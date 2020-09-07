@@ -17,6 +17,11 @@
 #    include <utility>
 
 
+namespace ProfileEvents
+{
+    extern const Event S3WriteBytes;
+}
+
 namespace DB
 {
 // S3 protocol does not allow to have multipart upload with more than 10000 parts.
@@ -58,6 +63,8 @@ void WriteBufferFromS3::nextImpl()
         return;
 
     temporary_buffer->write(working_buffer.begin(), offset());
+
+    ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
 
     if (is_multipart)
     {

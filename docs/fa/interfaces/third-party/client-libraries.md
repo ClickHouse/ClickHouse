@@ -49,6 +49,7 @@ toc_title: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0647\u0627\u06CC 
 -   کوتلین
     -   [AORM](https://github.com/TanVD/AORM)
 -   C\#
+    -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [فاحشه خانه.ادو](https://github.com/killwort/ClickHouse-Net)
     -   [فاحشه خانه.کارگیر](https://github.com/DarkWanderer/ClickHouse.Client)
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)

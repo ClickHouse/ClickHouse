@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 # POST permits everything.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+name,value,changed+FROM+system.settings+WHERE+name+IN+('readonly','max_rows_to_read')&max_rows_to_read=10000&default_format=PrettySpaceNoEscapes" -d' '

@@ -9,7 +9,6 @@
 #include <string.h>
 #include <signal.h>
 #include <cxxabi.h>
-#include <execinfo.h>
 #include <unistd.h>
 
 #include <typeinfo>
@@ -52,6 +51,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -77,6 +77,15 @@ static void call_default_signal_handler(int sig)
     raise(sig);
 }
 
+const char * msan_strsignal(int sig)
+{
+    // Apparently strsignal is not instrumented by MemorySanitizer, so we
+    // have to unpoison it to avoid msan reports inside fmt library when we
+    // print it.
+    const char * signal_name = strsignal(sig);
+    __msan_unpoison_string(signal_name);
+    return signal_name;
+}
 
 static constexpr size_t max_query_id_size = 127;
 
@@ -150,6 +159,11 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     errno = saved_errno;
 }
+
+
+/// Avoid link time dependency on DB/Interpreters - will use this function only when linked.
+__attribute__((__weak__)) void collectCrashLog(
+    Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
 
 
 /** The thread that read info about signal or std::terminate from pipe.
@@ -276,12 +290,14 @@ private:
         if (query_id.empty())
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, strsignal(sig), sig);
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
+                thread_num, msan_strsignal(sig), sig);
         }
         else
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, query_id, strsignal(sig), sig);
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
+                thread_num, query_id, msan_strsignal(sig), sig);
         }
 
         String error_message;
@@ -309,16 +325,13 @@ private:
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
+        /// Write crash to system.crash_log table if available.
+        if (collectCrashLog)
+            collectCrashLog(sig, thread_num, query_id, stack_trace);
+
         /// Send crash report to developers (if configured)
-
-        #if defined(__ELF__) && !defined(__FreeBSD__)
-            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
-        #else
-            String build_id_hex{};
-        #endif
-
         if (sig != SanitizerTrap)
-            SentryWriter::onFault(sig, error_message, stack_trace, build_id_hex);
+            SentryWriter::onFault(sig, error_message, stack_trace);
 
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
@@ -446,6 +459,11 @@ BaseDaemon::~BaseDaemon()
 {
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
+    /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
+    for (int sig : handled_signals)
+    {
+        signal(sig, SIG_DFL);
+    }
     signal_pipe.close();
 }
 
@@ -700,7 +718,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     /// Setup signal handlers.
     auto add_signal_handler =
-        [](const std::vector<int> & signals, signal_function handler)
+        [this](const std::vector<int> & signals, signal_function handler)
         {
             struct sigaction sa;
             memset(&sa, 0, sizeof(sa));
@@ -724,6 +742,8 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
                 for (auto signal : signals)
                     if (sigaction(signal, &sa, nullptr))
                         throw Poco::Exception("Cannot set signal handler.");
+
+                std::copy(signals.begin(), signals.end(), std::back_inserter(handled_signals));
             }
         };
 
@@ -832,13 +852,13 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
+        throw DB::Exception(std::string("Unsupported signal: ") + msan_strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
+    LOG_INFO(&logger(), "Received termination signal ({})", msan_strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {

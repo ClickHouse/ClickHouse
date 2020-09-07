@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
 
 #include <Common/PODArray_fwd.h>
-#include <Common/PODArray.h>
 
 #include <gtest/gtest.h>
 
@@ -178,7 +177,7 @@ INSTANTIATE_TEST_SUITE_P(SIMD_Cases,
             {"abcdef"}
         },
         {
-            "Token crosses bounday of 16-byte chunk",
+            "Token crosses boundary of 16-byte chunk",
             "            abcdef",
             {"abcdef"}
         },

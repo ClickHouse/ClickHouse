@@ -3,13 +3,13 @@
 #include <Compression/CompressionFactory.h>
 #include <common/unaligned.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
 
 #include <string.h>
 #include <algorithm>
-#include <cstdlib>
 #include <type_traits>
 
 #include <bitset>
@@ -249,9 +249,9 @@ uint8_t CompressionCodecGorilla::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Gorilla);
 }
 
-String CompressionCodecGorilla::getCodecDesc() const
+ASTPtr CompressionCodecGorilla::getCodecDesc() const
 {
-    return "Gorilla";
+    return std::make_shared<ASTIdentifier>("Gorilla");
 }
 
 UInt32 CompressionCodecGorilla::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -323,11 +323,6 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
     }
 }
 
-void CompressionCodecGorilla::useInfoAboutType(const DataTypePtr & data_type)
-{
-    data_bytes_size = getDataBytesSize(data_type);
-}
-
 void registerCodecGorilla(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Gorilla);
@@ -337,7 +332,7 @@ void registerCodecGorilla(CompressionCodecFactory & factory)
         if (arguments)
             throw Exception("Codec Gorilla does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
 
-        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;   /// Maybe postponed to the call to "useInfoAboutType"
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
         return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
     });
 }

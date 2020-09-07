@@ -3,6 +3,7 @@ import random
 import threading
 import time
 import pytest
+import io
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -16,6 +17,11 @@ from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnecti
 from kafka.admin import NewTopic
 from kafka.protocol.admin import DescribeGroupsResponse_v1, DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
+
+import avro.schema
+from confluent.schemaregistry.client import CachedSchemaRegistryClient
+from confluent.schemaregistry.serializers.MessageSerializer import MessageSerializer
+
 import socket
 from google.protobuf.internal.encoder import _VarintBytes
 
@@ -34,8 +40,7 @@ import kafka_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                config_dir='configs',
-                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
+                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml', 'configs/kafka_macros.xml' ],
                                 with_kafka=True,
                                 with_zookeeper=True,
                                 clickhouse_path_dir='clickhouse_path')
@@ -102,6 +107,22 @@ def kafka_produce_protobuf_messages(topic, start_index, num_messages):
     producer.flush()
     print("Produced {} messages for topic {}".format(num_messages, topic))
 
+def avro_confluent_message(schema_registry_client, value):
+    # type: (CachedSchemaRegistryClient, dict) -> str
+
+    serializer = MessageSerializer(schema_registry_client)
+    schema = avro.schema.make_avsc_object({
+        'name': 'row',
+        'type': 'record',
+        'fields': [
+            {'name': 'id', 'type': 'long'},
+            {'name': 'blockNo', 'type': 'int'},
+            {'name': 'val1', 'type': 'string'},
+            {'name': 'val2', 'type': 'float'},
+            {'name': 'val3', 'type': 'int'}
+        ]
+    })
+    return serializer.encode_record_with_schema('test_subject', schema, value)
 
 @pytest.mark.timeout(180)
 def test_kafka_json_as_string(kafka_cluster):
@@ -139,8 +160,8 @@ def test_kafka_formats(kafka_cluster):
                 '{"id":"0","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n',
                 '{"id":"1","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"2","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"3","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"4","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"5","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"6","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"7","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"8","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"9","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"10","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"11","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"12","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"13","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"14","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n{"id":"15","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n',
                 '{"id":"0","blockNo":0,"val1":"AM","val2":0.5,"val3":1}\n',
-                '' # tolerates
             ],
+            'supports_empty_value': True,
         },
         # JSONAsString doesn't fit to that test, and tested separately
         'JSONCompactEachRow' : {
@@ -148,8 +169,8 @@ def test_kafka_formats(kafka_cluster):
                 '["0", 0, "AM", 0.5, 1]\n',
                 '["1", 0, "AM", 0.5, 1]\n["2", 0, "AM", 0.5, 1]\n["3", 0, "AM", 0.5, 1]\n["4", 0, "AM", 0.5, 1]\n["5", 0, "AM", 0.5, 1]\n["6", 0, "AM", 0.5, 1]\n["7", 0, "AM", 0.5, 1]\n["8", 0, "AM", 0.5, 1]\n["9", 0, "AM", 0.5, 1]\n["10", 0, "AM", 0.5, 1]\n["11", 0, "AM", 0.5, 1]\n["12", 0, "AM", 0.5, 1]\n["13", 0, "AM", 0.5, 1]\n["14", 0, "AM", 0.5, 1]\n["15", 0, "AM", 0.5, 1]\n',
                 '["0", 0, "AM", 0.5, 1]\n',
-                '' # tolerates
             ],
+            'supports_empty_value': True,
         },
         'JSONCompactEachRowWithNamesAndTypes' : {
             'data_sample' : [
@@ -180,16 +201,16 @@ def test_kafka_formats(kafka_cluster):
                 '0,0,"AM",0.5,1\n',
                 '1,0,"AM",0.5,1\n2,0,"AM",0.5,1\n3,0,"AM",0.5,1\n4,0,"AM",0.5,1\n5,0,"AM",0.5,1\n6,0,"AM",0.5,1\n7,0,"AM",0.5,1\n8,0,"AM",0.5,1\n9,0,"AM",0.5,1\n10,0,"AM",0.5,1\n11,0,"AM",0.5,1\n12,0,"AM",0.5,1\n13,0,"AM",0.5,1\n14,0,"AM",0.5,1\n15,0,"AM",0.5,1\n',
                 '0,0,"AM",0.5,1\n',
-                '' # tolerates
             ],
+            'supports_empty_value': True,
         },
         'TSV' : {
             'data_sample' : [
                 '0\t0\tAM\t0.5\t1\n',
                 '1\t0\tAM\t0.5\t1\n2\t0\tAM\t0.5\t1\n3\t0\tAM\t0.5\t1\n4\t0\tAM\t0.5\t1\n5\t0\tAM\t0.5\t1\n6\t0\tAM\t0.5\t1\n7\t0\tAM\t0.5\t1\n8\t0\tAM\t0.5\t1\n9\t0\tAM\t0.5\t1\n10\t0\tAM\t0.5\t1\n11\t0\tAM\t0.5\t1\n12\t0\tAM\t0.5\t1\n13\t0\tAM\t0.5\t1\n14\t0\tAM\t0.5\t1\n15\t0\tAM\t0.5\t1\n',
                 '0\t0\tAM\t0.5\t1\n',
-                '' # tolerates
             ],
+            'supports_empty_value': True,
         },
         'CSVWithNames' : {
             'data_sample' : [
@@ -211,16 +232,16 @@ def test_kafka_formats(kafka_cluster):
                 "(0,0,'AM',0.5,1)",
                 "(1,0,'AM',0.5,1),(2,0,'AM',0.5,1),(3,0,'AM',0.5,1),(4,0,'AM',0.5,1),(5,0,'AM',0.5,1),(6,0,'AM',0.5,1),(7,0,'AM',0.5,1),(8,0,'AM',0.5,1),(9,0,'AM',0.5,1),(10,0,'AM',0.5,1),(11,0,'AM',0.5,1),(12,0,'AM',0.5,1),(13,0,'AM',0.5,1),(14,0,'AM',0.5,1),(15,0,'AM',0.5,1)",
                 "(0,0,'AM',0.5,1)",
-                '' # tolerates
             ],
+            'supports_empty_value': True,
         },
         'TSVWithNames' : {
             'data_sample' : [
                 'id\tblockNo\tval1\tval2\tval3\n0\t0\tAM\t0.5\t1\n',
                 'id\tblockNo\tval1\tval2\tval3\n1\t0\tAM\t0.5\t1\n2\t0\tAM\t0.5\t1\n3\t0\tAM\t0.5\t1\n4\t0\tAM\t0.5\t1\n5\t0\tAM\t0.5\t1\n6\t0\tAM\t0.5\t1\n7\t0\tAM\t0.5\t1\n8\t0\tAM\t0.5\t1\n9\t0\tAM\t0.5\t1\n10\t0\tAM\t0.5\t1\n11\t0\tAM\t0.5\t1\n12\t0\tAM\t0.5\t1\n13\t0\tAM\t0.5\t1\n14\t0\tAM\t0.5\t1\n15\t0\tAM\t0.5\t1\n',
                 'id\tblockNo\tval1\tval2\tval3\n0\t0\tAM\t0.5\t1\n',
-                '' # tolerates
             ],
+            'supports_empty_value': True,
         },
         'TSVWithNamesAndTypes' : {
             'data_sample' : [
@@ -389,25 +410,26 @@ def test_kafka_formats(kafka_cluster):
         #     # ],
         # },
         # 'Avro' : {
-        #     # TODO: Not working at all: avro::Exception, e.what() = EOF reached
-        #     #./contrib/libcxx/src/support/runtime/stdexcept_default.ipp:33: std::runtime_error::runtime_error(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&) @ 0x22ce2080 in /usr/bin/clickhouse
-        #     #./contrib/avro/lang/c++/api/Exception.hh:36: avro::Exception::Exception(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&) @ 0x1de48a6e in /usr/bin/clickhouse
-        #     #./contrib/avro/lang/c++/api/Stream.hh:336: avro::StreamReader::more() @ 0x22717f56 in /usr/bin/clickhouse
-        #     #./contrib/avro/lang/c++/api/Stream.hh:0: avro::StreamReader::readBytes(unsigned char*, unsigned long) @ 0x22717d22 in /usr/bin/clickhouse
-        #     #./contrib/avro/lang/c++/impl/BinaryDecoder.cc:170: avro::BinaryDecoder::decodeFixed(unsigned long, std::__1::vector<unsigned char, std::__1::allocator<unsigned char> >&) @ 0x227177cb in /usr/bin/clickhouse
-        #     #./contrib/avro/lang/c++/api/Specific.hh:216: avro::codec_traits<std::__1::array<unsigned char, 4ul> >::decode(avro::Decoder&, std::__1::array<unsigned char, 4ul>&) @ 0x22743624 in /usr/bin/clickhouse
-        #     #./contrib/avro/lang/c++/api/Specific.hh:342: void avro::decode<std::__1::array<unsigned char, 4ul> >(avro::Decoder&, std::__1::array<unsigned char, 4ul>&) @ 0x2272970d in /usr/bin/clickhouse
-        #     #./contrib/avro/lang/c++/impl/DataFile.cc:487: avro::DataFileReaderBase::readHeader() @ 0x2272608d in /usr/bin/clickhouse
-        #     #./contrib/avro/lang/c++/impl/DataFile.cc:280: avro::DataFileReaderBase::DataFileReaderBase(std::__1::unique_ptr<avro::InputStream, std::__1::default_delete<avro::InputStream> >) @ 0x22726923 in /usr/bin/clickhouse
-        #     #./src/Processors/Formats/Impl/AvroRowInputFormat.cpp:571: DB::AvroRowInputFormat::AvroRowInputFormat(DB::Block const&, DB::ReadBuffer&, DB::RowInputFormatParams) @ 0x1de19c9b in /usr/bin/clickhouse
         #     'data_sample' : [
-        #         #'\x4f\x62\x6a\x01\x04\x14\x61\x76\x72\x6f\x2e\x63\x6f\x64\x65\x63\x0c\x73\x6e\x61\x70\x70\x79\x16\x61\x76\x72\x6f\x2e\x73\x63\x68\x65\x6d\x61\x80\x03\x7b\x22\x74\x79\x70\x65\x22\x3a\x22\x72\x65\x63\x6f\x72\x64\x22\x2c\x22\x6e\x61\x6d\x65\x22\x3a\x22\x72\x6f\x77\x22\x2c\x22\x66\x69\x65\x6c\x64\x73\x22\x3a\x5b\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x69\x64\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x6c\x6f\x6e\x67\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x62\x6c\x6f\x63\x6b\x4e\x6f\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x31\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x62\x79\x74\x65\x73\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x32\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x66\x6c\x6f\x61\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x33\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x5d\x7d\x00\x73\x6e\x66\xa3\x62\x9f\x88\xed\x28\x08\x67\xf0\x75\xaf\x23\x83\x02\x20\x0a\x24\x00\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x80\xaa\x4a\xe3\x73\x6e\x66\xa3\x62\x9f\x88\xed\x28\x08\x67\xf0\x75\xaf\x23\x83',
-        #         #'\x4f\x62\x6a\x01\x04\x14\x61\x76\x72\x6f\x2e\x63\x6f\x64\x65\x63\x0c\x73\x6e\x61\x70\x70\x79\x16\x61\x76\x72\x6f\x2e\x73\x63\x68\x65\x6d\x61\x80\x03\x7b\x22\x74\x79\x70\x65\x22\x3a\x22\x72\x65\x63\x6f\x72\x64\x22\x2c\x22\x6e\x61\x6d\x65\x22\x3a\x22\x72\x6f\x77\x22\x2c\x22\x66\x69\x65\x6c\x64\x73\x22\x3a\x5b\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x69\x64\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x6c\x6f\x6e\x67\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x62\x6c\x6f\x63\x6b\x4e\x6f\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x31\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x62\x79\x74\x65\x73\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x32\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x66\x6c\x6f\x61\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x33\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x5d\x7d\x00\x73\x6e\x66\xa3\x62\x9f\x88\xed\x28\x08\x67\xf0\x75\xaf\x23\x83\x1e\x9e\x01\x96\x01\x28\x02\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x04\x15\x0a\x00\x06\x15\x0a\x00\x08\x15\x0a\x00\x0a\x15\x0a\x00\x0c\x15\x0a\x00\x0e\x15\x0a\x00\x10\x15\x0a\x00\x12\x15\x0a\x00\x14\x15\x0a\x00\x16\x15\x0a\x00\x18\x15\x0a\x00\x1a\x15\x0a\x00\x1c\x15\x0a\x24\x1e\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x49\x73\x4d\xca\x73\x6e\x66\xa3\x62\x9f\x88\xed\x28\x08\x67\xf0\x75\xaf\x23\x83',
-        #         #'\x4f\x62\x6a\x01\x04\x14\x61\x76\x72\x6f\x2e\x63\x6f\x64\x65\x63\x0c\x73\x6e\x61\x70\x70\x79\x16\x61\x76\x72\x6f\x2e\x73\x63\x68\x65\x6d\x61\x80\x03\x7b\x22\x74\x79\x70\x65\x22\x3a\x22\x72\x65\x63\x6f\x72\x64\x22\x2c\x22\x6e\x61\x6d\x65\x22\x3a\x22\x72\x6f\x77\x22\x2c\x22\x66\x69\x65\x6c\x64\x73\x22\x3a\x5b\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x69\x64\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x6c\x6f\x6e\x67\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x62\x6c\x6f\x63\x6b\x4e\x6f\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x31\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x62\x79\x74\x65\x73\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x32\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x66\x6c\x6f\x61\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x33\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x5d\x7d\x00\x73\x6e\x66\xa3\x62\x9f\x88\xed\x28\x08\x67\xf0\x75\xaf\x23\x83\x02\x20\x0a\x24\x00\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x80\xaa\x4a\xe3\x73\x6e\x66\xa3\x62\x9f\x88\xed\x28\x08\x67\xf0\x75\xaf\x23\x83',
-        #         # ''
+        #         '\x4f\x62\x6a\x01\x04\x16\x61\x76\x72\x6f\x2e\x73\x63\x68\x65\x6d\x61\x82\x03\x7b\x22\x74\x79\x70\x65\x22\x3a\x22\x72\x65\x63\x6f\x72\x64\x22\x2c\x22\x6e\x61\x6d\x65\x22\x3a\x22\x72\x6f\x77\x22\x2c\x22\x66\x69\x65\x6c\x64\x73\x22\x3a\x5b\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x69\x64\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x6c\x6f\x6e\x67\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x62\x6c\x6f\x63\x6b\x4e\x6f\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x31\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x73\x74\x72\x69\x6e\x67\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x32\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x66\x6c\x6f\x61\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x33\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x5d\x7d\x14\x61\x76\x72\x6f\x2e\x63\x6f\x64\x65\x63\x08\x6e\x75\x6c\x6c\x00\x8d\x1f\xf2\x17\x71\xa4\x2e\xe4\xc9\x0a\x23\x67\x12\xaa\xc6\xc0\x02\x14\x00\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x8d\x1f\xf2\x17\x71\xa4\x2e\xe4\xc9\x0a\x23\x67\x12\xaa\xc6\xc0',
+        #         '\x4f\x62\x6a\x01\x04\x16\x61\x76\x72\x6f\x2e\x73\x63\x68\x65\x6d\x61\x82\x03\x7b\x22\x74\x79\x70\x65\x22\x3a\x22\x72\x65\x63\x6f\x72\x64\x22\x2c\x22\x6e\x61\x6d\x65\x22\x3a\x22\x72\x6f\x77\x22\x2c\x22\x66\x69\x65\x6c\x64\x73\x22\x3a\x5b\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x69\x64\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x6c\x6f\x6e\x67\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x62\x6c\x6f\x63\x6b\x4e\x6f\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x31\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x73\x74\x72\x69\x6e\x67\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x32\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x66\x6c\x6f\x61\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x33\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x5d\x7d\x14\x61\x76\x72\x6f\x2e\x63\x6f\x64\x65\x63\x08\x6e\x75\x6c\x6c\x00\xeb\x9d\x51\x82\xf2\x11\x3d\x0b\xc5\x92\x97\xb2\x07\x6d\x72\x5a\x1e\xac\x02\x02\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x04\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x06\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x08\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x0a\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x0c\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x0e\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x10\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x12\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x14\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x16\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x18\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x1a\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x1c\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x1e\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\xeb\x9d\x51\x82\xf2\x11\x3d\x0b\xc5\x92\x97\xb2\x07\x6d\x72\x5a',
+        #         '\x4f\x62\x6a\x01\x04\x16\x61\x76\x72\x6f\x2e\x73\x63\x68\x65\x6d\x61\x82\x03\x7b\x22\x74\x79\x70\x65\x22\x3a\x22\x72\x65\x63\x6f\x72\x64\x22\x2c\x22\x6e\x61\x6d\x65\x22\x3a\x22\x72\x6f\x77\x22\x2c\x22\x66\x69\x65\x6c\x64\x73\x22\x3a\x5b\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x69\x64\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x6c\x6f\x6e\x67\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x62\x6c\x6f\x63\x6b\x4e\x6f\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x31\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x73\x74\x72\x69\x6e\x67\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x32\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x66\x6c\x6f\x61\x74\x22\x7d\x2c\x7b\x22\x6e\x61\x6d\x65\x22\x3a\x22\x76\x61\x6c\x33\x22\x2c\x22\x74\x79\x70\x65\x22\x3a\x22\x69\x6e\x74\x22\x7d\x5d\x7d\x14\x61\x76\x72\x6f\x2e\x63\x6f\x64\x65\x63\x08\x6e\x75\x6c\x6c\x00\x73\x65\x4f\x7c\xd9\x33\xe1\x18\xdd\x30\xe8\x22\x2a\x58\x20\x6f\x02\x14\x00\x00\x04\x41\x4d\x00\x00\x00\x3f\x02\x73\x65\x4f\x7c\xd9\x33\xe1\x18\xdd\x30\xe8\x22\x2a\x58\x20\x6f',
         #     ],
         # },
-        # TODO: test for AvroConfluence
+        'AvroConfluent' : {
+            'data_sample': [
+                avro_confluent_message(cluster.schema_registry_client, {'id':0L,'blockNo':0,'val1':unicode('AM'),'val2':0.5,"val3":1}),
+
+                ''.join(map(lambda id: avro_confluent_message(cluster.schema_registry_client, {'id':id,'blockNo':0,'val1':unicode('AM'),'val2':0.5,"val3":1}), range(1,16))),
+
+                avro_confluent_message(cluster.schema_registry_client, {'id':0L,'blockNo':0,'val1':unicode('AM'),'val2':0.5,"val3":1}),
+            ],
+            'extra_settings': ", format_avro_schema_registry_url='http://{}:{}'".format(
+                cluster.schema_registry_host,
+                cluster.schema_registry_port
+            ),
+            'supports_empty_value': True,
+        }
         # 'Arrow' : {
         #     # Not working at all: DB::Exception: Error while opening a table: Invalid: File is too small: 0, Stack trace (when copying this message, always include the lines below):
         #     # /src/Common/Exception.cpp:37: DB::Exception::Exception(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, int) @ 0x15c2d2a3 in /usr/bin/clickhouse
@@ -452,10 +474,15 @@ def test_kafka_formats(kafka_cluster):
         # },
     }
 
-    for format_name in all_formats:
+    for format_name, format_opts in all_formats.items():
         print('Set up {}'.format(format_name))
         topic_name='format_tests_{}'.format(format_name)
-        kafka_produce(topic_name, all_formats[format_name]['data_sample'])
+        data_sample = format_opts['data_sample']
+        data_prefix = []
+        # prepend empty value when supported
+        if format_opts.get('supports_empty_value', False):
+            data_prefix = data_prefix + ['']
+        kafka_produce(topic_name, data_prefix + data_sample)
         instance.query('''
             DROP TABLE IF EXISTS test.kafka_{format_name};
 
@@ -476,34 +503,35 @@ def test_kafka_formats(kafka_cluster):
 
             CREATE MATERIALIZED VIEW test.kafka_{format_name}_mv Engine=Log AS
                 SELECT *, _topic, _partition, _offset FROM test.kafka_{format_name};
-            '''.format(topic_name=topic_name, format_name=format_name, extra_settings=all_formats[format_name].get('extra_settings') or ''))
+            '''.format(topic_name=topic_name, format_name=format_name, extra_settings=format_opts.get('extra_settings') or ''))
 
     time.sleep(12)
 
-    for format_name in all_formats:
+    for format_name, format_opts in all_formats.items():
         print('Checking {}'.format(format_name))
         topic_name='format_tests_{}'.format(format_name)
-
+        # shift offsets by 1 if format supports empty value
+        offsets = [1,2,3] if format_opts.get('supports_empty_value', False) else [0,1,2]
         result = instance.query('SELECT * FROM test.kafka_{format_name}_mv;'.format(format_name=format_name))
         expected = '''\
-0	0	AM	0.5	1	{topic_name}	0	0
-1	0	AM	0.5	1	{topic_name}	0	1
-2	0	AM	0.5	1	{topic_name}	0	1
-3	0	AM	0.5	1	{topic_name}	0	1
-4	0	AM	0.5	1	{topic_name}	0	1
-5	0	AM	0.5	1	{topic_name}	0	1
-6	0	AM	0.5	1	{topic_name}	0	1
-7	0	AM	0.5	1	{topic_name}	0	1
-8	0	AM	0.5	1	{topic_name}	0	1
-9	0	AM	0.5	1	{topic_name}	0	1
-10	0	AM	0.5	1	{topic_name}	0	1
-11	0	AM	0.5	1	{topic_name}	0	1
-12	0	AM	0.5	1	{topic_name}	0	1
-13	0	AM	0.5	1	{topic_name}	0	1
-14	0	AM	0.5	1	{topic_name}	0	1
-15	0	AM	0.5	1	{topic_name}	0	1
-0	0	AM	0.5	1	{topic_name}	0	2
-'''.format(topic_name=topic_name)
+0	0	AM	0.5	1	{topic_name}	0	{offset_0}
+1	0	AM	0.5	1	{topic_name}	0	{offset_1}
+2	0	AM	0.5	1	{topic_name}	0	{offset_1}
+3	0	AM	0.5	1	{topic_name}	0	{offset_1}
+4	0	AM	0.5	1	{topic_name}	0	{offset_1}
+5	0	AM	0.5	1	{topic_name}	0	{offset_1}
+6	0	AM	0.5	1	{topic_name}	0	{offset_1}
+7	0	AM	0.5	1	{topic_name}	0	{offset_1}
+8	0	AM	0.5	1	{topic_name}	0	{offset_1}
+9	0	AM	0.5	1	{topic_name}	0	{offset_1}
+10	0	AM	0.5	1	{topic_name}	0	{offset_1}
+11	0	AM	0.5	1	{topic_name}	0	{offset_1}
+12	0	AM	0.5	1	{topic_name}	0	{offset_1}
+13	0	AM	0.5	1	{topic_name}	0	{offset_1}
+14	0	AM	0.5	1	{topic_name}	0	{offset_1}
+15	0	AM	0.5	1	{topic_name}	0	{offset_1}
+0	0	AM	0.5	1	{topic_name}	0	{offset_2}
+'''.format(topic_name=topic_name, offset_0 = offsets[0], offset_1 = offsets[1], offset_2 = offsets[2])
         assert TSV(result) == TSV(expected), 'Proper result for format: {}'.format(format_name)
 
 
@@ -570,9 +598,18 @@ def kafka_setup_teardown():
 
 @pytest.mark.timeout(180)
 def test_kafka_settings_old_syntax(kafka_cluster):
+    assert TSV(instance.query("SELECT * FROM system.macros WHERE macro like 'kafka%' ORDER BY macro", ignore_error=True)) == TSV('''kafka_broker	kafka1
+kafka_client_id	instance
+kafka_format_json_each_row	JSONEachRow
+kafka_group_name_new	new
+kafka_group_name_old	old
+kafka_topic_new	new
+kafka_topic_old	old
+''')
+
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
-            ENGINE = Kafka('kafka1:19092', 'old', 'old', 'JSONEachRow', '\\n');
+            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n');
         ''')
 
     # Don't insert malformed messages since old settings syntax
@@ -599,12 +636,12 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'new',
-                     kafka_group_name = 'new',
-                     kafka_format = 'JSONEachRow',
+            SETTINGS kafka_broker_list = '{kafka_broker}:19092',
+                     kafka_topic_list = '{kafka_topic_new}',
+                     kafka_group_name = '{kafka_group_name_new}',
+                     kafka_format = '{kafka_format_json_each_row}',
                      kafka_row_delimiter = '\\n',
-                     kafka_client_id = '{instance} test 1234',
+                     kafka_client_id = '{kafka_client_id} test 1234',
                      kafka_skip_broken_messages = 1;
         ''')
 
@@ -664,7 +701,8 @@ def test_kafka_issue11308(kafka_cluster):
         FROM test.kafka;
         ''')
 
-    time.sleep(9)
+    while int(instance.query('SELECT count() FROM test.persistent_kafka')) < 3:
+        time.sleep(1)
 
     result = instance.query('SELECT * FROM test.persistent_kafka ORDER BY time;')
 
@@ -1119,7 +1157,7 @@ def test_kafka_virtual_columns(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT _key, key, _topic, value, _offset, _partition, _timestamp FROM test.kafka', ignore_error=True)
+        result += instance.query('''SELECT _key, key, _topic, value, _offset, _partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) AS _timestamp FROM test.kafka''', ignore_error=True)
         if kafka_check_result(result, False, 'test_kafka_virtual1.reference'):
             break
 
@@ -1138,11 +1176,11 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
                      kafka_group_name = 'virt2',
                      kafka_format = 'JSONEachRow',
                      kafka_row_delimiter = '\\n';
-        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime))
+        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime('UTC')))
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp as timestamp FROM test.kafka;
+            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) as timestamp FROM test.kafka;
     ''')
 
     messages = []
@@ -1406,7 +1444,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
-        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime)
+        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime('UTC'))
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'insert3',
@@ -1414,7 +1452,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
                      kafka_format = 'TSV',
                      kafka_row_delimiter = '\\n';
 
-        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime)
+        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime('UTC'))
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'insert3',
@@ -1431,7 +1469,8 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
     instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({})),({},{},'{}',toDateTime({}))".format(3,3,'k3',1577836803,4,4,'k4',1577836804))
     instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(5,5,'k5',1577836805))
 
-    time.sleep(10)
+    while int(instance.query("SELECT count() FROM test.view")) < 5:
+        time.sleep(1)
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
@@ -1505,8 +1544,19 @@ def test_kafka_flush_by_time(kafka_cluster):
     assert TSV(result) == TSV('1	1')
 
 
-@pytest.mark.timeout(600)
+@pytest.mark.timeout(90)
 def test_kafka_flush_by_block_size(kafka_cluster):
+    cancel = threading.Event()
+
+    def produce():
+        while not cancel.is_set():
+            messages = []
+            messages.append(json.dumps({'key': 0, 'value': 0}))
+            kafka_produce('flush_by_block_size', messages)
+
+    kafka_thread = threading.Thread(target=produce)
+    kafka_thread.start()
+
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
@@ -1518,9 +1568,9 @@ def test_kafka_flush_by_block_size(kafka_cluster):
                      kafka_group_name = 'flush_by_block_size',
                      kafka_format = 'JSONEachRow',
                      kafka_max_block_size = 100,
+                     kafka_poll_max_batch_size = 1,
+                     kafka_flush_interval_ms = 120000, /* should not flush by time during test */
                      kafka_row_delimiter = '\\n';
-
-        SELECT * FROM test.kafka;
 
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
@@ -1530,29 +1580,26 @@ def test_kafka_flush_by_block_size(kafka_cluster):
             SELECT * FROM test.kafka;
     ''')
 
-    messages = []
-    for _ in range(101):
-        messages.append(json.dumps({'key': 0, 'value': 0}))
-    kafka_produce('flush_by_block_size', messages)
+    # Wait for Kafka engine to consume this data
+    while 1 != int(instance.query("SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view' AND name = 'all_1_1_0'")):
+        time.sleep(0.5)
 
-    time.sleep(1)
+    cancel.set()
+    kafka_thread.join()
 
-    # TODO: due to https://github.com/ClickHouse/ClickHouse/issues/11216
-    # second flush happens earlier than expected, so we have 2 parts here instead of one
-    # flush by block size works correctly, so the feature checked by the test is working correctly
+    # more flushes can happens during test, we need to check only result of first flush (part named all_1_1_0).
     result = instance.query("SELECT count() FROM test.view WHERE _part='all_1_1_0'")
     # print(result)
-
-    # kafka_cluster.open_bash_shell('instance')
 
     instance.query('''
         DROP TABLE test.consumer;
         DROP TABLE test.view;
     ''')
 
+
     # 100 = first poll should return 100 messages (and rows)
     # not waiting for stream_flush_interval_ms
-    assert int(result) == 100, 'Messages from kafka should be flushed at least every stream_flush_interval_ms!'
+    assert int(result) == 100, 'Messages from kafka should be flushed when block of size kafka_max_block_size is formed!'
 
 
 @pytest.mark.timeout(600)
@@ -1615,7 +1662,7 @@ def test_kafka_rebalance(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
@@ -1835,7 +1882,7 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
@@ -2033,7 +2080,7 @@ def test_premature_flush_on_eof(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
@@ -2073,6 +2120,76 @@ def test_premature_flush_on_eof(kafka_cluster):
     instance.query('''
         DROP TABLE test.kafka_consumer;
         DROP TABLE test.destination;
+    ''')
+
+
+@pytest.mark.timeout(180)
+def test_kafka_unavailable(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': j+1}) for j in range(20000)]
+    kafka_produce('test_bad_reschedule', messages)
+
+    kafka_cluster.pause_container('kafka1')
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'test_bad_reschedule',
+                    kafka_group_name = 'test_bad_reschedule',
+                    kafka_format = 'JSONEachRow',
+                    kafka_max_block_size = 1000;
+
+        CREATE MATERIALIZED VIEW test.destination Engine=Log AS
+        SELECT
+            key,
+            now() as consume_ts,
+            value,
+            _topic,
+            _key,
+            _offset,
+            _partition,
+            _timestamp
+        FROM test.kafka;
+    ''')
+
+    instance.query("SELECT * FROM test.kafka")
+    instance.query("SELECT count() FROM test.destination")
+
+    # enough to trigger issue
+    time.sleep(30)
+    kafka_cluster.unpause_container('kafka1')
+
+    while int(instance.query("SELECT count() FROM test.destination")) < 20000:
+        print("Waiting for consume")
+        time.sleep(1)
+
+@pytest.mark.timeout(180)
+def test_kafka_issue14202(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.empty_table (
+            dt Date,
+            some_string String
+        )
+        ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(dt)
+        ORDER BY some_string;
+
+        CREATE TABLE test.kafka_q (t UInt64, `some_string` String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'issue14202',
+                     kafka_group_name = 'issue14202',
+                     kafka_format = 'JSONEachRow';
+        ''')
+
+    time.sleep(3)
+
+    instance.query('INSERT INTO test.kafka_q SELECT t, some_string  FROM ( SELECT dt AS t, some_string FROM test.empty_table )')
+    # check instance is alive
+    assert TSV(instance.query('SELECT 1')) == TSV('1')
+    instance.query('''
+        DROP TABLE test.empty_table;
+        DROP TABLE test.kafka_q;
     ''')
 
 if __name__ == '__main__':

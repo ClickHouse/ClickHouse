@@ -57,7 +57,7 @@ public:
             return variable->second.type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();

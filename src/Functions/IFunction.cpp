@@ -518,10 +518,11 @@ DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(
         }
         if (null_presence.has_nullable)
         {
-            Block nested_block = createBlockWithNestedColumns(Block(arguments), ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
+            Block nested_block = createBlockWithNestedColumns(
+                Block(arguments),
+                ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
             auto return_type = impl->getReturnType(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
             return makeNullable(return_type);
-
         }
     }
 

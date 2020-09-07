@@ -28,7 +28,7 @@ namespace ErrorCodes
 /// If all rows had NULL, the behaviour is determined by "result_is_nullable" template parameter.
 ///  true - return NULL; false - return value from empty aggregation state of nested function.
 
-/// When serialize_flag is set to true, the flag about presense of values is serialized
+/// When serialize_flag is set to true, the flag about presence of values is serialized
 ///  regardless to the "result_is_nullable" even if it's unneeded - for protocol compatibility.
 
 template <bool result_is_nullable, bool serialize_flag, typename Derived>

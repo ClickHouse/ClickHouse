@@ -339,13 +339,13 @@ Writing to the syslog is also supported. Config example:
 </logger>
 ```
 
-Keys:
+Keys for syslog:
 
 -   use\_syslog — Required setting if you want to write to the syslog.
 -   address — The host\[:port\] of syslogd. If omitted, the local daemon is used.
 -   hostname — Optional. The name of the host that logs are sent from.
 -   facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the “LOG\_” prefix: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, and so on).
-    Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON otherwise.`
+    Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 -   format – Message format. Possible values: `bsd` and `syslog.`
 
 ## send\_crash\_reports {#server_configuration_parameters-logger}
@@ -357,8 +357,8 @@ The server will need an access to public Internet via IPv4 (at the time of writi
 
 Keys:
 
--   `enabled` – Boolean flag to enable the feature. Set to `true` to allow sending crash reports.
--   `endpoint` – Overrides the Sentry endpoint.
+-   `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports. 
+-   `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax. 
 -   `anonymize` - Avoid attaching the server hostname to crash report.
 -   `http_proxy` - Configure HTTP proxy for sending crash reports.
 -   `debug` - Sets the Sentry client into debug mode.
@@ -400,7 +400,7 @@ The cache is shared for the server and memory is allocated as needed. The cache 
 
 ## max\_server\_memory\_usage {#max_server_memory_usage}
 
-Limits total RAM usage by the ClickHouse server. You can specify it only for the default profile.
+Limits total RAM usage by the ClickHouse server.
 
 Possible values:
 
@@ -411,11 +411,37 @@ Default value: `0`.
 
 **Additional Info**
 
-On hosts with low RAM and swap, you possibly need setting `max_server_memory_usage_to_ram_ratio > 1`.
+The default `max_server_memory_usage` value is calculated as `memory_amount * max_server_memory_usage_to_ram_ratio`.
 
 **See also**
 
 -   [max\_memory\_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
+-   [max_server_memory_usage_to_ram_ratio](#max_server_memory_usage_to_ram_ratio)
+
+## max_server_memory_usage_to_ram_ratio {#max_server_memory_usage_to_ram_ratio}
+
+Defines the fraction of total physical RAM amount, available to the Clickhouse server. If the server tries to utilize more, the memory is cut down to the appropriate amount. 
+
+Possible values:
+
+-   Positive double.
+-   0 — The Clickhouse server can use all available RAM.
+
+Default value: `0`.
+
+**Usage**
+
+On hosts with low RAM and swap, you possibly need setting `max_server_memory_usage_to_ram_ratio` larger than 1.
+
+**Example**
+
+``` xml
+<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
+```
+
+**See Also**
+
+-   [max_server_memory_usage](#max_server_memory_usage)
 
 ## max\_concurrent\_queries {#max-concurrent-queries}
 
@@ -564,7 +590,8 @@ Use the following parameters to configure logging:
 
 -   `database` – Name of the database.
 -   `table` – Name of the system table.
--   `partition_by` – Sets a [custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
+-   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+-   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 **Example**
@@ -625,7 +652,8 @@ Use the following parameters to configure logging:
 
 -   `database` – Name of the database.
 -   `table` – Name of the system table the queries will be logged in.
--   `partition_by` – Sets a [custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a table.
+-   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+-   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn’t exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -636,7 +664,7 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 <query_log>
     <database>system</database>
     <table>query_log</table>
-    <partition_by>toMonday(event_date)</partition_by>
+    <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_log>
 ```
@@ -651,7 +679,8 @@ Use the following parameters to configure logging:
 
 -   `database` – Name of the database.
 -   `table` – Name of the system table the queries will be logged in.
--   `partition_by` – Sets a [custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table.
+-   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+-   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn’t exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -667,6 +696,34 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 </query_thread_log>
 ```
 
+## text\_log {#server_configuration_parameters-text_log}
+
+Settings for the [text\_log](../../operations/system-tables/text_log.md#system_tables-text_log) system table for logging text messages.
+
+Parameters:
+
+-   `level` — Maximum Message Level (by default `Trace`) which will be stored in a table.
+-   `database` — Database name.
+-   `table` — Table name.
+-   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+-   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+-   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+
+**Example**
+```xml 
+<yandex>
+    <text_log>
+        <level>notice</level>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <!-- <partition_by>event_date</partition_by> -->
+        <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
+    </text_log>
+</yandex>
+```
+
+
 ## trace\_log {#server_configuration_parameters-trace_log}
 
 Settings for the [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
@@ -675,7 +732,8 @@ Parameters:
 
 -   `database` — Database for storing a table.
 -   `table` — Table name.
--   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table.
+-   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+-   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 
 The default server configuration file `config.xml` contains the following settings section:
@@ -692,7 +750,7 @@ The default server configuration file `config.xml` contains the following settin
 ## query\_masking\_rules {#query-masking-rules}
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
-`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to the client. That allows preventing
+`system.query_log`, `system.text_log`, `system.processes` tables, and in logs sent to the client. That allows preventing
 sensitive data leakage from SQL queries (like names, emails, personal
 identifiers or credit card numbers) to logs.
 
