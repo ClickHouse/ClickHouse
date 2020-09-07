@@ -27,7 +27,7 @@ Block MetricLogElement::createBlock()
     {
         std::string name;
         name += "CurrentMetric_";
-        name += CurrentMetrics::getName(CurrentMetrics::Metric(i));
+        name += CurrentMetrics::getName(ProfileEvents::Event(i));
         columns_with_type_and_name.emplace_back(std::make_shared<DataTypeInt64>(), std::move(name));
     }
 

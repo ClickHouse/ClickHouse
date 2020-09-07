@@ -49,7 +49,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
     const String & full_relative_path,
     const NamesAndTypesList & columns_list,
     const MergeTreeDataPartType & part_type,
-    const NameSet & files_without_checksums,
     bool require_checksums,
     std::function<bool()> is_cancelled)
 {
@@ -136,7 +135,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         auto checksum_it = checksums_data.files.find(file_name);
 
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
-        if (checksum_it == checksums_data.files.end() && !files_without_checksums.count(file_name))
+        if (checksum_it == checksums_data.files.end() && file_name != "checksums.txt" && file_name != "columns.txt")
         {
             auto txt_checksum_it = checksum_files_txt.find(file_name);
             if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)
@@ -184,7 +183,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
         data_part->getFullRelativePath(),
         data_part->getColumns(),
         data_part->getType(),
-        data_part->getFileNamesWithoutChecksums(),
         require_checksums,
         is_cancelled);
 }

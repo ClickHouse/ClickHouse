@@ -7,7 +7,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | Формат                                                          | INSERT | SELECT |
 |-----------------------------------------------------------------|--------|--------|
 | [TabSeparated](#tabseparated)                                   | ✔      | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                             | ✔      | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                             | ✗      | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔      | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔      | ✔      |
 | [Template](#format-template)                                    | ✔      | ✔      |
@@ -61,7 +61,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-22      1031592
 2014-03-23      1046491
 
-1970-01-01      8873898
+0000-00-00      8873898
 
 2014-03-17      1031592
 2014-03-23      1406958
@@ -132,7 +132,7 @@ SELECT * FROM nestedt FORMAT TSV
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Отличается от формата `TabSeparated` тем, что строки выводятся без экранирования.
-Используя этот формат, следите, чтобы в полях не было символов табуляции или разрыва строки.
+Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
 Этот формат также доступен под именем `TSVRaw`.
 
@@ -432,7 +432,7 @@ JSON совместим с JavaScript. Для этого, дополнитель
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
-ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`. Чтобы включить отображение в результате значений  `+nan`, `-nan`, `+inf`, `-inf`, установите параметр [output\_format\_json\_quote\_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) равным 1.
+ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`.
 
 Смотрите также формат [JSONEachRow](#jsoneachrow) .
 
@@ -672,7 +672,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Totals:
 ┌──EventDate─┬───────c─┐
-│ 1970-01-01 │ 8873898 │
+│ 0000-00-00 │ 8873898 │
 └────────────┴─────────┘
 
 Extremes:
@@ -940,7 +940,7 @@ message MessageType {
 }
 ```
 
-не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values).
+не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create.md#create-default-values).
 
 ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
 в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).

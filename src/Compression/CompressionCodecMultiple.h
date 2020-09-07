@@ -9,15 +9,15 @@ class CompressionCodecMultiple final : public ICompressionCodec
 {
 public:
     CompressionCodecMultiple() = default;   /// Need for CompressionFactory to register codec by method byte.
-    CompressionCodecMultiple(Codecs codecs_);
+    CompressionCodecMultiple(Codecs codecs_, bool sanity_check);
 
     uint8_t getMethodByte() const override;
 
-    ASTPtr getCodecDesc() const override;
+    String getCodecDesc() const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    static std::vector<uint8_t> getCodecsBytesFromData(const char * source);
+    void useInfoAboutType(const DataTypePtr & data_type) override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -29,6 +29,8 @@ protected:
 
 private:
     Codecs codecs;
+
+    String getCodecDescImpl() const;
 };
 
 }

@@ -28,13 +28,13 @@ public:
     MemorySource(
         Names column_names_,
         BlocksList::iterator first_,
-        size_t num_blocks_,
+        BlocksList::iterator last_,
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot)
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
         , column_names(std::move(column_names_))
-        , current_it(first_)
-        , num_blocks(num_blocks_)
+        , current(first_)
+        , last(last_) /// [first, last]
     {
     }
 
@@ -49,7 +49,7 @@ protected:
         }
         else
         {
-            const Block & src = *current_it;
+            const Block & src = *current;
             Columns columns;
             columns.reserve(column_names.size());
 
@@ -57,21 +57,17 @@ protected:
             for (const auto & name : column_names)
                 columns.emplace_back(src.getByName(name).column);
 
-            ++current_block_idx;
-
-            if (current_block_idx == num_blocks)
+            if (current == last)
                 is_finished = true;
             else
-                ++current_it;
-
+                ++current;
             return Chunk(std::move(columns), src.rows());
         }
     }
 private:
     Names column_names;
-    BlocksList::iterator current_it;
-    size_t current_block_idx = 0;
-    const size_t num_blocks;
+    BlocksList::iterator current;
+    BlocksList::iterator last;
     bool is_finished = false;
 };
 
@@ -110,7 +106,7 @@ StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription col
 }
 
 
-Pipe StorageMemory::read(
+Pipes StorageMemory::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -130,26 +126,23 @@ Pipe StorageMemory::read(
 
     Pipes pipes;
 
-    BlocksList::iterator it = data.begin();
-
-    size_t offset = 0;
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        size_t next_offset = (stream + 1) * size / num_streams;
-        size_t num_blocks = next_offset - offset;
+        BlocksList::iterator first = data.begin();
+        BlocksList::iterator last = data.begin();
 
-        assert(num_blocks > 0);
+        std::advance(first, stream * size / num_streams);
+        std::advance(last, (stream + 1) * size / num_streams);
 
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, it, num_blocks, *this, metadata_snapshot));
+        if (first == last)
+            continue;
+        else
+            --last;
 
-        while (offset < next_offset)
-        {
-            ++it;
-            ++offset;
-        }
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, first, last, *this, metadata_snapshot));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
 

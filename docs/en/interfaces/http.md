@@ -36,7 +36,7 @@ Examples:
 $ curl 'http://localhost:8123/?query=SELECT%201'
 1
 
-$ wget -nv -O- 'http://localhost:8123/?query=SELECT 1'
+$ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
 1
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
@@ -76,10 +76,7 @@ ECT 1
 ```
 
 By default, data is returned in TabSeparated format (for more information, see the “Formats” section).
-
 You use the FORMAT clause of the query to request any other format.
-
-Also, you can use the ‘default_format’ URL parameter or ‘X-ClickHouse-Format’ header to specify a default format other than TabSeparated.
 
 ``` bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -170,7 +167,7 @@ $ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gz
 !!! note "Note"
     Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
 
-You can use the ‘database’ URL parameter or ‘X-ClickHouse-Database’ header to specify the default database.
+You can use the ‘database’ URL parameter to specify the default database.
 
 ``` bash
 $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?database=system' --data-binary @-

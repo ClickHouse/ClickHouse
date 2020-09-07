@@ -4,6 +4,8 @@
 #include <Common/Exception.h>
 #include <Common/escapeForFileName.h>
 
+#include <Core/Defines.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>

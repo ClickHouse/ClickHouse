@@ -41,7 +41,6 @@ namespace ErrorCodes
                 const std::string & host,
                 UInt16 port,
                 UInt8 db_index,
-                const std::string & password,
                 RedisStorageType storage_type,
                 const Block & sample_block);
 
@@ -92,7 +91,6 @@ namespace ErrorCodes
         const std::string host;
         const UInt16 port;
         const UInt8 db_index;
-        const std::string password;
         const RedisStorageType storage_type;
         Block sample_block;
 

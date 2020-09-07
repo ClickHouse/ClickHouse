@@ -75,11 +75,11 @@ StorageRabbitMQ::StorageRabbitMQ(
         , exchange_type(exchange_type_)
         , use_transactional_channel(use_transactional_channel_)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
-        , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
+        , semaphore(0, num_consumers_)
         , login_password(std::make_pair(
                     global_context.getConfigRef().getString("rabbitmq.username"),
                     global_context.getConfigRef().getString("rabbitmq.password")))
-        , semaphore(0, num_consumers_)
+        , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
 {
     loop = std::make_unique<uv_loop_t>();
     uv_loop_init(loop.get());
@@ -139,7 +139,7 @@ void StorageRabbitMQ::loopingFunc()
 }
 
 
-Pipe StorageRabbitMQ::read(
+Pipes StorageRabbitMQ::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & /* query_info */,
@@ -158,7 +158,7 @@ Pipe StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(
-            *this, metadata_snapshot, context, column_names);
+            *this, metadata_snapshot, context, column_names, log);
         auto converting_stream = std::make_shared<ConvertingBlockInputStream>(
             rabbit_stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Name);
         pipes.emplace_back(std::make_shared<SourceFromInputStream>(converting_stream));
@@ -171,7 +171,7 @@ Pipe StorageRabbitMQ::read(
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
 
@@ -364,7 +364,7 @@ bool StorageRabbitMQ::streamToViews()
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(*this, metadata_snapshot, rabbitmq_context, column_names);
+        auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(*this, metadata_snapshot, rabbitmq_context, column_names, log);
         auto converting_stream = std::make_shared<ConvertingBlockInputStream>(rabbit_stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Name);
 
         streams.emplace_back(converting_stream);

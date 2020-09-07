@@ -11,7 +11,7 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', with_zookeeper=True)
 node2 = cluster.add_instance('node2', with_zookeeper=True)
-node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.14', with_installed_binary=True)
+node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server:19.1.14', with_installed_binary=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -27,7 +27,7 @@ def test_creating_table_different_setting(start_cluster):
     node1.query("CREATE TABLE t1 (c1 String, c2 String) ENGINE=ReplicatedMergeTree('/clickhouse/t1', '1') ORDER BY tuple(c1) SETTINGS index_granularity_bytes = 0")
     node1.query("INSERT INTO t1 VALUES('x', 'y')")
 
-    node2.query("CREATE TABLE t1 (c1 String, c2 String) ENGINE=ReplicatedMergeTree('/clickhouse/t1', '2') ORDER BY tuple(c1) SETTINGS enable_mixed_granularity_parts = 0")
+    node2.query("CREATE TABLE t1 (c1 String, c2 String) ENGINE=ReplicatedMergeTree('/clickhouse/t1', '2') ORDER BY tuple(c1)")
 
     node1.query("INSERT INTO t1 VALUES('a', 'b')")
     node2.query("SYSTEM SYNC REPLICA t1", timeout=5)
@@ -64,7 +64,7 @@ def test_old_node_with_new_node(start_cluster):
     node3.query("CREATE TABLE t2 (c1 String, c2 String) ENGINE=ReplicatedMergeTree('/clickhouse/t2', '3') ORDER BY tuple(c1)")
     node3.query("INSERT INTO t2 VALUES('x', 'y')")
 
-    node2.query("CREATE TABLE t2 (c1 String, c2 String) ENGINE=ReplicatedMergeTree('/clickhouse/t2', '2') ORDER BY tuple(c1) SETTINGS enable_mixed_granularity_parts = 0")
+    node2.query("CREATE TABLE t2 (c1 String, c2 String) ENGINE=ReplicatedMergeTree('/clickhouse/t2', '2') ORDER BY tuple(c1)")
 
     node3.query("INSERT INTO t2 VALUES('a', 'b')")
     node2.query("SYSTEM SYNC REPLICA t2", timeout=5)

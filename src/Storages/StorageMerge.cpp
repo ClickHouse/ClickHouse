@@ -5,7 +5,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -19,6 +19,7 @@
 #include <ext/range.h>
 #include <algorithm>
 #include <Parsers/queryToString.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/AddingConstColumnTransform.h>
@@ -34,6 +35,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_PREWHERE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int SAMPLING_NOT_SUPPORTED;
 }
 
@@ -148,7 +150,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 }
 
 
-Pipe StorageMerge::read(
+Pipes StorageMerge::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -157,7 +159,7 @@ Pipe StorageMerge::read(
     const size_t max_block_size,
     unsigned num_streams)
 {
-    Pipes pipes;
+    Pipes res;
 
     bool has_table_virtual_column = false;
     Names real_column_names;
@@ -231,23 +233,22 @@ Pipe StorageMerge::read(
 
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
 
-        auto source_pipe = createSources(
+        auto source_pipes = createSources(
             storage_metadata_snapshot, query_info, processed_stage,
             max_block_size, header, table, real_column_names, modified_context,
             current_streams, has_table_virtual_column);
 
-        pipes.emplace_back(std::move(source_pipe));
+        for (auto & pipe : source_pipes)
+            res.emplace_back(std::move(pipe));
     }
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (res.empty())
+        return res;
 
-    if (!pipe.empty())
-        narrowPipe(pipe, num_streams);
-
-    return pipe;
+    return narrowPipes(std::move(res), num_streams);
 }
 
-Pipe StorageMerge::createSources(
+Pipes StorageMerge::createSources(
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const QueryProcessingStage::Enum & processed_stage,
@@ -269,17 +270,18 @@ Pipe StorageMerge::createSources(
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
 
-    Pipe pipe;
+    Pipes pipes;
 
     if (!storage)
     {
-        pipe = QueryPipeline::getPipe(InterpreterSelectQuery(
+        auto pipe = InterpreterSelectQuery(
             modified_query_info.query, *modified_context,
             std::make_shared<OneBlockInputStream>(header),
-            SelectQueryOptions(processed_stage).analyze()).execute().pipeline);
+            SelectQueryOptions(processed_stage).analyze()).execute().pipeline.getPipe();
 
         pipe.addInterpreterContext(modified_context);
-        return pipe;
+        pipes.emplace_back(std::move(pipe));
+        return pipes;
     }
 
     auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, query_info.query);
@@ -290,7 +292,7 @@ Pipe StorageMerge::createSources(
             real_column_names.push_back(ExpressionActions::getSmallestColumn(metadata_snapshot->getColumns().getAllPhysical()));
 
 
-        pipe = storage->read(real_column_names, metadata_snapshot, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
+        pipes = storage->read(real_column_names, metadata_snapshot, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }
     else if (processed_stage > storage_stage)
     {
@@ -302,39 +304,46 @@ Pipe StorageMerge::createSources(
 
         InterpreterSelectQuery interpreter{modified_query_info.query, *modified_context, SelectQueryOptions(processed_stage)};
 
-
-        pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
+        {
+            Pipe pipe = interpreter.execute().pipeline.getPipe();
+            pipes.emplace_back(std::move(pipe));
+        }
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
           * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
           */
-        pipe.addSimpleTransform([](const Block & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
+        pipes.back().addSimpleTransform(std::make_shared<MaterializingTransform>(pipes.back().getHeader()));
     }
 
-    if (!pipe.empty())
+    if (!pipes.empty())
     {
-        if (concat_streams && pipe.numOutputPorts() > 1)
-            pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
-
-        if (has_table_virtual_column)
+        if (concat_streams && pipes.size() > 1)
         {
-            pipe.addSimpleTransform([name = table_name](const Block & stream_header)
-            {
-                return std::make_shared<AddingConstColumnTransform<String>>(
-                        stream_header, std::make_shared<DataTypeString>(), name, "_table");
-            });
+            auto concat = std::make_shared<ConcatProcessor>(pipes.at(0).getHeader(), pipes.size());
+            Pipe pipe(std::move(pipes), std::move(concat));
+
+            pipes = Pipes();
+            pipes.emplace_back(std::move(pipe));
         }
 
-        /// Subordinary tables could have different but convertible types, like numeric types of different width.
-        /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, metadata_snapshot, *modified_context, modified_query_info.query, pipe, processed_stage);
+        for (auto & pipe : pipes)
+        {
+            if (has_table_virtual_column)
+                pipe.addSimpleTransform(std::make_shared<AddingConstColumnTransform<String>>(
+                    pipe.getHeader(), std::make_shared<DataTypeString>(), table_name, "_table"));
 
-        pipe.addTableLock(struct_lock);
-        pipe.addInterpreterContext(modified_context);
+            /// Subordinary tables could have different but convertible types, like numeric types of different width.
+            /// We must return streams with structure equals to structure of Merge table.
+            convertingSourceStream(header, metadata_snapshot, *modified_context, modified_query_info.query, pipe, processed_stage);
+
+            pipe.addTableLock(struct_lock);
+            pipe.addInterpreterContext(modified_context);
+
+        }
     }
 
-    return pipe;
+    return pipes;
 }
 
 
@@ -452,8 +461,6 @@ Block StorageMerge::getQueryHeader(
         }
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
-        case QueryProcessingStage::WithMergeableStateAfterAggregation:
-        case QueryProcessingStage::MAX:
         {
             auto query = query_info.query->clone();
             removeJoin(*query->as<ASTSelectQuery>());
@@ -475,10 +482,7 @@ void StorageMerge::convertingSourceStream(
     QueryProcessingStage::Enum processed_stage)
 {
     Block before_block_header = pipe.getHeader();
-    pipe.addSimpleTransform([&](const Block & stream_header)
-    {
-        return std::make_shared<ConvertingTransform>(stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
-    });
+    pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(before_block_header, header, ConvertingTransform::MatchColumnsMode::Name));
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
 
@@ -497,7 +501,7 @@ void StorageMerge::convertingSourceStream(
             NamesAndTypesList source_columns = metadata_snapshot->getSampleBlock().getNamesAndTypesList();
             auto virtual_column = *getVirtuals().tryGetByName("_table");
             source_columns.emplace_back(NameAndTypePair{virtual_column.name, virtual_column.type});
-            auto syntax_result = TreeRewriter(context).analyze(where_expression, source_columns);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(where_expression, source_columns);
             ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();
 
@@ -505,7 +509,7 @@ void StorageMerge::convertingSourceStream(
             {
                 if (required_column == header_column.name)
                     throw Exception("Block structure mismatch in Merge Storage: different types:\n" + before_block_header.dumpStructure()
-                                    + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
+                                    + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
             }
         }
 

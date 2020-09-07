@@ -18,7 +18,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
-        CompressionCodecPtr default_codec_,
+        CompressionCodecPtr default_codec,
         bool blocks_are_granules_size = false);
 
     MergedBlockOutputStream(
@@ -26,7 +26,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
-        CompressionCodecPtr default_codec_,
+        CompressionCodecPtr default_codec,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
         size_t aio_threshold,
         bool blocks_are_granules_size = false);
@@ -64,7 +64,6 @@ private:
     NamesAndTypesList columns_list;
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
-    CompressionCodecPtr default_codec;
 };
 
 }

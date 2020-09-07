@@ -8,7 +8,6 @@
 
 namespace DB
 {
-
 class RabbitMQBlockInputStream : public IBlockInputStream
 {
 
@@ -17,7 +16,8 @@ public:
             StorageRabbitMQ & storage_,
             const StorageMetadataPtr & metadata_snapshot_,
             const Context & context_,
-            const Names & columns);
+            const Names & columns,
+            Poco::Logger * log_);
 
     ~RabbitMQBlockInputStream() override;
 
@@ -32,10 +32,9 @@ private:
     StorageMetadataPtr metadata_snapshot;
     Context context;
     Names column_names;
-    bool finished = false;
-    bool claimed = false;
-    const Block non_virtual_header;
-    const Block virtual_header;
+    Poco::Logger * log;
+    bool finished = false, claimed = false;
+    const Block non_virtual_header, virtual_header;
 
     ConsumerBufferPtr buffer;
 };

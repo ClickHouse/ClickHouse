@@ -134,8 +134,8 @@ DICTIONARIES = []
 
 # Key-value dictionaries with only one possible field for key
 SOURCES_KV = [
-    SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "clickhouse", storage_type="simple"),
-    SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "clickhouse", storage_type="hash_map"),
+    SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "", storage_type="simple"),
+    SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "", storage_type="hash_map"),
 ]
 
 DICTIONARIES_KV = []
@@ -181,18 +181,12 @@ def setup_module(module):
                 if not (field.is_key or field.is_range or field.is_range_key):
                     DICTIONARIES_KV.append(get_dict(source, layout, field_keys + [field], field.name))
 
-    cluster = ClickHouseCluster(__file__)
-
     main_configs = []
-    main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
-
-    cluster.add_instance('clickhouse1', main_configs=main_configs)
-
-    dictionaries = []
     for fname in os.listdir(dict_configs_path):
-        dictionaries.append(os.path.join(dict_configs_path, fname))
-
-    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_mysql=True, with_mongo=True, with_redis=True, with_cassandra=True)
+        main_configs.append(os.path.join(dict_configs_path, fname))
+    cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
+    node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True, with_mongo=True, with_redis=True, with_cassandra=True)
+    cluster.add_instance('clickhouse1')
 
 
 @pytest.fixture(scope="module")
@@ -244,8 +238,8 @@ def remove_mysql_dicts():
     TODO remove this when open ssl will be fixed or thread sanitizer will be suppressed
     """
 
-    #global DICTIONARIES
-    #DICTIONARIES = [d for d in DICTIONARIES if not d.name.startswith("MySQL")]
+    global DICTIONARIES
+    DICTIONARIES = [d for d in DICTIONARIES if not d.name.startswith("MySQL")]
 
 
 @pytest.mark.parametrize("fold", list(range(10)))

@@ -111,7 +111,8 @@ public:
         TableLockHolder & table_lock_holder,
         time_t time_of_merge,
         const ReservationPtr & space_reservation,
-        bool deduplicate);
+        bool deduplicate,
+        bool force_ttl);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
@@ -156,11 +157,7 @@ private:
 
     /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
     /// Because we will generate new versions of them after we perform mutation.
-    static NameSet collectFilesToSkip(
-        const MergeTreeDataPartPtr & source_part,
-        const Block & updated_header,
-        const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-        const String & mrk_extension);
+    static NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension);
 
     /// Get the columns list of the resulting part in the same order as storage_columns.
     static NamesAndTypesList getColumnsForNewDataPart(
@@ -213,8 +210,7 @@ private:
     static void finalizeMutatedPart(
         const MergeTreeDataPartPtr & source_part,
         MergeTreeData::MutableDataPartPtr new_data_part,
-        bool need_remove_expired_values,
-        const CompressionCodecPtr & codec);
+        bool need_remove_expired_values);
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.

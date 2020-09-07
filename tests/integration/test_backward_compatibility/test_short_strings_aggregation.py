@@ -4,8 +4,8 @@ import helpers.client as client
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_zookeeper=False, image='yandex/clickhouse-server', tag='19.16.9.37', stay_alive=True, with_installed_binary=True)
-node2 = cluster.add_instance('node2', with_zookeeper=False, image='yandex/clickhouse-server', tag='19.16.9.37', stay_alive=True, with_installed_binary=True)
+node1 = cluster.add_instance('node1', with_zookeeper=False, image='yandex/clickhouse-server:19.16.9.37', stay_alive=True, with_installed_binary=True)
+node2 = cluster.add_instance('node2', with_zookeeper=False, image='yandex/clickhouse-server:19.16.9.37', stay_alive=True, with_installed_binary=True)
 node3 = cluster.add_instance('node3', with_zookeeper=False)
 
 @pytest.fixture(scope="module")

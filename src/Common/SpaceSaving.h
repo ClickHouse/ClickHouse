@@ -147,17 +147,16 @@ public:
     {
         // Increase weight of a key that already exists
         auto hash = counter_map.hash(key);
-
-        if (auto counter = findCounter(key, hash); counter)
+        auto counter = findCounter(key, hash);
+        if (counter)
         {
             counter->count += increment;
             counter->error += error;
             percolate(counter);
             return;
         }
-
         // Key doesn't exist, but can fit in the top K
-        if (unlikely(size() < capacity()))
+        else if (unlikely(size() < capacity()))
         {
             auto c = new Counter(arena.emplace(key), increment, error, hash);
             push(c);

@@ -175,14 +175,6 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
 void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     size_t num_plans = nested_interpreters.size();
-
-    /// Skip union for single interpreter.
-    if (num_plans == 1)
-    {
-        nested_interpreters.front()->buildQueryPlan(query_plan);
-        return;
-    }
-
     std::vector<QueryPlan> plans(num_plans);
     DataStreams data_streams(num_plans);
 

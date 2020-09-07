@@ -4,7 +4,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -34,9 +34,6 @@ struct ASTTablesInSelectQueryElement;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-class ArrayJoinAction;
-using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
-
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
@@ -46,12 +43,9 @@ struct ExpressionAnalyzerData
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
 
-    /// Columns after ARRAY JOIN. It there is no ARRAY JOIN, it's source_columns.
-    NamesAndTypesList columns_after_array_join;
-    /// Columns after Columns after ARRAY JOIN and JOIN. If there is no JOIN, it's columns_after_array_join.
-    NamesAndTypesList columns_after_join;
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
+    NamesAndTypesList array_join_columns;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
@@ -88,7 +82,7 @@ public:
     /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
     ExpressionAnalyzer(
         const ASTPtr & query_,
-        const TreeRewriterResultPtr & syntax_analyzer_result_,
+        const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_)
     :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false)
     {}
@@ -118,7 +112,7 @@ public:
 protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
-        const TreeRewriterResultPtr & syntax_analyzer_result_,
+        const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
         size_t subquery_depth_,
         bool do_global_);
@@ -128,16 +122,18 @@ protected:
     const ExtractedSettings settings;
     size_t subquery_depth;
 
-    TreeRewriterResultPtr syntax;
+    SyntaxAnalyzerResultPtr syntax;
 
     const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
+    NamesAndTypesList sourceWithJoinedColumns() const;
+
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global);
 
-    ArrayJoinActionPtr addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
+    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, JoinPtr = {}) const;
 
@@ -179,8 +175,6 @@ struct ExpressionAnalysisResult
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
 
-    ExpressionActionsPtr before_array_join;
-    ArrayJoinActionPtr array_join;
     ExpressionActionsPtr before_join;
     ExpressionActionsPtr join;
     ExpressionActionsPtr before_where;
@@ -237,7 +231,7 @@ public:
 
     SelectQueryExpressionAnalyzer(
         const ASTPtr & query_,
-        const TreeRewriterResultPtr & syntax_analyzer_result_,
+        const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
@@ -311,7 +305,7 @@ private:
       */
 
     /// Before aggregation:
-    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ExpressionActionsPtr & before_array_join, bool only_types);
+    bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.

@@ -381,6 +381,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorJSON(*this);
     registerOutputFormatProcessorJSONCompact(*this);
     registerOutputFormatProcessorXML(*this);
+    registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWire(*this);

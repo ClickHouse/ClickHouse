@@ -32,8 +32,10 @@ public:
     {}
 
     uint8_t getMethodByte() const override;
-
-    ASTPtr getCodecDesc() const override;
+    String getCodecDesc() const override
+    {
+        return variant == Variant::Byte ? "T64" : "T64('bit')";
+    }
 
 protected:
     UInt32 doCompressData(const char * src, UInt32 src_size, char * dst) const override;

@@ -7,15 +7,18 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-zero = cluster.add_instance("zero", user_configs=["configs/users.d/settings.xml"],
+zero = cluster.add_instance("zero",
+                            config_dir="configs",
                             macros={"cluster": "anime", "shard": "0", "replica": "zero"},
                             with_zookeeper=True)
 
-first = cluster.add_instance("first", user_configs=["configs/users.d/settings.xml"],
+first = cluster.add_instance("first",
+                             config_dir="configs",
                              macros={"cluster": "anime", "shard": "0", "replica": "first"},
                              with_zookeeper=True)
 
-second = cluster.add_instance("second", user_configs=["configs/users.d/settings.xml"],
+second = cluster.add_instance("second",
+                              config_dir="configs",
                               macros={"cluster": "anime", "shard": "0", "replica": "second"},
                               with_zookeeper=True)
 

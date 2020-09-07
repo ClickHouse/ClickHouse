@@ -57,7 +57,7 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
-#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -67,7 +67,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ParserQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -217,7 +216,7 @@ private:
     ConnectionParameters connection_parameters;
 
     QueryFuzzer fuzzer;
-    int query_fuzzer_runs = 0;
+    int query_fuzzer_runs;
 
     void initialize(Poco::Util::Application & self) override
     {
@@ -233,10 +232,10 @@ private:
         context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (const auto & setting : context.getSettingsRef().allUnchanged())
+        for (const auto & setting : context.getSettingsRef())
         {
-            const auto & name = setting.getName();
-            if (config().has(name))
+            const String & name = setting.getName().toString();
+            if (config().has(name) && !setting.isChanged())
                 context.setSetting(name, config().getString(name));
         }
 
@@ -790,7 +789,7 @@ private:
         // in particular, it can't distinguish the end of partial input buffer
         // and the final end of input file. This means we have to try to split
         // the input into separate queries here. Two patterns of input are
-        // especially interesting:
+        // especially interesing:
         // 1) multiline query:
         //      select 1
         //      from system.numbers;
@@ -847,26 +846,32 @@ private:
             }
 
             // Parse and execute what we've read.
+            fprintf(stderr, "will now parse '%s'\n", text.c_str());
+
             const auto * new_end = processWithFuzzing(text);
 
             if (new_end > &text[0])
             {
                 const auto rest_size = text.size() - (new_end - &text[0]);
 
+                fprintf(stderr, "total %zd, rest %zd\n", text.size(), rest_size);
+
                 memcpy(&text[0], new_end, rest_size);
                 text.resize(rest_size);
             }
             else
             {
-                // We didn't read enough text to parse a query. Will read more.
+                fprintf(stderr, "total %zd, can't parse\n", text.size());
             }
 
-            // Ensure that we're still connected to the server. If the server died,
-            // the reconnect is going to fail with an exception, and the fuzzer
-            // will exit. The ping() would be the best match here, but it's
-            // private, probably for a good reason that the protocol doesn't allow
-            // pings at any possible moment.
-            connection->forceConnected(connection_parameters.timeouts);
+            if (!connection->isConnected())
+            {
+                // Uh-oh...
+                std::cerr << "Lost connection to the server." << std::endl;
+                last_exception_received_from_server
+                    = std::make_unique<Exception>(210, "~");
+                return;
+            }
 
             if (text.size() > 4 * 1024)
             {
@@ -874,6 +879,9 @@ private:
                 // and we still cannot parse a single query in it. Abort.
                 std::cerr << "Read too much text and still can't parse a query."
                      " Aborting." << std::endl;
+                last_exception_received_from_server
+                    = std::make_unique<Exception>(1, "~");
+                // return;
                 exit(1);
             }
         }
@@ -1032,25 +1040,11 @@ private:
             full_query = text.substr(this_query_begin - text.data(),
                 begin - text.data());
 
-            // Don't repeat inserts, the tables grow too big. Also don't repeat
-            // creates because first we run the unmodified query, it will succeed,
-            // and the subsequent queries will fail. When we run out of fuzzer
-            // errors, it may be interesting to add fuzzing of create queries that
-            // wraps columns into LowCardinality or Nullable. Also there are other
-            // kinds of create queries such as CREATE DICTIONARY, we could fuzz
-            // them as well.
-            int this_query_runs = query_fuzzer_runs;
-            if (as_insert
-                || orig_ast->as<ASTCreateQuery>())
-            {
-                this_query_runs = 1;
-            }
-
             ASTPtr fuzz_base = orig_ast;
-            for (int fuzz_step = 0; fuzz_step < this_query_runs; fuzz_step++)
+            for (int fuzz_step = 0; fuzz_step < query_fuzzer_runs; fuzz_step++)
             {
-                fprintf(stderr, "fuzzing step %d out of %d for query at pos %zd\n",
-                    fuzz_step, this_query_runs, this_query_begin - text.data());
+                fprintf(stderr, "fuzzing step %d for query at pos %zd\n",
+                    fuzz_step, this_query_begin - text.data());
 
                 ASTPtr ast_to_process;
                 try
@@ -1060,15 +1054,7 @@ private:
                     auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
                     ast_to_process = fuzz_base->clone();
-
-                    std::stringstream dump_of_cloned_ast;
-                    ast_to_process->dumpTree(dump_of_cloned_ast);
-
-                    // Run the original query as well.
-                    if (fuzz_step > 0)
-                    {
-                        fuzzer.fuzzMain(ast_to_process);
-                    }
+                    fuzzer.fuzzMain(ast_to_process);
 
                     auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
@@ -1080,8 +1066,6 @@ private:
                             base_after_fuzz.c_str());
                         fprintf(stderr, "dump before fuzz:\n%s\n",
                             dump_before_fuzz.str().c_str());
-                        fprintf(stderr, "dump of cloned ast:\n%s\n",
-                            dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
                         fuzz_base->dumpTree(std::cerr);
                         assert(false);
@@ -1630,8 +1614,7 @@ private:
                 return false;
 
             default:
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
-                    packet.type, connection->getDescription());
+                throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         }
     }
 
@@ -2265,9 +2248,9 @@ public:
 
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?
-        for (const auto & setting : context.getSettingsRef().all())
+        for (const auto & setting : context.getSettingsRef())
         {
-            const auto & name = setting.getName();
+            const String name = setting.getName().toString();
             if (options.count(name))
                 config().setString(name, options[name].as<std::string>());
         }

@@ -42,7 +42,6 @@ void DNSCacheUpdater::run()
 
 void DNSCacheUpdater::start()
 {
-    LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "Update period {} seconds", update_period_seconds);
     task_handle->activateAndSchedule();
 }
 
