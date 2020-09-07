@@ -23,6 +23,12 @@ TableArgExpr::TableArgExpr(PtrTo<TableExpr> expr)
     children.push_back(expr);
 }
 
+TableFunctionExpr::TableFunctionExpr(PtrTo<Identifier> name, PtrTo<TableArgList> args)
+{
+    children.push_back(name);
+    children.push_back(args);
+}
+
 // static
 PtrTo<TableExpr> TableExpr::createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier> alias)
 {
@@ -81,7 +87,7 @@ ASTPtr TableExpr::convertToOld() const
             expr->children.push_back(func);
 
             func->name = children[NAME]->as<Identifier>()->getName();
-            func->arguments = children[ARGS] ? children[ARGS]->convertToOld() : nullptr;
+            func->arguments = children[ARGS] ? children[ARGS]->convertToOld() : std::make_shared<TableArgList>()->convertToOld();
             func->children.push_back(func->arguments);
 
             return expr;

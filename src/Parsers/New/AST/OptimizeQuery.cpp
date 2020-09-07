@@ -25,6 +25,12 @@ namespace DB
 
 using namespace AST;
 
+antlrcpp::Any ParseTreeVisitor::visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *ctx)
+{
+    auto clause = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionExprList>>() : nullptr;
+    return std::make_shared<OptimizeQuery>(visit(ctx->tableIdentifier()), clause, !!ctx->FINAL(), !!ctx->DEDUPLICATE());
+}
+
 antlrcpp::Any ParseTreeVisitor::visitPartitionClause(ClickHouseParser::PartitionClauseContext *ctx)
 {
     auto list = std::make_shared<PartitionExprList>();

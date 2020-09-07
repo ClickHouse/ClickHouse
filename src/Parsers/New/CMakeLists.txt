@@ -24,7 +24,6 @@ set (SRCS
     AST/Query.cpp
     AST/RatioExpr.cpp
     AST/RenameQuery.cpp
-    AST/SelectStmt.cpp
     AST/SelectUnionQuery.cpp
     AST/SetQuery.cpp
     AST/SettingExpr.cpp

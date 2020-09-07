@@ -3,6 +3,8 @@
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 
+#include <Parsers/New/ParseTreeVisitor.h>
+
 
 namespace DB::AST
 {
@@ -14,6 +16,18 @@ CreateViewQuery::CreateViewQuery(bool if_not_exists_, PtrTo<TableIdentifier> ide
     children.push_back(query);
 
     (void)if_not_exists; // TODO
+}
+
+}
+
+namespace DB
+{
+
+using namespace AST;
+
+antlrcpp::Any ParseTreeVisitor::visitCreateViewStmt(ClickHouseParser::CreateViewStmtContext *ctx)
+{
+    return std::make_shared<CreateViewQuery>(!!ctx->IF(), visit(ctx->tableIdentifier()), visit(ctx->subqueryClause()));
 }
 
 }

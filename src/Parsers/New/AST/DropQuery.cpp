@@ -2,6 +2,8 @@
 
 #include <Parsers/New/AST/Identifier.h>
 
+#include <Parsers/New/ParseTreeVisitor.h>
+
 #include <Parsers/ASTDropQuery.h>
 
 
@@ -56,6 +58,23 @@ ASTPtr DropQuery::convertToOld() const
     convertToOldPartially(query);
 
     return query;
+}
+
+}
+
+namespace DB
+{
+
+using namespace AST;
+
+antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx)
+{
+    return DropQuery::createDropDatabase(!!ctx->EXISTS(), visit(ctx->databaseIdentifier()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx)
+{
+    return DropQuery::createDropTable(!!ctx->EXISTS(), !!ctx->TEMPORARY(), visit(ctx->tableIdentifier()));
 }
 
 }

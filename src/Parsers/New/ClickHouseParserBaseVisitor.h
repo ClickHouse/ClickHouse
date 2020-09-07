@@ -1,5 +1,5 @@
 
-// Generated from ClickHouseParser.g4 by ANTLR 4.8
+// Generated from ClickHouseParser.g4 by ANTLR 4.7.2
 
 #pragma once
 
@@ -16,6 +16,10 @@ namespace DB {
  */
 class  ClickHouseParserBaseVisitor : public ClickHouseParserVisitor {
 public:
+
+  virtual antlrcpp::Any visitInput(ClickHouseParser::InputContext *ctx) override {
+    return visitChildren(ctx);
+  }
 
   virtual antlrcpp::Any visitQueryList(ClickHouseParser::QueryListContext *ctx) override {
     return visitChildren(ctx);
@@ -185,7 +189,15 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitValuesClause(ClickHouseParser::ValuesClauseContext *ctx) override {
+  virtual antlrcpp::Any visitDataClauseFormat(ClickHouseParser::DataClauseFormatContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitDataClauseValues(ClickHouseParser::DataClauseValuesContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitDataClauseSelect(ClickHouseParser::DataClauseSelectContext *ctx) override {
     return visitChildren(ctx);
   }
 

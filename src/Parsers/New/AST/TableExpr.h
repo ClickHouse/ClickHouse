@@ -15,11 +15,17 @@ class TableArgExpr : public INode
         ASTPtr convertToOld() const override { return children[0]->convertToOld(); }
 };
 
+class TableFunctionExpr : public INode
+{
+    public:
+        TableFunctionExpr(PtrTo<Identifier> name, PtrTo<TableArgList> args);
+};
+
 class TableExpr : public INode
 {
     public:
         static PtrTo<TableExpr> createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier> alias);
-        static PtrTo<TableExpr> createFunction(PtrTo<Identifier> name, PtrTo<TableArgList> args);
+        static PtrTo<TableExpr> createFunction(PtrTo<TableFunctionExpr> function);
         static PtrTo<TableExpr> createIdentifier(PtrTo<TableIdentifier> identifier);
         static PtrTo<TableExpr> createSubquery(PtrTo<SelectUnionQuery> subquery);
 
@@ -29,18 +35,17 @@ class TableExpr : public INode
         enum ChildIndex : UInt8
         {
             // ALIAS
-            EXPR = 0,
-            ALIAS = 1,
+            EXPR = 0,   // TableExpr
+            ALIAS = 1,  // Identifier
 
             // FUNCTION
-            NAME = 0,
-            ARGS = 1,
+            FUNCTION = 0,  // TableFunctionExpr
 
             // IDENTIFIER
-            IDENTIFIER = 0,
+            IDENTIFIER = 0,  // TableIdentifier
 
             // SUBQUERY
-            SUBQUERY = 0,
+            SUBQUERY = 0,  // SelectUnionSubquery
         };
         enum class ExprType
         {

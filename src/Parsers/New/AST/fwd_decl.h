@@ -44,6 +44,7 @@ class TableArgExpr;
 class TableColumnPropertyExpr;
 class TableElementExpr;
 class TableExpr;
+class TableFunctionExpr;
 class TableIdentifier;
 class TTLExpr;
 

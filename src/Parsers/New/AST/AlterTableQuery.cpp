@@ -79,35 +79,41 @@ namespace DB
 
 using namespace AST;
 
-antlrcpp::Any ParseTreeVisitor::visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext * ctx)
 {
     auto after = ctx->AFTER() ? visit(ctx->nestedIdentifier()).as<PtrTo<Identifier>>() : nullptr;
     return AlterTableClause::createAdd(!!ctx->IF(), visit(ctx->tableColumnDfnt()), after);
 }
 
-antlrcpp::Any ParseTreeVisitor::visitAlterTableClearClause(ClickHouseParser::AlterTableClearClauseContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClearClause(ClickHouseParser::AlterTableClearClauseContext * ctx)
 {
     return AlterTableClause::createClear(!!ctx->IF(), visit(ctx->nestedIdentifier()), visit(ctx->partitionClause()));
 }
 
-antlrcpp::Any ParseTreeVisitor::visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext * ctx)
 {
     return AlterTableClause::createComment(!!ctx->IF(), visit(ctx->nestedIdentifier()), Literal::createString(ctx->STRING_LITERAL()));
 }
 
-antlrcpp::Any ParseTreeVisitor::visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext * ctx)
 {
     return AlterTableClause::createDrop(!!ctx->IF(), visit(ctx->nestedIdentifier()));
 }
 
-antlrcpp::Any ParseTreeVisitor::visitAlterTableModifyClause(ClickHouseParser::AlterTableModifyClauseContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitAlterTableModifyClause(ClickHouseParser::AlterTableModifyClauseContext * ctx)
 {
     return AlterTableClause::createModify(!!ctx->IF(), visit(ctx->tableColumnDfnt()));
 }
 
-antlrcpp::Any ParseTreeVisitor::visitAlterTableOrderByClause(ClickHouseParser::AlterTableOrderByClauseContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitAlterTableOrderByClause(ClickHouseParser::AlterTableOrderByClauseContext * ctx)
 {
     return AlterTableClause::createOrderBy(visit(ctx->columnExpr()));
 }
 
+antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext * ctx)
+{
+    auto list = std::make_shared<List<AlterTableClause>>();
+    for (auto * clause : ctx->alterTableClause()) list->append(visit(clause));
+    return std::make_shared<AlterTableQuery>(visit(ctx->tableIdentifier()), list);
+}
 }

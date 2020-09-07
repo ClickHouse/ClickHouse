@@ -3,6 +3,8 @@
 #include <Parsers/New/AST/EngineExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 
+#include <Parsers/New/ParseTreeVisitor.h>
+
 #include <Parsers/ASTCreateQuery.h>
 
 
@@ -26,6 +28,19 @@ ASTPtr CreateDatabaseQuery::convertToOld() const
     // TODO: query->uuid
 
     return query;
+}
+
+}
+
+namespace DB
+{
+
+using namespace AST;
+
+antlrcpp::Any ParseTreeVisitor::visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx)
+{
+    auto engine = ctx->engineExpr() ? visit(ctx->engineExpr()).as<PtrTo<EngineExpr>>() : nullptr;
+    return std::make_shared<CreateDatabaseQuery>(!!ctx->IF(), visit(ctx->databaseIdentifier()), engine);
 }
 
 }

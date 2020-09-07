@@ -2,6 +2,8 @@
 
 #include <Parsers/New/AST/Identifier.h>
 
+#include <Parsers/New/ParseTreeVisitor.h>
+
 
 namespace DB::AST
 {
@@ -25,6 +27,23 @@ ShowCreateQuery::ShowCreateQuery(QueryType type, PtrList exprs) : query_type(typ
     children = exprs;
 
     (void)query_type, (void)temporary; // TODO
+}
+
+}
+
+namespace DB
+{
+
+using namespace AST;
+
+antlrcpp::Any ParseTreeVisitor::visitShowCreateDatabaseStmt(ClickHouseParser::ShowCreateDatabaseStmtContext *ctx)
+{
+    return ShowCreateQuery::createDatabase(visit(ctx->databaseIdentifier()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *ctx)
+{
+    return ShowCreateQuery::createTable(!!ctx->TEMPORARY(), visit(ctx->tableIdentifier()));
 }
 
 }

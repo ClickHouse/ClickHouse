@@ -3,7 +3,7 @@
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
-#include <Parsers/New/AST/SelectStmt.h>
+#include <Parsers/New/AST/SelectUnionQuery.h>
 
 #include <Parsers/New/ParseTreeVisitor.h>
 

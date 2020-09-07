@@ -1,5 +1,5 @@
 
-// Generated from ClickHouseParser.g4 by ANTLR 4.8
+// Generated from ClickHouseParser.g4 by ANTLR 4.7.2
 
 #pragma once
 
@@ -20,6 +20,8 @@ public:
   /**
    * Visit parse trees produced by ClickHouseParser.
    */
+    virtual antlrcpp::Any visitInput(ClickHouseParser::InputContext *context) = 0;
+
     virtual antlrcpp::Any visitQueryList(ClickHouseParser::QueryListContext *context) = 0;
 
     virtual antlrcpp::Any visitQueryStmt(ClickHouseParser::QueryStmtContext *context) = 0;
@@ -104,7 +106,11 @@ public:
 
     virtual antlrcpp::Any visitInsertFunctionStmt(ClickHouseParser::InsertFunctionStmtContext *context) = 0;
 
-    virtual antlrcpp::Any visitValuesClause(ClickHouseParser::ValuesClauseContext *context) = 0;
+    virtual antlrcpp::Any visitDataClauseFormat(ClickHouseParser::DataClauseFormatContext *context) = 0;
+
+    virtual antlrcpp::Any visitDataClauseValues(ClickHouseParser::DataClauseValuesContext *context) = 0;
+
+    virtual antlrcpp::Any visitDataClauseSelect(ClickHouseParser::DataClauseSelectContext *context) = 0;
 
     virtual antlrcpp::Any visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *context) = 0;
 

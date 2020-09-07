@@ -1,6 +1,7 @@
 #include <Parsers/New/AST/SystemQuery.h>
 
 #include <Parsers/New/AST/Identifier.h>
+#include <Parsers/New/ParseTreeVisitor.h>
 
 
 namespace DB::AST
@@ -33,6 +34,20 @@ SystemQuery::SystemQuery(QueryType type, PtrList exprs) : query_type(type)
     children = exprs;
 
     (void)query_type; // TODO
+}
+
+}
+
+namespace DB
+{
+
+using namespace AST;
+
+antlrcpp::Any ParseTreeVisitor::visitSystemStmt(ClickHouseParser::SystemStmtContext *ctx)
+{
+    if (ctx->SYNC()) return SystemQuery::createSync(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
+    if (ctx->MERGES()) return SystemQuery::createMerges(!!ctx->STOP(), visit(ctx->tableIdentifier()));
+    __builtin_unreachable();
 }
 
 }

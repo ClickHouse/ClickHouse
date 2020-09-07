@@ -73,4 +73,11 @@ antlrcpp::Any ParseTreeVisitor::visitAlterPartitionReplaceClause(ClickHouseParse
     return AlterPartitionClause::createReplace(visit(ctx->partitionClause()), visit(ctx->tableIdentifier()));
 }
 
+antlrcpp::Any ParseTreeVisitor::visitAlterPartitionStmt(ClickHouseParser::AlterPartitionStmtContext *ctx)
+{
+    auto list= std::make_shared<List<AlterPartitionClause>>();
+    for (auto * clause : ctx->alterPartitionClause()) list->append(visit(clause));
+    return std::make_shared<AlterPartitionQuery>(visit(ctx->tableIdentifier()), list);
+}
+
 }

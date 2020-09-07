@@ -101,8 +101,6 @@ antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext *c
         return Literal::createNull(ctx->NULL_SQL());
     if (ctx->STRING_LITERAL())
         return static_pointer_cast<Literal>(Literal::createString(ctx->STRING_LITERAL()));
-    if (ctx->identifier())
-        return static_pointer_cast<Literal>(Literal::createString(ctx->identifier()->IDENTIFIER()));  // TODO: store as function.
     if (ctx->numberLiteral())
         return static_pointer_cast<Literal>(visit(ctx->numberLiteral()).as<PtrTo<NumberLiteral>>());
     __builtin_unreachable();

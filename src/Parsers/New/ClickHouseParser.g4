@@ -6,6 +6,7 @@ options {
 
 // Top-level statements
 
+input: insertStmt | queryList;
 queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON? EOF;
 queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)?;
 query
@@ -71,7 +72,7 @@ subqueryClause: AS selectUnionStmt;
 schemaClause
     : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN  # SchemaDescriptionClause
     | AS tableIdentifier                                        # SchemaAsTableClause
-    | AS identifier LPAREN tableArgList? RPAREN                 # SchemaAsFunctionClause
+    | AS tableFuncExpr                                          # SchemaAsFunctionClause
     ;
 engineClause:
     engineExpr
@@ -117,14 +118,13 @@ existsStmt: EXISTS TEMPORARY? TABLE tableIdentifier;
 
 // INSERT statement
 
-insertStmt
-    : INSERT INTO tableIdentifier (LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN)? valuesClause  # InsertTableStmt
-    | INSERT INTO TABLE? FUNCTION identifier LPAREN tableArgList? RPAREN valuesClause                       # InsertFunctionStmt
-    ;
+insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFuncExpr) columnsClause? dataClause?;
 
-valuesClause
-    : VALUES valueTupleExpr (COMMA? valueTupleExpr)*
-    | selectUnionStmt
+columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
+dataClause
+    : FORMAT identifier                               # DataClauseFormat
+    | VALUES valueTupleExpr (COMMA? valueTupleExpr)*  # DataClauseValues
+    | selectUnionStmt                                 # DataClauseSelect
     ;
 
 valueTupleExpr: LPAREN columnExprList RPAREN; // same as ColumnExprTuple
@@ -285,11 +285,12 @@ nestedIdentifier: identifier (DOT identifier)?;
 // Tables
 
 tableExpr
-    : tableIdentifier                                       # TableExprIdentifier
-    | identifier LPAREN tableArgList? RPAREN                # TableExprFunction
-    | LPAREN selectUnionStmt RPAREN                         # TableExprSubquery
-    | tableExpr AS? identifier                              # TableExprAlias
+    : tableIdentifier                # TableExprIdentifier
+    | tableFuncExpr                  # TableExprFunction
+    | LPAREN selectUnionStmt RPAREN  # TableExprSubquery
+    | tableExpr AS? identifier       # TableExprAlias
     ;
+tableFuncExpr: identifier LPAREN tableArgList? RPAREN;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr
@@ -313,7 +314,6 @@ literal
     : numberLiteral
     | STRING_LITERAL
     | NULL_SQL
-    | identifier LPAREN RPAREN  // TODO: expand to LiteralExpr
     ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER, FOR
     : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
