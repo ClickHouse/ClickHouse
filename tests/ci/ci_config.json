@@ -152,6 +152,18 @@
             "with_coverage": false
         }
     ],
+    "special_build_config": [
+        {
+            "compiler": "clang-10",
+            "build-type": "debug",
+            "sanitizer": "",
+            "package-type": "deb",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "tidy": "enable",
+            "with_coverage": true
+        }
+    ],
     "tests_config": {
         "Functional stateful tests (address)": {
             "required_build_properties": {
