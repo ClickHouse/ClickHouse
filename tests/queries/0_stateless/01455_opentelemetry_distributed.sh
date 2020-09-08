@@ -24,29 +24,60 @@ select count(distinct value)
     where
         trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
         and operation_name = 'query'
-        and name = 'tracestate'
+        and name = 'clickhouse.tracestate'
         and length(value) > 0
     ;
 "
 }
 
 # Generate some random trace id so that the prevous runs of the test do not interfere.
+echo "===http==="
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
 # Check that the HTTP traceparent is read, and then passed through `remote` table function.
 # We expect 4 queries, because there are two DESC TABLE queries for the shard.
 # This is bug-ish, see https://github.com/ClickHouse/ClickHouse/issues/14228
-${CLICKHOUSE_CURL} --header "traceparent: 00-$trace_id-0000000000000010-01" --header "tracestate: some custom state" "http://localhost:8123/" --get --data-urlencode "query=select 1 from remote('127.0.0.2', system, one)"
+${CLICKHOUSE_CURL} \
+    --header "traceparent: 00-$trace_id-0000000000000010-01" \
+    --header "tracestate: some custom state" "http://localhost:8123/" \
+    --get \
+    --data-urlencode "query=select 1 from remote('127.0.0.2', system, one)"
 
 check_log
 
 # With another trace id, check that clickhouse-client accepts traceparent, and
 # that it is passed through URL table function. We expect two query spans, one
 # for the initial query, and one for the HTTP query.
+echo "===native==="
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
-${CLICKHOUSE_CLIENT} --opentelemetry-traceparent "00-$trace_id-0000000000000020-02" --opentelemetry-tracestate "another custom state" --query "
-    select * from url('http://127.0.0.2:8123/?query=select%201', CSV, 'a int')
-"
+${CLICKHOUSE_CLIENT} \
+    --opentelemetry-traceparent "00-$trace_id-0000000000000020-02" \
+    --opentelemetry-tracestate "another custom state" \
+    --query "select * from url('http://127.0.0.2:8123/?query=select%201', CSV, 'a int')"
 
 check_log
+
+# Test sampled tracing. The traces should be started with the specified probability,
+# only for initial queries.
+echo "===sampled==="
+query_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+
+for _ in {1..200}
+do
+    ${CLICKHOUSE_CLIENT} \
+        --opentelemetry_start_trace_probability=0.1 \
+        --query_id "$query_id" \
+        --query "select 1 from remote('127.0.0.2', system, one) format Null"
+done
+
+${CLICKHOUSE_CLIENT} -q "
+    with count(*) as c
+    -- expect 200 * 0.1 = 20 sampled events on average
+    select c > 10, c < 30
+    from system.opentelemetry_log
+        array join attribute.names as name, attribute.values as value
+    where name = 'clickhouse.query_id'
+        and value = '$query_id'
+    ;
+"
