@@ -7,11 +7,11 @@ import warnings
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-node1 = cluster.add_instance('node1', with_mysql=True, main_configs=['configs/dictionaries/simple_dictionary.xml'])
-node2 = cluster.add_instance('node2', with_mysql=True, main_configs=['configs/dictionaries/simple_dictionary.xml', 'configs/dictionaries/lazy_load.xml'])
-node3 = cluster.add_instance('node3', main_configs=['configs/dictionaries/dictionary_with_conflict_name.xml'])
-node4 = cluster.add_instance('node4', user_configs=['configs/config_password.xml']) # hardcoded value 33333
+cluster = ClickHouseCluster(__file__)
+node1 = cluster.add_instance('node1', with_mysql=True, dictionaries=['configs/dictionaries/simple_dictionary.xml'], user_configs=['configs/user_admin.xml', 'configs/user_default.xml'])
+node2 = cluster.add_instance('node2', with_mysql=True, dictionaries=['configs/dictionaries/simple_dictionary.xml'], main_configs=['configs/dictionaries/lazy_load.xml', 'configs/allow_remote_node.xml'], user_configs=['configs/user_admin.xml', 'configs/user_default.xml'])
+node3 = cluster.add_instance('node3', main_configs=['configs/allow_remote_node.xml'], dictionaries=['configs/dictionaries/dictionary_with_conflict_name.xml', 'configs/dictionaries/conflict_name_dictionary.xml'], user_configs=['configs/user_admin.xml'])
+node4 = cluster.add_instance('node4', user_configs=['configs/user_admin.xml', 'configs/config_password.xml'])
 
 
 def create_mysql_conn(user, password, hostname, port):
@@ -50,7 +50,7 @@ def started_cluster():
     (node2, 'complex_node2_hashed', 'LAYOUT(COMPLEX_KEY_HASHED())'),
     (node2, 'complex_node2_cache', 'LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))'),
 ])
-def test_crete_and_select_mysql(started_cluster, clickhouse, name, layout):
+def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     mysql_conn = create_mysql_conn("root", "clickhouse", "localhost", 3308)
     execute_mysql_query(mysql_conn, "CREATE DATABASE IF NOT EXISTS clickhouse")
     execute_mysql_query(mysql_conn, "CREATE TABLE clickhouse.{} (key_field1 int, key_field2 bigint, value1 text, value2 float, PRIMARY KEY (key_field1, key_field2))".format(name))
@@ -94,8 +94,8 @@ def test_crete_and_select_mysql(started_cluster, clickhouse, name, layout):
 
     for i in range(172, 200):
         assert clickhouse.query("SELECT dictGetString('default.{}', 'value1', tuple(toInt32({}), toInt64({})))".format(name, i, i * i)) == str(i) * 3 + '\n'
-        stroka = clickhouse.query("SELECT dictGetFloat32('default.{}', 'value2', tuple(toInt32({}), toInt64({})))".format(name, i, i * i)).strip()
-        value = float(stroka)
+        string = clickhouse.query("SELECT dictGetFloat32('default.{}', 'value2', tuple(toInt32({}), toInt64({})))".format(name, i, i * i)).strip()
+        value = float(string)
         assert int(value) == int(i * 2.718)
 
     clickhouse.query("select dictGetUInt8('xml_dictionary', 'SomeValue1', toUInt64(17))") == "17\n"
@@ -272,4 +272,4 @@ def test_clickhouse_remote(started_cluster):
         """)
 
     node3.query("select dictGetUInt8('test.clickhouse_remote', 'SomeValue1', toUInt64(17))") == '17\n'
-    
+

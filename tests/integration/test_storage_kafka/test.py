@@ -40,7 +40,6 @@ import kafka_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                config_dir='configs',
                                 main_configs=['configs/kafka.xml', 'configs/log_conf.xml', 'configs/kafka_macros.xml' ],
                                 with_kafka=True,
                                 with_zookeeper=True,
@@ -2192,6 +2191,33 @@ def test_kafka_issue14202(kafka_cluster):
         DROP TABLE test.empty_table;
         DROP TABLE test.kafka_q;
     ''')
+
+@pytest.mark.timeout(180)
+def test_kafka_csv_with_thread_per_consumer(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'csv',
+                     kafka_group_name = 'csv',
+                     kafka_format = 'CSV',
+                     kafka_row_delimiter = '\\n',
+                     kafka_num_consumers = 4,
+                     kafka_thread_per_consumer = 1;
+        ''')
+
+    messages = []
+    for i in range(50):
+        messages.append('{i}, {i}'.format(i=i))
+    kafka_produce('csv', messages)
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
+        if kafka_check_result(result):
+            break
+
+    kafka_check_result(result, True)
 
 if __name__ == '__main__':
     cluster.start()
