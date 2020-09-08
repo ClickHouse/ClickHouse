@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+import time
 import tarfile
 import logging
 import argparse
@@ -50,6 +51,7 @@ def dowload_with_progress(url, path):
             break
         except Exception as ex:
             sys.stdout.write("\n")
+            time.sleep(3)
             logging.info("Exception while downloading %s, retry %s", ex, i + 1)
             if os.path.exists(path):
                 os.remove(path)
