@@ -561,6 +561,9 @@ public:
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
+    static constexpr const bool is_multiply = IsOperation<Op>::multiply;
+    static constexpr const bool is_division = IsOperation<Op>::division;
+
     const Context & context;
     bool check_decimal_overflow = true;
 
@@ -858,7 +861,7 @@ public:
                     return false;
                 else if constexpr (std::is_same_v<LeftDataType, RightDataType>)
                 {
-                   if (left.getN() == right.getN())
+                    if (left.getN() == right.getN())
                     {
                         type_res = std::make_shared<LeftDataType>(left.getN());
                         return true;
@@ -872,10 +875,7 @@ public:
                 {
                     if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
-                        constexpr bool is_multiply = IsOperation<Op>::multiply;
-                        constexpr bool is_division = IsOperation<Op>::division;
-
-                        ResultDataType result_type = decimalResultType(left, right, is_multiply, is_division);
+                        ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
                     else if constexpr (IsDataTypeDecimal<LeftDataType>)
@@ -899,7 +899,7 @@ public:
                         type_res = std::make_shared<ResultDataType>();
                     return true;
                 }
-           }
+            }
             return false;
         });
         if (!valid)
@@ -995,8 +995,6 @@ public:
         if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
         {
             constexpr bool result_is_decimal = IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>;
-            constexpr bool is_multiply = IsOperation<Op>::multiply;
-            constexpr bool is_division = IsOperation<Op>::division;
 
             using T0 = typename LeftDataType::FieldType;
             using T1 = typename RightDataType::FieldType;
@@ -1019,7 +1017,7 @@ public:
                     /// the only case with a non-vector result
                     if constexpr (result_is_decimal)
                     {
-                        ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                        ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
                         typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                         typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                         if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
@@ -1044,7 +1042,7 @@ public:
             typename ColVecResult::MutablePtr col_res = nullptr;
             if constexpr (result_is_decimal)
             {
-                ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
                 col_res = ColVecResult::create(0, type.getScale());
             }
             else
@@ -1059,7 +1057,7 @@ public:
                 {
                     if constexpr (result_is_decimal)
                     {
-                        ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                        ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
 
                         typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                         typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
@@ -1079,12 +1077,13 @@ public:
             {
                 if constexpr (result_is_decimal)
                 {
-                    ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                    ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
 
                     typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                     typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                     if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                         scale_a = right.getScaleMultiplier();
+
                     if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                     {
                         OpImpl::vectorVector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b,
