@@ -475,6 +475,8 @@ public:
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
+    /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
+    std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
     /// Reset current zookeeper session. Do not create a new one.
@@ -502,6 +504,7 @@ public:
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
+    BackgroundSchedulePool & getMessageBrokerSchedulePool();
     BackgroundSchedulePool & getDistributedSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);

@@ -19,11 +19,12 @@ from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 psycopg2.extras.register_uuid()
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-config_dir = os.path.join(SCRIPT_DIR, './configs')
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', config_dir=config_dir, env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
+node = cluster.add_instance('node', main_configs=["configs/postresql.xml", "configs/log.xml", "configs/ssl_conf.xml",
+                                                  "configs/dhparam.pem", "configs/server.crt", "configs/server.key"],
+                            user_configs=["configs/default_passwd.xml"], env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
 
 server_port = 5433
 

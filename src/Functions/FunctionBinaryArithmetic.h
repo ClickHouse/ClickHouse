@@ -361,12 +361,8 @@ private:
                 return apply(a.value, b);
             else if constexpr (IsDecimalNumber<U>)
                 return apply(a, b.value);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return apply(UInt16(a), b);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return apply(a, UInt16(b));
             else
-                return applyNative(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b));
+                return applyNative(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b));
         }
         else
             return applyNative(a, b);
@@ -381,12 +377,8 @@ private:
                 return applyScaled<scale_left>(a.value, b, scale);
             else if constexpr (IsDecimalNumber<U>)
                 return applyScaled<scale_left>(a, b.value, scale);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return applyScaled<scale_left>(UInt16(a), b, scale);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return applyScaled<scale_left>(a, UInt16(b), scale);
             else
-                return applyNativeScaled<scale_left>(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
+                return applyNativeScaled<scale_left>(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b), scale);
         }
         else
             return applyNativeScaled<scale_left>(a, b, scale);
@@ -401,12 +393,8 @@ private:
                 return applyScaledDiv(a.value, b, scale);
             else if constexpr (IsDecimalNumber<U>)
                 return applyScaledDiv(a, b.value, scale);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return applyScaledDiv(UInt16(a), b, scale);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return applyScaledDiv(a, UInt16(b), scale);
             else
-                return applyNativeScaledDiv(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
+                return applyNativeScaledDiv(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b), scale);
         }
         else
             return applyNativeScaledDiv(a, b, scale);
@@ -1209,6 +1197,9 @@ public:
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes & arguments) const override
     {
+        if (2 != arguments.size())
+            return false;
+
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
@@ -1226,6 +1217,8 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
+        assert(2 == types.size() && 2 == values.size());
+
         llvm::Value * result = nullptr;
         castBothTypes(types[0].get(), types[1].get(), [&](const auto & left, const auto & right)
         {

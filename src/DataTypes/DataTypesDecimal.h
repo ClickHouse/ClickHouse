@@ -77,6 +77,19 @@ inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value 
     return default_value;
 }
 
+inline UInt32 getDecimalPrecision(const IDataType & data_type)
+{
+    if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
+        return decimal_type->getPrecision();
+    if (auto * decimal_type = checkDecimal<Decimal64>(data_type))
+        return decimal_type->getPrecision();
+    if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
+        return decimal_type->getPrecision();
+    if (auto * decimal_type = checkDecimal<Decimal256>(data_type))
+        return decimal_type->getPrecision();
+    return 0;
+}
+
 template <typename T>
 inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
 {
@@ -158,12 +171,18 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     else
     {
         if constexpr (is_big_int_v<FromFieldType>)
-            return convertDecimals<DataTypeDecimal<Decimal256>, ToDataType>(static_cast<bInt256>(value), 0, scale);
+            return convertDecimals<DataTypeDecimal<Decimal256>, ToDataType>(static_cast<Int256>(value), 0, scale);
         else if constexpr (std::is_same_v<FromFieldType, UInt64>)
             return convertDecimals<DataTypeDecimal<Decimal128>, ToDataType>(value, 0, scale);
         else
             return convertDecimals<DataTypeDecimal<Decimal64>, ToDataType>(value, 0, scale);
     }
+}
+
+template <typename T>
+inline DataTypePtr createDecimalMaxPrecision(UInt64 scale)
+{
+    return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::maxPrecision<T>(), scale);
 }
 
 }

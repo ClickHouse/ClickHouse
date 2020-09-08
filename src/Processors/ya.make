@@ -7,6 +7,8 @@ PEERDIR(
     contrib/libs/protobuf
 )
 
+CFLAGS(-g0)
+
 SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
@@ -38,7 +40,6 @@ SRCS(
     Formats/Impl/NativeFormat.cpp
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
-    Formats/Impl/ODBCDriverBlockOutputFormat.cpp
     Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp
     Formats/Impl/PrettyCompactBlockOutputFormat.cpp
