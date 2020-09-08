@@ -7,6 +7,8 @@ PEERDIR(
     contrib/libs/poco/MongoDB
 )
 
+CFLAGS(-g0)
+
 SRCS(
     AlterCommands.cpp
     ColumnDefault.cpp
