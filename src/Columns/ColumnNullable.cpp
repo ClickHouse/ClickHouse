@@ -334,8 +334,6 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
     if (equal_ranges.empty())
         return;
 
-    std::cout << "limit " << limit << std::endl;
-
     /// We will sort nested columns into `new_ranges` and call updatePermutation in next columns with `null_ranges`.
     EqualRanges new_ranges, null_ranges;
 
@@ -347,7 +345,7 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
         for (const auto & [first, last] : equal_ranges)
         {
             /// Current interval is righter than limit. 
-            if (first > limit) 
+            if (limit && first > limit)
                 break;
 
             /// Consider a half interval [first, last)
@@ -404,7 +402,7 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
         for (const auto & [first, last] : equal_ranges)
         {
             /// Current interval is righter than limit.
-            if (first > limit)
+            if (limit && first > limit)
                 break;
 
             ssize_t read_idx = last - 1;
@@ -439,15 +437,7 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
         }
     }
 
-    std::cout << "New Ranges " << std::endl;
-    for (auto [first, last] : new_ranges )
-        std::cout << "first " << first << " last " << last << std::endl;
-
-    std::cout << "Null Ranges " << std::endl;
-    for (auto [first, last] : null_ranges) 
-        std::cout << "first " << first << " last " << last << std::endl;
-
-    getNestedColumn().updatePermutation(reverse, 0, null_direction_hint, res, new_ranges);
+    getNestedColumn().updatePermutation(reverse, limit, null_direction_hint, res, new_ranges);
 
     equal_ranges = std::move(new_ranges);
     std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
