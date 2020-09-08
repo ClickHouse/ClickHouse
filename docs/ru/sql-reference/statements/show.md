@@ -172,7 +172,7 @@ SHOW CREATE [SETTINGS] PROFILE name
 
 ## SHOW USERS {#show-users-statement}
 
-Выводит список имен [аккаунтов пользователей](../../operations/access-rights.md#user-account-management). Для просмотра парметров пользовательских аккаунтов, см. системную таблицу [system.users](../../operations/system-tables/users.md#system_tables-users).
+Выводит список [пользовательских аккаунтов](../../operations/access-rights.md#user-account-management). Для просмотра параметров пользовательских аккаунтов, см. системную таблицу [system.users](../../operations/system-tables/users.md#system_tables-users).
 
 ### Синтаксис {#show-users-syntax}
 
