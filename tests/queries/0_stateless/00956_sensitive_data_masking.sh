@@ -55,15 +55,19 @@ echo 5
 # run in background
 rm -f "$tmp_file2" >/dev/null 2>&1
 bash -c "$CLICKHOUSE_CLIENT \
-  --query=\"select count() from system.numbers where ignore('find_me_TOPSECRET=TOPSECRET')=0 and ignore('fwerkh_that_magic_string_make_me_unique') = 0 FORMAT Null\" \
+  --query=\"select sleepEachRow(1) from numbers(10) where ignore('find_me_TOPSECRET=TOPSECRET')=0 and ignore('fwerkh_that_magic_string_make_me_unique') = 0 FORMAT Null\" \
   --log_queries=1 --ignore-error --multiquery >$tmp_file2 2>&1" &
 
-# $CLICKHOUSE_CLIENT --query='SHOW PROCESSLIST'
-
 rm -f "$tmp_file" >/dev/null 2>&1
-echo '5.1'
 # check that executing query doesn't expose secrets in processlist
-$CLICKHOUSE_CLIENT --query="SHOW PROCESSLIST" --log_queries=0 >"$tmp_file" 2>&1
+echo '5.1'
+
+# wait until the query in background will start (max: 10 seconds as sleepEachRow)
+for _ in {1..100}; do
+    $CLICKHOUSE_CLIENT --query="SHOW PROCESSLIST" --log_queries=0 >"$tmp_file" 2>&1
+    grep -q -F 'fwerkh_that_magic_string_make_me_unique' "$tmp_file" && break
+    sleep 0.1
+done
 
 $CLICKHOUSE_CLIENT --query="KILL QUERY WHERE query LIKE '%fwerkh_that_magic_string_make_me_unique%'" > /dev/null 2>&1
 wait

@@ -20,7 +20,6 @@ SRCS(
     ConvertingBlockInputStream.cpp
     copyData.cpp
     CountingBlockOutputStream.cpp
-    CreatingSetsBlockInputStream.cpp
     DistinctSortedBlockInputStream.cpp
     ExecutionSpeedLimits.cpp
     ExpressionBlockInputStream.cpp

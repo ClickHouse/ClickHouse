@@ -518,9 +518,10 @@ void StorageLiveView::drop()
     condition.notify_all();
 }
 
-void StorageLiveView::refresh(const Context & context)
+void StorageLiveView::refresh()
 {
-    auto table_lock = lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    // Lock is already acquired exclusively from InterperterAlterQuery.cpp InterpreterAlterQuery::execute() method.
+    // So, reacquiring lock is not needed and will result in an exception.
     {
         std::lock_guard lock(mutex);
         if (getNewBlocks())

@@ -503,6 +503,10 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_FROM_FIELD_DUMP = 536;
     extern const int ILLEGAL_MYSQL_VARIABLE = 537;
     extern const int MYSQL_SYNTAX_ERROR = 538;
+    extern const int CANNOT_BIND_RABBITMQ_EXCHANGE = 539;
+    extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE = 540;
+    extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING = 541;
+    extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE = 542;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

@@ -140,6 +140,7 @@ endmacro()
 
 add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_core Core)
+add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_datastreams DataStreams)
 add_object_library(clickhouse_datatypes DataTypes)
@@ -261,6 +262,8 @@ target_link_libraries(clickhouse_common_io
             roaring
 )
 
+
+
 if (USE_RDKAFKA)
     dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
     if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -270,6 +273,14 @@ endif()
 
 if (USE_AMQPCPP)
     dbms_target_link_libraries(PUBLIC amqp-cpp)
+endif()
+
+if (USE_CYRUS_SASL)
+    dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})
+endif()
+
+if (USE_KRB5)
+    dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
 if(RE2_INCLUDE_DIR)
@@ -320,6 +331,9 @@ if (USE_PARQUET)
     dbms_target_link_libraries(PRIVATE ${PARQUET_LIBRARY})
     if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
         dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
+        if (USE_STATIC_LIBRARIES)
+            dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
+        endif()
     endif ()
 endif ()
 

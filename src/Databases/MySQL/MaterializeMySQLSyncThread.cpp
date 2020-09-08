@@ -246,7 +246,7 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
         if (iterator != insert_columns_names.begin())
             insert_columns_str << ", ";
 
-        insert_columns_str << iterator->name;
+        insert_columns_str << backQuoteIfNeed(iterator->name);
     }
 
 
@@ -315,18 +315,29 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
 
             if (!metadata.need_dumping_tables.empty())
             {
-                metadata.transaction(Position(metadata.binlog_position, metadata.binlog_file), [&]()
+                Position position;
+                position.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set);
+
+                metadata.transaction(position, [&]()
                 {
                     cleanOutdatedTables(database_name, global_context);
                     dumpDataForTables(connection, metadata, query_prefix, database_name, mysql_database_name, global_context, [this] { return isCancelled(); });
                 });
+
+                const auto & position_message = [&]()
+                {
+                    std::stringstream ss;
+                    position.dump(ss);
+                    return ss.str();
+                };
+                LOG_INFO(log, "MySQL dump database position: \n {}", position_message());
             }
 
             if (opened_transaction)
                 connection->query("COMMIT").execute();
 
             client.connect();
-            client.startBinlogDump(randomNumber(), mysql_database_name, metadata.binlog_file, metadata.binlog_position);
+            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set);
             return metadata;
         }
         catch (...)
@@ -354,6 +365,14 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
 void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata)
 {
     metadata.transaction(client.getPosition(), [&]() { buffers.commit(global_context); });
+
+    const auto & position_message = [&]()
+    {
+        std::stringstream ss;
+        client.getPosition().dump(ss);
+        return ss.str();
+    };
+    LOG_INFO(log, "MySQL executed position: \n {}", position_message());
 }
 
 static inline void fillSignAndVersionColumnsData(Block & data, Int8 sign_value, UInt64 version_value, size_t fill_size)
@@ -569,21 +588,21 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
     {
         WriteRowsEvent & write_rows_event = static_cast<WriteRowsEvent &>(*receive_event);
         Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(write_rows_event.table, global_context);
-        size_t bytes = onWriteOrDeleteData<1>(write_rows_event.rows, buffer->first, ++metadata.version);
+        size_t bytes = onWriteOrDeleteData<1>(write_rows_event.rows, buffer->first, ++metadata.data_version);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), write_rows_event.rows.size(), bytes);
     }
     else if (receive_event->type() == MYSQL_UPDATE_ROWS_EVENT)
     {
         UpdateRowsEvent & update_rows_event = static_cast<UpdateRowsEvent &>(*receive_event);
         Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(update_rows_event.table, global_context);
-        size_t bytes = onUpdateData(update_rows_event.rows, buffer->first, ++metadata.version, buffer->second);
+        size_t bytes = onUpdateData(update_rows_event.rows, buffer->first, ++metadata.data_version, buffer->second);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), update_rows_event.rows.size(), bytes);
     }
     else if (receive_event->type() == MYSQL_DELETE_ROWS_EVENT)
     {
         DeleteRowsEvent & delete_rows_event = static_cast<DeleteRowsEvent &>(*receive_event);
         Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(delete_rows_event.table, global_context);
-        size_t bytes = onWriteOrDeleteData<-1>(delete_rows_event.rows, buffer->first, ++metadata.version);
+        size_t bytes = onWriteOrDeleteData<-1>(delete_rows_event.rows, buffer->first, ++metadata.data_version);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), delete_rows_event.rows.size(), bytes);
     }
     else if (receive_event->type() == MYSQL_QUERY_EVENT)

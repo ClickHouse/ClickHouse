@@ -54,7 +54,8 @@ def started_cluster():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
-                        config_dir="configs",
+                        main_configs=["configs/conf.d/query_log.xml", "configs/conf.d/ddl.xml", "configs/conf.d/clusters.xml"],
+                        user_configs=["configs/users.xml"],
                         macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
                         with_zookeeper=True)
 
@@ -226,6 +227,7 @@ def execute_task(task, cmd_options):
     zk.ensure_path(zk_task_path)
     zk.create(zk_task_path + "/description", task.copier_task_config)
 
+
     # Run cluster-copier processes on each node
     docker_api = docker.from_env().api
     copiers_exec_ids = []
@@ -241,9 +243,11 @@ def execute_task(task, cmd_options):
     for instance_name in copiers:
         instance = cluster.instances[instance_name]
         container = instance.get_docker_handle()
+        instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs/config-copier.xml"), "/etc/clickhouse-server/config-copier.xml")
+        print "Copied copier config to {}".format(instance.name)
         exec_id = docker_api.exec_create(container.id, cmd, stderr=True)
-        docker_api.exec_start(exec_id, detach=True)
-
+        output = docker_api.exec_start(exec_id).decode('utf8')
+        print(output)
         copiers_exec_ids.append(exec_id)
         print "Copier for {} ({}) has started".format(instance.name, instance.ip_address)
 
