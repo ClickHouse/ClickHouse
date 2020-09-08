@@ -266,7 +266,9 @@ inline T contructFromValue(const Value & val)
 }
 }
 
-template <typename T> inline T          Value::get()                        const {
+template <typename T>
+inline T Value::get() const
+{
     return details::contructFromValue<T>(*this);
 }
 
