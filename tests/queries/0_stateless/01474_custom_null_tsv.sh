@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS tsv_custom_null";
-$CLICKHOUSE_CLIENT --query="CREATE TABLE regexp (id Nullable(UInt32)) ENGINE = Memory";
+$CLICKHOUSE_CLIENT --query="CREATE TABLE tsv_custom_null (id Nullable(UInt32)) ENGINE = Memory";
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO tsv_custom_null VALUES (NULL)";
 
