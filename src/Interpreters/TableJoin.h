@@ -22,7 +22,7 @@ struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryReader;
 
-class ColumnWithTypeAndName;
+struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 struct Settings;
