@@ -65,11 +65,19 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
     {
         // No point writing these numbers with variable length, because they
         // are random and will probably require the full length anyway.
-        writeBinary(opentelemetry_trace_id, out);
-        writeBinary(opentelemetry_span_id, out);
-        writeBinary(opentelemetry_parent_span_id, out);
-        writeBinary(opentelemetry_tracestate, out);
-        writeBinary(opentelemetry_trace_flags, out);
+        if (opentelemetry_trace_id)
+        {
+            writeBinary(uint8_t(1), out);
+            writeBinary(opentelemetry_trace_id, out);
+            writeBinary(opentelemetry_span_id, out);
+            writeBinary(opentelemetry_parent_span_id, out);
+            writeBinary(opentelemetry_tracestate, out);
+            writeBinary(opentelemetry_trace_flags, out);
+        }
+        else
+        {
+            writeBinary(uint8_t(0), out);
+        }
     }
 }
 
@@ -125,15 +133,24 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
             client_version_patch = client_revision;
     }
 
+    // TODO what does it even mean to read this structure over HTTP? I thought
+    // this was for native protocol? See interface == Interface::HTTP.
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
     {
-        readBinary(opentelemetry_trace_id, in);
-        readBinary(opentelemetry_span_id, in);
-        readBinary(opentelemetry_parent_span_id, in);
-        readBinary(opentelemetry_tracestate, in);
-        readBinary(opentelemetry_trace_flags, in);
+        uint8_t have_trace_id = 0;
+        readBinary(have_trace_id, in);
+        if (have_trace_id)
+        {
+            readBinary(opentelemetry_trace_id, in);
+            readBinary(opentelemetry_span_id, in);
+            readBinary(opentelemetry_parent_span_id, in);
+            readBinary(opentelemetry_tracestate, in);
+            readBinary(opentelemetry_trace_flags, in);
 
-        std::cerr << fmt::format("read {:x}, {}, {}\n", opentelemetry_trace_id, opentelemetry_span_id, opentelemetry_parent_span_id) << StackTrace().toString() << std::endl;
+            fmt::print(stderr, "read {:x}, {}, {} at\n{}\n",
+                opentelemetry_trace_id, opentelemetry_span_id,
+                opentelemetry_parent_span_id, StackTrace().toString());
+        }
     }
 }
 
@@ -149,8 +166,8 @@ bool ClientInfo::setOpenTelemetryTraceparent(const std::string & traceparent,
     std::string & error)
 {
     uint8_t version = -1;
-    __uint64_t trace_id_high = 0;
-    __uint64_t trace_id_low = 0;
+    uint64_t trace_id_high = 0;
+    uint64_t trace_id_low = 0;
     uint64_t trace_parent = 0;
     uint8_t trace_flags = 0;
 
@@ -205,11 +222,11 @@ bool ClientInfo::setOpenTelemetryTraceparent(const std::string & traceparent,
 
 std::string ClientInfo::getOpenTelemetryTraceparentForChild() const
 {
-    // This span is a parent for its children (so deep...), so we specify
-    // this span_id as a parent id.
+    // This span is a parent for its children, so we specify this span_id as a
+    // parent id.
     return fmt::format("00-{:032x}-{:016x}-{:02x}", opentelemetry_trace_id,
         opentelemetry_span_id,
-        // This cast is because fmt is being weird and complaining that
+        // This cast is needed because fmt is being weird and complaining that
         // "mixing character types is not allowed".
         static_cast<uint8_t>(opentelemetry_trace_flags));
 }

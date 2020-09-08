@@ -69,7 +69,7 @@ public:
     // the incoming tracestate header, we just pass it downstream.
     // https://www.w3.org/TR/trace-context/
     String opentelemetry_tracestate;
-    UInt8 opentelemetry_trace_flags;
+    UInt8 opentelemetry_trace_flags = 0;
 
     /// All below are parameters related to initial query.
 

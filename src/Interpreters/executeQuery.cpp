@@ -138,20 +138,26 @@ static void logQuery(const String & query, const Context & context, bool interna
     }
     else
     {
-        const auto & current_query_id = context.getClientInfo().current_query_id;
-        const auto & initial_query_id = context.getClientInfo().initial_query_id;
-        const auto & current_user = context.getClientInfo().current_user;
+        const auto & client_info = context.getClientInfo();
+
+        const auto & current_query_id = client_info.current_query_id;
+        const auto & initial_query_id = client_info.initial_query_id;
+        const auto & current_user = client_info.current_user;
 
         LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}) {}",
-            context.getClientInfo().current_address.toString(),
-            (current_user != "default" ? ", user: " + context.getClientInfo().current_user : ""),
+            client_info.current_address.toString(),
+            (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             joinLines(query));
 
-        LOG_TRACE(&Poco::Logger::get("executeQuery"),
-            "OpenTelemetry trace id {:x}, span id {}, parent span id {}",
-            context.getClientInfo().opentelemetry_trace_id, context.getClientInfo().opentelemetry_span_id,
-            context.getClientInfo().opentelemetry_parent_span_id);
+        if (client_info.opentelemetry_trace_id)
+        {
+            LOG_TRACE(&Poco::Logger::get("executeQuery"),
+                "OpenTelemetry trace id {:x}, span id {}, parent span id {}",
+                client_info.opentelemetry_trace_id,
+                client_info.opentelemetry_span_id,
+                client_info.opentelemetry_parent_span_id);
+        }
     }
 }
 
@@ -222,7 +228,9 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
 
-    if (auto opentelemetry_log = context.getOpenTelemetryLog())
+    if (auto opentelemetry_log = context.getOpenTelemetryLog();
+        context.getClientInfo().opentelemetry_trace_id
+            && opentelemetry_log)
     {
         OpenTelemetrySpanLogElement span;
         span.trace_id = context.getClientInfo().opentelemetry_trace_id;
@@ -231,20 +239,21 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
         span.operation_name = "query";
         span.start_time = current_time;
         span.finish_time = current_time;
+        span.duration_ns = 0;
 
         // keep values synchonized to type enum in QueryLogElement::createBlock
-        span.attribute_names.push_back("status");
+        span.attribute_names.push_back("clickhouse.query_status");
         span.attribute_values.push_back("ExceptionBeforeStart");
 
-        span.attribute_names.push_back("query");
+        span.attribute_names.push_back("db.statement");
         span.attribute_values.push_back(elem.query);
 
-        span.attribute_names.push_back("query_id");
+        span.attribute_names.push_back("clickhouse.query_id");
         span.attribute_values.push_back(elem.client_info.current_query_id);
 
         if (!context.getClientInfo().opentelemetry_tracestate.empty())
         {
-            span.attribute_names.push_back("tracestate");
+            span.attribute_names.push_back("clickhouse.tracestate");
             span.attribute_values.push_back(
                 context.getClientInfo().opentelemetry_tracestate);
         }
@@ -285,7 +294,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool has_query_tail,
     ReadBuffer * istr)
 {
-    time_t current_time = time(nullptr);
+    const time_t current_time = time(nullptr);
 
     /// If we already executing query and it requires to execute internal query, than
     /// don't replace thread context with given (it can be temporary). Otherwise, attach context to thread.
@@ -621,7 +630,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         query_log->add(elem);
                 }
 
-                if (auto opentelemetry_log = context.getOpenTelemetryLog())
+                if (auto opentelemetry_log = context.getOpenTelemetryLog();
+                    context.getClientInfo().opentelemetry_trace_id
+                        && opentelemetry_log)
                 {
                     OpenTelemetrySpanLogElement span;
                     span.trace_id = context.getClientInfo().opentelemetry_trace_id;
@@ -629,20 +640,21 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
                     span.operation_name = "query";
                     span.start_time = elem.query_start_time;
-                    span.finish_time = time(nullptr); // current time
+                    span.finish_time = elem.event_time;
+                    span.duration_ns = elapsed_seconds * 1000000000;
 
                     // keep values synchonized to type enum in QueryLogElement::createBlock
-                    span.attribute_names.push_back("status");
+                    span.attribute_names.push_back("clickhouse.query_status");
                     span.attribute_values.push_back("QueryFinish");
 
-                    span.attribute_names.push_back("query");
+                    span.attribute_names.push_back("db.statement");
                     span.attribute_values.push_back(elem.query);
 
-                    span.attribute_names.push_back("query_id");
+                    span.attribute_names.push_back("clickhouse.query_id");
                     span.attribute_values.push_back(elem.client_info.current_query_id);
                     if (!context.getClientInfo().opentelemetry_tracestate.empty())
                     {
-                        span.attribute_names.push_back("tracestate");
+                        span.attribute_names.push_back("clickhouse.tracestate");
                         span.attribute_values.push_back(
                             context.getClientInfo().opentelemetry_tracestate);
                     }
