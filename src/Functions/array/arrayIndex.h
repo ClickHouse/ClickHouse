@@ -1,5 +1,3 @@
-#include <optional>
-#include <type_traits>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -741,6 +739,10 @@ private:
         if (!col_lc)
             return false;
 
+//        assert(checkAndGetColumn<ColumnNullable>(col_lc->getDictionaryPtr().get()));
+//        assert(col_lc->isNullable());
+//        assert(isColumnNullable(*col_lc->getDictionaryPtr().get()));
+
         const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
 
         const IColumn& col_arg = *block.getByPosition(arguments[1]).column.get();
@@ -799,7 +801,7 @@ private:
             block.getByPosition(result).column = std::move(col_result);
             return true;
         }
-        else if (col_lc->getDictionaryPtr()->isNullable()) // LC(Nullable(T)) and U
+        else if (col_lc->nestedIsNullable()) // LC(Nullable(T)) and U
         {
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality(); // Nullable(T)
             const ColumnNullable& left_nullable = *checkAndGetColumn<ColumnNullable>(left_casted.get());
