@@ -3666,4 +3666,9 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
     };
 }
 
+size_t MergeTreeData::getTotalMergesWithTTLInMergeList() const
+{
+    return global_context.getMergeList().getExecutingMergesWithTTLCount();
+}
+
 }
