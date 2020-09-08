@@ -548,6 +548,18 @@
                 "clang-tidy": "disable",
                 "with_coverage": false
             }
+        },
+        "AST fuzzer": {
+            "required_build_properties": {
+                "compiler": "clang-10",
+                "package_type": "binary",
+                "build_type": "debug",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
         }
     }
 }
