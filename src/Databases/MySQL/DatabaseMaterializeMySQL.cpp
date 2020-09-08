@@ -6,6 +6,7 @@
 
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 
+#    include <Interpreters/Context.h>
 #    include <Databases/DatabaseOrdinary.h>
 #    include <Databases/MySQL/DatabaseMaterializeTablesIterator.h>
 #    include <Databases/MySQL/MaterializeMySQLSyncThread.h>

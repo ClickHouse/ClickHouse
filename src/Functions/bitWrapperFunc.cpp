@@ -18,11 +18,11 @@ namespace DB
         using ResultType = UInt8;
         static constexpr const bool allow_fixed_string = false;
 
-        static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
+        static inline ResultType NO_SANITIZE_UNDEFINED apply(A a [[maybe_unused]])
         {
             // Should be a logical error, but this function is callable from SQL.
             // Need to investigate this.
-            if constexpr (!is_integral_v<A>)
+            if constexpr (!is_integer_v<A>)
                 throw DB::Exception("It's a bug! Only integer types are supported by __bitWrapperFunc.", ErrorCodes::BAD_ARGUMENTS);
             return a == 0 ? static_cast<ResultType>(0b10) : static_cast<ResultType >(0b1);
         }

@@ -127,7 +127,6 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
-    bool has_received_logs = false;      /// We have received some logs, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
@@ -161,6 +160,7 @@ private:
     /// Console output.
     WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
     std::unique_ptr<ShellCommand> pager_cmd;
+
     /// The user can specify to redirect query output to a file.
     std::optional<WriteBufferFromFile> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
@@ -847,32 +847,26 @@ private:
             }
 
             // Parse and execute what we've read.
-            fprintf(stderr, "will now parse '%s'\n", text.c_str());
-
             const auto * new_end = processWithFuzzing(text);
 
             if (new_end > &text[0])
             {
                 const auto rest_size = text.size() - (new_end - &text[0]);
 
-                fprintf(stderr, "total %zd, rest %zd\n", text.size(), rest_size);
-
                 memcpy(&text[0], new_end, rest_size);
                 text.resize(rest_size);
             }
             else
             {
-                fprintf(stderr, "total %zd, can't parse\n", text.size());
+                // We didn't read enough text to parse a query. Will read more.
             }
 
-            if (!connection->isConnected())
-            {
-                // Uh-oh...
-                std::cerr << "Lost connection to the server." << std::endl;
-                last_exception_received_from_server
-                    = std::make_unique<Exception>(210, "~");
-                return;
-            }
+            // Ensure that we're still connected to the server. If the server died,
+            // the reconnect is going to fail with an exception, and the fuzzer
+            // will exit. The ping() would be the best match here, but it's
+            // private, probably for a good reason that the protocol doesn't allow
+            // pings at any possible moment.
+            connection->forceConnected(connection_parameters.timeouts);
 
             if (text.size() > 4 * 1024)
             {
@@ -880,9 +874,6 @@ private:
                 // and we still cannot parse a single query in it. Abort.
                 std::cerr << "Read too much text and still can't parse a query."
                      " Aborting." << std::endl;
-                last_exception_received_from_server
-                    = std::make_unique<Exception>(1, "~");
-                // return;
                 exit(1);
             }
         }
@@ -1552,8 +1543,7 @@ private:
                         cancelled = true;
                         if (is_interactive)
                         {
-                            if (written_progress_chars)
-                                clearProgress();
+                            clearProgress();
                             std::cout << "Cancelling query." << std::endl;
                         }
 
@@ -1640,7 +1630,8 @@ private:
                 return false;
 
             default:
-                throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                    packet.type, connection->getDescription());
         }
     }
 
@@ -1808,9 +1799,6 @@ private:
 
     void onData(Block & block)
     {
-        if (written_progress_chars)
-            clearProgress();
-
         if (!block)
             return;
 
@@ -1827,18 +1815,23 @@ private:
             written_first_block = true;
         }
 
+        bool clear_progess = std_out.offset() > 0;
+        if (clear_progess)
+            clearProgress();
+
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        writeProgress();
+        if (clear_progess)
+            writeProgress();
     }
 
 
     void onLogData(Block & block)
     {
-        has_received_logs = true;
         initLogsOutputStream();
+        clearProgress();
         logs_out_stream->write(block);
         logs_out_stream->flush();
     }
@@ -1866,15 +1859,18 @@ private:
         }
         if (block_out_stream)
             block_out_stream->onProgress(value);
+
         writeProgress();
     }
 
 
     void clearProgress()
     {
-        written_progress_chars = 0;
-        if (!has_received_logs)
+        if (written_progress_chars)
+        {
+            written_progress_chars = 0;
             std::cerr << "\r" CLEAR_TO_END_OF_LINE;
+        }
     }
 
 
@@ -1901,8 +1897,15 @@ private:
 
         const char * indicator = indicators[increment % 8];
 
-        if (!has_received_logs && written_progress_chars)
-            message << '\r';
+        size_t terminal_width = getTerminalWidth();
+
+        if (!written_progress_chars)
+        {
+            /// If the current line is not empty, the progress must be output on the next line.
+            /// The trick is found here: https://www.vidarholen.net/contents/blog/?p=878
+            message << std::string(terminal_width, ' ');
+        }
+        message << '\r';
 
         size_t prefix_size = message.count();
 
@@ -1938,7 +1941,7 @@ private:
 
                 if (show_progress_bar)
                 {
-                    ssize_t width_of_progress_bar = static_cast<ssize_t>(getTerminalWidth()) - written_progress_chars - strlen(" 99%");
+                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
                     if (width_of_progress_bar > 0)
                     {
                         std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
@@ -1954,10 +1957,6 @@ private:
         }
 
         message << CLEAR_TO_END_OF_LINE;
-
-        if (has_received_logs)
-            message << '\n';
-
         ++increment;
 
         message.next();
@@ -2018,6 +2017,8 @@ private:
 
     void onEndOfStream()
     {
+        clearProgress();
+
         if (block_out_stream)
             block_out_stream->writeSuffix();
 
@@ -2028,8 +2029,7 @@ private:
 
         if (is_interactive && !written_first_block)
         {
-            if (written_progress_chars)
-                clearProgress();
+            clearProgress();
             std::cout << "Ok." << std::endl;
         }
     }

@@ -62,7 +62,12 @@ public:
     bool writeNumber(UInt32 value) { return writeValueIfPossible(&IConverter::writeUInt32, value); }
     bool writeNumber(Int64 value) { return writeValueIfPossible(&IConverter::writeInt64, value); }
     bool writeNumber(UInt64 value) { return writeValueIfPossible(&IConverter::writeUInt64, value); }
+    bool writeNumber(Int128 value) { return writeValueIfPossible(&IConverter::writeInt128, value); }
     bool writeNumber(UInt128 value) { return writeValueIfPossible(&IConverter::writeUInt128, value); }
+
+    bool writeNumber(Int256 value) { return writeValueIfPossible(&IConverter::writeInt256, value); }
+    bool writeNumber(UInt256 value) { return writeValueIfPossible(&IConverter::writeUInt256, value); }
+
     bool writeNumber(Float32 value) { return writeValueIfPossible(&IConverter::writeFloat32, value); }
     bool writeNumber(Float64 value) { return writeValueIfPossible(&IConverter::writeFloat64, value); }
     bool writeString(const StringRef & str) { return writeValueIfPossible(&IConverter::writeString, str); }
@@ -77,6 +82,7 @@ public:
     bool writeDecimal(Decimal32 decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal32, decimal, scale); }
     bool writeDecimal(Decimal64 decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal64, decimal, scale); }
     bool writeDecimal(const Decimal128 & decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal128, decimal, scale); }
+    bool writeDecimal(const Decimal256 & decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal256, decimal, scale); }
     bool writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place) { return writeValueIfPossible(&IConverter::writeAggregateFunction, function, place); }
 
 private:
@@ -147,7 +153,12 @@ private:
         virtual void writeUInt32(UInt32) = 0;
         virtual void writeInt64(Int64) = 0;
         virtual void writeUInt64(UInt64) = 0;
+        virtual void writeInt128(Int128) = 0;
         virtual void writeUInt128(const UInt128 &) = 0;
+
+        virtual void writeInt256(const Int256 &) = 0;
+        virtual void writeUInt256(const UInt256 &) = 0;
+
         virtual void writeFloat32(Float32) = 0;
         virtual void writeFloat64(Float64) = 0;
         virtual void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) = 0;
@@ -161,6 +172,7 @@ private:
         virtual void writeDecimal32(Decimal32, UInt32) = 0;
         virtual void writeDecimal64(Decimal64, UInt32) = 0;
         virtual void writeDecimal128(const Decimal128 &, UInt32) = 0;
+        virtual void writeDecimal256(const Decimal256 &, UInt32) = 0;
         virtual void writeAggregateFunction(const AggregateFunctionPtr &, ConstAggregateDataPtr) = 0;
     };
 
@@ -253,7 +265,10 @@ public:
     bool writeNumber(UInt32 /* value */) { return false; }
     bool writeNumber(Int64 /* value */) { return false; }
     bool writeNumber(UInt64 /* value */) { return false; }
+    bool writeNumber(Int128 /* value */) { return false; }
     bool writeNumber(UInt128 /* value */) { return false; }
+    bool writeNumber(Int256 /* value */) { return false; }
+    bool writeNumber(UInt256 /* value */) { return false; }
     bool writeNumber(Float32 /* value */) { return false; }
     bool writeNumber(Float64 /* value */) { return false; }
     bool writeString(const StringRef & /* value */) { return false; }
@@ -268,6 +283,7 @@ public:
     bool writeDecimal(Decimal32 /* decimal */, UInt32 /* scale */) { return false; }
     bool writeDecimal(Decimal64 /* decimal */, UInt32 /* scale */) { return false; }
     bool writeDecimal(const Decimal128 & /* decimal */, UInt32 /* scale */) { return false; }
+    bool writeDecimal(const Decimal256 & /* decimal */, UInt32 /* scale */) { return false; }
     bool writeAggregateFunction(const AggregateFunctionPtr & /* function */, ConstAggregateDataPtr /* place */) { return false; }
 };
 
