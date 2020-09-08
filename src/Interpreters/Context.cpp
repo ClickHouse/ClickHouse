@@ -82,6 +82,9 @@ namespace CurrentMetrics
 
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
+
+    extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundMessageBrokerSchedulePool;
 }
 
 
@@ -306,6 +309,9 @@ struct ContextShared
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
 
+    mutable std::mutex auxiliary_zookeepers_mutex;
+    mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
+
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_io_user;
@@ -338,6 +344,7 @@ struct ContextShared
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    std::optional<BackgroundSchedulePool> message_broker_schedule_pool;    /// A thread pool that can run different jobs in background (used in kafka streaming)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -438,6 +445,7 @@ struct ContextShared
         schedule_pool.reset();
         distributed_schedule_pool.reset();
         ddl_worker.reset();
+        message_broker_schedule_pool.reset();
 
         /// Stop trace collector if any
         trace_collector.reset();
@@ -1443,6 +1451,18 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
     return *shared->distributed_schedule_pool;
 }
 
+BackgroundSchedulePool & Context::getMessageBrokerSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->message_broker_schedule_pool)
+        shared->message_broker_schedule_pool.emplace(
+            settings.background_message_broker_schedule_pool_size,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundMessageBrokerSchedulePool,
+            "BgMBSchPool");
+    return *shared->message_broker_schedule_pool;
+}
+
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
@@ -1469,6 +1489,24 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
+}
+
+zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
+{
+    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+
+    auto zookeeper = shared->auxiliary_zookeepers.find(name);
+    if (zookeeper == shared->auxiliary_zookeepers.end())
+    {
+        if (!getConfigRef().has("auxiliary_zookeepers." + name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in config.xml", name);
+
+        zookeeper->second = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "auxiliary_zookeepers." + name);
+    }
+    else if (zookeeper->second->expired())
+        zookeeper->second = zookeeper->second->startNewSession();
+
+    return zookeeper->second;
 }
 
 void Context::resetZooKeeper() const
@@ -1988,6 +2026,12 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
+    for (auto & [disk_name, disk] : getDisksMap())
+    {
+        LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
+        disk->shutdown();
+    }
+
     shared->shutdown();
 }
 

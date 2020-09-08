@@ -12,21 +12,16 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /** Stuff for comparing numbers.
   * Integer values are compared as usual.
   * Floating-point numbers are compared this way that NaNs always end up at the end
   *  (if you don't do this, the sort would not work at all).
   */
-template <typename T>
+template <class T, class U = T>
 struct CompareHelper
 {
-    static bool less(T a, T b, int /*nan_direction_hint*/) { return a < b; }
-    static bool greater(T a, T b, int /*nan_direction_hint*/) { return a > b; }
+    static constexpr bool less(T a, U b, int /*nan_direction_hint*/) { return a < b; }
+    static constexpr bool greater(T a, U b, int /*nan_direction_hint*/) { return a > b; }
 
     /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
       * If one of the values is NaN, then
@@ -34,19 +29,19 @@ struct CompareHelper
       * - if nan_direction_hint == 1 - NaN are considered to be larger than all numbers;
       * Essentially: nan_direction_hint == -1 says that the comparison is for sorting in descending order.
       */
-    static int compare(T a, T b, int /*nan_direction_hint*/)
+    static constexpr int compare(T a, U b, int /*nan_direction_hint*/)
     {
         return a > b ? 1 : (a < b ? -1 : 0);
     }
 };
 
-template <typename T>
+template <class T>
 struct FloatCompareHelper
 {
-    static bool less(T a, T b, int nan_direction_hint)
+    static constexpr bool less(T a, T b, int nan_direction_hint)
     {
-        bool isnan_a = std::isnan(a);
-        bool isnan_b = std::isnan(b);
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
 
         if (isnan_a && isnan_b)
             return false;
@@ -58,10 +53,10 @@ struct FloatCompareHelper
         return a < b;
     }
 
-    static bool greater(T a, T b, int nan_direction_hint)
+    static constexpr bool greater(T a, T b, int nan_direction_hint)
     {
-        bool isnan_a = std::isnan(a);
-        bool isnan_b = std::isnan(b);
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
 
         if (isnan_a && isnan_b)
             return false;
@@ -73,10 +68,11 @@ struct FloatCompareHelper
         return a > b;
     }
 
-    static int compare(T a, T b, int nan_direction_hint)
+    static constexpr int compare(T a, T b, int nan_direction_hint)
     {
-        bool isnan_a = std::isnan(a);
-        bool isnan_b = std::isnan(b);
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
+
         if (unlikely(isnan_a || isnan_b))
         {
             if (isnan_a && isnan_b)
@@ -91,9 +87,8 @@ struct FloatCompareHelper
     }
 };
 
-template <> struct CompareHelper<Float32> : public FloatCompareHelper<Float32> {};
-template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {};
-
+template <class U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
+template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
 
 /** A template for columns that use a simple array to store.
  */
@@ -201,6 +196,12 @@ public:
         data.push_back(value);
     }
 
+    template <class U>
+    constexpr int compareAtOther(size_t n, size_t m, const ColumnVector<U> & rhs, int nan_direction_hint) const
+    {
+        return CompareHelper<T, U>::compare(data[n], rhs.data[m], nan_direction_hint);
+    }
+
     /// This method implemented in header because it could be possibly devirtualized.
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
     {
@@ -292,23 +293,17 @@ public:
     void gather(ColumnGathererStream & gatherer_stream) override;
 
     bool canBeInsideNullable() const override { return true; }
-    bool isFixedAndContiguous() const override { return is_POD; }
+    bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
     StringRef getRawData() const override
     {
-        if constexpr (is_POD)
-            return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
-        else
-            throw Exception("getRawData() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        if constexpr (is_POD)
-            return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
-        else
-            throw Exception("getDataAt() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     bool structureEquals(const IColumn & rhs) const override
