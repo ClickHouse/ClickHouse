@@ -21,7 +21,9 @@ class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryReader;
-class ColumnsWithTypeAndName;
+
+class ColumnWithTypeAndName;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 struct Settings;
 

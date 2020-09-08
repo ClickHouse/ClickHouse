@@ -4,7 +4,6 @@
 
 #include <Core/Settings.h>
 #include <Core/Block.h>
-#include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
 #include <Common/StringUtils/StringUtils.h>
