@@ -1079,7 +1079,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             {
                 if (merger_mutator.ttl_merges_blocker.isCancelled())
                 {
-                    String reason = "Not executing log entry for part " + entry.new_part_name + " because merges with TTL is cancelled now.";
+                    String reason = "Not executing log entry for part " + entry.new_part_name + " because merges with TTL are cancelled now.";
                     LOG_DEBUG(log, reason);
                     out_postpone_reason = reason;
                     return false;
