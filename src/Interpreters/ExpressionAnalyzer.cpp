@@ -583,7 +583,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
         ExpressionActionsPtr joined_block_actions = createJoinedBlockActions(context, analyzedJoin());
 
         Names original_right_columns;
-        if (!subquery_for_join.source)
+        if (subquery_for_join.source.empty())
         {
             NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
                 joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());
