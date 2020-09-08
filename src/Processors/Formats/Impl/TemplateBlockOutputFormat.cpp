@@ -186,7 +186,7 @@ void TemplateBlockOutputFormat::finalize()
         switch (static_cast<ResultsetPart>(*format.format_idx_to_column_idx[i]))
         {
             case ResultsetPart::Totals:
-                if (!totals)
+                if (!totals || !totals.hasRows())
                     format.throwInvalidFormat("Cannot print totals for this request", i);
                 writeRow(totals, 0);
                 break;
