@@ -226,25 +226,25 @@ private:
     static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
         CompareInt x;
-        if constexpr (is_big_int_v<CompareInt> && IsDecimalNumber<A>)
+        if constexpr (IsDecimalNumber<A>)
             x = a.value;
         else
-            x = bigint_cast<CompareInt>(a);
+            x = a;
 
         CompareInt y;
-        if constexpr (is_big_int_v<CompareInt> && IsDecimalNumber<B>)
+        if constexpr (IsDecimalNumber<B>)
             y = b.value;
         else
-            y = bigint_cast<CompareInt>(b);
+            y = b;
 
         if constexpr (_check_overflow)
         {
             bool overflow = false;
 
             if constexpr (sizeof(A) > sizeof(CompareInt))
-                overflow |= (A(x) != a);
+                overflow |= (bigint_cast<A>(x) != a);
             if constexpr (sizeof(B) > sizeof(CompareInt))
-                overflow |= (B(y) != b);
+                overflow |= (bigint_cast<B>(y) != b);
             if constexpr (is_unsigned_v<A>)
                 overflow |= (x < 0);
             if constexpr (is_unsigned_v<B>)
