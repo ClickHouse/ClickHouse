@@ -748,6 +748,10 @@ void DiskS3::setReadOnly(const String & path)
 
 void DiskS3::shutdown()
 {
+    /// This call stops any next retry attempts for ongoing S3 requests.
+    /// If S3 request is failed and the method below is executed S3 client immediately returns the last failed S3 request outcome.
+    /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
+    /// This should significantly speed up shutdown process if S3 is unhealthy.
     client->DisableRequestProcessing();
 }
 
