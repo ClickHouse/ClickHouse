@@ -7,18 +7,6 @@
 
 #include <string>
 
-namespace
-{
-void CipherDeleter(const EVP_CIPHER * cipher [[maybe_unused]])
-{
-#if OPENSSL_VERSION_NUMBER >= 0x03 << 28
-// Used to free EVP_CIPHER poniter obtained with EVP_CIPHER_fetch,
-// available only since OpenSSL ver 3.0.0.
-    EVP_CIPHER_free(const_cast<EVP_CIPHER*>(cipher));
-#endif
-}
-}
-
 namespace DB
 {
 namespace ErrorCodes
@@ -47,7 +35,7 @@ StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, const
     return StringRef(folded_key.data(), cipher_key_size);
 }
 
-CipherPtr getCipherByName(const StringRef & cipher_name)
+const EVP_CIPHER * getCipherByName(const StringRef & cipher_name)
 {
     const auto *evp_cipher = EVP_get_cipherbyname(cipher_name.data);
     if (evp_cipher == nullptr)
@@ -61,14 +49,10 @@ CipherPtr getCipherByName(const StringRef & cipher_name)
             evp_cipher = EVP_aes_256_cfb128();
     }
 
-#if OPENSSL_VERSION_NUMBER < 0x03 << 28
-    return CipherPtr{evp_cipher, CipherDeleter};
-#else
-    // HACK: To speed up context initialization with EVP_EncryptInit_ex (which is called at least once per row)
-    // Apparently cipher from EVP_get_cipherbyname may require additional initialization of context,
-    // while cipher from EVP_CIPHER_fetch causes less operations => faster context initialization.
-    return CipherPtr{EVP_CIPHER_fetch(nullptr, EVP_CIPHER_name(evp_cipher), nullptr), &CipherDeleter};
-#endif
+    // NOTE: cipher obtained not via EVP_CIPHER_fetch() would cause extra work on each context reset
+    // with EVP_CIPHER_CTX_reset() or EVP_EncryptInit_ex(), but using EVP_CIPHER_fetch()
+    // causes data race, so we stick to the slower but safer alternative here.
+    return evp_cipher;
 }
 
 }

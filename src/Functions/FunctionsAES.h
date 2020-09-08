@@ -36,9 +36,7 @@ namespace OpenSSLDetails
 [[noreturn]] void onError(std::string error_message);
 StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, const StringRef & key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key);
 
-using CipherDeleterType = void (*) (const EVP_CIPHER *cipher);
-using CipherPtr = std::unique_ptr<const EVP_CIPHER, CipherDeleterType>;
-CipherPtr getCipherByName(const StringRef & name);
+const EVP_CIPHER * getCipherByName(const StringRef & name);
 
 enum class CompatibilityMode
 {
@@ -189,10 +187,9 @@ private:
         if (mode.size == 0 || !std::string_view(mode).starts_with("aes-"))
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-        auto cipher = getCipherByName(mode);
-        if (cipher == nullptr)
+        auto evp_cipher = getCipherByName(mode);
+        if (evp_cipher == nullptr)
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
-        const EVP_CIPHER * evp_cipher = cipher.get();
 
         const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
 
@@ -438,10 +435,9 @@ private:
         if (mode.size == 0 || !std::string_view(mode).starts_with("aes-"))
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-        auto cipher = getCipherByName(mode);
-        if (cipher == nullptr)
+        auto evp_cipher = getCipherByName(mode);
+        if (evp_cipher == nullptr)
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
-        const EVP_CIPHER * evp_cipher = cipher.get();
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
