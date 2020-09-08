@@ -24,7 +24,7 @@ toc_title: Системные таблицы
 
 Для сбора системных показателей сервер ClickHouse использует:
 
--   возможности `CAP_NET_ADMIN`.
+-   Возможности `CAP_NET_ADMIN`.
 -   [procfs](https://ru.wikipedia.org/wiki/Procfs) (только Linux).
 
 **procfs**
