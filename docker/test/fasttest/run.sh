@@ -5,8 +5,7 @@ trap "exit" INT TERM
 trap 'kill $(jobs -pr) ||:' EXIT
 
 # This script is separated into two stages, cloning and everything else, so
-# that we can run the "everything else" stage from the cloned source (we don't
-# do this yet).
+# that we can run the "everything else" stage from the cloned source.
 stage=${stage:-}
 
 # A variable to pass additional flags to CMake.
@@ -16,7 +15,6 @@ stage=${stage:-}
 # empty parameter.
 read -ra FASTTEST_CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
 
-ls -la
 
 function kill_clickhouse
 {
@@ -60,6 +58,7 @@ function clone_root
 git clone https://github.com/ClickHouse/ClickHouse.git | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/clone_log.txt
 cd ClickHouse
 CLICKHOUSE_DIR=$(pwd)
+export CLICKHOUSE_DIR
 
 
 if [ "$PULL_REQUEST_NUMBER" != "0" ]; then
@@ -211,6 +210,9 @@ TESTS_TO_SKIP=(
     # to make some progress.
     00646_url_engine
     00974_query_profiler
+
+    # Look at DistributedFilesToInsert, so cannot run in parallel.
+    01460_DistributedFilesToInsert
 )
 
 clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
@@ -248,12 +250,20 @@ fi
 
 case "$stage" in
 "")
+    ls -la
     ;&
+
 "clone_root")
     clone_root
-    # TODO bootstrap into the cloned script here. Add this on Sep 1 2020 or
-    # later, so that most of the old branches are updated with this code.
+
+    # Pass control to the script from cloned sources, unless asked otherwise.
+    if ! [ -v FASTTEST_LOCAL_SCRIPT ]
+    then
+        stage=run "$CLICKHOUSE_DIR/docker/test/fasttest/run.sh"
+        exit $?
+    fi
     ;&
+
 "run")
     run
     ;&

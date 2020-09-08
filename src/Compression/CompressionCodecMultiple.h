@@ -17,6 +17,8 @@ public:
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
+    static std::vector<uint8_t> getCodecsBytesFromData(const char * source);
+
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
