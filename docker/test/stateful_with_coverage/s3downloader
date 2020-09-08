@@ -55,6 +55,8 @@ def dowload_with_progress(url, path):
             logging.info("Exception while downloading %s, retry %s", ex, i + 1)
             if os.path.exists(path):
                 os.remove(path)
+    else:
+        raise Exception("Cannot download dataset from {}, all retries exceeded".format(url))
 
     sys.stdout.write("\n")
     logging.info("Downloading finished")
