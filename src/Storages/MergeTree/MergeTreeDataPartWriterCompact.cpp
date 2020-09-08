@@ -112,8 +112,11 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
         {
             auto & stream = compressed_streams[i];
 
+            /// Offset should be 0, because compressed block is written for every granule.
+            assert(stream->hashing_buf.offset() == 0);
+
             writeIntBinary(plain_hashing.count(), marks);
-            writeIntBinary(stream->hashing_buf.offset(), marks);
+            writeIntBinary(UInt64(0), marks);
 
             writeColumnSingleGranule(block.getByName(name_and_type->name), stream, current_row, rows_to_write);
 
@@ -161,6 +164,12 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
 {
     if (columns_buffer.size() != 0)
         writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
+
+#ifndef NDEBUG
+    /// Offsets should be 0, because compressed block is written for every granule.
+    for (const auto & [_, stream] : streams_by_codec)
+        assert(stream->hashing_buf.offset() == 0);
+#endif
 
     if (with_final_mark && data_written)
     {

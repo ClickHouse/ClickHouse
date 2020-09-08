@@ -89,7 +89,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         CompressedReadBuffer uncompressing_buf(compressed_hashing_buf);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
 
-        uncompressed_hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
+        uncompressed_hashing_buf.ignoreAll();
         return IMergeTreeDataPart::Checksums::Checksum
         {
             compressed_hashing_buf.count(), compressed_hashing_buf.getHash(),
@@ -102,7 +102,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto file_buf = disk_->readFile(file_path);
         HashingReadBuffer hashing_buf(*file_buf);
-        hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
+        hashing_buf.ignoreAll();
         return IMergeTreeDataPart::Checksums::Checksum{hashing_buf.count(), hashing_buf.getHash()};
     };
 
