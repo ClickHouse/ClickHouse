@@ -21,6 +21,8 @@ PEERDIR(
 
 INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
 
+CFLAGS(-g0)
+
 SRCS(
     ActionLock.cpp
     AlignedBuffer.cpp
