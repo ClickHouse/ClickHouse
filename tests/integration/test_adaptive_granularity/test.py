@@ -336,12 +336,27 @@ def test_version_update_two_nodes(start_dynamic_cluster):
 
     node11.restart_with_latest_version(callback_onstop=callback) # just to be sure
 
-    node11.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=20)
-    node12.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=20)
-    node11.query("SELECT COUNT() FROM table_with_default_granularity_new") == "4\n"
-    node12.query("SELECT COUNT() FROM table_with_default_granularity_new") == "4\n"
+    for i in range(3):
+        try:
+            node11.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=120)
+            node12.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=120)
+        except Exception as ex:
+            print("Exception during replica sync", ex)
+            node11.query("SYSTEM RESTART REPLICA table_with_default_granularity_new")
+            node12.query("SYSTEM RESTART REPLICA table_with_default_granularity_new")
+            time.sleep(2 * i)
 
-    node11.query("SYSTEM SYNC REPLICA table_with_default_granularity", timeout=20)
+    assert node11.query("SELECT COUNT() FROM table_with_default_granularity_new") == "4\n"
+    assert node12.query("SELECT COUNT() FROM table_with_default_granularity_new") == "4\n"
+
     node11.query("INSERT INTO table_with_default_granularity VALUES (toDate('2018-10-01'), 5, 333), (toDate('2018-10-02'), 6, 444)")
-    node12.query("SYSTEM SYNC REPLICA table_with_default_granularity", timeout=20)
+    for i in range(3):
+        try:
+            node12.query("SYSTEM SYNC REPLICA table_with_default_granularity", timeout=120)
+        except Exception as ex:
+            print("Exception during replica sync", ex)
+            node11.query("SYSTEM RESTART REPLICA table_with_default_granularity")
+            node12.query("SYSTEM RESTART REPLICA table_with_default_granularity")
+            time.sleep(2 * i)
+
     assert node12.query("SELECT COUNT() FROM table_with_default_granularity") == '6\n'
