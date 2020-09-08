@@ -217,7 +217,7 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        writeCString("\\N", ostr);
+        writeString(settings.tsv.null_representation, ostr);
     else
         nested_data_type->serializeAsTextEscaped(col.getNestedColumn(), row_num, ostr, settings);
 }
