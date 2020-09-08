@@ -36,4 +36,8 @@ SRCS(
 <? find . -name '*.cpp' | grep -i -v -P 'tests|Bitmap|sumbur|abtesting' | sed 's/^\.\//    /' | sort ?>
 )
 
+IF (BUILD_TYPE STREQUAL "DEBUG" OR BUILD_TYPE STREQUAL "FASTDEBUG")
+    CFLAGS(-g0)
+ENDIF()
+
 END()

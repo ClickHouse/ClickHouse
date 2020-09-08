@@ -13,8 +13,8 @@ SRCS(
     DatabaseMemory.cpp
     DatabaseOnDisk.cpp
     DatabaseOrdinary.cpp
-    DatabasesCommon.cpp
     DatabaseWithDictionaries.cpp
+    DatabasesCommon.cpp
     MySQL/DatabaseConnectionMySQL.cpp
     MySQL/DatabaseMaterializeMySQL.cpp
     MySQL/MaterializeMetadata.cpp

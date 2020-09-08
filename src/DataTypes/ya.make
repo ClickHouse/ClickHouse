@@ -7,7 +7,6 @@ PEERDIR(
 )
 
 SRCS(
-    convertMySQLDataType.cpp
     DataTypeAggregateFunction.cpp
     DataTypeArray.cpp
     DataTypeCustomGeo.cpp
@@ -15,8 +14,8 @@ SRCS(
     DataTypeCustomSimpleAggregateFunction.cpp
     DataTypeCustomSimpleTextSerialization.cpp
     DataTypeDate.cpp
-    DataTypeDateTime64.cpp
     DataTypeDateTime.cpp
+    DataTypeDateTime64.cpp
     DataTypeDecimalBase.cpp
     DataTypeEnum.cpp
     DataTypeFactory.cpp
@@ -28,16 +27,17 @@ SRCS(
     DataTypeNothing.cpp
     DataTypeNullable.cpp
     DataTypeNumberBase.cpp
-    DataTypesDecimal.cpp
-    DataTypesNumber.cpp
     DataTypeString.cpp
     DataTypeTuple.cpp
     DataTypeUUID.cpp
+    DataTypesDecimal.cpp
+    DataTypesNumber.cpp
     FieldToDataType.cpp
-    getLeastSupertype.cpp
-    getMostSubtype.cpp
     IDataType.cpp
     NestedUtils.cpp
+    convertMySQLDataType.cpp
+    getLeastSupertype.cpp
+    getMostSubtype.cpp
     registerDataTypeDateTime.cpp
 
 )
