@@ -148,7 +148,7 @@ public:
     }
 
     template <typename T>
-    std::enable_if_t<is_big_int_v<T>, void> update(const T & x)
+    std::enable_if_t<is_big_int_v<T> && !std::has_unique_object_representations_v<T>, void> update(const T & x)
     {
         update(DB::BigInt<T>::serialize(x));
     }
@@ -213,7 +213,7 @@ std::enable_if_t<std::has_unique_object_representations_v<T>, UInt64> sipHash64(
 }
 
 template <typename T>
-std::enable_if_t<(std::is_floating_point_v<T> || is_big_int_v<T>), UInt64> sipHash64(const T & x)
+std::enable_if_t<(std::is_floating_point_v<T> || (is_big_int_v<T> && !std::has_unique_object_representations_v<T>)), UInt64> sipHash64(const T & x)
 {
     SipHash hash;
     hash.update(x);

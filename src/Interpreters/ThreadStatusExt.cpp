@@ -148,6 +148,7 @@ void ThreadStatus::initPerformanceCounters()
 
     query_start_time_nanoseconds = getCurrentTimeNanoseconds();
     query_start_time = time(nullptr);
+    query_start_time_microseconds = getCurrentTimeMicroseconds();
     ++queries_started;
 
     *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
@@ -303,6 +304,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 
     elem.event_time = time(nullptr);
     elem.query_start_time = query_start_time;
+    elem.query_start_time_microseconds = query_start_time_microseconds;
     elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
 
     elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);

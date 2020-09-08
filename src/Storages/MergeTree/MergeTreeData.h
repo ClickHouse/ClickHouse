@@ -534,9 +534,6 @@ public:
         return DB::extractKeyExpressionList(node);
     }
 
-    /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
-
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
@@ -648,6 +645,11 @@ public:
     /// Checks if given part already belongs destination disk or volume for the
     /// TTL rule.
     bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
+
+    /// Get count of total merges with TTL in MergeList (system.merges) for all
+    /// tables (not only current table).
+    /// Method is cheap and doesn't require any locks.
+    size_t getTotalMergesWithTTLInMergeList() const;
 
     using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
     WriteAheadLogPtr getWriteAheadLog();
