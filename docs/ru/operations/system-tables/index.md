@@ -29,7 +29,7 @@ toc_title: Системные таблицы
 
 **procfs**
 
-Если сервер ClickHouse не имеет возможности `CAP_NET_ADMIN`, он пытается обратиться к `ProcfsMetricsProvider`. `ProcfsMetricsProvider` позволяет собирать системные показатели для каждого запроса (для CPU и I/O).
+Если для сервера ClickHouse не включено `CAP_NET_ADMIN`, он пытается обратиться к `ProcfsMetricsProvider`. `ProcfsMetricsProvider` позволяет собирать системные показатели для каждого запроса (для CPU и I/O).
 
 Если procfs поддерживается и включена в системе, то сервер ClickHouse собирает следующие системные показатели:
 
