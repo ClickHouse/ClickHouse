@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-static Field nowSubsecond(UInt32 scale)
+Field nowSubsecond(UInt32 scale)
 {
     static constexpr Int32 fractional_scale = 9;
 
