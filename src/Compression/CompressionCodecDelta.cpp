@@ -39,7 +39,6 @@ ASTPtr CompressionCodecDelta::getCodecDesc() const
 void CompressionCodecDelta::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash);
-    hash.update(delta_bytes_size);
 }
 
 namespace
