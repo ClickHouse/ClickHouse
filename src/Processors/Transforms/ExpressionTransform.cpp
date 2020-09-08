@@ -13,7 +13,7 @@ Block ExpressionTransform::transformHeader(Block header, const ExpressionActions
 
 
 ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionActionsPtr expression_)
-    : ISimpleTransform(header_, transformHeader(header_, expression_), on_totals_)
+    : ISimpleTransform(header_, transformHeader(header_, expression_), false)
     , expression(std::move(expression_))
 {
 }
