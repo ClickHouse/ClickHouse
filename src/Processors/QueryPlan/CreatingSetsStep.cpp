@@ -36,12 +36,7 @@ CreatingSetsStep::CreatingSetsStep(
 
 void CreatingSetsStep::transformPipeline(QueryPipeline & pipeline)
 {
-    auto creating_sets = std::make_shared<CreatingSetsTransform>(
-            pipeline.getHeader(), subqueries_for_sets,
-            network_transfer_limits,
-            context);
-
-    pipeline.addCreatingSetsTransform(std::move(creating_sets));
+    pipeline.addCreatingSetsTransform(std::move(subqueries_for_sets), network_transfer_limits, context);
 }
 
 void CreatingSetsStep::describeActions(FormatSettings & settings) const
