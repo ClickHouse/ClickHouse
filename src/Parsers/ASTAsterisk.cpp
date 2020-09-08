@@ -13,9 +13,14 @@ ASTPtr ASTAsterisk::clone() const
 
 void ASTAsterisk::appendColumnName(WriteBuffer & ostr) const { ostr.write('*'); }
 
-void ASTAsterisk::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTAsterisk::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << "*";
+    for (const auto & child : children)
+    {
+        settings.ostr << ' ';
+        child->formatImpl(settings, state, frame);
+    }
 }
 
 }
