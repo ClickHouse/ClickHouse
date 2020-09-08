@@ -334,8 +334,7 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
     if (equal_ranges.empty())
         return;
 
-    if (limit >= equal_ranges.back().second || limit >= size())
-        limit = 0;
+    std::cout << "limit " << limit << std::endl;
 
     /// We will sort nested columns into `new_ranges` and call updatePermutation in next columns with `null_ranges`.
     EqualRanges new_ranges, null_ranges;
@@ -347,19 +346,22 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
         /// Shift all NULL values to the end.
         for (const auto & [first, last] : equal_ranges)
         {
+            /// Current interval is righter than limit. 
+            if (first > limit) 
+                break;
+
             /// Consider a half interval [first, last)
             size_t read_idx = first;
             size_t write_idx = first;
             size_t end_idx = last;
 
-            if (!limit)
-                limit = end_idx - read_idx;
-            else
-                limit = std::min(end_idx - read_idx, limit);
+            size_t current_limit = end_idx;
+            if (limit && limit >= read_idx && limit <= end_idx)
+                current_limit = limit;
 
             /// We simply check the limit not to do extra work.
             /// Since interval begins from `first`, not from zero, we add `first` to the right side of the inequality.
-            while (read_idx < first + limit && !isNullAt(res[read_idx]))
+            while (read_idx < current_limit && !isNullAt(res[read_idx]))
             {
                 ++read_idx;
                 ++write_idx;
@@ -377,7 +379,7 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
             /// Relative order of NULL elements could be changed,
             ///  but relative order of non-NULLs is preserved.
 
-            while (read_idx < end_idx && write_idx < first + limit)
+            while (read_idx < end_idx && write_idx < current_limit)
             {
                 if (!isNullAt(res[read_idx]))
                 {
@@ -391,7 +393,6 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
             if (first != write_idx)
                 new_ranges.emplace_back(first, write_idx);
 
-
             /// We have a range [write_idx, list) of NULL values
             if (write_idx != last)
                 null_ranges.emplace_back(write_idx, last);
@@ -399,9 +400,12 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
     }
     else
     {
+        /// Shift all NULL values to the beginning.
         for (const auto & [first, last] : equal_ranges)
         {
-            /// Shift all NULL values to the beginning.
+            /// Current interval is righter than limit.
+            if (first > limit)
+                break;
 
             ssize_t read_idx = last - 1;
             ssize_t write_idx = last - 1;
@@ -429,12 +433,19 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
             if (write_idx != static_cast<ssize_t>(last))
                 new_ranges.emplace_back(write_idx + 1, last);
 
-
             /// We have a range [first, write_idx+1) of NULL values
             if (static_cast<ssize_t>(first) != write_idx)
                 null_ranges.emplace_back(first, write_idx + 1);
         }
     }
+
+    std::cout << "New Ranges " << std::endl;
+    for (auto [first, last] : new_ranges )
+        std::cout << "first " << first << " last " << last << std::endl;
+
+    std::cout << "Null Ranges " << std::endl;
+    for (auto [first, last] : null_ranges) 
+        std::cout << "first " << first << " last " << last << std::endl;
 
     getNestedColumn().updatePermutation(reverse, 0, null_direction_hint, res, new_ranges);
 
