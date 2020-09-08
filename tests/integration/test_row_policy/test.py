@@ -234,15 +234,6 @@ def test_users_xml_is_readonly():
     assert re.search("storage is readonly", instance.query_and_get_error("DROP POLICY default ON mydb.filtered_table1"))
 
 
-def test_tags_with_db_and_table_names():
-    copy_policy_xml('tags_with_db_and_table_names.xml')
-    
-    assert instance.query("SELECT * FROM mydb.table") == TSV([[0, 0], [0, 1]])
-    assert instance.query("SELECT * FROM mydb.filtered_table2") == TSV([[0, 0, 6, 0]])
-    assert instance.query("SELECT * FROM mydb.filtered_table3") == TSV([[0, 0]])
-    assert instance.query("SELECT * FROM mydb.`.filtered_table4`") == TSV([[1, 1]])
-
-
 def test_miscellaneous_engines():
     copy_policy_xml('normal_filters.xml')
 
