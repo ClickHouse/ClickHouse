@@ -1359,6 +1359,9 @@ ExpressionActionsChain::JoinStep::JoinStep(
     , join(std::move(join_))
     , result_columns(std::move(required_columns_))
 {
+    for (const auto & column : result_columns)
+        required_columns.emplace_back(column.name, column.type);
+
     analyzed_join->addJoinedColumnsAndCorrectNullability(result_columns);
 }
 
