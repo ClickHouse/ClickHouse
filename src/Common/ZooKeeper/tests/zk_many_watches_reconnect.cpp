@@ -36,7 +36,10 @@ int main(int argc, char ** argv)
             threads.emplace_back([&, i_thread]
                 {
                     for (size_t i = 0; i < watches_per_thread; ++i)
-                        zk.exists("/clickhouse/nonexistent_node" + std::to_string(i * N_THREADS + i_thread), nullptr, watch);
+                    {
+                        std::string get_path_value;
+                        zk.tryGet("/clickhouse/nonexistent_node" + std::to_string(i * N_THREADS + i_thread), get_path_value,nullptr, watch);
+                    }
                 });
         }
         for (size_t i_thread = 0; i_thread < N_THREADS; ++i_thread)

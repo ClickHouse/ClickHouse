@@ -124,8 +124,8 @@ try
 
     std::cout << "exists\n";
 
-    zk.exists("/test",
-        [&](const ExistsResponse & response)
+    zk.get("/test",
+        [&](const GetResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)
                 std::cerr << "Error (exists): " << errorMessage(response.error) << '\n';

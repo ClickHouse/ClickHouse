@@ -370,7 +370,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Mutation maybe killed or whole replica was deleted.
             /// Wait event will unblock at this moment.
             Coordination::Stat exists_stat;
-            if (!getZooKeeper()->exists(zookeeper_path + "/mutations/" + mutation_id, &exists_stat, wait_event))
+            std::string get_path_value;
+            if (!getZooKeeper()->tryGet(zookeeper_path + "/mutations/" + mutation_id, get_path_value, &exists_stat, wait_event))
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
             }
@@ -2141,8 +2142,9 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     {
         LOG_INFO(log, "Waiting for replica {} to be fully created", source_path);
 
+        std::string get_path_value;
         zkutil::EventPtr event = std::make_shared<Poco::Event>();
-        if (zookeeper->exists(source_path + "/columns", nullptr, event))
+        if (zookeeper->tryGet(source_path + "/columns", get_path_value, nullptr, event))
         {
             LOG_WARNING(log, "Oops, a watch has leaked");
             break;

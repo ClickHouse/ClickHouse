@@ -144,8 +144,7 @@ public:
 
     void exists(
         const String & path,
-        ExistsCallback callback,
-        WatchCallback watch) override;
+        ExistsCallback callback) override;
 
     void get(
         const String & path,

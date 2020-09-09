@@ -683,8 +683,7 @@ void TestKeeper::remove(
 
 void TestKeeper::exists(
         const String & path,
-        ExistsCallback callback,
-        WatchCallback watch)
+        ExistsCallback callback)
 {
     TestKeeperExistsRequest request;
     request.path = path;
@@ -692,7 +691,6 @@ void TestKeeper::exists(
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperExistsRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ExistsResponse &>(response)); };
-    request_info.watch = watch;
     pushRequest(std::move(request_info));
 }
 

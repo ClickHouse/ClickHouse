@@ -364,8 +364,7 @@ public:
 
     virtual void exists(
         const String & path,
-        ExistsCallback callback,
-        WatchCallback watch) = 0;
+        ExistsCallback callback) = 0;
 
     virtual void get(
         const String & path,

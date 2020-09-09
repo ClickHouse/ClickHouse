@@ -149,7 +149,8 @@ int main(int argc, char ** argv)
                     bool watch = w == "w";
                     zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
                     Coordination::Stat stat;
-                    bool e = zk.exists(path, &stat, event);
+                    std::string get_path_value;
+                    bool e = zk.tryGet(path, get_path_value, &stat, event);
                     if (e)
                         printStat(stat);
                     else

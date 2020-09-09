@@ -372,7 +372,7 @@ Coordination::Error ZooKeeper::tryRemove(const std::string & path, int32_t versi
     return code;
 }
 
-Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
+Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat)
 {
     Coordination::Error code = Coordination::Error::ZOK;
     Poco::Event event;
@@ -385,19 +385,19 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
         event.set();
     };
 
-    impl->exists(path, callback, watch_callback);
+    impl->exists(path, callback);
     event.wait();
     return code;
 }
 
-bool ZooKeeper::exists(const std::string & path, Coordination::Stat * stat, const EventPtr & watch)
+bool ZooKeeper::exists(const std::string & path, Coordination::Stat * stat)
 {
-    return existsWatch(path, stat, callbackForEvent(watch));
+    return existsWatch(path, stat);
 }
 
-bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
+bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat)
 {
-    Coordination::Error code = existsImpl(path, stat, watch_callback);
+    Coordination::Error code = existsImpl(path, stat);
 
     if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
         throw KeeperException(code, path);
@@ -669,10 +669,13 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         }
     };
 
+    std::string get_path_value;
     while (!condition || !condition())
     {
         /// NOTE: if the node doesn't exist, the watch will leak.
-        impl->exists(path, callback, watch);
+        /// FIX the above issue.
+        tryGetWatch(path, get_path_value, nullptr, watch);
+
         if (!condition)
             state->event.wait();
         else if (!state->event.tryWait(1000))
@@ -774,7 +777,7 @@ std::future<Coordination::ExistsResponse> ZooKeeper::asyncExists(const std::stri
             promise->set_value(response);
     };
 
-    impl->exists(path, std::move(callback), {});
+    impl->exists(path, std::move(callback));
     return future;
 }
 

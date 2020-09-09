@@ -119,8 +119,8 @@ public:
     /// * The node has children.
     Coordination::Error tryRemove(const std::string & path, int32_t version = -1);
 
-    bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
-    bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+    bool exists(const std::string & path, Coordination::Stat * stat = nullptr);
+    bool existsWatch(const std::string & path, Coordination::Stat * stat);
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
@@ -258,7 +258,7 @@ private:
     Coordination::Error getChildrenImpl(
         const std::string & path, Strings & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
     Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
-    Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
+    Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_);
 
     std::unique_ptr<Coordination::IKeeper> impl;
 

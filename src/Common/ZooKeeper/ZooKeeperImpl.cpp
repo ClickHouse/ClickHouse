@@ -1535,8 +1535,7 @@ void ZooKeeper::remove(
 
 void ZooKeeper::exists(
     const String & path,
-    ExistsCallback callback,
-    WatchCallback watch)
+    ExistsCallback callback)
 {
     ZooKeeperExistsRequest request;
     request.path = path;
@@ -1544,7 +1543,6 @@ void ZooKeeper::exists(
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperExistsRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ExistsResponse &>(response)); };
-    request_info.watch = watch;
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
