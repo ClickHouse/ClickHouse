@@ -27,11 +27,13 @@ constexpr T abs(T value) noexcept
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+namespace
+{
 
 template <typename A, typename B>
 struct LCMImpl
@@ -77,6 +79,8 @@ struct LCMImpl
 
 struct NameLCM { static constexpr auto name = "lcm"; };
 using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM, false>;
+
+}
 
 void registerFunctionLCM(FunctionFactory & factory)
 {
