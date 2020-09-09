@@ -35,7 +35,6 @@ set (SRCS
     AST/UseQuery.cpp
     ClickHouseLexer.cpp
     ClickHouseParser.cpp
-    ClickHouseParserBaseVisitor.cpp
     ClickHouseParserVisitor.cpp
     LexerErrorListener.cpp
     parseQuery.cpp

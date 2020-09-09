@@ -127,3 +127,8 @@ website/package-lock.json
 
 # ANTLR extension cache
 .antlr
+
+# ANTLR generated files
+/src/Parsers/New/*.interp
+/src/Parsers/New/*.tokens
+/src/Parsers/New/ClickHouseParserBaseVisitor.*
