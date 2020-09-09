@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int UNKNOWN_TYPE;
 }
 
 CassandraBlockInputStream::CassandraBlockInputStream(
@@ -140,6 +141,8 @@ void CassandraBlockInputStream::insertValue(IColumn & column, ValueType type, co
             assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(uuid_str.data(), uuid_str.size()));
             break;
         }
+        default:
+            throw Exception("Unknown type : " + std::to_string(static_cast<int>(type)), ErrorCodes::UNKNOWN_TYPE);
     }
 }
 
@@ -252,6 +255,8 @@ void CassandraBlockInputStream::assertTypes(const CassResultPtr & result)
                 expected = CASS_VALUE_TYPE_UUID;
                 expected_text = "uuid";
                 break;
+            default:
+                throw Exception("Unknown type : " + std::to_string(static_cast<int>(description.types[i].first)), ErrorCodes::UNKNOWN_TYPE);
         }
 
         CassValueType got = cass_result_column_type(result, i);

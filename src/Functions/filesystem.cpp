@@ -7,6 +7,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct FilesystemAvailable
 {
@@ -57,6 +59,7 @@ private:
     std::filesystem::space_info spaceinfo;
 };
 
+}
 
 void registerFunctionFilesystem(FunctionFactory & factory)
 {

@@ -35,6 +35,13 @@ ASTPtr ICompressionCodec::getFullCodecDesc() const
     return result;
 }
 
+UInt64 ICompressionCodec::getHash() const
+{
+    SipHash hash;
+    updateHash(hash);
+    return hash.get64();
+}
+
 UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const
 {
     assert(source != nullptr && dest != nullptr);

@@ -5,6 +5,7 @@
 #include <Compression/CompressionInfo.h>
 #include <Core/Types.h>
 #include <Parsers/IAST.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -35,6 +36,10 @@ public:
     /// Codec description with "CODEC" prefix, for example "CODEC(ZSTD(2))" or
     /// "CODEC(LZ4,LZ4HC(5))"
     ASTPtr getFullCodecDesc() const;
+
+    /// Hash, that depends on codec ast and optional parameters like data type
+    virtual void updateHash(SipHash & hash) const = 0;
+    UInt64 getHash() const;
 
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
