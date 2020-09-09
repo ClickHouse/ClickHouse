@@ -4,6 +4,8 @@
 #include <ctime>
 #include <vector>
 #include <functional>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -40,11 +42,12 @@ public:
         /// Opaque pointer to avoid dependencies (it is not possible to do forward declaration of typedef).
         const void * data;
 
-        /// Minimal time, when we need to delete some data from this part.
-        time_t min_ttl;
+        /// Information about different TTLs for part. Can be used by
+        /// TTLSelector to assign merges with TTL.
+        MergeTreeDataPartTTLInfos ttl_infos;
 
-        /// Maximum time, when we will need to drop this part altogether because all rows in it are expired.
-        time_t max_ttl;
+        /// Part compression codec definition.
+        ASTPtr compression_codec_desc;
     };
 
     /// Parts are belong to partitions. Only parts within same partition could be merged.

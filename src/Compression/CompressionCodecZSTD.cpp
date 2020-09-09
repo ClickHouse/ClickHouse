@@ -32,6 +32,11 @@ ASTPtr CompressionCodecZSTD::getCodecDesc() const
     return makeASTFunction("ZSTD", literal);
 }
 
+void CompressionCodecZSTD::updateHash(SipHash & hash) const
+{
+    getCodecDesc()->updateTreeHash(hash);
+}
+
 UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     return ZSTD_compressBound(uncompressed_size);
