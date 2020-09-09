@@ -547,6 +547,9 @@ void ColumnString::getPermutationWithCollation(const Collator & collator, bool r
 
 void ColumnString::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
 {
+    if (equal_ranges.empty())
+        return;
+
     if (limit >= size() || limit >= equal_ranges.back().second)
         limit = 0;
 
