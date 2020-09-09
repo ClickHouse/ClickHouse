@@ -214,3 +214,8 @@ def test_write_gzip_storage(started_cluster):
     node1.query("insert into GZIPHDFSStorage values (1, 'Mark', 72.53)")
     assert hdfs_api.read_gzip_data("/gzip_storage") == "1\tMark\t72.53\n"
     assert node1.query("select * from GZIPHDFSStorage") == "1\tMark\t72.53\n"
+
+if __name__ == '__main__':
+    cluster.start()
+    raw_input("Cluster created, press any key to destroy...")
+    cluster.shutdown()

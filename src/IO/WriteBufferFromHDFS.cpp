@@ -23,12 +23,12 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 {
     std::string hdfs_uri;
     hdfsFile fout;
-    HDFSBuilderPtr builder;
+    HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    explicit WriteBufferFromHDFSImpl(const std::string & hdfs_name_)
+    explicit WriteBufferFromHDFSImpl(const std::string & hdfs_name_, const Context & context)
         : hdfs_uri(hdfs_name_)
-        , builder(createHDFSBuilder(hdfs_uri))
+        , builder(createHDFSBuilder(hdfs_uri, context))
         , fs(createHDFSFS(builder.get()))
     {
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
@@ -72,9 +72,9 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     }
 };
 
-WriteBufferFromHDFS::WriteBufferFromHDFS(const std::string & hdfs_name_, size_t buf_size)
+WriteBufferFromHDFS::WriteBufferFromHDFS(const std::string & hdfs_name_, const Context & context, size_t buf_size)
     : BufferWithOwnMemory<WriteBuffer>(buf_size)
-    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_))
+    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, context))
 {
 }
 
