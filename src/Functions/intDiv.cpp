@@ -15,6 +15,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_DIVISION;
 }
 
+namespace
+{
+
 /// Optimizations for integer division by a constant.
 
 template <typename A, typename B>
@@ -82,6 +85,8 @@ struct DivideIntegralByConstantImpl
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
   * Can be expanded to all possible combinations, but more code is needed.
   */
+
+}
 
 template <> struct BinaryOperationImpl<UInt64, UInt8, DivideIntegralImpl<UInt64, UInt8>> : DivideIntegralByConstantImpl<UInt64, UInt8> {};
 template <> struct BinaryOperationImpl<UInt64, UInt16, DivideIntegralImpl<UInt64, UInt16>> : DivideIntegralByConstantImpl<UInt64, UInt16> {};
