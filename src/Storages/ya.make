@@ -7,6 +7,8 @@ PEERDIR(
     contrib/libs/poco/MongoDB
 )
 
+CFLAGS(-g0)
+
 SRCS(
     AlterCommands.cpp
     ColumnDefault.cpp
@@ -84,6 +86,7 @@ SRCS(
     MergeTree/MergeTreeThreadSelectBlockInputProcessor.cpp
     MergeTree/MergeTreeWhereOptimizer.cpp
     MergeTree/MergeTreeWriteAheadLog.cpp
+    MergeTree/MergeType.cpp
     MergeTree/registerStorageMergeTree.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp

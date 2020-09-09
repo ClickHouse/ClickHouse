@@ -646,6 +646,11 @@ public:
     /// TTL rule.
     bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
 
+    /// Get count of total merges with TTL in MergeList (system.merges) for all
+    /// tables (not only current table).
+    /// Method is cheap and doesn't require any locks.
+    size_t getTotalMergesWithTTLInMergeList() const;
+
     using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
     WriteAheadLogPtr getWriteAheadLog();
 

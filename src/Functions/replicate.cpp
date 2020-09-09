@@ -7,12 +7,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
+
+namespace
+{
 
 /** Creates an array, multiplying the column (the first argument) by the number of elements in the array (the second argument).
   */
@@ -64,6 +66,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionReplicate(FunctionFactory & factory)
 {

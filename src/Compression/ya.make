@@ -12,6 +12,8 @@ PEERDIR(
     contrib/libs/zstd
 )
 
+CFLAGS(-g0)
+
 SRCS(
     CachedCompressedReadBuffer.cpp
     CompressedReadBufferBase.cpp
