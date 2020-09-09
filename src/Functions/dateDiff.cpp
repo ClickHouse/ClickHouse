@@ -28,6 +28,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 /** dateDiff('unit', t1, t2, [timezone])
   * t1 and t2 can be Date or DateTime
   *
@@ -211,6 +214,8 @@ private:
              - Int64(Transform::execute(x, timezone_x));
     }
 };
+
+}
 
 void registerFunctionDateDiff(FunctionFactory & factory)
 {

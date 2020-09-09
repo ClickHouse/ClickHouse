@@ -17,12 +17,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 template <typename ToDataType, typename Name>
 class FunctionReinterpretStringAs : public IFunction
@@ -135,6 +137,7 @@ using FunctionReinterpretAsDate = FunctionReinterpretStringAs<DataTypeDate,     
 using FunctionReinterpretAsDateTime = FunctionReinterpretStringAs<DataTypeDateTime, NameReinterpretAsDateTime>;
 using FunctionReinterpretAsUUID = FunctionReinterpretStringAs<DataTypeUUID, NameReinterpretAsUUID>;
 
+}
 
 void registerFunctionsReinterpretStringAs(FunctionFactory & factory)
 {
@@ -154,5 +157,3 @@ void registerFunctionsReinterpretStringAs(FunctionFactory & factory)
 }
 
 }
-
-
