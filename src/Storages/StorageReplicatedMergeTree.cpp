@@ -1331,6 +1331,16 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         return false;
     }
 
+    if (entry.merge_type == MergeType::TTL_RECOMPRESS &&
+        (time(nullptr) - entry.create_time) <= storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds() &&
+        entry.source_replica != replica_name)
+    {
+        LOG_INFO(log, "Will try to fetch part {} until '{}' because this part assigned to recompression merge. "
+            "Source replica {} will try to merge this part first", entry.new_part_name,
+            LocalDateTime(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
+        return false;
+    }
+
     DataPartsVector parts;
     bool have_all_parts = true;
     for (const String & name : entry.source_parts)
@@ -2551,6 +2561,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         {
             UInt64 max_source_parts_size_for_merge = merger_mutator.getMaxSourcePartsSizeForMerge(
                 storage_settings_ptr->max_replicated_merges_in_queue, merges_and_mutations_sum);
+
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
             bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < storage_settings_ptr->max_replicated_merges_with_ttl_in_queue &&
@@ -2677,6 +2688,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
     entry.new_part_type = merged_part_type;
+    entry.merge_type = merge_type;
     entry.deduplicate = deduplicate;
     entry.merge_type = merge_type;
     entry.create_time = time(nullptr);
