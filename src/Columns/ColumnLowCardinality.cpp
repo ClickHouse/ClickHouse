@@ -372,7 +372,7 @@ void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan
 
     if (limit)
     {
-        const auto& [first, last] = equal_ranges.back();
+        const auto & [first, last] = equal_ranges.back();
 
         if (limit < first || limit >= last)
             return;

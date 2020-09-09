@@ -382,7 +382,7 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
         }
     }
 
-    auto & column_unique = static_cast<const IColumnUnique &>(rhs);
+    const auto & column_unique = static_cast<const IColumnUnique &>(rhs);
     return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
 }
 
