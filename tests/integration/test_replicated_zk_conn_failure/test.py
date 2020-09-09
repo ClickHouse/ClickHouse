@@ -12,11 +12,11 @@ from helpers.network import PartitionManager
 # 3. Try creating the table and there would be a Poco:Exception.
 # 4. Try creating the table again and there should not be any error
 # that indicates that the Directory for table already exists.
-
-
+# 5. Final step is to restore ZooKeeper connection and verify that
+# the table creation and queries work.
 def test_replicated_zk_conn_failure():
     cluster = ClickHouseCluster(__file__)
-    node1 = cluster.add_instance('node1', main_configs=["configs/remote_servers.xml"], with_zookeeper=True)
+    node1 = cluster.add_instance('node1', with_zookeeper=True)
     try:
         cluster.start()
         node1.query("CREATE DATABASE replica;")
@@ -27,7 +27,7 @@ def test_replicated_zk_conn_failure():
         )
         Engine=ReplicatedMergeTree('/clickhouse/tables/replica/test', 'node1')
         PARTITION BY toYYYYMMDD(event_time)
-        ORDER BY id;'''.format(replica=node1.name)
+        ORDER BY id;'''
         with PartitionManager() as pm:
             pm.drop_instance_zk_connections(node1)
             time.sleep(5)
@@ -41,5 +41,10 @@ def test_replicated_zk_conn_failure():
             # Should not expect any errors related to directory already existing
             # and those should have been already cleaned up during the previous retry.
             assert "Directory for table data data/replica/test/ already exists" not in error
+            # restore ZooKeeper connections.
+            pm.restore_instance_zk_connections(node1)
+            # retry create query and query the table created.
+            node1.query(query_create)
+            assert "0\n" in node1.query('''SELECT count() from replica.test FORMAT TSV''')
     finally:
         cluster.shutdown()
