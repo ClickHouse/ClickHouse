@@ -5,11 +5,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+namespace
+{
 
 template <typename A, typename B>
 struct GCDImpl
@@ -39,6 +41,8 @@ struct GCDImpl
 
 struct NameGCD { static constexpr auto name = "gcd"; };
 using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD, false>;
+
+}
 
 void registerFunctionGCD(FunctionFactory & factory)
 {
