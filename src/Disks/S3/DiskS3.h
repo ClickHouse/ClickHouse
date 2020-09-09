@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Disks/DiskFactory.h"
-#include "Disks/Executor.h"
 #include "ProxyConfiguration.h"
 
 #include <aws/s3/S3Client.h>
@@ -10,7 +9,6 @@
 
 namespace DB
 {
-
 /**
  * Storage for persisting data in S3 and metadata on the local disk.
  * Files are represented by file in local filesystem (clickhouse_root/disks/disk_name/path/to/file)
@@ -101,8 +99,6 @@ public:
     void setReadOnly(const String & path) override;
 
     const String getType() const override { return "s3"; }
-
-    void shutdown() override;
 
 private:
     bool tryReserve(UInt64 bytes);

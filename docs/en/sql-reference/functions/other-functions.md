@@ -917,48 +917,6 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 └───────────────────────────────────────────────────────┘
 ```
 
-## defaultValueOfTypeName {#defaultvalueoftypename}
-
-Outputs the default value for given type name.
-
-Does not include default values for custom columns set by the user.
-
-``` sql
-defaultValueOfTypeName(type)
-```
-
-**Parameters:**
-
--   `type` — A string representing a type name.
-
-**Returned values**
-
--   `0` for numbers.
--   Empty string for strings.
--   `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
-
-**Example**
-
-``` sql
-SELECT defaultValueOfTypeName('Int8')
-```
-
-``` text
-┌─defaultValueOfTypeName('Int8')─┐
-│                              0 │
-└────────────────────────────────┘
-```
-
-``` sql
-SELECT defaultValueOfTypeName('Nullable(Int8)')
-```
-
-``` text
-┌─defaultValueOfTypeName('Nullable(Int8)')─┐
-│                                     ᴺᵁᴸᴸ │
-└──────────────────────────────────────────┘
-```
-
 ## replicate {#other-functions-replicate}
 
 Creates an array with a single value.
@@ -1455,13 +1413,13 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 Query:
 
-```sql
+```sql 
 SELECT randomStringUTF8(13)
 ```
 
 Result:
 
-```text
+```text 
 ┌─randomStringUTF8(13)─┐
 │ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛   │
 └──────────────────────┘

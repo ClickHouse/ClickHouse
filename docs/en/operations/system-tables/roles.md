@@ -8,8 +8,4 @@ Columns:
 - `id` ([UUID](../../sql-reference/data-types/uuid.md)) — Role ID.
 - `storage` ([String](../../sql-reference/data-types/string.md)) — Path to the storage of roles. Configured in the `access_control_path` parameter.
 
-## See Also {#see-also}
-
--   [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)
-
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/roles) <!--hide-->

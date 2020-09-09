@@ -9,7 +9,7 @@ from helpers.test_tools import assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/remote_servers.xml'])
+node = cluster.add_instance('node', config_dir="configs", main_configs=['configs/remote_servers.xml'])
 
 cluster_param = pytest.mark.parametrize("cluster", [
     ('test_cluster'),

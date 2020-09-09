@@ -31,7 +31,6 @@ struct QueryLogElement
 
     time_t event_time{};
     time_t query_start_time{};
-    UInt64 query_start_time_microseconds{};
     UInt64 query_duration_ms{};
 
     /// The data fetched from DB to execute the query

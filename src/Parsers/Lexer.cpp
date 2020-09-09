@@ -146,20 +146,13 @@ Token Lexer::nextTokenImpl()
                 }
             }
 
-            /// Try to parse it to a identifier(1identifier_name), otherwise it return ErrorWrongNumber
+            /// word character cannot go just after number (SELECT 123FROM)
             if (pos < end && isWordCharASCII(*pos))
             {
                 ++pos;
                 while (pos < end && isWordCharASCII(*pos))
                     ++pos;
-
-                for (const char * iterator = token_begin; iterator < pos; ++iterator)
-                {
-                    if (!isWordCharASCII(*iterator) && *iterator != '$')
-                        return Token(TokenType::ErrorWrongNumber, token_begin, pos);
-                }
-
-                return Token(TokenType::BareWord, token_begin, pos);
+                return Token(TokenType::ErrorWrongNumber, token_begin, pos);
             }
 
             return Token(TokenType::Number, token_begin, pos);
@@ -320,10 +313,10 @@ Token Lexer::nextTokenImpl()
         }
 
         default:
-            if (isWordCharASCII(*pos) || *pos == '$')
+            if (isWordCharASCII(*pos))
             {
                 ++pos;
-                while (pos < end && (isWordCharASCII(*pos) || *pos == '$'))
+                while (pos < end && isWordCharASCII(*pos))
                     ++pos;
                 return Token(TokenType::BareWord, token_begin, pos);
             }

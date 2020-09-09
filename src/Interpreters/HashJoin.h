@@ -88,7 +88,7 @@ using MappedAsof =       WithFlags<AsofRowRefs, false>;
   * - CROSS
   *
   * ALL means usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
-  * ANY uses one line per unique key from right table. For LEFT JOIN it would be any row (with needed joined key) from the right table,
+  * ANY uses one line per unique key from right talbe. For LEFT JOIN it would be any row (with needed joined key) from the right table,
   * for RIGHT JOIN it would be any row from the left table and for INNER one it would be any row from right and any row from left.
   * SEMI JOIN filter left table by keys that are present in right table for LEFT JOIN, and filter right table by keys from left table
   * for RIGHT JOIN. In other words SEMI JOIN returns only rows which joining keys present in another table.
@@ -245,7 +245,7 @@ public:
         std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;
         std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_fixed_string;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
-        std::unique_ptr<HashMap<DummyUInt256, Mapped, UInt256HashCRC32>>                keys256;
+        std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>                     keys256;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
 
         void create(Type which)

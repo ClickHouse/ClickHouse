@@ -7,8 +7,6 @@
 #include <Compression/LZ4_decompress_faster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <IO/WriteHelpers.h>
 
 #pragma GCC diagnostic ignored "-Wold-style-cast"
@@ -30,14 +28,9 @@ uint8_t CompressionCodecLZ4::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::LZ4);
 }
 
-ASTPtr CompressionCodecLZ4::getCodecDesc() const
+String CompressionCodecLZ4::getCodecDesc() const
 {
-    return std::make_shared<ASTIdentifier>("LZ4");
-}
-
-void CompressionCodecLZ4::updateHash(SipHash & hash) const
-{
-    getCodecDesc()->updateTreeHash(hash);
+    return "LZ4";
 }
 
 UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -63,10 +56,10 @@ void registerCodecLZ4(CompressionCodecFactory & factory)
     });
 }
 
-ASTPtr CompressionCodecLZ4HC::getCodecDesc() const
+
+String CompressionCodecLZ4HC::getCodecDesc() const
 {
-    auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(level));
-    return makeASTFunction("LZ4HC", literal);
+    return "LZ4HC(" + toString(level) + ")";
 }
 
 UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_size, char * dest) const

@@ -4,7 +4,6 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Dictionaries/IDictionary.h>
-#include <Common/Config/ConfigReloader.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
@@ -14,7 +13,6 @@
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <cstring>
-#include <filesystem>
 
 
 namespace DB
@@ -367,24 +365,18 @@ namespace
 
 
     SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
-                                                     const String & path_to_constraints,
-                                                     const std::function<void(const std::string_view &)> & check_setting_name_function)
+                                                     const String & path_to_constraints)
     {
         SettingsProfileElements profile_elements;
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(path_to_constraints, keys);
-
         for (const String & setting_name : keys)
         {
-            if (check_setting_name_function)
-                check_setting_name_function(setting_name);
-
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
             Poco::Util::AbstractConfiguration::Keys constraint_types;
             String path_to_name = path_to_constraints + "." + setting_name;
             config.keys(path_to_name, constraint_types);
-
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
@@ -398,14 +390,12 @@ namespace
             }
             profile_elements.push_back(std::move(profile_element));
         }
-
         return profile_elements;
     }
 
     std::shared_ptr<SettingsProfile> parseSettingsProfile(
         const Poco::Util::AbstractConfiguration & config,
-        const String & profile_name,
-        const std::function<void(const std::string_view &)> & check_setting_name_function)
+        const String & profile_name)
     {
         auto profile = std::make_shared<SettingsProfile>();
         profile->setName(profile_name);
@@ -427,14 +417,11 @@ namespace
 
             if (key == "constraints" || key.starts_with("constraints["))
             {
-                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, check_setting_name_function));
+                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key));
                 continue;
             }
 
             const auto & setting_name = key;
-            if (check_setting_name_function)
-                check_setting_name_function(setting_name);
-
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
             profile_element.value = Settings::stringToValueUtil(setting_name, config.getString(profile_config + "." + key));
@@ -445,10 +432,7 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseSettingsProfiles(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::function<void(const std::string_view &)> & check_setting_name_function,
-        Poco::Logger * log)
+    std::vector<AccessEntityPtr> parseSettingsProfiles(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
     {
         std::vector<AccessEntityPtr> profiles;
         Poco::Util::AbstractConfiguration::Keys profile_names;
@@ -457,7 +441,7 @@ namespace
         {
             try
             {
-                profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
+                profiles.push_back(parseSettingsProfile(config, profile_name));
             }
             catch (...)
             {
@@ -469,35 +453,12 @@ namespace
 }
 
 
-UsersConfigAccessStorage::UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_)
-    : UsersConfigAccessStorage(STORAGE_TYPE, check_setting_name_function_)
+UsersConfigAccessStorage::UsersConfigAccessStorage() : IAccessStorage("users.xml")
 {
 }
 
-UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, const CheckSettingNameFunction & check_setting_name_function_)
-    : IAccessStorage(storage_name_), check_setting_name_function(check_setting_name_function_)
-{
-}
 
-UsersConfigAccessStorage::~UsersConfigAccessStorage() = default;
-
-
-String UsersConfigAccessStorage::getStoragePath() const
-{
-    std::lock_guard lock{load_mutex};
-    return path;
-}
-
-
-void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    std::lock_guard lock{load_mutex};
-    path.clear();
-    config_reloader.reset();
-    parseFromConfig(config);
-}
-
-void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfiguration & config)
+void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
     for (const auto & entity : parseUsers(config, getLogger()))
@@ -506,47 +467,11 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
         all_entities.emplace_back(generateID(*entity), entity);
     for (const auto & entity : parseRowPolicies(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function, getLogger()))
+    for (const auto & entity : parseSettingsProfiles(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
     memory_storage.setAll(all_entities);
 }
 
-void UsersConfigAccessStorage::load(
-    const String & users_config_path,
-    const String & include_from_path,
-    const String & preprocessed_dir,
-    const zkutil::GetZooKeeper & get_zookeeper_function)
-{
-    std::lock_guard lock{load_mutex};
-    path = std::filesystem::path{users_config_path}.lexically_normal();
-    config_reloader.reset();
-    config_reloader = std::make_unique<ConfigReloader>(
-        users_config_path,
-        include_from_path,
-        preprocessed_dir,
-        zkutil::ZooKeeperNodeCache(get_zookeeper_function),
-        std::make_shared<Poco::Event>(),
-        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config)
-        {
-            parseFromConfig(*new_config);
-            Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
-        },
-        /* already_loaded = */ false);
-}
-
-void UsersConfigAccessStorage::reload()
-{
-    std::lock_guard lock{load_mutex};
-    if (config_reloader)
-        config_reloader->reload();
-}
-
-void UsersConfigAccessStorage::startPeriodicReloading()
-{
-    std::lock_guard lock{load_mutex};
-    if (config_reloader)
-        config_reloader->start();
-}
 
 std::optional<UUID> UsersConfigAccessStorage::findImpl(EntityType type, const String & name) const
 {

@@ -25,7 +25,7 @@ namespace DB
 {
 
 /** Implements LIVE VIEW table WATCH EVENTS input stream.
- *  Keeps stream alive by outputting blocks with no rows
+ *  Keeps stream alive by outputing blocks with no rows
  *  based on period specified by the heartbeat interval.
  */
 class LiveViewEventsBlockInputStream : public IBlockInputStream
@@ -161,7 +161,7 @@ protected:
                 if (!active)
                     return { Block(), false };
                 /// If we are done iterating over our blocks
-                /// and there are new blocks available then get them
+                /// and there are new blocks availble then get them
                 if (blocks.get() != (*blocks_ptr).get())
                 {
                     blocks = (*blocks_ptr);

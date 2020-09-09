@@ -75,7 +75,7 @@ private:
     template <typename T>
     inline static void writeBitmask(T x, WriteBuffer & out)
     {
-        using UnsignedT = make_unsigned_t<T>;
+        using UnsignedT = std::make_unsigned_t<T>;
         UnsignedT u_x = x;
 
         bool first = true;

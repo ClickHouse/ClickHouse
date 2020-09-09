@@ -30,8 +30,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
 
 /** convertCharset(s, from, to)
   *
@@ -212,7 +210,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionConvertCharset(FunctionFactory & factory)
 {

@@ -11,7 +11,7 @@ logging.getLogger().addHandler(logging.StreamHandler())
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", main_configs=["configs/minio.xml", "configs/ssl.xml", "configs/config.d/log_conf.xml"], with_minio=True)
+        cluster.add_instance("node", config_dir="configs", with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")

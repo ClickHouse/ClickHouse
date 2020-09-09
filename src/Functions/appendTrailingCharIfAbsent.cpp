@@ -17,8 +17,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
 
 class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
@@ -110,8 +108,6 @@ private:
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 };
-
-}
 
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory & factory)
 {

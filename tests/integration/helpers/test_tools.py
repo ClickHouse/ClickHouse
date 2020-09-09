@@ -11,9 +11,6 @@ class TSV:
             raw_lines = contents.splitlines(True)
         elif isinstance(contents, list):
             raw_lines = ['\t'.join(map(str, l)) if isinstance(l, list) else str(l) for l in contents]
-        elif isinstance(contents, TSV):
-            self.lines = contents.lines
-            return
         else:
             raise TypeError("contents must be either file or string or list, actual type: " + type(contents).__name__)
         self.lines = [l.strip() for l in raw_lines if l.strip()]

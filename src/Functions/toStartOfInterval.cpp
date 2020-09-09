@@ -143,6 +143,7 @@ namespace
             return time_zone.toStartOfSecondInterval(t, seconds);
         }
     };
+}
 
 
 class FunctionToStartOfInterval : public IFunction
@@ -339,7 +340,6 @@ private:
     }
 };
 
-}
 
 void registerFunctionToStartOfInterval(FunctionFactory & factory)
 {

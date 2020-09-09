@@ -37,7 +37,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -61,7 +61,7 @@ public:
         bool deduplicate,
         const Context & context) override;
 
-    Pipe alterPartition(
+    Pipes alterPartition(
         const ASTPtr & query,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & commands,

@@ -8,8 +8,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function isNull which returns true if a value
 /// is null, false otherwise.
@@ -55,7 +53,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionIsNull(FunctionFactory & factory)
 {

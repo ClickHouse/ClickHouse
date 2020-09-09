@@ -12,8 +12,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function coalesce which takes a set of arguments and
 /// returns the value of the leftmost non-null argument. If no such value is
@@ -177,7 +175,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionCoalesce(FunctionFactory & factory)
 {

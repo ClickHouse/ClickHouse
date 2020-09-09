@@ -402,11 +402,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
   *       </mysql>
   *   </source>
   */
-void buildSourceConfiguration(
-    AutoPtr<Document> doc,
-    AutoPtr<Element> root,
-    const ASTFunctionWithKeyValueArguments * source,
-    const ASTDictionarySettings * settings)
+void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTFunctionWithKeyValueArguments * source, const ASTDictionarySettings * settings)
 {
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
@@ -502,9 +498,7 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
 
     bool complex = DictionaryFactory::instance().isComplex(dictionary_layout->layout_type);
 
-    auto all_attr_names_and_types = buildDictionaryAttributesConfiguration(
-        xml_document, structure_element, query.dictionary_attributes_list, pk_attrs);
-
+    auto all_attr_names_and_types = buildDictionaryAttributesConfiguration(xml_document, structure_element, query.dictionary_attributes_list, pk_attrs);
     checkPrimaryKey(all_attr_names_and_types, pk_attrs);
 
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);

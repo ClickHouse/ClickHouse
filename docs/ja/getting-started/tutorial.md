@@ -1,37 +1,35 @@
 ---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 12
-toc_title: "チュートリアル"
+toc_title: "\u30C1\u30E5\u30FC\u30C8\u30EA"
 ---
 
-# ClickHouse チュートリアル {#clickhouse-tutorial}
+# ClickHouseチュートリアル {#clickhouse-tutorial}
 
-## このチュートリアルに期待されることは？ {#what-to-expect-from-this-tutorial}
+## このチュートリアルから何を期待する？ {#what-to-expect-from-this-tutorial}
 
-このチュートリアルでは、単純なClickHouseクラスターを設定する方法について説明します。それは小規模ですが、耐障害性とスケーラブルになります。
-次に、データセット例のいずれかを使用してデータを入力し、いくつかのデモクエリを実行します。
+このチュートリアルでは、単純なClickHouseクラスターを設定する方法について説明します。 それは小さいが、耐障害性とスケーラブルになります。 次に、例のデータセットのいずれかを使用してデータを入力し、いくつかのデモクエリを実行します。
 
 ## 単一ノードの設定 {#single-node-setup}
 
-分散環境は複雑なので、まずは単一のサーバーまたは仮想マシンにClickHouseを展開することから始めます。
-ClickHouseは通常、[deb](../getting-started/install.md#install-from-deb-packages) or [rpm](../getting-started/install.md#from-rpm-packages) パッケージからインストールしますが、サポートされていないOSのために [代替案](install.md#from-docker-image) があります。
+分散環境の複雑さを先送りするために、単一のサーバーまたは仮想マシンにClickHouseを展開することから始めます。 ClickHouseは通常、 [deb](install.md#install-from-deb-packages) または [rpm](install.md#from-rpm-packages) パッケージが、あります [代替案](install.md#from-docker-image) の営業システムな支援します。
 
-例えば、`deb` パッケージを選択して実行する場合:
+たとえば、次のように選択します `deb` パッケージと実行:
 
 ``` bash
 {% include 'install/deb.sh' %}
 ```
 
-インストールされたパッケージの内容:
+インストールされたパッケージには何がありますか:
 
--   `clickhouse-client` パッケージには [clickhouse-client](../interfaces/cli.md) アプリケーション、インタラクティブな ClickHouse コンソールクライアントが含まれています。
--   `clickhouse-common` パッケージには、ClickHouse実行可能ファイルが含まれています。
--   `clickhouse-server` パッケージには、ClickHouseをサーバとして実行するための設定ファイルが含まれています。
+-   `clickhouse-client` パッケージ [clickhouse-クライアント](../interfaces/cli.md) 適用、相互ClickHouseコンソール顧客。
+-   `clickhouse-common` パッケージが含まれてClickHouse実行可能ファイルです。
+-   `clickhouse-server` パッケージを含む設定ファイルを実行ClickHouseしています。
 
-サーバ設定ファイルは `/etc/clickhouse-server/` にあります。先に進む前に、`config.xml` の `<path>` 要素に注目してください。
-パスはデータを保存する場所を決めるので、ディスク容量の大きいボリュームに配置する必要があります。デフォルト値は `/var/lib/clickhouse/` です。
-設定を調整したい場合、`config.xml` ファイルを直接編集するのは不便です。`config.xml` の要素をオーバーライドするために推奨される方法は、`config.xml` の「パッチ」として機能する [config.d ディレクトリ内のファイル](../operations/configuration-files.md) を作成することです。
+サーバー設定ファイルは `/etc/clickhouse-server/`. 更に行く前に、気づいて下さい `<path>` の要素 `config.xml`. Pathはデータストレージの場所を決定するため、ディスク容量の大きいボリューム上に配置する必要があります。 `/var/lib/clickhouse/`. 設定を調整したい場合は、直接編集するのは便利ではありません `config.xml` ファイルで、このように書き換え、将来のパッケージです。 のオーバーライドは、config要素の作成 [config内のファイル。dディレクトリ](../operations/configuration-files.md) として役立つ “patches” 設定する。xml。
 
-お気づきかもしれませんが、`clickhouse-server` は パッケージインストール後に自動的に起動されたり、アップデート後に自動的に再起動されることはありません。サーバの起動方法は init システムに依存しており、大抵は以下のようになっています:
+お気づきの通り, `clickhouse-server` が開始後、自動的にパッケージ設置できます。 更新後も自動的に再起動されることはありません。 サーバーの起動方法はinitシステムによって異なります。:
 
 ``` bash
 sudo service clickhouse-server start
@@ -43,15 +41,15 @@ sudo service clickhouse-server start
 sudo /etc/init.d/clickhouse-server start
 ```
 
-サーバログのデフォルトの場所は `/var/log/clickhouse-server/` です。サーバが クライアントからの接続の準備が整うと、`Ready for connections` メッセージをログに出力します。
+サーバーログの既定の場所 `/var/log/clickhouse-server/`. サーバーは、クライアント接続を処理する準備ができています。 `Ready for connections` メッセージ
 
-一度 `clickhouse-server` を起動して実行すると、`clickhouse-client` を使ってサーバに接続し、`SELECT "Hello, world!";` のようなテストクエリを実行することができます。
+一度 `clickhouse-server` 稼働中であれば `clickhouse-client` サーバーに接続し、次のようなテストクエリを実行するには `SELECT "Hello, world!";`.
 
 <details markdown="1">
 
-<summary>Clickhouse-クライアントのクイックtips</summary>
+<summary>Clickhouse-クライアントのクイックヒント</summary>
 
-インタラクティブモード:
+対話モード:
 
 ``` bash
 clickhouse-client
@@ -73,7 +71,7 @@ echo 'SELECT 1' | clickhouse-client
 clickhouse-client <<< 'SELECT 1'
 ```
 
-指定したフォーマットでファイルからデータを insert する:
+指定した形式でファイルからデータを挿入する:
 
 ``` bash
 clickhouse-client --query='INSERT INTO table VALUES' < data.txt
@@ -82,43 +80,39 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 </details>
 
-## サンプルデータセットのインポート {#import-sample-dataset}
+## インポート {#import-sample-dataset}
 
-ClickHouseサーバーにいくつかのサンプルデータを入れてみましょう。
-このチュートリアルでは、ClickHouseがオープンソースになる以前(詳しくは [歴史について](../introduction/history.md) を参照)に初めて本番用途で使われたサービスである、Yandex.Metricaの匿名化されたデータを使用します。
+今度は、ClickHouseサーバーにサンプルデータを入力します。 このチュートリアルでは、Yandexの匿名化されたデータを使用します。Metrica、それがオープンソースになる前に、本番の方法でClickHouseを実行する最初のサービス（その詳細については [歴史セクション](../introduction/history.md)). そこには [Yandexのをインポートする複数の方法。メトリカデータセット](example-datasets/metrica.md) そして、チュートリアルのために、私たちは最も現実的なものに行きます。
 
-[Yandex.Metrica データセットをインポートするにはいくつかの方法](../getting-started/example-datasets/metrica.md) がありますが, チュートリアルとして、最もよく使う方法を使用します。
-
-### テーブルデータのダウンロードと展開 {#download-and-extract-table-data}
+### 表データのダウンロードと抽出 {#download-and-extract-table-data}
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
 curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
-展開されたファイルのサイズは約10GBです。
+抽出されたファイルのサイズは約10GBです。
 
 ### テーブルの作成 {#create-tables}
 
-ほとんどのデータベース管理システムのように, ClickHouseは論理的にテーブルを "データベース" にグループ化します。
-`default` データベースがありますが、`tutorial` という名前の新しいものを作成します:
+ほとんどのデータベース管理システムClickHouse論理的にグテーブル “databases”. そこには `default` データベースが、我々は名前の新しいものを作成します `tutorial`:
 
 ``` bash
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-テーブルを作成するための構文はデータベースに比べてはるかに複雑です([参照](../sql-reference/statements/create.md))。通常、`CREATE TABLE` 文は3つのキーを指定しなければなりません。
+テーブルを作成するための構文は、データベースに比べて複雑です(参照 [参照](../sql-reference/statements/create.md). 一般に `CREATE TABLE` 声明を設定するつもの:
 
 1.  作成するテーブルの名前。
-2.  テーブルのスキーマ。つまり、カラムと [データ型](../sql-reference/data-types/index.md) のリスト。
-3.  [テーブルエンジン](../engines/table-engines/index.md) と、このテーブルへのクエリが物理的に実行される方法に関するすべての詳細を決定する設定。
+2.  Table schema, i.e. list of columns and their [データ型](../sql-reference/data-types/index.md).
+3.  [表エンジン](../engines/table-engines/index.md) このテーブルへのクエリが物理的に実行される方法に関するすべての詳細を決定します。
 
-Yandex.Metricaはウェブ解析サービスであり、サンプルデータセットでは機能が網羅されていないため、作成するテーブルは2つしかありません:
+Yandex.Metricaはweb分析サービスであり、サンプルデータセットは完全な機能をカバーしていないため、作成するテーブルは二つしかありません:
 
--   `hits` はサービスの対象となるすべてのウェブサイト上ですべてのユーザが行った各アクションのテーブルです。
--   `visits` は、個々のアクションではなく、あらかじめ構築されたセッションを含むテーブルです。
+-   `hits` とができるテーブルの各行動によるすべてのユーザーはすべてのwebサイトのサービスです。
+-   `visits` はテーブルを含む組み立て済みセッションの代わりに個別に行動します。
 
-これらのテーブルの実際の CREATE TABLE クエリを実行しましょう:
+これらのテーブルの実際のcreate tableクエリを見て実行しましょう:
 
 ``` sql
 CREATE TABLE tutorial.hits_v1
@@ -461,22 +455,22 @@ SAMPLE BY intHash32(UserID)
 SETTINGS index_granularity = 8192
 ```
 
-これらのクエリは、`clickhouse-client` の対話型モード(事前にクエリを指定せずにターミナルで起動するだけです)を使って実行するか、[代替インターフェイス](../interfaces/index.md) で実行できます。
+ドできるようになりました。方のクエリのインタラクティブモードの `clickhouse-client` （事前にクエリを指定せずに端末で起動するだけです）またはいくつか試してみてください [代替インターフェ](../interfaces/index.md) 望むなら
 
-見ての通り、 `hits_v1` は [基本的な MergeTree エンジン](../engines/table-engines/mergetree-family/mergetree.md) を使っており、`visits_v1` は [Collapsing MergeTree](../engines/table-engines/mergetree-family/collapsingmergetree.md) という変種を使っています。
+ご覧のとおり, `hits_v1` を使用して [基本的なMergeTreeエンジン](../engines/table-engines/mergetree-family/mergetree.md) は、 `visits_v1` を使用して [崩壊](../engines/table-engines/mergetree-family/collapsingmergetree.md) バリアント
 
-### データのインポート {#import-data}
+### デー {#import-data}
 
-ClickHouseへのデータのインポートは、他の多くのSQLデータベースのように[INSERT INTO](../sql-reference/statements/insert-into.md)クエリを介して行われます。しかし、データは通常、`VALUES` 句 (これもサポートされています) の代わりに、[サポートされているシリアライズ形式](../interfaces/formats.md) のいずれかで提供されます。
+ClickHouseへのデータのインポートは [INSERT INTO](../sql-reference/statements/insert-into.md) 他の多くのSQLデータベースと同様のクエリ。 ただし、データは通常、次のいずれかで提供されます [対応するシリアル化形式](../interfaces/formats.md) 代わりに `VALUES` 句(これもサポートされています)。
 
-先ほどダウンロードしたファイルはタブ区切り形式になっており、コンソールクライアントから次のようにインポートします:
+ファイルをダウンロード前にタブ区切り形式では下記のように輸入したいお客様のコンソール:
 
 ``` bash
 clickhouse-client --query "INSERT INTO tutorial.hits_v1 FORMAT TSV" --max_insert_block_size=100000 < hits_v1.tsv
 clickhouse-client --query "INSERT INTO tutorial.visits_v1 FORMAT TSV" --max_insert_block_size=100000 < visits_v1.tsv
 ```
 
-ClickHouseには多くの [調整のための設定](../operations/settings/index.md) があり、コンソールクライアントで引数として指定する方法があります。どのような設定が利用可能で、それが何を意味し、デフォルトは何なのかを知る最も簡単な方法は、`system.settings` テーブルにクエリすることです:
+ClickHouseは多くの [調整する設定](../operations/settings/index.md) そして、コンソールクライアントでそれらを指定する一つの方法は、引数を介してです。 `--max_insert_block_size`. どのような設定が利用可能か、それらが何を意味し、デフォルトが何であるかを把握する最も簡単な方法は、 `system.settings` テーブル:
 
 ``` sql
 SELECT name, value, changed, description
@@ -487,19 +481,16 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-必要に応じて、インポート後のテーブルを[OPTIMIZE](../sql-reference/statements/optimize.md)することができます。
-MergeTree-familyのエンジンで設定されているテーブルは、常にバックグラウンドでデータ部分のマージを行い、データストレージを最適化します(あるいは、少なくともそれが意味のあるものかどうかをチェックします)。
-
-以下のクエリは、テーブルエンジンがストレージの最適化を後で行うのではなく、今すぐに行うように強制します:
+必要に応じ [OPTIMIZE](../sql-reference/statements/misc.md#misc_operations-optimize) インポート後のテーブル。 MergeTree-familyのエンジンで構成されているテーブルは、常にバックグラウンドでデータ部分のマージを行い、データストレージを最適化します（または少なくとも理にか これらのクエリのテーブルエンジンな保管の最適化現在の代わりについては後日、:
 
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"
 clickhouse-client --query "OPTIMIZE TABLE tutorial.visits_v1 FINAL"
 ```
 
-これらのクエリは、I/OとCPUに負荷のかかる処理を開始するので、テーブルが継続して新しいデータを受け取る場合には、そのままにしてバックグラウンドでマージを実行させた方が良いでしょう。
+これらのクエリはI/OとCPUを大量に消費する操作を開始するため、テーブルが一貫して新しいデータを受信する場合は、そのままにして、マージをバックグ
 
-これで、テーブルのインポートが成功したかどうかを確認することができます:
+今までチェックできる場合、テーブルの輸入に成功した:
 
 ``` bash
 clickhouse-client --query "SELECT COUNT(*) FROM tutorial.hits_v1"
@@ -528,21 +519,18 @@ FROM tutorial.visits_v1
 WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'yandex.ru')
 ```
 
-## クラスタのデプロイ {#cluster-deployment}
+## クラスター展開 {#cluster-deployment}
 
-ClickHouseクラスタは均質なクラスタ(homogenous cluster)です。セットアップ手順は以下です:
+ClickHouseクラスターは均質なクラスターです。 設定手順:
 
-1.  クラスタのすべてのマシンにClickHouse serverをインストールする
-2.  設定ファイルにクラスタ設定を行う
-3.   各インスタンスにローカルテーブルを作成する
-4.  [分散テーブル](../engines/table-engines/special/distributed.md) を作成する
+1.  イClickHouseサーバーのすべての機械のクラスター
+2.  構成ファイルでのクラスター設定の設定
+3.  各インスタ
+4.  作成 [分散テーブル](../engines/table-engines/special/distributed.md)
 
-[分散テーブル](../engines/table-engines/special/distributed.md) は、
-実際には ClickHouse クラスタのローカルテーブルへの "ビュー "のようなものです。
-分散テーブルからの SELECT クエリは、すべてのクラスタのシャードのリソースを使用して実行されます。
-また、複数のクラスタのための設定を行い、異なるクラスタにビューを提供する複数の分散テーブルを作成することができます。
+[分散テーブル](../engines/table-engines/special/distributed.md) 実際には “view” ClickHouseクラスタのローカルテーブルに。 SELECTクエリから分散型のテーブル実行が持つリソースを活用したすべてのクラスターの破片. を指定しますconfigs複数のクラスターを作成した複数のテーブルのビューを提供する別のクラスター
 
-3つのシャード、各1つのレプリカを持つクラスタの設定例:
+クラスターの設定例:
 
 ``` xml
 <remote_servers>
@@ -569,39 +557,37 @@ ClickHouseクラスタは均質なクラスタ(homogenous cluster)です。セ�
 </remote_servers>
 ```
 
-さらにデモンストレーションとして、`hits_v1` で使ったのと同じ `CREATE TABLE` クエリを使って新しいローカルテーブルを作成してみましょう:
+さらなる実証しましょう新しい地域のテーブルと同じ `CREATE TABLE` 私たちが使用したクエリ `hits_v1` しかし、異なるテーブル名:
 
 ``` sql
 CREATE TABLE tutorial.hits_local (...) ENGINE = MergeTree() ...
 ```
 
-クラスタのローカルテーブルへのビューを提供する分散テーブルを作成します:
+クラスターのローカルテーブルにビューを提供する分散テーブルの作成:
 
 ``` sql
 CREATE TABLE tutorial.hits_all AS tutorial.hits_local
 ENGINE = Distributed(perftest_3shards_1replicas, tutorial, hits_local, rand());
 ```
 
-通常は、クラスタのすべてのマシンに同様の分散テーブルを作成します。これにより、クラスタのどのマシンでも分散クエリを実行することができます。
-また、[remote](../sql-reference/table-functions/remote.md) テーブル関数を使用して、与えられたSELECTクエリのための一時的な分散テーブルを作成する代替オプションもあります。
+一般的な方法は、クラスターのすべてのマシンで同様の分散テーブルを作成することです。 これは、クラスタの任意のマシン上で分散クエリを実行できます。 また、特定のSELECTクエリに対して一時的な分散テーブルを作成する別のオプションもあります [リモート](../sql-reference/table-functions/remote.md) テーブル関数。
 
-分散テーブルに [INSERT SELECT](../sql-reference/statements/insert-into.md)を実行して、テーブルを複数のサーバに分散させてみましょう。
+走ろう [INSERT SELECT](../sql-reference/statements/insert-into.md) 分散テーブルにテーブルを複数のサーバーに分散させます。
 
 ``` sql
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
-!!! warning "注意"
-    この方法は、大きなテーブルのシャーディングには適していません。
-    別のツール [clickhouse-copier](../operations/utilities/clickhouse-copier.md) があり、任意の大きなテーブルを再シャーディングすることができます。
+!!! warning "通知"
+    この方法は、大規模なテーブルのシャーディングには適していません。 別のツールがあります [クリックハウス-複写機](../operations/utilities/clickhouse-copier.md) 任意の大きなテーブルを再シャードできます。
 
-予想通り、計算量の多いクエリは、1台のサーバではなく3台のサーバを利用した方がN倍速く実行されます。
+予想されるように、計算上重いクエリは、3つのサーバーの代わりに使用するとn倍高速に実行されます。
 
-このケースでは、3つのシャードを持つクラスタを使用しており、それぞれに1つのレプリカが含まれています。
+この場合、3つのシャードを持つクラスターを使用し、それぞれに単一のレプリカが含まれています。
 
-本番環境でレジリエンスを提供するためには、各シャードが複数のアベイラビリティゾーンまたはデータセンター(または少なくともラック)の間で2~3個のレプリカを含むことをお勧めします。
+運用環境でレジリエンスを提供するには、各シャードに複数のアベイラビリティーゾーンまたはデータセンター(または少なくともラック)間に2-3個のレプリ ClickHouseでは、レプリカの数に制限はありません。
 
-3つのレプリカを含む1つのシャードのクラスタの設定例:
+レプリカを含むシャードのクラスターの設定例:
 
 ``` xml
 <remote_servers>
@@ -625,16 +611,12 @@ INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 </remote_servers>
 ```
 
-ネイティブレプリケーションを有効にするには [ZooKeeper](http://zookeeper.apache.org/) が必要です。
-ClickHouseは全てのレプリカ上でデータの整合性を取り、障害発生時には自動的にリストア処理を行います。
-ZooKeeperクラスタは別サーバ(ClickHouseを含む他のプロセスが稼働していない場所)に配置することをお勧めします。
-
 ネイティブ複製を有効にする [飼育係](http://zookeeper.apache.org/) 必須です。 ClickHouseのデータの整合性はすべてのレプリカと回復手続き後の不動します。 別のサーバー(ClickHouseを含む他のプロセスが実行されていない場所)にZooKeeperクラスターを展開することをお勧めします。
 
-!!! note "備考"
-    ZooKeeperは厳密な要件ではありません: いくつかの簡単なケースでは、アプリケーションコードからすべてのレプリカにデータを書き込むことでデータを複製することができます。このケースにおいて、このアプローチは **お勧めできません**。ClickHouseはすべてのレプリカ上でデータの一貫性を保証することができません。したがって、それはあなたのアプリケーションの責任になります。
+!!! note "注"
+    単純なケースでは、アプリケーションコードからすべてのレプリカにデータを書き込むことでデータを複製できます。 このアプローチは **ない** この場合、ClickHouseはすべてのレプリカでデータの一貫性を保証できません。 従ってそれはあなたの適用の責任になる。
 
-ZooKeeperの場所は設定ファイルで指定します:
+ZooKeeperの場所は設定ファイルで指定されます:
 
 ``` xml
 <zookeeper>
@@ -662,9 +644,7 @@ ZooKeeperの場所は設定ファイルで指定します:
 </macros>
 ```
 
-レプリケートされたテーブルの作成時にレプリカが存在しない場合、新しい最初のレプリカがインスタンス化されます。既に有効なレプリカがある場合は、新しいレプリカが既存のレプリカからデータをクローンします。
-最初にすべての複製されたテーブルを作成し、そこにデータを挿入する方法があります。別の方法として、いくつかのレプリカを作成して、データ挿入後またはデータ挿入中に他のレプリカを追加するという方法もあります。
-
+がない場合にレプリカの瞬間に複製表を作成し、新しい最初のレプリカスのインスタンスが作成. がある場合でライブレプリカを新たなレプリカのクローンからデータを設定しています。 するオプションを複製のテーブル、データを挿入します。 別のオプションを作れるレプリカを追加しその他の長期データを挿入出来ます。
 
 ``` sql
 CREATE TABLE tutorial.hits_replica (...)
@@ -675,18 +655,12 @@ ENGINE = ReplcatedMergeTree(
 ...
 ```
 
-ここでは、[ReplicatedMergeTree](../engines/table-engines/mergetree-family/replication.md) テーブルエンジンを使用しています。
-パラメータには、シャードとレプリカの識別子を含む ZooKeeper path を指定します。
+ここでは、 [複製マージツリー](../engines/table-engines/mergetree-family/replication.md) テーブルエンジン。 パラメータでは、シャードとレプリカ識別子を含むZooKeeper pathを指定します。
 
 ``` sql
 INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 ```
 
-レプリケーションはマルチマスターモードで動作します。
-どのレプリカにもデータをロードすることができ、システムはそれを他のインスタンスと自動的に同期させます。
-レプリケーションは非同期なので、ある時点ですべてのレプリカに最近挿入されたデータが含まれているとは限りません。
-少なくとも1つのレプリカは、データの取り込みを可能にするために起動しておく必要があります。
-他のレプリカはデータを同期させ、再びアクティブになると整合性を修復します。
-この方法では、最近挿入されたデータが失われる可能性が低いことに注意してください。
+複製はマルチマスターモードで動作します。 データは任意のレプリカにロードでき、システムはそれを他のインスタンスと自動的に同期します。 複製は非同期で一定の瞬間にも、すべてのレプリカを含む場合があり、最近に挿入されます。 少なくとも一つのレプリカのようにするためのデータで測定す 他の人は、データを同期し、再びアクティブになると一貫性を修復します。 この方法では、最近挿入されたデータが失われる可能性が低いことに注意してください。
 
 [元の記事](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->

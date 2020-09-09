@@ -5,7 +5,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
@@ -48,19 +47,10 @@ ASTPtr ASTFunction::clone() const
     auto res = std::make_shared<ASTFunction>(*this);
     res->children.clear();
 
-    if (query) { res->query = query->clone(); res->children.push_back(res->query); }
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
 
     return res;
-}
-
-
-void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(name.size());
-    hash_state.update(name);
-    IAST::updateTreeHashImpl(hash_state);
 }
 
 
@@ -119,18 +109,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
     nested_need_parens.need_parens = true;
     nested_dont_need_parens.need_parens = false;
 
-    if (query)
-    {
-        std::string nl_or_nothing = settings.one_line ? "" : "\n";
-        std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-        settings.ostr << (settings.hilite ? hilite_function : "") << name << "(" << nl_or_nothing;
-        FormatStateStacked frame_nested = frame;
-        frame_nested.need_parens = false;
-        ++frame_nested.indent;
-        query->formatImpl(settings, state, frame_nested);
-        settings.ostr << nl_or_nothing << indent_str << ")";
-        return;
-    }
     /// Should this function to be written as operator?
     bool written = false;
     if (arguments && !parameters)

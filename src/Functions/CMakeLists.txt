@@ -34,7 +34,6 @@ target_link_libraries(clickhouse_functions
         ${FASTOPS_LIBRARY}
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded
-        clickhouse_parsers
         consistent-hashing
         consistent-hashing-sumbur
         dbms
@@ -53,8 +52,10 @@ endif()
 
 target_include_directories(clickhouse_functions SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
-# Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
-target_compile_options(clickhouse_functions PRIVATE "-g0")
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
+    target_compile_options(clickhouse_functions PRIVATE "-g0")
+endif ()
 
 if (USE_ICU)
     target_link_libraries (clickhouse_functions PRIVATE ${ICU_LIBRARIES})

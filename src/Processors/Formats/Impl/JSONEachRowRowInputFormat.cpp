@@ -32,6 +32,9 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
 {
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(in);
+
     size_t num_columns = getPort().getHeader().columns();
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -39,10 +42,10 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
         name_map[column_name] = i;        /// NOTE You could place names more cache-locally.
         if (format_settings_.import_nested_json)
         {
-            const auto split = Nested::splitName(column_name);
-            if (!split.second.empty())
+            const auto splitted = Nested::splitName(column_name);
+            if (!splitted.second.empty())
             {
-                const StringRef table_name(column_name.data(), split.first.size());
+                const StringRef table_name(column_name.data(), splitted.first.size());
                 name_map[table_name] = NESTED_FIELD;
             }
         }
@@ -282,9 +285,6 @@ void JSONEachRowRowInputFormat::resetParser()
 
 void JSONEachRowRowInputFormat::readPrefix()
 {
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(in);
-
     skipWhitespaceIfAny(in);
     if (!in.eof() && *in.position() == '[')
     {

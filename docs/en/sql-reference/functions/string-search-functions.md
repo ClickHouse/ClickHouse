@@ -21,16 +21,15 @@ For a case-insensitive search, use the function [positionCaseInsensitive](#posit
 **Syntax**
 
 ``` sql
-position(haystack, needle[, start_pos])
+position(haystack, needle)
 ```
 
-Alias: `locate(haystack, needle[, start_pos])`.
+Alias: `locate(haystack, needle)`.
 
 **Parameters**
 
 -   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -55,18 +54,6 @@ Result:
 ┌─position('Hello, world!', '!')─┐
 │                             13 │
 └────────────────────────────────┘
-```
-
-``` sql
-SELECT
-    position('Hello, world!', 'o', 1),
-    position('Hello, world!', 'o', 7)
-```
-
-``` text
-┌─position('Hello, world!', 'o', 1)─┬─position('Hello, world!', 'o', 7)─┐
-│                                 5 │                                 9 │
-└───────────────────────────────────┴───────────────────────────────────┘
 ```
 
 The same phrase in Russian contains characters which can’t be represented using a single byte. The function returns some unexpected result (use [positionUTF8](#positionutf8) function for multi-byte encoded text):
@@ -94,14 +81,13 @@ Works under the assumption that the string contains a set of bytes representing 
 **Syntax**
 
 ``` sql
-positionCaseInsensitive(haystack, needle[, start_pos])
+positionCaseInsensitive(haystack, needle)
 ```
 
 **Parameters**
 
 -   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -137,14 +123,13 @@ For a case-insensitive search, use the function [positionCaseInsensitiveUTF8](#p
 **Syntax**
 
 ``` sql
-positionUTF8(haystack, needle[, start_pos])
+positionUTF8(haystack, needle)
 ```
 
 **Parameters**
 
 -   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -210,14 +195,13 @@ Works under the assumption that the string contains a set of bytes representing 
 **Syntax**
 
 ``` sql
-positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
+positionCaseInsensitiveUTF8(haystack, needle)
 ```
 
 **Parameters**
 
 -   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned value**
 

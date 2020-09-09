@@ -14,13 +14,15 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1',
-            main_configs=['configs/logs_config.xml', "configs/config.d/instant_moves.xml", "configs/config.d/storage_configuration.xml", "configs/config.d/cluster.xml",],
+            config_dir='configs',
+            main_configs=['configs/logs_config.xml'],
             with_zookeeper=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 1} )
 
 node2 = cluster.add_instance('node2',
-            main_configs=['configs/logs_config.xml', "configs/config.d/instant_moves.xml", "configs/config.d/storage_configuration.xml", "configs/config.d/cluster.xml",],
+            config_dir='configs',
+            main_configs=['configs/logs_config.xml'],
             with_zookeeper=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 2} )
@@ -171,7 +173,7 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
             ) ENGINE = {engine}
             ORDER BY tuple()
         """.format(name=name, engine=engine))
-
+ 
         node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='default_with_small_jbod_with_external'""".format(name=name))
 
         # Second expression is preferred because d1 > now()-3600.

@@ -26,13 +26,14 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
+#include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
-#include <Parsers/queryToString.h>
 
 #include <cmath>
 #include <ctime>
+#include <iomanip>
 #include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -207,17 +208,16 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
     return 0;
 }
 
+
 bool MergeTreeDataMergerMutator::selectPartsToMerge(
     FutureMergedMutatedPart & future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
-    bool merge_with_ttl_allowed,
     String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
     const auto data_settings = data.getSettings();
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
     if (data_parts.empty())
     {
@@ -294,17 +294,14 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     IMergeSelector::PartsRange parts_to_merge;
 
-    if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
+    if (!ttl_merges_blocker.isCancelled())
     {
         TTLMergeSelector merge_selector(
                 next_ttl_merge_times_by_partition,
                 current_time,
                 data_settings->merge_with_ttl_timeout,
                 data_settings->ttl_only_drop_parts);
-
         parts_to_merge = merge_selector.select(parts_ranges, max_total_size_to_merge);
-        if (!parts_to_merge.empty())
-            future_part.merge_type = MergeType::TTL_DELETE;
     }
 
     if (parts_to_merge.empty())
@@ -527,7 +524,7 @@ public:
   * - time elapsed for current merge.
   */
 
-/// Auxiliary struct that for each merge stage stores its current progress.
+/// Auxilliary struct that for each merge stage stores its current progress.
 /// A stage is: the horizontal stage + a stage for each gathered column (if we are doing a
 /// Vertical merge) or a mutation of a single part. During a single stage all rows are read.
 struct MergeStageProgress
@@ -606,15 +603,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     TableLockHolder &,
     time_t time_of_merge,
     const ReservationPtr & space_reservation,
-    bool deduplicate)
+    bool deduplicate,
+    bool force_ttl)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
     if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
-
-    if (isTTLMergeType(future_part.merge_type) && ttl_merges_blocker.isCancelled())
-        throw Exception("Cancelled merging parts with TTL", ErrorCodes::ABORTED);
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
 
@@ -657,18 +652,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
-    bool need_remove_expired_values = false;
-    bool force_ttl = false;
+    bool need_remove_expired_values = force_ttl;
     for (const auto & part : parts)
-    {
         new_data_part->ttl_infos.update(part->ttl_infos);
-        if (metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(metadata_snapshot))
-        {
-            LOG_INFO(log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
-            need_remove_expired_values = true;
-            force_ttl = true;
-        }
-    }
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
     if (part_min_ttl && part_min_ttl <= time_of_merge)
@@ -760,10 +746,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         if (metadata_snapshot->hasSortingKey())
         {
-            pipe.addSimpleTransform([&metadata_snapshot](const Block & header)
-            {
-                return std::make_shared<ExpressionTransform>(header, metadata_snapshot->getSortingKey().expression);
-            });
+            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), metadata_snapshot->getSortingKey().expression);
+            pipe.addSimpleTransform(std::move(expr));
         }
 
         pipes.emplace_back(std::move(pipe));
@@ -832,8 +816,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
     QueryPipeline pipeline;
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
-    pipeline.addTransform(std::move(merged_transform));
+    pipeline.init(Pipe(std::move(pipes), std::move(merged_transform)));
     pipeline.setMaxThreads(1);
     BlockInputStreamPtr merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
@@ -1155,7 +1138,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         auto indices_to_recalc = getIndicesToRecalculate(in, updated_header.getNamesAndTypesList(), metadata_snapshot, context);
 
-        NameSet files_to_skip = collectFilesToSkip(source_part, updated_header, indices_to_recalc, mrk_extension);
+        NameSet files_to_skip = collectFilesToSkip(updated_header, indices_to_recalc, mrk_extension);
         NameToNameVector files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
         if (need_remove_expired_values)
@@ -1217,7 +1200,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             }
         }
 
-        finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values, compression_codec);
+        finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values);
     }
 
     return new_data_part;
@@ -1481,12 +1464,9 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
 }
 
 NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
-    const MergeTreeDataPartPtr & source_part,
-    const Block & updated_header,
-    const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-    const String & mrk_extension)
+    const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension)
 {
-    NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
+    NameSet files_to_skip = {"checksums.txt", "columns.txt"};
 
     /// Skip updated files
     for (const auto & entry : updated_header)
@@ -1773,8 +1753,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
 void MergeTreeDataMergerMutator::finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
-    bool need_remove_expired_values,
-    const CompressionCodecPtr & codec)
+    bool need_remove_expired_values)
 {
     auto disk = new_data_part->volume->getDisk();
     if (need_remove_expired_values)
@@ -1793,10 +1772,6 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
         new_data_part->checksums.write(*out_checksums);
     } /// close fd
 
-    {
-        auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
-        DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
-    }
 
     {
         /// Write a file with a description of columns.
@@ -1811,7 +1786,6 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     new_data_part->modification_time = time(nullptr);
     new_data_part->setBytesOnDisk(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), new_data_part->getFullRelativePath()));
-    new_data_part->default_codec = codec;
     new_data_part->calculateColumnsSizesOnDisk();
 }
 
