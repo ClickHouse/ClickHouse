@@ -93,6 +93,10 @@
 
 [cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) — скрипт, генерирующий [PlantUML](https://plantuml.com/) диаграммы схем таблиц.
 
+### xeus-clickhouse {#xeus-clickhouse}
+
+[xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) — это ядро Jupyter для ClickHouse, которое поддерживает запрос ClickHouse-данных с использованием SQL в Jupyter.
+
 ## Коммерческие {#kommercheskie}
 
 ### DataGrip {#datagrip}

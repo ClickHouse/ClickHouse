@@ -12,6 +12,9 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
+namespace
+{
+
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
 class FunctionCaseWithExpression : public IFunction
@@ -111,6 +114,8 @@ public:
 private:
     const Context & context;
 };
+
+}
 
 void registerFunctionCaseWithExpression(FunctionFactory & factory)
 {

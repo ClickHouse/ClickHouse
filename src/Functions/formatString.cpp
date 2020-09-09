@@ -22,6 +22,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
+
 template <typename Name>
 class FormatFunction : public IFunction
 {
@@ -129,6 +132,8 @@ struct NameFormat
     static constexpr auto name = "format";
 };
 using FunctionFormat = FormatFunction<NameFormat>;
+
+}
 
 void registerFunctionFormat(FunctionFactory & factory)
 {

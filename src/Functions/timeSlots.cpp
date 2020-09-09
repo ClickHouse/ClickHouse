@@ -13,13 +13,15 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
+
+namespace
+{
 
 /** timeSlots(StartTime, Duration)
   * - for the time interval beginning at `StartTime` and continuing `Duration` seconds,
@@ -189,6 +191,8 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
+
+}
 
 void registerFunctionTimeSlots(FunctionFactory & factory)
 {
