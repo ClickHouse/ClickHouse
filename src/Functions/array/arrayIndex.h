@@ -739,10 +739,6 @@ private:
         if (!col_lc)
             return false;
 
-//        assert(checkAndGetColumn<ColumnNullable>(col_lc->getDictionaryPtr().get()));
-//        assert(col_lc->isNullable());
-//        assert(isColumnNullable(*col_lc->getDictionaryPtr().get()));
-
         const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
 
         const IColumn& col_arg = *block.getByPosition(arguments[1]).column.get();
