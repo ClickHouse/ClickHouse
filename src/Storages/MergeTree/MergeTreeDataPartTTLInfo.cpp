@@ -162,29 +162,18 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
     writeString("}", out);
 }
 
-time_t MergeTreeDataPartTTLInfos::getMinRecompressionTTL() const
+time_t MergeTreeDataPartTTLInfos::getMinimalMaxRecompressionTTL() const
 {
-    time_t min = std::numeric_limits<time_t>::max();
+    time_t max = std::numeric_limits<time_t>::max();
     for (const auto & [name, info] : recompression_ttl)
-    {
-        if (info.min != 0)
-            min = std::min(info.min, min);
-    }
+        if (info.max != 0)
+            max = std::min(info.max, max);
 
-    if (min == std::numeric_limits<time_t>::max())
+    if (max == std::numeric_limits<time_t>::max())
         return 0;
-    return min;
-}
-
-time_t MergeTreeDataPartTTLInfos::getMaxRecompressionTTL() const
-{
-    time_t max = 0;
-    for (const auto & [name, info] : recompression_ttl)
-        max = std::max(info.max, max);
 
     return max;
 }
-
 
 std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max)
 {

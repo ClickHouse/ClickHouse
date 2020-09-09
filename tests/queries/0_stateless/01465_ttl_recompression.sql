@@ -42,6 +42,8 @@ OPTIMIZE TABLE recompression_table FINAL;
 
 SELECT name, default_compression_codec FROM system.parts WHERE table = 'recompression_table' and active = 1 and database = currentDatabase() ORDER BY name;
 
+SELECT name, recompression_ttl_info.expression FROM system.parts WHERE table = 'recompression_table' and active = 1 and database = currentDatabase() ORDER BY name;
+
 DROP TABLE IF EXISTS recompression_table;
 
 CREATE TABLE recompression_table_compact

@@ -106,6 +106,8 @@ def test_recompression_multiple_ttls(started_cluster):
 
     assert node2.query("SELECT default_compression_codec FROM system.parts where name = 'all_1_1_4'") == "ZSTD(12)\n"
 
+    assert node2.query("SELECT recompression_ttl_info.expression FROM system.parts where name = 'all_1_1_4'") == "['plus(d, toIntervalSecond(10))','plus(d, toIntervalSecond(15))','plus(d, toIntervalSecond(5))']\n"
+
 
 def test_recompression_replicated(started_cluster):
     for i, node in enumerate([node1, node2]):
