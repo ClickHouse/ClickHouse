@@ -282,7 +282,7 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
     {
         const auto & [first, last] = equal_range.back();
 
-        if (limit < first || limit >= last)
+        if (limit < first || limit > last)
             return;
 
         /// Since then, we are working inside the interval.
