@@ -25,6 +25,8 @@ namespace ErrorCodes
 
 using namespace GatherUtils;
 
+namespace
+{
 
 template <typename Name, bool is_injective>
 class ConcatImpl : public IFunction
@@ -225,6 +227,7 @@ private:
     const Context & context;
 };
 
+}
 
 void registerFunctionsConcat(FunctionFactory & factory)
 {

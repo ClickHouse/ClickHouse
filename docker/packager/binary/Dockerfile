@@ -1,5 +1,5 @@
 #  docker build -t yandex/clickhouse-binary-builder .
-FROM ubuntu:19.10
+FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
 
@@ -32,6 +32,8 @@ RUN apt-get update \
         curl \
         gcc-9 \
         g++-9 \
+        gcc-10 \
+        g++-10 \
         llvm-${LLVM_VERSION} \
         clang-${LLVM_VERSION} \
         lld-${LLVM_VERSION} \

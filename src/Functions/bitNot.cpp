@@ -10,6 +10,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
 template <typename A>
 struct BitNotImpl
 {
@@ -35,6 +38,8 @@ struct BitNotImpl
 
 struct NameBitNot { static constexpr auto name = "bitNot"; };
 using FunctionBitNot = FunctionUnaryArithmetic<BitNotImpl, NameBitNot, true>;
+
+}
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 {
