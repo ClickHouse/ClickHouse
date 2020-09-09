@@ -919,7 +919,33 @@ private:
         while (begin < end)
         {
             const char * pos = begin;
-            ASTPtr orig_ast = parseQuery(pos, end, true);
+
+            ASTPtr orig_ast;
+            try
+            {
+                orig_ast = parseQuery(pos, end, true);
+            }
+            catch (Exception & e)
+            {
+                if (!test_mode)
+                    throw;
+
+                /// Try find test hint for syntax error
+                const char * end_of_line = find_first_symbols<'\n'>(begin, end);
+                TestHint hint(true, String(begin, end_of_line - begin));
+                if (hint.serverError()) /// Syntax errors are considered as client errors
+                    throw;
+                if (hint.clientError() != e.code())
+                {
+                    if (hint.clientError())
+                        e.addMessage("\nExpected clinet error: " + std::to_string(hint.clientError()));
+                    throw;
+                }
+
+                /// It's expected syntax error, skip the line
+                begin = end_of_line;
+                continue;
+            }
 
             if (!orig_ast)
             {

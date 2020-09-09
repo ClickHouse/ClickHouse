@@ -4260,9 +4260,13 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
       * To do this, check its node `log_pointer` - the maximum number of the element taken from `log` + 1.
       */
 
-    const auto & check_replica_become_inactive = [this, &replica]()
+    bool waiting_itself = replica == replica_name;
+
+    const auto & stop_waiting = [&]()
     {
-        return !getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active");
+        bool stop_waiting_itself = waiting_itself && is_dropped;
+        bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active");
+        return stop_waiting_itself || stop_waiting_non_active;
     };
     constexpr auto event_wait_timeout_ms = 1000;
 
@@ -4277,7 +4281,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
         LOG_DEBUG(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
 
         /// Let's wait until entry gets into the replica queue.
-        while (wait_for_non_active || !check_replica_become_inactive())
+        while (!stop_waiting())
         {
             zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -4325,7 +4329,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
             LOG_DEBUG(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
 
             /// Let's wait until the entry gets into the replica queue.
-            while (wait_for_non_active || !check_replica_become_inactive())
+            while (!stop_waiting())
             {
                 zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -4378,10 +4382,8 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
 
     /// Third - wait until the entry disappears from the replica queue or replica become inactive.
     String path_to_wait_on = zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for;
-    if (wait_for_non_active)
-        return getZooKeeper()->waitForDisappear(path_to_wait_on);
 
-    return getZooKeeper()->waitForDisappear(path_to_wait_on, check_replica_become_inactive);
+    return getZooKeeper()->waitForDisappear(path_to_wait_on, stop_waiting);
 }
 
 
