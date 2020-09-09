@@ -28,11 +28,13 @@ public:
         ADD_COLUMN,
         DROP_COLUMN,
         MODIFY_COLUMN,
+        MODIFY_COLUMN_REMOVE_PROPERTY,
         COMMENT_COLUMN,
         RENAME_COLUMN,
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
+        REMOVE_TABLE_TTL,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
         MODIFY_QUERY,
@@ -59,6 +61,20 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
+    };
+
+    /// Which property user wants to remove from column
+    enum RemoveProperty
+    {
+        /// Default specifiers
+        DEFAULT,
+        MATERIALIZED,
+        ALIAS,
+
+        /// Other properties
+        COMMENT,
+        CODEC,
+        TTL
     };
 
     Type type = NO_TYPE;
@@ -166,6 +182,8 @@ public:
 
     /// Target column name
     ASTPtr rename_to;
+
+    RemoveProperty to_remove;
 
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 
