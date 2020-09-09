@@ -1225,10 +1225,6 @@ class ClickHouseInstance:
         if self.with_kerberized_kafka:
             distutils.dir_util.copy_tree(self.kerberos_secrets_dir, p.abspath(p.join(self.path, 'secrets')))
 
-        # Copy config dir
-        if self.custom_config_dir:
-            distutils.dir_util.copy_tree(self.custom_config_dir, configs_dir)
-
         # Copy config.d configs
         print "Copy custom test config files {} to {}".format(self.custom_main_config_paths, self.config_d_dir)
         for path in self.custom_main_config_paths:
