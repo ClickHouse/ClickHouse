@@ -185,9 +185,9 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
 
     if (limit)
     {
-        const auto& [first, last] = equal_ranges.back();
+        const auto & [first, last] = equal_ranges.back();
 
-        if (limit < first || limit >= last)
+        if (limit < first || limit > last)
             return;
 
         /// Since then we are working inside the interval.

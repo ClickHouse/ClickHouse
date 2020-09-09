@@ -209,9 +209,9 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
     }
     if (limit)
     {
-        const auto& [first, last] = equal_ranges.back();
+        const auto & [first, last] = equal_ranges.back();
 
-        if (limit < first || limit >= last)
+        if (limit < first || limit > last)
             return;
 
         /// Since then we are working inside the interval.

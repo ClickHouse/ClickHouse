@@ -370,7 +370,7 @@ void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direc
     {
         const auto & [first, last] = equal_ranges.back();
 
-        if (limit < first || limit >= last)
+        if (limit < first || limit > last)
             return;
 
         /// Since then we are working inside the interval.
@@ -589,7 +589,7 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, boo
     {
         const auto & [first, last] = equal_ranges.back();
 
-        if (limit < first || limit >= last)
+        if (limit < first || limit > last)
             return;
 
         /// Since then we are working inside the interval.
