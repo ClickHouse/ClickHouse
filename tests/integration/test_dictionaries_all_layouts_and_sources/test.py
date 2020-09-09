@@ -2,9 +2,9 @@ import pytest
 import os
 
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
-from helpers.external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
-from helpers.external_sources import SourceMongo, SourceMongoURI, SourceHTTP, SourceHTTPS, SourceRedis, SourceCassandra
+from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
+from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
+from external_sources import SourceMongo, SourceMongoURI, SourceHTTP, SourceHTTPS, SourceRedis, SourceCassandra
 import math
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -132,6 +132,14 @@ SOURCES = [
 
 DICTIONARIES = []
 
+# Key-value dictionaries with only one possible field for key
+SOURCES_KV = [
+    SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "clickhouse", storage_type="simple"),
+    SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "clickhouse", storage_type="hash_map"),
+]
+
+DICTIONARIES_KV = []
+
 cluster = None
 node = None
 
@@ -162,6 +170,17 @@ def setup_module(module):
             else:
                 print "Source", source.name, "incompatible with layout", layout.name
 
+    for layout in LAYOUTS:
+        field_keys = list(filter(lambda x: x.is_key, FIELDS[layout.layout_type]))
+        for source in SOURCES_KV:
+            if not source.compatible_with_layout(layout):
+                print "Source", source.name, "incompatible with layout", layout.name
+                continue
+
+            for field in FIELDS[layout.layout_type]:
+                if not (field.is_key or field.is_range or field.is_range_key):
+                    DICTIONARIES_KV.append(get_dict(source, layout, field_keys + [field], field.name))
+
     cluster = ClickHouseCluster(__file__)
 
     main_configs = []
@@ -180,7 +199,7 @@ def setup_module(module):
 def started_cluster():
     try:
         cluster.start()
-        for dictionary in DICTIONARIES:
+        for dictionary in DICTIONARIES + DICTIONARIES_KV:
             print "Preparing", dictionary.name
             dictionary.prepare_source(cluster)
             print "Prepared"
@@ -344,3 +363,102 @@ def test_ranged_dictionaries(started_cluster, fold):
     for query, answer in queries_with_answers:
         print query
         assert node.query(query) == str(answer) + '\n'
+
+
+@pytest.mark.parametrize("fold", list(range(10)))
+def test_key_value_simple_dictionaries(started_cluster, fold):
+    fields = FIELDS["simple"]
+    values = VALUES["simple"]
+    data = [Row(fields, vals) for vals in values]
+
+    all_simple_dicts = [d for d in DICTIONARIES_KV if d.structure.layout.layout_type == "simple"]
+    simple_dicts = get_dictionaries(fold, 10, all_simple_dicts)
+
+    for dct in simple_dicts:
+        queries_with_answers = []
+        local_data = []
+        for row in data:
+            local_fields = dct.get_fields()
+            local_values = [row.get_value_by_name(field.name) for field in local_fields if row.has_field(field.name)]
+            local_data.append(Row(local_fields, local_values))
+
+        dct.load_data(local_data)
+
+        node.query("system reload dictionary {}".format(dct.name))
+
+        print 'name: ', dct.name
+
+        for row in local_data:
+            print dct.get_fields()
+            for field in dct.get_fields():
+                print field.name, field.is_key
+                if not field.is_key:
+                    for query in dct.get_select_get_queries(field, row):
+                        queries_with_answers.append((query, row.get_value_by_name(field.name)))
+
+                    for query in dct.get_select_has_queries(field, row):
+                        queries_with_answers.append((query, 1))
+
+                    for query in dct.get_select_get_or_default_queries(field, row):
+                        queries_with_answers.append((query, field.default_value_for_get))
+
+        if dct.structure.has_hierarchy:
+            for query in dct.get_hierarchical_queries(data[0]):
+                queries_with_answers.append((query, [1]))
+
+            for query in dct.get_hierarchical_queries(data[1]):
+                queries_with_answers.append((query, [2, 1]))
+
+            for query in dct.get_is_in_queries(data[0], data[1]):
+                queries_with_answers.append((query, 0))
+
+            for query in dct.get_is_in_queries(data[1], data[0]):
+                queries_with_answers.append((query, 1))
+
+        for query, answer in queries_with_answers:
+            print query
+            if isinstance(answer, list):
+                answer = str(answer).replace(' ', '')
+            assert node.query(query) == str(answer) + '\n'
+
+
+@pytest.mark.parametrize("fold", list(range(10)))
+def test_key_value_complex_dictionaries(started_cluster, fold):
+    fields = FIELDS["complex"]
+    values = VALUES["complex"]
+    data = [Row(fields, vals) for vals in values]
+
+    all_complex_dicts = [d for d in DICTIONARIES_KV if d.structure.layout.layout_type == "complex"]
+    complex_dicts = get_dictionaries(fold, 10, all_complex_dicts)
+    for dct in complex_dicts:
+        dct.load_data(data)
+
+    node.query("system reload dictionaries")
+
+    for dct in complex_dicts:
+        queries_with_answers = []
+        local_data = []
+        for row in data:
+            local_fields = dct.get_fields()
+            local_values = [row.get_value_by_name(field.name) for field in local_fields if row.has_field(field.name)]
+            local_data.append(Row(local_fields, local_values))
+
+        dct.load_data(local_data)
+
+        node.query("system reload dictionary {}".format(dct.name))
+
+        for row in local_data:
+            for field in dct.get_fields():
+                if not field.is_key:
+                    for query in dct.get_select_get_queries(field, row):
+                        queries_with_answers.append((query, row.get_value_by_name(field.name)))
+
+                    for query in dct.get_select_has_queries(field, row):
+                        queries_with_answers.append((query, 1))
+
+                    for query in dct.get_select_get_or_default_queries(field, row):
+                        queries_with_answers.append((query, field.default_value_for_get))
+
+        for query, answer in queries_with_answers:
+            print query
+            assert node.query(query) == str(answer) + '\n'

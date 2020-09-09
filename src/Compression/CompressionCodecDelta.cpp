@@ -36,11 +36,6 @@ ASTPtr CompressionCodecDelta::getCodecDesc() const
     return makeASTFunction("Delta", literal);
 }
 
-void CompressionCodecDelta::updateHash(SipHash & hash) const
-{
-    getCodecDesc()->updateTreeHash(hash);
-}
-
 namespace
 {
 

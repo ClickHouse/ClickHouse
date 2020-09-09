@@ -10,9 +10,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace
-{
-
 template <typename A, typename B>
 struct BitTestImpl
 {
@@ -35,8 +32,6 @@ struct BitTestImpl
 
 struct NameBitTest { static constexpr auto name = "bitTest"; };
 using FunctionBitTest = FunctionBinaryArithmetic<BitTestImpl, NameBitTest>;
-
-}
 
 void registerFunctionBitTest(FunctionFactory & factory)
 {

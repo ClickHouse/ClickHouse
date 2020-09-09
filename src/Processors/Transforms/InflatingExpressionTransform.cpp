@@ -1,32 +1,32 @@
-#include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
 
-Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
+Block InflatingExpressionTransform::transformHeader(Block header, const ExpressionActionsPtr & expression)
 {
     ExtraBlockPtr tmp;
-    join->joinBlock(header, tmp);
+    expression->execute(header, tmp);
     return header;
 }
 
-JoiningTransform::JoiningTransform(Block input_header, JoinPtr join_,
-                                   bool on_totals_, bool default_totals_)
-    : ISimpleTransform(input_header, transformHeader(input_header, join_), on_totals_)
-    , join(std::move(join_))
+InflatingExpressionTransform::InflatingExpressionTransform(Block input_header, ExpressionActionsPtr expression_,
+                                                           bool on_totals_, bool default_totals_)
+    : ISimpleTransform(input_header, transformHeader(input_header, expression_), on_totals_)
+    , expression(std::move(expression_))
     , on_totals(on_totals_)
     , default_totals(default_totals_)
 {}
 
-void JoiningTransform::transform(Chunk & chunk)
+void InflatingExpressionTransform::transform(Chunk & chunk)
 {
     if (!initialized)
     {
         initialized = true;
 
-        if (join->alwaysReturnsEmptySet() && !on_totals)
+        if (expression->resultIsAlwaysEmpty() && !on_totals)
         {
             stopReading();
             chunk.clear();
@@ -42,10 +42,10 @@ void JoiningTransform::transform(Chunk & chunk)
 
         /// Drop totals if both out stream and joined stream doesn't have ones.
         /// See comment in ExpressionTransform.h
-        if (default_totals && !join->hasTotals())
+        if (default_totals && !expression->hasTotalsInJoin())
             return;
 
-        join->joinTotals(block);
+        expression->executeOnTotals(block);
     }
     else
         block = readExecute(chunk);
@@ -54,7 +54,7 @@ void JoiningTransform::transform(Chunk & chunk)
     chunk.setColumns(block.getColumns(), num_rows);
 }
 
-Block JoiningTransform::readExecute(Chunk & chunk)
+Block InflatingExpressionTransform::readExecute(Chunk & chunk)
 {
     Block res;
 
@@ -64,7 +64,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
             res = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
         if (res)
-            join->joinBlock(res, not_processed);
+            expression->execute(res, not_processed);
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
     {
@@ -72,12 +72,12 @@ Block JoiningTransform::readExecute(Chunk & chunk)
             res = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
         not_processed.reset();
-        join->joinBlock(res, not_processed);
+        expression->execute(res, not_processed);
     }
     else
     {
         res = std::move(not_processed->block);
-        join->joinBlock(res, not_processed);
+        expression->execute(res, not_processed);
     }
     return res;
 }

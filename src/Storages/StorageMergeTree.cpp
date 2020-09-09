@@ -627,13 +627,11 @@ bool StorageMergeTree::merge(
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto data_settings = getSettings();
 
     FutureMergedMutatedPart future_part;
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
-    MergeList::EntryPtr merge_entry;
 
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
@@ -653,21 +651,8 @@ bool StorageMergeTree::merge(
         if (partition_id.empty())
         {
             UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
-            bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < data_settings->max_number_of_merges_with_ttl_in_pool;
-
-            /// TTL requirements is much more strict than for regular merge, so
-            /// if regular not possible, than merge with ttl is not also not
-            /// possible.
             if (max_source_parts_size > 0)
-            {
-                selected = merger_mutator.selectPartsToMerge(
-                    future_part,
-                    aggressive,
-                    max_source_parts_size,
-                    can_merge,
-                    merge_with_ttl_allowed,
-                    out_disable_reason);
-            }
+                selected = merger_mutator.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
             else if (out_disable_reason)
                 *out_disable_reason = "Current value of max_source_parts_size is zero";
         }
@@ -716,9 +701,10 @@ bool StorageMergeTree::merge(
         }
 
         merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
-        auto table_id = getStorageID();
-        merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
     }
+
+    auto table_id = getStorageID();
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
 
     /// Logging
     Stopwatch stopwatch;

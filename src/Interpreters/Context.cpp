@@ -1990,12 +1990,6 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
-    for (auto & [disk_name, disk] : getDisksMap())
-    {
-        LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
-        disk->shutdown();
-    }
-
     shared->shutdown();
 }
 

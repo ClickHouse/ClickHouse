@@ -14,14 +14,13 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_INDEX;
 }
 
-namespace
-{
 
 /** Extract element of tuple by constant index or name. The operation is essentially free.
   * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
@@ -140,7 +139,6 @@ private:
     }
 };
 
-}
 
 void registerFunctionTupleElement(FunctionFactory & factory)
 {

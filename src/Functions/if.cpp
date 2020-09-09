@@ -28,6 +28,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -35,8 +36,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace
-{
 
 using namespace GatherUtils;
 
@@ -1050,8 +1049,6 @@ public:
         }
     }
 };
-
-}
 
 void registerFunctionIf(FunctionFactory & factory)
 {

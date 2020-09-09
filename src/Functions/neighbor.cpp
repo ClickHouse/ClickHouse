@@ -15,9 +15,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-namespace
-{
-
 // Implements function, giving value for column within range of given
 // Example:
 // | c1 |
@@ -196,8 +193,6 @@ public:
         }
     }
 };
-
-}
 
 void registerFunctionNeighbor(FunctionFactory & factory)
 {

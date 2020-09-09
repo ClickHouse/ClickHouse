@@ -29,7 +29,6 @@
 
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IsOperation.h>
 
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
@@ -846,7 +845,8 @@ private:
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())
         {
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count,
+                std::is_same_v<Op<int, int>, NotEqualsOp<int, int>>);
         }
         else
         {
@@ -1190,9 +1190,9 @@ public:
         if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
         {
             /// Always true: =, <=, >=
-            if constexpr (IsOperation<Op>::equals
-                || IsOperation<Op>::less_or_equals
-                || IsOperation<Op>::greater_or_equals)
+            if constexpr (std::is_same_v<Op<int, int>, EqualsOp<int, int>>
+                || std::is_same_v<Op<int, int>, LessOrEqualsOp<int, int>>
+                || std::is_same_v<Op<int, int>, GreaterOrEqualsOp<int, int>>)
             {
                 block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
                 return;

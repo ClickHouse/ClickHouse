@@ -5,25 +5,25 @@
 namespace DB
 {
 
-class IJoin;
-using JoinPtr = std::shared_ptr<IJoin>;
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-class JoiningTransform : public ISimpleTransform
+class InflatingExpressionTransform : public ISimpleTransform
 {
 public:
-    JoiningTransform(Block input_header, JoinPtr join_,
-                     bool on_totals_ = false, bool default_totals_ = false);
+    InflatingExpressionTransform(Block input_header, ExpressionActionsPtr expression_,
+                                 bool on_totals_ = false, bool default_totals_ = false);
 
     String getName() const override { return "InflatingExpressionTransform"; }
 
-    static Block transformHeader(Block header, const JoinPtr & join);
+    static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
 protected:
     void transform(Chunk & chunk) override;
     bool needInputData() const override { return !not_processed; }
 
 private:
-    JoinPtr join;
+    ExpressionActionsPtr expression;
     bool on_totals;
     /// This flag means that we have manually added totals to our pipeline.
     /// It may happen in case if joined subquery has totals, but out string doesn't.

@@ -22,7 +22,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include "IFunctionImpl.h"
 #include "FunctionHelpers.h"
-#include "IsOperation.h"
 #include "DivisionUtils.h"
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
@@ -168,6 +167,17 @@ struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op, ResultType>
 };
 
 
+template <typename, typename> struct PlusImpl;
+template <typename, typename> struct MinusImpl;
+template <typename, typename> struct MultiplyImpl;
+template <typename, typename> struct DivideFloatingImpl;
+template <typename, typename> struct DivideIntegralImpl;
+template <typename, typename> struct DivideIntegralOrZeroImpl;
+template <typename, typename> struct LeastBaseImpl;
+template <typename, typename> struct GreatestBaseImpl;
+template <typename, typename> struct ModuloImpl;
+
+
 /// Binary operations for Decimals need scale args
 /// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
 /// *   no agrs scale. ScaleR = Scale1 + Scale2;
@@ -175,15 +185,15 @@ struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op, ResultType>
 template <typename A, typename B, template <typename, typename> typename Operation, typename ResultType_, bool _check_overflow = true>
 struct DecimalBinaryOperation
 {
-    static constexpr bool is_plus_minus =   IsOperation<Operation>::plus ||
-                                            IsOperation<Operation>::minus;
-    static constexpr bool is_multiply =     IsOperation<Operation>::multiply;
-    static constexpr bool is_float_division = IsOperation<Operation>::div_floating;
-    static constexpr bool is_int_division = IsOperation<Operation>::div_int ||
-                                            IsOperation<Operation>::div_int_or_zero;
+    static constexpr bool is_plus_minus =   std::is_same_v<Operation<Int32, Int32>, PlusImpl<Int32, Int32>> ||
+                                            std::is_same_v<Operation<Int32, Int32>, MinusImpl<Int32, Int32>>;
+    static constexpr bool is_multiply =     std::is_same_v<Operation<Int32, Int32>, MultiplyImpl<Int32, Int32>>;
+    static constexpr bool is_float_division = std::is_same_v<Operation<Int32, Int32>, DivideFloatingImpl<Int32, Int32>>;
+    static constexpr bool is_int_division = std::is_same_v<Operation<Int32, Int32>, DivideIntegralImpl<Int32, Int32>> ||
+                                            std::is_same_v<Operation<Int32, Int32>, DivideIntegralOrZeroImpl<Int32, Int32>>;
     static constexpr bool is_division = is_float_division || is_int_division;
-    static constexpr bool is_compare =      IsOperation<Operation>::least ||
-                                            IsOperation<Operation>::greatest;
+    static constexpr bool is_compare =      std::is_same_v<Operation<Int32, Int32>, LeastBaseImpl<Int32, Int32>> ||
+                                            std::is_same_v<Operation<Int32, Int32>, GreatestBaseImpl<Int32, Int32>>;
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
     static constexpr bool can_overflow = is_plus_minus || is_multiply;
 
@@ -519,7 +529,15 @@ private: /// it's not correct for Decimal
     using Op = Operation<T0, T1>;
 public:
 
-    static constexpr bool allow_decimal = IsOperation<Operation>::allow_decimal;
+    static constexpr bool allow_decimal =
+        std::is_same_v<Operation<T0, T0>, PlusImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, MinusImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, MultiplyImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, DivideFloatingImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, DivideIntegralImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, DivideIntegralOrZeroImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, LeastBaseImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, GreatestBaseImpl<T0, T0>>;
 
     /// Appropriate result type for binary operator on numeric types. "Date" can also mean
     /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
@@ -538,21 +556,21 @@ public:
             DataTypeFromFieldType<typename Op::ResultType>>,
         /// Date + Integral -> Date
         /// Integral + Date -> Date
-        Case<IsOperation<Operation>::plus, Switch<
+        Case<std::is_same_v<Op, PlusImpl<T0, T1>>, Switch<
             Case<IsIntegral<RightDataType>, LeftDataType>,
             Case<IsIntegral<LeftDataType>, RightDataType>>>,
         /// Date - Date     -> Int32
         /// Date - Integral -> Date
-        Case<IsOperation<Operation>::minus, Switch<
+        Case<std::is_same_v<Op, MinusImpl<T0, T1>>, Switch<
             Case<std::is_same_v<LeftDataType, RightDataType>, DataTypeInt32>,
             Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, LeftDataType>>>,
         /// least(Date, Date) -> Date
         /// greatest(Date, Date) -> Date
-        Case<std::is_same_v<LeftDataType, RightDataType> && (IsOperation<Operation>::least || IsOperation<Operation>::greatest),
+        Case<std::is_same_v<LeftDataType, RightDataType> && (std::is_same_v<Op, LeastBaseImpl<T0, T1>> || std::is_same_v<Op, GreatestBaseImpl<T0, T1>>),
             LeftDataType>,
         /// Date % Int32 -> Int32
         /// Date % Float -> Float64
-        Case<IsOperation<Operation>::modulo, Switch<
+        Case<std::is_same_v<Op, ModuloImpl<T0, T1>>, Switch<
             Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
             Case<IsDateOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>>>>;
 };
@@ -561,8 +579,10 @@ public:
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
-    static constexpr const bool is_multiply = IsOperation<Op>::multiply;
-    static constexpr const bool is_division = IsOperation<Op>::division;
+    constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
+    constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>> ||
+                                std::is_same_v<Op<UInt8, UInt8>, DivideIntegralImpl<UInt8, UInt8>> ||
+                                std::is_same_v<Op<UInt8, UInt8>, DivideIntegralOrZeroImpl<UInt8, UInt8>>;
 
     const Context & context;
     bool check_decimal_overflow = true;
@@ -612,9 +632,10 @@ class FunctionBinaryArithmetic : public IFunction
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         /// We construct another function (example: addMonths) and call it.
 
-        static constexpr bool function_is_plus = IsOperation<Op>::plus;
-        static constexpr bool function_is_minus = IsOperation<Op>::minus;
-        if constexpr (!function_is_plus && !function_is_minus)
+        static constexpr bool function_is_plus = std::is_same_v<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>;
+        static constexpr bool function_is_minus = std::is_same_v<Op<UInt8, UInt8>, MinusImpl<UInt8, UInt8>>;
+
+        if (!function_is_plus && !function_is_minus)
             return {};
 
         const DataTypePtr & type_time = first_is_date_or_datetime ? type0 : type1;
@@ -653,7 +674,7 @@ class FunctionBinaryArithmetic : public IFunction
 
     bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
-        if constexpr (!IsOperation<Op>::multiply)
+        if constexpr (!std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>)
             return false;
 
         WhichDataType which0(type0);
@@ -665,7 +686,7 @@ class FunctionBinaryArithmetic : public IFunction
 
     bool isAggregateAddition(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
-        if constexpr (!IsOperation<Op>::plus)
+        if constexpr (!std::is_same_v<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>)
             return false;
 
         WhichDataType which0(type0);
@@ -876,6 +897,7 @@ public:
                     if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
+
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
                     else if constexpr (IsDataTypeDecimal<LeftDataType>)
@@ -1018,6 +1040,7 @@ public:
                     if constexpr (result_is_decimal)
                     {
                         ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
+
                         typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                         typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                         if constexpr (IsDataTypeDecimal<RightDataType> && is_division)

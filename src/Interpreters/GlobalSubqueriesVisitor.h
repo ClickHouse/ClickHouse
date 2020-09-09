@@ -22,7 +22,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int WRONG_GLOBAL_SUBQUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -73,7 +73,8 @@ public:
                 is_table = true;
 
             if (!subquery_or_table_name)
-                throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
+                throw Exception("Logical error: unknown AST element passed to ExpressionAnalyzer::addExternalStorage method",
+                                ErrorCodes::LOGICAL_ERROR);
 
             if (is_table)
             {

@@ -207,17 +207,16 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
     return 0;
 }
 
+
 bool MergeTreeDataMergerMutator::selectPartsToMerge(
     FutureMergedMutatedPart & future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
-    bool merge_with_ttl_allowed,
     String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
     const auto data_settings = data.getSettings();
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
     if (data_parts.empty())
     {
@@ -294,17 +293,14 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     IMergeSelector::PartsRange parts_to_merge;
 
-    if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
+    if (!ttl_merges_blocker.isCancelled())
     {
         TTLMergeSelector merge_selector(
                 next_ttl_merge_times_by_partition,
                 current_time,
                 data_settings->merge_with_ttl_timeout,
                 data_settings->ttl_only_drop_parts);
-
         parts_to_merge = merge_selector.select(parts_ranges, max_total_size_to_merge);
-        if (!parts_to_merge.empty())
-            future_part.merge_type = MergeType::TTL_DELETE;
     }
 
     if (parts_to_merge.empty())
@@ -612,9 +608,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
-
-    if (isTTLMergeType(future_part.merge_type) && ttl_merges_blocker.isCancelled())
-        throw Exception("Cancelled merging parts with TTL", ErrorCodes::ABORTED);
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
 

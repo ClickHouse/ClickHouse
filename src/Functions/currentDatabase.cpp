@@ -7,8 +7,6 @@
 
 namespace DB
 {
-namespace
-{
 
 class FunctionCurrentDatabase : public IFunction
 {
@@ -47,7 +45,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionCurrentDatabase(FunctionFactory & factory)
 {

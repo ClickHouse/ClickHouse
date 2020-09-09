@@ -646,13 +646,6 @@ ASTPtr CompressionCodecT64::getCodecDesc() const
     return makeASTFunction("T64", literal);
 }
 
-void CompressionCodecT64::updateHash(SipHash & hash) const
-{
-    getCodecDesc()->updateTreeHash(hash);
-    hash.update(type_idx);
-    hash.update(variant);
-}
-
 void registerCodecT64(CompressionCodecFactory & factory)
 {
     auto reg_func = [&](const ASTPtr & arguments, DataTypePtr type) -> CompressionCodecPtr

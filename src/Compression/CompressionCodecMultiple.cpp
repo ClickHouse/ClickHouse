@@ -37,12 +37,6 @@ ASTPtr CompressionCodecMultiple::getCodecDesc() const
     return result;
 }
 
-void CompressionCodecMultiple::updateHash(SipHash & hash) const
-{
-    for (const auto & codec : codecs)
-        codec->updateHash(hash);
-}
-
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     UInt32 compressed_size = uncompressed_size;

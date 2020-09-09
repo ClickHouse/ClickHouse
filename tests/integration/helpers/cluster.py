@@ -1041,7 +1041,7 @@ class ClickHouseInstance:
             except socket.timeout:
                 continue
             except socket.error as e:
-                if e.errno == errno.ECONNREFUSED or e.errno == errno.EHOSTUNREACH or e.errno == errno.ENETUNREACH:
+                if e.errno == errno.ECONNREFUSED:
                     time.sleep(0.1)
                 else:
                     raise

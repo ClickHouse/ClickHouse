@@ -139,6 +139,8 @@ protected:
 
     ArrayJoinActionPtr addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
+    void addJoinAction(ExpressionActionsPtr & actions, JoinPtr = {}) const;
+
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
     /** Similar to getRootActions but do not make sets when analyzing IN functions. It's used in
@@ -180,7 +182,7 @@ struct ExpressionAnalysisResult
     ExpressionActionsPtr before_array_join;
     ArrayJoinActionPtr array_join;
     ExpressionActionsPtr before_join;
-    JoinPtr join;
+    ExpressionActionsPtr join;
     ExpressionActionsPtr before_where;
     ExpressionActionsPtr before_aggregation;
     ExpressionActionsPtr before_having;
@@ -311,7 +313,7 @@ private:
     /// Before aggregation:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ExpressionActionsPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain);
+    bool appendJoin(ExpressionActionsChain & chain);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
     void appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();

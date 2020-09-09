@@ -233,9 +233,6 @@ def test_mysql_federated(mysql_server, server_address):
         node.query('''CREATE TABLE mysql_federated.test (col UInt32) ENGINE = Log''', settings={"password": "123"})
         node.query('''INSERT INTO mysql_federated.test VALUES (0), (1), (5)''', settings={"password": "123"})
 
-        def check_retryable_error_in_stderr(stderr):
-            return "Can't connect to local MySQL server through socket" in stderr or "MySQL server has gone away" in stderr
-
         code, (stdout, stderr) = mysql_server.exec_run('''
             mysql
             -e "DROP SERVER IF EXISTS clickhouse;"
@@ -248,7 +245,7 @@ def test_mysql_federated(mysql_server, server_address):
         if code != 0:
             print("stdout", stdout)
             print("stderr", stderr)
-            if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
+            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
                 time.sleep(1)
                 continue
         assert code == 0
@@ -262,7 +259,7 @@ def test_mysql_federated(mysql_server, server_address):
         if code != 0:
             print("stdout", stdout)
             print("stderr", stderr)
-            if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
+            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
                 time.sleep(1)
                 continue
         assert code == 0
@@ -278,7 +275,7 @@ def test_mysql_federated(mysql_server, server_address):
         if code != 0:
             print("stdout", stdout)
             print("stderr", stderr)
-            if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
+            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
                 time.sleep(1)
                 continue
         assert code == 0
@@ -289,7 +286,7 @@ def test_mysql_federated(mysql_server, server_address):
 def test_mysql_set_variables(mysql_client, server_address):
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
-        -e
+        -e 
         "
         SET NAMES=default;
         SET character_set_results=default;

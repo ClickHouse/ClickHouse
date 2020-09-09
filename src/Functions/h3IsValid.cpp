@@ -14,10 +14,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
-
 class FunctionH3IsValid : public IFunction
 {
 public:
@@ -62,7 +58,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionH3IsValid(FunctionFactory & factory)
 {

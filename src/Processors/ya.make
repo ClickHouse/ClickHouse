@@ -137,7 +137,7 @@ SRCS(
     Transforms/FillingTransform.cpp
     Transforms/FilterTransform.cpp
     Transforms/FinishSortingTransform.cpp
-    Transforms/JoiningTransform.cpp
+    Transforms/InflatingExpressionTransform.cpp
     Transforms/LimitByTransform.cpp
     Transforms/LimitsCheckingTransform.cpp
     Transforms/MaterializingTransform.cpp

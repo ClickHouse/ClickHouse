@@ -4,8 +4,6 @@
 
 namespace DB
 {
-namespace
-{
 
 class FunctionIdentity : public IFunction
 {
@@ -37,7 +35,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionIdentity(FunctionFactory & factory)
 {

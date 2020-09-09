@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /** blockSize() - get the block size in number of rows.
   */
@@ -49,7 +47,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionBlockSize(FunctionFactory & factory)
 {
