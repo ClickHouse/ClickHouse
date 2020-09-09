@@ -82,6 +82,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_where("WHERE");
     ParserKeyword s_to("TO");
 
+    ParserKeyword s_remove("REMOVE");
+
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserCompoundColumnDeclaration parser_col_decl;
@@ -430,18 +432,24 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (s_if_exists.ignore(pos, expected))
                 command->if_exists = true;
 
-            if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
-                return false;
-
-            if (s_first.ignore(pos, expected))
-                command->first = true;
-            else if (s_after.ignore(pos, expected))
+            if (s_remove.ignore(pos, expected))
             {
-                if (!parser_name.parse(pos, command->column, expected))
+            }
+            else
+            {
+                if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
                     return false;
+
+                if (s_first.ignore(pos, expected))
+                    command->first = true;
+                else if (s_after.ignore(pos, expected))
+                {
+                    if (!parser_name.parse(pos, command->column, expected))
+                        return false;
+                }
+                command->type = ASTAlterCommand::MODIFY_COLUMN;
             }
 
-            command->type = ASTAlterCommand::MODIFY_COLUMN;
         }
         else if (s_modify_order_by.ignore(pos, expected))
         {
