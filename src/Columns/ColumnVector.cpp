@@ -15,10 +15,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
-#include <pdqsort.h>
-#include <numeric>
-
 #include <ext/scope_guard.h>
+#include <pdqsort.h>
+
+
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
