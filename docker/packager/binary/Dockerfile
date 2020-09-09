@@ -99,7 +99,7 @@ RUN echo 'deb http://archive.ubuntu.com/ubuntu/ focal-proposed restricted main m
 RUN apt-get update \
     && apt-get install gcc-10 g++10 --yes
 
-RUN rm /etc/apt/sources.list.d/proposed-repositories.list
+RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
 
 COPY build.sh /
