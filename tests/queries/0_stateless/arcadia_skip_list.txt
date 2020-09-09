@@ -140,3 +140,4 @@
 01456_ast_optimizations_over_distributed
 01460_DistributedFilesToInsert
 01474_bad_global_join
+01457_create_as_table_function_structure
