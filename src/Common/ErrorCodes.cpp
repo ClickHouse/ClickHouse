@@ -281,7 +281,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_IS_EMPTY = 281;
     extern const int INCORRECT_INDEX = 282;
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE = 283;
-    extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD = 284;
+    extern const int WRONG_GLOBAL_SUBQUERY = 284;
     extern const int TOO_FEW_LIVE_REPLICAS = 285;
     extern const int UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE = 286;
     extern const int UNKNOWN_FORMAT_VERSION = 287;
