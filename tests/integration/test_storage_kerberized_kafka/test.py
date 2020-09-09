@@ -20,7 +20,6 @@ import socket
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                config_dir='configs',
                                 main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
                                 with_kerberized_kafka=True,
                                 )
