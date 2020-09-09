@@ -968,13 +968,13 @@ private:
         else if (which.isUInt32()) executeIntType<UInt32, first>(icolumn, vec_to);
         else if (which.isUInt64()) executeIntType<UInt64, first>(icolumn, vec_to);
         else if (which.isUInt128() || which.isUUID()) executeBigIntType<UInt128, first>(icolumn, vec_to);
-        else if (which.isUInt256()) executeBigIntType<UInt256, first>(icolumn, vec_to);
+        else if (which.isbUInt256()) executeBigIntType<bUInt256, first>(icolumn, vec_to);
         else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isInt32()) executeIntType<Int32, first>(icolumn, vec_to);
         else if (which.isInt64()) executeIntType<Int64, first>(icolumn, vec_to);
         else if (which.isInt128()) executeBigIntType<Int128, first>(icolumn, vec_to);
-        else if (which.isInt256()) executeBigIntType<Int256, first>(icolumn, vec_to);
+        else if (which.isbInt256()) executeBigIntType<bInt256, first>(icolumn, vec_to);
         else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);

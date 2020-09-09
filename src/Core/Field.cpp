@@ -218,16 +218,16 @@ void readBinary(Tuple & x, ReadBuffer & buf)
                 x.push_back(value);
                 break;
             }
-            case Field::Types::UInt256:
+            case Field::Types::bUInt256:
             {
-                UInt256 value;
+                bUInt256 value;
                 DB::readBinary(value, buf);
                 x.push_back(value);
                 break;
             }
-            case Field::Types::Int256:
+            case Field::Types::bInt256:
             {
-                Int256 value;
+                bInt256 value;
                 DB::readBinary(value, buf);
                 x.push_back(value);
                 break;
@@ -301,14 +301,14 @@ void writeBinary(const Tuple & x, WriteBuffer & buf)
                 DB::writeStringBinary(get<std::string>(elem), buf);
                 break;
             }
-            case Field::Types::UInt256:
+            case Field::Types::bUInt256:
             {
-                DB::writeBinary(get<UInt256>(elem), buf);
+                DB::writeBinary(get<bUInt256>(elem), buf);
                 break;
             }
-            case Field::Types::Int256:
+            case Field::Types::bInt256:
             {
-                DB::writeBinary(get<Int256>(elem), buf);
+                DB::writeBinary(get<bInt256>(elem), buf);
                 break;
             }
             case Field::Types::Array:
@@ -411,14 +411,14 @@ Field Field::restoreFromDump(const std::string_view & dump_)
     prefix = std::string_view{"Int256_"};
     if (dump.starts_with(prefix))
     {
-        Int256 value = parseFromString<Int256>(dump.substr(prefix.length()));
+        bInt256 value = parseFromString<bInt256>(dump.substr(prefix.length()));
         return value;
     }
 
     prefix = std::string_view{"UInt256_"};
     if (dump.starts_with(prefix))
     {
-        UInt256 value = parseFromString<UInt256>(dump.substr(prefix.length()));
+        bUInt256 value = parseFromString<bUInt256>(dump.substr(prefix.length()));
         return value;
     }
 

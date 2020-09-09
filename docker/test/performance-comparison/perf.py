@@ -262,13 +262,6 @@ for query_index, q in enumerate(test_queries):
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
             server_seconds += c.last_query.elapsed
 
-            if c.last_query.elapsed > 10:
-                # Stop processing pathologically slow queries, to avoid timing out
-                # the entire test task. This shouldn't really happen, so we don't
-                # need much handling for this case and can just exit.
-                print(f'The query no. {query_index} is taking too long to run ({c.last_query.elapsed} s)', file=sys.stderr)
-                exit(2)
-
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
 

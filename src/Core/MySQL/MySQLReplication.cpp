@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace MySQLReplication
@@ -100,22 +99,23 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(schema.data()), schema_len);
         payload.ignore(1);
 
-        size_t len = payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH;
+        size_t len
+            = header.event_size - EVENT_HEADER_LENGTH - 4 - 4 - 1 - 2 - 2 - status_len - schema_len - 1 - CHECKSUM_CRC32_SIGNATURE_LENGTH;
         query.resize(len);
         payload.readStrict(reinterpret_cast<char *>(query.data()), len);
-        if (query.starts_with("BEGIN") || query.starts_with("COMMIT"))
+        if (query.rfind("BEGIN", 0) == 0 || query.rfind("COMMIT") == 0)
         {
             typ = QUERY_EVENT_MULTI_TXN_FLAG;
         }
-        else if (query.starts_with("XA"))
+        else if (query.rfind("XA", 0) == 0)
         {
-            if (query.starts_with("XA ROLLBACK"))
-                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
+            if (query.rfind("XA ROLLBACK", 0) == 0)
+                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
             typ = QUERY_EVENT_XA;
         }
-        else if (query.starts_with("SAVEPOINT"))
+        else if (query.rfind("SAVEPOINT", 0) == 0)
         {
-            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
+            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
         }
     }
 
@@ -741,9 +741,7 @@ namespace MySQLReplication
 
     void GTIDEvent::dump(std::ostream & out) const
     {
-        WriteBufferFromOwnString ws;
-        writeUUIDText(gtid.uuid, ws);
-        auto gtid_next = ws.str() + ":" + std::to_string(gtid.seq_no);
+        auto gtid_next = gtid.uuid.toUnderType().toHexString() + ":" + std::to_string(gtid.seq_no);
 
         header.dump(out);
         out << "GTID Next: " << gtid_next << std::endl;
@@ -780,8 +778,11 @@ namespace MySQLReplication
                 gtid_sets.update(gtid_event->gtid);
                 break;
             }
-            default:
-                throw ReplicationError("Position update with unsupport event", ErrorCodes::LOGICAL_ERROR);
+            default: {
+                /// DryRun event.
+                binlog_pos = event->header.log_pos;
+                break;
+            }
         }
     }
 
@@ -908,6 +909,7 @@ namespace MySQLReplication
                 event = std::make_shared<DryRunEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
+                position.update(event);
                 break;
             }
         }

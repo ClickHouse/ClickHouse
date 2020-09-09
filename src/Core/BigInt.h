@@ -7,15 +7,46 @@ namespace DB
 {
 
 template <typename T>
-struct BigInt
+struct BigIntPayload
 {
-    static_assert(sizeof(T) == 32);
+    static_assert(!is_big_int_v<T>);
+    static constexpr size_t size = 0;
+};
+
+template <> struct BigIntPayload<bUInt256> { static constexpr size_t size = 32; };
+
+template <> struct BigIntPayload<bInt256>
+{
+    using UnsingedType = bUInt256;
     static constexpr size_t size = 32;
+};
+
+template <typename T>
+struct BigInt : BigIntPayload<T>
+{
+    using BigIntPayload<T>::size;
+
+    static constexpr size_t lastBit()
+    {
+        return size * 8 - 1;
+    }
 
     static StringRef serialize(const T & x, char * pos)
     {
-        //unalignedStore<T>(pos, x);
-        memcpy(pos, &x, size);
+        if constexpr (is_signed_v<T>)
+        {
+            using UnsignedT = typename BigIntPayload<T>::UnsingedType;
+
+            if (x < 0)
+            {
+                UnsignedT unsigned_x = UnsignedT{0} - static_cast<UnsignedT>(-x);
+                export_bits(unsigned_x, pos, 8, false);
+            }
+            else
+                export_bits(x, pos, 8, false);
+        }
+        else
+            export_bits(x, pos, 8, false);
         return StringRef(pos, size);
     }
 
@@ -28,20 +59,24 @@ struct BigInt
 
     static T deserialize(const char * pos)
     {
-        //return unalignedLoad<T>(pos);
-        T res;
-        memcpy(&res, pos, size);
-        return res;
-    }
+        if constexpr (is_signed_v<T>)
+        {
+            using UnsignedT = typename BigIntPayload<T>::UnsingedType;
 
-    static std::vector<UInt64> toIntArray(const T & x)
-    {
-        std::vector<UInt64> parts(4, 0);
-        parts[0] = UInt64(x);
-        parts[1] = UInt64(x >> 64);
-        parts[2] = UInt64(x >> 128);
-        parts[4] = UInt64(x >> 192);
-        return parts;
+            UnsignedT unsigned_x;
+            import_bits(unsigned_x, pos, pos + size, false);
+
+            bool is_negative = bit_test(unsigned_x, lastBit());
+            if (is_negative)
+                unsigned_x = UnsignedT{0} - unsigned_x;
+            return static_cast<T>(unsigned_x);
+        }
+        else
+        {
+            T x;
+            import_bits(x, pos, pos + size, false);
+            return x;
+        }
     }
 };
 

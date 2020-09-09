@@ -111,8 +111,6 @@ public:
     bool hasDefault(const String & column_name) const;
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
-    /// Does column has non default specified compression codec
-    bool hasCompressionCodec(const String & column_name) const;
     CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
     CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
 

@@ -37,12 +37,6 @@ ASTPtr CompressionCodecMultiple::getCodecDesc() const
     return result;
 }
 
-void CompressionCodecMultiple::updateHash(SipHash & hash) const
-{
-    for (const auto & codec : codecs)
-        codec->updateHash(hash);
-}
-
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     UInt32 compressed_size = uncompressed_size;
@@ -110,15 +104,6 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
     }
 
     memcpy(dest, compressed_buf.data(), decompressed_size);
-}
-
-std::vector<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
-{
-    std::vector<uint8_t> result;
-    uint8_t compression_methods_size = source[0];
-    for (size_t i = 0; i < compression_methods_size; ++i)
-        result.push_back(source[1 + i]);
-    return result;
 }
 
 bool CompressionCodecMultiple::isCompression() const

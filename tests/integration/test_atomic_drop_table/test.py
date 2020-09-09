@@ -6,7 +6,7 @@ from helpers.cluster import ClickHouseCluster
 
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=["configs/config.d/zookeeper_session_timeout.xml", "configs/remote_servers.xml"], with_zookeeper=True)
+node1 = cluster.add_instance('node1', config_dir="configs", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")

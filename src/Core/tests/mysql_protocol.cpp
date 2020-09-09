@@ -356,10 +356,6 @@ int main(int argc, char ** argv)
                         break;
                     }
                     default:
-                        if (event->header.type != MySQLReplication::EventType::HEARTBEAT_EVENT)
-                        {
-                            event->dump(std::cerr);
-                        }
                         break;
                 }
             }

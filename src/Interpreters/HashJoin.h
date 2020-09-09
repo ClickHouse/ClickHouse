@@ -245,7 +245,7 @@ public:
         std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;
         std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_fixed_string;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
-        std::unique_ptr<HashMap<DummyUInt256, Mapped, UInt256HashCRC32>>                keys256;
+        std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>                     keys256;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
 
         void create(Type which)

@@ -4,7 +4,7 @@ from helpers.cluster import ClickHouseCluster
 
 
 cluster = ClickHouseCluster(__file__)
-server = cluster.add_instance('server', user_configs=["configs/users.d/network.xml"])
+server = cluster.add_instance('server', config_dir="configs")
 
 clientA1 = cluster.add_instance('clientA1', hostname = 'clientA1.com')
 clientA2 = cluster.add_instance('clientA2', hostname = 'clientA2.com')
@@ -20,12 +20,7 @@ clientD2 = cluster.add_instance('clientD2', hostname = 'xxx.clientD0002.ru')
 clientD3 = cluster.add_instance('clientD3', hostname = 'clientD0003.ru')
 
 
-def check_clickhouse_is_ok(client_node, server_node):
-    assert client_node.exec_in_container(["bash", "-c", "/usr/bin/curl -s {}:8123 ".format(server_node.hostname)]) == "Ok.\n"
-
-
 def query_from_one_node_to_another(client_node, server_node, query):
-    check_clickhouse_is_ok(client_node, server_node)
     return client_node.exec_in_container(["bash", "-c", "/usr/bin/clickhouse client --host {} --query {!r}".format(server_node.hostname, query)])
 
 
@@ -61,6 +56,5 @@ def test_allowed_host():
 
     for client_node in expected_to_fail:
         with pytest.raises(Exception) as e:
-            result = query_from_one_node_to_another(client_node, server, "SELECT * FROM test_table")
-            print("Client node: {} Server node: {} Result: {}".format(client_node, server_node, result))
+            query_from_one_node_to_another(client_node, server, "SELECT * FROM test_table")
         assert "default: Authentication failed" in str(e)

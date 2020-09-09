@@ -7,8 +7,6 @@
 
 namespace DB
 {
-namespace
-{
 
 class FunctionToLowCardinality: public IFunction
 {
@@ -49,7 +47,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionToLowCardinality(FunctionFactory & factory)
 {

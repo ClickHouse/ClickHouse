@@ -847,26 +847,32 @@ private:
             }
 
             // Parse and execute what we've read.
+            fprintf(stderr, "will now parse '%s'\n", text.c_str());
+
             const auto * new_end = processWithFuzzing(text);
 
             if (new_end > &text[0])
             {
                 const auto rest_size = text.size() - (new_end - &text[0]);
 
+                fprintf(stderr, "total %zd, rest %zd\n", text.size(), rest_size);
+
                 memcpy(&text[0], new_end, rest_size);
                 text.resize(rest_size);
             }
             else
             {
-                // We didn't read enough text to parse a query. Will read more.
+                fprintf(stderr, "total %zd, can't parse\n", text.size());
             }
 
-            // Ensure that we're still connected to the server. If the server died,
-            // the reconnect is going to fail with an exception, and the fuzzer
-            // will exit. The ping() would be the best match here, but it's
-            // private, probably for a good reason that the protocol doesn't allow
-            // pings at any possible moment.
-            connection->forceConnected(connection_parameters.timeouts);
+            if (!connection->isConnected())
+            {
+                // Uh-oh...
+                std::cerr << "Lost connection to the server." << std::endl;
+                last_exception_received_from_server
+                    = std::make_unique<Exception>(210, "~");
+                return;
+            }
 
             if (text.size() > 4 * 1024)
             {
@@ -874,6 +880,9 @@ private:
                 // and we still cannot parse a single query in it. Abort.
                 std::cerr << "Read too much text and still can't parse a query."
                      " Aborting." << std::endl;
+                last_exception_received_from_server
+                    = std::make_unique<Exception>(1, "~");
+                // return;
                 exit(1);
             }
         }

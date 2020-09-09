@@ -23,7 +23,6 @@ struct AsteriskSemanticImpl;
 
 
 /** SELECT COLUMNS('regexp') is expanded to multiple columns like * (asterisk).
-  * Optional transformers can be attached to further manipulate these expanded columns.
   */
 class ASTColumnsMatcher : public IAST
 {

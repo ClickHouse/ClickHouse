@@ -38,7 +38,7 @@ struct MergeTreeDataPartTTLInfos
     MergeTreeDataPartTTLInfo table_ttl;
 
     /// `part_min_ttl` and `part_max_ttl` are TTLs which are used for selecting parts
-    /// to merge in order to remove expired rows.
+    /// to merge in order to remove expired rows.    
     time_t part_min_ttl = 0;
     time_t part_max_ttl = 0;
 
@@ -58,7 +58,7 @@ struct MergeTreeDataPartTTLInfos
             part_max_ttl = time_max;
     }
 
-    bool empty() const
+    bool empty()
     {
         return !part_min_ttl && moves_ttl.empty();
     }

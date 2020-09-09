@@ -43,6 +43,7 @@ namespace std
 #endif
 #endif
 
+#include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>

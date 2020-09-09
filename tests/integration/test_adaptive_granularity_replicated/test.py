@@ -11,7 +11,7 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', with_zookeeper=True)
 node2 = cluster.add_instance('node2', with_zookeeper=True)
-node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.14', with_installed_binary=True)
+node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server:19.1.14', with_installed_binary=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():

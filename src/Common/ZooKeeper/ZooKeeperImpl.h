@@ -260,7 +260,7 @@ struct ZooKeeperRequest : virtual Request
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
-    virtual ~ZooKeeperRequest() override = default;
+    virtual ~ZooKeeperRequest() = default;
 
     virtual ZooKeeper::OpNum getOpNum() const = 0;
 

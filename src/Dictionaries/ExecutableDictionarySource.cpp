@@ -101,8 +101,8 @@ BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
 namespace
 {
     /** A stream, that also runs and waits for background thread
-      * (that will feed data into pipe to be read from the other side of the pipe).
-      */
+  * (that will feed data into pipe to be read from the other side of the pipe).
+  */
     class BlockInputStreamWithBackgroundThread final : public IBlockInputStream
     {
     public:

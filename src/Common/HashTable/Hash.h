@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Core/BigInt.h>
 #include <Common/UInt128.h>
 #include <common/unaligned.h>
 
@@ -90,7 +89,8 @@ template <typename T>
 inline typename std::enable_if<is_big_int_v<T>, DB::UInt64>::type
 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
-    std::vector<UInt64> parts = DB::BigInt<T>::toIntArray(x);
+    std::vector<UInt64> parts;
+    export_bits(x, std::back_inserter(parts), sizeof(UInt64), false);
     for (const auto & part : parts)
         updated_value = intHashCRC32(part, updated_value);
 
@@ -199,7 +199,7 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
     {
         return intHash64(key.low ^ key.high);
     }
-    else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
+    else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, bUInt256>)
     {
         return intHash64(static_cast<UInt64>(key) ^
             static_cast<UInt64>(key >> 64) ^
@@ -256,7 +256,7 @@ inline size_t hashCRC32(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
     {
         return intHashCRC32(key.low ^ key.high);
     }
-    else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
+    else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, bUInt256>)
     {
         return intHashCRC32(static_cast<UInt64>(key) ^
             static_cast<UInt64>(key >> 64) ^
@@ -280,13 +280,13 @@ DEFINE_HASH(DB::UInt16)
 DEFINE_HASH(DB::UInt32)
 DEFINE_HASH(DB::UInt64)
 DEFINE_HASH(DB::UInt128)
-DEFINE_HASH(DB::UInt256)
+DEFINE_HASH(DB::bUInt256)
 DEFINE_HASH(DB::Int8)
 DEFINE_HASH(DB::Int16)
 DEFINE_HASH(DB::Int32)
 DEFINE_HASH(DB::Int64)
 DEFINE_HASH(DB::Int128)
-DEFINE_HASH(DB::Int256)
+DEFINE_HASH(DB::bInt256)
 DEFINE_HASH(DB::Float32)
 DEFINE_HASH(DB::Float64)
 
@@ -297,7 +297,7 @@ template <>
 struct DefaultHash<DB::UInt128> : public DB::UInt128Hash {};
 
 template <>
-struct DefaultHash<DB::DummyUInt256> : public DB::UInt256Hash {};
+struct DefaultHash<DB::UInt256> : public DB::UInt256Hash {};
 
 
 /// It is reasonable to use for UInt8, UInt16 with sufficient hash table size.
@@ -358,7 +358,7 @@ struct IntHash32
         {
             return intHash32<salt>(key.low ^ key.high);
         }
-        else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
+        else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, bUInt256>)
         {
             return intHash32<salt>(static_cast<UInt64>(key) ^
                 static_cast<UInt64>(key >> 64) ^

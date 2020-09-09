@@ -150,10 +150,13 @@ struct ConvertImpl
                 }
                 else if constexpr (is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>)
                 {
+                    using CastFrom = std::conditional_t<std::is_same_v<FromFieldType, UInt8>, uint8_t, FromFieldType>;
+                    using CastTo = std::conditional_t<std::is_same_v<ToFieldType, UInt8>, uint8_t, ToFieldType>;
+
                     if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     else
-                        vec_to[i] = bigint_cast<ToFieldType>(vec_from[i]);
+                        vec_to[i] = static_cast<CastTo>(static_cast<CastFrom>(vec_from[i]));
                 }
                 else if constexpr (std::is_same_v<ToFieldType, UInt128> && sizeof(FromFieldType) <= sizeof(UInt64))
                     vec_to[i] = static_cast<ToFieldType>(static_cast<UInt64>(vec_from[i]));
@@ -977,7 +980,6 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 /// Declared early because used below.
 struct NameToDate { static constexpr auto name = "toDate"; };
 struct NameToDateTime { static constexpr auto name = "toDateTime"; };
-struct NameToDateTime32 { static constexpr auto name = "toDateTime32"; };
 struct NameToDateTime64 { static constexpr auto name = "toDateTime64"; };
 struct NameToString { static constexpr auto name = "toString"; };
 struct NameToDecimal32 { static constexpr auto name = "toDecimal32"; };
@@ -1004,26 +1006,6 @@ DEFINE_NAME_TO_INTERVAL(Year)
 
 #undef DEFINE_NAME_TO_INTERVAL
 
-struct NameParseDateTimeBestEffort;
-struct NameParseDateTimeBestEffortOrZero;
-struct NameParseDateTimeBestEffortOrNull;
-
-template<typename Name, typename ToDataType>
-static inline bool isDateTime64(const ColumnsWithTypeAndName & arguments, const ColumnNumbers & arguments_index = {})
-{
-    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-        return true;
-    else if constexpr (std::is_same_v<Name, NameToDateTime> || std::is_same_v<Name, NameParseDateTimeBestEffort>
-        || std::is_same_v<Name, NameParseDateTimeBestEffortOrZero> || std::is_same_v<Name, NameParseDateTimeBestEffortOrNull>)
-    {
-        if (arguments_index.empty())
-            return (arguments.size() == 2 && isUnsignedInteger(arguments[1].type)) || arguments.size() == 3;
-        else
-            return (arguments_index.size() == 2 && isUnsignedInteger(arguments[arguments_index[1]].type)) || arguments_index.size() == 3;
-    }
-
-    return false;
-}
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert : public IFunction
@@ -1055,16 +1037,10 @@ public:
         FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, nullptr}};
         FunctionArgumentDescriptors optional_args;
 
-        if constexpr (to_decimal)
+        if constexpr (to_decimal || to_datetime64)
         {
             mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
         }
-
-        if (!to_decimal && isDateTime64<Name, ToDataType>(arguments))
-        {
-            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
-        }
-
         // toString(DateTime or DateTime64, [timezone: String])
         if ((std::is_same_v<Name, NameToString> && arguments.size() > 0 && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
             // toUnixTimestamp(value[, timezone : String])
@@ -1087,16 +1063,19 @@ public:
         }
         else if constexpr (to_decimal)
         {
+//            if (!arguments[1].column)
+//                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+
             UInt64 scale = extractToDecimalScale(arguments[1]);
 
             if constexpr (std::is_same_v<Name, NameToDecimal32>)
-                return createDecimalMaxPrecision<Decimal32>(scale);
+                return createDecimal<DataTypeDecimal>(9, scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal64>)
-                return createDecimalMaxPrecision<Decimal64>(scale);
+                return createDecimal<DataTypeDecimal>(18, scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal128>)
-                return createDecimalMaxPrecision<Decimal128>(scale);
+                return createDecimal<DataTypeDecimal>(38, scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal256>)
-                return createDecimalMaxPrecision<Decimal256>(scale);
+                return createDecimal<DataTypeDecimal>(77, scale);
 
             throw Exception("Something wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
         }
@@ -1107,22 +1086,16 @@ public:
             UInt32 scale [[maybe_unused]] = DataTypeDateTime64::default_scale;
 
             // DateTime64 requires more arguments: scale and timezone. Since timezone is optional, scale should be first.
-            if (isDateTime64<Name, ToDataType>(arguments))
+            if constexpr (to_datetime64)
             {
                 timezone_arg_position += 1;
                 scale = static_cast<UInt32>(arguments[1].column->get64(0));
-
-                if (to_datetime64 || scale != 0) /// toDateTime('xxxx-xx-xx xx:xx:xx', 0) return DateTime
-                    return std::make_shared<DataTypeDateTime64>(scale,
-                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
-
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
+            else if constexpr (to_datetime64)
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
             else
                 return std::make_shared<ToDataType>();
         }
@@ -1241,22 +1214,6 @@ private:
             return true;
         };
 
-        if (isDateTime64<Name, ToDataType>(block.getColumnsWithTypeAndName(), arguments))
-        {
-            /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
-            const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
-            UInt32 scale = extractToDecimalScale(scale_column);
-
-            if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
-            {
-                if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call))
-                    throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-                return;
-            }
-        }
-
         bool done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call);
         if (!done)
         {
@@ -1311,8 +1268,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypePtr res;
-
-        if (isDateTime64<Name, ToDataType>(arguments))
+        if constexpr (to_datetime64)
         {
             validateFunctionArgumentTypes(*this, arguments,
                 FunctionArgumentDescriptors{{"string", isStringOrFixedString, nullptr, "String or FixedString"}},
@@ -1322,12 +1278,11 @@ public:
                     {"timezone", isStringOrFixedString, isColumnConst, "const String or FixedString"},
                 });
 
-            UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
+            UInt64 scale = DataTypeDateTime64::default_scale;
             if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0);
-
-            res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
+            res = std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
         else
         {
@@ -1374,12 +1329,19 @@ public:
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
             else if constexpr (to_decimal)
             {
                 UInt64 scale = extractToDecimalScale(arguments[1]);
-                res = createDecimalMaxPrecision<typename ToDataType::FieldType>(scale);
+
+                if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>)
+                    res = createDecimal<DataTypeDecimal>(9, scale);
+                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>)
+                    res = createDecimal<DataTypeDecimal>(18, scale);
+                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
+                    res = createDecimal<DataTypeDecimal>(38, scale);
+                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>)
+                    res = createDecimal<DataTypeDecimal>(77, scale);
+
                 if (!res)
                     throw Exception("Something wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
             }
@@ -1393,53 +1355,42 @@ public:
         return res;
     }
 
-    template <typename ConvertToDataType>
-    bool executeInternal(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, UInt32 scale = 0) const
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
-        if (checkAndGetDataType<DataTypeString>(from_type))
-        {
-            ConvertThroughParsing<DataTypeString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                block, arguments, result, input_rows_count, scale);
-            return true;
-        }
-        else if (checkAndGetDataType<DataTypeFixedString>(from_type))
-        {
-            ConvertThroughParsing<DataTypeFixedString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                block, arguments, result, input_rows_count, scale);
-            return true;
-        }
-
-        return false;
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
-    {
         bool ok = true;
-
-        if constexpr (to_decimal)
-            ok = executeInternal<ToDataType>(block, arguments, result, input_rows_count,
-                assert_cast<const ToDataType &>(*removeNullable(block.getByPosition(result).type)).getScale());
-        else
+        if constexpr (to_decimal || to_datetime64)
         {
-            if (isDateTime64<Name, ToDataType>(block.getColumnsWithTypeAndName(), arguments))
-            {
-                UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
-                if (arguments.size() > 1)
-                    scale = extractToDecimalScale(block.getColumnsWithTypeAndName()[arguments[1]]);
+            const UInt32 scale = assert_cast<const ToDataType &>(*removeNullable(block.getByPosition(result).type)).getScale();
 
-                if (scale == 0)
-                    ok = executeInternal<DataTypeDateTime>(block, arguments, result, input_rows_count);
-                else
-                {
-                    ok = executeInternal<DataTypeDateTime64>(block, arguments, result, input_rows_count, static_cast<UInt32>(scale));
-                }
+            if (checkAndGetDataType<DataTypeString>(from_type))
+            {
+                ConvertThroughParsing<DataTypeString, ToDataType, Name, exception_mode, parsing_mode>::execute(
+                    block, arguments, result, input_rows_count, scale);
+            }
+            else if (checkAndGetDataType<DataTypeFixedString>(from_type))
+            {
+                ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, exception_mode, parsing_mode>::execute(
+                    block, arguments, result, input_rows_count, scale);
             }
             else
+                ok = false;
+        }
+        else
+        {
+            if (checkAndGetDataType<DataTypeString>(from_type))
             {
-                ok = executeInternal<ToDataType>(block, arguments, result, input_rows_count);
+                ConvertThroughParsing<DataTypeString, ToDataType, Name, exception_mode, parsing_mode>::execute(
+                    block, arguments, result, input_rows_count);
             }
+            else if (checkAndGetDataType<DataTypeFixedString>(from_type))
+            {
+                ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, exception_mode, parsing_mode>::execute(
+                    block, arguments, result, input_rows_count);
+            }
+            else
+                ok = false;
         }
 
         if (!ok)
@@ -1691,18 +1642,17 @@ using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMono
 using FunctionToUInt16 = FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
 using FunctionToUInt32 = FunctionConvert<DataTypeUInt32, NameToUInt32, ToNumberMonotonicity<UInt32>>;
 using FunctionToUInt64 = FunctionConvert<DataTypeUInt64, NameToUInt64, ToNumberMonotonicity<UInt64>>;
-using FunctionToUInt256 = FunctionConvert<DataTypeUInt256, NameToUInt256, ToNumberMonotonicity<UInt256>>;
+using FunctionToUInt256 = FunctionConvert<DataTypeUInt256, NameToUInt256, ToNumberMonotonicity<bUInt256>>;
 using FunctionToInt8 = FunctionConvert<DataTypeInt8, NameToInt8, ToNumberMonotonicity<Int8>>;
 using FunctionToInt16 = FunctionConvert<DataTypeInt16, NameToInt16, ToNumberMonotonicity<Int16>>;
 using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMonotonicity<Int32>>;
 using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
 using FunctionToInt128 = FunctionConvert<DataTypeInt128, NameToInt128, ToNumberMonotonicity<Int128>>;
-using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<Int256>>;
+using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<bInt256>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity>;
 using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity>;
-using FunctionToDateTime32 = FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity>;
 using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, UnknownMonotonicity>;
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
@@ -1832,9 +1782,6 @@ struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTime
 struct NameParseDateTimeBestEffortUS { static constexpr auto name = "parseDateTimeBestEffortUS"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
 struct NameParseDateTimeBestEffortOrNull { static constexpr auto name = "parseDateTimeBestEffortOrNull"; };
-struct NameParseDateTime32BestEffort { static constexpr auto name = "parseDateTime32BestEffort"; };
-struct NameParseDateTime32BestEffortOrZero { static constexpr auto name = "parseDateTime32BestEffortOrZero"; };
-struct NameParseDateTime32BestEffortOrNull { static constexpr auto name = "parseDateTime32BestEffortOrNull"; };
 struct NameParseDateTime64BestEffort { static constexpr auto name = "parseDateTime64BestEffort"; };
 struct NameParseDateTime64BestEffortOrZero { static constexpr auto name = "parseDateTime64BestEffortOrZero"; };
 struct NameParseDateTime64BestEffortOrNull { static constexpr auto name = "parseDateTime64BestEffortOrNull"; };
@@ -1848,13 +1795,6 @@ using FunctionParseDateTimeBestEffortOrZero = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
 using FunctionParseDateTimeBestEffortOrNull = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
-
-using FunctionParseDateTime32BestEffort = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTime32BestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
-using FunctionParseDateTime32BestEffortOrZero = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTime32BestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
-using FunctionParseDateTime32BestEffortOrNull = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTime32BestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
 
 using FunctionParseDateTime64BestEffort = FunctionConvertFromString<
     DataTypeDateTime64, NameParseDateTime64BestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;

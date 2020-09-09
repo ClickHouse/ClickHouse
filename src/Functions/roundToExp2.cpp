@@ -5,13 +5,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-namespace
-{
 
 template <typename T>
 inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
@@ -55,9 +48,10 @@ roundDownToPowerOfTwo(T x)
 
 template <typename T>
 inline std::enable_if_t<is_big_int_v<T>, T>
-roundDownToPowerOfTwo(T)
+roundDownToPowerOfTwo(T x)
 {
-    throw Exception("roundToExp2() for big integers is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    // extention from boost/multiprecision/number.hpp
+    return T(1) << msb(x);
 }
 
 /** For integer data types:
@@ -89,8 +83,6 @@ struct RoundToExp2Impl
 
 struct NameRoundToExp2 { static constexpr auto name = "roundToExp2"; };
 using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundToExp2, false>;
-
-}
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundToExp2> : PositiveMonotonicity {};
 

@@ -12,17 +12,33 @@ Block ExpressionTransform::transformHeader(Block header, const ExpressionActions
 }
 
 
-ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionActionsPtr expression_)
-    : ISimpleTransform(header_, transformHeader(header_, expression_), false)
+ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionActionsPtr expression_, bool on_totals_)
+    : ISimpleTransform(header_, transformHeader(header_, expression_), on_totals_)
     , expression(std::move(expression_))
+    , on_totals(on_totals_)
 {
 }
 
 void ExpressionTransform::transform(Chunk & chunk)
 {
+    if (!initialized)
+    {
+        initialized = true;
+
+        if (expression->resultIsAlwaysEmpty() && !on_totals)
+        {
+            stopReading();
+            chunk.clear();
+            return;
+        }
+    }
+
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    expression->execute(block);
+    if (on_totals)
+        expression->executeOnTotals(block);
+    else
+        expression->execute(block);
 
     auto num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);

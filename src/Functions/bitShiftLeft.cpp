@@ -9,9 +9,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
 template <typename A, typename B>
 struct BitShiftLeftImpl
 {
@@ -21,10 +18,12 @@ struct BitShiftLeftImpl
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
+        using CastB = std::conditional_t<std::is_same_v<B, UInt8>, uint8_t, B>;
+
         if constexpr (is_big_int_v<B>)
-            throw Exception("BitShiftLeft is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
-        else if constexpr (is_big_int_v<A>)
-            return bigint_cast<Result>(a) << bigint_cast<UInt32>(b);
+            throw Exception("BitShiftLeftImpl is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+        else if constexpr (is_big_int_v<ResultType>)
+            return static_cast<Result>(a) << static_cast<CastB>(b);
         else
             return static_cast<Result>(a) << static_cast<Result>(b);
     }
@@ -43,8 +42,6 @@ struct BitShiftLeftImpl
 
 struct NameBitShiftLeft { static constexpr auto name = "bitShiftLeft"; };
 using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl, NameBitShiftLeft>;
-
-}
 
 void registerFunctionBitShiftLeft(FunctionFactory & factory)
 {

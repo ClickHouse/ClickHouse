@@ -28,15 +28,10 @@ void ASTColumnsMatcher::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTColumnsMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsMatcher::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "("
                   << quoteString(original_pattern) << ")";
-    for (ASTs::const_iterator it = children.begin() + 1; it != children.end(); ++it)
-    {
-        settings.ostr << ' ';
-        (*it)->formatImpl(settings, state, frame);
-    }
 }
 
 void ASTColumnsMatcher::setPattern(String pattern)

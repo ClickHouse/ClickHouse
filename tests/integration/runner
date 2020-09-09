@@ -53,7 +53,7 @@ def check_args_and_update_paths(args):
 
     logging.info("base_configs_dir: {},  binary: {}, cases_dir: {} ".format(args.base_configs_dir, args.binary, args.cases_dir))
 
-    for path in [args.binary, args.bridge_binary, args.base_configs_dir, args.cases_dir, CLICKHOUSE_ROOT]:
+    for path in [args.binary, args.base_configs_dir, args.cases_dir, CLICKHOUSE_ROOT]:
         if not os.path.exists(path):
             raise Exception("Path {} doesn't exist".format(path))
 
@@ -154,10 +154,8 @@ if __name__ == "__main__":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
             elif image == "yandex/clickhouse-postgresql-java-client":
                 env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
-            elif image == "yandex/clickhouse-integration-test":
-                env_tags += "-e {}={}".format("DOCKER_BASE_TAG", tag)
             else:
-                logging.info("Unknown image {}".format(image))
+                raise Exception("Unknown image {}".format(image))
 
     # create named volume which will be used inside to store images and other docker related files,
     # to avoid redownloading it every time

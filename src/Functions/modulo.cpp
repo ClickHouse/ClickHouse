@@ -10,13 +10,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
 }
-
-namespace
-{
 
 /// Optimizations for integer modulo by a constant.
 
@@ -72,8 +70,6 @@ struct ModuloByConstantImpl
         }
     }
 };
-
-}
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
   * Can be expanded to all possible combinations, but more code is needed.

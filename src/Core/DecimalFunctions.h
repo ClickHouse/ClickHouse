@@ -36,7 +36,7 @@ inline auto scaleMultiplier(UInt32 scale)
         return common::exp10_i64(scale);
     else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, Decimal128>)
         return common::exp10_i128(scale);
-    else if constexpr (std::is_same_v<T, Int256> || std::is_same_v<T, Decimal256>)
+    else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, Decimal256>)
         return common::exp10_i256(scale);
 }
 

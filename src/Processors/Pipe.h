@@ -64,7 +64,6 @@ public:
     /// If totals or extremes are not empty, transform shouldn't change header.
     void addTransform(ProcessorPtr transform);
     void addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes);
-    void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
     enum class StreamType
     {

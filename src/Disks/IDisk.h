@@ -183,9 +183,6 @@ public:
     /// Return disk type - "local", "s3", etc.
     virtual const String getType() const = 0;
 
-    /// Invoked when Global Context is shutdown.
-    virtual void shutdown() { }
-
 private:
     /// Returns executor to perform asynchronous operations.
     Executor & getExecutor() { return *executor; }

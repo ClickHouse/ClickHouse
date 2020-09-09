@@ -30,8 +30,6 @@ void registerTableFunctionHDFS(TableFunctionFactory & factory);
 void registerTableFunctionODBC(TableFunctionFactory & factory);
 void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
-void registerTableFunctionView(TableFunctionFactory & factory);
-
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
 #endif

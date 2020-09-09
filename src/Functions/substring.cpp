@@ -26,8 +26,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
 
 /// If 'is_utf8' - measure offset and length in code points instead of bytes.
 /// UTF8 variant is not available for FixedString arguments.
@@ -177,8 +175,6 @@ public:
         }
     }
 };
-
-}
 
 void registerFunctionSubstring(FunctionFactory & factory)
 {

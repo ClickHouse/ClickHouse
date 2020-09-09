@@ -69,6 +69,8 @@ public:
         /// Source column is removed from block.
         ARRAY_JOIN,
 
+        JOIN,
+
         /// Reorder and rename the columns, delete the extra ones. The same column names are allowed in the result.
         PROJECT,
         /// Add columns with alias names. This columns are the same as non-aliased. PROJECT columns if you need to modify them.
@@ -117,6 +119,7 @@ public:
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(std::string source_name, std::string result_name);
+    static ExpressionAction ordinaryJoin(std::shared_ptr<TableJoin> table_join, JoinPtr join);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
@@ -134,6 +137,10 @@ private:
     friend class ExpressionActions;
 
     void prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding);
+    void executeOnTotals(Block & block) const;
+
+    /// Executes action on block (modify it). Block could be split in case of JOIN. Then not_processed block is created.
+    void execute(Block & block, ExtraBlockPtr & not_processed) const;
     void execute(Block & block, bool dry_run) const;
 };
 
@@ -198,7 +205,18 @@ public:
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
 
-    bool hasArrayJoin() const;
+    /// Execute the expression on the block with continuation. This method in only supported for single JOIN.
+    void execute(Block & block, ExtraBlockPtr & not_processed) const;
+
+    bool hasJoinOrArrayJoin() const;
+
+    /// Check if joined subquery has totals.
+    bool hasTotalsInJoin() const;
+
+    /** Execute the expression on the block of total values.
+      * Almost the same as `execute`. The difference is only when JOIN is executed.
+      */
+    void executeOnTotals(Block & block) const;
 
     /// Obtain a sample block that contains the names and types of result columns.
     const Block & getSampleBlock() const { return sample_block; }
@@ -207,7 +225,13 @@ public:
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
+    JoinPtr getTableJoinAlgo() const;
+
     const Settings & getSettings() const { return settings; }
+
+    /// Check if result block has no rows. True if it's definite, false if we can't say for sure.
+    /// Call it only after subqueries for join were executed.
+    bool resultIsAlwaysEmpty() const;
 
     /// Check if column is always zero. True if it's definite, false if we can't say for sure.
     /// Call it only after subqueries for sets were executed.
@@ -333,29 +357,13 @@ struct ExpressionActionsChain
         NamesAndTypesList required_columns;
         ColumnsWithTypeAndName result_columns;
 
-        ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_);
+        ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_, Names required_output_);
 
         const NamesAndTypesList & getRequiredColumns() const override { return required_columns; }
         const ColumnsWithTypeAndName & getResultColumns() const override { return result_columns; }
         void finalize(const Names & required_output_) override;
         void prependProjectInput() const override {} /// TODO: remove unused columns before ARRAY JOIN ?
         std::string dump() const override { return "ARRAY JOIN"; }
-    };
-
-    struct JoinStep : public Step
-    {
-        std::shared_ptr<TableJoin> analyzed_join;
-        JoinPtr join;
-
-        NamesAndTypesList required_columns;
-        ColumnsWithTypeAndName result_columns;
-
-        JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, ColumnsWithTypeAndName required_columns_);
-        const NamesAndTypesList & getRequiredColumns() const override { return required_columns; }
-        const ColumnsWithTypeAndName & getResultColumns() const override { return result_columns; }
-        void finalize(const Names & required_output_) override;
-        void prependProjectInput() const override {} /// TODO: remove unused columns before JOIN ?
-        std::string dump() const override { return "JOIN"; }
     };
 
     using StepPtr = std::unique_ptr<Step>;

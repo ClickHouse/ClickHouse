@@ -452,8 +452,6 @@ Block StorageMerge::getQueryHeader(
         }
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
-        case QueryProcessingStage::WithMergeableStateAfterAggregation:
-        case QueryProcessingStage::MAX:
         {
             auto query = query_info.query->clone();
             removeJoin(*query->as<ASTSelectQuery>());

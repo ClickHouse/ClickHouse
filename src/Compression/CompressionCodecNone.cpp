@@ -17,11 +17,6 @@ ASTPtr CompressionCodecNone::getCodecDesc() const
     return std::make_shared<ASTIdentifier>("NONE");
 }
 
-void CompressionCodecNone::updateHash(SipHash & hash) const
-{
-    getCodecDesc()->updateTreeHash(hash);
-}
-
 UInt32 CompressionCodecNone::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     memcpy(dest, source, source_size);

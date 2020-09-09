@@ -7,7 +7,7 @@ node1 = cluster.add_instance('node1', with_zookeeper=True)
 node2 = cluster.add_instance('node2', with_zookeeper=True)
 
 # no adaptive granularity by default
-node3 = cluster.add_instance('node3', image='yandex/clickhouse-server', tag='19.9.5.36', with_installed_binary=True, stay_alive=True)
+node3 = cluster.add_instance('node3', image='yandex/clickhouse-server:19.9.5.36', with_installed_binary=True, stay_alive=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():

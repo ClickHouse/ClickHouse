@@ -110,7 +110,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    SubqueriesForSets & getSubqueriesForSets() { return subqueries_for_sets; }
+    const SubqueriesForSets & getSubqueriesForSets() const { return subqueries_for_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
@@ -138,6 +138,8 @@ protected:
     void initGlobalSubqueriesAndExternalTables(bool do_global);
 
     ArrayJoinActionPtr addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
+
+    void addJoinAction(ExpressionActionsPtr & actions, JoinPtr = {}) const;
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
@@ -180,7 +182,7 @@ struct ExpressionAnalysisResult
     ExpressionActionsPtr before_array_join;
     ArrayJoinActionPtr array_join;
     ExpressionActionsPtr before_join;
-    JoinPtr join;
+    ExpressionActionsPtr join;
     ExpressionActionsPtr before_where;
     ExpressionActionsPtr before_aggregation;
     ExpressionActionsPtr before_having;
@@ -311,7 +313,7 @@ private:
     /// Before aggregation:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ExpressionActionsPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain);
+    bool appendJoin(ExpressionActionsChain & chain);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
     void appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();

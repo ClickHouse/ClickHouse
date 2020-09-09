@@ -254,12 +254,6 @@ ASTPtr CompressionCodecGorilla::getCodecDesc() const
     return std::make_shared<ASTIdentifier>("Gorilla");
 }
 
-void CompressionCodecGorilla::updateHash(SipHash & hash) const
-{
-    getCodecDesc()->updateTreeHash(hash);
-    hash.update(data_bytes_size);
-}
-
 UInt32 CompressionCodecGorilla::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     const auto result = 2 // common header

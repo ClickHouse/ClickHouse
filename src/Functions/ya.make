@@ -33,8 +33,6 @@ PEERDIR(
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
-CFLAGS(-g0)
-
 SRCS(
     abs.cpp
     acos.cpp

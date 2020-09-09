@@ -13,14 +13,16 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1',
-            main_configs=['configs/logs_config.xml', 'configs/config.d/storage_configuration.xml', 'configs/config.d/cluster.xml'],
+            config_dir='configs',
+            main_configs=['configs/logs_config.xml'],
             with_zookeeper=True,
             stay_alive=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 1} )
 
 node2 = cluster.add_instance('node2',
-            main_configs=['configs/logs_config.xml', 'configs/config.d/storage_configuration.xml', 'configs/config.d/cluster.xml'],
+            config_dir='configs',
+            main_configs=['configs/logs_config.xml'],
             with_zookeeper=True,
             stay_alive=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],

@@ -482,8 +482,8 @@ struct WhichDataType
     bool isUInt32() const { return idx == TypeIndex::UInt32; }
     bool isUInt64() const { return idx == TypeIndex::UInt64; }
     bool isUInt128() const { return idx == TypeIndex::UInt128; }
-    bool isUInt256() const { return idx == TypeIndex::UInt256; }
-    bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128() || isUInt256(); }
+    bool isbUInt256() const { return idx == TypeIndex::bUInt256; }
+    bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128() || isbUInt256(); }
     bool isNativeUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64(); }
 
     bool isInt8() const { return idx == TypeIndex::Int8; }
@@ -491,8 +491,8 @@ struct WhichDataType
     bool isInt32() const { return idx == TypeIndex::Int32; }
     bool isInt64() const { return idx == TypeIndex::Int64; }
     bool isInt128() const { return idx == TypeIndex::Int128; }
-    bool isInt256() const { return idx == TypeIndex::Int256; }
-    bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128() || isInt256(); }
+    bool isbInt256() const { return idx == TypeIndex::bInt256; }
+    bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128() || isbInt256(); }
     bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
 
     bool isDecimal32() const { return idx == TypeIndex::Decimal32; }
@@ -529,7 +529,7 @@ struct WhichDataType
     bool isFunction() const { return idx == TypeIndex::Function; }
     bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
 
-    bool IsBigIntOrDeimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
+    bool IsBigIntOrDeimal() const { return isInt128() || isbInt256() || isbUInt256() || isDecimal256(); }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)

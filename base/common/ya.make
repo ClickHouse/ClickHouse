@@ -32,8 +32,6 @@ PEERDIR(
     contrib/restricted/cityhash-1.0.2
 )
 
-CFLAGS(-g0)
-
 SRCS(
     argsToConfig.cpp
     coverage.cpp
