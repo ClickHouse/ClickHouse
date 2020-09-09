@@ -172,6 +172,12 @@ public:
     bool lowCardinality() const override { return true; }
     bool isNullable() const override { return isColumnNullable(*dictionary.getColumnUniquePtr()); }
 
+    /**
+     * Checks if the dictionary column is Nullable(T).
+     * So LC(Nullable(T)) would return true, LC(U) -- false.
+     */
+    bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
+
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
     /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique); }
