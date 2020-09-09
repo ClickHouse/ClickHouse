@@ -74,7 +74,7 @@ done
 ${CLICKHOUSE_CLIENT} -q "
     with count(*) as c
     -- expect 200 * 0.1 = 20 sampled events on average
-    select c > 10, c < 30
+    select if(c > 10 and c < 30, 'OK', 'fail: ' || toString(c))
     from system.opentelemetry_log
         array join attribute.names as name, attribute.values as value
     where name = 'clickhouse.query_id'
