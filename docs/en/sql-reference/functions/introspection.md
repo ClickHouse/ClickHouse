@@ -98,7 +98,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
+The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
 
 ``` text
 Row 1:
@@ -184,7 +184,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
+The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
 
 ``` text
 Row 1:
@@ -281,7 +281,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
+The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
 
 ``` text
 Row 1:
