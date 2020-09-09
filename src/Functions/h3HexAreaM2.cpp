@@ -12,12 +12,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
+
+namespace
+{
 
 class FunctionH3HexAreaM2 : public IFunction
 {
@@ -66,6 +68,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionH3HexAreaM2(FunctionFactory & factory)
 {

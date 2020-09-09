@@ -145,9 +145,12 @@ void registerDiskS3(DiskFactory & factory)
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
 
         /// This code is used only to check access to the corresponding disk.
-        checkWriteAccess(*s3disk);
-        checkReadAccess(name, *s3disk);
-        checkRemoveAccess(*s3disk);
+        if (!config.getBool(config_prefix + ".skip_access_check", false))
+        {
+            checkWriteAccess(*s3disk);
+            checkReadAccess(name, *s3disk);
+            checkRemoveAccess(*s3disk);
+        }
 
         bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
 
