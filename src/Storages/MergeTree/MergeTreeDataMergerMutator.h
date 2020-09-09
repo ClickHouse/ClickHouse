@@ -6,6 +6,7 @@
 #include <functional>
 #include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeType.h>
 
 
 namespace DB
@@ -22,6 +23,7 @@ struct FutureMergedMutatedPart
     MergeTreeDataPartType type;
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
+    MergeType merge_type = MergeType::REGULAR;
 
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
 
@@ -81,6 +83,7 @@ public:
         bool aggressive,
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
+        bool merge_with_ttl_allowed,
         String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.

@@ -122,6 +122,8 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
     }
 };
 
+
+/// The methods can be virtual or not depending on the template parameter. See IStringSource.
 #if !__clang__
 #   pragma GCC diagnostic push
 #   pragma GCC diagnostic ignored "-Wsuggest-override"

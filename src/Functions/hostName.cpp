@@ -7,6 +7,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Get the host name. Is is constant on single server, but is not constant in distributed queries.
 class FunctionHostName : public IFunction
@@ -50,6 +52,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionHostName(FunctionFactory & factory)
 {
