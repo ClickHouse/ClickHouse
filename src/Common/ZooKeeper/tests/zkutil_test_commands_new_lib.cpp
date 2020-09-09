@@ -124,7 +124,7 @@ try
 
     std::cout << "exists\n";
 
-    zk.get("/test",
+    zk.exists("/test",
         [&](const GetResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)
@@ -133,13 +133,6 @@ try
                 std::cerr << "Exists\n";
 
             //event.set();
-        },
-        [](const WatchResponse & response)
-        {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Watch (exists) on /test, Error: " << errorMessage(response.error) << '\n';
-            else
-                std::cerr << "Watch (exists) on /test, path: " << response.path << ", type: " << response.type << '\n';
         });
 
     //event.wait();
