@@ -46,15 +46,15 @@ private:
         }
     };
 
-    /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
-    using InsertsByTime = std::set<LogEntryPtr, ByTime>;
-
     struct OperationsInQueue
     {
         size_t merges = 0;
         size_t mutations = 0;
         size_t merges_with_ttl = 0;
     };
+
+    /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
+    using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
     StorageReplicatedMergeTree & storage;
     MergeTreeDataFormatVersion format_version;
