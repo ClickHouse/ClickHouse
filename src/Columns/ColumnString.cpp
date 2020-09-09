@@ -9,7 +9,7 @@
 #include <DataStreams/ColumnGathererStream.h>
 
 #include <common/unaligned.h>
-
+#include <ext/scope_guard.h>
 
 namespace DB
 {
@@ -325,28 +325,30 @@ void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_directio
     }
 }
 
-void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_range) const
+void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (equal_range.empty())
+    if (equal_ranges.empty())
         return;
 
-    if (limit >= size() || limit > equal_range.back().second)
+    if (limit >= size() || limit > equal_ranges.back().second)
         limit = 0;
 
     EqualRanges new_ranges;
-    auto less_true = less<true>(*this);
-    auto less_false = less<false>(*this);
-    size_t n = equal_range.size();
-    if (limit)
-        --n;
+    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
 
-    for (size_t i = 0; i < n; ++i)
+    size_t number_of_ranges = equal_ranges.size();
+    if (limit)
+        --number_of_ranges;
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
     {
-        const auto &[first, last] = equal_range[i];
+        const auto & [first, last] = equal_ranges[i];
+
         if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, less_false);
+            std::sort(res.begin() + first, res.begin() + last, less<false>(*this));
         else
-            std::sort(res.begin() + first, res.begin() + last, less_true);
+            std::sort(res.begin() + first, res.begin() + last, less<true>(*this));
+
         size_t new_first = first;
         for (size_t j = first + 1; j < last; ++j)
         {
@@ -366,11 +368,18 @@ void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direc
 
     if (limit)
     {
-        const auto &[first, last] = equal_range.back();
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit >= last)
+            return;
+
+        /// Since then we are working inside the interval.
+
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less_false);
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
         else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less_true);
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
+
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)
         {
@@ -397,7 +406,6 @@ void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direc
         if (new_last - new_first > 1)
             new_ranges.emplace_back(new_first, new_last);
     }
-    equal_range = std::move(new_ranges);
 }
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
