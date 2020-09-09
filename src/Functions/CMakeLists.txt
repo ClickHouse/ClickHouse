@@ -53,8 +53,18 @@ endif()
 
 target_include_directories(clickhouse_functions SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
-# Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
-target_compile_options(clickhouse_functions PRIVATE "-g0")
+option(STRIP_DEBUG_SYMBOLS_FUNCTIONS
+    "Do not generate debugger info for ClickHouse functions.
+    Provides faster linking and lower binary size.
+    Tradeoff is the inability to debug some source files with e.g. gdb
+    (empty stack frames and no local variables)." OFF)
+
+if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
+    message(WARNING "Not generating debugger info for ClickHouse functions")
+    target_compile_options(clickhouse_functions PRIVATE "-g0")
+else()
+    message(STATUS "Generating debugger info for ClickHouse functions")
+endif()
 
 if (USE_ICU)
     target_link_libraries (clickhouse_functions PRIVATE ${ICU_LIBRARIES})
