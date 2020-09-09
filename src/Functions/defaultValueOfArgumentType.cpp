@@ -5,6 +5,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Returns global default value for type of passed argument (example: 0 for numeric types, '' for String).
 class FunctionDefaultValueOfArgumentType : public IFunction
@@ -47,6 +49,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionDefaultValueOfArgumentType(FunctionFactory & factory)
 {

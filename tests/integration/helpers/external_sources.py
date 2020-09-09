@@ -477,13 +477,13 @@ class SourceCassandra(ExternalSource):
 
 class SourceRedis(ExternalSource):
     def __init__(
-            self, name, internal_hostname, internal_port, docker_hostname, docker_port, user, password, storage_type
+            self, name, internal_hostname, internal_port, docker_hostname, docker_port, user, password, db_index, storage_type
     ):
         super(SourceRedis, self).__init__(
             name, internal_hostname, internal_port, docker_hostname, docker_port, user, password
         )
         self.storage_type = storage_type
-        self.db_index = 1
+        self.db_index = db_index
 
     def get_source_str(self, table_name):
         return '''
@@ -513,21 +513,13 @@ class SourceRedis(ExternalSource):
             values = []
             for name in self.ordered_names:
                 values.append(str(row.data[name]))
-            print 'values: ', values
             if len(values) == 2:
                 self.client.set(*values)
-                print 'kek: ', self.client.get(values[0])
             else:
                 self.client.hset(*values)
 
     def compatible_with_layout(self, layout):
-        if (
-            layout.is_simple and self.storage_type == "simple" or
-            layout.is_complex and self.storage_type == "simple" and layout.name == "complex_key_hashed_one_key" or
-            layout.is_complex and self.storage_type == "hash_map" and layout.name == "complex_key_hashed_two_keys"
-        ):
-            return True
-        return False
+        return layout.is_simple and self.storage_type == "simple" or layout.is_complex and self.storage_type == "hash_map"
 
 class SourceAerospike(ExternalSource):
     def __init__(self, name, internal_hostname, internal_port,
