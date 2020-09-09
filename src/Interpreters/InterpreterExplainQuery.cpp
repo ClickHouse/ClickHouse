@@ -248,8 +248,6 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
 
-        plan.optimize();
-
         WriteBufferFromOStream buffer(ss);
         plan.explainPlan(buffer, settings.query_plan_options);
     }
@@ -269,14 +267,10 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         if (settings.graph)
         {
-            /// Pipe holds QueryPlan, should not go out-of-scope
-            auto pipe = QueryPipeline::getPipe(std::move(*pipeline));
-            const auto & processors = pipe.getProcessors();
-
             if (settings.compact)
-                printPipelineCompact(processors, buffer, settings.query_pipeline_options.header);
+                printPipelineCompact(pipeline->getProcessors(), buffer, settings.query_pipeline_options.header);
             else
-                printPipeline(processors, buffer);
+                printPipeline(pipeline->getProcessors(), buffer);
         }
         else
         {

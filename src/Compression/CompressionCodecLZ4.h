@@ -14,11 +14,9 @@ class CompressionCodecLZ4 : public ICompressionCodec
 public:
     uint8_t getMethodByte() const override;
 
-    ASTPtr getCodecDesc() const override;
+    String getCodecDesc() const override;
 
     UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER; }
-
-    void updateHash(SipHash & hash) const override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -41,7 +39,7 @@ public:
 
     CompressionCodecLZ4HC(int level_);
 
-    ASTPtr getCodecDesc() const override;
+    String getCodecDesc() const override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;

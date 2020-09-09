@@ -1,6 +1,6 @@
 import itertools
 import timeit
-import os.path
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -91,16 +91,8 @@ def started_cluster(request):
 
     cluster = ClickHouseCluster(__file__)
     cluster.__with_ssl_config = request.param == "configs_secure"
-    main_configs = []
-    main_configs += [os.path.join(request.param, "config.d/remote_servers.xml")]
-    if cluster.__with_ssl_config:
-        main_configs += [os.path.join(request.param, "server.crt")]
-        main_configs += [os.path.join(request.param, "server.key")]
-        main_configs += [os.path.join(request.param, "dhparam.pem")]
-        main_configs += [os.path.join(request.param, "config.d/ssl_conf.xml")]
-    user_configs = [os.path.join(request.param, "users.d/set_distributed_defaults.xml")]
     for name in NODES:
-        NODES[name] = cluster.add_instance(name, main_configs=main_configs, user_configs=user_configs)
+        NODES[name] = cluster.add_instance(name, config_dir=request.param)
     try:
         cluster.start()
 

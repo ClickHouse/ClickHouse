@@ -199,6 +199,7 @@ void registerOutputFormatProcessorJSON(FormatFactory & factory);
 void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
 void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatProcessorXML(FormatFactory & factory);
+void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
 void registerOutputFormatProcessorNull(FormatFactory & factory);
 void registerOutputFormatProcessorMySQLWire(FormatFactory & factory);

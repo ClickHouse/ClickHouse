@@ -1087,7 +1087,7 @@ SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) 
 └───┴─────┘
 ```
 
-Подзапрос формирует `sumState` для каждого числа от `0` до `9`. `sumState` возвращает состояние функции [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), содержащее сумму одного числа.
+Подзапрос формирует `sumState` для каждого числа от `0` до `9`. `sumState` возвращает состояние функции [sum](../../sql-reference/aggregate-functions/reference.md#agg_function-sum), содержащее сумму одного числа.
 
 Весь запрос делает следующее:
 
@@ -1332,81 +1332,6 @@ len: 30
 
 -   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
 -   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
-
-
-## randomFixedString {#randomfixedstring}
-
-Генерирует бинарную строку заданной длины, заполненную случайными байтами, включая нулевые.
-
-**Синтаксис**
-
-``` sql
-randomFixedString(length);
-```
-
-**Параметры**
-
--   `length` — Длина строки в байтах. [UInt64](../../sql-reference/data-types/int-uint.md).
-
-**Returned value(s)**
-
--   Строка, заполненная случайными байтами.
-
-Тип: [FixedString](../../sql-reference/data-types/fixedstring.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT randomFixedString(13) as rnd, toTypeName(rnd)
-```
-
-Результат:
-
-```text
-┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
-│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
-└──────────┴───────────────────────────────────┘
-
-```
-
-## randomStringUTF8 {#randomstringutf8}
-
-Генерирует строку заданной длины со случайными символами в кодировке UTF-8.
-
-**Синтаксис**
-
-``` sql
-randomStringUTF8(length);
-```
-
-**Параметры**
-
--   `length` — Длина итоговой строки в кодовых точках. [UInt64](../../sql-reference/data-types/int-uint.md).
-
-**Возвращаемое значение**
-
--   Случайная строка в кодировке UTF-8.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-```sql 
-SELECT randomStringUTF8(13)
-```
-
-Результат:
-
-```text 
-┌─randomStringUTF8(13)─┐
-│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛   │
-└──────────────────────┘
-
-```
 
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

@@ -518,10 +518,9 @@ void StorageLiveView::drop()
     condition.notify_all();
 }
 
-void StorageLiveView::refresh()
+void StorageLiveView::refresh(const Context & context)
 {
-    // Lock is already acquired exclusively from InterperterAlterQuery.cpp InterpreterAlterQuery::execute() method.
-    // So, reacquiring lock is not needed and will result in an exception.
+    auto table_lock = lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     {
         std::lock_guard lock(mutex);
         if (getNewBlocks())
@@ -529,7 +528,7 @@ void StorageLiveView::refresh()
     }
 }
 
-Pipe StorageLiveView::read(
+Pipes StorageLiveView::read(
     const Names & /*column_names*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
@@ -538,6 +537,7 @@ Pipe StorageLiveView::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
+    Pipes pipes;
     {
         std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
@@ -545,8 +545,9 @@ Pipe StorageLiveView::read(
             if (getNewBlocks())
                 condition.notify_all();
         }
-        return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
+        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
     }
+    return pipes;
 }
 
 BlockInputStreams StorageLiveView::watch(

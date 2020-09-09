@@ -34,6 +34,7 @@ namespace ProfileEvents
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -42,8 +43,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
 
 using CoordinateType = Float64;
 using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
@@ -150,7 +149,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
         const auto * const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
@@ -562,7 +561,6 @@ private:
     }
 };
 
-}
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {

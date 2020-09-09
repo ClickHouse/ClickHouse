@@ -313,18 +313,6 @@ void TCPHandler::runImpl()
             state.io.onException();
             exception.emplace(Exception::CreateFromPocoTag{}, e);
         }
-// Server should die on std logic errors in debug, like with assert()
-// or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
-// tests.
-#ifndef NDEBUG
-        catch (const std::logic_error & e)
-        {
-            state.io.onException();
-            exception.emplace(Exception::CreateFromSTDTag{}, e);
-            sendException(*exception, send_exception_with_stack_trace);
-            std::abort();
-        }
-#endif
         catch (const std::exception & e)
         {
             state.io.onException();
@@ -880,10 +868,10 @@ void TCPHandler::receiveQuery()
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-                                                                                                      : SettingsWriteFormat::BINARY;
+    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
+                                                                                                      : SettingsBinaryFormat::OLD;
     Settings passed_settings;
-    passed_settings.read(*in, settings_format);
+    passed_settings.deserialize(*in, settings_format);
     auto settings_changes = passed_settings.changes();
     if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
@@ -925,9 +913,9 @@ void TCPHandler::receiveUnexpectedQuery()
         skip_client_info.read(*in, client_revision);
 
     Settings skip_settings;
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-                                                                                                      : SettingsWriteFormat::BINARY;
-    skip_settings.read(*in, settings_format);
+    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
+                                                                                                      : SettingsBinaryFormat::OLD;
+    skip_settings.deserialize(*in, settings_format);
 
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);
@@ -1045,12 +1033,8 @@ void TCPHandler::initBlockOutput(const Block & block)
                 level = query_settings.network_zstd_compression_level;
 
             if (state.compression == Protocol::Compression::Enable)
-            {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs);
-
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionCodecFactory::instance().get(method, level));
-            }
+                    *out, CompressionCodecFactory::instance().get(method, level, !query_settings.allow_suspicious_codecs));
             else
                 state.maybe_compressed_out = out;
         }

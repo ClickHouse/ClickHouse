@@ -1,9 +1,14 @@
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 
+#include <IO/ReadHelpers.h>
+
+#include <Columns/ColumnAggregateFunction.h>
+
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -27,7 +32,7 @@ namespace ErrorCodes
 
 static const std::vector<String> supported_functions{"any", "anyLast", "min",
     "max", "sum", "sumWithOverflow", "groupBitAnd", "groupBitOr", "groupBitXor",
-    "sumMap", "minMap", "maxMap", "groupArrayArray", "groupUniqArrayArray"};
+    "sumMap", "groupArrayArray", "groupUniqArrayArray"};
 
 
 String DataTypeCustomSimpleAggregateFunction::getName() const

@@ -12,14 +12,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
-
-namespace
-{
 
 // Average metric edge length of H3 hexagon. The edge length `e` for given resolution `res` can
 // be used for converting metric search radius `radius` to hexagon search ring size `k` that is
@@ -49,7 +47,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
@@ -73,7 +71,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionH3EdgeLengthM(FunctionFactory & factory)
 {

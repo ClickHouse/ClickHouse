@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeCustomSimpleTextSerialization.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCoding.h>
 
 namespace DB

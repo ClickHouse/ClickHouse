@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 class FunctionRowNumberInBlock : public IFunction
 {
@@ -46,7 +44,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         auto column = ColumnUInt64::create();
         auto & data = column->getData();
@@ -57,8 +55,6 @@ public:
         block.getByPosition(result).column = std::move(column);
     }
 };
-
-}
 
 void registerFunctionRowNumberInBlock(FunctionFactory & factory)
 {

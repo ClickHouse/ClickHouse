@@ -28,9 +28,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
 /** dateDiff('unit', t1, t2, [timezone])
   * t1 and t2 can be Date or DateTime
   *
@@ -83,7 +80,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 3}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto * unit_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!unit_column)
@@ -127,7 +124,7 @@ private:
     void dispatchForColumns(
         const IColumn & x, const IColumn & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result) const
+        ColumnInt64::Container & result)
     {
         if (const auto * x_vec_16 = checkAndGetColumn<ColumnUInt16>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_16, y, timezone_x, timezone_y, result);
@@ -145,7 +142,7 @@ private:
     void dispatchForSecondColumn(
         const ColumnVector<T1> & x, const IColumn & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result) const
+        ColumnInt64::Container & result)
     {
         if (const auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
             vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
@@ -163,7 +160,7 @@ private:
     void dispatchConstForSecondColumn(
         T1 x, const IColumn & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result) const
+        ColumnInt64::Container & result)
     {
         if (const auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
             constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
@@ -177,7 +174,7 @@ private:
     void vectorVector(
         const ColumnVector<T1> & x, const ColumnVector<T2> & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result) const
+        ColumnInt64::Container & result)
     {
         const auto & x_data = x.getData();
         const auto & y_data = y.getData();
@@ -189,7 +186,7 @@ private:
     void vectorConstant(
         const ColumnVector<T1> & x, T2 y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result) const
+        ColumnInt64::Container & result)
     {
         const auto & x_data = x.getData();
         for (size_t i = 0, size = x.size(); i < size; ++i)
@@ -200,7 +197,7 @@ private:
     void constantVector(
         T1 x, const ColumnVector<T2> & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result) const
+        ColumnInt64::Container & result)
     {
         const auto & y_data = y.getData();
         for (size_t i = 0, size = y.size(); i < size; ++i)
@@ -208,14 +205,12 @@ private:
     }
 
     template <typename Transform, typename T1, typename T2>
-    Int64 calculate(T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
+    Int64 calculate(T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y)
     {
         return Int64(Transform::execute(y, timezone_y))
              - Int64(Transform::execute(x, timezone_x));
     }
 };
-
-}
 
 void registerFunctionDateDiff(FunctionFactory & factory)
 {

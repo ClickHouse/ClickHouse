@@ -49,12 +49,6 @@ private:
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
-    struct OperationsInQueue
-    {
-        size_t merges = 0;
-        size_t mutations = 0;
-        size_t merges_with_ttl = 0;
-    };
 
     StorageReplicatedMergeTree & storage;
     MergeTreeDataFormatVersion format_version;
@@ -127,7 +121,7 @@ private:
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
         /// (even if parts_to_do.size() == 0 some relevant parts can still commit in the future).
-        /// Also we can jump over mutation when we download mutated part from other replica.
+        /// Also we can jump over mutation when we dowload mutated part from other replica.
         bool is_done = false;
 
         String latest_failed_part;
@@ -331,7 +325,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Count the number of merges and mutations of single parts in the queue.
-    OperationsInQueue countMergesAndPartMutations() const;
+    std::pair<size_t, size_t> countMergesAndPartMutations() const;
 
     /// Count the total number of active mutations.
     size_t countMutations() const;
@@ -365,7 +359,7 @@ public:
     /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
     void disableMergesInBlockRange(const String & part_name);
 
-    /// Checks that part is already in virtual parts
+    /// Cheks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
@@ -407,15 +401,6 @@ public:
 
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
-
-
-    /// Return empty optional if mutation was killed. Otherwise return partially
-    /// filled mutation status with information about error (latest_fail*) and
-    /// is_done. mutation_ids filled with all mutations with same errors,
-    /// because they may be executed simultaneously as one mutation. Order is
-    /// important for better readability of exception message. If mutation was
-    /// killed doesn't return any ids.
-    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids = nullptr) const;
 
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 

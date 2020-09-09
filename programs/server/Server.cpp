@@ -128,6 +128,7 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 
@@ -214,6 +215,30 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 }
 
 
+/// Check that there is no user-level settings at the top level in config.
+/// This is a common source of mistake (user don't know where to write user-level setting).
+void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & config, const std::string & path)
+{
+    if (config.getBool("skip_check_for_incorrect_settings", false))
+        return;
+
+    Settings settings;
+    for (const auto & setting : settings)
+    {
+        std::string name = setting.getName().toString();
+        if (config.has(name))
+        {
+            throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
+                " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
+                " You can add it to <profiles><default> if you want to change default value of this setting."
+                " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
+                " in the main configuration file.",
+                name, path),
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        }
+    }
+}
+
 void checkForUsersNotInMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_path,
@@ -270,7 +295,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     /** Context contains all that query execution is dependent:
-      *  settings, available functions, data types, aggregate functions, databases, ...
+      *  settings, available functions, data types, aggregate functions, databases...
       */
     auto shared_context = Context::createShared();
     auto global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
@@ -294,7 +319,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+    checkForUserSettingsAtTopLevel(config(), config_path);
 
     const auto memory_amount = getMemoryAmount();
 
@@ -331,7 +356,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
-    /// Check that the process user id matches the owner of the data.
+    /// Check that the process' user id matches the owner of the data.
     const auto effective_user_id = geteuid();
     struct stat statbuf;
     if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
@@ -443,9 +468,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     {
-        Poco::File(path + "data/").createDirectories();
-        Poco::File(path + "metadata/").createDirectories();
-
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         Poco::File(path + "metadata_dropped/").createDirectories();
     }
@@ -513,7 +535,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
+            checkForUserSettingsAtTopLevel(*config, config_path);
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
@@ -521,7 +543,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
-            global_context->setExternalAuthenticatorsConfig(*config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -534,19 +555,44 @@ int Server::main(const std::vector<std::string> & /*args*/)
         },
         /* already_loaded = */ true);
 
-    auto & access_control = global_context->getAccessControlManager();
-    if (config().has("custom_settings_prefixes"))
-        access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
+    /// Initialize users config reloader.
+    std::string users_config_path = config().getString("users_config", config_path);
+    /// If path to users' config isn't absolute, try guess its root (current) dir.
+    /// At first, try to find it in dir of main config, after will use current dir.
+    if (users_config_path.empty() || users_config_path[0] != '/')
+    {
+        std::string config_dir = Poco::Path(config_path).parent().toString();
+        if (Poco::File(config_dir + users_config_path).exists())
+            users_config_path = config_dir + users_config_path;
+    }
 
-    /// Initialize access storages.
-    access_control.addStoragesFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+    if (users_config_path != config_path)
+        checkForUsersNotInMainConfig(config(), config_path, users_config_path, log);
+
+    auto users_config_reloader = std::make_unique<ConfigReloader>(
+        users_config_path,
+        include_from_path,
+        config().getString("path", ""),
+        zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
+        std::make_shared<Poco::Event>(),
+        [&](ConfigurationPtr config)
+        {
+            global_context->setUsersConfig(config);
+            checkForUserSettingsAtTopLevel(*config, users_config_path);
+        },
+        /* already_loaded = */ false);
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
     global_context->setConfigReloadCallback([&]()
     {
         main_config_reloader->reload();
-        access_control.reloadUsersConfigs();
+        users_config_reloader->reload();
     });
+
+    /// Sets a local directory storing information about access control.
+    std::string access_control_local_path = config().getString("access_control_path", "");
+    if (!access_control_local_path.empty())
+        global_context->getAccessControlManager().setLocalDirectory(access_control_local_path);
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -593,9 +639,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
-
-    /// Check sanity of MergeTreeSettings on server startup
-    global_context->getMergeTreeSettings().sanityCheck(settings);
 
     /// Limit on total memory usage
     size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);
@@ -716,7 +759,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// Disable DNS caching at all
         DNSResolver::instance().setDisableCacheFlag();
-        LOG_DEBUG(log, "DNS caching disabled");
     }
     else
     {
@@ -1017,7 +1059,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         buildLoggers(config(), logger());
 
         main_config_reloader->start();
-        access_control.startPeriodicReloadingUsersConfigs();
+        users_config_reloader->start();
         if (dns_cache_updater)
             dns_cache_updater->start();
 
@@ -1076,6 +1118,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             dns_cache_updater.reset();
             main_config_reloader.reset();
+            users_config_reloader.reset();
 
             if (current_connections)
             {

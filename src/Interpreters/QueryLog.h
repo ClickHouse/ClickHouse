@@ -2,6 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
+#include <Core/SettingsCollection.h>
 
 
 namespace ProfileEvents
@@ -31,7 +32,6 @@ struct QueryLogElement
 
     time_t event_time{};
     time_t query_start_time{};
-    UInt64 query_start_time_microseconds{};
     UInt64 query_duration_ms{};
 
     /// The data fetched from DB to execute the query
@@ -48,7 +48,6 @@ struct QueryLogElement
 
     UInt64 memory_usage{};
 
-    String current_database;
     String query;
 
     Int32 exception_code{}; // because ErrorCodes are int

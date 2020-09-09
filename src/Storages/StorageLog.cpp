@@ -127,12 +127,7 @@ public:
     {
         try
         {
-            if (!done)
-            {
-                /// Rollback partial writes.
-                streams.clear();
-                storage.file_checker.repair();
-            }
+            writeSuffix();
         }
         catch (...)
         {
@@ -303,6 +298,7 @@ void LogBlockOutputStream::writeSuffix()
 {
     if (done)
         return;
+    done = true;
 
     WrittenStreams written_streams;
     IDataType::SerializeBinaryBulkSettings settings;
@@ -318,7 +314,6 @@ void LogBlockOutputStream::writeSuffix()
 
     /// Finish write.
     marks_stream->next();
-    marks_stream->finalize();
 
     for (auto & name_stream : streams)
         name_stream.second.finalize();
@@ -328,12 +323,9 @@ void LogBlockOutputStream::writeSuffix()
         column_files.push_back(storage.files[name_stream.first].data_file_path);
     column_files.push_back(storage.marks_file_path);
 
-    for (const auto & file : column_files)
-        storage.file_checker.update(file);
-    storage.file_checker.save();
+    storage.file_checker.update(column_files.begin(), column_files.end());
 
     streams.clear();
-    done = true;
 }
 
 
@@ -435,7 +427,6 @@ StorageLog::StorageLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
     , disk(std::move(disk_))
@@ -451,31 +442,13 @@ StorageLog::StorageLog(
     if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    if (!attach)
-    {
-        /// create directories if they do not exist
-        disk->createDirectories(table_path);
-    }
-    else
-    {
-        try
-        {
-            file_checker.repair();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+    /// create directories if they do not exist
+    disk->createDirectories(table_path);
 
     for (const auto & column : storage_metadata.getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
-
-    if (!attach)
-        for (const auto & file : files)
-            file_checker.setEmpty(file.second.data_file_path);
 }
 
 
@@ -605,7 +578,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
     return it->second.marks;
 }
 
-Pipe StorageLog::read(
+Pipes StorageLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -648,7 +621,7 @@ Pipe StorageLog::read(
             max_read_buffer_size));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
 BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
@@ -682,7 +655,7 @@ void registerStorageLog(StorageFactory & factory)
 
         return StorageLog::create(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
-            args.attach, args.context.getSettings().max_compress_block_size);
+            args.context.getSettings().max_compress_block_size);
     }, features);
 }
 

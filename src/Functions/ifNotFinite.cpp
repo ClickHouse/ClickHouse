@@ -8,8 +8,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// ifNotFinite(x, y) is equivalent to isFinite(x) ? x : y.
 class FunctionIfNotFinite : public IFunction
@@ -41,7 +39,7 @@ public:
         return if_type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         Block temp_block = block;
 
@@ -65,7 +63,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionIfNotFinite(FunctionFactory & factory)
 {
