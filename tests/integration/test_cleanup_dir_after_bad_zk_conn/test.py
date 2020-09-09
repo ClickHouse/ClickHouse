@@ -9,12 +9,12 @@ from helpers.network import PartitionManager
 # Test flow is as follows:
 # 1. Configure cluster with ZooKeeper and create a database.
 # 2. Drop all connections to ZooKeeper.
-# 3. Try creating the table and there would be a Poco:Exception.
+# 3. Try creating the table and there will be a Poco:Exception.
 # 4. Try creating the table again and there should not be any error
-# that indicates that the Directory for table already exists.
+# that indicates that the directory for table already exists.
 # 5. Final step is to restore ZooKeeper connection and verify that
-# the table creation and queries work.
-def test_replicated_zk_conn_failure():
+# the table creation works.
+def test_cleanup_dir_after_bad_zk_conn():
     cluster = ClickHouseCluster(__file__)
     node1 = cluster.add_instance('node1', with_zookeeper=True)
     try:
@@ -30,21 +30,15 @@ def test_replicated_zk_conn_failure():
         ORDER BY id;'''
         with PartitionManager() as pm:
             pm.drop_instance_zk_connections(node1)
-            time.sleep(5)
+            time.sleep(3)
             error = node1.query_and_get_error(query_create)
-            # Assert that there was net exception.
-            assert "Poco::Exception. Code: 1000" in error
-            # Assert that the exception was due to ZooKeeper connectivity.
-            assert "All connection tries failed while connecting to ZooKeeper" in error
-            # retry table creation
+            assert "Poco::Exception. Code: 1000" and \
+                   "All connection tries failed while connecting to ZooKeeper" in error
             error = node1.query_and_get_error(query_create)
-            # Should not expect any errors related to directory already existing
-            # and those should have been already cleaned up during the previous retry.
             assert "Directory for table data data/replica/test/ already exists" not in error
-            # restore ZooKeeper connections.
             pm.restore_instance_zk_connections(node1)
-            # retry create query and query the table created.
             node1.query(query_create)
-            assert "0\n" in node1.query('''SELECT count() from replica.test FORMAT TSV''')
+            node1.query('''INSERT INTO replica.test VALUES (1, now())''')
+            assert "1\n" in node1.query('''SELECT count() from replica.test FORMAT TSV''')
     finally:
         cluster.shutdown()
