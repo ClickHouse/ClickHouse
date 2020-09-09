@@ -612,7 +612,10 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
         return true;
     }
 
-    throw Exception("Cannot create table, because it is created concurrently every time or because of logical error", ErrorCodes::LOGICAL_ERROR);
+    /// Do not use LOGICAL_ERROR code, because it may happen if user has specified wrong zookeeper_path
+    throw Exception("Cannot create table, because it is created concurrently every time "
+                    "or because of wrong zookeeper_path "
+                    "or because of logical error", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
 }
 
 void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot)
