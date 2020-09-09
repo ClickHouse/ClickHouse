@@ -1348,9 +1348,11 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
                [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
            != query_requires_access.end());
 
+    bool use_local_default_database = false;
+    const String & current_database = context.getCurrentDatabase();
+
     if (need_replace_current_database)
     {
-        bool use_local_default_database = false;
         Strings shard_default_databases;
         for (const auto & shard : shards)
         {
@@ -1371,10 +1373,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
 
         if (use_local_default_database)
         {
-            const String & current_database = context.getCurrentDatabase();
-            AddDefaultDatabaseVisitor visitor(current_database);
-            visitor.visitDDL(query_ptr);
-
             query_requires_access.replaceEmptyDatabase(current_database);
         }
         else
@@ -1394,6 +1392,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
             }
         }
     }
+
+    AddDefaultDatabaseVisitor visitor(current_database, !use_local_default_database);
+    visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config
     if (query_requires_grant_option)
