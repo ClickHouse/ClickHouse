@@ -182,7 +182,9 @@ void ExpressionAnalyzer::analyzeAggregation()
         if (join)
         {
             getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
-            addJoinAction(temp_actions);
+            auto sample_columns = temp_actions->getSampleBlock().getColumnsWithTypeAndName();
+            analyzedJoin().addJoinedColumnsAndCorrectNullability(sample_columns);
+            temp_actions = std::make_shared<ExpressionActions>(sample_columns, context);
         }
 
         columns_after_join = columns_after_array_join;
@@ -474,17 +476,11 @@ ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActi
     auto array_join = addMultipleArrayJoinAction(step.actions(), is_array_join_left);
 
     chain.steps.push_back(std::make_unique<ExpressionActionsChain::ArrayJoinStep>(
-            array_join, step.getResultColumns(),
-            Names())); /// Required output is empty because all array joined columns are kept by step.
+            array_join, step.getResultColumns()));
 
     chain.addStep();
 
     return array_join;
-}
-
-void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, JoinPtr join) const
-{
-    actions->add(ExpressionAction::ordinaryJoin(syntax->analyzed_join, join));
 }
 
 bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types)
@@ -495,14 +491,17 @@ bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & 
     return true;
 }
 
-bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain)
+JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain)
 {
     JoinPtr table_join = makeTableJoin(*syntax->ast_join);
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
 
-    addJoinAction(step.actions(), table_join);
-    return true;
+    chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(
+            syntax->analyzed_join, table_join, step.getResultColumns()));
+
+    chain.addStep();
+    return table_join;
 }
 
 static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
@@ -1091,15 +1090,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage);
 
-            before_join = chain.getLastActions(true);
-            if (before_join)
-                chain.addStep();
-
-            query_analyzer.appendJoin(chain);
-
-            join = chain.getLastActions();
-            if (!join)
-                throw Exception("No expected JOIN", ErrorCodes::LOGICAL_ERROR);
+            before_join = chain.getLastActions();
+            join = query_analyzer.appendJoin(chain);
             chain.addStep();
         }
 
@@ -1150,9 +1142,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (hasJoin())
         {
             /// You may find it strange but we support read_in_order for HashJoin and do not support for MergeJoin.
-            auto join_algo = join->getTableJoinAlgo();
             bool has_delayed_stream = query_analyzer.analyzedJoin().needStreamWithNonJoinedRows();
-            join_allow_read_in_order = typeid_cast<HashJoin *>(join_algo.get()) && !has_delayed_stream;
+            join_allow_read_in_order = typeid_cast<HashJoin *>(join.get()) && !has_delayed_stream;
         }
 
         optimize_read_in_order =
@@ -1242,8 +1233,8 @@ void ExpressionAnalysisResult::checkActions() const
         {
             if (actions)
                 for (const auto & action : actions->getActions())
-                    if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
-                        throw Exception("PREWHERE cannot contain ARRAY JOIN or JOIN action", ErrorCodes::ILLEGAL_PREWHERE);
+                    if (action.type == ExpressionAction::Type::ARRAY_JOIN)
+                        throw Exception("PREWHERE cannot contain ARRAY JOIN action", ErrorCodes::ILLEGAL_PREWHERE);
         };
 
         check_actions(prewhere_info->prewhere_actions);
