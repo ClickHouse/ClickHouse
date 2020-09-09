@@ -38,7 +38,7 @@ int main(int argc, char ** argv)
                     for (size_t i = 0; i < watches_per_thread; ++i)
                     {
                         std::string get_path_value;
-                        zk.tryGet("/clickhouse/nonexistent_node" + std::to_string(i * N_THREADS + i_thread), get_path_value,nullptr, watch);
+                        zk.tryGet("/clickhouse/nonexistent_node" + std::to_string(i * N_THREADS + i_thread), get_path_value, nullptr, watch);
                     }
                 });
         }
