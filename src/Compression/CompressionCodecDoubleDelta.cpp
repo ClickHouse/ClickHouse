@@ -339,6 +339,12 @@ ASTPtr CompressionCodecDoubleDelta::getCodecDesc() const
     return std::make_shared<ASTIdentifier>("DoubleDelta");
 }
 
+void CompressionCodecDoubleDelta::updateHash(SipHash & hash) const
+{
+    getCodecDesc()->updateTreeHash(hash);
+    hash.update(data_bytes_size);
+}
+
 UInt32 CompressionCodecDoubleDelta::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     const auto result = 2 // common header

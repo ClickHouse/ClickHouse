@@ -32,7 +32,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/InflatingExpressionTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
@@ -63,8 +63,6 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
-
-#include <TableFunctions/ITableFunction.h>
 
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
@@ -743,7 +741,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     auto & expressions = analysis_result;
-    const auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+    auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
     bool intermediate_stage = false;
     bool to_aggregation_stage = false;
     bool from_aggregation_stage = false;
@@ -915,12 +913,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (expressions.hasJoin())
             {
                 Block join_result_sample;
-                JoinPtr join = expressions.join->getTableJoinAlgo();
+                JoinPtr join = expressions.join;
 
-                join_result_sample = InflatingExpressionTransform::transformHeader(
+                join_result_sample = JoiningTransform::transformHeader(
                     query_plan.getCurrentDataStream().header, expressions.join);
 
-                QueryPlanStepPtr join_step = std::make_unique<InflatingExpressionStep>(
+                QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                     query_plan.getCurrentDataStream(),
                     expressions.join);
 
@@ -1857,7 +1855,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
     query_plan.addStep(std::move(extremes_step));
 }
 
-void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, const SubqueriesForSets & subqueries_for_sets)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, SubqueriesForSets & subqueries_for_sets)
 {
     if (query_info.input_order_info)
         executeMergeSorted(query_plan, query_info.input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
@@ -1866,7 +1864,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
 
     auto creating_sets = std::make_unique<CreatingSetsStep>(
             query_plan.getCurrentDataStream(),
-            subqueries_for_sets,
+            std::move(subqueries_for_sets),
             SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
             *context);
 

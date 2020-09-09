@@ -6,6 +6,8 @@ PEERDIR(
     clickhouse/src/Formats
 )
 
+CFLAGS(-g0)
+
 SRCS(
     convertMySQLDataType.cpp
     DataTypeAggregateFunction.cpp

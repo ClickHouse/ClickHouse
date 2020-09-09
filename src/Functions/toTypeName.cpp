@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** toTypeName(x) - get the type name
   * Returns name of IDataType instance (name of data type).
@@ -85,6 +87,7 @@ public:
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 };
 
+}
 
 void registerFunctionToTypeName(FunctionFactory & factory)
 {

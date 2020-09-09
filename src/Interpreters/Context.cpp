@@ -82,6 +82,9 @@ namespace CurrentMetrics
 
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
+
+    extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundMessageBrokerSchedulePool;
 }
 
 
@@ -341,6 +344,7 @@ struct ContextShared
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    std::optional<BackgroundSchedulePool> message_broker_schedule_pool;    /// A thread pool that can run different jobs in background (used in kafka streaming)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -441,6 +445,7 @@ struct ContextShared
         schedule_pool.reset();
         distributed_schedule_pool.reset();
         ddl_worker.reset();
+        message_broker_schedule_pool.reset();
 
         /// Stop trace collector if any
         trace_collector.reset();
@@ -1421,6 +1426,18 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
     return *shared->distributed_schedule_pool;
 }
 
+BackgroundSchedulePool & Context::getMessageBrokerSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->message_broker_schedule_pool)
+        shared->message_broker_schedule_pool.emplace(
+            settings.background_message_broker_schedule_pool_size,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundMessageBrokerSchedulePool,
+            "BgMBSchPool");
+    return *shared->message_broker_schedule_pool;
+}
+
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
@@ -1973,6 +1990,12 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
+    for (auto & [disk_name, disk] : getDisksMap())
+    {
+        LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
+        disk->shutdown();
+    }
+
     shared->shutdown();
 }
 
