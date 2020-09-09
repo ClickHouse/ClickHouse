@@ -353,13 +353,8 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
             size_t write_idx = first;
             size_t end_idx = last;
 
-            size_t current_limit = end_idx;
-            if (limit && limit >= read_idx && limit <= end_idx)
-                current_limit = limit;
-
-            /// We simply check the limit not to do extra work.
-            /// Since interval begins from `first`, not from zero, we add `first` to the right side of the inequality.
-            while (read_idx < current_limit && !isNullAt(res[read_idx]))
+            /// We can't check the limit here because the interval is not sorted by nested column.
+            while (read_idx < end_idx && !isNullAt(res[read_idx]))
             {
                 ++read_idx;
                 ++write_idx;
@@ -377,7 +372,7 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
             /// Relative order of NULL elements could be changed,
             ///  but relative order of non-NULLs is preserved.
 
-            while (read_idx < end_idx && write_idx < current_limit)
+            while (read_idx < end_idx && write_idx < end_idx)
             {
                 if (!isNullAt(res[read_idx]))
                 {
