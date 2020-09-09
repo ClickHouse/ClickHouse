@@ -476,7 +476,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait ZooKeeper container")
 
-    def wait_hdfs_to_start(self, timeout=60):
+    def wait_hdfs_to_start(self, timeout=600):
         hdfs_api = HDFSApi("root")
         start = time.time()
         while time.time() - start < timeout:
