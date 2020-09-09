@@ -171,6 +171,10 @@ public:
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
 
+    /**
+     * Checks if the dictionary column is Nullable(T).
+     * So LC(Nullable(T)) would return true, LC(U) -- false.
+     */
     bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
