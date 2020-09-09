@@ -860,6 +860,7 @@ class ClickHouseInstance:
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
         self.custom_dictionaries_paths = [p.abspath(p.join(base_path, c)) for c in custom_dictionaries]
         self.clickhouse_path_dir = p.abspath(p.join(base_path, clickhouse_path_dir)) if clickhouse_path_dir else None
+        self.kerberos_secrets_dir = p.abspath(p.join(base_path, 'secrets'))
         self.macros = macros if macros is not None else {}
         self.with_zookeeper = with_zookeeper
         self.zookeeper_config_path = zookeeper_config_path
@@ -1222,8 +1223,7 @@ class ClickHouseInstance:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
         if self.with_kerberized_kafka:
-            secrets_dir = p.abspath(p.join(self.custom_config_dir, os.pardir, 'secrets'))
-            distutils.dir_util.copy_tree(secrets_dir, p.abspath(p.join(self.path, 'secrets')))
+            distutils.dir_util.copy_tree(self.kerberos_secrets_dir, p.abspath(p.join(self.path, 'secrets')))
 
         # Copy config dir
         if self.custom_config_dir:
