@@ -97,7 +97,7 @@ RUN wget -nv https://clickhouse-datasets.s3.yandex.net/toolchains/toolchains/fre
 RUN echo 'deb http://archive.ubuntu.com/ubuntu/ focal-proposed restricted main multiverse universe' > /etc/apt/sources.list.d/proposed-repositories.list
 
 RUN apt-get update \
-    && apt-get install gcc-10 g++10 --yes
+    && apt-get install gcc-10 g++-10 --yes
 
 RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
