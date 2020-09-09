@@ -70,8 +70,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         return table_function_ptr->execute(query.table_function, context, table_function_ptr->getName());
     }
 
-    query.table_id = context.resolveStorageID(query.table_id);
-    return DatabaseCatalog::instance().getTable(query.table_id, context);
+    query.table = std::make_shared<ASTTableIdentifier>(context.resolveStorageID(query.table));
+    return DatabaseCatalog::instance().getTable(query.table->as<ASTTableIdentifier>()->getStorageId(), context);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -98,7 +98,8 @@ Block InterpreterInsertQuery::getSampleBlock(
 
         /// The table does not have a column with that name
         if (!table_sample.has(current_name))
-            throw Exception("No such column " + current_name + " in table " + query.table_id.getNameForLogs(),
+            throw Exception(
+                "No such column " + current_name + " in table " + query.table->as<ASTTableIdentifier>()->getStorageId().getNameForLogs(),
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (!allow_materialized && !table_sample_non_materialized.has(current_name))
@@ -159,7 +160,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
     if (!query.table_function)
-        context.checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
+        context.checkAccess(AccessType::INSERT, query.table, query_sample_block.getNames());
 
     bool is_distributed_insert_select = false;
 
@@ -200,7 +201,8 @@ BlockIO InterpreterInsertQuery::execute()
 
             if (settings.parallel_distributed_insert_select == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
             {
-                new_query->table_id = StorageID(storage_dst->getRemoteDatabaseName(), storage_dst->getRemoteTableName());
+                new_query->table
+                    = std::make_shared<ASTTableIdentifier>(storage_dst->getRemoteDatabaseName(), storage_dst->getRemoteTableName());
             }
 
             const auto & cluster = storage_src->getCluster();
@@ -317,7 +319,7 @@ BlockIO InterpreterInsertQuery::execute()
             /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
             if (const auto & constraints = metadata_snapshot->getConstraints(); !constraints.empty())
                 out = std::make_shared<CheckConstraintsBlockOutputStream>(
-                    query.table_id, out, out->getHeader(), metadata_snapshot->getConstraints(), context);
+                    query.table, out, out->getHeader(), metadata_snapshot->getConstraints(), context);
 
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
@@ -395,7 +397,7 @@ BlockIO InterpreterInsertQuery::execute()
 
 StorageID InterpreterInsertQuery::getDatabaseTable() const
 {
-    return query_ptr->as<ASTInsertQuery &>().table_id;
+    return query_ptr->as<ASTInsertQuery>()->table->as<ASTTableIdentifier>()->getStorageId();
 }
 
 }

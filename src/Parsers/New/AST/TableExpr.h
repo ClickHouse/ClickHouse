@@ -15,12 +15,6 @@ class TableArgExpr : public INode
         ASTPtr convertToOld() const override { return children[0]->convertToOld(); }
 };
 
-class TableFunctionExpr : public INode
-{
-    public:
-        TableFunctionExpr(PtrTo<Identifier> name, PtrTo<TableArgList> args);
-};
-
 class TableExpr : public INode
 {
     public:
@@ -58,6 +52,21 @@ class TableExpr : public INode
         ExprType expr_type;
 
         TableExpr(ExprType type, PtrList exprs);
+};
+
+class TableFunctionExpr : public INode
+{
+    public:
+        TableFunctionExpr(PtrTo<Identifier> name, PtrTo<TableArgList> args);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            NAME = 0,
+            ARGS = 1,
+        };
 };
 
 }

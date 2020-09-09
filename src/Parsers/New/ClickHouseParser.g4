@@ -72,7 +72,7 @@ subqueryClause: AS selectUnionStmt;
 schemaClause
     : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN  # SchemaDescriptionClause
     | AS tableIdentifier                                        # SchemaAsTableClause
-    | AS tableFuncExpr                                          # SchemaAsFunctionClause
+    | AS tableFunctionExpr                                          # SchemaAsFunctionClause
     ;
 engineClause:
     engineExpr
@@ -118,7 +118,7 @@ existsStmt: EXISTS TEMPORARY? TABLE tableIdentifier;
 
 // INSERT statement
 
-insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFuncExpr) columnsClause? dataClause?;
+insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) columnsClause? dataClause?;
 
 columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
 dataClause
@@ -286,11 +286,11 @@ nestedIdentifier: identifier (DOT identifier)?;
 
 tableExpr
     : tableIdentifier                # TableExprIdentifier
-    | tableFuncExpr                  # TableExprFunction
+    | tableFunctionExpr                  # TableExprFunction
     | LPAREN selectUnionStmt RPAREN  # TableExprSubquery
     | tableExpr AS? identifier       # TableExprAlias
     ;
-tableFuncExpr: identifier LPAREN tableArgList? RPAREN;
+tableFunctionExpr: identifier LPAREN tableArgList? RPAREN;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr

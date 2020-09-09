@@ -143,7 +143,7 @@ struct SharedContextHolder
 {
     ~SharedContextHolder();
     SharedContextHolder();
-    SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
+    explicit SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
     SharedContextHolder(SharedContextHolder &&) noexcept;
 
     SharedContextHolder & operator=(SharedContextHolder &&);
@@ -327,6 +327,7 @@ public:
     };
 
     String resolveDatabase(const String & database_name) const;
+    StorageID resolveStorageID(const ASTPtr & table, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;

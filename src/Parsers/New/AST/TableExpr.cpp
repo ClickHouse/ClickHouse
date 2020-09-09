@@ -23,12 +23,6 @@ TableArgExpr::TableArgExpr(PtrTo<TableExpr> expr)
     children.push_back(expr);
 }
 
-TableFunctionExpr::TableFunctionExpr(PtrTo<Identifier> name, PtrTo<TableArgList> args)
-{
-    children.push_back(name);
-    children.push_back(args);
-}
-
 // static
 PtrTo<TableExpr> TableExpr::createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier> alias)
 {
@@ -36,9 +30,9 @@ PtrTo<TableExpr> TableExpr::createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier>
 }
 
 // static
-PtrTo<TableExpr> TableExpr::createFunction(PtrTo<Identifier> name, PtrTo<TableArgList> args)
+PtrTo<TableExpr> TableExpr::createFunction(PtrTo<TableFunctionExpr> function)
 {
-    return PtrTo<TableExpr>(new TableExpr(ExprType::FUNCTION, {name, args}));
+    return PtrTo<TableExpr>(new TableExpr(ExprType::FUNCTION, {function}));
 }
 
 // static
@@ -81,14 +75,10 @@ ASTPtr TableExpr::convertToOld() const
         case ExprType::FUNCTION:
         {
             auto expr = std::make_shared<ASTTableExpression>();
-            auto func = std::make_shared<ASTFunction>();
+            auto func = children[FUNCTION]->convertToOld();
 
             expr->table_function = func;
             expr->children.push_back(func);
-
-            func->name = children[NAME]->as<Identifier>()->getName();
-            func->arguments = children[ARGS] ? children[ARGS]->convertToOld() : std::make_shared<TableArgList>()->convertToOld();
-            func->children.push_back(func->arguments);
 
             return expr;
         }
@@ -112,6 +102,23 @@ ASTPtr TableExpr::convertToOld() const
             return expr;
         }
     }
+}
+
+TableFunctionExpr::TableFunctionExpr(PtrTo<Identifier> name, PtrTo<TableArgList> args)
+{
+    children.push_back(name);
+    children.push_back(args);
+}
+
+ASTPtr TableFunctionExpr::convertToOld() const
+{
+    auto func = std::make_shared<ASTFunction>();
+
+    func->name = children[NAME]->as<Identifier>()->getName();
+    func->arguments = children[ARGS] ? children[ARGS]->convertToOld() : std::make_shared<TableArgList>()->convertToOld();
+    func->children.push_back(func->arguments);
+
+    return func;
 }
 
 }
@@ -142,8 +149,7 @@ antlrcpp::Any ParseTreeVisitor::visitTableExprAlias(ClickHouseParser::TableExprA
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprFunction(ClickHouseParser::TableExprFunctionContext *ctx)
 {
-    return TableExpr::createFunction(
-        visit(ctx->identifier()), ctx->tableArgList() ? visit(ctx->tableArgList()).as<PtrTo<TableArgList>>() : nullptr);
+    return TableExpr::createFunction(visit(ctx->tableFunctionExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext *ctx)
@@ -154,6 +160,12 @@ antlrcpp::Any ParseTreeVisitor::visitTableExprIdentifier(ClickHouseParser::Table
 antlrcpp::Any ParseTreeVisitor::visitTableExprSubquery(ClickHouseParser::TableExprSubqueryContext *ctx)
 {
     return TableExpr::createSubquery(visit(ctx->selectUnionStmt()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableFunctionExpr(ClickHouseParser::TableFunctionExprContext *ctx)
+{
+    auto list = ctx->tableArgList() ? visit(ctx->tableArgList()).as<PtrTo<TableArgList>>() : nullptr;
+    return std::make_shared<TableFunctionExpr>(visit(ctx->identifier()), list);
 }
 
 }

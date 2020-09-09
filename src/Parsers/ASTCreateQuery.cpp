@@ -1,10 +1,12 @@
 #include <Parsers/ASTCreateQuery.h>
+
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
-#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -273,11 +275,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             << backQuoteIfNeed(to_table_id.table_name);
     }
 
-    if (!as_table.empty())
+    if (as_table)
     {
-        settings.ostr
-            << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
-            << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
+        auto * as_table_ptr = as_table->as<ASTTableIdentifier>();
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
+                      << (!as_table_ptr->getDatabaseName().empty() ? backQuoteIfNeed(as_table_ptr->getDatabaseName()) + "." : "")
+                      << backQuoteIfNeed(as_table_ptr->getTableName());
     }
 
     if (as_table_function)

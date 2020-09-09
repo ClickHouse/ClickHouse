@@ -63,7 +63,7 @@ ASTPtr InsertQuery::convertToOld() const
             query->table_function = children[FUNCTION]->convertToOld();
             break;
         case QueryType::TABLE:
-            query->table_id = children[IDENTIFIER]->convertToOld();
+            query->table = children[IDENTIFIER]->convertToOld();
             break;
     }
 
@@ -79,20 +79,11 @@ namespace DB
 
 using namespace AST;
 
-antlrcpp::Any ParseTreeVisitor::visitInsertFunctionStmt(ClickHouseParser::InsertFunctionStmtContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitColumnsClause(ClickHouseParser::ColumnsClauseContext *ctx)
 {
-    auto data = ctx->dataClause() ? visit(ctx->dataClause()).as<PtrTo<DataClause>>() : nullptr;
     auto list = std::make_shared<ColumnNameList>();
     for (auto * name : ctx->nestedIdentifier()) list->append(visit(name));
-    return InsertQuery::createFunction(visit(ctx->tableFuncExpr()), list, data);
-}
-
-antlrcpp::Any ParseTreeVisitor::visitInsertTableStmt(ClickHouseParser::InsertTableStmtContext *ctx)
-{
-    auto data = ctx->dataClause() ? visit(ctx->dataClause()).as<PtrTo<DataClause>>() : nullptr;
-    auto list = std::make_shared<ColumnNameList>();
-    for (auto * name : ctx->nestedIdentifier()) list->append(visit(name));
-    return InsertQuery::createTable(visit(ctx->tableIdentifier()), list, data);
+    return list;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitDataClauseFormat(ClickHouseParser::DataClauseFormatContext *ctx)
@@ -110,6 +101,16 @@ antlrcpp::Any ParseTreeVisitor::visitDataClauseValues(ClickHouseParser::DataClau
     auto list = std::make_shared<ColumnExprList>();
     for (auto * expr : ctx->valueTupleExpr()) list->append(visit(expr));
     return DataClause::createValues(list);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx)
+{
+    auto data = ctx->dataClause() ? visit(ctx->dataClause()).as<PtrTo<DataClause>>() : nullptr;
+    auto columns = ctx->columnsClause() ? visit(ctx->columnsClause()).as<PtrTo<ColumnNameList>>() : nullptr;
+
+    if (ctx->FUNCTION()) return InsertQuery::createFunction(visit(ctx->tableFunctionExpr()), columns, data);
+    if (ctx->tableIdentifier()) return InsertQuery::createTable(visit(ctx->tableIdentifier()), columns, data);
+    __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *ctx)

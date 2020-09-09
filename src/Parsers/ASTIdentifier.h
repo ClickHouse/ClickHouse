@@ -55,11 +55,6 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
-    virtual String getNestedName() const { return {}; }
-    virtual String getColumnName() const { return {}; }
-    virtual String getTableName() const { return {}; }
-    virtual String getDatabaseName() const { return {}; }
-
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
@@ -86,12 +81,18 @@ class ASTColumnIdentifier final : public ASTIdentifier
 class ASTTableIdentifier final : public ASTIdentifier
 {
     public:
-        explicit ASTTableIdentifier(const String & name_, std::vector<String> && name_parts_ = {})
-            : ASTIdentifier(name_, std::move(name_parts_)) {}
-        explicit ASTTableIdentifier(std::vector<String> && name_parts_) : ASTIdentifier(std::move(name_parts_)) {}
+        explicit ASTTableIdentifier(const String & table);
+        explicit ASTTableIdentifier(const StorageID & id);
+        ASTTableIdentifier(const String & database, const String & table);
+        ASTTableIdentifier(const ASTPtr & database, const ASTPtr & table);
 
-        String getTableName() const override;
-        String getDatabaseName() const override;
+        String getTableName() const;
+        String getDatabaseName() const;
+        StorageID getStorageId() const;
+};
+
+class ASTDatabaseIdentifier final : public ASTIdentifier
+{
 };
 
 

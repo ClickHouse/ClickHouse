@@ -55,23 +55,24 @@ public:
     RuleTtlClause = 17, RuleEngineExpr = 18, RuleTableElementExpr = 19, 
     RuleTableColumnDfnt = 20, RuleTableColumnPropertyExpr = 21, RuleTtlExpr = 22, 
     RuleDescribeStmt = 23, RuleDropStmt = 24, RuleExistsStmt = 25, RuleInsertStmt = 26, 
-    RuleDataClause = 27, RuleValueTupleExpr = 28, RuleOptimizeStmt = 29, 
-    RulePartitionClause = 30, RuleRenameStmt = 31, RuleSelectUnionStmt = 32, 
-    RuleSelectStmt = 33, RuleWithClause = 34, RuleFromClause = 35, RuleSampleClause = 36, 
-    RuleArrayJoinClause = 37, RulePrewhereClause = 38, RuleWhereClause = 39, 
-    RuleGroupByClause = 40, RuleHavingClause = 41, RuleOrderByClause = 42, 
-    RuleLimitByClause = 43, RuleLimitClause = 44, RuleSettingsClause = 45, 
-    RuleJoinExpr = 46, RuleJoinOp = 47, RuleJoinOpCross = 48, RuleJoinConstraintClause = 49, 
-    RuleLimitExpr = 50, RuleOrderExprList = 51, RuleOrderExpr = 52, RuleRatioExpr = 53, 
-    RuleSettingExprList = 54, RuleSettingExpr = 55, RuleSetStmt = 56, RuleShowStmt = 57, 
-    RuleSystemStmt = 58, RuleTruncateStmt = 59, RuleUseStmt = 60, RuleColumnTypeExpr = 61, 
-    RuleColumnExprList = 62, RuleColumnsExpr = 63, RuleColumnExpr = 64, 
-    RuleColumnArgList = 65, RuleColumnArgExpr = 66, RuleColumnLambdaExpr = 67, 
-    RuleColumnIdentifier = 68, RuleNestedIdentifier = 69, RuleTableExpr = 70, 
-    RuleTableIdentifier = 71, RuleTableArgList = 72, RuleTableArgExpr = 73, 
-    RuleDatabaseIdentifier = 74, RuleFloatingLiteral = 75, RuleNumberLiteral = 76, 
-    RuleLiteral = 77, RuleKeyword = 78, RuleIdentifier = 79, RuleIdentifierOrNull = 80, 
-    RuleUnaryOp = 81, RuleBinaryOp = 82, RuleEnumValue = 83
+    RuleColumnsClause = 27, RuleDataClause = 28, RuleValueTupleExpr = 29, 
+    RuleOptimizeStmt = 30, RulePartitionClause = 31, RuleRenameStmt = 32, 
+    RuleSelectUnionStmt = 33, RuleSelectStmt = 34, RuleWithClause = 35, 
+    RuleFromClause = 36, RuleSampleClause = 37, RuleArrayJoinClause = 38, 
+    RulePrewhereClause = 39, RuleWhereClause = 40, RuleGroupByClause = 41, 
+    RuleHavingClause = 42, RuleOrderByClause = 43, RuleLimitByClause = 44, 
+    RuleLimitClause = 45, RuleSettingsClause = 46, RuleJoinExpr = 47, RuleJoinOp = 48, 
+    RuleJoinOpCross = 49, RuleJoinConstraintClause = 50, RuleLimitExpr = 51, 
+    RuleOrderExprList = 52, RuleOrderExpr = 53, RuleRatioExpr = 54, RuleSettingExprList = 55, 
+    RuleSettingExpr = 56, RuleSetStmt = 57, RuleShowStmt = 58, RuleSystemStmt = 59, 
+    RuleTruncateStmt = 60, RuleUseStmt = 61, RuleColumnTypeExpr = 62, RuleColumnExprList = 63, 
+    RuleColumnsExpr = 64, RuleColumnExpr = 65, RuleColumnArgList = 66, RuleColumnArgExpr = 67, 
+    RuleColumnLambdaExpr = 68, RuleColumnIdentifier = 69, RuleNestedIdentifier = 70, 
+    RuleTableExpr = 71, RuleTableFunctionExpr = 72, RuleTableIdentifier = 73, 
+    RuleTableArgList = 74, RuleTableArgExpr = 75, RuleDatabaseIdentifier = 76, 
+    RuleFloatingLiteral = 77, RuleNumberLiteral = 78, RuleLiteral = 79, 
+    RuleKeyword = 80, RuleIdentifier = 81, RuleIdentifierOrNull = 82, RuleUnaryOp = 83, 
+    RuleBinaryOp = 84, RuleEnumValue = 85
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -111,6 +112,7 @@ public:
   class DropStmtContext;
   class ExistsStmtContext;
   class InsertStmtContext;
+  class ColumnsClauseContext;
   class DataClauseContext;
   class ValueTupleExprContext;
   class OptimizeStmtContext;
@@ -155,6 +157,7 @@ public:
   class ColumnIdentifierContext;
   class NestedIdentifierContext;
   class TableExprContext;
+  class TableFunctionExprContext;
   class TableIdentifierContext;
   class TableArgListContext;
   class TableArgExprContext;
@@ -595,10 +598,7 @@ public:
     SchemaAsFunctionClauseContext(SchemaClauseContext *ctx);
 
     antlr4::tree::TerminalNode *AS();
-    IdentifierContext *identifier();
-    antlr4::tree::TerminalNode *LPAREN();
-    antlr4::tree::TerminalNode *RPAREN();
-    TableArgListContext *tableArgList();
+    TableFunctionExprContext *tableFunctionExpr();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -860,51 +860,38 @@ public:
   class  InsertStmtContext : public antlr4::ParserRuleContext {
   public:
     InsertStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-   
-    InsertStmtContext() = default;
-    void copyFrom(InsertStmtContext *context);
-    using antlr4::ParserRuleContext::copyFrom;
-
     virtual size_t getRuleIndex() const override;
-
-   
-  };
-
-  class  InsertTableStmtContext : public InsertStmtContext {
-  public:
-    InsertTableStmtContext(InsertStmtContext *ctx);
-
     antlr4::tree::TerminalNode *INSERT();
     antlr4::tree::TerminalNode *INTO();
     TableIdentifierContext *tableIdentifier();
+    antlr4::tree::TerminalNode *FUNCTION();
+    TableFunctionExprContext *tableFunctionExpr();
     antlr4::tree::TerminalNode *TABLE();
+    ColumnsClauseContext *columnsClause();
+    DataClauseContext *dataClause();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  InsertStmtContext* insertStmt();
+
+  class  ColumnsClauseContext : public antlr4::ParserRuleContext {
+  public:
+    ColumnsClauseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *LPAREN();
     std::vector<NestedIdentifierContext *> nestedIdentifier();
     NestedIdentifierContext* nestedIdentifier(size_t i);
     antlr4::tree::TerminalNode *RPAREN();
-    DataClauseContext *dataClause();
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
+
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
   };
 
-  class  InsertFunctionStmtContext : public InsertStmtContext {
-  public:
-    InsertFunctionStmtContext(InsertStmtContext *ctx);
-
-    antlr4::tree::TerminalNode *INSERT();
-    antlr4::tree::TerminalNode *INTO();
-    antlr4::tree::TerminalNode *FUNCTION();
-    IdentifierContext *identifier();
-    antlr4::tree::TerminalNode *LPAREN();
-    antlr4::tree::TerminalNode *RPAREN();
-    antlr4::tree::TerminalNode *TABLE();
-    TableArgListContext *tableArgList();
-    DataClauseContext *dataClause();
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  InsertStmtContext* insertStmt();
+  ColumnsClauseContext* columnsClause();
 
   class  DataClauseContext : public antlr4::ParserRuleContext {
   public:
@@ -2090,15 +2077,27 @@ public:
   public:
     TableExprFunctionContext(TableExprContext *ctx);
 
-    IdentifierContext *identifier();
-    antlr4::tree::TerminalNode *LPAREN();
-    antlr4::tree::TerminalNode *RPAREN();
-    TableArgListContext *tableArgList();
+    TableFunctionExprContext *tableFunctionExpr();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
   TableExprContext* tableExpr();
   TableExprContext* tableExpr(int precedence);
+  class  TableFunctionExprContext : public antlr4::ParserRuleContext {
+  public:
+    TableFunctionExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    TableArgListContext *tableArgList();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  TableFunctionExprContext* tableFunctionExpr();
+
   class  TableIdentifierContext : public antlr4::ParserRuleContext {
   public:
     TableIdentifierContext(antlr4::ParserRuleContext *parent, size_t invokingState);

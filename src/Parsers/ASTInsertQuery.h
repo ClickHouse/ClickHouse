@@ -1,23 +1,26 @@
 #pragma once
 
-#include <Parsers/IAST.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/ASTIdentifier.h>
+
 
 namespace DB
 {
-
 
 /** INSERT query
   */
 class ASTInsertQuery : public IAST
 {
 public:
-    StorageID table_id = StorageID::createEmpty();
-    ASTPtr columns;
+    ASTInsertQuery() = default;
+    explicit ASTInsertQuery(const StorageID & id);
+
+    ASTPtr table;           // ASTTableIdentifier
+    ASTPtr columns;         // ASTColumns
     String format;
     ASTPtr select;
     ASTPtr watch;
-    ASTPtr table_function;
+    ASTPtr table_function;  // ASTFunction
     ASTPtr settings_ast;
 
     /// Data to insert
@@ -31,7 +34,11 @@ public:
     void tryFindInputFunction(ASTPtr & input_function) const;
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return "InsertQuery" + (delim + table_id.database_name) + delim + table_id.table_name; }
+    String getID(char delim) const override
+    {
+        return "InsertQuery" + (delim + table->as<ASTTableIdentifier>()->getDatabaseName()) + delim
+            + table->as<ASTTableIdentifier>()->getTableName();
+    }
 
     ASTPtr clone() const override
     {

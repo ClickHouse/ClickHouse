@@ -79,7 +79,7 @@ public:
     virtual String getName() = 0;
     virtual ASTPtr getCreateTableQuery() = 0;
     //// force -- force table creation (used for SYSTEM FLUSH LOGS)
-    virtual void flush(bool force = false) = 0;
+    virtual void flush(bool force) = 0;
     virtual void prepareTable() = 0;
     virtual void startup() = 0;
     virtual void shutdown() = 0;
@@ -139,7 +139,7 @@ public:
     void stopFlushThread();
 
     /// Flush data in the buffer to disk
-    void flush(bool force = false) override;
+    void flush(bool force) override;
 
     /// Start the background thread.
     void startup() override;
@@ -433,9 +433,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
 
-        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-        insert->table_id = table_id;
-        ASTPtr query_ptr(insert.release());
+        ASTPtr query_ptr = std::make_shared<ASTInsertQuery>(table_id);
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context(context);

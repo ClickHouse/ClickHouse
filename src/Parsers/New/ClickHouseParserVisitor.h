@@ -102,9 +102,9 @@ public:
 
     virtual antlrcpp::Any visitExistsStmt(ClickHouseParser::ExistsStmtContext *context) = 0;
 
-    virtual antlrcpp::Any visitInsertTableStmt(ClickHouseParser::InsertTableStmtContext *context) = 0;
+    virtual antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *context) = 0;
 
-    virtual antlrcpp::Any visitInsertFunctionStmt(ClickHouseParser::InsertFunctionStmtContext *context) = 0;
+    virtual antlrcpp::Any visitColumnsClause(ClickHouseParser::ColumnsClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitDataClauseFormat(ClickHouseParser::DataClauseFormatContext *context) = 0;
 
@@ -271,6 +271,8 @@ public:
     virtual antlrcpp::Any visitTableExprAlias(ClickHouseParser::TableExprAliasContext *context) = 0;
 
     virtual antlrcpp::Any visitTableExprFunction(ClickHouseParser::TableExprFunctionContext *context) = 0;
+
+    virtual antlrcpp::Any visitTableFunctionExpr(ClickHouseParser::TableFunctionExprContext *context) = 0;
 
     virtual antlrcpp::Any visitTableIdentifier(ClickHouseParser::TableIdentifierContext *context) = 0;
 

@@ -1,15 +1,13 @@
 #include <Parsers/New/AST/CreateTableQuery.h>
 
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/New/AST/EngineExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/TableElementExpr.h>
-
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTIdentifier.h>
-
+#include <Parsers/New/AST/TableExpr.h>
 #include <Parsers/New/ParseTreeVisitor.h>
-#include "Parsers/ASTIdentifier.h"
 
 
 namespace DB::AST
@@ -28,9 +26,9 @@ PtrTo<SchemaClause> SchemaClause::createAsTable(PtrTo<TableIdentifier> identifie
 }
 
 // static
-PtrTo<SchemaClause> SchemaClause::createAsFunction(PtrTo<Identifier> identifier, PtrTo<TableArgList> list)
+PtrTo<SchemaClause> SchemaClause::createAsFunction(PtrTo<TableFunctionExpr> expr)
 {
-    return PtrTo<SchemaClause>(new SchemaClause(ClauseType::FUNCTION, {identifier, list}));
+    return PtrTo<SchemaClause>(new SchemaClause(ClauseType::FUNCTION, {expr}));
 }
 
 SchemaClause::SchemaClause(ClauseType type, PtrList exprs) : clause_type(type)
@@ -78,9 +76,7 @@ ASTPtr CreateTableQuery::convertToOld() const
             }
             case SchemaClause::ClauseType::TABLE:
             {
-                auto as_table = children[SCHEMA]->convertToOld();
-                query->as_database = as_table->as<ASTIdentifier>()->getDatabaseName();
-                query->as_table = as_table->as<ASTIdentifier>()->getTableName();
+                query->as_table = children[SCHEMA]->convertToOld();
                 break;
             }
             case SchemaClause::ClauseType::FUNCTION:
@@ -128,8 +124,7 @@ antlrcpp::Any ParseTreeVisitor::visitSchemaAsTableClause(ClickHouseParser::Schem
 
 antlrcpp::Any ParseTreeVisitor::visitSchemaAsFunctionClause(ClickHouseParser::SchemaAsFunctionClauseContext *ctx)
 {
-    return SchemaClause::createAsFunction(
-        visit(ctx->identifier()), ctx->tableArgList() ? visit(ctx->tableArgList()).as<PtrTo<TableArgList>>() : nullptr);
+    return SchemaClause::createAsFunction(visit(ctx->tableFunctionExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSubqueryClause(ClickHouseParser::SubqueryClauseContext *ctx)

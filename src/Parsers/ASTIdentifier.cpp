@@ -117,6 +117,26 @@ void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
+ASTTableIdentifier::ASTTableIdentifier(const String & table) : ASTIdentifier({table})
+{
+}
+
+ASTTableIdentifier::ASTTableIdentifier(const StorageID & storage_id) : ASTIdentifier({storage_id.database_name, storage_id.table_name})
+{
+}
+
+ASTTableIdentifier::ASTTableIdentifier(const String & database, const String & table) : ASTIdentifier({database, table})
+{
+}
+
+ASTTableIdentifier::ASTTableIdentifier(const ASTPtr & database, const ASTPtr & table)
+    : ASTIdentifier(database ? std::vector<String>{database->as<ASTIdentifier>()->name, table->as<ASTIdentifier>()->name}
+                             : std::vector<String>{table->as<ASTIdentifier>()->name})
+{
+    // TODO: if (database) assert(database->as<ASTIdentifier>());
+    // TODO: assert(table && table->as<ASTIdentifier>());
+}
+
 String ASTTableIdentifier::getTableName() const
 {
     if (name_parts.size() == 2) return name_parts[1];
@@ -129,6 +149,11 @@ String ASTTableIdentifier::getDatabaseName() const
     if (name_parts.size() == 2) return name_parts[0];
     else return {};
     __builtin_unreachable();
+}
+
+StorageID ASTTableIdentifier::getStorageId() const
+{
+    return StorageID(getDatabaseName(), getTableName(), uuid);
 }
 
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name)

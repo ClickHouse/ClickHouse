@@ -12,7 +12,7 @@ class SchemaClause : public INode
     public:
         static PtrTo<SchemaClause> createDescription(PtrTo<TableElementList> list);
         static PtrTo<SchemaClause> createAsTable(PtrTo<TableIdentifier> identifier);
-        static PtrTo<SchemaClause> createAsFunction(PtrTo<Identifier> identifier, PtrTo<TableArgList> list);
+        static PtrTo<SchemaClause> createAsFunction(PtrTo<TableFunctionExpr> expr);
 
         enum class ClauseType
         {
