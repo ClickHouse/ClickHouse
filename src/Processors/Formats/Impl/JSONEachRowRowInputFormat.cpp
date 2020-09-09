@@ -146,14 +146,15 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
 
         if (yield_strings)
         {
-            // notice: null_as_default on "null" strings is not supported
-
             String str;
             readJSONString(str, in);
 
             ReadBufferFromString buf(str);
 
-            type->deserializeAsWholeText(*columns[index], buf, format_settings);
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = DataTypeNullable::deserializeWholeText(*columns[index], buf, format_settings, type);
+            else
+                type->deserializeAsWholeText(*columns[index], buf, format_settings);
         }
         else
         {
