@@ -10,7 +10,7 @@ stage=${stage:-}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
-# it being undefined. Also read it as array so that we can pass an empty list 
+# it being undefined. Also read it as array so that we can pass an empty list
 # of additional variable to cmake properly, and it doesn't generate an extra
 # empty parameter.
 read -ra FASTTEST_CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
@@ -79,7 +79,7 @@ fi
 
 function run
 {
-SUBMODULES_TO_UPDATE=(contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco contrib/libunwind contrib/ryu contrib/fmtlib contrib/base64 contrib/cctz contrib/libcpuid contrib/double-conversion contrib/libcxx contrib/libcxxabi contrib/libc-headers contrib/lz4 contrib/zstd contrib/fastops contrib/rapidjson contrib/re2 contrib/sparsehash-c11)
+SUBMODULES_TO_UPDATE=(contrib/antlr4-runtime contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco contrib/libunwind contrib/ryu contrib/fmtlib contrib/base64 contrib/cctz contrib/libcpuid contrib/double-conversion contrib/libcxx contrib/libcxxabi contrib/libc-headers contrib/lz4 contrib/zstd contrib/fastops contrib/rapidjson contrib/re2 contrib/sparsehash-c11)
 
 git submodule update --init --recursive "${SUBMODULES_TO_UPDATE[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/submodule_log.txt
 

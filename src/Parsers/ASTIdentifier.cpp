@@ -117,7 +117,7 @@ void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const String & table) : ASTIdentifier({table})
+ASTTableIdentifier::ASTTableIdentifier(const String & table) : ASTIdentifier(std::vector<String>{table})
 {
 }
 
@@ -140,7 +140,7 @@ ASTTableIdentifier::ASTTableIdentifier(const ASTPtr & database, const ASTPtr & t
 String ASTTableIdentifier::getTableName() const
 {
     if (name_parts.size() == 2) return name_parts[1];
-    else return name_parts[0];
+    else if (name_parts.size() == 1) return name_parts[0];
     __builtin_unreachable();
 }
 

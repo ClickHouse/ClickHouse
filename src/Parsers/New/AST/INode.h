@@ -30,7 +30,7 @@ class INode : public TypePromotion<INode>
         void dump(int indentation) const
         {
             for (auto i = 0; i < indentation; ++i) std::cout << " ";
-            std::cout << "⭸ " << dumpInfo() << " (" << demangle(typeid(*this).name()) << ")" << std::endl;
+            std::cout << "⭸ " << demangle(typeid(*this).name()) << " (" << dumpInfo() << ")" << std::endl;
             for (const auto & child : children) if (child) child->dump(indentation + 1);
         }
 
