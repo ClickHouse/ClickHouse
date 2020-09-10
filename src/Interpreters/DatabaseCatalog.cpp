@@ -64,13 +64,20 @@ TemporaryTableHolder::TemporaryTableHolder(
     const Context & context_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    const ASTPtr & query)
+    const ASTPtr & query,
+    bool create_for_global_subquery)
     : TemporaryTableHolder
       (
           context_,
           [&](const StorageID & table_id)
           {
-              return StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
+              auto storage = StorageMemory::create(
+                      table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
+
+              if (create_for_global_subquery)
+                  storage->delayReadForGlobalSubqueries();
+
+              return storage;
           },
           query
       )
