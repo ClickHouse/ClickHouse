@@ -446,10 +446,30 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     return res;
 }
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const SelectQueryInfo & query_info) const
 {
     const auto & settings = context.getSettingsRef();
     auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    ClusterPtr cluster = getCluster();
+    query_info.cluster = cluster;
+
+    /// Always calculate optimized cluster here, to avoid conditions during read()
+    /// (Anyway it will be calculated in the read())
+    if (settings.optimize_skip_unused_shards)
+    {
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_info.query);
+        if (optimized_cluster)
+        {
+            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}", makeFormattedListOfShards(optimized_cluster));
+            cluster = optimized_cluster;
+            query_info.cluster = cluster;
+        }
+        else
+        {
+            LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}", has_sharding_key ? "" : " (no sharding key)");
+        }
+    }
 
     if (settings.distributed_group_by_no_merge)
     {
@@ -464,14 +484,6 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
     if (to_stage == QueryProcessingStage::WithMergeableState)
         return QueryProcessingStage::WithMergeableState;
 
-    ClusterPtr cluster = getCluster();
-    if (settings.optimize_skip_unused_shards)
-    {
-        ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_ptr);
-        if (optimized_cluster)
-            cluster = optimized_cluster;
-    }
-
     /// If there is only one node, the query can be fully processed by the
     /// shard, initiator will work as a proxy only.
     if (getClusterQueriedNodes(settings, cluster) == 1)
@@ -483,7 +495,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
         sharding_key_is_deterministic)
     {
         Block sharding_key_block = sharding_key_expr->getSampleBlock();
-        auto stage = getOptimizedQueryProcessingStage(query_ptr, settings.extremes, sharding_key_block);
+        auto stage = getOptimizedQueryProcessingStage(query_info.query, settings.extremes, sharding_key_block);
         if (stage)
         {
             LOG_DEBUG(log, "Force processing stage to {}", QueryProcessingStage::toString(*stage));
@@ -503,23 +515,6 @@ Pipe StorageDistributed::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    const auto & settings = context.getSettingsRef();
-
-    ClusterPtr cluster = getCluster();
-    if (settings.optimize_skip_unused_shards)
-    {
-        ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_info.query);
-        if (optimized_cluster)
-        {
-            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}", makeFormattedListOfShards(optimized_cluster));
-            cluster = optimized_cluster;
-        }
-        else
-        {
-            LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}", has_sharding_key ? "" : " (no sharding key)");
-        }
-    }
-
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
@@ -538,8 +533,7 @@ Pipe StorageDistributed::read(
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
-    return ClusterProxy::executeQuery(select_stream_factory, cluster, log,
-        modified_query_ast, context, context.getSettingsRef(), query_info);
+    return ClusterProxy::executeQuery(select_stream_factory, log, modified_query_ast, context, query_info);
 }
 
 

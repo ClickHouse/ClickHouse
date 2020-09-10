@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Interpreters/Cluster.h>
 
 namespace DB
 {
@@ -26,8 +25,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 /// `stream_factory` object encapsulates the logic of creating streams for a different type of query
 /// (currently SELECT, DESCRIBE).
 Pipe executeQuery(
-    IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info);
+    IStreamFactory & stream_factory, Poco::Logger * log, const ASTPtr & query_ast, const Context & context, const SelectQueryInfo & query_info);
 
 }
 

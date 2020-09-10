@@ -101,9 +101,9 @@ StorageMaterializedView::StorageMaterializedView(
         DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const SelectQueryInfo & query_info) const
 {
-    return getTargetTable()->getQueryProcessingStage(context, to_stage, query_ptr);
+    return getTargetTable()->getQueryProcessingStage(context, to_stage, query_info);
 }
 
 Pipe StorageMaterializedView::read(

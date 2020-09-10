@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageLog.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
 
@@ -114,7 +115,9 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
     Names column_names;
     column_names.push_back("a");
 
-    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
+    SelectQueryInfo query_info;
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
+        context, QueryProcessingStage::Complete, query_info);
 
     QueryPipeline pipeline;
     pipeline.init(table->read(column_names, metadata_snapshot, {}, context, stage, 8192, 1));
