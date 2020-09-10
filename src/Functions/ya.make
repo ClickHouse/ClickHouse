@@ -10,7 +10,6 @@ ADDINCL(
     contrib/libs/farmhash
     contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
-    contrib/libs/icu/common
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
@@ -33,6 +32,8 @@ PEERDIR(
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
+CFLAGS(-g0)
+
 SRCS(
     abs.cpp
     acos.cpp

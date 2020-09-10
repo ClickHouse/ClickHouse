@@ -8,12 +8,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 /** Function for transforming numbers and dates to strings that contain the same set of bytes in the machine representation. */
 class FunctionReinterpretAsString : public IFunction
@@ -80,6 +82,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionReinterpretAsString(FunctionFactory & factory)
 {
@@ -87,5 +90,3 @@ void registerFunctionReinterpretAsString(FunctionFactory & factory)
 }
 
 }
-
-

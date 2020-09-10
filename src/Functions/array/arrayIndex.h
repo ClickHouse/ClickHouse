@@ -1,5 +1,3 @@
-#include <optional>
-#include <type_traits>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -799,7 +797,7 @@ private:
             block.getByPosition(result).column = std::move(col_result);
             return true;
         }
-        else if (col_lc->getDictionaryPtr()->isNullable()) // LC(Nullable(T)) and U
+        else if (col_lc->nestedIsNullable()) // LC(Nullable(T)) and U
         {
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality(); // Nullable(T)
             const ColumnNullable& left_nullable = *checkAndGetColumn<ColumnNullable>(left_casted.get());

@@ -866,6 +866,8 @@ private:
             // will exit. The ping() would be the best match here, but it's
             // private, probably for a good reason that the protocol doesn't allow
             // pings at any possible moment.
+            // Don't forget to reset the default database which might have changed.
+            connection->setDefaultDatabase("");
             connection->forceConnected(connection_parameters.timeouts);
 
             if (text.size() > 4 * 1024)
@@ -1103,7 +1105,9 @@ private:
                 {
                     last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     received_exception_from_server = true;
-                    std::cerr << "Error on processing query: " << ast_to_process->formatForErrorMessage() << std::endl << last_exception_received_from_server->message();
+                    fmt::print(stderr, "Error on processing query '{}': {}\n",
+                        ast_to_process->formatForErrorMessage(),
+                        last_exception_received_from_server->message());
                 }
 
                 if (!connection->isConnected())

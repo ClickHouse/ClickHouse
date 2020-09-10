@@ -13,12 +13,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
 
 /** globalVariable('name') - takes constant string argument and returns the value of global variable with that name.
   * It is intended for compatibility with MySQL.
@@ -81,6 +82,7 @@ private:
         {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}}, {"version", {std::make_shared<DataTypeString>(), "5.7.30"}}};
 };
 
+}
 
 void registerFunctionGlobalVariable(FunctionFactory & factory)
 {
