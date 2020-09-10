@@ -106,6 +106,8 @@ public:
 
     const String getType() const override { return "s3"; }
 
+    void shutdown() override;
+
 private:
     bool tryReserve(UInt64 bytes);
 

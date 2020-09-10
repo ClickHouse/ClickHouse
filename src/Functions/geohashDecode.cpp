@@ -14,12 +14,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
 
 // geohashDecode(string) => (lon float64, lat float64)
 class FunctionGeohashDecode : public IFunction
@@ -89,6 +90,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionGeohashDecode(FunctionFactory & factory)
 {

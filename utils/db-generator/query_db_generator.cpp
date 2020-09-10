@@ -651,10 +651,9 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             {
                 ColumnType type = type_cast(literal->value.getType());
 
-                /// C++20
-                auto routine = [&] <typename T>(const T & arr_values)
+                auto routine = [&](const auto & arr_values)
                 {
-                    for (auto val : arr_values)
+                    for (auto & val : arr_values)
                     {
                         type = type_cast(val.getType());
                         if (type == type::s || type == type::d || type == type::dt)

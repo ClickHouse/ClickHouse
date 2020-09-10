@@ -14,6 +14,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/FileSyncGuard.h>
 
+#include <Parsers/queryToString.h>
 
 namespace ProfileEvents
 {
@@ -303,6 +304,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
         updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
+
+    const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
+    for (const auto & ttl_entry : recompression_ttl_entries)
+        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
 
