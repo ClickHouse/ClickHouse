@@ -190,10 +190,12 @@ public:
     ActionsDAG(const ActionsDAG &) = delete;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     ActionsDAG(const NamesAndTypesList & inputs);
+    ActionsDAG(const ColumnsWithTypeAndName & inputs);
 
     const std::list<Node> & getNodes() const;
     const Index & getIndex() const { return index; }
 
+    ColumnsWithTypeAndName getResultColumns() const;
     NamesAndTypesList getNamesAndTypesList() const;
     std::string dumpNames() const;
 

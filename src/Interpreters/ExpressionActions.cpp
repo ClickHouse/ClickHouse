@@ -1414,6 +1414,12 @@ ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs)
         addInput(input.name, input.type);
 }
 
+ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs)
+{
+    for (const auto & input : inputs)
+        addInput(input.name, input.type);
+}
+
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
     if (index.count(node.result_name) != 0)
@@ -1580,6 +1586,16 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.result_name = std::move(result_name);
 
     return addNode(std::move(node));
+}
+
+ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
+{
+    ColumnsWithTypeAndName result;
+    result.reserve(nodes.size());
+    for (const auto & node : nodes)
+        result.emplace_back(node.column, node.result_type, node.result_name);
+
+    return result;
 }
 
 NamesAndTypesList ActionsDAG::getNamesAndTypesList() const
