@@ -17,7 +17,7 @@ toc_title: intro
 - [Резервное копирование](backup.md)
 - [Конфигурационные файлы](configuration-files.md)
 - [Квоты](quotas.md)
-- [Системные таблицы](system-tables.md)
+- [Системные таблицы](system-tables/index.md)
 - [Конфигурационные параметры сервера](server-configuration-parameters/index.md)
 - [Тестирование серверов с помощью ClickHouse](performance-test.md)
 - [Настройки](settings/index.md#settings)

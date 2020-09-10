@@ -9,17 +9,17 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
 
 /** Match all groups of given input string with given re, return array of arrays of matches.
  *
@@ -51,7 +51,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const ColumnPtr column_haystack = block.getByPosition(arguments[0]).column;
         const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
@@ -103,6 +103,8 @@ public:
         block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 };
+
+}
 
 void registerFunctionExtractGroups(FunctionFactory & factory)
 {

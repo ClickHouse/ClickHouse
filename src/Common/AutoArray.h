@@ -15,7 +15,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
-/** An array of (almost) unchangable size:
+/** An array of (almost) unchangeable size:
   *  the size is specified in the constructor;
   *  `resize` method removes old data, and necessary only for
   *  so that you can first create an empty object using the default constructor,

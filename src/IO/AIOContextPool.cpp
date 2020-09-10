@@ -42,12 +42,12 @@ void AIOContextPool::doMonitor()
 void AIOContextPool::waitForCompletion()
 {
     /// array to hold completion events
-    io_event events[max_concurrent_events];
+    std::vector<io_event> events(max_concurrent_events);
 
     try
     {
-        const auto num_events = getCompletionEvents(events, max_concurrent_events);
-        fulfillPromises(events, num_events);
+        const auto num_events = getCompletionEvents(events.data(), max_concurrent_events);
+        fulfillPromises(events.data(), num_events);
         notifyProducers(num_events);
     }
     catch (...)

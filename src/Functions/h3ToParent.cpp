@@ -3,8 +3,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <IO/WriteHelpers.h>
 #include <ext/range.h>
 
+#include <constants.h>
 #include <h3api.h>
 
 
@@ -13,7 +15,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
+
+namespace
+{
+
 class FunctionH3ToParent : public IFunction
 {
 public:
@@ -43,7 +50,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
         const auto * col_resolution = block.getByPosition(arguments[1]).column.get();
@@ -57,6 +64,10 @@ public:
             const UInt64 hindex = col_hindex->getUInt(row);
             const UInt8 resolution = col_resolution->getUInt(row);
 
+            if (resolution > MAX_H3_RES)
+                throw Exception("The argument 'resolution' (" + toString(resolution) + ") of function " + getName()
+                    + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
             UInt64 res = h3ToParent(hindex, resolution);
 
             dst_data[row] = res;
@@ -66,6 +77,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionH3ToParent(FunctionFactory & factory)
 {

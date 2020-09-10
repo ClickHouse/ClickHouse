@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
-
-. $CURDIR/mergetree_mutations.lib
+. "$CURDIR"/../shell_config.sh
 
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS json_test"
@@ -14,9 +12,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO json_test VALUES (1, '{\"date\": \"201
 
 ${CLICKHOUSE_CLIENT} --query="SELECT COUNT() FROM json_test"
 
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE json_test DELETE WHERE JSONExtractString(metadata, 'date') = '2018-01-01'"
-
-wait_for_mutation "json_test" "mutation_2.txt"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE json_test DELETE WHERE JSONExtractString(metadata, 'date') = '2018-01-01'" --mutations_sync=1
 
 ${CLICKHOUSE_CLIENT} --query="SELECT COUNT() FROM json_test"
 

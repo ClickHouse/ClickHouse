@@ -11,7 +11,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -44,10 +44,9 @@ namespace ErrorCodes
 }
 
 
-std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast, bool sanity_check_compression_codecs)
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
-    const CompressionCodecFactory & compression_codec_factory = CompressionCodecFactory::instance();
 
     if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -75,8 +74,11 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
-
+        {
+            if (ast_col_decl.default_specifier == "ALIAS")
+                throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
+            command.codec = ast_col_decl.codec;
+        }
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
 
@@ -132,7 +134,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.ttl = ast_col_decl.ttl;
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
+            command.codec = ast_col_decl.codec;
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -159,6 +161,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_ORDER_BY;
         command.order_by = command_ast->order_by;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_SAMPLE_BY)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_SAMPLE_BY;
+        command.sample_by = command_ast->sample_by;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
@@ -271,7 +281,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         if (comment)
             column.comment = *comment;
 
-        column.codec = codec;
+        if (codec)
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false);
+
         column.ttl = ttl;
 
         metadata.columns.add(column, after_column, first);
@@ -290,16 +302,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             if (codec)
-            {
-                /// User doesn't specify data type, it means that datatype doesn't change
-                /// let's use info about old type
-                if (data_type == nullptr)
-                    codec->useInfoAboutType(column.type);
-                else /// use info about new DataType
-                    codec->useInfoAboutType(data_type);
-
-                column.codec = codec;
-            }
+                column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false);
 
             if (comment)
                 column.comment = *comment;
@@ -334,6 +337,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
 
         /// Recalculate key with new order_by expression.
         sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
+    }
+    else if (type == MODIFY_SAMPLE_BY)
+    {
+        metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, context);
     }
     else if (type == COMMENT_COLUMN)
     {
@@ -501,32 +508,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
-bool AlterCommand::isModifyingData(const StorageInMemoryMetadata & metadata) const
-{
-    /// Possible change data representation on disk
-    if (type == MODIFY_COLUMN)
-    {
-        if (data_type == nullptr)
-            return false;
-
-        /// It is allowed to ALTER data type to the same type as before.
-        for (const auto & column : metadata.columns.getAllPhysical())
-            if (column.name == column_name)
-                return !column.type->equals(*data_type);
-
-        return true;
-    }
-
-    return type == ADD_COLUMN  /// We need to change columns.txt in each part for MergeTree
-        || type == DROP_COLUMN /// We need to change columns.txt in each part for MergeTree
-        || type == DROP_INDEX; /// We need to remove file from filesystem for MergeTree
-}
-
-bool AlterCommand::isSettingsAlter() const
-{
-    return type == MODIFY_SETTING;
-}
-
 namespace
 {
 
@@ -538,11 +519,21 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
     if (from->equals(*to))
         return true;
 
+    if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from))
+    {
+        if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(to))
+            return to_enum8->contains(*from_enum8);
+    }
+
+    if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(from))
+    {
+        if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(to))
+            return to_enum16->contains(*from_enum16);
+    }
+
     static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
         {
-            { typeid(DataTypeEnum8),    typeid(DataTypeEnum8)    },
             { typeid(DataTypeEnum8),    typeid(DataTypeInt8)     },
-            { typeid(DataTypeEnum16),   typeid(DataTypeEnum16)   },
             { typeid(DataTypeEnum16),   typeid(DataTypeInt16)    },
             { typeid(DataTypeDateTime), typeid(DataTypeUInt32)   },
             { typeid(DataTypeUInt32),   typeid(DataTypeDateTime) },
@@ -583,6 +574,10 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 }
 
+bool AlterCommand::isSettingsAlter() const
+{
+    return type == MODIFY_SETTING;
+}
 
 bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata) const
 {
@@ -711,6 +706,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY COLUMN";
     case AlterCommand::Type::MODIFY_ORDER_BY:
         return "MODIFY ORDER BY";
+    case AlterCommand::Type::MODIFY_SAMPLE_BY:
+        return "MODIFY SAMPLE BY";
     case AlterCommand::Type::MODIFY_TTL:
         return "MODIFY TTL";
     case AlterCommand::Type::MODIFY_SETTING:
@@ -748,6 +745,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
         metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, context);
+
+    // /// And in sample key expression
+    if (metadata_copy.sampling_key.definition_ast != nullptr)
+        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, context);
 
     /// Changes in columns may lead to changes in secondary indices
     for (auto & index : metadata_copy.secondary_indices)
@@ -834,6 +835,9 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
                                 ErrorCodes::BAD_ARGUMENTS};
 
+            if (command.codec)
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
@@ -850,6 +854,10 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             if (renamed_columns.count(column_name))
                 throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
                                 ErrorCodes::NOT_IMPLEMENTED};
+
+            if (command.codec)
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+
             modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -865,7 +873,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                         if (default_expression)
                         {
                             ASTPtr query = default_expression->clone();
-                            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns.getAll());
+                            auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
                             const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                             const auto required_columns = actions->getRequiredColumns();
 
@@ -1007,17 +1015,6 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         throw Exception{"Cannot DROP or CLEAR all columns", ErrorCodes::BAD_ARGUMENTS};
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
-}
-
-bool AlterCommands::isModifyingData(const StorageInMemoryMetadata & metadata) const
-{
-    for (const auto & param : *this)
-    {
-        if (param.isModifyingData(metadata))
-            return true;
-    }
-
-    return false;
 }
 
 bool AlterCommands::isSettingsAlter() const

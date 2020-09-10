@@ -9,13 +9,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
 
 /** Reverse the string as a sequence of bytes.
   */
@@ -88,7 +89,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
@@ -143,6 +144,7 @@ private:
     const Context & context;
 };
 
+}
 
 void registerFunctionReverse(FunctionFactory & factory)
 {

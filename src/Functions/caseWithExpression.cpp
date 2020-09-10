@@ -12,6 +12,9 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
+namespace
+{
+
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
 class FunctionCaseWithExpression : public IFunction
@@ -43,7 +46,7 @@ public:
         return getLeastSupertype(dst_array_types);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) const override
     {
         if (args.empty())
             throw Exception{"Function " + getName() + " expects at least 1 argument",
@@ -111,6 +114,8 @@ public:
 private:
     const Context & context;
 };
+
+}
 
 void registerFunctionCaseWithExpression(FunctionFactory & factory)
 {

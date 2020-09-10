@@ -34,6 +34,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, const Co
 
 BlockIO InterpreterAlterQuery::execute()
 {
+    BlockIO res;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
 
     if (!alter.cluster.empty())
@@ -57,7 +58,7 @@ BlockIO InterpreterAlterQuery::execute()
     LiveViewCommands live_view_commands;
     for (ASTAlterCommand * command_ast : alter.command_list->commands)
     {
-        if (auto alter_command = AlterCommand::parse(command_ast, !context.getSettingsRef().allow_suspicious_codecs))
+        if (auto alter_command = AlterCommand::parse(command_ast))
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {
@@ -86,7 +87,9 @@ BlockIO InterpreterAlterQuery::execute()
     if (!partition_commands.empty())
     {
         table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, context.getSettingsRef());
-        table->alterPartition(query_ptr, metadata_snapshot, partition_commands, context);
+        auto partition_commands_pipe = table->alterPartition(query_ptr, metadata_snapshot, partition_commands, context);
+        if (!partition_commands_pipe.empty())
+            res.pipeline.init(std::move(partition_commands_pipe));
     }
 
     if (!live_view_commands.empty())
@@ -98,7 +101,7 @@ BlockIO InterpreterAlterQuery::execute()
             switch (command.type)
             {
                 case LiveViewCommand::REFRESH:
-                    live_view->refresh(context);
+                    live_view->refresh();
                     break;
             }
         }
@@ -113,7 +116,7 @@ BlockIO InterpreterAlterQuery::execute()
         table->alter(alter_commands, context, alter_lock);
     }
 
-    return {};
+    return res;
 }
 
 
@@ -179,6 +182,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MODIFY_ORDER_BY:
         {
             required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
+            break;
+        }
+        case ASTAlterCommand::MODIFY_SAMPLE_BY:
+        {
+            required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
             break;
         }
         case ASTAlterCommand::ADD_INDEX:

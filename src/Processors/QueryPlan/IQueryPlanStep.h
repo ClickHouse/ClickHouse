@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -27,11 +28,35 @@ public:
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
 
+    /// How data is sorted.
+    enum class SortMode
+    {
+        Chunk, /// Separate chunks are sorted
+        Port, /// Data from each port is sorted
+        Stream, /// Data is globally sorted
+    };
+
+    /// It is not guaranteed that header has columns from sort_description.
+    SortDescription sort_description = {};
+    SortMode sort_mode = SortMode::Chunk;
+
     /// Things which may be added:
-    /// * sort description
     /// * limit
     /// * estimated rows number
     /// * memory allocation context
+
+    bool hasEqualPropertiesWith(const DataStream & other) const
+    {
+        return distinct_columns == other.distinct_columns
+            && has_single_port == other.has_single_port
+            && sort_description == other.sort_description
+            && (sort_description.empty() || sort_mode == other.sort_mode);
+    }
+
+    bool hasEqualHeaderWith(const DataStream & other) const
+    {
+        return blocksHaveEqualStructure(header, other.header);
+    }
 };
 
 using DataStreams = std::vector<DataStream>;

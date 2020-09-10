@@ -2,7 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsCollection.h>
+#include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/asof.h>
@@ -22,10 +22,13 @@ struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryReader;
 
+struct ColumnWithTypeAndName;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
+
 struct Settings;
 
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
 
 class TableJoin
 {
@@ -41,7 +44,7 @@ class TableJoin
       * It's possible to use name `expr(t2 columns)`.
       */
 
-    friend class SyntaxAnalyzer;
+    friend class TreeRewriter;
 
     const SizeLimits size_limits;
     const size_t default_max_bytes = 0;
@@ -71,11 +74,11 @@ class TableJoin
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
-    VolumeJBODPtr tmp_volume;
+    VolumePtr tmp_volume;
 
 public:
     TableJoin() = default;
-    TableJoin(const Settings &, VolumeJBODPtr tmp_volume);
+    TableJoin(const Settings &, VolumePtr tmp_volume);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
@@ -97,7 +100,7 @@ public:
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    VolumeJBODPtr getTemporaryVolume() { return tmp_volume; }
+    VolumePtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
     bool allowDictJoin(const String & dict_key, const Block & sample_block, Names &, NamesAndTypesList &) const;
     bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
@@ -133,7 +136,7 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-    void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;
+    void addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const;
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }

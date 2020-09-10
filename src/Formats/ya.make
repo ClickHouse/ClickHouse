@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -5,6 +6,8 @@ PEERDIR(
     contrib/libs/protobuf
     contrib/libs/protoc
 )
+
+CFLAGS(-g0)
 
 SRCS(
     FormatFactory.cpp
@@ -21,6 +24,7 @@ SRCS(
     ProtobufSchemas.cpp
     ProtobufWriter.cpp
     verbosePrintString.cpp
+
 )
 
 END()

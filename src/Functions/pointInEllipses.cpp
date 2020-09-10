@@ -11,7 +11,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -19,6 +18,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
+
+namespace
+{
 
 /**
  * The function checks if a point is in one of ellipses in set.
@@ -85,7 +87,7 @@ private:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const auto size = input_rows_count;
 
@@ -188,6 +190,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionPointInEllipses(FunctionFactory & factory)
 {

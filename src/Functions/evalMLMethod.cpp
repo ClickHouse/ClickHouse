@@ -2,27 +2,24 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/typeid_cast.h>
 
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
 #include <iostream>
 
 #include <Common/PODArray.h>
-#include <Columns/ColumnArray.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
-    namespace ErrorCodes
-    {
-        extern const int BAD_ARGUMENTS;
-        extern const int ILLEGAL_COLUMN;
-        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    }
-
+namespace
+{
 
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
 * Takes state of aggregate function. Returns result of aggregation (finalized state).
@@ -65,7 +62,7 @@ public:
         return type->getReturnTypeToPredict();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
@@ -86,6 +83,8 @@ public:
 
     const Context & context;
 };
+
+}
 
 void registerFunctionEvalMLMethod(FunctionFactory & factory)
 {

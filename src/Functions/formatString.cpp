@@ -22,6 +22,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
+
 template <typename Name>
 class FormatFunction : public IFunction
 {
@@ -64,7 +67,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const ColumnPtr & c0 = block.getByPosition(arguments[0]).column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
@@ -129,6 +132,8 @@ struct NameFormat
     static constexpr auto name = "format";
 };
 using FunctionFormat = FormatFunction<NameFormat>;
+
+}
 
 void registerFunctionFormat(FunctionFactory & factory)
 {

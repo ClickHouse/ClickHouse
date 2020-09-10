@@ -69,12 +69,12 @@ public:
 
     Field operator[](size_t index) const override
     {
-        return String(reinterpret_cast<const char *>(&chars[n * index]), n);
+        return Field{&chars[n * index], n};
     }
 
     void get(size_t index, Field & res) const override
     {
-        res.assignString(reinterpret_cast<const char *>(&chars[n * index]), n);
+        res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
     StringRef getDataAt(size_t index) const override

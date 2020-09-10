@@ -13,6 +13,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -56,14 +57,14 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const CompressionCodecPtr & default_codec,
+    const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
         shared_from_this(), columns_list, metadata_snapshot, indices_to_recalc,
         index_granularity_info.marks_file_extension,
-        default_codec, writer_settings, computed_index_granularity);
+        default_codec_, writer_settings, computed_index_granularity);
 }
 
 
@@ -237,6 +238,21 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
         ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
         each_columns_size[column.name] = size;
         total_size.add(size);
+
+#ifndef NDEBUG
+        /// Most trivial types
+        if (rows_count != 0 && column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
+        {
+            size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
+            if (rows_in_column != rows_count)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Column {} has rows count {} according to size in memory "
+                    "and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
+            }
+        }
+#endif
     }
 }
 

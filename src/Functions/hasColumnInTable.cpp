@@ -12,7 +12,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -20,6 +19,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
+namespace
+{
 
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
@@ -55,7 +56,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
     const Context & global_context;
@@ -84,7 +85,7 @@ DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAnd
 }
 
 
-void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
     auto get_string_from_block = [&](size_t column_pos) -> String
     {
@@ -140,6 +141,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
 }
 
+}
 
 void registerFunctionHasColumnInTable(FunctionFactory & factory)
 {

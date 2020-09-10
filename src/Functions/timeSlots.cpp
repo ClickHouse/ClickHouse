@@ -13,13 +13,15 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
+
+namespace
+{
 
 /** timeSlots(StartTime, Duration)
   * - for the time interval beginning at `StartTime` and continuing `Duration` seconds,
@@ -143,7 +145,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         const auto * starts = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
         const auto * const_starts = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
@@ -189,6 +191,8 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
+
+}
 
 void registerFunctionTimeSlots(FunctionFactory & factory)
 {

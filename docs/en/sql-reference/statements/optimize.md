@@ -1,5 +1,6 @@
 ---
 toc_priority: 49
+toc_title: OPTIMIZE
 ---
 
 # OPTIMIZE Statement {#misc_operations-optimize}

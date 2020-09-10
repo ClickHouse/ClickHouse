@@ -156,7 +156,7 @@ namespace
         subnet = IPSubnet{pattern};
     }
 
-    /// Extracts a subnet, a host name or a host name regular expession from a like pattern.
+    /// Extracts a subnet, a host name or a host name regular expression from a like pattern.
     void parseLikePattern(
         const String & pattern, std::optional<IPSubnet> & subnet, std::optional<String> & name, std::optional<String> & name_regexp)
     {

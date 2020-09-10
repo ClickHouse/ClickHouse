@@ -20,8 +20,8 @@
     <fill_query>INSERT INTO mt_{parts}_parts SELECT number, rand() % 10000, rand() FROM numbers_mt(100000000)</fill_query>
     <fill_query>OPTIMIZE TABLE mt_{parts}_parts FINAL</fill_query>
 
-    <query>SELECT val2 FROM mt_{parts}_parts ORDER BY val1 LIMIT 10000 FORMAT Null</query>
-    <query>SELECT val2 FROM mt_{parts}_parts ORDER BY val1 LIMIT 100000 FORMAT Null</query>
+    <query>SELECT val2 FROM mt_{parts}_parts ORDER BY val1 LIMIT 1000000 FORMAT Null</query>
+    <query>SELECT val2 FROM mt_{parts}_parts ORDER BY val1 LIMIT 10000000 FORMAT Null</query>
     <query>SELECT sum(val2) FROM mt_{parts}_parts GROUP BY val1 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS mt_{parts}_parts</drop_query>

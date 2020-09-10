@@ -15,6 +15,9 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
+namespace
+{
+
 // Implements function, giving value for column within range of given
 // Example:
 // | c1 |
@@ -74,7 +77,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const DataTypePtr & result_type = block.getByPosition(result).type;
 
@@ -193,6 +196,8 @@ public:
         }
     }
 };
+
+}
 
 void registerFunctionNeighbor(FunctionFactory & factory)
 {

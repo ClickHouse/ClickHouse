@@ -8,12 +8,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 /** Function for transforming numbers and dates to strings that contain the same set of bytes in the machine representation. */
 class FunctionReinterpretAsString : public IFunction
@@ -66,7 +68,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const IColumn & src = *block.getByPosition(arguments[0]).column;
         MutableColumnPtr dst = block.getByPosition(result).type->createColumn();
@@ -80,6 +82,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionReinterpretAsString(FunctionFactory & factory)
 {
@@ -87,5 +90,3 @@ void registerFunctionReinterpretAsString(FunctionFactory & factory)
 }
 
 }
-
-
