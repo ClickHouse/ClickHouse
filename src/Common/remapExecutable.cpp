@@ -1,4 +1,4 @@
-#if defined(__linux__) && defined(__amd64__) && defined(__SSE2__)
+#if defined(__linux__) && defined(__amd64__) && defined(__SSE2__) && !defined(SANITIZER) && defined(NDEBUG)
 
 #include <sys/mman.h>
 #include <unistd.h>
