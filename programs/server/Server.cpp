@@ -32,6 +32,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/remapExecutable.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -307,6 +308,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         if (config().getBool("mlock_executable", false))
         {
+            LOG_DEBUG(log, "Will remap executable in memory.");
+            remapExecutable();
+            LOG_DEBUG(log, "The code in memory has been successfully remapped.");
+
+/*
             if (hasLinuxCapability(CAP_IPC_LOCK))
             {
                 LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
@@ -321,7 +327,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     " It could happen due to incorrect ClickHouse package installation."
                     " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
                     " Note that it will not work on 'nosuid' mounted filesystems.", executable_path);
-            }
+            }*/
         }
     }
 #endif
