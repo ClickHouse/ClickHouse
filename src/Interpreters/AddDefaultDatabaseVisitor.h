@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -23,8 +24,9 @@ namespace DB
 class AddDefaultDatabaseVisitor
 {
 public:
-    AddDefaultDatabaseVisitor(const String & database_name_, std::ostream * ostr_ = nullptr)
+    AddDefaultDatabaseVisitor(const String & database_name_, bool only_replace_current_database_function_ = false, std::ostream * ostr_ = nullptr)
     :   database_name(database_name_),
+        only_replace_current_database_function(only_replace_current_database_function_),
         visit_depth(0),
         ostr(ostr_)
     {}
@@ -34,7 +36,8 @@ public:
         visitDDLChildren(ast);
 
         if (!tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
-            !tryVisitDynamicCast<ASTRenameQuery>(ast))
+            !tryVisitDynamicCast<ASTRenameQuery>(ast) &&
+            !tryVisitDynamicCast<ASTFunction>(ast))
         {}
     }
 
@@ -60,6 +63,7 @@ public:
 
 private:
     const String database_name;
+    bool only_replace_current_database_function = false;
     mutable size_t visit_depth;
     std::ostream * ostr;
 
@@ -164,18 +168,33 @@ private:
 
     void visitDDL(ASTQueryWithTableAndOutput & node, ASTPtr &) const
     {
+        if (only_replace_current_database_function)
+            return;
+
         if (node.database.empty())
             node.database = database_name;
     }
 
     void visitDDL(ASTRenameQuery & node, ASTPtr &) const
     {
+        if (only_replace_current_database_function)
+            return;
+
         for (ASTRenameQuery::Element & elem : node.elements)
         {
             if (elem.from.database.empty())
                 elem.from.database = database_name;
             if (elem.to.database.empty())
                 elem.to.database = database_name;
+        }
+    }
+
+    void visitDDL(ASTFunction & function, ASTPtr & node) const
+    {
+        if (function.name == "currentDatabase")
+        {
+            node = std::make_shared<ASTLiteral>(database_name);
+            return;
         }
     }
 

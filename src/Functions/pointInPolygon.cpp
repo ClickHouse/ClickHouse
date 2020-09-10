@@ -34,7 +34,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -43,6 +42,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
 
 using CoordinateType = Float64;
 using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
@@ -561,6 +562,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {
