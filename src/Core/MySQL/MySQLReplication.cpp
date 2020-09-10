@@ -171,7 +171,9 @@ namespace MySQLReplication
 
         /// Ignore MySQL 8.0 optional metadata fields.
         /// https://mysqlhighavailability.com/more-metadata-is-written-into-binary-log/
-        payload.ignore(payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
+        auto remain = payload.available();
+        if (remain > CHECKSUM_CRC32_SIGNATURE_LENGTH)
+           payload.ignore(remain);
     }
 
     /// Types that do not used in the binlog event:
@@ -221,6 +223,7 @@ namespace MySQLReplication
                 }
                 case MYSQL_TYPE_NEWDECIMAL:
                 case MYSQL_TYPE_STRING: {
+                    /// Big-Endian
                     auto b0 = UInt16(meta[pos] << 8);
                     auto b1 = UInt8(meta[pos + 1]);
                     column_meta.emplace_back(UInt16(b0 + b1));
@@ -231,6 +234,7 @@ namespace MySQLReplication
                 case MYSQL_TYPE_BIT:
                 case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
+                    /// Little-Endian
                     auto b0 = UInt8(meta[pos]);
                     auto b1 = UInt16(meta[pos + 1] << 8);
                     column_meta.emplace_back(UInt16(b0 + b1));
