@@ -952,13 +952,10 @@ void TCPHandler::receiveQuery()
         data += state.query_id;
         data += client_info.initial_user;
 
-        std::string calculated_hash;
-        calculated_hash.resize(32);
-
-        if (received_hash.size() != calculated_hash.size())
+        if (received_hash.size() != 32)
             throw NetException("Unexpected hash received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
-        encodeSHA256(data, reinterpret_cast<unsigned char *>(calculated_hash.data()));
+        std::string calculated_hash = encodeSHA256(data);
 
         if (calculated_hash != received_hash)
             throw NetException("Hash mismatch", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);

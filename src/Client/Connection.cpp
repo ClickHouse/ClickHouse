@@ -312,13 +312,10 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
 #if USE_SSL
 void Connection::sendClusterNameAndSalt()
 {
-    salt.clear();
     pcg64_fast rng(randomSeed());
     UInt64 rand = rng();
-    std::string_view data(reinterpret_cast<char *>(&rand), sizeof(rand));
 
-    salt.resize(32);
-    encodeSHA256(data, reinterpret_cast<unsigned char *>(salt.data()));
+    salt = encodeSHA256(&rand, sizeof(rand));
 
     writeStringBinary(cluster, *out);
     writeStringBinary(salt, *out);
@@ -462,9 +459,7 @@ void Connection::sendQuery(
             data += client_info->initial_user;
             /// TODO: add source/target host/ip-address
 
-            std::string hash;
-            hash.resize(32);
-            encodeSHA256(data, reinterpret_cast<unsigned char *>(hash.data()));
+            std::string hash = encodeSHA256(data);
             writeStringBinary(hash, *out);
 #else
         throw Exception(
