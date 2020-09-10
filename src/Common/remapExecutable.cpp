@@ -89,20 +89,6 @@ __attribute__((__noinline__)) int64_t our_syscall(...)
 }
 
 
-__attribute__((__always_inline__)) void our_memcpy(char * __restrict dst, const char * __restrict src, ssize_t n)
-{
-    while (n > 0)
-    {
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
-
-        dst += 16;
-        src += 16;
-        n -= 16;
-    }
-}
-
-
 __attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
 {
     /// The function should not use the stack, otherwise various optimizations, including "omit-frame-pointer" may break the code.
@@ -122,7 +108,7 @@ __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, v
     /** Unmap old memory region with the code of our program.
       * Our instruction pointer is located inside scratch area and this function can execute after old code is unmapped.
       * But it cannot call any other functions because they are not available at usual addresses
-      * - that's why we have to use "our_syscall" and "our_memcpy" functions.
+      * - that's why we have to use "our_syscall" function and a substitution for memcpy.
       * (Relative addressing may continue to work but we should not assume that).
       */
 
@@ -152,7 +138,19 @@ __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, v
 
     /// Copy the code from scratch area to the old memory location.
 
-    our_memcpy(reinterpret_cast<char *>(begin), reinterpret_cast<const char *>(scratch), size);
+    {
+        __m128i * __restrict dst = reinterpret_cast<__m128i *>(begin);
+        const __m128i * __restrict src = reinterpret_cast<const __m128i *>(scratch);
+        const __m128i * __restrict src_end = reinterpret_cast<const __m128i *>(reinterpret_cast<const char *>(scratch) + size);
+        while (src < src_end)
+        {
+            _mm_storeu_si128(dst, _mm_loadu_si128(src));
+
+            ++dst;
+            ++src;
+        }
+    }
+
     //syscall_func(SYS_write, 2, &dot, 1);
 
     /// Make the memory area with the code executable and non-writable.
