@@ -142,7 +142,8 @@ void TraceCollector::run()
         if (trace_log)
         {
             UInt64 time = clock_gettime_ns(CLOCK_REALTIME);
-            TraceLogElement element{time_t(time / 1000000000), time, trace_type, thread_id, query_id, trace, size};
+            UInt64  time_in_microseconds = clock_gettime_microseconds(CLOCK_REALTIME);
+            TraceLogElement element{time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, trace, size};
             trace_log->add(element);
         }
     }
