@@ -28,6 +28,8 @@
 #include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <ext/map.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -1216,13 +1218,22 @@ class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op
 public:
     using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>;
     using Monotonicity = typename Base::Monotonicity;
-    static FunctionPtr create(const ColumnWithTypeAndName & left_, const ColumnWithTypeAndName & right_, const Context & context)
+
+    static FunctionPtr create(
+        const ColumnWithTypeAndName & left_,
+        const ColumnWithTypeAndName & right_,
+        const DataTypePtr & return_type_,
+        const Context & context)
     {
-        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, context);
+        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context);
     }
+
     FunctionBinaryArithmeticWithConstants(
-        const ColumnWithTypeAndName & left_, const ColumnWithTypeAndName & right_, const Context & context_)
-        : Base(context_), left(left_), right(right_)
+        const ColumnWithTypeAndName & left_,
+        const ColumnWithTypeAndName & right_,
+        const DataTypePtr & return_type_,
+        const Context & context_)
+        : Base(context_), left(left_), right(right_), return_type(return_type_)
     {
     }
 
@@ -1253,7 +1264,7 @@ public:
     bool hasInformationAboutMonotonicity() const override
     {
         std::string_view name_ = Name::name;
-        if (name_ == "minus" || name_ == "plus" || name_ == "multiply" || name_ == "divide" || name_ == "intDiv")
+        if (name_ == "minus" || name_ == "plus" || name_ == "divide" || name_ == "intDiv")
         {
             return true;
         }
@@ -1262,58 +1273,108 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field & left_point, const Field & right_point) const override
     {
+        // For simplicity, we treat null values as monotonicity breakers.
+        if (left_point.isNull() || right_point.isNull())
+            return {false, true, false};
+
+        // For simplicity, we treat every single value interval as positive monotonic.
+        if (applyVisitor(FieldVisitorAccurateEquals(), left_point, right_point))
+            return {true, true, false};
+
         std::string_view name_ = Name::name;
         if (name_ == "minus" || name_ == "plus")
         {
-            return {true, true, true};
+            // const +|- variable
+            if (left.column && isColumnConst(*left.column))
+            {
+                auto transform = [&](const Field & point)
+                {
+                    Block block_with_constant
+                        = {{left.column->cloneResized(1), left.type, left.name},
+                           {right.type->createColumnConst(1, point), right.type, right.name},
+                           {nullptr, return_type, ""}};
+                    Base::executeImpl(block_with_constant, {0, 1}, 2, 1);
+                    Field point_transformed;
+                    block_with_constant.getByPosition(2).column->get(0, point_transformed);
+                    return point_transformed;
+                };
+                transform(left_point);
+                transform(right_point);
+                if (name_ == "plus")
+                {
+                    // Check if there is an overflow
+                    if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
+                            == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
+                        return {true, true, false};
+                    else
+                        return {false, true, false};
+                }
+                else
+                {
+                    // Check if there is an overflow
+                    if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
+                            != applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
+                        return {true, false, false};
+                    else
+                        return {false, false, false};
+                }
+            }
+            // variable +|- constant
+            else if (right.column && isColumnConst(*right.column))
+            {
+                auto transform = [&](const Field & point)
+                {
+                    Block block_with_constant
+                        = {{left.type->createColumnConst(1, point), left.type, left.name},
+                           {right.column->cloneResized(1), right.type, right.name},
+                           {nullptr, return_type, ""}};
+                    Base::executeImpl(block_with_constant, {0, 1}, 2, 1);
+                    Field point_transformed;
+                    block_with_constant.getByPosition(2).column->get(0, point_transformed);
+                    return point_transformed;
+                };
+
+                // Check if there is an overflow
+                if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
+                    == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
+                    return {true, true, false};
+                else
+                    return {false, true, false};
+            }
         }
-        if (name_ == "multiply" || name_ == "divide" || name_ == "intDiv")
+        if (name_ == "divide" || name_ == "intDiv")
         {
-            if (!left.column)
+            // const / variable
+            if (left.column && isColumnConst(*left.column))
             {
-                bool positive = true;
-                if (WhichDataType(right.type).isInt())
-                {
-                    positive = right.column->getInt(0) >= 0;
-                }
+                auto constant = (*left.column)[0];
+                if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
+                    return {true, true, false}; // 0 / 0 is undefined, thus it's not always monotonic
 
-                if (WhichDataType(left.type).isUInt())
-                    return {true, positive, true};
-                else if (WhichDataType(left.type).isInt())
+                bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
+                if (applyVisitor(FieldVisitorAccurateLess(), left_point, Field(0)) &&
+                        applyVisitor(FieldVisitorAccurateLess(), right_point, Field(0)))
                 {
-                    if (left_point.get<Int64>() == right_point.get<Int64>())
-                        return {true, positive, true};
-                    if (left_point.get<Int64>() >= 0)
-                        return {true, positive, false};
-                    else if (right_point.get<Int64>() <= 0)
-                        return {true, !positive, false};
-                    else
-                        return {false, true, false};
+                    return {true, is_constant_positive, false};
+                }
+                else
+                if (applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point) &&
+                        applyVisitor(FieldVisitorAccurateLess(), Field(0), right_point))
+                {
+                    return {true, !is_constant_positive, false};
                 }
             }
-            if (!right.column)
+            // variable / constant
+            else if (right.column && isColumnConst(*right.column))
             {
-                bool positive = true;
-                if (WhichDataType(left.type).isInt())
-                {
-                    positive = right.column->getInt(0) >= 0;
-                }
+                auto constant = (*left.column)[0];
+                if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
+                    return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
 
-                if (WhichDataType(left.type).isUInt())
-                    return {true, !positive, true};
-                else if (WhichDataType(left.type).isInt())
-                {
-                    if (left_point.get<Int64>() == right_point.get<Int64>())
-                        return {true, !positive, true};
-                    if (left_point.get<Int64>() >= 0)
-                        return {true, !positive, false};
-                    else if (right_point.get<Int64>() <= 0)
-                        return {true, positive, false};
-                    else
-                        return {false, true, false};
-                }
+                bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
+                // division is saturated to `inf`, thus it doesn't have overflow issues.
+                return {true, is_constant_positive, false};
             }
-            return {true, true, true}; // both arguments are constants
         }
         return {false, true, false};
     }
@@ -1321,6 +1382,7 @@ public:
 private:
     ColumnWithTypeAndName left;
     ColumnWithTypeAndName right;
+    DataTypePtr return_type;
 };
 
 
@@ -1348,7 +1410,8 @@ public:
                 || (arguments[1].column && isColumnConst(*arguments[1].column))))
         {
             return std::make_unique<DefaultFunction>(
-                FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments>::create(arguments[0], arguments[1], context),
+                FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments>::create(
+                    arguments[0], arguments[1], return_type, context),
                 ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         }
