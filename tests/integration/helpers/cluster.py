@@ -1223,7 +1223,7 @@ class ClickHouseInstance:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
         if self.with_kerberized_kafka:
-            distutils.dir_util.copy_tree(self.kerberos_secrets_dir, p.abspath(p.join(self.path, 'secrets')))
+            shutil.copytree(self.kerberos_secrets_dir, p.abspath(p.join(self.path, 'secrets')))
 
         # Copy config.d configs
         print "Copy custom test config files {} to {}".format(self.custom_main_config_paths, self.config_d_dir)
