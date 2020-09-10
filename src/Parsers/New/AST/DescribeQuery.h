@@ -14,6 +14,8 @@ class DescribeQuery : public Query
 {
     public:
         explicit DescribeQuery(PtrTo<TableExpr> expr);
+
+        ASTPtr convertToOld() const override;
 };
 
 }

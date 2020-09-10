@@ -23,10 +23,14 @@ class SchemaClause : public INode
 
         auto getType() const { return clause_type; }
 
+        ASTPtr convertToOld() const override;
+
     private:
         ClauseType clause_type;
 
         SchemaClause(ClauseType type, PtrList exprs);
+
+        String dumpInfo() const override;
 };
 
 class CreateTableQuery : public DDLQuery
@@ -53,6 +57,8 @@ class CreateTableQuery : public DDLQuery
         };
 
         const bool attach, temporary, if_not_exists;
+
+        String dumpInfo() const override;
 };
 
 }

@@ -1,8 +1,8 @@
 #include <Parsers/New/AST/ShowCreateQuery.h>
 
 #include <Parsers/New/AST/Identifier.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 
 
 namespace DB::AST
@@ -27,6 +27,15 @@ ShowCreateQuery::ShowCreateQuery(QueryType type, PtrList exprs) : query_type(typ
     children = exprs;
 
     (void)query_type, (void)temporary; // TODO
+}
+
+ASTPtr ShowCreateQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTShowCreateTableQuery>();
+
+    // TODO
+
+    return query;
 }
 
 }

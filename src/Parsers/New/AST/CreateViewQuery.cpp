@@ -1,8 +1,8 @@
 #include <Parsers/New/AST/CreateViewQuery.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -16,6 +16,15 @@ CreateViewQuery::CreateViewQuery(bool if_not_exists_, PtrTo<TableIdentifier> ide
     children.push_back(query);
 
     (void)if_not_exists; // TODO
+}
+
+ASTPtr CreateViewQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTCreateQuery>();
+
+    // TODO
+
+    return query;
 }
 
 }

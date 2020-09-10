@@ -10,6 +10,8 @@ class RenameQuery : public DDLQuery
 {
     public:
         explicit RenameQuery(PtrTo<List<TableIdentifier>> list);
+
+        ASTPtr convertToOld() const override;
 };
 
 }

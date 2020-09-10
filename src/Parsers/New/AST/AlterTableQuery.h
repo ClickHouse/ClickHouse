@@ -42,6 +42,8 @@ class AlterTableQuery : public DDLQuery
 {
     public:
         AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses);
+
+        ASTPtr convertToOld() const override;
 };
 
 }

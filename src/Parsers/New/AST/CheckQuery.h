@@ -10,6 +10,8 @@ class CheckQuery : public Query
 {
     public:
         explicit CheckQuery(PtrTo<TableIdentifier> identifier);
+
+        ASTPtr convertToOld() const override;
 };
 
 }

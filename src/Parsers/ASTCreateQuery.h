@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Parsers/ASTQueryWithOnCluster.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -66,7 +67,7 @@ public:
     //FIXME
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
     ASTStorage * storage = nullptr;
-    ASTPtr as_table;
+    ASTTableIdentifier * as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
 

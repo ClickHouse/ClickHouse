@@ -10,6 +10,8 @@ class UseQuery : public Query
 {
     public:
         explicit UseQuery(PtrTo<DatabaseIdentifier> identifier);
+
+        ASTPtr convertToOld() const override;
 };
 
 }

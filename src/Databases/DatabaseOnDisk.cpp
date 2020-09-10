@@ -101,7 +101,6 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
     /// We remove everything that is not needed for ATTACH from the query.
     create->database.clear();
-    create->as_table.reset();
     create->if_not_exists = false;
     create->is_populate = false;
     create->replace_view = false;

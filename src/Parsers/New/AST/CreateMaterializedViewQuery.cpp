@@ -1,10 +1,10 @@
 #include <Parsers/New/AST/CreateMaterializedViewQuery.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/New/AST/CreateTableQuery.h>
 #include <Parsers/New/AST/EngineExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -32,6 +32,15 @@ CreateMaterializedViewQuery::CreateMaterializedViewQuery(
     children.push_back(query);
 
     (void)if_not_exists; // TODO
+}
+
+ASTPtr CreateMaterializedViewQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTCreateQuery>();
+
+    // TODO
+
+    return query;
 }
 
 }

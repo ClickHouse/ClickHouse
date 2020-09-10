@@ -23,6 +23,8 @@ class CreateMaterializedViewQuery : public DDLQuery
             PtrTo<EngineClause> engine,
             PtrTo<SelectUnionQuery> query);
 
+        ASTPtr convertToOld() const override;
+
     private:
         enum ChildIndex : UInt8
         {

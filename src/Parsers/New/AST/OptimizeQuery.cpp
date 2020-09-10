@@ -1,9 +1,9 @@
 #include <Parsers/New/AST/OptimizeQuery.h>
 
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -16,6 +16,15 @@ OptimizeQuery::OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionE
     children.push_back(identifier);
     if (list) children.insert(children.end(), list->begin(), list->end());
     (void)final, (void)deduplicate; // TODO
+}
+
+ASTPtr OptimizeQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTOptimizeQuery>();
+
+    // TODO
+
+    return query;
 }
 
 }

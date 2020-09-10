@@ -1,7 +1,7 @@
 #include <Parsers/New/AST/DescribeQuery.h>
 
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/New/AST/TableExpr.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -11,6 +11,15 @@ namespace DB::AST
 DescribeQuery::DescribeQuery(PtrTo<TableExpr> expr)
 {
     children.push_back(expr);
+}
+
+ASTPtr DescribeQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTDescribeQuery>();
+
+    // TODO
+
+    return query;
 }
 
 }

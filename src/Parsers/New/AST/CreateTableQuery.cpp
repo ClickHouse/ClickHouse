@@ -36,6 +36,32 @@ SchemaClause::SchemaClause(ClauseType type, PtrList exprs) : clause_type(type)
     children = exprs;
 }
 
+ASTPtr SchemaClause::convertToOld() const
+{
+    switch(clause_type)
+    {
+        case ClauseType::DESCRIPTION:
+        {
+            auto columns = std::make_shared<ASTColumns>();
+           // TODO
+            return columns;
+        }
+        case ClauseType::FUNCTION:
+        case ClauseType::TABLE:
+            return children.front()->convertToOld();
+    }
+}
+
+String SchemaClause::dumpInfo() const
+{
+    switch(clause_type)
+    {
+        case ClauseType::DESCRIPTION: return "Description";
+        case ClauseType::FUNCTION: return "Function";
+        case ClauseType::TABLE: return "Table";
+    }
+}
+
 CreateTableQuery::CreateTableQuery(
     bool attach_,
     bool temporary_,
@@ -76,7 +102,7 @@ ASTPtr CreateTableQuery::convertToOld() const
             }
             case SchemaClause::ClauseType::TABLE:
             {
-                query->as_table = children[SCHEMA]->convertToOld();
+                query->set(query->as_table, children[SCHEMA]->convertToOld());
                 break;
             }
             case SchemaClause::ClauseType::FUNCTION:
@@ -90,6 +116,18 @@ ASTPtr CreateTableQuery::convertToOld() const
     if (has(SUBQUERY)) query->set(query->select, children[SUBQUERY]->convertToOld());
 
     return query;
+}
+
+String CreateTableQuery::dumpInfo() const
+{
+    String info;
+    if (attach) info += "attach=true, ";
+    else info += "attach=false, ";
+    if (temporary) info += "temporary=true, ";
+    else info += "temporary=false, ";
+    if (if_not_exists) info += "if_not_exists=true";
+    else info += "if_not_exists=false";
+    return info;
 }
 
 }

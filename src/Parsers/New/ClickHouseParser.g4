@@ -72,7 +72,7 @@ subqueryClause: AS selectUnionStmt;
 schemaClause
     : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN  # SchemaDescriptionClause
     | AS tableIdentifier                                        # SchemaAsTableClause
-    | AS tableFunctionExpr                                          # SchemaAsFunctionClause
+    | AS tableFunctionExpr                                      # SchemaAsFunctionClause
     ;
 engineClause:
     engineExpr

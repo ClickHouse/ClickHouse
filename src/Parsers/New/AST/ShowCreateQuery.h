@@ -12,6 +12,8 @@ class ShowCreateQuery : public Query
         static PtrTo<ShowCreateQuery> createDatabase(PtrTo<DatabaseIdentifier> identifier);
         static PtrTo<ShowCreateQuery> createTable(bool temporary, PtrTo<TableIdentifier> identifier);
 
+        ASTPtr convertToOld() const override;
+
     private:
         enum class QueryType
         {

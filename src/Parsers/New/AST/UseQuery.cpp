@@ -1,5 +1,6 @@
 #include <Parsers/New/AST/UseQuery.h>
 
+#include <Parsers/ASTUseQuery.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
@@ -10,6 +11,15 @@ namespace DB::AST
 UseQuery::UseQuery(PtrTo<DatabaseIdentifier> identifier)
 {
     children.push_back(identifier);
+}
+
+ASTPtr UseQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTUseQuery>();
+
+    // TODO
+
+    return query;
 }
 
 }

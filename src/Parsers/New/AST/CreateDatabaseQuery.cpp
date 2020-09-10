@@ -1,17 +1,16 @@
 #include <Parsers/New/AST/CreateDatabaseQuery.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/New/AST/EngineExpr.h>
 #include <Parsers/New/AST/Identifier.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
-
-#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB::AST
 {
 
-CreateDatabaseQuery::CreateDatabaseQuery(bool if_not_exists_, PtrTo<DatabaseIdentifier> identifier, PtrTo<EngineExpr> expr) : if_not_exists(if_not_exists_)
+CreateDatabaseQuery::CreateDatabaseQuery(bool if_not_exists_, PtrTo<DatabaseIdentifier> identifier, PtrTo<EngineExpr> expr)
+    : if_not_exists(if_not_exists_)
 {
     children.push_back(identifier);
     children.push_back(expr);

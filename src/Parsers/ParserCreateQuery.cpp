@@ -467,7 +467,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
 
-    if (as_table) query->as_table = std::make_shared<ASTTableIdentifier>(as_database, as_table);
+    if (as_table) query->set(query->as_table, std::make_shared<ASTTableIdentifier>(as_database, as_table));
     query->set(query->select, select);
 
     return true;
@@ -575,7 +575,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     query->set(query->columns_list, columns_list);
 
-    query->as_table = std::make_shared<ASTTableIdentifier>(as_database, as_table);
+    if (as_table) query->set(query->as_table, std::make_shared<ASTTableIdentifier>(as_database, as_table));
     query->set(query->select, select);
 
     if (live_view_timeout)
@@ -780,7 +780,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
 
-    query->as_table = std::make_shared<ASTTableIdentifier>(as_database, as_table);
+    if (as_table) query->set(query->as_table, std::make_shared<ASTTableIdentifier>(as_database, as_table));
     query->set(query->select, select);
 
     return true;

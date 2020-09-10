@@ -1,10 +1,10 @@
 #include <Parsers/New/AST/AlterTableQuery.h>
 
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/TableElementExpr.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -63,13 +63,22 @@ AlterTableClause::AlterTableClause(ClauseType type, PtrList exprs) : clause_type
 {
     children = exprs;
 
-    (void)clause_type; // TODO
+    (void) clause_type; // TODO
 }
 
 AlterTableQuery::AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses)
 {
     children.push_back(identifier);
     children.push_back(clauses);
+}
+
+ASTPtr AlterTableQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTAlterQuery>();
+
+    // TODO: implement this.
+
+    return query;
 }
 
 }
