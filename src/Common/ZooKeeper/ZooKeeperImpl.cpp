@@ -1092,8 +1092,6 @@ void ZooKeeper::sendThread()
                     {
                         info.request->has_watch = true;
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
-                        std::lock_guard lock(watches_mutex);
-                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
                     }
 
                     if (expired)
@@ -1276,6 +1274,22 @@ void ZooKeeper::receiveEvent()
         {
             response->readImpl(*in);
             response->removeRootPath(root_path);
+        }
+
+        /// Find from operations
+        if (request_info.watch)
+        {
+            bool add_watch = false;
+            if (request_info.isExists)
+                add_watch = (response->error == Error::ZOK || response->error == Error::ZNONODE);
+            else
+                add_watch = response->error == Error::ZOK;
+
+            if (add_watch)
+            {
+                std::lock_guard lock(watches_mutex);
+                watches[request_info.request->getPath()].emplace_back(std::move(request_info.watch));
+            }
         }
 
         int32_t actual_length = in->count() - count_before_event;
@@ -1545,6 +1559,7 @@ void ZooKeeper::exists(
     request_info.request = std::make_shared<ZooKeeperExistsRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ExistsResponse &>(response)); };
     request_info.watch = watch;
+    request_info.isExists = true;
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
@@ -1563,6 +1578,7 @@ void ZooKeeper::get(
     request_info.request = std::make_shared<ZooKeeperGetRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetResponse &>(response)); };
     request_info.watch = watch;
+    request_info.isExists = false;
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
@@ -1601,6 +1617,7 @@ void ZooKeeper::list(
     request_info.request = std::make_shared<ZooKeeperListRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
     request_info.watch = watch;
+    request_info.isExists = false;
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperList);

@@ -197,6 +197,7 @@ private:
         ResponseCallback callback;
         WatchCallback watch;
         clock::time_point time;
+        bool isExists;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
