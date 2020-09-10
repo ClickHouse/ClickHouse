@@ -152,9 +152,9 @@ public:
         COLUMN,
         /// Another one name for column.
         ALIAS,
-        FUNCTION,
         /// Function arrayJoin. Specially separated because it changes the number of rows.
         ARRAY_JOIN,
+        FUNCTION,
     };
 
     struct Node
@@ -166,8 +166,17 @@ public:
         std::string result_name;
         DataTypePtr result_type;
 
+        FunctionOverloadResolverPtr function_builder;
+        /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
+        FunctionBasePtr function_base;
+        /// Prepared function which is used in function execution.
+        ExecutableFunctionPtr function;
+
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
+        /// Some functions like `ignore()` always return constant but can't be replaced by constant it.
+        /// We calculate such constants in order to avoid unnecessary materialization, but prohibit it's folding.
+        bool allow_constant_folding = true;
     };
 
     using Index = std::unordered_map<std::string_view, Node *>;
@@ -180,14 +189,25 @@ public:
     ActionsDAG() = default;
     ActionsDAG(const ActionsDAG &) = delete;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
+    ActionsDAG(const NamesAndTypesList & inputs);
 
     const std::list<Node> & getNodes() const;
     const Index & getIndex() const { return index; }
 
+    NamesAndTypesList getNamesAndTypesList() const;
+    std::string dumpNames() const;
+
     const Node & addInput(std::string name, DataTypePtr type);
+    const Node & addColumn(ColumnWithTypeAndName column);
     const Node & addAlias(const std::string & name, std::string alias);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
-    const Node & addFunction(const FunctionOverloadResolverPtr & function, const Names & arguments);
+    const Node & addFunction(
+            const FunctionOverloadResolverPtr & function,
+            const Names & argument_names,
+            std::string result_name,
+            bool compile_expressions);
+
+    ExpressionActionsPtr buildExpressions(const Context & context);
 
 private:
     Node & addNode(Node node);

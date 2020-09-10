@@ -339,7 +339,7 @@ static Block createBlockForSet(
 }
 
 SetPtr makeExplicitSet(
-    const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
+    const ASTFunction * node, const ActionsDAG::Index & index, bool create_ordered_set,
     const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
 {
     const IAST & args = *node->arguments;
@@ -350,7 +350,10 @@ SetPtr makeExplicitSet(
     const ASTPtr & left_arg = args.children.at(0);
     const ASTPtr & right_arg = args.children.at(1);
 
-    const DataTypePtr & left_arg_type = sample_block.getByName(left_arg->getColumnName()).type;
+    auto it = index.find(left_arg->getColumnName());
+    if (it == index.end())
+        throw Exception("Unknown identifier: '" + left_arg->getColumnName() + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+    const DataTypePtr & left_arg_type = it->second->result_type;
 
     DataTypes set_element_types = {left_arg_type};
     const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
@@ -413,6 +416,15 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
     throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
+void ScopeStack::addColumn(ColumnWithTypeAndName column)
+{
+    auto level = getColumnLevel(column.name);
+    const auto & node = stack[level]->addColumn(std::move(column));
+
+    for (size_t j = level + 1; j < stack.size(); ++j)
+        stack[j]->addInput(node.result_name, node.result_type);
+}
+
 void ScopeStack::addAlias(const std::string & name, std::string alias)
 {
    auto level = getColumnLevel(name);
@@ -431,37 +443,20 @@ void ScopeStack::addArrayJoin(const std::string & source_name, std::string resul
         stack[j]->addInput(node.result_name, node.result_type);
 }
 
-void ScopeStack::addAction(const ExpressionAction & action)
+void ScopeStack::addFunction(
+    const FunctionOverloadResolverPtr & function,
+    const Names & argument_names,
+    std::string result_name,
+    bool compile_expressions)
 {
     size_t level = 0;
-    Names required = action.getNeededColumns();
-    for (const auto & elem : required)
-        level = std::max(level, getColumnLevel(elem));
+    for (const auto & argument : argument_names)
+        level = std::max(level, getColumnLevel(argument));
 
-    Names added;
-    stack[level].actions->add(action, added);
+    const auto & node = stack[level]->addFunction(function, argument_names, std::move(result_name), compile_expressions);
 
-    stack[level].new_columns.insert(added.begin(), added.end());
-
-    for (const auto & elem : added)
-    {
-        const ColumnWithTypeAndName & col = stack[level].actions->getSampleBlock().getByName(elem);
-        for (size_t j = level + 1; j < stack.size(); ++j)
-            stack[j].actions->addInput(col);
-    }
-}
-
-void ScopeStack::addActionNoInput(const ExpressionAction & action)
-{
-    size_t level = 0;
-    Names required = action.getNeededColumns();
-    for (const auto & elem : required)
-        level = std::max(level, getColumnLevel(elem));
-
-    Names added;
-    stack[level].actions->add(action, added);
-
-    stack[level].new_columns.insert(added.begin(), added.end());
+    for (size_t j = level + 1; j < stack.size(); ++j)
+        stack[j]->addInput(node.result_name, node.result_type);
 }
 
 ActionsDAGPtr ScopeStack::popLevel()
@@ -469,6 +464,11 @@ ActionsDAGPtr ScopeStack::popLevel()
     auto res = std::move(stack.back());
     stack.pop_back();
     return res;
+}
+
+std::string ScopeStack::dumpNames() const
+{
+    return stack.back()->dumpNames();
 }
 
 const ActionsDAG::Index & ScopeStack::getIndex() const
@@ -592,10 +592,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                 auto argument_name = node.arguments->children.at(0)->getColumnName();
 
-                data.addAction(ExpressionAction::applyFunction(
+                data.addFunction(
                         FunctionFactory::instance().get(node.name + "IgnoreSet", data.context),
                         { argument_name, argument_name },
-                        column_name.get(ast)));
+                        column_name.get(ast));
             }
             return;
         }
@@ -667,7 +667,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     column.column = ColumnConst::create(std::move(column_set), 1);
                 else
                     column.column = std::move(column_set);
-                data.addAction(ExpressionAction::addColumn(column));
+                data.addColumn(column);
             }
 
             argument_types.push_back(column.type);
@@ -683,7 +683,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 ColumnConst::create(std::move(column_string), 1),
                 std::make_shared<DataTypeString>(),
                 data.getUniqueName("__" + node.name));
-            data.addAction(ExpressionAction::addColumn(column));
+            data.addColumn(column);
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
         }
@@ -703,9 +703,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 child_column_name = as_literal->unique_column_name;
             }
 
-            if (data.hasColumn(child_column_name))
+            const auto & index = data.actions_stack.getIndex();
+            auto it = index.find(child_column_name);
+            if (it != index.end())
             {
-                argument_types.push_back(data.getSampleBlock().getByName(child_column_name).type);
+                argument_types.push_back(it->second->result_type);
                 argument_names.push_back(child_column_name);
             }
             else
@@ -713,7 +715,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 if (data.only_consts)
                     arguments_present = false;
                 else
-                    throw Exception("Unknown identifier: " + child_column_name + " there are columns: " + data.getSampleBlock().dumpNames(),
+                    throw Exception("Unknown identifier: " + child_column_name + " there are columns: " + data.actions_stack.dumpNames(),
                                     ErrorCodes::UNKNOWN_IDENTIFIER);
             }
         }
@@ -750,7 +752,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                 data.actions_stack.pushLevel(lambda_arguments);
                 visit(lambda->arguments->children.at(1), data);
-                ExpressionActionsPtr lambda_actions = data.actions_stack.popLevel();
+                auto lambda_dag = data.actions_stack.popLevel();
+                auto lambda_actions = lambda_dag->buildExpressions(data.context);
 
                 String result_name = lambda->arguments->children.at(1)->getColumnName();
                 lambda_actions->finalize(Names(1, result_name));
@@ -769,7 +772,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
                         lambda_actions, captured, lambda_arguments, result_type, result_name);
                 auto function_capture_adapter = std::make_shared<FunctionOverloadResolverAdaptor>(std::move(function_capture));
-                data.addAction(ExpressionAction::applyFunction(function_capture_adapter, captured, lambda_name));
+                data.addFunction(function_capture_adapter, captured, lambda_name);
 
                 argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                 argument_names[i] = lambda_name;
@@ -791,7 +794,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (arguments_present)
     {
-        data.addAction(ExpressionAction::applyFunction(function_builder, argument_names, column_name.get(ast)));
+        data.addFunction(function_builder, argument_names, column_name.get(ast));
     }
 }
 
@@ -806,8 +809,12 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     if (literal.unique_column_name.empty())
     {
         const auto default_name = literal.getColumnName();
-        const auto & block = data.getSampleBlock();
-        const auto * existing_column = block.findByName(default_name);
+        const auto & index = data.actions_stack.getIndex();
+        const ActionsDAG::Node * existing_column = nullptr;
+
+        auto it = index.find(default_name);
+        if (it != index.end())
+            existing_column = it->second;
 
         /*
          * To approximate CSE, bind all identical literals to a single temporary
@@ -843,7 +850,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     column.column = type->createColumnConst(1, value);
     column.type = type;
 
-    data.addAction(ExpressionAction::addColumn(column));
+    data.addColumn(std::move(column));
 }
 
 SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
@@ -855,7 +862,6 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
     const IAST & args = *node.arguments;
     const ASTPtr & left_in_operand = args.children.at(0);
     const ASTPtr & right_in_operand = args.children.at(1);
-    const Block & sample_block = data.getSampleBlock();
 
     /// If the subquery or table name for SELECT.
     const auto * identifier = right_in_operand->as<ASTIdentifier>();
@@ -916,9 +922,10 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
     }
     else
     {
-        if (sample_block.has(left_in_operand->getColumnName()))
+        const auto & index = data.actions_stack.getIndex();
+        if (index.count(left_in_operand->getColumnName()) != 0)
             /// An explicit enumeration of values in parentheses.
-            return makeExplicitSet(&node, sample_block, false, data.context, data.set_size_limit, data.prepared_sets);
+            return makeExplicitSet(&node, index, false, data.context, data.set_size_limit, data.prepared_sets);
         else
             return {};
     }

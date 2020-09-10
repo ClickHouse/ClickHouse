@@ -21,7 +21,7 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
  /// The case of an explicit enumeration of values.
 SetPtr makeExplicitSet(
-    const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
+    const ASTFunction * node, const ActionsDAG::Index & index, bool create_ordered_set,
     const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
 
 
@@ -46,16 +46,19 @@ struct ScopeStack
 
     size_t getColumnLevel(const std::string & name);
 
+    void addColumn(ColumnWithTypeAndName column);
     void addAlias(const std::string & name, std::string alias);
     void addArrayJoin(const std::string & source_name, std::string result_name);
-
-    void addAction(const ExpressionAction & action);
-    /// For arrayJoin() to avoid double columns in the input.
-    void addActionNoInput(const ExpressionAction & action);
+    void addFunction(
+            const FunctionOverloadResolverPtr & function,
+            const Names & argument_names,
+            std::string result_name,
+            bool compile_expressions);
 
     ActionsDAGPtr popLevel();
 
     const ActionsDAG::Index & getIndex() const;
+    std::string dumpNames() const;
 };
 
 class ASTIdentifier;
@@ -106,32 +109,18 @@ public:
             no_storage_or_local(no_storage_or_local_),
             visit_depth(0),
             actions_stack(std::move(actions), context),
-            next_unique_suffix(actions_stack.getSampleBlock().columns() + 1)
+            next_unique_suffix(actions_stack.getIndex().size() + 1)
         {}
 
-//        void updateActions(ExpressionActionsPtr & actions)
-//        {
-//            actions = actions_stack.popLevel();
-//        }
-//
-//        void addAction(const ExpressionAction & action)
-//        {
-//            actions_stack.addAction(action);
-//        }
-//        void addActionNoInput(const ExpressionAction & action)
-//        {
-//            actions_stack.addActionNoInput(action);
-//        }
-//
-//        const Block & getSampleBlock() const
-//        {
-//            return actions_stack.getSampleBlock();
-//        }
-//
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const
         {
             return actions_stack.getIndex().count(column_name) != 0;
+        }
+
+        void addColumn(ColumnWithTypeAndName column)
+        {
+            actions_stack.addColumn(std::move(column));
         }
 
         void addAlias(const std::string & name, std::string alias)
@@ -144,18 +133,30 @@ public:
             actions_stack.addArrayJoin(source_name, std::move(result_name));
         }
 
+        void addFunction(const FunctionOverloadResolverPtr & function,
+                         const Names & argument_names,
+                         std::string result_name)
+        {
+            actions_stack.addFunction(function, argument_names, std::move(result_name),
+                                      context.getSettingsRef().compile_expressions);
+        }
+
+        ActionsDAGPtr getActions()
+        {
+            return actions_stack.popLevel();
+        }
+
         /*
          * Generate a column name that is not present in the sample block, using
          * the given prefix and an optional numeric suffix.
          */
         String getUniqueName(const String & prefix)
         {
-            const auto & block = getSampleBlock();
             auto result = prefix;
 
             // First, try the name without any suffix, because it is currently
             // used both as a display name and a column id.
-            while (block.has(result))
+            while (hasColumn(result))
             {
                 result = prefix + "_" + toString(next_unique_suffix);
                 ++next_unique_suffix;

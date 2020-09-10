@@ -13,8 +13,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
+#include <IO/Operators.h>
 #include <optional>
 #include <Columns/ColumnSet.h>
+#include <stack>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -1406,6 +1408,12 @@ const ExpressionActionsPtr & ExpressionActionsChain::Step::actions() const
     return typeid_cast<const ExpressionActionsStep *>(this)->actions;
 }
 
+ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs)
+{
+    for (const auto & input : inputs)
+        addInput(input.name, input.type);
+}
+
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
     if (index.count(node.result_name) != 0)
@@ -1435,6 +1443,17 @@ const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type
     return addNode(std::move(node));
 }
 
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
+{
+    Node node;
+    node.type = Type::COLUMN;
+    node.result_type = std::move(column.type);
+    node.result_name = std::move(column.name);
+    node.column = std::move(column.column);
+
+    return addNode(std::move(node));
+}
+
 const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::string alias)
 {
     auto & child = getNode(name);
@@ -1444,6 +1463,7 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::str
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
+    node.allow_constant_folding = child.allow_constant_folding;
     node.children.emplace_back(&child);
 
     return addNode(std::move(node));
@@ -1466,49 +1486,61 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const std::string & source_nam
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addFunction(const FunctionOverloadResolverPtr & function, const Names & arguments)
+const ActionsDAG::Node & ActionsDAG::addFunction(
+    const FunctionOverloadResolverPtr & function,
+    const Names & argument_names,
+    std::string result_name,
+    bool compile_expressions)
 {
+    size_t num_arguments = argument_names.size();
+
     Node node;
     node.type = Type::FUNCTION;
+    node.function_builder = function;
+    node.children.reserve(num_arguments);
 
     bool all_const = true;
-    bool all_suitable_for_constant_folding = true;
+    ColumnsWithTypeAndName arguments(num_arguments);
+    ColumnNumbers argument_numbers(num_arguments);
 
-    ColumnNumbers arguments(argument_names.size());
-    for (size_t i = 0; i < argument_names.size(); ++i)
+    for (size_t i = 0; i < num_arguments; ++i)
     {
-        arguments[i] = sample_block.getPositionByName(argument_names[i]);
-        ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
-        if (!col || !isColumnConst(*col))
+        auto & child = getNode(argument_names[i]);
+        node.children.emplace_back(&child);
+        node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
+
+        ColumnWithTypeAndName argument;
+        argument.column = child.column;
+        argument.type = child.result_type;
+
+        if (!argument.column || !isColumnConst(*argument.column))
             all_const = false;
 
-        if (names_not_for_constant_folding.count(argument_names[i]))
-            all_suitable_for_constant_folding = false;
+        arguments[i] = std::move(argument);
+        argument_numbers[i] = i;
     }
 
-    size_t result_position = sample_block.columns();
-    sample_block.insert({nullptr, result_type, result_name});
-    function = function_base->prepare(sample_block, arguments, result_position);
-    function->createLowCardinalityResultCache(settings.max_threads);
+    node.function_base = function->build(arguments);
+    node.result_type = node.function_base->getReturnType();
 
-    bool compile_expressions = false;
+    Block sample_block(std::move(arguments));
+    sample_block.insert({nullptr, node.result_type, node.result_name});
+    node.function = node.function_base->prepare(sample_block, argument_numbers, num_arguments);
+
+    bool do_compile_expressions = false;
 #if USE_EMBEDDED_COMPILER
-    compile_expressions = settings.compile_expressions;
+    do_compile_expressions = compile_expressions;
 #endif
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
     /// But if we compile expressions compiled version of this function maybe placed in cache,
     /// so we don't want to unfold non deterministic functions
-    if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
+    if (all_const && node.function_base->isSuitableForConstantFolding() && (!do_compile_expressions || node.function_base->isDeterministic()))
     {
-        function->execute(sample_block, arguments, result_position, sample_block.rows(), true);
+        node.function->execute(sample_block, argument_numbers, num_arguments, sample_block.rows(), true);
 
         /// If the result is not a constant, just in case, we will consider the result as unknown.
-        ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
-        if (!isColumnConst(*col.column))
-        {
-            col.column = nullptr;
-        }
-        else
+        ColumnWithTypeAndName & col = sample_block.safeGetByPosition(num_arguments);
+        if (isColumnConst(*col.column))
         {
             /// All constant (literal) columns in block are added with size 1.
             /// But if there was no columns in block before executing a function, the result has size 0.
@@ -1517,32 +1549,136 @@ const ActionsDAG::Node & ActionsDAG::addFunction(const FunctionOverloadResolverP
             if (col.column->empty())
                 col.column = col.column->cloneResized(1);
 
-            if (!all_suitable_for_constant_folding)
-                names_not_for_constant_folding.insert(result_name);
+            node.column = std::move(col.column);
         }
     }
 
     /// Some functions like ignore() or getTypeName() always return constant result even if arguments are not constant.
     /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
     /// unnecessary materialization.
-    auto & res = sample_block.getByPosition(result_position);
-    if (!res.column && function_base->isSuitableForConstantFolding())
+    if (!node.column && node.function_base->isSuitableForConstantFolding())
     {
-        if (auto col = function_base->getResultIfAlwaysReturnsConstantAndHasArguments(sample_block, arguments))
+        if (auto col = node.function_base->getResultIfAlwaysReturnsConstantAndHasArguments(sample_block, argument_numbers))
         {
-            res.column = std::move(col);
-            names_not_for_constant_folding.insert(result_name);
+            node.column = std::move(col);
+            node.allow_constant_folding = false;
         }
     }
 
-    node.result_name = function->getName() + "(";
-    for (size_t i = 0 ; i < arguments.size(); ++i)
+    if (result_name.empty())
     {
-        if (i)
-            node.result_name += ", ";
-        node.result_name += arguments[i];
+        result_name = function->getName() + "(";
+        for (size_t i = 0; i < argument_names.size(); ++i)
+        {
+            if (i)
+                result_name += ", ";
+            result_name += argument_names[i];
+        }
+        result_name += ")";
     }
-    node.result_name += ")";
+
+    node.result_name = std::move(result_name);
+
+    return addNode(std::move(node));
+}
+
+NamesAndTypesList ActionsDAG::getNamesAndTypesList() const
+{
+    NamesAndTypesList result;
+    for (const auto & node : nodes)
+        result.emplace_back(node.result_name, node.result_type);
+
+    return result;
+}
+
+std::string ActionsDAG::dumpNames() const
+{
+    WriteBufferFromOwnString out;
+    for (auto it = nodes.begin(); it != nodes.end(); ++it)
+    {
+        if (it != nodes.begin())
+            out << ", ";
+        out << it->result_name;
+    }
+    return out.str();
+}
+
+ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
+{
+    struct Data
+    {
+        Node * node = nullptr;
+        size_t num_created_children = 0;
+        std::vector<Node *> parents;
+    };
+
+    std::vector<Data> data(nodes.size());
+    std::unordered_map<Node *, size_t> reverse_index;
+
+    for (auto & node : nodes)
+    {
+        size_t id = reverse_index.size();
+        data[id].node = &node;
+        reverse_index[&node] = id;
+    }
+
+    std::stack<Node *> ready_nodes;
+    std::stack<Node *> ready_array_joins;
+
+    for (auto & node : nodes)
+    {
+        for (const auto & child : node.children)
+            data[reverse_index[child]].parents.emplace_back(&node);
+
+        if (node.children.empty())
+            ready_nodes.emplace(&node);
+    }
+
+    auto expressions = std::make_shared<ExpressionActions>(NamesAndTypesList(), context);
+
+    while (!ready_nodes.empty() || !ready_array_joins.empty())
+    {
+        auto & stack = ready_nodes.empty() ? ready_array_joins : ready_nodes;
+        Node * node = stack.top();
+        stack.pop();
+
+        Names argument_names;
+        for (const auto & child : node->children)
+            argument_names.emplace_back(child->result_name);
+
+        switch (node->type)
+        {
+            case Type::INPUT:
+                expressions->addInput({node->column, node->result_type, node->result_name});
+                break;
+            case Type::COLUMN:
+                expressions->add(ExpressionAction::addColumn({node->column, node->result_type, node->result_name}));
+                break;
+            case Type::ALIAS:
+                expressions->add(ExpressionAction::copyColumn(argument_names.at(0), node->result_name));
+                break;
+            case Type::ARRAY_JOIN:
+                expressions->add(ExpressionAction::arrayJoin(argument_names.at(0), node->result_name));
+                break;
+            case Type::FUNCTION:
+                expressions->add(ExpressionAction::applyFunction(node->function_builder, argument_names, node->result_name));
+                break;
+        }
+
+        for (const auto & parent : data[reverse_index[node]].parents)
+        {
+            auto & cur = data[reverse_index[parent]];
+            ++cur.num_created_children;
+
+            if (parent->children.size() == cur.num_created_children)
+            {
+                auto & push_stack = parent->type == Type::ARRAY_JOIN ? ready_array_joins : ready_nodes;
+                push_stack.push(parent);
+            }
+        }
+    }
+
+    return expressions;
 }
 
 }
