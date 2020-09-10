@@ -76,8 +76,8 @@ fuzzBits([s], [prob])
 
 **Параметры**
 
-- `s` - `String` or `FixedString`
-- `prob` - constant `Float32/64`
+- `s` — `String` or `FixedString`
+- `prob` — constant `Float32/64`
 
 **Возвращаемое значение**
 
