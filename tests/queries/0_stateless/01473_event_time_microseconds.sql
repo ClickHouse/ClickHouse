@@ -7,7 +7,6 @@ set log_queries = 1;
 
 select '01473_metric_log_table_event_start_time_microseconds_test';
 system flush logs;
-SELECT sleep(3) Format Null;
 -- query assumes that the event_time field is accurate.
 WITH (
     (
