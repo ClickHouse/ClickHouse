@@ -2,9 +2,6 @@
 
 set -x -e
 
-# Update tzdata to the latest version. It is embedded into clickhouse binary.
-sudo apt-get update && sudo apt-get install tzdata
-
 mkdir -p build/cmake/toolchain/darwin-x86_64
 tar xJf MacOSX10.14.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
 
@@ -21,7 +18,7 @@ ccache --zero-stats ||:
 ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
 rm -f CMakeCache.txt
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS ..
-ninja $NINJA_FLAGS clickhouse-bundle
+ninja -j $(($(nproc) / 2)) $NINJA_FLAGS clickhouse-bundle
 mv ./programs/clickhouse* /output
 mv ./src/unit_tests_dbms /output
 find . -name '*.so' -print -exec mv '{}' /output \;

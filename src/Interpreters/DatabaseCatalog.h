@@ -10,6 +10,7 @@
 #include <set>
 #include <unordered_map>
 #include <mutex>
+#include <shared_mutex>
 #include <array>
 #include <list>
 
@@ -35,7 +36,7 @@ using Dependencies = std::vector<StorageID>;
 /// Allows executing DDL query only in one thread.
 /// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table,
 /// when counter is 0 erases element in the destructor.
-/// If the element already exists in the map, waits, when ddl query will be finished in other thread.
+/// If the element already exists in the map, waits when ddl query will be finished in other thread.
 class DDLGuard
 {
 public:
@@ -49,11 +50,12 @@ public:
     /// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
     using Map = std::map<String, Entry>;
 
-    DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem);
+    DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem);
     ~DDLGuard();
 
 private:
     Map & map;
+    std::shared_mutex & db_mutex;
     Map::iterator it;
     std::unique_lock<std::mutex> guards_lock;
     std::unique_lock<std::mutex> table_lock;
@@ -76,7 +78,8 @@ struct TemporaryTableHolder : boost::noncopyable
         const Context & context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        const ASTPtr & query = {});
+        const ASTPtr & query = {},
+        bool create_for_global_subquery = false);
 
     TemporaryTableHolder(TemporaryTableHolder && rhs);
     TemporaryTableHolder & operator = (TemporaryTableHolder && rhs);
@@ -113,6 +116,8 @@ public:
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table);
+    /// Get an object that protects the database from concurrent DDL queries all tables in the database
+    std::unique_lock<std::shared_mutex> getExclusiveDDLGuardForDatabase(const String & database);
 
 
     void assertDatabaseExists(const String & database_name) const;
@@ -232,11 +237,13 @@ private:
     Poco::Logger * log;
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
-    /// database -> object -> (mutex, counter), counter: how many threads are running a query on the table at the same time
+    /// database name -> database guard -> (table name mutex, counter),
+    /// counter: how many threads are running a query on the table at the same time
     /// For the duration of the operation, an element is placed here, and an object is returned,
     /// which deletes the element in the destructor when counter becomes zero.
-    /// In case the element already exists, waits, when query will be executed in other thread. See class DDLGuard below.
-    using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
+    /// In case the element already exists, waits when query will be executed in other thread. See class DDLGuard below.
+    using DatabaseGuard = std::pair<DDLGuard::Map, std::shared_mutex>;
+    using DDLGuards = std::map<String, DatabaseGuard>;
     DDLGuards ddl_guards;
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
     mutable std::mutex ddl_guards_mutex;

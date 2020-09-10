@@ -34,7 +34,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -43,6 +42,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
 
 using CoordinateType = Float64;
 using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
@@ -508,20 +509,35 @@ private:
 
     void parseConstPolygonFromSingleColumn(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
     {
-        ColumnPtr polygon_column_float64 = castColumn(
-            block.getByPosition(arguments[1]),
-            std::make_shared<DataTypeArray>(
-                std::make_shared<DataTypeTuple>(DataTypes{
-                    std::make_shared<DataTypeFloat64>(),
-                    std::make_shared<DataTypeFloat64>()})));
-
-        const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
-        const IColumn & column_const_data = column_const.getDataColumn();
-
         if (isTwoDimensionalArray(*block.getByPosition(arguments[1]).type))
+        {
+            ColumnPtr polygon_column_float64 = castColumn(
+                block.getByPosition(arguments[1]),
+                std::make_shared<DataTypeArray>(
+                    std::make_shared<DataTypeArray>(
+                        std::make_shared<DataTypeTuple>(DataTypes{
+                            std::make_shared<DataTypeFloat64>(),
+                            std::make_shared<DataTypeFloat64>()}))));
+
+            const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
+            const IColumn & column_const_data = column_const.getDataColumn();
+
             parseConstPolygonWithHolesFromSingleColumn(column_const_data, 0, out_polygon);
+        }
         else
+        {
+            ColumnPtr polygon_column_float64 = castColumn(
+                block.getByPosition(arguments[1]),
+                std::make_shared<DataTypeArray>(
+                    std::make_shared<DataTypeTuple>(DataTypes{
+                        std::make_shared<DataTypeFloat64>(),
+                        std::make_shared<DataTypeFloat64>()})));
+
+            const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
+            const IColumn & column_const_data = column_const.getDataColumn();
+
             parseConstPolygonWithoutHolesFromSingleColumn(column_const_data, 0, out_polygon);
+        }
     }
 
     void parseConstPolygon(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
@@ -546,6 +562,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {

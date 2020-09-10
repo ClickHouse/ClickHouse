@@ -76,17 +76,18 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         if (uncompressed_cache)
         {
             auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-                    fullPath(data_part->volume->getDisk(), full_data_path),
-                    [this, full_data_path, buffer_size]()
-                    {
-                        return data_part->volume->getDisk()->readFile(
-                                full_data_path,
-                                buffer_size,
-                                0,
-                                settings.min_bytes_to_use_direct_io,
-                                settings.min_bytes_to_use_mmap_io);
-                    },
-                    uncompressed_cache);
+                fullPath(data_part->volume->getDisk(), full_data_path),
+                [this, full_data_path, buffer_size]()
+                {
+                    return data_part->volume->getDisk()->readFile(
+                        full_data_path,
+                        buffer_size,
+                        0,
+                        settings.min_bytes_to_use_direct_io,
+                        settings.min_bytes_to_use_mmap_io);
+                },
+                uncompressed_cache,
+                /* allow_different_codecs = */ true);
 
             if (profile_callback_)
                 buffer->setProfileCallback(profile_callback_, clock_type_);
@@ -97,9 +98,10 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         else
         {
             auto buffer =
-                    std::make_unique<CompressedReadBufferFromFile>(
-                            data_part->volume->getDisk()->readFile(
-                                    full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io));
+                std::make_unique<CompressedReadBufferFromFile>(
+                    data_part->volume->getDisk()->readFile(
+                        full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io),
+                    /* allow_different_codecs = */ true);
 
             if (profile_callback_)
                 buffer->setProfileCallback(profile_callback_, clock_type_);
@@ -247,7 +249,6 @@ void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
         throw;
     }
 }
-
 
 bool MergeTreeReaderCompact::isContinuousReading(size_t mark, size_t column_position)
 {

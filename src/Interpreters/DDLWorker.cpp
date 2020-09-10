@@ -28,7 +28,6 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/Lock.h>
 #include <Common/isLocalAddress.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -196,12 +195,101 @@ struct DDLTask
 };
 
 
-static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
-    const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
+namespace
 {
-    auto zookeeper_holder = std::make_shared<zkutil::ZooKeeperHolder>();
-    zookeeper_holder->initFromInstance(zookeeper);
-    return std::make_unique<zkutil::Lock>(std::move(zookeeper_holder), lock_prefix, lock_name, lock_message);
+
+/** Caveats: usage of locks in ZooKeeper is incorrect in 99% of cases,
+  *  and highlights your poor understanding of distributed systems.
+  *
+  * It's only correct if all the operations that are performed under lock
+  *  are atomically checking that the lock still holds
+  *  or if we ensure that these operations will be undone if lock is lost
+  *  (due to ZooKeeper session loss) that's very difficult to achieve.
+  *
+  * It's Ok if every operation that we perform under lock is actually operation in ZooKeeper.
+  *
+  * In 1% of cases when you can correctly use Lock, the logic is complex enough, so you don't need this class.
+  *
+  * TLDR: Don't use this code.
+  * We only have a few cases of it's usage and it will be removed.
+  */
+class ZooKeeperLock
+{
+public:
+    /// lock_prefix - path where the ephemeral lock node will be created
+    /// lock_name - the name of the ephemeral lock node
+    ZooKeeperLock(
+        const zkutil::ZooKeeperPtr & zookeeper_,
+        const std::string & lock_prefix_,
+        const std::string & lock_name_,
+        const std::string & lock_message_ = "")
+    :
+        zookeeper(zookeeper_),
+        lock_path(lock_prefix_ + "/" + lock_name_),
+        lock_message(lock_message_),
+        log(&Poco::Logger::get("zkutil::Lock"))
+    {
+        zookeeper->createIfNotExists(lock_prefix_, "");
+    }
+
+    ~ZooKeeperLock()
+    {
+        try
+        {
+            unlock();
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    void unlock()
+    {
+        Coordination::Stat stat;
+        std::string dummy;
+        bool result = zookeeper->tryGet(lock_path, dummy, &stat);
+
+        if (result && stat.ephemeralOwner == zookeeper->getClientID())
+            zookeeper->remove(lock_path, -1);
+        else
+            LOG_WARNING(log, "Lock is lost. It is normal if session was expired. Path: {}/{}", lock_path, lock_message);
+    }
+
+    bool tryLock()
+    {
+        std::string dummy;
+        Coordination::Error code = zookeeper->tryCreate(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy);
+
+        if (code == Coordination::Error::ZNODEEXISTS)
+        {
+            return false;
+        }
+        else if (code == Coordination::Error::ZOK)
+        {
+            return true;
+        }
+        else
+        {
+            throw Coordination::Exception(code);
+        }
+    }
+
+private:
+    zkutil::ZooKeeperPtr zookeeper;
+
+    std::string lock_path;
+    std::string lock_message;
+    Poco::Logger * log;
+
+};
+
+std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
+    const zkutil::ZooKeeperPtr & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
+{
+    return std::make_unique<ZooKeeperLock>(zookeeper, lock_prefix, lock_name, lock_message);
+}
+
 }
 
 
@@ -775,44 +863,52 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     String shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
     String shard_path = node_path + "/shards/" + shard_node_name;
     String is_executed_path = shard_path + "/executed";
+    String tries_to_execute_path = shard_path + "/tries_to_execute";
     zookeeper->createAncestors(shard_path + "/");
 
-    auto is_already_executed = [&]() -> bool
-    {
-        String executed_by;
-        if (zookeeper->tryGet(is_executed_path, executed_by))
-        {
-            LOG_DEBUG(log, "Task {} has already been executed by leader replica ({}) of the same shard.", task.entry_name, executed_by);
-            return true;
-        }
+    /// Node exists, or we will create or we will get an exception
+    zookeeper->tryCreate(tries_to_execute_path, "0", zkutil::CreateMode::Persistent);
 
-        return false;
-    };
+    static constexpr int MAX_TRIES_TO_EXECUTE = 3;
+
+    String executed_by;
+
+    zkutil::EventPtr event = std::make_shared<Poco::Event>();
+    if (zookeeper->tryGet(is_executed_path, executed_by))
+    {
+        LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
+        return true;
+    }
 
     pcg64 rng(randomSeed());
 
     auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
-    static const size_t max_tries = 20;
-    bool executed_by_leader = false;
-    for (size_t num_tries = 0; num_tries < max_tries; ++num_tries)
-    {
-        if (is_already_executed())
-        {
-            executed_by_leader = true;
-            break;
-        }
 
+    bool executed_by_leader = false;
+    while (true)
+    {
         StorageReplicatedMergeTree::Status status;
         replicated_storage->getStatus(status);
 
-        /// Leader replica take lock
+        /// Any replica which is leader tries to take lock
         if (status.is_leader && lock->tryLock())
         {
-            if (is_already_executed())
+            /// In replicated merge tree we can have multiple leaders. So we can
+            /// be "leader", but another "leader" replica may already execute
+            /// this task.
+            if (zookeeper->tryGet(is_executed_path, executed_by))
             {
+                LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
                 executed_by_leader = true;
                 break;
             }
+
+            /// Doing it exclusively
+            size_t counter = parse<int>(zookeeper->get(tries_to_execute_path));
+            if (counter > MAX_TRIES_TO_EXECUTE)
+                break;
+
+            zookeeper->set(tries_to_execute_path, toString(counter + 1));
 
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock
@@ -822,20 +918,31 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
                 executed_by_leader = true;
                 break;
             }
+
+            lock->unlock();
         }
 
-        /// Does nothing if wasn't previously locked
-        lock->unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 1000)(rng)));
+
+        if (event->tryWait(std::uniform_int_distribution<int>(0, 1000)(rng)))
+        {
+            executed_by_leader = true;
+            break;
+        }
+        else if (parse<int>(zookeeper->get(tries_to_execute_path)) > MAX_TRIES_TO_EXECUTE)
+        {
+            /// Nobody will try to execute query again
+            break;
+        }
     }
 
     /// Not executed by leader so was not executed at all
     if (!executed_by_leader)
     {
-        task.execution_status = ExecutionStatus(ErrorCodes::NOT_IMPLEMENTED,
-                                                "Cannot execute replicated DDL query on leader");
+        task.execution_status = ExecutionStatus(ErrorCodes::NOT_IMPLEMENTED, "Cannot execute replicated DDL query");
         return false;
     }
+
+    LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
     return true;
 }
 
@@ -914,8 +1021,6 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
                 ops.emplace_back(zkutil::makeRemoveRequest(lock_path, -1));
                 ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
                 zookeeper->multi(ops);
-
-                lock->unlockAssumeLockNodeRemovedManually();
             }
         }
         catch (...)
@@ -1329,9 +1434,11 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
                [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
            != query_requires_access.end());
 
+    bool use_local_default_database = false;
+    const String & current_database = context.getCurrentDatabase();
+
     if (need_replace_current_database)
     {
-        bool use_local_default_database = false;
         Strings shard_default_databases;
         for (const auto & shard : shards)
         {
@@ -1352,10 +1459,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
 
         if (use_local_default_database)
         {
-            const String & current_database = context.getCurrentDatabase();
-            AddDefaultDatabaseVisitor visitor(current_database);
-            visitor.visitDDL(query_ptr);
-
             query_requires_access.replaceEmptyDatabase(current_database);
         }
         else
@@ -1375,6 +1478,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
             }
         }
     }
+
+    AddDefaultDatabaseVisitor visitor(current_database, !use_local_default_database);
+    visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config
     if (query_requires_grant_option)

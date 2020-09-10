@@ -402,7 +402,6 @@ public:
     virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
-    /// Implies isFixedAndContiguous.
     virtual bool isNumeric() const { return false; }
 
     /// If the only value column can contain is NULL.

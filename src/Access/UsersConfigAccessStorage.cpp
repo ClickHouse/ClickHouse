@@ -4,6 +4,7 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Dictionaries/IDictionary.h>
+#include <Common/Config/ConfigReloader.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
@@ -13,6 +14,7 @@
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <cstring>
+#include <filesystem>
 
 
 namespace DB
@@ -467,19 +469,35 @@ namespace
 }
 
 
-UsersConfigAccessStorage::UsersConfigAccessStorage() : IAccessStorage("users.xml")
+UsersConfigAccessStorage::UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_)
+    : UsersConfigAccessStorage(STORAGE_TYPE, check_setting_name_function_)
 {
 }
 
-
-void UsersConfigAccessStorage::setCheckSettingNameFunction(
-    const std::function<void(const std::string_view &)> & check_setting_name_function_)
+UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, const CheckSettingNameFunction & check_setting_name_function_)
+    : IAccessStorage(storage_name_), check_setting_name_function(check_setting_name_function_)
 {
-    check_setting_name_function = check_setting_name_function_;
+}
+
+UsersConfigAccessStorage::~UsersConfigAccessStorage() = default;
+
+
+String UsersConfigAccessStorage::getStoragePath() const
+{
+    std::lock_guard lock{load_mutex};
+    return path;
 }
 
 
-void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration & config)
+void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock{load_mutex};
+    path.clear();
+    config_reloader.reset();
+    parseFromConfig(config);
+}
+
+void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
     for (const auto & entity : parseUsers(config, getLogger()))
@@ -493,6 +511,42 @@ void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfig
     memory_storage.setAll(all_entities);
 }
 
+void UsersConfigAccessStorage::load(
+    const String & users_config_path,
+    const String & include_from_path,
+    const String & preprocessed_dir,
+    const zkutil::GetZooKeeper & get_zookeeper_function)
+{
+    std::lock_guard lock{load_mutex};
+    path = std::filesystem::path{users_config_path}.lexically_normal();
+    config_reloader.reset();
+    config_reloader = std::make_unique<ConfigReloader>(
+        users_config_path,
+        include_from_path,
+        preprocessed_dir,
+        zkutil::ZooKeeperNodeCache(get_zookeeper_function),
+        std::make_shared<Poco::Event>(),
+        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config)
+        {
+            parseFromConfig(*new_config);
+            Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
+        },
+        /* already_loaded = */ false);
+}
+
+void UsersConfigAccessStorage::reload()
+{
+    std::lock_guard lock{load_mutex};
+    if (config_reloader)
+        config_reloader->reload();
+}
+
+void UsersConfigAccessStorage::startPeriodicReloading()
+{
+    std::lock_guard lock{load_mutex};
+    if (config_reloader)
+        config_reloader->start();
+}
 
 std::optional<UUID> UsersConfigAccessStorage::findImpl(EntityType type, const String & name) const
 {

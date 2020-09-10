@@ -7,6 +7,8 @@ PEERDIR(
     contrib/libs/protobuf
 )
 
+CFLAGS(-g0)
+
 SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
@@ -39,7 +41,6 @@ SRCS(
     Formats/Impl/NativeFormat.cpp
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
-    Formats/Impl/ODBCDriverBlockOutputFormat.cpp
     Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp
     Formats/Impl/PrettyCompactBlockOutputFormat.cpp
@@ -89,6 +90,7 @@ SRCS(
     QueryPipeline.cpp
     QueryPlan/AddingDelayedSourceStep.cpp
     QueryPlan/AggregatingStep.cpp
+    QueryPlan/ArrayJoinStep.cpp
     QueryPlan/ConvertingStep.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
@@ -125,6 +127,7 @@ SRCS(
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
+    Transforms/ArrayJoinTransform.cpp
     Transforms/ConvertingTransform.cpp
     Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
@@ -135,7 +138,7 @@ SRCS(
     Transforms/FillingTransform.cpp
     Transforms/FilterTransform.cpp
     Transforms/FinishSortingTransform.cpp
-    Transforms/InflatingExpressionTransform.cpp
+    Transforms/JoiningTransform.cpp
     Transforms/LimitByTransform.cpp
     Transforms/LimitsCheckingTransform.cpp
     Transforms/MaterializingTransform.cpp

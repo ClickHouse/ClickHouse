@@ -128,7 +128,6 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 
@@ -215,30 +214,6 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 }
 
 
-/// Check that there is no user-level settings at the top level in config.
-/// This is a common source of mistake (user don't know where to write user-level setting).
-void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & config, const std::string & path)
-{
-    if (config.getBool("skip_check_for_incorrect_settings", false))
-        return;
-
-    Settings settings;
-    for (const auto & setting : settings.all())
-    {
-        const auto & name = setting.getName();
-        if (config.has(name))
-        {
-            throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
-                " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
-                " You can add it to <profiles><default> if you want to change default value of this setting."
-                " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
-                " in the main configuration file.",
-                name, path),
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-        }
-    }
-}
-
 void checkForUsersNotInMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_path,
@@ -319,7 +294,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    checkForUserSettingsAtTopLevel(config(), config_path);
+    Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
     const auto memory_amount = getMemoryAmount();
 
@@ -538,7 +513,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            checkForUserSettingsAtTopLevel(*config, config_path);
+            Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
@@ -559,47 +534,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
         },
         /* already_loaded = */ true);
 
-    /// Initialize users config reloader.
-    std::string users_config_path = config().getString("users_config", config_path);
-    /// If path to users' config isn't absolute, try guess its root (current) dir.
-    /// At first, try to find it in dir of main config, after will use current dir.
-    if (users_config_path.empty() || users_config_path[0] != '/')
-    {
-        std::string config_dir = Poco::Path(config_path).parent().toString();
-        if (Poco::File(config_dir + users_config_path).exists())
-            users_config_path = config_dir + users_config_path;
-    }
-
-    if (users_config_path != config_path)
-        checkForUsersNotInMainConfig(config(), config_path, users_config_path, log);
-
+    auto & access_control = global_context->getAccessControlManager();
     if (config().has("custom_settings_prefixes"))
-        global_context->getAccessControlManager().setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
+        access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
 
-    auto users_config_reloader = std::make_unique<ConfigReloader>(
-        users_config_path,
-        include_from_path,
-        config().getString("path", ""),
-        zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
-        std::make_shared<Poco::Event>(),
-        [&](ConfigurationPtr config)
-        {
-            global_context->setUsersConfig(config);
-            checkForUserSettingsAtTopLevel(*config, users_config_path);
-        },
-        /* already_loaded = */ false);
+    /// Initialize access storages.
+    access_control.addStoragesFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
     global_context->setConfigReloadCallback([&]()
     {
         main_config_reloader->reload();
-        users_config_reloader->reload();
+        access_control.reloadUsersConfigs();
     });
-
-    /// Sets a local directory storing information about access control.
-    std::string access_control_local_path = config().getString("access_control_path", "");
-    if (!access_control_local_path.empty())
-        global_context->getAccessControlManager().setLocalDirectory(access_control_local_path);
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -769,6 +716,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// Disable DNS caching at all
         DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
     }
     else
     {
@@ -1069,7 +1017,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         buildLoggers(config(), logger());
 
         main_config_reloader->start();
-        users_config_reloader->start();
+        access_control.startPeriodicReloadingUsersConfigs();
         if (dns_cache_updater)
             dns_cache_updater->start();
 
@@ -1128,7 +1076,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             dns_cache_updater.reset();
             main_config_reloader.reset();
-            users_config_reloader.reset();
 
             if (current_connections)
             {
