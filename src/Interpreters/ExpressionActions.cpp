@@ -1406,4 +1406,143 @@ const ExpressionActionsPtr & ExpressionActionsChain::Step::actions() const
     return typeid_cast<const ExpressionActionsStep *>(this)->actions;
 }
 
+ActionsDAG::Node & ActionsDAG::addNode(Node node)
+{
+    if (index.count(node.result_name) != 0)
+        throw Exception("Column '" + node.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+
+    auto & res = nodes.emplace_back(std::move(node));
+    index[res.result_name] = &res;
+    return res;
+}
+
+ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
+{
+    auto it = index.find(name);
+    if (it == index.end())
+        throw Exception("Unknown identifier: '" + name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+
+    return *it->second;
+}
+
+const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type)
+{
+    Node node;
+    node.type = Type::INPUT;
+    node.result_type = std::move(type);
+    node.result_name = std::move(name);
+
+    return addNode(std::move(node));
+}
+
+const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::string alias)
+{
+    auto & child = getNode(name);
+
+    Node node;
+    node.type = Type::ALIAS;
+    node.result_type = child.result_type;
+    node.result_name = std::move(alias);
+    node.column = child.column;
+    node.children.emplace_back(&child);
+
+    return addNode(std::move(node));
+}
+
+const ActionsDAG::Node & ActionsDAG::addArrayJoin(const std::string & source_name, std::string result_name)
+{
+    auto & child = getNode(source_name);
+
+    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(child.result_type.get());
+    if (!array_type)
+        throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
+
+    Node node;
+    node.type = Type::ARRAY_JOIN;
+    node.result_type = array_type->getNestedType();
+    node.result_name = std::move(result_name);
+    node.children.emplace_back(&child);
+
+    return addNode(std::move(node));
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunction(const FunctionOverloadResolverPtr & function, const Names & arguments)
+{
+    Node node;
+    node.type = Type::FUNCTION;
+
+    bool all_const = true;
+    bool all_suitable_for_constant_folding = true;
+
+    ColumnNumbers arguments(argument_names.size());
+    for (size_t i = 0; i < argument_names.size(); ++i)
+    {
+        arguments[i] = sample_block.getPositionByName(argument_names[i]);
+        ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
+        if (!col || !isColumnConst(*col))
+            all_const = false;
+
+        if (names_not_for_constant_folding.count(argument_names[i]))
+            all_suitable_for_constant_folding = false;
+    }
+
+    size_t result_position = sample_block.columns();
+    sample_block.insert({nullptr, result_type, result_name});
+    function = function_base->prepare(sample_block, arguments, result_position);
+    function->createLowCardinalityResultCache(settings.max_threads);
+
+    bool compile_expressions = false;
+#if USE_EMBEDDED_COMPILER
+    compile_expressions = settings.compile_expressions;
+#endif
+    /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
+    /// But if we compile expressions compiled version of this function maybe placed in cache,
+    /// so we don't want to unfold non deterministic functions
+    if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
+    {
+        function->execute(sample_block, arguments, result_position, sample_block.rows(), true);
+
+        /// If the result is not a constant, just in case, we will consider the result as unknown.
+        ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
+        if (!isColumnConst(*col.column))
+        {
+            col.column = nullptr;
+        }
+        else
+        {
+            /// All constant (literal) columns in block are added with size 1.
+            /// But if there was no columns in block before executing a function, the result has size 0.
+            /// Change the size to 1.
+
+            if (col.column->empty())
+                col.column = col.column->cloneResized(1);
+
+            if (!all_suitable_for_constant_folding)
+                names_not_for_constant_folding.insert(result_name);
+        }
+    }
+
+    /// Some functions like ignore() or getTypeName() always return constant result even if arguments are not constant.
+    /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
+    /// unnecessary materialization.
+    auto & res = sample_block.getByPosition(result_position);
+    if (!res.column && function_base->isSuitableForConstantFolding())
+    {
+        if (auto col = function_base->getResultIfAlwaysReturnsConstantAndHasArguments(sample_block, arguments))
+        {
+            res.column = std::move(col);
+            names_not_for_constant_folding.insert(result_name);
+        }
+    }
+
+    node.result_name = function->getName() + "(";
+    for (size_t i = 0 ; i < arguments.size(); ++i)
+    {
+        if (i)
+            node.result_name += ", ";
+        node.result_name += arguments[i];
+    }
+    node.result_name += ")";
+}
+
 }

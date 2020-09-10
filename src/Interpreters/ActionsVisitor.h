@@ -16,6 +16,9 @@ struct ExpressionAction;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+
  /// The case of an explicit enumeration of values.
 SetPtr makeExplicitSet(
     const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
@@ -31,31 +34,28 @@ SetPtr makeExplicitSet(
   */
 struct ScopeStack
 {
-    struct Level
-    {
-        ExpressionActionsPtr actions;
-        NameSet new_columns;
-    };
-
-    using Levels = std::vector<Level>;
+    using Levels = std::vector<ActionsDAGPtr>;
 
     Levels stack;
 
     const Context & context;
 
-    ScopeStack(const ExpressionActionsPtr & actions, const Context & context_);
+    ScopeStack(ActionsDAGPtr actions, const Context & context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
 
     size_t getColumnLevel(const std::string & name);
 
+    void addAlias(const std::string & name, std::string alias);
+    void addArrayJoin(const std::string & source_name, std::string result_name);
+
     void addAction(const ExpressionAction & action);
     /// For arrayJoin() to avoid double columns in the input.
     void addActionNoInput(const ExpressionAction & action);
 
-    ExpressionActionsPtr popLevel();
+    ActionsDAGPtr popLevel();
 
-    const Block & getSampleBlock() const;
+    const ActionsDAG::Index & getIndex() const;
 };
 
 class ASTIdentifier;
@@ -91,7 +91,7 @@ public:
         int next_unique_suffix;
 
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-                const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
+                const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
                 bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_)
         :   context(context_),
@@ -105,33 +105,43 @@ public:
             only_consts(only_consts_),
             no_storage_or_local(no_storage_or_local_),
             visit_depth(0),
-            actions_stack(actions, context),
+            actions_stack(std::move(actions), context),
             next_unique_suffix(actions_stack.getSampleBlock().columns() + 1)
         {}
 
-        void updateActions(ExpressionActionsPtr & actions)
-        {
-            actions = actions_stack.popLevel();
-        }
-
-        void addAction(const ExpressionAction & action)
-        {
-            actions_stack.addAction(action);
-        }
-        void addActionNoInput(const ExpressionAction & action)
-        {
-            actions_stack.addActionNoInput(action);
-        }
-
-        const Block & getSampleBlock() const
-        {
-            return actions_stack.getSampleBlock();
-        }
-
+//        void updateActions(ExpressionActionsPtr & actions)
+//        {
+//            actions = actions_stack.popLevel();
+//        }
+//
+//        void addAction(const ExpressionAction & action)
+//        {
+//            actions_stack.addAction(action);
+//        }
+//        void addActionNoInput(const ExpressionAction & action)
+//        {
+//            actions_stack.addActionNoInput(action);
+//        }
+//
+//        const Block & getSampleBlock() const
+//        {
+//            return actions_stack.getSampleBlock();
+//        }
+//
         /// Does result of the calculation already exists in the block.
-        bool hasColumn(const String & columnName) const
+        bool hasColumn(const String & column_name) const
         {
-            return actions_stack.getSampleBlock().has(columnName);
+            return actions_stack.getIndex().count(column_name) != 0;
+        }
+
+        void addAlias(const std::string & name, std::string alias)
+        {
+            actions_stack.addAlias(name, std::move(alias));
+        }
+
+        void addArrayJoin(const std::string & source_name, std::string result_name)
+        {
+            actions_stack.addArrayJoin(source_name, std::move(result_name));
         }
 
         /*
