@@ -129,3 +129,45 @@ Prefer the `ON/OFF` values, if possible.
 
 | Name | Description | Default value | Comment |
 |------|-------------|---------------|---------|
+| ENABLE_CLANG_TIDY | OFF | Use 'clang-tidy' static analyzer if present |  |
+
+| USE_INTERNAL_ | ${LIB_NAME_UC}_LIBRARY "Use bundled library ${LIB_NAME} instead of system" ${NOT_UNBUNDLED} |  |  |
+
+| FUZZER |  | Enable fuzzer: libfuzzer |  |
+
+| PARALLEL_COMPILE_JOBS |  | Define the maximum number of concurrent compilation jobs" " |  |
+
+| PARALLEL_LINK_JOBS |  | Define the maximum number of concurrent link jobs" " |  |
+
+| SANITIZE |  | Enable sanitizer: address, memory, thread, undefined" " |  |
+
+| LINKER_NAME |  | Linker name or full path |  |
+
+| WEVERYTHING | ON | Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang. |  |
+
+| ENABLE_CLICKHOUSE_ALL | ON | Enable all tools |  |
+
+| ENABLE_CLICKHOUSE_SERVER | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-server |  |
+
+| ENABLE_CLICKHOUSE_CLIENT | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-client |  |
+
+| ENABLE_CLICKHOUSE_LOCAL | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-local |  |
+
+| ENABLE_CLICKHOUSE_BENCHMARK | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-benchmark |  |
+
+| ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-extract-from-config |  |
+
+| ENABLE_CLICKHOUSE_COMPRESSOR | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-compressor |  |
+
+| ENABLE_CLICKHOUSE_COPIER | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-copier |  |
+
+| ENABLE_CLICKHOUSE_FORMAT | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-format |  |
+
+| ENABLE_CLICKHOUSE_OBFUSCATOR | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-obfuscator |  |
+
+| ENABLE_CLICKHOUSE_ODBC_BRIDGE | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-odbc-bridge |  |
+
+| ENABLE_CLICKHOUSE_INSTALL | OFF | Enable clickhouse-install |  |
+
+| ENABLE_CLICKHOUSE_INSTALL | ${ENABLE_CLICKHOUSE_ALL} | Enable clickhouse-install |  |
+
