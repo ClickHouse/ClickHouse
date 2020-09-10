@@ -25,8 +25,8 @@ using UInt64 = uint64_t;
 
 using Int128 = __int128;
 
-using wInt256 = std::wide_integer<256, signed>;
-using wUInt256 = std::wide_integer<256, unsigned>;
+using wInt256 = wide::integer<256, signed>;
+using wUInt256 = wide::integer<256, unsigned>;
 
 static_assert(sizeof(wInt256) == 32);
 static_assert(sizeof(wUInt256) == 32);
