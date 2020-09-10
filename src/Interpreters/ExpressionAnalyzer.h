@@ -156,7 +156,7 @@ protected:
       * Set has_aggregation = true if there is GROUP BY or at least one aggregate function.
       */
     void analyzeAggregation();
-    bool makeAggregateDescriptions(ExpressionActionsPtr & actions);
+    bool makeAggregateDescriptions(ActionsDAGPtr & actions);
 
     const ASTSelectQuery * getSelectQuery() const;
 

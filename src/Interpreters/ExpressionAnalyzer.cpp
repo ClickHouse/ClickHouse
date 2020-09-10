@@ -165,14 +165,14 @@ void ExpressionAnalyzer::analyzeAggregation()
             getRootActionsNoMakeSet(array_join_expression_list, true, temp_actions, false);
             if (auto array_join = addMultipleArrayJoinAction(temp_actions, is_array_join_left))
             {
-                auto sample_block = temp_actions->getSampleBlock();
-                array_join->prepare(sample_block);
-                temp_actions = std::make_shared<ExpressionActions>(sample_block.getColumnsWithTypeAndName(), context);
+                auto sample_columns = temp_actions->getResultColumns();
+                array_join->prepare(sample_columns);
+                temp_actions = std::make_shared<ActionsDAG>(sample_columns);
             }
 
-            for (auto & column : temp_actions->getSampleBlock().getNamesAndTypesList())
+            for (auto & column : temp_actions->getResultColumns())
                 if (syntax->array_join_result_to_source.count(column.name))
-                    array_join_columns.emplace_back(column);
+                    array_join_columns.emplace_back(column.name, column.type);
         }
 
         columns_after_array_join = sourceColumns();
@@ -182,9 +182,9 @@ void ExpressionAnalyzer::analyzeAggregation()
         if (join)
         {
             getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
-            auto sample_columns = temp_actions->getSampleBlock().getColumnsWithTypeAndName();
+            auto sample_columns = temp_actions->getResultColumns();
             analyzedJoin().addJoinedColumnsAndCorrectNullability(sample_columns);
-            temp_actions = std::make_shared<ExpressionActions>(sample_columns, context);
+            temp_actions = std::make_shared<ActionsDAG>(sample_columns);
         }
 
         columns_after_join = columns_after_array_join;
@@ -212,15 +212,16 @@ void ExpressionAnalyzer::analyzeAggregation()
                     getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
                     const auto & column_name = group_asts[i]->getColumnName();
-                    const auto & block = temp_actions->getSampleBlock();
+                    const auto & index = temp_actions->getIndex();
 
-                    if (!block.has(column_name))
+                    auto it = index.find(column_name);
+                    if (it == index.end())
                         throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
-                    const auto & col = block.getByName(column_name);
+                    const auto & node = it->second;
 
                     /// Constant expressions have non-null column pointer at this stage.
-                    if (col.column && isColumnConst(*col.column))
+                    if (node->column && isColumnConst(*node->column))
                     {
                         /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                         if (!aggregate_descriptions.empty() || size > 1)
@@ -235,7 +236,7 @@ void ExpressionAnalyzer::analyzeAggregation()
                         }
                     }
 
-                    NameAndTypePair key{column_name, col.type};
+                    NameAndTypePair key{column_name, node->result_type};
 
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.count(key.name))
@@ -256,14 +257,14 @@ void ExpressionAnalyzer::analyzeAggregation()
             }
         }
         else
-            aggregated_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
+            aggregated_columns = temp_actions->getNamesAndTypesList();
 
         for (const auto & desc : aggregate_descriptions)
             aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
     }
     else
     {
-        aggregated_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
+        aggregated_columns = temp_actions->getNamesAndTypesList();
     }
 }
 
@@ -396,7 +397,7 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_sub
 }
 
 
-bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & actions)
+bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
 {
     for (const ASTFunction * node : aggregates())
     {
@@ -411,7 +412,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & action
         {
             getRootActionsNoMakeSet(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
-            types[i] = actions->getSampleBlock().getByName(name).type;
+            types[i] = actions->getIndex().find(name)->second->result_type;
             aggregate.argument_names[i] = name;
         }
 
