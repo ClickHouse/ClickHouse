@@ -10,7 +10,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -112,6 +111,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
     format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
+    format_settings.tsv.null_representation = settings.output_format_tsv_null_representation;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.schema.format_schema = settings.format_schema;
@@ -203,19 +203,6 @@ BlockInputStreamPtr FormatFactory::getInput(
 BlockOutputStreamPtr FormatFactory::getOutput(
     const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
 {
-    if (name == "PrettyCompactMonoBlock")
-    {
-        /// TODO: rewrite
-        auto format = getOutputFormat("PrettyCompact", buf, sample, context);
-        auto res = std::make_shared<SquashingBlockOutputStream>(
-                std::make_shared<OutputStreamToOutputFormat>(format),
-                sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
-
-        res->disableFlush();
-
-        return std::make_shared<MaterializingBlockOutputStream>(res, sample);
-    }
-
     if (!getCreators(name).output_processor_creator)
     {
         const auto & output_getter = getCreators(name).output_creator;
@@ -395,7 +382,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorJSON(*this);
     registerOutputFormatProcessorJSONCompact(*this);
     registerOutputFormatProcessorXML(*this);
-    registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWire(*this);

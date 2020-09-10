@@ -108,8 +108,8 @@ using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 
 
@@ -227,14 +227,14 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
-    VolumeJBODPtr getTemporaryVolume() const;
+    VolumePtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
 
-    VolumeJBODPtr setTemporaryStorage(const String & path, const String & policy_name = "");
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -244,6 +244,9 @@ public:
 
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
+
+    /// Sets external authenticators config (LDAP).
+    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -374,7 +377,7 @@ public:
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change) const;
     void checkSettingsConstraints(const SettingsChanges & changes) const;
-    void clampToSettingsConstraints(SettingChange & change) const;
+    void checkSettingsConstraints(SettingsChanges & changes) const;
     void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).
@@ -471,6 +474,8 @@ public:
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
+    /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
+    std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
     /// Reset current zookeeper session. Do not create a new one.
@@ -498,6 +503,7 @@ public:
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
+    BackgroundSchedulePool & getMessageBrokerSchedulePool();
     BackgroundSchedulePool & getDistributedSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
@@ -529,8 +535,8 @@ public:
     std::shared_ptr<MetricLog> getMetricLog();
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog();
 
-    /// Returns an object used to log opertaions with parts if it possible.
-    /// Provide table name to make required cheks.
+    /// Returns an object used to log operations with parts if it possible.
+    /// Provide table name to make required checks.
     std::shared_ptr<PartLog> getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;

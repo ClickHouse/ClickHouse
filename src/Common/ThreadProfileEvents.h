@@ -59,6 +59,8 @@ namespace ProfileEvents
     extern const Event PerfDataTLBMisses;
     extern const Event PerfInstructionTLBReferences;
     extern const Event PerfInstructionTLBMisses;
+    extern const Event PerfLocalMemoryReferences;
+    extern const Event PerfLocalMemoryMisses;
 #endif
 }
 
@@ -80,6 +82,12 @@ inline UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
     return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
+inline UInt64 getCurrentTimeMicroseconds()
+{
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    return (tv.tv_sec) * 1000000U + (tv.tv_usec);
+}
 
 struct RUsageCounters
 {
@@ -162,7 +170,7 @@ struct PerfEventValue
     UInt64 time_running = 0;
 };
 
-static constexpr size_t NUMBER_OF_RAW_EVENTS = 20;
+static constexpr size_t NUMBER_OF_RAW_EVENTS = 22;
 
 struct PerfDescriptorsHolder : boost::noncopyable
 {

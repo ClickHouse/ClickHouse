@@ -10,11 +10,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
 }
+
+namespace
+{
 
 /// Optimizations for integer modulo by a constant.
 
@@ -71,6 +73,8 @@ struct ModuloByConstantImpl
     }
 };
 
+}
+
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
   * Can be expanded to all possible combinations, but more code is needed.
   */
@@ -102,6 +106,7 @@ using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo, false>;
 void registerFunctionModulo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModulo>();
+    factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
 }
 
 }

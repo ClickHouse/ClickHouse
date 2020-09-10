@@ -2,7 +2,6 @@
 
 #include "CompressedReadBufferFromFile.h"
 
-#include <Compression/CompressionInfo.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/WriteHelpers.h>
 #include <IO/createReadBufferFromFileBase.h>
@@ -37,20 +36,22 @@ bool CompressedReadBufferFromFile::nextImpl()
     return true;
 }
 
-CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf)
+CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_)
     : BufferWithOwnMemory<ReadBuffer>(0), p_file_in(std::move(buf)), file_in(*p_file_in)
 {
     compressed_in = &file_in;
+    allow_different_codecs = allow_different_codecs_;
 }
 
 
 CompressedReadBufferFromFile::CompressedReadBufferFromFile(
-    const std::string & path, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, size_t buf_size)
+    const std::string & path, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, size_t buf_size, bool allow_different_codecs_)
     : BufferWithOwnMemory<ReadBuffer>(0)
     , p_file_in(createReadBufferFromFileBase(path, estimated_size, aio_threshold, mmap_threshold, buf_size))
     , file_in(*p_file_in)
 {
     compressed_in = &file_in;
+    allow_different_codecs = allow_different_codecs_;
 }
 
 

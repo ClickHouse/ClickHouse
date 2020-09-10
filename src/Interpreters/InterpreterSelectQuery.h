@@ -26,8 +26,8 @@ class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;
 
-struct SyntaxAnalyzerResult;
-using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
+struct TreeRewriterResult;
+using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -136,7 +136,7 @@ private:
     static void executeProjection(QueryPlan & query_plan, const ExpressionActionsPtr & expression);
     void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPlan & query_plan);
-    void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
 
     String generateFilterActions(
@@ -161,7 +161,7 @@ private:
     SelectQueryOptions options;
     ASTPtr query_ptr;
     std::shared_ptr<Context> context;
-    SyntaxAnalyzerResultPtr syntax_analyzer_result;
+    TreeRewriterResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;
 

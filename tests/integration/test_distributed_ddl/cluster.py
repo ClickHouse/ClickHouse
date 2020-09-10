@@ -17,10 +17,17 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
 
     def prepare(self, replace_hostnames_with_ips=True):
         try:
+            main_configs_files = ["clusters.xml", "zookeeper_session_timeout.xml", "macro.xml", "query_log.xml","ddl.xml"]
+            main_configs = [os.path.join(self.test_config_dir, "config.d", f) for f in main_configs_files]
+            user_configs = [os.path.join(self.test_config_dir, "users.d", f) for f in ["restricted_user.xml", "query_log.xml"]]
+            if self.test_config_dir == "configs_secure":
+                main_configs += [os.path.join(self.test_config_dir, f) for f in ["server.crt", "server.key", "dhparam.pem", "config.d/ssl_conf.xml"]]
+
             for i in xrange(4):
                 self.add_instance(
                     'ch{}'.format(i+1),
-                    config_dir=self.test_config_dir,
+                    main_configs=main_configs,
+                    user_configs=user_configs,
                     macros={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1},
                     with_zookeeper=True)
 
@@ -68,8 +75,8 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
         assert len(set(codes)) == 1, "\n" + tsv_content
         assert codes[0] == "0", "\n" + tsv_content
 
-    def ddl_check_query(self, instance, query, num_hosts=None):
-        contents = instance.query(query)
+    def ddl_check_query(self, instance, query, num_hosts=None, settings=None):
+        contents = instance.query(query, settings=settings)
         self.check_all_hosts_successfully_executed(contents, num_hosts)
         return contents
 

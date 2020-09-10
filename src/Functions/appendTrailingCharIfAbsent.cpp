@@ -17,6 +17,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
 
 class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
@@ -53,7 +55,7 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const auto & column = block.getByPosition(arguments[0]).column;
         const auto & column_char = block.getByPosition(arguments[1]).column;
@@ -108,6 +110,8 @@ private:
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 };
+
+}
 
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory & factory)
 {

@@ -101,8 +101,8 @@ BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
 namespace
 {
     /** A stream, that also runs and waits for background thread
-  * (that will feed data into pipe to be read from the other side of the pipe).
-  */
+      * (that will feed data into pipe to be read from the other side of the pipe).
+      */
     class BlockInputStreamWithBackgroundThread final : public IBlockInputStream
     {
     public:
@@ -220,6 +220,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const std::string & config_prefix,
                                  Block & sample_block,
                                  const Context & context,
+                                 const std::string & /* default_database */,
                                  bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)

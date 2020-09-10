@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Core/Types.h>
 #include <ext/bit_cast.h>

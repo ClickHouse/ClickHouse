@@ -88,37 +88,38 @@ SELECT toStartOfWeek(N)
 "Date","2019-09-15"
 ------------------------------------------
 SELECT toStartOfDay(N)
-"DateTime","2019-09-16 00:00:00"
+
+Code: 43: Function toStartOfDay supports a 2nd argument (optional) that must be non-empty and be a valid time zone.
 "DateTime('Europe/Minsk')","2019-09-16 00:00:00"
 "DateTime('Europe/Minsk')","2019-09-16 00:00:00"
 ------------------------------------------
 SELECT toStartOfHour(N)
 
-Code: 43: Illegal type Date of argument for function toStartOfHour.
+Code: 43: Function toStartOfHour supports a 2nd argument (optional) that must be non-empty and be a valid time zone.
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 ------------------------------------------
 SELECT toStartOfMinute(N)
 
-Code: 43: Illegal type Date of argument for function toStartOfMinute.
+Code: 43: Function toStartOfMinute supports a 2nd argument (optional) that must be non-empty and be a valid time zone.
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toStartOfFiveMinute(N)
 
-Code: 43: Illegal type Date of argument for function toStartOfFiveMinute.
+Code: 43: Function toStartOfFiveMinute supports a 2nd argument (optional) that must be non-empty and be a valid time zone.
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toStartOfTenMinutes(N)
 
-Code: 43: Illegal type Date of argument for function toStartOfTenMinutes.
+Code: 43: Function toStartOfTenMinutes supports a 2nd argument (optional) that must be non-empty and be a valid time zone.
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toStartOfFifteenMinutes(N)
 
-Code: 43: Illegal type Date of argument for function toStartOfFifteenMinutes.
+Code: 43: Function toStartOfFifteenMinutes supports a 2nd argument (optional) that must be non-empty and be a valid time zone.
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 ------------------------------------------
@@ -143,9 +144,30 @@ Code: 43: Illegal type Date of argument for function toStartOfInterval.
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 ------------------------------------------
+SELECT date_trunc(\'year\', N)
+"Date","2019-01-01"
+"Date","2019-01-01"
+"Date","2019-01-01"
+------------------------------------------
+SELECT date_trunc(\'month\', N)
+"Date","2019-09-01"
+"Date","2019-09-01"
+"Date","2019-09-01"
+------------------------------------------
+SELECT date_trunc(\'day\', N)
+"DateTime","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
+------------------------------------------
+SELECT date_trunc(\'minute\', N)
+
+Code: 43: Illegal type Date of argument for function date_trunc.
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
+------------------------------------------
 SELECT toTime(N)
 
-Code: 43: Illegal type Date of argument for function toTime.
+Code: 43: Function toTime supports a 2nd argument (optional) that must be non-empty and be a valid time zone.
 "DateTime('Europe/Minsk')","1970-01-02 19:20:11"
 "DateTime('Europe/Minsk')","1970-01-02 19:20:11"
 ------------------------------------------
@@ -211,7 +233,7 @@ SELECT toYearWeek(N)
 ------------------------------------------
 SELECT timeSlot(N)
 
-Code: 43: Illegal type Date of argument for function timeSlot.
+Code: 43: Function timeSlot supports a 2nd argument (optional) that must be non-empty and be a valid time zone.
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 ------------------------------------------

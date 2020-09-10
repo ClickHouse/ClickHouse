@@ -14,15 +14,13 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1',
-            config_dir='configs',
-            main_configs=['configs/logs_config.xml'],
+            main_configs=['configs/logs_config.xml', "configs/config.d/instant_moves.xml", "configs/config.d/storage_configuration.xml", "configs/config.d/cluster.xml",],
             with_zookeeper=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 1} )
 
 node2 = cluster.add_instance('node2',
-            config_dir='configs',
-            main_configs=['configs/logs_config.xml'],
+            main_configs=['configs/logs_config.xml', "configs/config.d/instant_moves.xml", "configs/config.d/storage_configuration.xml", "configs/config.d/cluster.xml",],
             with_zookeeper=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 2} )
@@ -97,7 +95,7 @@ def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
         with pytest.raises(QueryRuntimeException):
             node1.query(get_command("TTL d1 TO DISK 'unknown'", "small_jbod_with_external"))
 
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
         if alter:
             node1.query(get_command(None, "small_jbod_with_external"))
@@ -105,7 +103,7 @@ def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
         with pytest.raises(QueryRuntimeException):
             node1.query(get_command("TTL d1 TO VOLUME 'unknown'", "small_jbod_with_external"))
 
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
         if alter:
             node1.query(get_command(None, "only_jbod2"))
@@ -113,7 +111,7 @@ def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
         with pytest.raises(QueryRuntimeException):
             node1.query(get_command("TTL d1 TO DISK 'jbod1'", "only_jbod2"))
 
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
         if alter:
             node1.query(get_command(None, "only_jbod2"))
@@ -122,7 +120,7 @@ def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
             node1.query(get_command("TTL d1 TO VOLUME 'external'", "only_jbod2"))
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 @pytest.mark.parametrize("name,engine,positive", [
@@ -155,7 +153,7 @@ def test_inserts_to_disk_work(started_cluster, name, engine, positive):
 
     finally:
         try:
-            node1.query("DROP TABLE IF EXISTS {}".format(name))
+            node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
         except:
             pass
 
@@ -173,7 +171,7 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
             ) ENGINE = {engine}
             ORDER BY tuple()
         """.format(name=name, engine=engine))
- 
+
         node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='default_with_small_jbod_with_external'""".format(name=name))
 
         # Second expression is preferred because d1 > now()-3600.
@@ -204,7 +202,7 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 @pytest.mark.parametrize("name,engine,positive", [
@@ -250,7 +248,7 @@ def test_moves_to_disk_work(started_cluster, name, engine, positive):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -296,7 +294,7 @@ def test_moves_to_volume_work(started_cluster, name, engine):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 @pytest.mark.parametrize("name,engine,positive", [
@@ -334,7 +332,7 @@ def test_inserts_to_volume_work(started_cluster, name, engine, positive):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "20"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -379,7 +377,7 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod1"}
 
-        node1.query("DROP TABLE {}".format(name_temp))
+        node1.query("DROP TABLE {} NO DELAY".format(name_temp))
 
         time.sleep(2)
         used_disks = get_used_disks_for_table(node1, name)
@@ -388,8 +386,8 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name_temp))
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name_temp))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 def test_replicated_download_ttl_info(started_cluster):
@@ -420,7 +418,7 @@ def test_replicated_download_ttl_info(started_cluster):
     finally:
         for node in (node1, node2):
             try:
-                node.query("DROP TABLE IF EXISTS {}".format(name))
+                node.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
             except:
                 continue
 
@@ -479,7 +477,7 @@ def test_merges_to_disk_work(started_cluster, name, engine, positive):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "16"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -544,8 +542,8 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "12"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name_temp))
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name_temp))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 @pytest.mark.parametrize("name,engine,positive", [
@@ -597,7 +595,7 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "14"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 @pytest.mark.parametrize("name,engine,positive,bar", [
@@ -640,7 +638,7 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, b
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -702,7 +700,7 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == str(len(data))
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
 
 
 @pytest.mark.parametrize("name,engine,positive", [
@@ -799,7 +797,7 @@ limitations under the License."""
             assert rows_count == 3
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -897,7 +895,7 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
         assert node1.query("SELECT 1") == "1\n"
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "500\n"
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
 
 @pytest.mark.skip(reason="Flacky test")
 @pytest.mark.parametrize("name,positive", [
@@ -950,7 +948,7 @@ def test_double_move_while_select(started_cluster, name, positive):
         assert node1.query("SELECT n FROM {name} ORDER BY n".format(name=name)).splitlines() == ["1", "2", "3", "4"]
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
 
 
 @pytest.mark.parametrize("name,engine,positive", [
@@ -1040,4 +1038,4 @@ limitations under the License."""
             assert node1.query("SELECT count() FROM {name}".format(name=name)) == "6\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))

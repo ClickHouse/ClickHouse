@@ -18,7 +18,6 @@ EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFDIR=/etc/$PROGRAM
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
-CLICKHOUSE_DATADIR_OLD=/opt/clickhouse
 CLICKHOUSE_DATADIR=/var/lib/clickhouse
 if [ -d "/var/lock" ]; then
     LOCALSTATEDIR=/var/lock
@@ -34,7 +33,6 @@ CLICKHOUSE_BINDIR=/usr/bin
 CLICKHOUSE_CRONFILE=/etc/cron.d/clickhouse-server
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 LOCKFILE=$LOCALSTATEDIR/$PROGRAM
-RETVAL=0
 CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
 CLICKHOUSE_PIDFILE="$CLICKHOUSE_PIDDIR/$PROGRAM.pid"
 # CLICKHOUSE_STOP_TIMEOUT=60 # Disabled by default. Place to /etc/default/clickhouse if you need.
@@ -69,16 +67,9 @@ if uname -mpi | grep -q 'x86_64'; then
 fi
 
 
-SUPPORTED_COMMANDS="{start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
-is_supported_command()
-{
-    echo "$SUPPORTED_COMMANDS" | grep -E "(\{|\|)$1(\||})" &> /dev/null
-}
-
-
 is_running()
 {
-    [ -r "$CLICKHOUSE_PIDFILE" ] && pgrep -s $(cat "$CLICKHOUSE_PIDFILE") 1> /dev/null 2> /dev/null
+    pgrep --pidfile "$CLICKHOUSE_PIDFILE" $(echo "${PROGRAM}" | cut -c1-15) 1> /dev/null 2> /dev/null
 }
 
 
@@ -124,11 +115,11 @@ initdb()
         CLICKHOUSE_DATADIR_FROM_CONFIG=$CLICKHOUSE_DATADIR
     fi
 
-    if ! getent group ${CLICKHOUSE_USER} >/dev/null; then
+    if ! getent passwd ${CLICKHOUSE_USER} >/dev/null; then
         echo "Can't chown to non-existing user ${CLICKHOUSE_USER}"
         return
     fi
-    if ! getent passwd ${CLICKHOUSE_GROUP} >/dev/null; then
+    if ! getent group ${CLICKHOUSE_GROUP} >/dev/null; then
         echo "Can't chown to non-existing group ${CLICKHOUSE_GROUP}"
         return
     fi
@@ -182,7 +173,7 @@ start()
             su -s $SHELL ${CLICKHOUSE_USER} -c "$FLOCK -u 9; $CLICKHOUSE_PROGRAM_ENV exec -a \"$PROGRAM\" \"$CLICKHOUSE_BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\""
             EXIT_STATUS=$?
             if [ $EXIT_STATUS -ne 0 ]; then
-                break
+                return $EXIT_STATUS
             fi
         fi
     fi
@@ -285,13 +276,12 @@ use_cron()
     fi
     return 0
 }
-
+# returns false if cron disabled (with systemd)
 enable_cron()
 {
     use_cron && sed -i 's/^#*//' "$CLICKHOUSE_CRONFILE"
 }
-
-
+# returns false if cron disabled (with systemd)
 disable_cron()
 {
     use_cron && sed -i 's/^#*/#/' "$CLICKHOUSE_CRONFILE"
@@ -314,15 +304,14 @@ main()
     EXIT_STATUS=0
     case "$1" in
     start)
-        start && enable_cron
+        service_or_func start && enable_cron
         ;;
     stop)
-        # disable_cron returns false if cron disabled (with systemd) - not checking return status
         disable_cron
-        stop
+        service_or_func stop
         ;;
     restart)
-        restart && enable_cron
+        service_or_func restart && enable_cron
         ;;
     forcestop)
         disable_cron
@@ -332,7 +321,7 @@ main()
         forcerestart && enable_cron
         ;;
     reload)
-        restart
+        service_or_func restart
         ;;
     condstart)
         is_running || service_or_func start
@@ -356,7 +345,7 @@ main()
         disable_cron
         ;;
     *)
-        echo "Usage: $0 $SUPPORTED_COMMANDS"
+        echo "Usage: $0 {start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
         exit 2
         ;;
     esac

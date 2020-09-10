@@ -22,6 +22,9 @@ public:
 
     void describeActions(FormatSettings & settings) const override;
 
+    /// Add limit or change it to lower value.
+    void updateLimit(size_t limit_);
+
 private:
     SortDescription prefix_description;
     SortDescription result_description;

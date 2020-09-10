@@ -29,6 +29,9 @@ class ThreadPoolImpl
 public:
     using Job = std::function<void()>;
 
+    /// Maximum number of threads is based on the number of physical cores.
+    ThreadPoolImpl();
+
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
     explicit ThreadPoolImpl(size_t max_threads_);
 

@@ -8,13 +8,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
 
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
   * Takes state of aggregate function. Returns result of aggregation (finalized state).
@@ -58,7 +59,7 @@ public:
         return type->getReturnType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         auto column = block.getByPosition(arguments.at(0)).column;
         if (!typeid_cast<const ColumnAggregateFunction *>(column.get()))
@@ -73,6 +74,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionFinalizeAggregation(FunctionFactory & factory)
 {

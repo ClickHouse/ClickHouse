@@ -57,8 +57,8 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
 using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
 
-struct SyntaxAnalyzerResult;
-using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
+struct TreeRewriterResult;
+using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
 class ReadInOrderOptimizer;
 using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
@@ -73,7 +73,7 @@ struct SelectQueryInfo
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
 
-    SyntaxAnalyzerResultPtr syntax_analyzer_result;
+    TreeRewriterResultPtr syntax_analyzer_result;
 
     PrewhereInfoPtr prewhere_info;
 

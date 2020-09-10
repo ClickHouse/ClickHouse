@@ -509,20 +509,20 @@ public:
         UInt64 count = 0;
         if (isSmall())
         {
-            std::vector<T> ans;
+            std::vector<T> answer;
             for (const auto & x : small)
             {
                 T val = x.getValue();
                 if (UInt32(val) >= range_start)
                 {
-                    ans.push_back(val);
+                    answer.push_back(val);
                 }
             }
-            sort(ans.begin(), ans.end());
-            if (limit > ans.size())
-                limit = ans.size();
+            sort(answer.begin(), answer.end());
+            if (limit > answer.size())
+                limit = answer.size();
             for (size_t i = 0; i < limit; ++i)
-                r1.add(ans[i]);
+                r1.add(answer[i]);
             count = UInt64(limit);
         }
         else

@@ -7,12 +7,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 class FunctionRegexpQuoteMeta : public IFunction
 {
@@ -49,7 +51,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const ColumnPtr & column_string = block.getByPosition(arguments[0]).column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
@@ -104,11 +106,13 @@ public:
 
         block.getByPosition(result).column = std::move(dst_column);
     }
-
 };
+
+}
 
 void registerFunctionRegexpQuoteMeta(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRegexpQuoteMeta>();
 }
+
 }

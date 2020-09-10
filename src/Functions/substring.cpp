@@ -26,6 +26,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
 
 /// If 'is_utf8' - measure offset and length in code points instead of bytes.
 /// UTF8 variant is not available for FixedString arguments.
@@ -80,7 +82,7 @@ public:
     void executeForSource(const ColumnPtr & column_start, const ColumnPtr & column_length,
                               const ColumnConst * column_start_const, const ColumnConst * column_length_const,
                               Int64 start_value, Int64 length_value, Block & block, size_t result, Source && source,
-                              size_t input_rows_count)
+                              size_t input_rows_count) const
     {
         auto col_res = ColumnString::create();
 
@@ -116,7 +118,7 @@ public:
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         size_t number_of_arguments = arguments.size();
 
@@ -175,6 +177,8 @@ public:
         }
     }
 };
+
+}
 
 void registerFunctionSubstring(FunctionFactory & factory)
 {

@@ -561,7 +561,9 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
 
-    const auto & [disk, data_path] = storage.getPath();
+    auto reservation = storage.getStoragePolicy()->reserve(block.bytes());
+    auto disk = reservation->getDisk()->getPath();
+    auto data_path = storage.getRelativeDataPath();
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
@@ -589,7 +591,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             WriteBufferFromOwnString header_buf;
             writeVarUInt(ClickHouseRevision::get(), header_buf);
             writeStringBinary(query_string, header_buf);
-            context.getSettingsRef().serialize(header_buf);
+            context.getSettingsRef().write(header_buf);
             context.getClientInfo().write(header_buf, ClickHouseRevision::get());
 
             /// Add new fields here, for example:

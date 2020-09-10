@@ -82,6 +82,9 @@ namespace CurrentMetrics
 
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
+
+    extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundMessageBrokerSchedulePool;
 }
 
 
@@ -306,6 +309,9 @@ struct ContextShared
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
 
+    mutable std::mutex auxiliary_zookeepers_mutex;
+    mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
+
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_io_user;
@@ -319,7 +325,7 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    mutable VolumeJBODPtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
+    mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -338,6 +344,7 @@ struct ContextShared
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    std::optional<BackgroundSchedulePool> message_broker_schedule_pool;    /// A thread pool that can run different jobs in background (used in kafka streaming)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -438,6 +445,7 @@ struct ContextShared
         schedule_pool.reset();
         distributed_schedule_pool.reset();
         ddl_worker.reset();
+        message_broker_schedule_pool.reset();
 
         /// Stop trace collector if any
         trace_collector.reset();
@@ -547,7 +555,7 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
-VolumeJBODPtr Context::getTemporaryVolume() const
+VolumePtr Context::getTemporaryVolume() const
 {
     auto lock = getLock();
     return shared->tmp_volume;
@@ -572,7 +580,7 @@ void Context::setPath(const String & path)
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
-VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & policy_name)
+VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 
@@ -583,7 +591,7 @@ VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & p
             shared->tmp_path += '/';
 
         auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
-        shared->tmp_volume = std::make_shared<VolumeJBOD>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
+        shared->tmp_volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk);
     }
     else
     {
@@ -621,6 +629,7 @@ void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->config = config;
+    shared->access_control_manager.setExternalAuthenticatorsConfig(*shared->config);
 }
 
 const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
@@ -640,6 +649,11 @@ const AccessControlManager & Context::getAccessControlManager() const
     return shared->access_control_manager;
 }
 
+void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+    shared->access_control_manager.setExternalAuthenticatorsConfig(config);
+}
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
@@ -962,7 +976,7 @@ void Context::setSetting(const StringRef & name, const String & value)
         setProfile(value);
         return;
     }
-    settings.set(name, value);
+    settings.set(std::string_view{name}, value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();
@@ -977,7 +991,7 @@ void Context::setSetting(const StringRef & name, const Field & value)
         setProfile(value.safeGet<String>());
         return;
     }
-    settings.set(name, value);
+    settings.set(std::string_view{name}, value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();
@@ -1019,11 +1033,10 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes) const
         settings_constraints->check(settings, changes);
 }
 
-
-void Context::clampToSettingsConstraints(SettingChange & change) const
+void Context::checkSettingsConstraints(SettingsChanges & changes) const
 {
     if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->clamp(settings, change);
+        settings_constraints->check(settings, changes);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes) const
@@ -1031,7 +1044,6 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
     if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->clamp(settings, changes);
 }
-
 
 std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
 {
@@ -1065,7 +1077,6 @@ void Context::setCurrentDatabase(const String & name)
     current_database = name;
     calculateAccessRights();
 }
-
 
 void Context::setCurrentQueryId(const String & query_id)
 {
@@ -1415,6 +1426,18 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
     return *shared->distributed_schedule_pool;
 }
 
+BackgroundSchedulePool & Context::getMessageBrokerSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->message_broker_schedule_pool)
+        shared->message_broker_schedule_pool.emplace(
+            settings.background_message_broker_schedule_pool_size,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundMessageBrokerSchedulePool,
+            "BgMBSchPool");
+    return *shared->message_broker_schedule_pool;
+}
+
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
@@ -1441,6 +1464,24 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
+}
+
+zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
+{
+    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+
+    auto zookeeper = shared->auxiliary_zookeepers.find(name);
+    if (zookeeper == shared->auxiliary_zookeepers.end())
+    {
+        if (!getConfigRef().has("auxiliary_zookeepers." + name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in config.xml", name);
+
+        zookeeper->second = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "auxiliary_zookeepers." + name);
+    }
+    else if (zookeeper->second->expired())
+        zookeeper->second = zookeeper->second->startNewSession();
+
+    return zookeeper->second;
 }
 
 void Context::resetZooKeeper() const
@@ -1557,7 +1598,7 @@ void Context::reloadClusterConfig()
                 return;
             }
 
-            /// Clusters config has been suddenly changed, recompute clusters
+            // Clusters config has been suddenly changed, recompute clusters
         }
     }
 }
@@ -1792,14 +1833,16 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
         catch (Exception & e)
         {
-            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: {}", e.message());
+            LOG_ERROR(shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
         }
     }
 
+#if !defined(ARCADIA_BUILD)
     if (shared->storage_s3_settings)
     {
         shared->storage_s3_settings->loadFromConfig("s3", config);
     }
+#endif
 }
 
 
@@ -1820,6 +1863,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
 const StorageS3Settings & Context::getStorageS3Settings() const
 {
+#if !defined(ARCADIA_BUILD)
     auto lock = getLock();
 
     if (!shared->storage_s3_settings)
@@ -1829,6 +1873,9 @@ const StorageS3Settings & Context::getStorageS3Settings() const
     }
 
     return *shared->storage_s3_settings;
+#else
+    throw Exception("S3 is unavailable in Arcadia", ErrorCodes::NOT_IMPLEMENTED);
+#endif
 }
 
 void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const
@@ -1943,6 +1990,12 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
+    for (auto & [disk_name, disk] : getDisksMap())
+    {
+        LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
+        disk->shutdown();
+    }
+
     shared->shutdown();
 }
 

@@ -2,7 +2,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 function stress()
 {
@@ -15,7 +15,7 @@ function stress()
 # https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
 export -f stress
 
-for thread in {1..5}; do
+for _ in {1..5}; do
     # Ten seconds are just barely enough to reproduce the issue in most of runs.
     timeout 10 bash -c stress &
 done

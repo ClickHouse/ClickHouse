@@ -30,7 +30,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
         auto col_res = ColumnVector<UInt128>::create();
         typename ColumnVector<UInt128>::Container & vec_to = col_res->getData();
@@ -70,7 +70,7 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
