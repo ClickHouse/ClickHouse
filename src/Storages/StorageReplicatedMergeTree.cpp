@@ -4037,6 +4037,14 @@ Pipe StorageReplicatedMergeTree::alterPartition(
                 current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
             }
             break;
+            case PartitionCommand::ADD_FINGERPRINT_PART:
+            {
+                throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+            }
+            case PartitionCommand::REMOVE_FINGERPRINT_PART:
+            {
+                throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+            }
         }
         for (auto & command_result : current_command_results)
             command_result.command_type = command.typeToString();

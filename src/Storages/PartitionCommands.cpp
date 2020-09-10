@@ -98,6 +98,22 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         command.with_name = command_ast->with_name;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::ADD_FINGERPRINT_PART)
+    {
+        PartitionCommand command;
+        command.type = PartitionCommand::ADD_FINGERPRINT_PART;
+        command.partition = command_ast->partition;
+        command.part = command_ast->part;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::REMOVE_FINGERPRINT_PART)
+    {
+        PartitionCommand command;
+        command.type = PartitionCommand::REMOVE_FINGERPRINT_PART;
+        command.partition = command_ast->partition;
+        command.part = command_ast->part;
+        return command;
+    }
     else
         return {};
 }
@@ -131,6 +147,10 @@ std::string PartitionCommand::typeToString() const
         return "FREEZE PARTITION";
     case PartitionCommand::Type::REPLACE_PARTITION:
         return "REPLACE PARTITION";
+    case PartitionCommand::Type::ADD_FINGERPRINT_PART:
+        return "ADD FINGERPRINT FOR PART";
+    case PartitionCommand::Type::REMOVE_FINGERPRINT_PART:
+        return "REMOVE FINGERPRINT FOR PART";
     }
     __builtin_unreachable();
 }

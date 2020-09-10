@@ -53,6 +53,8 @@ public:
         FETCH_PARTITION,
         FREEZE_PARTITION,
         FREEZE_ALL,
+        ADD_FINGERPRINT_PART,
+        REMOVE_FINGERPRINT_PART,
 
         DELETE,
         UPDATE,

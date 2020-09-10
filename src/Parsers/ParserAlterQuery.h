@@ -19,6 +19,7 @@ namespace DB
   *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]
   *     [FETCH PARTITION partition FROM ...]
   *     [FREEZE [PARTITION] [WITH NAME name]]
+  *     [ADD|REMOVE FINGERPRINT FOR PART part_name]
   *     [DELETE WHERE ...]
   *     [UPDATE col_name = expr, ... WHERE ...]
   * ALTER LIVE VIEW [db.name]

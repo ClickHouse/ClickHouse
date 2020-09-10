@@ -28,6 +28,8 @@ struct PartitionCommand
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
         REPLACE_PARTITION,
+        ADD_FINGERPRINT_PART,
+        REMOVE_FINGERPRINT_PART,
     };
 
     Type type;

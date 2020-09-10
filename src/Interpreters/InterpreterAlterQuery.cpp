@@ -279,6 +279,12 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_FREEZE_PARTITION, database, table);
             break;
         }
+        case ASTAlterCommand::ADD_FINGERPRINT_PART: [[fallthrough]];
+        case ASTAlterCommand::REMOVE_FINGERPRINT_PART:
+        {
+            required_access.emplace_back(AccessType::ALTER_FINGERPRINT_PART, database, table);
+            break;
+        }
         case ASTAlterCommand::MODIFY_QUERY:
         {
             required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_QUERY, database, table);

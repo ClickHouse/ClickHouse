@@ -1139,6 +1139,14 @@ Pipe StorageMergeTree::alterPartition(
                 current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
             }
             break;
+            case PartitionCommand::ADD_FINGERPRINT_PART:
+            {
+                throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+            }
+            case PartitionCommand::REMOVE_FINGERPRINT_PART:
+            {
+                throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+            }
 
             default:
                 IStorage::alterPartition(query, metadata_snapshot, commands, query_context); // should throw an exception.

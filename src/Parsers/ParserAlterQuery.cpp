@@ -63,6 +63,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_replace_partition("REPLACE PARTITION");
     ParserKeyword s_freeze("FREEZE");
     ParserKeyword s_partition("PARTITION");
+    ParserKeyword s_add_fingerprint_part("ADD FINGERPRINT FOR PART");
+    ParserKeyword s_remove_fingerprint_part("REMOVE FINGERPRINT FOR PART");
 
     ParserKeyword s_first("FIRST");
     ParserKeyword s_after("AFTER");
@@ -435,6 +437,22 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
             }
+        }
+        else if (s_add_fingerprint_part.ignore(pos, expected))
+        {
+            if (!parser_string_literal.parse(pos, command->partition, expected))
+                return false;
+
+            command->type = ASTAlterCommand::ADD_FINGERPRINT_PART;
+            command->part = true;
+        }
+        else if (s_remove_fingerprint_part.ignore(pos, expected))
+        {
+            if (!parser_string_literal.parse(pos, command->partition, expected))
+                return false;
+
+            command->type = ASTAlterCommand::REMOVE_FINGERPRINT_PART;
+            command->part = true;
         }
         else if (s_modify_column.ignore(pos, expected))
         {

@@ -269,6 +269,18 @@ void ASTAlterCommand::formatImpl(
                           << " " << std::quoted(with_name, '\'');
         }
     }
+    else if (type == ASTAlterCommand::ADD_FINGERPRINT_PART)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD FINGERPRINT FOR PART "
+                      << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::REMOVE_FINGERPRINT_PART)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REMOVE FINGERPRINT FOR PART "
+                      << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+    }
     else if (type == ASTAlterCommand::DELETE)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE WHERE " << (settings.hilite ? hilite_none : "");
