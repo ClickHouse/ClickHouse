@@ -1,8 +1,7 @@
 #!/bin/bash/
 
 output_file_name="cmake_flags_and_output.md"
-
-regex='s/^((\s*#\s+.*\n?)*)\s*option\s*\(([A-Z_]+)\s*(\"((.|\n)*?)\")?\s*(.*)?\).*$/| \3 | \7 | \5 | \1 |\n/mg;t;d'
+ch_master_url="http:\/\/github.com\/clickhouse\/clickhouse\/blob\/master\/"
 
 rm -fr ${output_file_name}
 touch ${output_file_name}
@@ -14,8 +13,12 @@ process() {
             process "$i"
         elif [ -f "$i" ]; then
             echo "Processing $i"
+            subd_name=${i//\//\\/}
+            subd_name=${subd_name//\./\\\.}
+            subd_name=${subd_name:2}
+            regex='s/^((\s*#\s+.*\n?)*)\s*option\s*\(([A-Z_]+)\s*(\"((.|\n)*?)\")?\s*(.*)?\).*$/| (`\3`)['$ch_master_url${subd_name:2}'] | `\7` | \5 | \1 |/mg;t;d'
 
-            cat $i | sed -E "${regex}" >> ${output_file_name}
+            cat $i | sed -E "$regex" >> ${output_file_name}
         fi
     done
 }
