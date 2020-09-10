@@ -33,6 +33,7 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
         std::lock_guard lock(write_mutex);
         out->sync();
         sync_scheduled = false;
+        sync_cv.notify_all();
     });
 }
 
@@ -50,7 +51,7 @@ void MergeTreeWriteAheadLog::init()
 
 void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_name)
 {
-    std::lock_guard lock(write_mutex);
+    std::unique_lock lock(write_mutex);
 
     auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
     min_block_number = std::min(min_block_number, part_info.min_block);
@@ -70,7 +71,7 @@ void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_na
 
 void MergeTreeWriteAheadLog::dropPart(const String & part_name)
 {
-    std::lock_guard lock(write_mutex);
+    std::unique_lock lock(write_mutex);
 
     writeIntBinary(static_cast<UInt8>(0), *out);
     writeIntBinary(static_cast<UInt8>(ActionType::DROP_PART), *out);
@@ -78,7 +79,7 @@ void MergeTreeWriteAheadLog::dropPart(const String & part_name)
     sync(lock);
 }
 
-void MergeTreeWriteAheadLog::rotate(const std::lock_guard<std::mutex> &)
+void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
 {
     String new_name = String(WAL_FILE_NAME) + "_"
         + toString(min_block_number) + "_"
@@ -90,7 +91,7 @@ void MergeTreeWriteAheadLog::rotate(const std::lock_guard<std::mutex> &)
 
 MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const StorageMetadataPtr & metadata_snapshot)
 {
-    std::lock_guard lock(write_mutex);
+    std::unique_lock lock(write_mutex);
 
     MergeTreeData::MutableDataPartsVector parts;
     auto in = disk->readFile(path, DBMS_DEFAULT_BUFFER_SIZE);
@@ -185,7 +186,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
     return result;
 }
 
-void MergeTreeWriteAheadLog::sync(const std::lock_guard<std::mutex> &)
+void MergeTreeWriteAheadLog::sync(std::unique_lock<std::mutex> & lock)
 {
     size_t bytes_to_sync = storage.getSettings()->write_ahead_log_bytes_to_fsync;
     time_t time_to_sync = storage.getSettings()->write_ahead_log_interval_ms_to_fsync;
@@ -201,6 +202,9 @@ void MergeTreeWriteAheadLog::sync(const std::lock_guard<std::mutex> &)
         sync_task->scheduleAfter(time_to_sync);
         sync_scheduled = true;
     }
+
+    if (storage.getSettings()->in_memory_parts_insert_sync)
+        sync_cv.wait(lock, [this] { return !sync_scheduled; });
 }
 
 std::optional<MergeTreeWriteAheadLog::MinMaxBlockNumber>

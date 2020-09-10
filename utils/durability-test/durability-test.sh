@@ -1,5 +1,17 @@
 #!/bin/bash
 
+: '
+A simple test for durability. It starts up clickhouse server in qemu VM and runs
+inserts via clickhouse benchmark tool. Then it kills VM in random moment and
+checks whether table contains broken parts. With enabled fsync no broken parts
+should be appeared.
+
+Usage:
+
+./install.sh
+./durability-test.sh <table name> <file with create query> <file with insert query>
+'
+
 URL=http://cloud-images.ubuntu.com/bionic/current
 IMAGE=bionic-server-cloudimg-amd64.img
 SSH_PORT=11022

@@ -17,7 +17,7 @@ public:
     FileSyncGuard(const DiskPtr & disk_, int fd_) : disk(disk_), fd(fd_) {}
 
     FileSyncGuard(const DiskPtr & disk_, const String & path)
-        : disk(disk_), fd(disk_->open(path, O_RDONLY)) {}
+        : disk(disk_), fd(disk_->open(path, O_RDWR)) {}
 
     ~FileSyncGuard()
     {
