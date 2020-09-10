@@ -207,7 +207,7 @@ decimalResultType(const DataTypeDecimal<T> & tx, const DataTypeDecimal<U> & ty, 
 {
     UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
     if (is_multiply)
-        scale = tx.getScale() * ty.getScale();
+        scale = tx.getScale() + ty.getScale();
     else if (is_divide)
         scale = tx.getScale();
     return DataTypeDecimal<U>(maxDecimalPrecision<U>(), scale);
