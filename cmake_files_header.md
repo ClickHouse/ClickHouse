@@ -5,7 +5,7 @@
 ### Don't be obvious. Be informative.
 
 Bad:
-```
+```cmake
 option (ENABLE_TESTS "Enables testing" OFF)
 ```
 
@@ -14,7 +14,7 @@ purpose. If the option's name is quite self-descriptive, prefer the empty descri
 
 Better:
 
-```
+```cmake
 option(ENABLE_TESTS OFF)
 ```
 
@@ -24,7 +24,7 @@ The comment is parsed into a separate column (see below).
 
 Even better (default off value is omitted):
 
-```
+```cmake
 # Adds the ability to test ClickHouse using Google.Test (would produce another target unit_tests_dbms).
 # see tests/CMakeLists.txt for implementation detail.
 option(ENABLE_GTEST_TESTS)
@@ -38,7 +38,7 @@ In that case, prefer explicitly raising a warning telling the developer that he 
 Also, such options should be disabled if applies.
 
 Bad:
-```
+```cmake
 option(STRIP_DEBUG_SYMBOLS_FUNCTIONS
     "Do not generate debugger info for ClickHouse functions.
     ${STRIP_DSF_DEFAULT})
@@ -50,7 +50,7 @@ endif()
 ```
 Better:
 
-```
+```cmake
 # Provides faster linking and lower binary size.
 # Tradeoff is the inability to debug some source files with e.g. gdb
 # (empty stack frames and no local variables)."
@@ -71,13 +71,13 @@ You may find that the option's name is self-descriptive.
 
 Bad:
 
-```
+```cmake
 option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
 ```
 
 Better:
 
-```
+```cmake
 # Only applicable for clang.
 # Turned off when building with tests or sanitizers.
 option(ENABLE_THINLTO ON).
@@ -90,13 +90,13 @@ the tool's docs. It won't take much of your time.
 
 Bad:
 
-```
+```cmake
 option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
 ```
 
 Better (combined with the above hint):
 
-```
+```cmake
 # https://clang.llvm.org/docs/ThinLTO.html
 # Only applicable for clang.
 # Turned off when building with tests or sanitizers.
@@ -105,13 +105,13 @@ option(ENABLE_THINLTO ON).
 
 Other example, bad:
 
-```
+```cmake
 option (USE_INCLUDE_WHAT_YOU_USE "Use 'include-what-you-use' tool" OFF)
 ```
 
 Better:
 
-```
+```cmake
 # https://github.com/include-what-you-use/include-what-you-use
 option (USE_INCLUDE_WHAT_YOU_USE)
 ```
