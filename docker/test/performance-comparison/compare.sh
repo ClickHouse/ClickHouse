@@ -398,11 +398,11 @@ create table query_run_metrics_denorm engine File(TSV, 'analyze/query-run-metric
 -- the further calculations. This may happen if there was an error during the
 -- test runs, e.g. the server died. It will be reported in test errors, so we
 -- don't have to report it again.
-create view broken_tests as
-    select test_name
+create view broken_queries as
+    select test, query_index
     from query_runs
-    group by test_name
-    having count(*) % 2 == 0
+    group by test, query_index
+    having count(*) % 2 != 0
     ;
 
 -- This is for statistical processing with eqmed.sql
@@ -411,7 +411,7 @@ create table query_run_metrics_for_stats engine File(
         'analyze/query-run-metrics-for-stats.tsv')
     as select test, query_index, 0 run, version, metric_values
     from query_run_metric_arrays
-    where test not in broken_tests
+    where (test, query_index) not in broken_queries
     order by test, query_index, run, version
     ;
 
