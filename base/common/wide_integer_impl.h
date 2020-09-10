@@ -252,7 +252,7 @@ struct integer<Bits, Signed>::_impl
         return sizeof(T) * CHAR_BIT <= Bits;
     }
 
-    constexpr static integer<Bits, unsigned> shift_left(const integer<Bits, unsigned> & rhs, int n)
+    constexpr static integer<Bits, unsigned> shift_left(const integer<Bits, unsigned> & rhs, int n) noexcept
     {
         if (static_cast<size_t>(n) >= base_bits * arr_size)
             return 0;
