@@ -163,7 +163,7 @@ __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, v
     /** Step 3 function should unmap the scratch area.
       * The currently executed code is located in the scratch area and cannot be removed here.
       * We have to call another function and use its address from the original location (not in scratch area).
-      * To do it, we obtain it's pointer and call by pointer.
+      * To do it, we obtain its pointer and call by pointer.
       */
 
     void(* volatile step3)(void*, size_t, size_t) = remapToHugeStep3;
