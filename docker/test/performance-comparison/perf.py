@@ -7,6 +7,7 @@ import clickhouse_driver
 import xml.etree.ElementTree as et
 import argparse
 import pprint
+import random
 import re
 import string
 import time
@@ -20,7 +21,8 @@ parser = argparse.ArgumentParser(description='Run performance test.')
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
 parser.add_argument('--host', nargs='*', default=['localhost'], help="Server hostname(s). Corresponds to '--port' options.")
 parser.add_argument('--port', nargs='*', default=[9000], help="Server port(s). Corresponds to '--host' options.")
-parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 13)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
+parser.add_argument('--runs', type=int, default=1, help='Number of query runs per server.')
+parser.add_argument('--max-queries', type=int, default=None, help='Test no more than this number of queries, chosen at random.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
 parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
@@ -189,8 +191,14 @@ for conn_index, c in enumerate(connections):
         c.execute(q)
         print(f'fill\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
 
+# Run the queries in randomized order, but preserve their indexes as specified
+# in the test XML. To avoid using too much time, limit the number of queries
+# we run per test.
+queries_to_run = random.sample(range(0, len(test_queries)), args.max_queries or len(test_queries))
+
 # Run test queries.
-for query_index, q in enumerate(test_queries):
+for query_index in queries_to_run:
+    q = test_queries[query_index]
     query_prefix = f'{test_name}.query{query_index}'
 
     # We have some crazy long queries (about 100kB), so trim them to a sane

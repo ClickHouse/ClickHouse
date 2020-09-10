@@ -121,7 +121,7 @@ function run_tests
     then
         # Use the explicitly set path to directory with test files.
         test_prefix="$CHPC_TEST_PATH"
-    elif [ "$PR_TO_TEST" = "0" ]
+    elif [ "$PR_TO_TEST" == "0" ]
     then
         # When testing commits from master, use the older test files. This
         # allows the tests to pass even when we add new functions and tests for
@@ -155,6 +155,20 @@ function run_tests
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
+    # For PRs, test only a subset of queries, and run them less times.
+    # If the corresponding environment variables are already set, keep
+    # those values.
+    if [ "$PR_TO_TEST" == "0" ]
+    then
+        CHPC_TEST_RUNS=${CHPC_RUNS:-7}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-15}
+    else
+        CHPC_TEST_RUNS=${CHPC_RUNS:-13}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
+    fi
+    export CHPC_TEST_RUNS
+    export CHPC_MAX_QUERIES
+
     # Determine which concurrent benchmarks to run. For now, the only test
     # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
     # are also going to run it as a normal test.
@@ -187,6 +201,7 @@ function run_tests
         # the grep is to filter out set -x output and keep only time output
         { \
             time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 \
+                --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
                 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
         } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" \
             || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
