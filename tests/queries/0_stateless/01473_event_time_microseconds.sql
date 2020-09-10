@@ -22,3 +22,20 @@ WITH (
         LIMIT 1
     ) AS time)
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(time)) = 0, 'ok', 'fail')
+
+select '01473_trace_log_table_event_start_time_microseconds_test';
+system flush logs;
+WITH (
+    (
+        SELECT event_time_microseconds
+        FROM system.trace_log
+        ORDER BY event_time DESC
+        LIMIT 1
+    ) AS time_with_microseconds,
+    (
+        SELECT event_time
+        FROM system.trace_log
+        ORDER BY event_time DESC
+        LIMIT 1
+    ) AS time)
+SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(time)) = 0, 'ok', 'fail'); -- success
