@@ -106,8 +106,8 @@ public:
         const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[1]);
         const DataTypeTuple & type1 = static_cast<const DataTypeTuple &>(*arg1.type);
         const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
-        auto & left_elems = type1.getElements();
-        auto & right_elems = type2.getElements();
+        const auto & left_elems = type1.getElements();
+        const auto & right_elems = type2.getElements();
         if (left_elems.size() != 2 || right_elems.size() != 2)
             throw Exception(
                 "Illegal column of arguments of function " + getName() + ", tuple should have exactly two elements.",

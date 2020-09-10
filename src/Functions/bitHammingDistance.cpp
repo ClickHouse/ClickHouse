@@ -97,8 +97,7 @@ public:
     {
         const auto * left_generic = block.getByPosition(arguments[0]).type.get();
         const auto * right_generic = block.getByPosition(arguments[1]).type.get();
-        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
-        {
+        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right) {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
             using T0 = typename LeftDataType::FieldType;
@@ -109,8 +108,8 @@ public:
 
             using OpImpl = BitHammingDistanceImpl<T0, T1>;
 
-            const auto col_left_raw = block.getByPosition(arguments[0]).column.get();
-            const auto col_right_raw = block.getByPosition(arguments[1]).column.get();
+            const auto * const col_left_raw = block.getByPosition(arguments[0]).column.get();
+            const auto * const col_right_raw = block.getByPosition(arguments[1]).column.get();
 
             typename ColVecResult::MutablePtr col_res = nullptr;
             col_res = ColVecResult::create();
