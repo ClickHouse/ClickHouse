@@ -130,7 +130,7 @@ private:
 };
 
 
-QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const SelectQueryInfo & query_info) const
 {
     if (destination_id)
     {
@@ -139,7 +139,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        return destination->getQueryProcessingStage(context, to_stage, query_ptr);
+        return destination->getQueryProcessingStage(context, to_stage, query_info);
     }
 
     return QueryProcessingStage::FetchColumns;

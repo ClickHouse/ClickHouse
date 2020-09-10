@@ -489,8 +489,10 @@ BlockIO InterpreterSelectQuery::execute()
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {
+    query_info.query = query_ptr;
+
     if (storage && !options.only_analyze)
-        from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_ptr);
+        from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_info);
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
@@ -1415,7 +1417,6 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        query_info.query = query_ptr;
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
         query_info.prewhere_info = prewhere_info;

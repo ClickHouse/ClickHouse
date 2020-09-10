@@ -63,6 +63,8 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 class ReadInOrderOptimizer;
 using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
+class Cluster;
+using ClusterPtr = std::shared_ptr<Cluster>;
 
 /** Query along with some additional data,
   *  that can be used during query processing
@@ -72,6 +74,10 @@ struct SelectQueryInfo
 {
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
+
+    /// For optimize_skip_unused_shards
+    /// We can modify it in getQueryProcessingStage()
+    mutable ClusterPtr cluster;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 

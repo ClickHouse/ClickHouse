@@ -4,9 +4,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/IInterpreter.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/ProcessList.h>
+#include <Parsers/queryToString.h>
 #include <Processors/Pipe.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -75,12 +76,13 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 }
 
 Pipe executeQuery(
-    IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
+    IStreamFactory & stream_factory, Poco::Logger * log,
+    const ASTPtr & query_ast, const Context & context, const SelectQueryInfo & query_info)
 {
     assert(log);
 
     Pipes res;
+    const Settings & settings = context.getSettingsRef();
 
     const std::string query = queryToString(query_ast);
 
@@ -103,7 +105,7 @@ Pipe executeQuery(
     else
         throttler = user_level_throttler;
 
-    for (const auto & shard_info : cluster->getShardsInfo())
+    for (const auto & shard_info : query_info.cluster->getShardsInfo())
         stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, res);
 
     return Pipe::unitePipes(std::move(res));

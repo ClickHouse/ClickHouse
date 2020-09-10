@@ -7,7 +7,6 @@
 #include <Interpreters/CancellationCode.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -55,6 +54,7 @@ using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
 struct StreamLocalLimits;
 class EnabledQuota;
+struct SelectQueryInfo;
 
 struct ColumnSize
 {
@@ -212,15 +212,12 @@ public:
       *
       * SelectQueryInfo is required since the stage can depends on the query
       * (see Distributed() engine and optimize_skip_unused_shards).
+      * And to store optimized cluster (after optimize_skip_unused_shards).
       *
       * QueryProcessingStage::Enum required for Distributed over Distributed,
       * since it cannot return Complete for intermediate queries never.
       */
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const
-    {
-        return getQueryProcessingStage(context, QueryProcessingStage::Complete, {});
-    }
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const SelectQueryInfo &) const
     {
         return QueryProcessingStage::FetchColumns;
     }
