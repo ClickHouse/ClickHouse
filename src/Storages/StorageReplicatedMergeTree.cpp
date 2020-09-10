@@ -234,10 +234,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         {
             current_zookeeper = global_context.getZooKeeper();
         }
-        catch (Poco::Exception & e)
+        catch (...)
         {
-            dropIfEmpty();
-            throw e;
+            if (!attach)
+                dropIfEmpty();
+            throw;
         }
     }
 
@@ -262,7 +263,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     if (!current_zookeeper)
     {
         if (!attach)
+        {
+            dropIfEmpty();
             throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+        }
 
         /// Do not activate the replica. It will be readonly.
         LOG_ERROR(log, "No ZooKeeper: table will be in readonly mode.");
