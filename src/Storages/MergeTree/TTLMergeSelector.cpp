@@ -43,12 +43,9 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
 
             if (ttl && !isTTLAlreadySatisfied(*part_it) && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
             {
-                if (only_drop_parts || part_it->can_participate_in_merges)
-                {
-                    partition_to_merge_min_ttl = ttl;
-                    partition_to_merge_index = i;
-                    best_begin = part_it;
-                }
+                partition_to_merge_min_ttl = ttl;
+                partition_to_merge_index = i;
+                best_begin = part_it;
             }
         }
     }
@@ -66,8 +63,7 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
         time_t ttl = getTTLForPart(*best_begin);
 
         if (!ttl || isTTLAlreadySatisfied(*best_begin) || ttl > current_time
-            || (max_total_size_to_merge && total_size > max_total_size_to_merge)
-            || (!only_drop_parts && !best_begin->can_participate_in_merges))
+            || (max_total_size_to_merge && total_size > max_total_size_to_merge))
         {
             /// This condition can not be satisfied on first iteration.
             ++best_begin;
@@ -87,8 +83,7 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
         time_t ttl = getTTLForPart(*best_end);
 
         if (!ttl || isTTLAlreadySatisfied(*best_end) || ttl > current_time
-            || (max_total_size_to_merge && total_size > max_total_size_to_merge)
-            || (!only_drop_parts && !best_end->can_participate_in_merges))
+            || (max_total_size_to_merge && total_size > max_total_size_to_merge))
             break;
 
         total_size += best_end->size;
@@ -106,6 +101,22 @@ time_t TTLDeleteMergeSelector::getTTLForPart(const IMergeSelector::Part & part) 
     return only_drop_parts ? part.ttl_infos->part_max_ttl : part.ttl_infos->part_min_ttl;
 }
 
+bool TTLDeleteMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & part) const
+{
+    /// N.B. Satisfied TTL means that TTL is NOT expired.
+    /// return true -- this part can not be selected
+    /// return false -- this part can be selected
+
+    /// Dropping whole part is an exception to `can_participate_in_merges` logic.
+    if (only_drop_parts)
+        return false;
+
+    if (!part.can_participate_in_merges)
+        return true;
+
+    return false;
+}
+
 time_t TTLRecompressMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
 {
     return part.ttl_infos->getMinimalMaxRecompressionTTL();
@@ -113,6 +124,13 @@ time_t TTLRecompressMergeSelector::getTTLForPart(const IMergeSelector::Part & pa
 
 bool TTLRecompressMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & part) const
 {
+    /// N.B. Satisfied TTL means that TTL is NOT expired.
+    /// return true -- this part can not be selected
+    /// return false -- this part can be selected
+
+    if (!part.can_participate_in_merges)
+        return true;
+
     if (recompression_ttls.empty())
         return false;
 
