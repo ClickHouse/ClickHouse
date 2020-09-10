@@ -64,13 +64,20 @@ TemporaryTableHolder::TemporaryTableHolder(
     const Context & context_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    const ASTPtr & query)
+    const ASTPtr & query,
+    bool create_for_global_subquery)
     : TemporaryTableHolder
       (
           context_,
           [&](const StorageID & table_id)
           {
-              return StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
+              auto storage = StorageMemory::create(
+                      table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
+
+              if (create_for_global_subquery)
+                  storage->delayReadForGlobalSubqueries();
+
+              return storage;
           },
           query
       )
@@ -521,7 +528,21 @@ DatabaseCatalog::updateDependency(const StorageID & old_from, const StorageID & 
 std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
     std::unique_lock lock(ddl_guards_mutex);
-    return std::make_unique<DDLGuard>(ddl_guards[database], std::move(lock), table);
+    auto db_guard_iter = ddl_guards.try_emplace(database).first;
+    DatabaseGuard & db_guard = db_guard_iter->second;
+    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table);
+}
+
+std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
+{
+    DDLGuards::iterator db_guard_iter;
+    {
+        std::unique_lock lock(ddl_guards_mutex);
+        db_guard_iter = ddl_guards.try_emplace(database).first;
+        assert(db_guard_iter->second.first.count(""));
+    }
+    DatabaseGuard & db_guard = db_guard_iter->second;
+    return std::unique_lock{db_guard.second};
 }
 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
@@ -791,17 +812,23 @@ String DatabaseCatalog::resolveDictionaryName(const String & name) const
 }
 
 
-DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
-        : map(map_), guards_lock(std::move(guards_lock_))
+DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
+        : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
 {
     it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
     ++it->second.counter;
     guards_lock.unlock();
     table_lock = std::unique_lock(*it->second.mutex);
+    bool is_database = elem.empty();
+    if (!is_database)
+        db_mutex.lock_shared();
 }
 
 DDLGuard::~DDLGuard()
 {
+    bool is_database = it->first.empty();
+    if (!is_database)
+        db_mutex.unlock_shared();
     guards_lock.lock();
     --it->second.counter;
     if (!it->second.counter)

@@ -9,6 +9,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** buildId() - returns the compiler build id of the running binary.
   */
@@ -42,6 +44,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionBuildId(FunctionFactory & factory)
 {

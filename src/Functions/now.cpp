@@ -9,10 +9,11 @@
 
 
 namespace DB
-
 {
-/// Get the current time. (It is a constant, it is evaluated once for the entire query.)
+namespace
+{
 
+/// Get the current time. (It is a constant, it is evaluated once for the entire query.)
 class ExecutableFunctionNow : public IExecutableFunctionImpl
 {
 public:
@@ -81,6 +82,8 @@ public:
         return std::make_unique<FunctionBaseNow>(time(nullptr));
     }
 };
+
+}
 
 void registerFunctionNow(FunctionFactory & factory)
 {

@@ -12,10 +12,9 @@ void SubqueryForSet::makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery>
                                 NamesWithAliases && joined_block_aliases_)
 {
     joined_block_aliases = std::move(joined_block_aliases_);
-    source = std::make_shared<LazyBlockInputStream>(interpreter->getSampleBlock(),
-                                                    [interpreter]() mutable { return interpreter->execute().getInputStream(); });
+    source = QueryPipeline::getPipe(interpreter->execute().pipeline);
 
-    sample_block = source->getHeader();
+    sample_block = source.getHeader();
     renameColumns(sample_block);
 }
 
@@ -50,11 +49,10 @@ bool SubqueryForSet::insertJoinedBlock(Block & block)
     return join->addJoinedBlock(block);
 }
 
-void SubqueryForSet::setTotals()
+void SubqueryForSet::setTotals(Block totals)
 {
-    if (join && source)
+    if (join)
     {
-        Block totals = source->getTotals();
         renameColumns(totals);
         join->setTotals(totals);
     }
