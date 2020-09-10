@@ -1,0 +1,7 @@
+<yandex>
+  <hdfs>
+		<hadoop_kerberos_keytab>/tmp/keytab/clickhouse.keytab</hadoop_kerberos_keytab>
+		<hadoop_kerberos_principal>hdfsuser@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+		<hadoop_security_authentication>kerberos</hadoop_security_authentication>
+  </hdfs>
+</yandex>

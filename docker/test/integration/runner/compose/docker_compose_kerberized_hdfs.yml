@@ -1,0 +1,31 @@
+version: '2.3'
+
+services:
+  kerberizedhdfs1:
+    image: sequenceiq/hadoop-docker:2.7.0
+    hostname: kerberizedhdfs1
+    restart: always
+    volumes:
+        - ${KERBERIZED_HDFS_DIR}/../../hdfs_configs/bootstrap.sh:/etc/bootstrap.sh:ro
+        - ${KERBERIZED_HDFS_DIR}/secrets:/usr/local/hadoop/etc/hadoop/conf
+        - ${KERBERIZED_HDFS_DIR}/secrets/krb.conf:/etc/krb5.conf:ro
+    ports:
+      - 50475:50475
+      - 50470:50470
+    depends_on:
+        - hdfs_kerberos
+    entrypoint: /etc/bootstrap.sh -d
+
+  hdfs_kerberos:
+    # build: ${KERBERIZED_KAFKA_DIR}
+    image: arenadata/kdc:latest
+    hostname: hdfs_kerberos
+    volumes:
+        - ${KERBERIZED_HDFS_DIR}/secrets:/tmp/keytab
+        - ${KERBERIZED_HDFS_DIR}/../../kerberos_image_config.sh:/config.sh
+        - /dev/urandom:/dev/random
+    ports: [88, 749]
+    networks:
+      default:
+        aliases:
+          - hdfs.local
