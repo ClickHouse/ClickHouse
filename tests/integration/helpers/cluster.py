@@ -1,6 +1,5 @@
 import base64
 import cassandra.cluster
-import distutils.dir_util
 import docker
 import errno
 import httplib
@@ -19,6 +18,7 @@ import socket
 import subprocess
 import time
 import urllib
+import traceback
 import xml.dom.minidom
 from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
@@ -667,6 +667,7 @@ class ClickHouseCluster:
         except BaseException, e:
             print "Failed to start cluster: "
             print str(e)
+            print traceback.print_exc()
             raise
 
     def shutdown(self, kill=True):
@@ -1164,10 +1165,10 @@ class ClickHouseInstance:
 
         db_dir = p.abspath(p.join(self.path, 'database'))
         print "Setup database dir {}".format(db_dir)
-        os.mkdir(db_dir)
         if self.clickhouse_path_dir is not None:
             print "Database files taken from {}".format(self.clickhouse_path_dir)
-            distutils.dir_util.copy_tree(self.clickhouse_path_dir, db_dir)
+            shutil.copytree(self.clickhouse_path_dir, db_dir)
+            print "Database copied from {} to {}".format(self.clickhouse_path_dir, db_dir)
 
         logs_dir = p.abspath(p.join(self.path, 'logs'))
         print "Setup logs dir {}".format(logs_dir)
@@ -1228,7 +1229,6 @@ class ClickHouseInstance:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
 
-
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
                 image=self.image,
@@ -1251,8 +1251,8 @@ class ClickHouseInstance:
                 app_net=app_net,
                 ipv4_address=ipv4_address,
                 ipv6_address=ipv6_address,
-                net_aliases = net_aliases,
-                net_alias1 = net_alias1,
+                net_aliases=net_aliases,
+                net_alias1=net_alias1,
             ))
 
     def destroy_dir(self):

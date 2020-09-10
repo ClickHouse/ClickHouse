@@ -18,7 +18,8 @@
         "00152_insert_different_granularity",
         "00151_replace_partition_with_different_granularity",
         "00157_cache_dictionary",
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01474_executable_dictionary" /// informational stderr from sanitizer at start
     ],
     "address-sanitizer": [
         "00281",
