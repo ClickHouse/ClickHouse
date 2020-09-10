@@ -8,8 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_DATA;
+    extern const int INCORRECT_QUERY;
 }
 
 LineAsStringRowInputFormat::LineAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_) :
@@ -17,7 +16,7 @@ LineAsStringRowInputFormat::LineAsStringRowInputFormat(const Block & header_, Re
 {
     if (header_.columns() > 1 || header_.getDataTypes()[0]->getTypeId() != TypeIndex::String)
     {
-        throw Exception("This input format is only suitable for tables with a single column of type String.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("This input format is only suitable for tables with a single column of type String.", ErrorCodes::INCORRECT_QUERY);
     }
 }
 
@@ -39,7 +38,8 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
     {
         pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
         buf.position() = pos;
-        if (buf.position() == buf.buffer().end())  {
+        if (buf.position() == buf.buffer().end())
+        {
             over = true;
             break;
         }
@@ -48,14 +48,11 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
             newline = false;
         }
         else if (*buf.position() == '\\')
-            {
+        {
             ++buf.position();
             if (!buf.eof())
-            {
-            	++buf.position();
-            }
+                ++buf.position();
         }
-        
     }
 
     buf.makeContinuousMemoryFromCheckpointToPos();
