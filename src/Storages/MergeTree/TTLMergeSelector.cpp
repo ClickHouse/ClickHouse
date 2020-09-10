@@ -111,10 +111,7 @@ bool TTLDeleteMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & 
     if (only_drop_parts)
         return false;
 
-    if (!part.can_participate_in_merges)
-        return true;
-
-    return false;
+    return !part.can_participate_in_merges;
 }
 
 time_t TTLRecompressMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
