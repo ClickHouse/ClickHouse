@@ -1466,8 +1466,10 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
 
-    if (!shared->zookeeper || shared->zookeeper->expired())
+    if (!shared->zookeeper)
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "zookeeper");
+    else if (shared->zookeeper->expired())
+        shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
 }
@@ -1494,6 +1496,15 @@ void Context::resetZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper.reset();
+}
+
+void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->zookeeper || shared->zookeeper->configChanged(*config, "zookeeper"))
+    {
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
+    }
 }
 
 bool Context::hasZooKeeper() const
