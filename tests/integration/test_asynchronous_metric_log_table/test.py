@@ -1,14 +1,28 @@
 import time
 
+import pytest
 from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+node1 = cluster.add_instance('node1', with_zookeeper=True,
+                             main_configs=['configs/asynchronous_metrics_update_period_s.xml'])
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+
+    finally:
+        cluster.shutdown()
+
 
 # Tests that the event_time_microseconds field in system.asynchronous_metric_log table gets populated.
 # asynchronous metrics are updated once every 60s by default. To make the test run faster, the setting
 # asynchronous_metric_update_period_s is being set to 2s so that the metrics are populated faster and
 # are available for querying during the test.
-def test_asynchronous_metric_log():
-    cluster = ClickHouseCluster(__file__)
-    node1 = cluster.add_instance('node1', with_zookeeper=True, main_configs=['configs/asynchronous_metrics_update_period_s.xml'])
+def test_event_time_microseconds_field(started_cluster):
     try:
         cluster.start()
         node1.query("SET log_queries = 1;")
@@ -27,6 +41,7 @@ def test_asynchronous_metric_log():
         node1.query("SYSTEM FLUSH LOGS;")
         node1.query("SELECT * FROM system.asynchronous_metrics LIMIT 10")
         assert "1\n" in node1.query('''SELECT count() from replica.test FORMAT TSV''')
-        assert "ok\n" in node1.query("SELECT If((select count(event_time_microseconds)  from system.asynchronous_metric_log) > 0, 'ok', 'fail');")
+        assert "ok\n" in node1.query(
+            "SELECT If((select count(event_time_microseconds)  from system.asynchronous_metric_log) > 0, 'ok', 'fail');")
     finally:
         cluster.shutdown()
