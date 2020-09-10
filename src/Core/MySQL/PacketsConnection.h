@@ -2,6 +2,7 @@
 
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
+#include <Core/Types.h>
 
 namespace DB
 {

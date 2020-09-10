@@ -1,10 +1,11 @@
 /// Original is here https://github.com/cerevra/int
 #pragma once
 
-#include "wide_integer.h"
 #include "throwError.h"
 
-#include <climits> // CHAR_BIT
+#ifndef CHAR_BIT
+#define CHAR_BIT 8
+#endif
 
 namespace wide
 {
@@ -1264,31 +1265,6 @@ constexpr bool operator!=(const Arithmetic & lhs, const Arithmetic2 & rhs)
 
 #undef CT
 
-template <size_t Bits, typename Signed>
-inline std::string to_string(const integer<Bits, Signed> & n)
-{
-    std::string res;
-    if (integer<Bits, Signed>::_impl::operator_eq(n, 0U))
-        return "0";
-
-    integer<Bits, unsigned> t;
-    bool is_neg = integer<Bits, Signed>::_impl::is_negative(n);
-    if (is_neg)
-        t = integer<Bits, Signed>::_impl::operator_unary_minus(n);
-    else
-        t = n;
-
-    while (!integer<Bits, unsigned>::_impl::operator_eq(t, 0U))
-    {
-        res.insert(res.begin(), '0' + char(integer<Bits, unsigned>::_impl::operator_percent(t, 10U)));
-        t = integer<Bits, unsigned>::_impl::operator_slash(t, 10U);
-    }
-
-    if (is_neg)
-        res.insert(res.begin(), '-');
-    return res;
-}
-
 }
 
 namespace std
@@ -1307,7 +1283,7 @@ struct hash<wide::integer<Bits, Signed>>
         size_t res = 0;
         for (unsigned i = 0; i < count; ++i)
             res ^= ptr[i];
-        return hash<size_t>()(res);
+        return res;
     }
 };
 

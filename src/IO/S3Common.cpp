@@ -85,7 +85,7 @@ public:
 
 private:
     Poco::Logger * default_logger;
-    std::unordered_map<String, Poco::Logger *> tag_loggers;
+    std::unordered_map<DB::String, Poco::Logger *> tag_loggers;
 };
 
 class S3AuthSigner : public Aws::Client::AWSAuthV4Signer

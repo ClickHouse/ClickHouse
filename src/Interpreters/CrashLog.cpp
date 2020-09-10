@@ -61,7 +61,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
 }
 
 
-void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace)
+void collectCrashLog(Int32 signal, UInt64 thread_id, const DB::String & query_id, const StackTrace & stack_trace)
 {
     using namespace DB;
 

@@ -26,11 +26,11 @@ protected:
 };
 
 size_t getLengthEncodedNumberSize(uint64_t x);
-size_t getLengthEncodedStringSize(const String & s);
+size_t getLengthEncodedStringSize(const std::string & s);
 
 void writeLengthEncodedNumber(uint64_t x, WriteBuffer & buffer);
-void writeLengthEncodedString(const String & s, WriteBuffer & buffer);
-void writeNulTerminatedString(const String & s, WriteBuffer & buffer);
+void writeLengthEncodedString(const std::string & s, WriteBuffer & buffer);
+void writeNulTerminatedString(const std::string & s, WriteBuffer & buffer);
 
 }
 

@@ -25,7 +25,7 @@
 #include <cstdint>
 #include <limits>
 #include <type_traits>
-#include <string>
+#include <initializer_list>
 
 namespace wide
 {
@@ -245,9 +245,6 @@ template <size_t Bits, typename Signed, size_t Bits2, typename Signed2>
 constexpr bool operator!=(const integer<Bits, Signed> & lhs, const integer<Bits2, Signed2> & rhs);
 template <typename Arithmetic, typename Arithmetic2, class = __only_arithmetic<Arithmetic, Arithmetic2>>
 constexpr bool operator!=(const Arithmetic & rhs, const Arithmetic2 & lhs);
-
-template <size_t Bits, typename Signed>
-std::string to_string(const integer<Bits, Signed> & n);
 
 }
 

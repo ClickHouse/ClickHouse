@@ -1,3 +1,7 @@
+#include <string>
+
+using String = std::string;
+
 #include <Common/StatusInfo.h>
 #include <Interpreters/ExternalLoader.h>
 

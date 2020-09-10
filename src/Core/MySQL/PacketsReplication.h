@@ -3,6 +3,7 @@
 #include <IO/MySQLPacketPayloadReadBuffer.h>
 #include <IO/MySQLPacketPayloadWriteBuffer.h>
 #include <Core/MySQL/PacketEndpoint.h>
+#include <Core/Types.h>
 
 /// Implementation of MySQL wire protocol.
 /// Works only on little-endian architecture.

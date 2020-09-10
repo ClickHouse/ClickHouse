@@ -25,6 +25,7 @@
 #include <Common/StatusFile.h>
 #include <loggers/Loggers.h>
 
+using String = std::string;
 
 namespace Poco { class TaskManager; }
 

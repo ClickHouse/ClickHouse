@@ -1,9 +1,6 @@
 #pragma once
 
-#include <algorithm>
 #include <cstdint>
-#include <cstdlib>
-#include <string>
 #include <type_traits>
 
 #include <common/wide_integer.h>
@@ -30,8 +27,6 @@ using wUInt256 = wide::integer<256, unsigned>;
 
 static_assert(sizeof(wInt256) == 32);
 static_assert(sizeof(wUInt256) == 32);
-
-using String = std::string;
 
 /// The standard library type traits, such as std::is_arithmetic, with one exception
 /// (std::common_type), are "set in stone". Attempting to specialize them causes undefined behavior.
@@ -120,12 +115,6 @@ template <> struct is_big_int<wUInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_big_int_v = is_big_int<T>::value;
-
-template <typename T>
-inline std::string bigintToString(const T & x)
-{
-    return to_string(x);
-}
 
 template <typename To, typename From>
 inline To bigint_cast(const From & x [[maybe_unused]])
