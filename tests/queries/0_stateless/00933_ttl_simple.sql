@@ -23,7 +23,6 @@ create table ttl_00933_1 (d DateTime, a Int ttl d + interval 1 DAY) engine = Mer
 insert into ttl_00933_1 values (toDateTime('2000-10-10 00:00:00'), 1);
 insert into ttl_00933_1 values (toDateTime('2000-10-10 00:00:00'), 2);
 insert into ttl_00933_1 values (toDateTime('2000-10-10 00:00:00'), 3);
-optimize table ttl_00933_1 final;
 select * from ttl_00933_1 order by d;
 
 drop table if exists ttl_00933_1;

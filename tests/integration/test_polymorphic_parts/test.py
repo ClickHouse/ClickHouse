@@ -42,6 +42,7 @@ def create_tables(name, nodes, node_settings, shard):
         ORDER BY id
         SETTINGS index_granularity = 64, index_granularity_bytes = {index_granularity_bytes},
         min_rows_for_wide_part = {min_rows_for_wide_part}, min_rows_for_compact_part = {min_rows_for_compact_part},
+        min_bytes_for_wide_part = 0, min_bytes_for_compact_part = 0,
         in_memory_parts_enable_wal = 1
         '''.format(name=name, shard=shard, repl=i, **settings))
 
