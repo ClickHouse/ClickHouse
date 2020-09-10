@@ -44,8 +44,8 @@ public:
 
 private:
     void init();
-    void rotate(const std::lock_guard<std::mutex> & lock);
-    void sync(const std::lock_guard<std::mutex> & lock);
+    void rotate(const std::unique_lock<std::mutex> & lock);
+    void sync(std::unique_lock<std::mutex> & lock);
 
     const MergeTreeData & storage;
     DiskPtr disk;
@@ -60,6 +60,7 @@ private:
 
     BackgroundSchedulePool & pool;
     BackgroundSchedulePoolTaskHolder sync_task;
+    std::condition_variable sync_cv;
 
     size_t bytes_at_last_sync = 0;
     bool sync_scheduled = false;
