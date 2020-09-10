@@ -57,7 +57,10 @@ option(STRIP_DEBUG_SYMBOLS_FUNCTIONS
     "Do not generate debugger info for ClickHouse functions.
     Provides faster linking and lower binary size.
     Tradeoff is the inability to debug some source files with e.g. gdb
-    (empty stack frames and no local variables)." OFF)
+    (empty stack frames and no local variables)."
+    CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
+    OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
+    OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
 
 if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
     message(WARNING "Not generating debugger info for ClickHouse functions")
