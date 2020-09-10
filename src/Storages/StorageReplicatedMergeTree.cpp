@@ -226,10 +226,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// This unclean state will hinder table creation on any retries and will
         /// complain that the Directory for table already exists.
         ///
-        /// To acheive a clean state on failed table creations, catch this error if
-        /// the excaption is of type Poco::Exception and call dropIfEmpty() method,
-        /// then proceed throwing the exception. Without this, the Directory for the
-        /// tables need to be manually deleted before retrying the CreateQuery.
+        /// To achieve a clean state on failed table creations, catch this error and
+        /// call dropIfEmpty() method only if the operation isn't ATTACH then proceed
+        /// throwing the exception. Without this, the Directory for the tables need
+        /// to be manually deleted before retrying the CreateQuery.
         try
         {
             current_zookeeper = global_context.getZooKeeper();
