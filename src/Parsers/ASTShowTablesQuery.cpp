@@ -63,7 +63,7 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
                 << backQuoteIfNeed(from);
 
-	formatLike(settings);
+        formatLike(settings);
 
         if (where_expression)
         {
@@ -71,7 +71,7 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
             where_expression->formatImpl(settings, state, frame);
         }
 
-	formatLimit(settings, state, frame);
+        formatLimit(settings, state, frame);
     }
 }
 
