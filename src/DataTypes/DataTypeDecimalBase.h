@@ -173,7 +173,7 @@ decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_
 {
     UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
     if (is_multiply)
-        scale = tx.getScale() * ty.getScale();
+        scale = tx.getScale() + ty.getScale();
     else if (is_divide)
         scale = tx.getScale();
     return DecimalType<U>(DecimalUtils::maxPrecision<U>(), scale);
