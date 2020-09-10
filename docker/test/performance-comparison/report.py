@@ -372,7 +372,7 @@ if args.report == 'main':
             'New,&nbsp;s',                                          # 1
             'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)',                 # 2
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 3
-            'p&nbsp;<&nbsp;0.001 threshold',                   # 4
+            'p&nbsp;<&nbsp;0.01 threshold',                   # 4
             # Failed                                           # 5
             'Test',                                            # 6
             '#',                                               # 7
@@ -416,7 +416,7 @@ if args.report == 'main':
             'Old,&nbsp;s', #0
             'New,&nbsp;s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
-            'p&nbsp;&lt;&nbsp;0.001 threshold', #3
+            'p&nbsp;&lt;&nbsp;0.01 threshold', #3
             # Failed #4
             'Test', #5
             '#',    #6
@@ -649,7 +649,7 @@ elif args.report == 'all-queries':
             'New,&nbsp;s', #3
             'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)',                 #4
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #5
-            'p&nbsp;&lt;&nbsp;0.001 threshold',          #6
+            'p&nbsp;&lt;&nbsp;0.01 threshold',          #6
             'Test',                                   #7
             '#',                                      #8
             'Query',                                  #9
