@@ -381,50 +381,54 @@ SetPtr makeExplicitSet(
     return set;
 }
 
-ScopeStack::ScopeStack(const ExpressionActionsPtr & actions, const Context & context_)
+ScopeStack::ScopeStack(ActionsDAGPtr actions, const Context & context_)
     : context(context_)
 {
-    stack.emplace_back();
-    stack.back().actions = actions;
-
-    const Block & sample_block = actions->getSampleBlock();
-    for (size_t i = 0, size = sample_block.columns(); i < size; ++i)
-        stack.back().new_columns.insert(sample_block.getByPosition(i).name);
+    stack.emplace_back(std::move(actions));
 }
 
 void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
 {
-    stack.emplace_back();
-    Level & prev = stack[stack.size() - 2];
-
-    ColumnsWithTypeAndName all_columns;
-    NameSet new_names;
+    auto & actions = stack.emplace_back(std::make_shared<ActionsDAG>());
+    const auto & prev = stack[stack.size() - 2];
 
     for (const auto & input_column : input_columns)
-    {
-        all_columns.emplace_back(nullptr, input_column.type, input_column.name);
-        new_names.insert(input_column.name);
-        stack.back().new_columns.insert(input_column.name);
-    }
+        actions->addInput(input_column.name, input_column.type);
 
-    const Block & prev_sample_block = prev.actions->getSampleBlock();
-    for (size_t i = 0, size = prev_sample_block.columns(); i < size; ++i)
-    {
-        const ColumnWithTypeAndName & col = prev_sample_block.getByPosition(i);
-        if (!new_names.count(col.name))
-            all_columns.push_back(col);
-    }
+    const auto & index = actions->getIndex();
 
-    stack.back().actions = std::make_shared<ExpressionActions>(all_columns, context);
+    for (const auto & [name, node] : prev->getIndex())
+    {
+        if (index.count(name) == 0)
+            actions->addInput(node->result_name, node->result_type);
+    }
 }
 
 size_t ScopeStack::getColumnLevel(const std::string & name)
 {
     for (int i = static_cast<int>(stack.size()) - 1; i >= 0; --i)
-        if (stack[i].new_columns.count(name))
+        if (stack[i]->getIndex().count(name))
             return i;
 
     throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
+}
+
+void ScopeStack::addAlias(const std::string & name, std::string alias)
+{
+   auto level = getColumnLevel(name);
+   const auto & node = stack[level]->addAlias(name, std::move(alias));
+
+    for (size_t j = level + 1; j < stack.size(); ++j)
+        stack[j]->addInput(node.result_name, node.result_type);
+}
+
+void ScopeStack::addArrayJoin(const std::string & source_name, std::string result_name)
+{
+    auto level = getColumnLevel(source_name);
+    const auto & node = stack[level]->addAlias(source_name, std::move(result_name));
+
+    for (size_t j = level + 1; j < stack.size(); ++j)
+        stack[j]->addInput(node.result_name, node.result_type);
 }
 
 void ScopeStack::addAction(const ExpressionAction & action)
@@ -460,16 +464,16 @@ void ScopeStack::addActionNoInput(const ExpressionAction & action)
     stack[level].new_columns.insert(added.begin(), added.end());
 }
 
-ExpressionActionsPtr ScopeStack::popLevel()
+ActionsDAGPtr ScopeStack::popLevel()
 {
-    ExpressionActionsPtr res = stack.back().actions;
+    auto res = std::move(stack.back());
     stack.pop_back();
     return res;
 }
 
-const Block & ScopeStack::getSampleBlock() const
+const ActionsDAG::Index & ScopeStack::getIndex() const
 {
-    return stack.back().actions->getSampleBlock();
+    return stack.back()->getIndex();
 }
 
 struct CachedColumnName
@@ -532,7 +536,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
 
         /// Special check for WITH statement alias. Add alias action to be able to use this alias.
         if (identifier.prefer_alias_to_column_name && !identifier.alias.empty())
-            data.addAction(ExpressionAction::addAliases({{identifier.name, identifier.alias}}));
+            data.addAlias(identifier.name, identifier.alias);
     }
 }
 
@@ -562,8 +566,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             /// It could have been possible to implement arrayJoin which keeps source column,
             /// but in this case it will always be replicated (as many arrays), which is expensive.
             String tmp_name = data.getUniqueName("_array_join_" + arg->getColumnName());
-            data.addActionNoInput(ExpressionAction::copyColumn(arg->getColumnName(), tmp_name));
-            data.addAction(ExpressionAction::arrayJoin(tmp_name, result_name));
+            data.addAlias(arg->getColumnName(), tmp_name);
+            data.addArrayJoin(tmp_name, result_name);
         }
 
         return;

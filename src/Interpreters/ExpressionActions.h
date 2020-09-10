@@ -140,6 +140,60 @@ private:
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class ActionsDAG
+{
+public:
+
+    enum class Type
+    {
+        /// Column which must be in input.
+        INPUT,
+        /// Constant column with known value.
+        COLUMN,
+        /// Another one name for column.
+        ALIAS,
+        FUNCTION,
+        /// Function arrayJoin. Specially separated because it changes the number of rows.
+        ARRAY_JOIN,
+    };
+
+    struct Node
+    {
+        std::vector<Node *> children;
+
+        Type type;
+
+        std::string result_name;
+        DataTypePtr result_type;
+
+        /// For COLUMN node and propagated constants.
+        ColumnPtr column;
+    };
+
+    using Index = std::unordered_map<std::string_view, Node *>;
+
+private:
+    std::list<Node> nodes;
+    Index index;
+
+public:
+    ActionsDAG() = default;
+    ActionsDAG(const ActionsDAG &) = delete;
+    ActionsDAG & operator=(const ActionsDAG &) = delete;
+
+    const std::list<Node> & getNodes() const;
+    const Index & getIndex() const { return index; }
+
+    const Node & addInput(std::string name, DataTypePtr type);
+    const Node & addAlias(const std::string & name, std::string alias);
+    const Node & addArrayJoin(const std::string & source_name, std::string result_name);
+    const Node & addFunction(const FunctionOverloadResolverPtr & function, const Names & arguments);
+
+private:
+    Node & addNode(Node node);
+    Node & getNode(const std::string & name);
+};
+
 /** Contains a sequence of actions on the block.
   */
 class ExpressionActions
