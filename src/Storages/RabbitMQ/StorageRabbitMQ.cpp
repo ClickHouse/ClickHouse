@@ -721,8 +721,7 @@ bool StorageRabbitMQ::streamToViews()
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
     // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
-    insert->table_id = table_id;
+    auto insert = std::make_shared<ASTInsertQuery>(table_id);
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);

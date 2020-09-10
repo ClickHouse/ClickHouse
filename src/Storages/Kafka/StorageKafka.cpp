@@ -540,8 +540,7 @@ bool StorageKafka::streamToViews()
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
-    insert->table_id = table_id;
+    auto insert = std::make_shared<ASTInsertQuery>(table_id);
 
     size_t block_size = getMaxBlockSize();
 
