@@ -612,8 +612,8 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 
             for (const auto & kv : stage.column_to_updated)
             {
-                actions_chain.getLastActions()->add(ExpressionAction::copyColumn(
-                        kv.second->getColumnName(), kv.first, /* can_replace = */ true));
+                actions_chain.getLastStep().actions()->addAlias(
+                        kv.second->getColumnName(), kv.first, /* can_replace = */ true);
             }
         }
 
@@ -624,7 +624,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         actions_chain.finalize();
 
         /// Propagate information about columns needed as input.
-        for (const auto & column : actions_chain.steps.front()->actions()->getRequiredColumnsWithTypes())
+        for (const auto & column : actions_chain.steps.front()->getRequiredColumns())
             prepared_stages[i - 1].output_columns.insert(column.name);
     }
 
@@ -670,7 +670,7 @@ void MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & p
                 /// Execute DELETEs.
                 pipeline.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<FilterTransform>(header, step->actions(), stage.filter_column_names[i], false);
+                    return std::make_shared<FilterTransform>(header, step->getExpression(), stage.filter_column_names[i], false);
                 });
             }
             else
@@ -678,7 +678,7 @@ void MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & p
                 /// Execute UPDATE or final projection.
                 pipeline.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<ExpressionTransform>(header, step->actions());
+                    return std::make_shared<ExpressionTransform>(header, step->getExpression());
                 });
             }
         }

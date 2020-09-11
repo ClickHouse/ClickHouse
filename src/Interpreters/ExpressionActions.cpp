@@ -1251,7 +1251,7 @@ void ExpressionActionsChain::addStep()
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ExpressionActions>(columns, context)));
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1398,12 +1398,17 @@ void ExpressionActionsChain::JoinStep::finalize(const Names & required_output_)
     std::swap(result_columns, new_result_columns);
 }
 
-ExpressionActionsPtr & ExpressionActionsChain::Step::actions()
+ActionsDAGPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep *>(this)->actions;
+    return typeid_cast<ExpressionActionsStep *>(this)->actions_dag;
 }
 
-const ExpressionActionsPtr & ExpressionActionsChain::Step::actions() const
+const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
+{
+    return typeid_cast<const ExpressionActionsStep *>(this)->actions_dag;
+}
+
+ExpressionActionsPtr ExpressionActionsChain::Step::getExpression() const
 {
     return typeid_cast<const ExpressionActionsStep *>(this)->actions;
 }
@@ -1420,13 +1425,18 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs)
         addInput(input.name, input.type);
 }
 
-ActionsDAG::Node & ActionsDAG::addNode(Node node)
+ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
 {
-    if (index.count(node.result_name) != 0)
+    auto it = index.find(node.result_name);
+    if (it != index.end() && !can_replace)
         throw Exception("Column '" + node.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
     auto & res = nodes.emplace_back(std::move(node));
     index[res.result_name] = &res;
+
+    if (it != index.end())
+        it->second->renaming_parent = &res;
+
     return res;
 }
 
@@ -1460,7 +1470,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::string alias)
+const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::string alias, bool can_replace)
 {
     auto & child = getNode(name);
 
@@ -1472,7 +1482,7 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::str
     node.allow_constant_folding = child.allow_constant_folding;
     node.children.emplace_back(&child);
 
-    return addNode(std::move(node));
+    return addNode(std::move(node), can_replace);
 }
 
 const ActionsDAG::Node & ActionsDAG::addArrayJoin(const std::string & source_name, std::string result_name)
@@ -1591,9 +1601,10 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 {
     ColumnsWithTypeAndName result;
-    result.reserve(nodes.size());
+    result.reserve(index.size());
     for (const auto & node : nodes)
-        result.emplace_back(node.column, node.result_type, node.result_name);
+        if (!node.renaming_parent)
+            result.emplace_back(node.column, node.result_type, node.result_name);
 
     return result;
 }
@@ -1602,9 +1613,21 @@ NamesAndTypesList ActionsDAG::getNamesAndTypesList() const
 {
     NamesAndTypesList result;
     for (const auto & node : nodes)
-        result.emplace_back(node.result_name, node.result_type);
+        if (!node.renaming_parent)
+            result.emplace_back(node.result_name, node.result_type);
 
     return result;
+}
+
+Names ActionsDAG::getNames() const
+{
+    Names names;
+    names.reserve(index.size());
+    for (const auto & node : nodes)
+        if (!node.renaming_parent)
+            names.emplace_back(node.result_name);
+
+    return names;
 }
 
 std::string ActionsDAG::dumpNames() const
@@ -1625,7 +1648,9 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
     {
         Node * node = nullptr;
         size_t num_created_children = 0;
+        size_t num_expected_children = 0;
         std::vector<Node *> parents;
+        Node * renamed_child = nullptr;
     };
 
     std::vector<Data> data(nodes.size());
@@ -1643,12 +1668,37 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
 
     for (auto & node : nodes)
     {
+        data[reverse_index[&node]].num_expected_children += node.children.size();
+
         for (const auto & child : node.children)
             data[reverse_index[child]].parents.emplace_back(&node);
 
-        if (node.children.empty())
+        if (node.renaming_parent)
+        {
+
+            auto & cur = data[reverse_index[node.renaming_parent]];
+            cur.renamed_child = &node;
+            cur.num_expected_children += 1;
+        }
+    }
+
+    for (auto & node : nodes)
+    {
+        if (node.children.empty() && data[reverse_index[&node]].renamed_child == nullptr)
             ready_nodes.emplace(&node);
     }
+
+    auto update_parent = [&](Node * parent)
+    {
+        auto & cur = data[reverse_index[parent]];
+        ++cur.num_created_children;
+
+        if (cur.num_created_children == cur.num_expected_children)
+        {
+            auto & push_stack = parent->type == Type::ARRAY_JOIN ? ready_array_joins : ready_nodes;
+            push_stack.push(parent);
+        }
+    };
 
     auto expressions = std::make_shared<ExpressionActions>(NamesAndTypesList(), context);
 
@@ -1662,6 +1712,8 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
         for (const auto & child : node->children)
             argument_names.emplace_back(child->result_name);
 
+        auto & cur = data[reverse_index[node]];
+
         switch (node->type)
         {
             case Type::INPUT:
@@ -1671,7 +1723,7 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
                 expressions->add(ExpressionAction::addColumn({node->column, node->result_type, node->result_name}));
                 break;
             case Type::ALIAS:
-                expressions->add(ExpressionAction::copyColumn(argument_names.at(0), node->result_name));
+                expressions->add(ExpressionAction::copyColumn(argument_names.at(0), node->result_name, cur.renamed_child != nullptr));
                 break;
             case Type::ARRAY_JOIN:
                 expressions->add(ExpressionAction::arrayJoin(argument_names.at(0), node->result_name));
@@ -1681,17 +1733,11 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
                 break;
         }
 
-        for (const auto & parent : data[reverse_index[node]].parents)
-        {
-            auto & cur = data[reverse_index[parent]];
-            ++cur.num_created_children;
+        for (const auto & parent : cur.parents)
+            update_parent(parent);
 
-            if (parent->children.size() == cur.num_created_children)
-            {
-                auto & push_stack = parent->type == Type::ARRAY_JOIN ? ready_array_joins : ready_nodes;
-                push_stack.push(parent);
-            }
-        }
+        if (node->renaming_parent)
+            update_parent(node->renaming_parent);
     }
 
     return expressions;
