@@ -529,13 +529,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         else if (s_modify_ttl.ignore(pos, expected))
         {
-            if (!parser_ttl_list.parse(pos, command->ttl, expected))
-            {
-                if (s_remove.ignore(pos, expected))
-                    command->to_remove = RemoveProperty::TTL;
-                else
-                    return false;
-            }
+            if (s_remove.ignore(pos, expected))
+                command->to_remove = RemoveProperty::TTL;
+            else if (!parser_ttl_list.parse(pos, command->ttl, expected))
+                return false;
             command->type = ASTAlterCommand::MODIFY_TTL;
         }
         else if (s_materialize_ttl.ignore(pos, expected))

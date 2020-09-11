@@ -825,7 +825,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 
                     if (command.to_remove == RemoveProperty::TTL && column_from_table.ttl == nullptr)
                         command.ignore = true;
-                    if (command.to_remove == RemoveProperty::COMMENT && column_from_table.comment == "")
+                    if (command.to_remove == RemoveProperty::COMMENT && column_from_table.comment.empty())
                         command.ignore = true;
                     if (command.to_remove == RemoveProperty::CODEC && column_from_table.codec == nullptr)
                         command.ignore = true;
