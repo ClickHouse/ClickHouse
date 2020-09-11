@@ -101,7 +101,7 @@ void ASTAlterCommand::formatImpl(
 
         if (to_remove != RemoveProperty::NO_PROPERTY)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REMOVE ";
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE ";
             switch (to_remove)
             {
             case RemoveProperty::DEFAULT:

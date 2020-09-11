@@ -111,7 +111,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = AlterCommand::MODIFY_COLUMN;
 
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
-
         command.column_name = ast_col_decl.name;
         command.to_remove = command_ast->to_remove;
 

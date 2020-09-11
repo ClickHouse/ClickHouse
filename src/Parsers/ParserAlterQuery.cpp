@@ -438,7 +438,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (s_if_exists.ignore(pos, expected))
                 command->if_exists = true;
 
-            if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
+            ASTPtr column_name;
+            Pos stop_pos = pos;
+            if (!parser_name.parse(pos, column_name, expected))
                 return false;
 
             if (s_remove.ignore(pos, expected))
@@ -457,9 +459,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->to_remove = RemoveProperty::TTL;
                 else
                     return false;
+
+                auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+                tryGetIdentifierNameInto(column_name, column_declaration->name);
+                command->col_decl = column_declaration;
             }
             else
             {
+                pos = stop_pos;
+                if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
+                    return false;
+
                 if (s_first.ignore(pos, expected))
                     command->first = true;
                 else if (s_after.ignore(pos, expected))
