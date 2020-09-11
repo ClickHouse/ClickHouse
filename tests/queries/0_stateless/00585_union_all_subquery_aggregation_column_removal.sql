@@ -8,19 +8,19 @@ INSERT INTO clicks VALUES ('facebook.com'), ('yandex.ru'), ('google.com');
 INSERT INTO transactions VALUES ('facebook.com'), ('yandex.ru'), ('baidu.com');
 
 
-SELECT 
+SELECT
     sum(total_count) AS total, 
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
     FROM transactions 
     GROUP BY domain
     UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
@@ -33,19 +33,19 @@ LIMIT 10
 FORMAT JSONEachRow;
 
 
-SELECT 
+SELECT
     sum(total_count) AS total, 
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
     FROM clicks 
     GROUP BY domain
 UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
@@ -60,19 +60,19 @@ FORMAT JSONEachRow;
 
 SELECT DISTINCT * FROM
 (
-SELECT 
+SELECT
     sum(total_count) AS total, 
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
     FROM transactions 
     GROUP BY domain
     UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
@@ -85,19 +85,19 @@ LIMIT 10
 
 UNION ALL
 
-SELECT 
+SELECT
     sum(total_count) AS total, 
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
     FROM clicks 
     GROUP BY domain
 UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
@@ -112,20 +112,20 @@ LIMIT 10
 
 SELECT DISTINCT total, domain FROM
 (
-SELECT 
+SELECT
     sum(total_count) AS total, 
     sum(facebookHits) AS facebook,
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
     FROM transactions 
     GROUP BY domain
     UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
@@ -138,20 +138,20 @@ LIMIT 10
 
 UNION ALL
 
-SELECT 
+SELECT
     sum(total_count) AS total, 
     max(facebookHits) AS facebook,
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
     FROM clicks 
     GROUP BY domain
 UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
@@ -167,19 +167,19 @@ ORDER BY domain, total;
 
 SELECT * FROM
 (
-SELECT 
+SELECT
     sum(total_count) AS total, 
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
     FROM transactions 
     GROUP BY domain
     UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
@@ -192,19 +192,19 @@ LIMIT 10
 ) js1
 ALL FULL OUTER JOIN
 (
-SELECT 
+SELECT
     sum(total_count) AS total, 
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
     FROM clicks 
     GROUP BY domain
 UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
@@ -221,19 +221,19 @@ ORDER BY total, domain;
 
 SELECT total FROM
 (
-SELECT 
+SELECT
     sum(total_count) AS total, 
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
     FROM transactions 
     GROUP BY domain
     UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
@@ -246,19 +246,19 @@ LIMIT 10
 ) js1
 ALL FULL OUTER JOIN
 (
-SELECT 
+SELECT
     sum(total_count) AS total, 
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
     FROM clicks 
     GROUP BY domain
 UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
@@ -275,19 +275,19 @@ ORDER BY total, domain;
 
 SELECT domain FROM
 (
-SELECT 
+SELECT
     sum(total_count) AS total, 
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
     FROM transactions 
     GROUP BY domain
     UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
@@ -300,19 +300,19 @@ LIMIT 10
 ) js1
 ALL FULL OUTER JOIN
 (
-SELECT 
+SELECT
     sum(total_count) AS total, 
     domain
 FROM 
 (
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
     FROM clicks 
     GROUP BY domain
 UNION ALL 
-    SELECT 
+    SELECT
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
