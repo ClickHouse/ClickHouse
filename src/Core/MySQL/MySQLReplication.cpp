@@ -171,9 +171,7 @@ namespace MySQLReplication
 
         /// Ignore MySQL 8.0 optional metadata fields.
         /// https://mysqlhighavailability.com/more-metadata-is-written-into-binary-log/
-        auto remain = payload.available();
-        if (remain > CHECKSUM_CRC32_SIGNATURE_LENGTH)
-           payload.ignore(remain);
+        payload.ignoreAll();
     }
 
     /// Types that do not used in the binlog event:
@@ -915,7 +913,7 @@ namespace MySQLReplication
                 break;
             }
         }
-        payload.tryIgnore(CHECKSUM_CRC32_SIGNATURE_LENGTH);
+        payload.ignoreAll();
     }
 }
 
