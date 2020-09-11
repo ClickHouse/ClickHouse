@@ -107,12 +107,15 @@ struct AlterCommand
     /// Target column name
     String rename_to;
 
-    /// What to remove from column (or TTL)
-    RemoveProperty to_remove;
-
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
     void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
+
+    /// Checks that alter query changes data. For MergeTree:
+    ///    * column files (data and marks)
+    ///    * each part meta (columns.txt)
+    /// in each part on disk (it's not lightweight alter).
+    bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
     /// Check that alter command require data modification (mutation) to be
     /// executed. For example, cast from Date to UInt16 type can be executed
@@ -160,6 +163,9 @@ public:
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
     void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
+
+    /// At least one command modify data on disk.
+    bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
     /// At least one command modify settings.
     bool isSettingsAlter() const;
