@@ -29,11 +29,6 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
     return getID(storage.getInMemoryMetadataPtr()->getPartitionKey().sample_block);
 }
 
-#if defined (__GNUC__) && __GNUC__ >= 10
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wstringop-overflow"
-#endif
-
 /// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
 /// So if you want to change this method, be sure to guarantee compatibility with existing table data.
 String MergeTreePartition::getID(const Block & partition_key_sample) const
@@ -92,9 +87,6 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     return result;
 }
 
-#if defined (__GNUC__) && __GNUC__ >= 10
-    #pragma GCC diagnostic pop
-#endif
 
 void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const
 {
