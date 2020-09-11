@@ -99,42 +99,12 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
 
-        if (to_remove != RemoveProperty::NO_PROPERTY)
+        if (first)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FIRST " << (settings.hilite ? hilite_none : "");
+        else if (column)    /// AFTER
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE ";
-            switch (to_remove)
-            {
-            case RemoveProperty::DEFAULT:
-                settings.ostr << "DEFAULT";
-                break;
-            case RemoveProperty::MATERIALIZED:
-                settings.ostr << "MATERIALIZED";
-                break;
-            case RemoveProperty::ALIAS:
-                settings.ostr << "ALIAS";
-                break;
-            case RemoveProperty::COMMENT:
-                settings.ostr << "COMMENT";
-                break;
-            case RemoveProperty::CODEC:
-                settings.ostr << "CODEC";
-                break;
-            case RemoveProperty::TTL:
-                settings.ostr << "TTL";
-                break;
-            default:
-                __builtin_unreachable();
-            }
-        }
-        else
-        {
-            if (first)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FIRST " << (settings.hilite ? hilite_none : "");
-            else if (column)    /// AFTER
-            {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
-                column->formatImpl(settings, state, frame);
-            }
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
+            column->formatImpl(settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::COMMENT_COLUMN)
@@ -308,14 +278,7 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::MODIFY_TTL)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
-        if (ttl)
-        {
-            ttl->formatImpl(settings, state, frame);
-        }
-        else if (to_remove == RemoveProperty::TTL)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " REMOVE " << (settings.hilite ? hilite_none : "");
-        }
+        ttl->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {
