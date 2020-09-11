@@ -29,7 +29,7 @@ static void dump(const std::string & bin_path)
     for (size_t part_num = 0; !in.eof(); ++part_num)
     {
         UInt8 version;
-        String part_name;
+        std::string part_name;
         DB::MergeTreeWriteAheadLog::ActionType action_type;
 
         DB::readIntBinary(version, in);
