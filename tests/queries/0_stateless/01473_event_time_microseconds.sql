@@ -3,10 +3,10 @@
 -- an integration test as those metrics take 60s by default to be updated.
 -- Refer: tests/integration/test_asynchronous_metric_log_table.
 
-set log_queries = 1;
+SET log_queries = 1;
 
-select '01473_metric_log_table_event_start_time_microseconds_test';
-system flush logs;
+SELECT '01473_metric_log_table_event_start_time_microseconds_test';
+SYSTEM FLUSH LOGS;
 -- query assumes that the event_time field is accurate.
 WITH (
     (
@@ -21,10 +21,10 @@ WITH (
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time)
-SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(time)) = 0, 'ok', 'fail')
+SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(time)) = 0, 'ok', 'fail');
 
-select '01473_trace_log_table_event_start_time_microseconds_test';
-system flush logs;
+SELECT '01473_trace_log_table_event_start_time_microseconds_test';
+SYSTEM FLUSH LOGS;
 WITH (
     (
         SELECT event_time_microseconds
@@ -35,6 +35,40 @@ WITH (
     (
         SELECT event_time
         FROM system.trace_log
+        ORDER BY event_time DESC
+        LIMIT 1
+    ) AS time)
+SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(time)) = 0, 'ok', 'fail'); -- success
+
+SELECT '01473_query_log_table_event_start_time_microseconds_test';
+SYSTEM FLUSH LOGS;
+WITH (
+    (
+        SELECT event_time_microseconds
+        FROM system.query_log
+        ORDER BY event_time DESC
+        LIMIT 1
+    ) AS time_with_microseconds,
+    (
+        SELECT event_time
+        FROM system.query_log
+        ORDER BY event_time DESC
+        LIMIT 1
+    ) AS time)
+SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(time)) = 0, 'ok', 'fail'); -- success
+
+SELECT '01473_query_thread_log_table_event_start_time_microseconds_test';
+SYSTEM FLUSH LOGS;
+WITH (
+    (
+        SELECT event_time_microseconds
+        FROM system.query_thread_log
+        ORDER BY event_time DESC
+        LIMIT 1
+    ) AS time_with_microseconds,
+    (
+        SELECT event_time
+        FROM system.query_thread_log
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time)
