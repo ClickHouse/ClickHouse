@@ -15,7 +15,12 @@ namespace DB
 class JSONEachRowRowOutputFormat : public IRowOutputFormat
 {
 public:
-    JSONEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_);
+    JSONEachRowRowOutputFormat(
+        WriteBuffer & out_,
+        const Block & header_,
+        FormatFactory::WriteCallback callback,
+        const FormatSettings & settings_,
+        bool yield_strings_);
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
@@ -35,6 +40,9 @@ private:
     Names fields;
 
     FormatSettings settings;
+
+protected:
+    bool yield_strings;
 };
 
 }

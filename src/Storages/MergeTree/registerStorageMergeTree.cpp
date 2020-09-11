@@ -395,9 +395,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        bool has_arguments = arg_num + 2 <= arg_cnt && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
+        bool has_arguments = arg_num + 2 <= arg_cnt;
+        bool has_valid_arguments = has_arguments && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
 
-        if (has_arguments)
+        if (has_valid_arguments)
         {
             const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
@@ -420,7 +421,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
             ++arg_num;
         }
-        else if (is_extended_storage_def)
+        else if (is_extended_storage_def && !has_arguments)
         {
             /// Try use default values if arguments are not specified.
             /// It works for ON CLUSTER queries when database engine is Atomic and there are {shard} and {replica} in config.
@@ -428,7 +429,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             replica_name = "{replica}"; /// TODO maybe use hostname if {replica} is not defined?
         }
         else
-            throw Exception("Expected zookeper_path and replica_name arguments", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Expected two string literal arguments: zookeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -558,8 +559,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.context);
 
         if (args.storage_def->ttl_table)
+        {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 args.storage_def->ttl_table->ptr(), metadata.columns, args.context, metadata.primary_key);
+        }
 
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
