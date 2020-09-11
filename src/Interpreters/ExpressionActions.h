@@ -160,6 +160,8 @@ public:
     struct Node
     {
         std::vector<Node *> children;
+        /// This field is filled if current node is replaced by existing node with the same name.
+        Node * renaming_parent = nullptr;
 
         Type type;
 
@@ -192,16 +194,16 @@ public:
     ActionsDAG(const NamesAndTypesList & inputs);
     ActionsDAG(const ColumnsWithTypeAndName & inputs);
 
-    const std::list<Node> & getNodes() const;
     const Index & getIndex() const { return index; }
 
     ColumnsWithTypeAndName getResultColumns() const;
     NamesAndTypesList getNamesAndTypesList() const;
+    Names getNames() const;
     std::string dumpNames() const;
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addColumn(ColumnWithTypeAndName column);
-    const Node & addAlias(const std::string & name, std::string alias);
+    const Node & addAlias(const std::string & name, std::string alias, bool can_replace);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
@@ -212,9 +214,11 @@ public:
     ExpressionActionsPtr buildExpressions(const Context & context);
 
 private:
-    Node & addNode(Node node);
+    Node & addNode(Node node, bool can_replace = false);
     Node & getNode(const std::string & name);
 };
+
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 /** Contains a sequence of actions on the block.
   */
@@ -363,17 +367,19 @@ struct ExpressionActionsChain
         virtual std::string dump() const = 0;
 
         /// Only for ExpressionActionsStep
-        ExpressionActionsPtr & actions();
-        const ExpressionActionsPtr & actions() const;
+        ActionsDAGPtr & actions();
+        const ActionsDAGPtr & actions() const;
+        ExpressionActionsPtr getExpression() const;
     };
 
     struct ExpressionActionsStep : public Step
     {
+        ActionsDAGPtr actions_dag;
         ExpressionActionsPtr actions;
 
-        explicit ExpressionActionsStep(ExpressionActionsPtr actions_, Names required_output_ = Names())
+        explicit ExpressionActionsStep(ActionsDAGPtr actions_, Names required_output_ = Names())
             : Step(std::move(required_output_))
-            , actions(std::move(actions_))
+            , actions_dag(std::move(actions_))
         {
         }
 
@@ -458,7 +464,9 @@ struct ExpressionActionsChain
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
         }
 
-        return steps.back()->actions();
+        auto * step = typeid_cast<ExpressionActionsStep *>(&steps.back());
+        step->actions = step->actions_dag->buildExpressions(context);
+        return step->actions;
     }
 
     Step & getLastStep()
@@ -472,7 +480,7 @@ struct ExpressionActionsChain
     Step & lastStep(const NamesAndTypesList & columns)
     {
         if (steps.empty())
-            steps.emplace_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ExpressionActions>(columns, context)));
+            steps.emplace_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
         return *steps.back();
     }
 
