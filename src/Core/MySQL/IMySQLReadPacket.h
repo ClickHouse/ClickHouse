@@ -34,7 +34,7 @@ public:
 };
 
 uint64_t readLengthEncodedNumber(ReadBuffer & buffer);
-void readLengthEncodedString(std::string & s, ReadBuffer & buffer);
+void readLengthEncodedString(String & s, ReadBuffer & buffer);
 
 }
 

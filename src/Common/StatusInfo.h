@@ -16,9 +16,9 @@ namespace CurrentStatusInfo
 
     const char * getName(Status event);
     const char * getDocumentation(Status event);
-    const std::vector<std::pair<std::string, Int8>> & getAllPossibleValues(Status event);
+    const std::vector<std::pair<String, Int8>> & getAllPossibleValues(Status event);
 
-    extern std::unordered_map<std::string, Int8> values[];
+    extern std::unordered_map<String, Int8> values[];
     extern std::mutex locks[];
 
     Status end();

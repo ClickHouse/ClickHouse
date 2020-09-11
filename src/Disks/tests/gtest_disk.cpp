@@ -98,7 +98,7 @@ TYPED_TEST(DiskTest, readFile)
 
     // Test SEEK_SET
     {
-        std::string buf(4, '0');
+        String buf(4, '0');
         std::unique_ptr<DB::SeekableReadBuffer> in = this->disk->readFile("test_file");
 
         in->seek(5, SEEK_SET);
@@ -110,7 +110,7 @@ TYPED_TEST(DiskTest, readFile)
     // Test SEEK_CUR
     {
         std::unique_ptr<DB::SeekableReadBuffer> in = this->disk->readFile("test_file");
-        std::string buf(4, '0');
+        String buf(4, '0');
 
         in->readStrict(buf.data(), 4);
         EXPECT_EQ("test", buf);

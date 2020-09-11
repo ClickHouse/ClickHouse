@@ -1,7 +1,5 @@
 #pragma once
 
-using String = std::string;
-
 /** Allows to compare two incremental counters of type UInt32 in presence of possible overflow.
   * We assume that we compare values that are not too far away.
   * For example, when we increment 0xFFFFFFFF, we get 0. So, 0xFFFFFFFF is less than 0.

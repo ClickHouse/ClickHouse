@@ -110,7 +110,7 @@ private:
             if (my_node_it == children.end() || *my_node_it != node_name)
                 throw Poco::Exception("Assertion failed in LeaderElection");
 
-            std::string value = zookeeper.get(path + "/" + children.front());
+            String value = zookeeper.get(path + "/" + children.front());
 
 #if !defined(ARCADIA_BUILD) /// C++20; Replicated tables are unused in Arcadia.
             if (value.ends_with(suffix))

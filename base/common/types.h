@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <type_traits>
 
 #include <common/wide_integer.h>
@@ -27,6 +28,8 @@ using wUInt256 = wide::integer<256, unsigned>;
 
 static_assert(sizeof(wInt256) == 32);
 static_assert(sizeof(wUInt256) == 32);
+
+using String = std::string;
 
 /// The standard library type traits, such as std::is_arithmetic, with one exception
 /// (std::common_type), are "set in stone". Attempting to specialize them causes undefined behavior.

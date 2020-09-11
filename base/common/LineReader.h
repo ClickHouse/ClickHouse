@@ -4,9 +4,6 @@
 
 #include <atomic>
 #include <vector>
-#include <string>
-
-using String = std::string;
 
 class LineReader
 {
