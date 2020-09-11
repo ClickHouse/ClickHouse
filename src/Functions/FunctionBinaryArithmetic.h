@@ -171,6 +171,14 @@ struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op, ResultType>
 {
 };
 
+template <typename T>
+inline constexpr const auto & undec(const T & x)
+{
+    if constexpr (IsDecimalNumber<T>)
+        return x.value;
+    else
+        return x;
+}
 
 /// Binary operations for Decimals need scale args
 /// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
@@ -318,15 +326,6 @@ struct DecimalBinaryOperation
     }
 
 private:
-    template <typename T>
-    static constexpr const auto & undec(const T & x)
-    {
-        if constexpr (IsDecimalNumber<T>)
-            return x.value;
-        else
-            return x;
-    }
-
     /// there's implicit type convertion here
     static NativeResultType apply(NativeResultType a, NativeResultType b)
     {
