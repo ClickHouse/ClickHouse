@@ -64,31 +64,27 @@ template <typename A, typename B, typename Op, typename ResultType_ = typename O
 struct BinaryOperationImplBase
 {
     using ResultType = ResultType_;
-    /// Less specialisations to avoid N^2 variants. Cast small ints to 32-bit if other argument is bigint.
-    using CastA = std::conditional_t<(sizeof(A) < 4 && sizeof(B) > 8), typename NumberTraits::Construct<std::is_signed_v<A>, false, 4>::Type, A>;
-    using CastB = std::conditional_t<(sizeof(B) < 4 && sizeof(A) > 8), typename NumberTraits::Construct<std::is_signed_v<B>, false, 4>::Type, B>;
-
     static const constexpr bool allow_fixed_string = false;
 
     static void NO_INLINE vectorVector(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<ResultType>(CastA(a[i]), CastB(b[i]));
+            c[i] = Op::template apply<ResultType>(a[i], b[i]);
     }
 
-    static void NO_INLINE vectorConstant(const A * __restrict a, CastB b, ResultType * __restrict c, size_t size)
+    static void NO_INLINE vectorConstant(const A * __restrict a, B b, ResultType * __restrict c, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b);
     }
 
-    static void NO_INLINE constantVector(CastA a, const B * __restrict b, ResultType * __restrict c, size_t size)
+    static void NO_INLINE constantVector(A a, const B * __restrict b, ResultType * __restrict c, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a, b[i]);
     }
 
-    static ResultType constantConstant(CastA a, CastB b)
+    static ResultType constantConstant(A a, B b)
     {
         return Op::template apply<ResultType>(a, b);
     }
