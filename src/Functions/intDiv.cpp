@@ -22,7 +22,7 @@ namespace
 
 template <typename A, typename B>
 struct DivideIntegralByConstantImpl
-    : BinaryOperationImplBase<A, B, DivideIntegralImpl<A, B>>
+    : BinaryOperation<A, B, DivideIntegralImpl<A, B>>
 {
     using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;

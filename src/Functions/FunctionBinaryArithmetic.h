@@ -61,7 +61,7 @@ namespace ErrorCodes
   */
 
 template <typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
-struct BinaryOperationImplBase
+struct BinaryOperation
 {
     using ResultType = ResultType_;
     static const constexpr bool allow_fixed_string = false;
@@ -163,7 +163,7 @@ struct FixedStringOperationImpl
 
 
 template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
-struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op, ResultType>
+struct BinaryOperationImpl : BinaryOperation<A, B, Op, ResultType>
 {
 };
 
