@@ -210,6 +210,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     // event_time_microseconds from the same timespec. So it can be assumed that both of these
     // times are equal upto the precision of a second.
     elem.event_time = current_time;
+    elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = current_time;
     elem.query_start_time_microseconds = current_time_microseconds;
 
@@ -484,6 +485,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.type = QueryLogElementType::QUERY_START;
 
             elem.event_time = current_time;
+            elem.event_time_microseconds = current_time_microseconds;
             elem.query_start_time = current_time;
             elem.query_start_time_microseconds = current_time_microseconds;
 
@@ -555,6 +557,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.type = QueryLogElementType::QUERY_FINISH;
 
                 elem.event_time = time(nullptr);
+                elem.event_time_microseconds = getCurrentTimeMicroseconds();
 
                 status_info_to_query_log(elem, info, ast);
 
@@ -616,6 +619,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
 
                 elem.event_time = time(nullptr);
+                elem.event_time_microseconds = getCurrentTimeMicroseconds();
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception_code = getCurrentExceptionCode();
                 elem.exception = getCurrentExceptionMessage(false);
