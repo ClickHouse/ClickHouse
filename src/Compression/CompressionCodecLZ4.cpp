@@ -35,6 +35,11 @@ ASTPtr CompressionCodecLZ4::getCodecDesc() const
     return std::make_shared<ASTIdentifier>("LZ4");
 }
 
+void CompressionCodecLZ4::updateHash(SipHash & hash) const
+{
+    getCodecDesc()->updateTreeHash(hash);
+}
+
 UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     return LZ4_COMPRESSBOUND(uncompressed_size);
