@@ -390,6 +390,7 @@ void registerOutputFormatProcessorPostgreSQLWire(FormatFactory & factory);
 
 void registerInputFormatProcessorRegexp(FormatFactory & factory);
 void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
+void registerInputFormatProcessorLineAsString(FormatFactory & factory);
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 
 FormatFactory::FormatFactory()
@@ -454,6 +455,7 @@ FormatFactory::FormatFactory()
 
     registerInputFormatProcessorRegexp(*this);
     registerInputFormatProcessorJSONAsString(*this);
+    registerInputFormatProcessorLineAsString(*this);
 #if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorCapnProto(*this);
 #endif
