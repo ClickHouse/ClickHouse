@@ -6,6 +6,7 @@
 
 #if USE_MYSQL
 
+#include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <mysqlxx/Connection.h>
@@ -13,8 +14,6 @@
 
 namespace DB
 {
-
-Block getShowMasterLogHeader(const String & mysql_version);
 
 /** Materialize database engine metadata
  *
@@ -35,14 +34,15 @@ struct MaterializeMetadata
 
     size_t data_version = 1;
     size_t meta_version = 2;
+    String mysql_version;
 
     bool is_initialized;
 
     void fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection);
 
-    bool checkBinlogFileExists(
-        mysqlxx::PoolWithFailover::Entry & connection,
-        const String & binlog_file) const;
+    bool checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection) const;
+
+    Block getShowMasterLogHeader() const;
 
     void commitMetadata(const std::function<void()> & function, const String & persistent_tmp_path);
 

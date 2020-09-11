@@ -30,7 +30,7 @@ public:
         MySQLClient && client_,
         std::unique_ptr<MaterializeMySQLSettings> settings_);
 
-    MaterializeMetadata loadMetadata();
+    MaterializeMetadataPtr loadMetadata();
 
     void rethrowExceptionIfNeed() const;
 

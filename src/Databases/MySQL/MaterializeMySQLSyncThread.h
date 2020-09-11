@@ -16,7 +16,6 @@
 #    include <Databases/IDatabase.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
-#    include <Databases/MySQL/MySQLReplicaBuffer.h>
 #    include <Interpreters/StorageID.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <mysqlxx/Pool.h>

@@ -25,6 +25,12 @@
 
 namespace DB {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_MYSQL_VARIABLE;
+    extern const int LOGICAL_ERROR;
+}
+
 String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection)
 {
     Block variables_header{

@@ -2,7 +2,6 @@
 
 #if USE_MYSQL
 
-#include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/MySQL/MySQLUtils.h>
@@ -46,7 +45,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     executed_gtid_set = (*master_status.getByPosition(4).column)[0].safeGet<String>();
 }
 
-Block getShowMasterLogHeader(const String & mysql_version)
+Block MaterializeMetadata::getShowMasterLogHeader() const
 {
     if (startsWith(mysql_version, "5."))
     {
@@ -63,11 +62,9 @@ Block getShowMasterLogHeader(const String & mysql_version)
     };
 }
 
-bool MaterializeMetadata::checkBinlogFileExists(
-    mysqlxx::PoolWithFailover::Entry & connection,
-    const String & binlog_file) const
+bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection) const
 {
-    MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", getShowMasterLogHeader(mysql_version), DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", getShowMasterLogHeader(), DEFAULT_BLOCK_SIZE);
 
     while (Block block = input.read())
     {
@@ -158,7 +155,7 @@ bool MaterializeMetadata::tryInitFromFile(mysqlxx::PoolWithFailover::Entry & con
         assertString("\nData Version:\t", in);
         readIntText(data_version, in);
 
-        if (checkBinlogFileExists(connection, binlog_file))
+        if (checkBinlogFileExists(connection))
             return true;
     }
 
