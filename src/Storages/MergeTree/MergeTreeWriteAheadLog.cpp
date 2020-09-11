@@ -37,6 +37,13 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     });
 }
 
+MergeTreeWriteAheadLog::~MergeTreeWriteAheadLog()
+{
+    std::unique_lock lock(write_mutex);
+    if (sync_scheduled)
+        sync_cv.wait(lock, [this] { return !sync_scheduled; });
+}
+
 void MergeTreeWriteAheadLog::init()
 {
     out = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);

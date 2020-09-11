@@ -35,6 +35,8 @@ public:
     MergeTreeWriteAheadLog(MergeTreeData & storage_, const DiskPtr & disk_,
         const String & name = DEFAULT_WAL_FILE_NAME);
 
+    ~MergeTreeWriteAheadLog();
+
     void addPart(const Block & block, const String & part_name);
     void dropPart(const String & part_name);
     std::vector<MergeTreeMutableDataPartPtr> restore(const StorageMetadataPtr & metadata_snapshot);
