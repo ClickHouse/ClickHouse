@@ -506,15 +506,6 @@ def collect_build_flags(client):
     else:
         raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
-    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'")
-
-    if clickhouse_proc.returncode == 0:
-        if '10485760' in stdout:
-            result.append(BuildFlags.POLYMORPHIC_PARTS)
-    else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
-
     return result
 
 
