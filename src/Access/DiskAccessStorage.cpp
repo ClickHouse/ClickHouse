@@ -218,6 +218,16 @@ namespace
     }
 
 
+    /// Converts a path to an absolute path and append it with a separator.
+    String makeDirectoryPathCanonical(const String & directory_path)
+    {
+        auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
+        if (canonical_directory_path.has_filename())
+            canonical_directory_path += std::filesystem::path::preferred_separator;
+        return canonical_directory_path;
+    }
+
+
     /// Calculates the path to a file named <id>.sql for saving an access entity.
     String getEntityFilePath(const String & directory_path, const UUID & id)
     {
@@ -298,22 +308,17 @@ DiskAccessStorage::DiskAccessStorage(const String & directory_path_, bool readon
 {
 }
 
-
 DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_)
     : IAccessStorage(storage_name_)
 {
-    auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path_);
-    if (canonical_directory_path.has_filename())
-        canonical_directory_path += std::filesystem::path::preferred_separator;
+    directory_path = makeDirectoryPathCanonical(directory_path_);
+    readonly = readonly_;
 
     std::error_code create_dir_error_code;
-    std::filesystem::create_directories(canonical_directory_path, create_dir_error_code);
+    std::filesystem::create_directories(directory_path, create_dir_error_code);
 
-    if (!std::filesystem::exists(canonical_directory_path) || !std::filesystem::is_directory(canonical_directory_path) || create_dir_error_code)
-        throw Exception("Couldn't create directory " + canonical_directory_path.string() + " reason: '" + create_dir_error_code.message() + "'", ErrorCodes::DIRECTORY_DOESNT_EXIST);
-
-    directory_path = canonical_directory_path;
-    readonly = readonly_;
+    if (!std::filesystem::exists(directory_path) || !std::filesystem::is_directory(directory_path) || create_dir_error_code)
+        throw Exception("Couldn't create directory " + directory_path + " reason: '" + create_dir_error_code.message() + "'", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
     bool should_rebuild_lists = std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path));
     if (!should_rebuild_lists)
@@ -334,6 +339,12 @@ DiskAccessStorage::~DiskAccessStorage()
 {
     stopListsWritingThread();
     writeLists();
+}
+
+
+bool DiskAccessStorage::isStoragePathEqual(const String & directory_path_) const
+{
+    return getStoragePath() == makeDirectoryPathCanonical(directory_path_);
 }
 
 
