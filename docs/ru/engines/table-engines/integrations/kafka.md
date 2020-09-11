@@ -1,3 +1,8 @@
+---
+toc_priority: 5
+toc_title: Kafka
+---
+
 # Kafka {#kafka}
 
 Движок работает с [Apache Kafka](http://kafka.apache.org/).

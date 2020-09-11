@@ -1,3 +1,8 @@
+---
+toc_priority: 4
+toc_title: HDFS
+---
+
 # HDFS {#table_engines-hdfs}
 
 Управляет данными в HDFS. Данный движок похож на движки [File](../special/file.md#table_engines-file) и [URL](../special/url.md#table_engines-url).
