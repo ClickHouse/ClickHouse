@@ -1086,9 +1086,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     MutationCommands commands_for_part;
     for (const auto & command : commands)
     {
-        if (command.partition == nullptr || future_part.parts[0]->info.partition_id == data.getPartitionIDFromQuery(
-                command.partition, context_for_reading))
+        if (command.partition == nullptr)
             commands_for_part.emplace_back(command);
+        else
+        {
+            if (command.part)
+            {
+                if (future_part.parts[0]->name == command.partition->as<ASTLiteral &>().value.safeGet<String>())
+                    commands_for_part.emplace_back(command);
+            }
+            else
+            {
+                if (future_part.parts[0]->info.partition_id == data.getPartitionIDFromQuery(command.partition, context_for_reading))
+                    commands_for_part.emplace_back(command);
+            }
+        }
     }
 
     if (source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
@@ -1109,8 +1121,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const auto data_settings = data.getSettings();
     MutationCommands for_interpreter;
     MutationCommands for_file_renames;
+    MutationCommands for_metadata;
 
-    splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
+    splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames, for_metadata);
 
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
@@ -1132,6 +1145,38 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
+
+    new_data_part->fingerprint = source_part->fingerprint;
+
+    for (auto & cmd : for_metadata)
+    {
+        switch (cmd.type)
+        {
+            case MutationCommand::ADD_FINGERPRINT_PART:
+            {
+                if (!new_data_part->fingerprint.empty())
+                {
+                    /// This should be prevented before enqueuing the alter
+                    throw Exception("Part already has a fingerprint, skipping this command", ErrorCodes::LOGICAL_ERROR);
+                }
+
+                new_data_part->fingerprint = cmd.fingerprint;
+            }
+            break;
+
+            case MutationCommand::REMOVE_FINGERPRINT_PART:
+            {
+                if (new_data_part->fingerprint == cmd.fingerprint)
+                    new_data_part->fingerprint = "";
+                else
+                    LOG_ERROR(log, "Fingerprint does not match");
+            }
+            break;
+
+            default:
+                __builtin_unreachable();
+        }
+    }
 
     /// It shouldn't be changed by mutation.
     new_data_part->index_granularity_info = source_part->index_granularity_info;
@@ -1357,7 +1402,8 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
     MergeTreeData::DataPartPtr part,
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
-    MutationCommands & for_file_renames)
+    MutationCommands & for_file_renames,
+    MutationCommands & for_metadata)
 {
     ColumnsDescription part_columns(part->getColumns());
 
@@ -1366,7 +1412,11 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         NameSet mutated_columns;
         for (const auto & command : commands)
         {
-            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+            if (command.type == MutationCommand::Type::ADD_FINGERPRINT_PART)
+            {
+                for_metadata.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE)
@@ -1410,7 +1460,12 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
     {
         for (const auto & command : commands)
         {
-            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+            if (command.type == MutationCommand::Type::ADD_FINGERPRINT_PART
+                || command.type == MutationCommand::Type::REMOVE_FINGERPRINT_PART)
+            {
+                for_metadata.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE)
@@ -1819,6 +1874,16 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
         new_data_part->ttl_infos.write(out_hashing);
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
         new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+    }
+
+    if (!new_data_part->fingerprint.empty())
+    {
+        auto out = disk->writeFile(new_data_part->getFullRelativePath() + "fingerprint.txt", 36);
+        HashingWriteBuffer out_hashing(*out);
+        writeString(new_data_part->fingerprint, out_hashing);
+        out_hashing.next();
+        new_data_part->checksums.files["fingerprint.txt"].file_size = out_hashing.count();
+        new_data_part->checksums.files["fingerprint.txt"].file_hash = out_hashing.getHash();
     }
 
     {

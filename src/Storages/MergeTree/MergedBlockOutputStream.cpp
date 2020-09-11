@@ -164,6 +164,16 @@ void MergedBlockOutputStream::finalizePartOnDisk(
             out->sync();
     }
 
+    if (!new_part->fingerprint.empty())
+    {
+        auto out = volume->getDisk()->writeFile(part_path + "fingerprint.txt", 36);
+        HashingWriteBuffer out_hashing(*out);
+        writeString(new_part->fingerprint, out_hashing);
+        out_hashing.next();
+        checksums.files["fingerprint.txt"].file_size = out_hashing.count();
+        checksums.files["fingerprint.txt"].file_hash = out_hashing.getHash();
+    }
+
     removeEmptyColumnsFromPart(new_part, part_columns, checksums);
 
     {

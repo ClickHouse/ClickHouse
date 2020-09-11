@@ -112,6 +112,26 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.partition = command->partition;
         return res;
     }
+    else if (command->type == ASTAlterCommand::ADD_FINGERPRINT_PART)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = ADD_FINGERPRINT_PART;
+        res.partition = command->partition;
+        res.part = true;
+        res.fingerprint = command->fingerprint;
+        return res;
+    }
+    else if (command->type == ASTAlterCommand::REMOVE_FINGERPRINT_PART)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = REMOVE_FINGERPRINT_PART;
+        res.partition = command->partition;
+        res.part = true;
+        res.fingerprint = command->fingerprint;
+        return res;
+    }
     return {};
 }
 

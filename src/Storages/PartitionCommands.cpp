@@ -104,6 +104,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         command.type = PartitionCommand::ADD_FINGERPRINT_PART;
         command.partition = command_ast->partition;
         command.part = command_ast->part;
+        command.fingerprint = command_ast->fingerprint;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::REMOVE_FINGERPRINT_PART)
@@ -112,6 +113,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         command.type = PartitionCommand::REMOVE_FINGERPRINT_PART;
         command.partition = command_ast->partition;
         command.part = command_ast->part;
+        command.fingerprint = command_ast->fingerprint;
         return command;
     }
     else

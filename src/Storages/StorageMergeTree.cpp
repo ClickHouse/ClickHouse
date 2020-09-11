@@ -41,6 +41,8 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int PARTITION_DOESNT_EXIST;
+    extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
 namespace ActionLocks
@@ -342,11 +344,17 @@ public:
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String & mutation_file_name)
 {
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    return startMutationUnlocked(commands, mutation_file_name);
+}
+
+Int64 StorageMergeTree::startMutationUnlocked(const MutationCommands & commands, String & mutation_file_name)
+{
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = getStoragePolicy()->getAnyDisk();
     Int64 version;
-    std::lock_guard lock(currently_processing_in_background_mutex);
 
     MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get());
     version = increment.get();
@@ -830,7 +838,9 @@ bool StorageMergeTree::tryMutatePart()
                 {
                     if (command.type != MutationCommand::Type::DROP_COLUMN
                         && command.type != MutationCommand::Type::DROP_INDEX
-                        && command.type != MutationCommand::Type::RENAME_COLUMN)
+                        && command.type != MutationCommand::Type::RENAME_COLUMN
+                        && command.type != MutationCommand::Type::ADD_FINGERPRINT_PART
+                        && command.type != MutationCommand::Type::REMOVE_FINGERPRINT_PART)
                     {
                         commands_for_size_validation.push_back(command);
                     }
@@ -1139,14 +1149,22 @@ Pipe StorageMergeTree::alterPartition(
                 current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
             }
             break;
+
             case PartitionCommand::ADD_FINGERPRINT_PART:
             {
-                throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                String fingerprint = command.fingerprint;
+                if (fingerprint.empty())
+                    fingerprint = toString(UUIDHelpers::generateV4());
+
+                current_command_results = addFingerprintPart(command.partition, fingerprint);
             }
+            break;
+
             case PartitionCommand::REMOVE_FINGERPRINT_PART:
             {
-                throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                current_command_results = removeFingerprintPart(command.partition, command.fingerprint);
             }
+            break;
 
             default:
                 IStorage::alterPartition(query, metadata_snapshot, commands, query_context); // should throw an exception.
@@ -1399,6 +1417,130 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         PartLog::addNewParts(global_context, dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
         throw;
     }
+}
+
+PartitionCommandsResultInfo StorageMergeTree::addFingerprintPart(const ASTPtr & ast_part_name, const String & fingerprint)
+{
+    PartitionCommandsResultInfo results;
+    String part_name = ast_part_name->as<ASTLiteral>()->value.safeGet<String>();
+
+    MutationCommands commands;
+
+    {
+        MutationCommand command;
+
+        auto ast = std::make_shared<ASTAlterCommand>();
+        ast->type = ASTAlterCommand::ADD_FINGERPRINT_PART;
+        ast->partition = ast_part_name;
+        ast->fingerprint = fingerprint;
+
+        command.type = MutationCommand::ADD_FINGERPRINT_PART;
+        command.ast = std::move(ast);
+
+        command.partition = ast_part_name;
+        command.part = true;
+        command.fingerprint = fingerprint;
+
+        commands.push_back(command);
+    }
+
+    Int64 mutation_version;
+    String mutation_file_name;
+
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        auto data_parts_lock = lockParts();
+
+        auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+        auto part_it = data_parts_by_info.find(part_info);
+        if (part_it == data_parts_by_info.end() || (*part_it)->state != IMergeTreeDataPart::State::Committed)
+            throw Exception("Could not find part by name: " + part_name, ErrorCodes::PARTITION_DOESNT_EXIST);
+
+        LOG_INFO(log, "Starting mutation to add fingerprint " + fingerprint + " for part " + part_name);
+
+        {
+            if (currently_merging_mutating_parts.count(*part_it))
+                throw Exception("Part " + part_name + " participates in a merge, try again later.",
+                                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+
+            {
+                auto mutations_begin_it = current_mutations_by_version.upper_bound(part_info.getDataVersion());
+                if (mutations_begin_it != current_mutations_by_version.end())
+                    throw Exception("Part " + part_name + " has pending mutations, try again after all mutations have been executed.",
+                                    ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+            }
+
+            mutation_version = startMutationUnlocked(commands, mutation_file_name);
+        }
+    }
+
+    waitForMutation(mutation_version, mutation_file_name);
+
+    LOG_INFO(log, "Mutation to add fingerprint is finished");
+
+    return results;
+}
+
+PartitionCommandsResultInfo StorageMergeTree::removeFingerprintPart(const ASTPtr & ast_part_name, const String & fingerprint)
+{
+    PartitionCommandsResultInfo results;
+    String part_name = ast_part_name->as<ASTLiteral>()->value.safeGet<String>();
+
+    MutationCommands commands;
+
+    {
+        MutationCommand command;
+
+        auto ast = std::make_shared<ASTAlterCommand>();
+        ast->type = ASTAlterCommand::REMOVE_FINGERPRINT_PART;
+        ast->partition = ast_part_name;
+        ast->fingerprint = fingerprint;
+
+        command.type = MutationCommand::REMOVE_FINGERPRINT_PART;
+        command.ast = std::move(ast);
+
+        command.partition = ast_part_name;
+        command.part = true;
+        command.fingerprint = fingerprint;
+
+        commands.push_back(command);
+    }
+
+    Int64 mutation_version;
+    String mutation_file_name;
+
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        auto data_parts_lock = lockParts();
+
+        auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+        auto part_it = data_parts_by_info.find(part_info);
+        if (part_it == data_parts_by_info.end() || (*part_it)->state != IMergeTreeDataPart::State::Committed)
+            throw Exception("Could not find part by name: " + part_name, ErrorCodes::PARTITION_DOESNT_EXIST);
+
+        LOG_INFO(log, "Starting mutation to remove fingerprint " + fingerprint + " for part " + part_name);
+
+        {
+            if (currently_merging_mutating_parts.count(*part_it))
+                throw Exception("Part " + part_name + " participates in a merge, try again later.",
+                                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+
+            {
+                auto mutations_begin_it = current_mutations_by_version.upper_bound(part_info.getDataVersion());
+                if (mutations_begin_it != current_mutations_by_version.end())
+                    throw Exception("Part " + part_name + " has pending mutations, try again after all mutations have been executed.",
+                                    ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+            }
+
+            mutation_version = startMutationUnlocked(commands, mutation_file_name);
+        }
+    }
+
+    waitForMutation(mutation_version, mutation_file_name);
+
+    LOG_INFO(log, "Mutation to remove fingerprint is finished");
+
+    return results;
 }
 
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)

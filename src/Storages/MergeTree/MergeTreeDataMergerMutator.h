@@ -150,7 +150,8 @@ private:
         MergeTreeData::DataPartPtr part,
         const MutationCommands & commands,
         MutationCommands & for_interpreter,
-        MutationCommands & for_file_renames);
+        MutationCommands & for_file_renames,
+        MutationCommands & for_metadata);
 
     /// Apply commands to source_part i.e. remove and rename some columns in
     /// source_part and return set of files, that have to be removed or renamed

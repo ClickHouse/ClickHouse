@@ -57,6 +57,9 @@ struct PartitionCommand
     /// For FREEZE PARTITION
     String with_name;
 
+    /// FOR ADD|REMOVE FINGERPRINT
+    String fingerprint;
+
     enum MoveDestinationType
     {
         DISK,
@@ -97,6 +100,8 @@ struct PartitionCommandResultInfo
     /// Name of the backup (specified by user or increment value), filled in
     /// FREEZE
     String backup_name;
+    /// Fingerprint, filled in ADD FINGERPRINT
+    String fingerprint;
 };
 
 using PartitionCommandsResultInfo = std::vector<PartitionCommandResultInfo>;

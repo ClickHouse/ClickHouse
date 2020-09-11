@@ -33,6 +33,8 @@ struct MutationCommand
         DROP_INDEX,
         MATERIALIZE_TTL,
         RENAME_COLUMN,
+        ADD_FINGERPRINT_PART,
+        REMOVE_FINGERPRINT_PART,
     };
 
     Type type = EMPTY;
@@ -46,6 +48,7 @@ struct MutationCommand
     /// For MATERIALIZE INDEX
     String index_name;
     ASTPtr partition;
+    bool part = false;
 
     /// For reads, drops and etc.
     String column_name;
@@ -56,6 +59,9 @@ struct MutationCommand
 
     /// Column rename_to
     String rename_to;
+
+    /// Used by ADD|REMOVE FINGERPRINT FOR PART
+    String fingerprint;
 
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
     static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);

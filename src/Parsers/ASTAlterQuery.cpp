@@ -271,14 +271,27 @@ void ASTAlterCommand::formatImpl(
     }
     else if (type == ASTAlterCommand::ADD_FINGERPRINT_PART)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD FINGERPRINT FOR PART "
-                      << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD FINGERPRINT ";
+
+        if (!fingerprint.empty())
+            settings.ostr << (settings.hilite ? hilite_identifier : "")
+                          << quoteString(fingerprint)
+                          << (settings.hilite ? hilite_none : "")
+                          << " ";
+
+        settings.ostr << "FOR PART " << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::REMOVE_FINGERPRINT_PART)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REMOVE FINGERPRINT FOR PART "
-                      << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REMOVE FINGERPRINT ";
+
+        settings.ostr << (settings.hilite ? hilite_identifier : "")
+                      << quoteString(fingerprint)
+                      << (settings.hilite ? hilite_none : "")
+                      << " ";
+
+        settings.ostr << "FOR PART " << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::DELETE)

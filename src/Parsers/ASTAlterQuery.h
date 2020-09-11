@@ -173,6 +173,9 @@ public:
     /// Which property user want to remove
     String remove_property;
 
+    /// For ADD|REMOVE FINGERPRINT
+    String fingerprint;
+
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 
     ASTPtr clone() const override;

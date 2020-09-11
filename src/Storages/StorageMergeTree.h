@@ -135,6 +135,7 @@ private:
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
     Int64 startMutation(const MutationCommands & commands, String & mutation_file_name);
+    Int64 startMutationUnlocked(const MutationCommands & commands, String & mutation_file_name);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, const String & file_name);
 
@@ -155,6 +156,9 @@ private:
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);
+    PartitionCommandsResultInfo addFingerprintPart(const ASTPtr & part_name, const String & fingerprint);
+    PartitionCommandsResultInfo removeFingerprintPart(const ASTPtr & part_name, const String & fingerprint);
+
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
     /// Update mutation entries after part mutation execution. May reset old
     /// errors if mutation was successful. Otherwise update last_failed* fields
