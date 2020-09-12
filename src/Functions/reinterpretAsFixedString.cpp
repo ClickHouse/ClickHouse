@@ -8,13 +8,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
 
 class FunctionReinterpretAsFixedString : public IFunction
 {
@@ -83,6 +84,8 @@ public:
         block.getByPosition(result).column = std::move(dst);
     }
 };
+
+}
 
 void registerFunctionReinterpretAsFixedString(FunctionFactory & factory)
 {

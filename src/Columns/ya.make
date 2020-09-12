@@ -2,8 +2,6 @@
 LIBRARY()
 
 ADDINCL(
-    contrib/libs/icu/common
-    contrib/libs/icu/i18n
     contrib/libs/pdqsort
 )
 
@@ -12,6 +10,8 @@ PEERDIR(
     contrib/libs/icu
     contrib/libs/pdqsort
 )
+
+CFLAGS(-g0)
 
 SRCS(
     Collator.cpp

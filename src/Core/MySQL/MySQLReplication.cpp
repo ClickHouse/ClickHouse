@@ -100,8 +100,7 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(schema.data()), schema_len);
         payload.ignore(1);
 
-        size_t len
-            = header.event_size - EVENT_HEADER_LENGTH - 4 - 4 - 1 - 2 - 2 - status_len - schema_len - 1 - CHECKSUM_CRC32_SIGNATURE_LENGTH;
+        size_t len = payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH;
         query.resize(len);
         payload.readStrict(reinterpret_cast<char *>(query.data()), len);
         if (query.starts_with("BEGIN") || query.starts_with("COMMIT"))
@@ -172,7 +171,7 @@ namespace MySQLReplication
 
         /// Ignore MySQL 8.0 optional metadata fields.
         /// https://mysqlhighavailability.com/more-metadata-is-written-into-binary-log/
-        payload.ignore(payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
+        payload.ignoreAll();
     }
 
     /// Types that do not used in the binlog event:
@@ -222,6 +221,7 @@ namespace MySQLReplication
                 }
                 case MYSQL_TYPE_NEWDECIMAL:
                 case MYSQL_TYPE_STRING: {
+                    /// Big-Endian
                     auto b0 = UInt16(meta[pos] << 8);
                     auto b1 = UInt8(meta[pos + 1]);
                     column_meta.emplace_back(UInt16(b0 + b1));
@@ -232,6 +232,7 @@ namespace MySQLReplication
                 case MYSQL_TYPE_BIT:
                 case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
+                    /// Little-Endian
                     auto b0 = UInt8(meta[pos]);
                     auto b1 = UInt16(meta[pos + 1] << 8);
                     column_meta.emplace_back(UInt16(b0 + b1));
@@ -781,11 +782,8 @@ namespace MySQLReplication
                 gtid_sets.update(gtid_event->gtid);
                 break;
             }
-            default: {
-                /// DryRun event.
-                binlog_pos = event->header.log_pos;
-                break;
-            }
+            default:
+                throw ReplicationError("Position update with unsupport event", ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -912,11 +910,10 @@ namespace MySQLReplication
                 event = std::make_shared<DryRunEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.update(event);
                 break;
             }
         }
-        payload.tryIgnore(CHECKSUM_CRC32_SIGNATURE_LENGTH);
+        payload.ignoreAll();
     }
 }
 

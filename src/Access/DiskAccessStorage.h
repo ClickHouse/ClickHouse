@@ -42,9 +42,8 @@ private:
     void scheduleWriteLists(EntityType type);
     bool rebuildLists();
 
-    void startListsWritingThread();
-    void stopListsWritingThread();
     void listsWritingThreadFunc();
+    void stopListsWritingThread();
 
     void insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications);
     void removeNoLock(const UUID & id, Notifications & notifications);
@@ -74,7 +73,7 @@ private:
     bool failed_to_write_lists = false;                          /// Whether writing of the list files has been failed since the recent restart of the server.
     ThreadFromGlobalPool lists_writing_thread;                   /// List files are written in a separate thread.
     std::condition_variable lists_writing_thread_should_exit;    /// Signals `lists_writing_thread` to exit.
-    std::atomic<bool> lists_writing_thread_exited = false;
+    bool lists_writing_thread_is_waiting = false;
     mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];
     mutable std::mutex mutex;
 };
