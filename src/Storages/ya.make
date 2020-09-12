@@ -20,6 +20,7 @@ SRCS(
     IStorage.cpp
     KeyDescription.cpp
     LiveView/StorageLiveView.cpp
+    LiveView/TemporaryLiveViewCleaner.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
     MergeTree/BackgroundProcessingPool.cpp
