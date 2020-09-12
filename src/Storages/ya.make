@@ -10,6 +10,7 @@ SRCS(
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedBlockOutputStream.cpp
     LiveView/StorageLiveView.cpp
+    LiveView/TemporaryLiveViewCleaner.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
     MergeTree/BackgroundProcessingPool.cpp
