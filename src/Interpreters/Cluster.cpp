@@ -11,6 +11,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <ext/range.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB
 {
@@ -296,7 +297,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     config_prefix += ".";
 
     secret = config.getString(config_prefix + "secret", "");
-    std::erase(config_keys, "secret");
+    boost::range::remove_erase(config_keys, "secret");
 
     if (config_keys.empty())
         throw Exception("No cluster elements (shard, node) specified in config at path " + config_prefix, ErrorCodes::SHARD_HAS_NO_CONNECTIONS);
