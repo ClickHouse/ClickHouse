@@ -14,6 +14,7 @@
 
 #include <Access/AccessFlags.h>
 
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -248,6 +249,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Read from prepared input.
         source_header = input_pipe->getHeader();
     }
+
+    ApplyWithSubqueryVisitor().visit(query_ptr);
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
