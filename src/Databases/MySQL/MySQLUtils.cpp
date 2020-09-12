@@ -1,5 +1,11 @@
 #include <Databases/MySQL/MySQLUtils.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_MYSQL
+
 #include <memory>
 #include <sstream>
 #include <unordered_map>
@@ -161,3 +167,5 @@ BlockOutputStreamPtr getTableOutput(const String & database_name, const String &
 }
 
 }
+
+#endif
