@@ -16,7 +16,7 @@
 #include <IO/Operators.h>
 #include <optional>
 #include <Columns/ColumnSet.h>
-#include <stack>
+#include <queue>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -188,7 +188,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
             size_t result_position = sample_block.columns();
             sample_block.insert({nullptr, result_type, result_name});
-            function = function_base->prepare(sample_block, arguments, result_position);
+            if (!function)
+                function = function_base->prepare(sample_block, arguments, result_position);
             function->createLowCardinalityResultCache(settings.max_threads);
 
             bool compile_expressions = false;
@@ -200,7 +201,10 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             /// so we don't want to unfold non deterministic functions
             if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
             {
-                function->execute(sample_block, arguments, result_position, sample_block.rows(), true);
+                if (added_column)
+                    sample_block.getByPosition(result_position).column = added_column;
+                else
+                    function->execute(sample_block, arguments, result_position, sample_block.rows(), true);
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
@@ -588,8 +592,11 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
             arguments[i] = sample_block.getByName(action.argument_names[i]);
         }
 
-        action.function_base = action.function_builder->build(arguments);
-        action.result_type = action.function_base->getReturnType();
+        if (!action.function_base)
+        {
+            action.function_base = action.function_builder->build(arguments);
+            action.result_type = action.function_base->getReturnType();
+        }
     }
 
     if (action.type == ExpressionAction::ADD_ALIASES)
@@ -1250,6 +1257,12 @@ void ExpressionActionsChain::addStep()
     if (steps.empty())
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
+    if (auto * step = typeid_cast<ExpressionActionsStep *>(steps.back().get()))
+    {
+        if (!step->actions)
+            step->actions = step->actions_dag->buildExpressions(context);
+    }
+
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
     steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
 }
@@ -1422,7 +1435,7 @@ ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs)
 ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs)
 {
     for (const auto & input : inputs)
-        addInput(input.name, input.type);
+        addInput(input);
 }
 
 ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
@@ -1432,11 +1445,11 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
         throw Exception("Column '" + node.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
     auto & res = nodes.emplace_back(std::move(node));
-    index[res.result_name] = &res;
 
     if (it != index.end())
         it->second->renaming_parent = &res;
 
+    index[res.result_name] = &res;
     return res;
 }
 
@@ -1459,8 +1472,22 @@ const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type
     return addNode(std::move(node));
 }
 
+const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
+{
+    Node node;
+    node.type = Type::INPUT;
+    node.result_type = std::move(column.type);
+    node.result_name = std::move(column.name);
+    node.column = std::move(column.column);
+
+    return addNode(std::move(node));
+}
+
 const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
 {
+    if (!column.column)
+        throw Exception("Cannot add column " + column.name + " because it is nullptr", ErrorCodes::LOGICAL_ERROR);
+
     Node node;
     node.type = Type::COLUMN;
     node.result_type = std::move(column.type);
@@ -1485,7 +1512,8 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::str
     return addNode(std::move(node), can_replace);
 }
 
-const ActionsDAG::Node & ActionsDAG::addArrayJoin(const std::string & source_name, std::string result_name)
+const ActionsDAG::Node & ActionsDAG::addArrayJoin(
+    const std::string & source_name, std::string result_name, std::string unique_column_name)
 {
     auto & child = getNode(source_name);
 
@@ -1497,6 +1525,7 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const std::string & source_nam
     node.type = Type::ARRAY_JOIN;
     node.result_type = array_type->getNestedType();
     node.result_name = std::move(result_name);
+    node.unique_column_name_for_array_join = std::move(unique_column_name);
     node.children.emplace_back(&child);
 
     return addNode(std::move(node));
@@ -1506,7 +1535,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     const FunctionOverloadResolverPtr & function,
     const Names & argument_names,
     std::string result_name,
-    bool compile_expressions)
+    bool compile_expressions [[maybe_unused]])
 {
     size_t num_arguments = argument_names.size();
 
@@ -1663,8 +1692,8 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
         reverse_index[&node] = id;
     }
 
-    std::stack<Node *> ready_nodes;
-    std::stack<Node *> ready_array_joins;
+    std::queue<Node *> ready_nodes;
+    std::queue<Node *> ready_array_joins;
 
     for (auto & node : nodes)
     {
@@ -1705,7 +1734,7 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
     while (!ready_nodes.empty() || !ready_array_joins.empty())
     {
         auto & stack = ready_nodes.empty() ? ready_array_joins : ready_nodes;
-        Node * node = stack.top();
+        Node * node = stack.front();
         stack.pop();
 
         Names argument_names;
@@ -1726,11 +1755,29 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
                 expressions->add(ExpressionAction::copyColumn(argument_names.at(0), node->result_name, cur.renamed_child != nullptr));
                 break;
             case Type::ARRAY_JOIN:
-                expressions->add(ExpressionAction::arrayJoin(argument_names.at(0), node->result_name));
+                /// Here we copy argument because arrayJoin removes source column.
+                /// It makes possible to remove source column before arrayJoin if it won't be needed anymore.
+
+                /// It could have been possible to implement arrayJoin which keeps source column,
+                /// but in this case it will always be replicated (as many arrays), which is expensive.
+                expressions->add(ExpressionAction::copyColumn(argument_names.at(0), node->unique_column_name_for_array_join));
+                expressions->add(ExpressionAction::arrayJoin(node->unique_column_name_for_array_join, node->result_name));
                 break;
             case Type::FUNCTION:
-                expressions->add(ExpressionAction::applyFunction(node->function_builder, argument_names, node->result_name));
+            {
+                ExpressionAction action;
+                action.type = ExpressionAction::APPLY_FUNCTION;
+                action.result_name = node->result_name;
+                action.result_type = node->result_type;
+                action.function_builder = node->function_builder;
+                action.function_base = node->function_base;
+                action.function = node->function;
+                action.argument_names = std::move(argument_names);
+                action.added_column = node->column;
+
+                expressions->add(action);
                 break;
+            }
         }
 
         for (const auto & parent : cur.parents)

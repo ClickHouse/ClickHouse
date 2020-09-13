@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_ELEMENT_OF_SET;
+    extern const int BAD_ARGUMENTS;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -387,60 +388,81 @@ SetPtr makeExplicitSet(
 ScopeStack::ScopeStack(ActionsDAGPtr actions, const Context & context_)
     : context(context_)
 {
-    stack.emplace_back(std::move(actions));
+    auto & level = stack.emplace_back();
+    level.actions = std::move(actions);
+
+    for (const auto & [name, node] : level.actions->getIndex())
+        if (node->type == ActionsDAG::Type::INPUT)
+            level.inputs.emplace(name);
 }
 
 void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
 {
-    auto & actions = stack.emplace_back(std::make_shared<ActionsDAG>());
+    auto & level = stack.emplace_back();
+    level.actions = std::make_shared<ActionsDAG>();
     const auto & prev = stack[stack.size() - 2];
 
     for (const auto & input_column : input_columns)
-        actions->addInput(input_column.name, input_column.type);
+    {
+        level.actions->addInput(input_column.name, input_column.type);
+        level.inputs.emplace(input_column.name);
+    }
 
-    const auto & index = actions->getIndex();
+    const auto & index = level.actions->getIndex();
 
-    for (const auto & [name, node] : prev->getIndex())
+    for (const auto & [name, node] : prev.actions->getIndex())
     {
         if (index.count(name) == 0)
-            actions->addInput(node->result_name, node->result_type);
+            level.actions->addInput({node->column, node->result_type, node->result_name});
     }
 }
 
 size_t ScopeStack::getColumnLevel(const std::string & name)
 {
     for (int i = static_cast<int>(stack.size()) - 1; i >= 0; --i)
-        if (stack[i]->getIndex().count(name))
+    {
+        if (stack[i].inputs.count(name))
             return i;
+
+        const auto & index = stack[i].actions->getIndex();
+        auto it = index.find(name);
+
+        if (it != index.end() && it->second->type != ActionsDAG::Type::INPUT)
+            return i;
+    }
 
     throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
 void ScopeStack::addColumn(ColumnWithTypeAndName column)
 {
-    auto level = getColumnLevel(column.name);
-    const auto & node = stack[level]->addColumn(std::move(column));
+    const auto & node = stack[0].actions->addColumn(std::move(column));
 
-    for (size_t j = level + 1; j < stack.size(); ++j)
-        stack[j]->addInput(node.result_name, node.result_type);
+    for (size_t j = 1; j < stack.size(); ++j)
+        stack[j].actions->addInput({node.column, node.result_type, node.result_name});
 }
 
 void ScopeStack::addAlias(const std::string & name, std::string alias)
 {
-   auto level = getColumnLevel(name);
-   const auto & node = stack[level]->addAlias(name, std::move(alias));
+    auto level = getColumnLevel(name);
+    const auto & node = stack[level].actions->addAlias(name, std::move(alias));
 
     for (size_t j = level + 1; j < stack.size(); ++j)
-        stack[j]->addInput(node.result_name, node.result_type);
+        stack[j].actions->addInput({node.column, node.result_type, node.result_name});
 }
 
-void ScopeStack::addArrayJoin(const std::string & source_name, std::string result_name)
+void ScopeStack::addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name)
 {
-    auto level = getColumnLevel(source_name);
-    const auto & node = stack[level]->addAlias(source_name, std::move(result_name));
+    getColumnLevel(source_name);
 
-    for (size_t j = level + 1; j < stack.size(); ++j)
-        stack[j]->addInput(node.result_name, node.result_type);
+    if (stack.front().actions->getIndex().count(source_name) == 0)
+        throw Exception("Expression with arrayJoin cannot depend on lambda argument: " + source_name,
+                        ErrorCodes::BAD_ARGUMENTS);
+
+    const auto & node = stack.front().actions->addArrayJoin(source_name, std::move(result_name), std::move(unique_column_name));
+
+    for (size_t j = 1; j < stack.size(); ++j)
+        stack[j].actions->addInput({node.column, node.result_type, node.result_name});
 }
 
 void ScopeStack::addFunction(
@@ -453,27 +475,27 @@ void ScopeStack::addFunction(
     for (const auto & argument : argument_names)
         level = std::max(level, getColumnLevel(argument));
 
-    const auto & node = stack[level]->addFunction(function, argument_names, std::move(result_name), compile_expressions);
+    const auto & node = stack[level].actions->addFunction(function, argument_names, std::move(result_name), compile_expressions);
 
     for (size_t j = level + 1; j < stack.size(); ++j)
-        stack[j]->addInput(node.result_name, node.result_type);
+        stack[j].actions->addInput({node.column, node.result_type, node.result_name});
 }
 
 ActionsDAGPtr ScopeStack::popLevel()
 {
     auto res = std::move(stack.back());
     stack.pop_back();
-    return res;
+    return res.actions;
 }
 
 std::string ScopeStack::dumpNames() const
 {
-    return stack.back()->dumpNames();
+    return stack.back().actions->dumpNames();
 }
 
 const ActionsDAG::Index & ScopeStack::getIndex() const
 {
-    return stack.back()->getIndex();
+    return stack.back().actions->getIndex();
 }
 
 struct CachedColumnName
@@ -560,14 +582,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (!data.only_consts)
         {
             String result_name = column_name.get(ast);
-            /// Here we copy argument because arrayJoin removes source column.
-            /// It makes possible to remove source column before arrayJoin if it won't be needed anymore.
-
-            /// It could have been possible to implement arrayJoin which keeps source column,
-            /// but in this case it will always be replicated (as many arrays), which is expensive.
-            String tmp_name = data.getUniqueName("_array_join_" + arg->getColumnName());
-            data.addAlias(arg->getColumnName(), tmp_name);
-            data.addArrayJoin(tmp_name, result_name);
+            data.addArrayJoin(arg->getColumnName(), result_name);
         }
 
         return;

@@ -34,7 +34,13 @@ SetPtr makeExplicitSet(
   */
 struct ScopeStack
 {
-    using Levels = std::vector<ActionsDAGPtr>;
+    struct Level
+    {
+        ActionsDAGPtr actions;
+        NameSet inputs;
+    };
+
+    using Levels = std::vector<Level>;
 
     Levels stack;
 
@@ -48,7 +54,7 @@ struct ScopeStack
 
     void addColumn(ColumnWithTypeAndName column);
     void addAlias(const std::string & name, std::string alias);
-    void addArrayJoin(const std::string & source_name, std::string result_name);
+    void addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name);
     void addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
@@ -130,7 +136,7 @@ public:
 
         void addArrayJoin(const std::string & source_name, std::string result_name)
         {
-            actions_stack.addArrayJoin(source_name, std::move(result_name));
+            actions_stack.addArrayJoin(source_name, std::move(result_name), getUniqueName("_array_join_" + source_name));
         }
 
         void addFunction(const FunctionOverloadResolverPtr & function,

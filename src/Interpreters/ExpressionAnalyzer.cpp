@@ -158,24 +158,37 @@ void ExpressionAnalyzer::analyzeAggregation()
     if (select_query)
     {
         NamesAndTypesList array_join_columns;
+        columns_after_array_join = sourceColumns();
 
         bool is_array_join_left;
         if (ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList(is_array_join_left))
         {
             getRootActionsNoMakeSet(array_join_expression_list, true, temp_actions, false);
-            if (auto array_join = addMultipleArrayJoinAction(temp_actions, is_array_join_left))
-            {
-                auto sample_columns = temp_actions->getResultColumns();
-                array_join->prepare(sample_columns);
-                temp_actions = std::make_shared<ActionsDAG>(sample_columns);
-            }
+
+            auto array_join = addMultipleArrayJoinAction(temp_actions, is_array_join_left);
+            auto sample_columns = temp_actions->getResultColumns();
+            array_join->prepare(sample_columns);
+            temp_actions = std::make_shared<ActionsDAG>(sample_columns);
+
+            NamesAndTypesList new_columns_after_array_join;
+            NameSet added_columns;
 
             for (auto & column : temp_actions->getResultColumns())
+            {
                 if (syntax->array_join_result_to_source.count(column.name))
-                    array_join_columns.emplace_back(column.name, column.type);
+                {
+                    new_columns_after_array_join.emplace_back(column.name, column.type);
+                    added_columns.emplace(column.name);
+                }
+            }
+
+            for (auto & column : columns_after_array_join)
+                if (added_columns.count(column.name) == 0)
+                    new_columns_after_array_join.emplace_back(column.name, column.type);
+
+            columns_after_array_join.swap(new_columns_after_array_join);
         }
 
-        columns_after_array_join = sourceColumns();
         columns_after_array_join.insert(columns_after_array_join.end(), array_join_columns.begin(), array_join_columns.end());
 
         const ASTTablesInSelectQueryElement * join = select_query->join();
@@ -393,7 +406,7 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_sub
                                    sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
                                    no_subqueries, true, only_consts, !isRemoteStorage());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
-    visitor_data.getActions();
+    actions = visitor_data.getActions();
 }
 
 
@@ -881,7 +894,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     return true;
 }
 
-void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
+ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
     const auto * select_query = getSelectQuery();
 
@@ -927,7 +940,9 @@ void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain &
         }
     }
 
-    chain.getLastActions()->add(ExpressionAction::project(result_columns));
+    auto actions = chain.getLastActions();
+    actions->add(ExpressionAction::project(result_columns));
+    return actions;
 }
 
 
@@ -1175,8 +1190,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             chain.addStep();
         }
 
-        query_analyzer.appendProjectResult(chain);
-        final_projection = chain.getLastActions();
+        final_projection = query_analyzer.appendProjectResult(chain);
 
         finalize_chain(chain);
     }
