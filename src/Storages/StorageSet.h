@@ -31,10 +31,12 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        bool disable_set_and_join_persistency_,
         const Context & context_);
 
     String base_path;
     String path;
+    bool disable_set_and_join_persistency;
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
@@ -82,6 +84,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        bool disable_set_and_join_persistency_,
         const Context & context_);
 };
 

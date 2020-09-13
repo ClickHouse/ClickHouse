@@ -72,6 +72,7 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         bool overwrite,
+        bool disable_set_and_join_persistency_,
         const Context & context_);
 };
 
