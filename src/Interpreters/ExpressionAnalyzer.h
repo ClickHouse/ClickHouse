@@ -269,7 +269,7 @@ public:
     /// These appends are public only for tests
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    void appendProjectResult(ExpressionActionsChain & chain) const;
+    ExpressionActionsPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
 private:
     StorageMetadataPtr metadata_snapshot;

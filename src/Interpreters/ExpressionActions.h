@@ -168,6 +168,8 @@ public:
         std::string result_name;
         DataTypePtr result_type;
 
+        std::string unique_column_name_for_array_join;
+
         FunctionOverloadResolverPtr function_builder;
         /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
         FunctionBasePtr function_base;
@@ -202,9 +204,10 @@ public:
     std::string dumpNames() const;
 
     const Node & addInput(std::string name, DataTypePtr type);
+    const Node & addInput(ColumnWithTypeAndName column);
     const Node & addColumn(ColumnWithTypeAndName column);
-    const Node & addAlias(const std::string & name, std::string alias, bool can_replace);
-    const Node & addArrayJoin(const std::string & source_name, std::string result_name);
+    const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
+    const Node & addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name);
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
@@ -464,7 +467,7 @@ struct ExpressionActionsChain
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
         }
 
-        auto * step = typeid_cast<ExpressionActionsStep *>(&steps.back());
+        auto * step = typeid_cast<ExpressionActionsStep *>(steps.back().get());
         step->actions = step->actions_dag->buildExpressions(context);
         return step->actions;
     }
