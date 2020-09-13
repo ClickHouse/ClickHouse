@@ -1,3 +1,7 @@
+---
+toc_title: GROUP BY
+---
+
 # Секция GROUP BY {#select-group-by-clause}
 
 Секция `GROUP BY` переключает `SELECT` запрос в режим агрегации, который работает следующим образом:

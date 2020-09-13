@@ -1,3 +1,8 @@
+---
+toc_priority: 35
+toc_title: "\u041c\u0430\u0441\u0441\u0438\u0432\u044b"
+---
+
 # Массивы {#functions-for-working-with-arrays}
 
 ## empty {#function-empty}

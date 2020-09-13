@@ -1,3 +1,7 @@
+---
+toc_title: WITH
+---
+
 # Секция WITH {#sektsiia-with}
 
 Данная секция представляет собой [Common Table Expressions](https://ru.wikipedia.org/wiki/Иерархические_и_рекурсивные_запросы_в_SQL), то есть позволяет использовать результаты выражений из секции `WITH` в остальной части `SELECT` запроса.  

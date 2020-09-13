@@ -1,3 +1,8 @@
+---
+toc_priority: 42
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u043e\u0438\u0441\u043a\u0430\u0020\u0438\u0020\u0437\u0430\u043c\u0435\u043d\u044b\u0020\u0432\u0020\u0441\u0442\u0440\u043e\u043a\u0430\u0445"
+---
+
 # Функции поиска и замены в строках {#funktsii-poiska-i-zameny-v-strokakh}
 
 ## replaceOne(haystack, pattern, replacement) {#replaceonehaystack-pattern-replacement}

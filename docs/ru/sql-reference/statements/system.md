@@ -1,3 +1,8 @@
+---
+toc_priority: 37
+toc_title: SYSTEM
+---
+
 # Запросы SYSTEM {#query-language-system}
 
 -   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries) 

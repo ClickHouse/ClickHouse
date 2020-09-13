@@ -1,3 +1,8 @@
+---
+toc_priority: 60
+toc_title: clickhouse-local
+---
+
 # clickhouse-local {#clickhouse-local}
 
 Принимает на вход данные, которые можно представить в табличном виде и выполняет над ними операции, заданные на [языке запросов](../../operations/utilities/clickhouse-local.md) ClickHouse.

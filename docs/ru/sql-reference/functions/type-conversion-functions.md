@@ -1,3 +1,8 @@
+---
+toc_priority: 38
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u0440\u0435\u043e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u043d\u0438\u044f\u0020\u0442\u0438\u043f\u043e\u0432"
+---
+
 # Функции преобразования типов {#funktsii-preobrazovaniia-tipov}
 
 ## Общие проблемы преобразования чисел {#numeric-conversion-issues}

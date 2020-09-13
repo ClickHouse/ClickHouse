@@ -1,3 +1,8 @@
+---
+toc_priority: 39
+toc_title: numbers
+---
+
 # numbers {#numbers}
 
 `numbers(N)` - возвращает таблицу с единственным столбцом `number` (UInt64), содержащим натуральные числа от `0` до `N-1`.

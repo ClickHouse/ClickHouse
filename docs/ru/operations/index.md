@@ -1,7 +1,7 @@
 ---
 toc_folder_title: "\u042d\u043a\u0441\u043f\u043b\u0443\u0430\u0442\u0430\u0446\u0438\u044f"
 toc_priority: 41
-toc_title: intro
+toc_title: "\u042d\u043a\u0441\u043f\u043b\u0443\u0430\u0442\u0430\u0446\u0438\u044f"
 ---
 
 # Эксплуатация {#operations}

@@ -1,3 +1,8 @@
+---
+toc_priority: 45
+toc_title: hdfs
+---
+
 # hdfs {#hdfs}
 
 Создаёт таблицу из файла в HDFS. Данная табличная функция похожа на табличные функции [url](url.md) и [file](file.md).

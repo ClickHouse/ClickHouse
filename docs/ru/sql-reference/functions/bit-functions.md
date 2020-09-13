@@ -1,3 +1,8 @@
+---
+toc_priority: 48
+toc_title: "\u0411\u0438\u0442\u043e\u0432\u044b\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+---
+
 # Битовые функции {#bitovye-funktsii}
 
 Битовые функции работают для любой пары типов из UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.
