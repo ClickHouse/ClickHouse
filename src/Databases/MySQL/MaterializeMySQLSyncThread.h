@@ -113,6 +113,8 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> background_thread_pool;
 };
 
+using MaterializeMySQLSyncThreadPtr = std::shared_ptr<MaterializeMySQLSyncThread>;
+
 }
 
 #endif

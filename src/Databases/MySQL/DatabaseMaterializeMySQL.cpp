@@ -55,17 +55,10 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
     , mysql_database_name(mysql_database_name_)
     , settings(std::move(settings_))
     , pool(std::move(pool_))
+    , client(std::move(client_))
     , log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
-    , materialize_metadata(loadMetadata())
-    , materialize_thread(context, database_name_, mysql_database_name_, pool, std::move(client_), materialize_metadata, settings.get())
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
-}
-
-MaterializeMetadataPtr DatabaseMaterializeMySQL::loadMetadata()
-{
-    auto connection = pool.get();
-    return std::make_shared<MaterializeMetadata>(connection, getDatabase(database_name).getMetadataPath() + "/.metadata", checkVariableAndGetVersion(connection));
 }
 
 void DatabaseMaterializeMySQL::rethrowExceptionIfNeed() const
@@ -201,7 +194,10 @@ void DatabaseMaterializeMySQL::tryDumpTablesData(
         connection->query("FLUSH TABLES WITH READ LOCK;").execute();
 
         locked_tables = true;
-        materialize_metadata->fetchMasterStatus(connection); // overwrite metadata for consistency
+        materialize_metadata = std::make_shared<MaterializeMetadata>(
+            connection,
+            getDatabase(database_name).getMetadataPath() + "/.metadata",
+            checkVariableAndGetVersion(connection));
         connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
         connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
 
@@ -278,7 +274,16 @@ void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_for
         dumpTablesData(context);
 
         // TODO: is there a guarantee that dump queries will finish here?
-        materialize_thread.startSynchronization();
+        materialize_thread = std::make_shared<MaterializeMySQLSyncThread>(
+            context,
+            database_name,
+            mysql_database_name,
+            pool,
+            std::move(client),
+            materialize_metadata,
+            settings.get());
+
+        materialize_thread->startSynchronization();
     }
     catch (...)
     {
@@ -291,7 +296,7 @@ void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_for
 
 void DatabaseMaterializeMySQL::shutdown()
 {
-    materialize_thread.stopSynchronization();
+    materialize_thread.reset();
 
     auto iterator = nested_database->getTablesIterator(global_context, {});
 

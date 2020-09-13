@@ -143,7 +143,7 @@ void MaterializeMetadata::fetchMetadata(mysqlxx::PoolWithFailover::Entry & conne
 
 bool MaterializeMetadata::tryInitFromFile(mysqlxx::PoolWithFailover::Entry & connection)
 {
-    if (!Poco::File(persistent_path).exists()) {
+    if (Poco::File(persistent_path).exists()) {
         ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
         assertString("Version:\t" + toString(meta_version), in);
         assertString("\nBinlog File:\t", in);

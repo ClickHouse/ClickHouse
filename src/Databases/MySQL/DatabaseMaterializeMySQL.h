@@ -30,8 +30,6 @@ public:
         MySQLClient && client_,
         std::unique_ptr<MaterializeMySQLSettings> settings_);
 
-    MaterializeMetadataPtr loadMetadata();
-
     void rethrowExceptionIfNeed() const;
 
     void setException(const std::exception_ptr & exception);
@@ -44,9 +42,10 @@ protected:
     std::unique_ptr<MaterializeMySQLSettings> settings;
 
     mutable mysqlxx::Pool pool;
+    MySQLClient client;
     Poco::Logger * log;
     MaterializeMetadataPtr materialize_metadata;
-    MaterializeMySQLSyncThread materialize_thread;
+    MaterializeMySQLSyncThreadPtr materialize_thread;
 
     std::exception_ptr exception;
 
