@@ -1,3 +1,8 @@
+---
+toc_priority: 38
+toc_title: GraphiteMergeTree
+---
+
 # GraphiteMergeTree {#graphitemergetree}
 
 Движок предназначен для прореживания и агрегирования/усреднения (rollup) данных [Graphite](http://graphite.readthedocs.io/en/latest/index.html). Он может быть интересен разработчикам, которые хотят использовать ClickHouse как хранилище данных для Graphite.

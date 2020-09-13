@@ -1,3 +1,8 @@
+---
+toc_priority: 40
+toc_title: Join
+---
+
 # Join {#join}
 
 Подготовленная структура данных для использования в операциях [JOIN](../../../engines/table-engines/special/join.md#select-join).

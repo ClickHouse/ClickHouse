@@ -1,3 +1,8 @@
+---
+toc_priority: 14
+toc_title: Playground
+---
+
 # ClickHouse Playground {#clickhouse-playground}
 
 ClickHouse Playground позволяет моментально выполнить запросы к ClickHouse из бразуера.

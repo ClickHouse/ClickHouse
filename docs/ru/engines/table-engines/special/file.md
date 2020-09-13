@@ -1,3 +1,8 @@
+---
+toc_priority: 37
+toc_title: File
+---
+
 # File(Format) {#table_engines-file}
 
 Управляет данными в одном файле на диске в указанном формате.
