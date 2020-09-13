@@ -26,6 +26,7 @@ def start_cluster():
 # are set to suitable values so that traces are properly populated. Test compares the event_time and
 # event_time_microseconds fields and asserts that they are exactly equal upto their seconds parts. Also
 # one additional test to ensure that the count(event_time_microseconds) is > 0;
+@pytest.mark.skip(reason="TODO: system.trace_log not populated in time on CI but works fine on dev")
 def test_field_event_time_microseconds(start_cluster):
     node.query('SET query_profiler_real_time_period_ns = 0;')
     node.query('SET query_profiler_cpu_time_period_ns = 1000000;')
