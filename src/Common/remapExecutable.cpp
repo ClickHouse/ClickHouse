@@ -74,7 +74,7 @@ std::pair<void *, size_t> getMappedArea(void * ptr)
 
 __attribute__((__noinline__)) int64_t our_syscall(...)
 {
-     __asm__ __volatile__ (R"(
+    __asm__ __volatile__ (R"(
         movq %%rdi,%%rax;
         movq %%rsi,%%rdi;
         movq %%rdx,%%rsi;
