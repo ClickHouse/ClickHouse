@@ -45,4 +45,9 @@ ALTER TABLE r_no_prop_table MODIFY TTL REMOVE;
 
 SHOW CREATE TABLE r_no_prop_table;
 
+ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE ttl;
+ALTER TABLE r_no_prop_table MODIFY TTL remove;
+
+ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE dsadasda; --{serverError 36}
+
 DROP TABLE IF EXISTS r_no_prop_table;

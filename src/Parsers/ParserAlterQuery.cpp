@@ -92,6 +92,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
+    ParserIdentifier parser_remove_property;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
     ParserConstraintDeclaration parser_constraint_decl;
@@ -443,20 +444,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             if (s_remove.ignore(pos, expected))
             {
-                if (s_default.ignore(pos, expected))
-                    command->to_remove = RemoveProperty::DEFAULT;
-                else if (s_materialized.ignore(pos, expected))
-                    command->to_remove = RemoveProperty::MATERIALIZED;
-                else if (s_alias.ignore(pos, expected))
-                    command->to_remove = RemoveProperty::ALIAS;
-                else if (s_comment.ignore(pos, expected))
-                    command->to_remove = RemoveProperty::COMMENT;
-                else if (s_codec.ignore(pos, expected))
-                    command->to_remove = RemoveProperty::CODEC;
-                else if (s_ttl.ignore(pos, expected))
-                    command->to_remove = RemoveProperty::TTL;
-                else
+                ASTPtr identifier;
+                if (!parser_remove_property.parse(pos, identifier, expected))
                     return false;
+
+                String property_name;
+                tryGetIdentifierNameInto(identifier, property_name);
+                command->remove_property = Poco::toUpper(property_name);
             }
             else
             {
@@ -520,7 +514,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else if (s_modify_ttl.ignore(pos, expected))
         {
             if (s_remove.ignore(pos, expected))
-                command->to_remove = RemoveProperty::TTL;
+                command->remove_property = "TTL";
             else if (!parser_ttl_list.parse(pos, command->ttl, expected))
                 return false;
             command->type = ASTAlterCommand::MODIFY_TTL;

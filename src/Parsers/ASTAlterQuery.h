@@ -9,22 +9,6 @@
 namespace DB
 {
 
-/// Which property user wants to remove from column
-enum class RemoveProperty
-{
-    NO_PROPERTY,
-    /// Default specifiers
-    DEFAULT,
-    MATERIALIZED,
-    ALIAS,
-
-    /// Other properties
-    COMMENT,
-    CODEC,
-    TTL
-};
-
-
 /** ALTER query:
  *  ALTER TABLE [db.]name_type
  *      ADD COLUMN col_name type [AFTER col_after],
@@ -183,7 +167,8 @@ public:
     /// Target column name
     ASTPtr rename_to;
 
-    RemoveProperty to_remove = RemoveProperty::NO_PROPERTY;
+    /// Which property user want to remove
+    String remove_property;
 
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 

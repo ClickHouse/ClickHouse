@@ -39,6 +39,21 @@ struct AlterCommand
         RENAME_COLUMN,
     };
 
+    /// Which property user wants to remove from column
+    enum class RemoveProperty
+    {
+        NO_PROPERTY,
+        /// Default specifiers
+        DEFAULT,
+        MATERIALIZED,
+        ALIAS,
+
+        /// Other properties
+        COMMENT,
+        CODEC,
+        TTL
+    };
+
     Type type;
 
     String column_name;
@@ -128,6 +143,8 @@ struct AlterCommand
 
     /// Checks that any TTL changed by alter
     bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
+
+    bool isRemovingProperty() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after

@@ -99,32 +99,9 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
 
-        if (to_remove != RemoveProperty::NO_PROPERTY)
+        if (!remove_property.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE ";
-            switch (to_remove)
-            {
-            case RemoveProperty::DEFAULT:
-                settings.ostr << "DEFAULT";
-                break;
-            case RemoveProperty::MATERIALIZED:
-                settings.ostr << "MATERIALIZED";
-                break;
-            case RemoveProperty::ALIAS:
-                settings.ostr << "ALIAS";
-                break;
-            case RemoveProperty::COMMENT:
-                settings.ostr << "COMMENT";
-                break;
-            case RemoveProperty::CODEC:
-                settings.ostr << "CODEC";
-                break;
-            case RemoveProperty::TTL:
-                settings.ostr << "TTL";
-                break;
-            default:
-                __builtin_unreachable();
-            }
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE " << remove_property;
         }
         else
         {
@@ -312,7 +289,7 @@ void ASTAlterCommand::formatImpl(
         {
             ttl->formatImpl(settings, state, frame);
         }
-        else if (to_remove == RemoveProperty::TTL)
+        else if (remove_property == "TTL")
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " REMOVE " << (settings.hilite ? hilite_none : "");
         }
