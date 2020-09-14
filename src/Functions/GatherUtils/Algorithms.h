@@ -25,7 +25,7 @@ inline constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
 
 template <typename T>
-void ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
+void inline ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 {
     sink.elements.resize(sink.current_offset + slice.size);
     memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size * sizeof(T));
@@ -33,7 +33,7 @@ void ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySi
 }
 
 template <typename T, typename U>
-void ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
+void inline ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
     using NativeU = typename NativeType<U>::Type;
 
@@ -395,7 +395,7 @@ void ALWAYS_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const 
 
 
 template <typename SourceA, typename SourceB, typename Sink>
-void ALWAYS_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)
+void inline ALWAYS_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)
 {
     sink.reserve(std::max(src_a.getSizeForReserve(), src_b.getSizeForReserve()));
 
