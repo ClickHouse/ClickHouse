@@ -80,7 +80,7 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 ## 导入示例数据集 {#import-sample-dataset}
 
-现在是时候用一些示例数据填充我们的ClickHouse服务器。 在本教程中，我们将使用Yandex的匿名数据。Metrica，在成为开源之前以生产方式运行ClickHouse的第一个服务（更多关于这一点 [历史科](../introduction/history.md)). 有 [多种导入Yandex的方式。梅里卡数据集](example-datasets/metrica.md)，为了本教程，我们将使用最现实的一个。
+现在是时候用一些示例数据填充我们的ClickHouse服务端。 在本教程中，我们将使用Yandex.Metrica的匿名数据，它是在ClickHouse成为开源之前作为生产环境运行的第一个服务（关于这一点的更多内容请参阅[ClickHouse历史](../introduction/history.md))。有 [多种导入Yandex.Metrica数据集的的方法](example-datasets/metrica.md)，为了本教程，我们将使用最现实的一个。
 
 ### 下载并提取表数据 {#download-and-extract-table-data}
 
@@ -93,22 +93,22 @@ curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unx
 
 ### 创建表 {#create-tables}
 
-与大多数数据库管理系统一样，ClickHouse在逻辑上将表分组为 “databases”. 有一个 `default` 数据库，但我们将创建一个名为新的 `tutorial`:
+与大多数数据库管理系统一样，ClickHouse在逻辑上将表分组为数据库。包含一个 `default` 数据库，但我们将创建一个新的数据库 `tutorial`:
 
 ``` bash
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-与数据库相比，创建表的语法要复杂得多（请参阅 [参考资料](../sql-reference/statements/create.md). 一般 `CREATE TABLE` 声明必须指定三个关键的事情:
+与创建数据库相比，创建表的语法要复杂得多（请参阅 [参考资料](../sql-reference/statements/create.md). 一般 `CREATE TABLE` 声明必须指定三个关键的事情:
 
 1.  要创建的表的名称。
-2.  Table schema, i.e. list of columns and their [数据类型](../sql-reference/data-types/index.md).
-3.  [表引擎](../engines/table-engines/index.md) 及其设置，这决定了如何物理执行对此表的查询的所有细节。
+2.  表结构，例如：列名和对应的[数据类型](../sql-reference/data-types/index.md)。
+3.  [表引擎](../engines/table-engines/index.md) 及其设置，这决定了对此表的查询操作是如何在物理层面执行的所有细节。
 
-YandexMetrica是一个网络分析服务，样本数据集不包括其全部功能，因此只有两个表可以创建:
+Yandex.Metrica是一个网络分析服务，样本数据集不包括其全部功能，因此只有两个表可以创建:
 
--   `hits` 是一个表格，其中包含所有用户在服务所涵盖的所有网站上完成的每个操作。
--   `visits` 是一个包含预先构建的会话而不是单个操作的表。
+-   `hits` 表包含所有用户在服务所涵盖的所有网站上完成的每个操作。
+-   `visits` 表包含预先构建的会话，而不是单个操作。
 
 让我们看看并执行这些表的实际创建表查询:
 
@@ -453,9 +453,9 @@ SAMPLE BY intHash32(UserID)
 SETTINGS index_granularity = 8192
 ```
 
-您可以使用以下交互模式执行这些查询 `clickhouse-client` （只需在终端中启动它，而不需要提前指定查询）或尝试一些 [替代接口](../interfaces/index.md) 如果你愿意的话
+您可以使用`clickhouse-client`的交互模式执行这些查询（只需在终端中启动它，而不需要提前指定查询）。或者如果你愿意，可以尝试一些[替代接口](../interfaces/index.md)。
 
-正如我们所看到的, `hits_v1` 使用 [基本MergeTree引擎](../engines/table-engines/mergetree-family/mergetree.md)，而 `visits_v1` 使用 [崩溃](../engines/table-engines/mergetree-family/collapsingmergetree.md) 变体。
+正如我们所看到的, `hits_v1` 使用 [基本的MergeTree引擎](../engines/table-engines/mergetree-family/mergetree.md)，而 `visits_v1` 使用 [折叠树](../engines/table-engines/mergetree-family/collapsingmergetree.md) 变体。
 
 ### 导入数据 {#import-data}
 
