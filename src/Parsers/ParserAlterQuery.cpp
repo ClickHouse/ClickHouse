@@ -83,6 +83,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_to("TO");
 
     ParserKeyword s_remove("REMOVE");
+    ParserKeyword s_default("DEFAULT");
+    ParserKeyword s_materialized("MATERIALIZED");
+    ParserKeyword s_alias("ALIAS");
+    ParserKeyword s_comment("COMMENT");
+    ParserKeyword s_codec("CODEC");
+    ParserKeyword s_ttl("TTL");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
@@ -438,13 +444,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             if (s_remove.ignore(pos, expected))
             {
-                ASTPtr identifier;
-                if (!parser_remove_property.parse(pos, identifier, expected))
+                if (s_default.ignore(pos, expected))
+                    command->remove_property = "DEFAULT";
+                else if (s_materialized.ignore(pos, expected))
+                    command->remove_property = "MATERIALIZED";
+                else if (s_alias.ignore(pos, expected))
+                    command->remove_property = "ALIAS";
+                else if (s_comment.ignore(pos, expected))
+                    command->remove_property = "COMMENT";
+                else if (s_codec.ignore(pos, expected))
+                    command->remove_property = "CODEC";
+                else if (s_ttl.ignore(pos, expected))
+                    command->remove_property = "TTL";
+                else
                     return false;
-
-                String property_name;
-                tryGetIdentifierNameInto(identifier, property_name);
-                command->remove_property = Poco::toUpper(property_name);
             }
             else
             {
