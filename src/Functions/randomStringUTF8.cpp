@@ -17,6 +17,8 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+namespace
+{
 
 /* Generate string with a UTF-8 encoded text.
  * Take a single argument - length of result string in Unicode code points.
@@ -140,6 +142,8 @@ public:
         block.getByPosition(result).column = std::move(col_to);
     }
 };
+
+}
 
 void registerFunctionRandomStringUTF8(FunctionFactory & factory)
 {

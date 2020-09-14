@@ -129,7 +129,7 @@ private:
         Shift shift;
         if (decimal0 && decimal1)
         {
-            auto result_type = decimalResultType(*decimal0, *decimal1, false, false);
+            auto result_type = decimalResultType<false, false>(*decimal0, *decimal1);
             shift.a = static_cast<CompareInt>(result_type.scaleFactorFor(*decimal0, false).value);
             shift.b = static_cast<CompareInt>(result_type.scaleFactorFor(*decimal1, false).value);
         }
@@ -226,25 +226,25 @@ private:
     static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
         CompareInt x;
-        if constexpr (is_big_int_v<CompareInt> && IsDecimalNumber<A>)
+        if constexpr (IsDecimalNumber<A>)
             x = a.value;
         else
-            x = bigint_cast<CompareInt>(a);
+            x = a;
 
         CompareInt y;
-        if constexpr (is_big_int_v<CompareInt> && IsDecimalNumber<B>)
+        if constexpr (IsDecimalNumber<B>)
             y = b.value;
         else
-            y = bigint_cast<CompareInt>(b);
+            y = b;
 
         if constexpr (_check_overflow)
         {
             bool overflow = false;
 
             if constexpr (sizeof(A) > sizeof(CompareInt))
-                overflow |= (A(x) != a);
+                overflow |= (bigint_cast<A>(x) != a);
             if constexpr (sizeof(B) > sizeof(CompareInt))
-                overflow |= (B(y) != b);
+                overflow |= (bigint_cast<B>(y) != b);
             if constexpr (is_unsigned_v<A>)
                 overflow |= (x < 0);
             if constexpr (is_unsigned_v<B>)

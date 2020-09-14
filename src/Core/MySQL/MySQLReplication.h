@@ -499,7 +499,7 @@ namespace MySQLReplication
         virtual BinlogEventPtr readOneEvent() = 0;
         virtual void setReplicateDatabase(String db) = 0;
         virtual void setGTIDSets(GTIDSets sets) = 0;
-        virtual ~IFlavor() = default;
+        virtual ~IFlavor() override = default;
     };
 
     class MySQLFlavor : public IFlavor

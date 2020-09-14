@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 
 #include <atomic>
 #include <cmath>
@@ -22,6 +23,10 @@ namespace DB
     }
 }
 
+namespace ProfileEvents
+{
+    extern const Event QueryMemoryLimitExceeded;
+}
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
@@ -104,6 +109,7 @@ void MemoryTracker::alloc(Int64 size)
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         auto untrack_lock = blocker.cancel(); // NOLINT
 
+        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         std::stringstream message;
         message << "Memory tracker";
         if (const auto * description = description_ptr.load(std::memory_order_relaxed))
@@ -136,6 +142,7 @@ void MemoryTracker::alloc(Int64 size)
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         auto no_track = blocker.cancel(); // NOLINT
 
+        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         std::stringstream message;
         message << "Memory limit";
         if (const auto * description = description_ptr.load(std::memory_order_relaxed))

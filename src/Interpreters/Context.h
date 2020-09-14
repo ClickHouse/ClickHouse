@@ -445,11 +445,7 @@ public:
 
     void makeQueryContext() { query_context = this; }
     void makeSessionContext() { session_context = this; }
-    void makeGlobalContext()
-    {
-        global_context = this;
-        DatabaseCatalog::init(this);
-    }
+    void makeGlobalContext() { initGlobal(); global_context = this; }
 
     const Settings & getSettingsRef() const { return settings; }
 
@@ -503,6 +499,7 @@ public:
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
+    BackgroundSchedulePool & getMessageBrokerSchedulePool();
     BackgroundSchedulePool & getDistributedSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
@@ -623,6 +620,8 @@ public:
     MySQLWireContext mysql;
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
+
+    void initGlobal();
 
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateAccessRights();
