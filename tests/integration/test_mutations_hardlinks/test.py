@@ -9,7 +9,7 @@ from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1')
+node1 = cluster.add_instance('node1', main_configs=['configs/wide_parts_only.xml'])
 
 @pytest.fixture(scope="module")
 def started_cluster():
