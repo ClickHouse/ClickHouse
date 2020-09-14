@@ -382,10 +382,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
         }
 
-        IBlockInputStream::LocalLimits limits;
+        LocalLimits limits;
         if (!interpreter->ignoreLimits())
         {
-            limits.mode = IBlockInputStream::LIMITS_CURRENT;
+            limits.mode = LimitsMode::LIMITS_CURRENT;
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
