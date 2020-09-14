@@ -93,6 +93,8 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     Block table_sample = metadata_snapshot->getSampleBlock();
+
+    /// Process column transformers (e.g. * EXCEPT(a)), asterisks and qualified columns.
     const auto & columns = metadata_snapshot->getColumns();
     auto names_and_types = columns.getOrdinary();
     removeDuplicateColumns(names_and_types);
