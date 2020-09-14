@@ -21,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -81,14 +82,14 @@ void SetOrJoinBlockOutputStream::write(const Block & block)
     Block sorted_block = block.sortColumns();
 
     table.insertBlock(sorted_block);
-    if(!disable_set_and_join_persistency)
+    if (!disable_set_and_join_persistency)
         backup_stream.write(sorted_block);
 }
 
 void SetOrJoinBlockOutputStream::writeSuffix()
 {
     table.finishInsert();
-    if(!disable_set_and_join_persistency)
+    if (!disable_set_and_join_persistency)
     {
         backup_stream.flush();
         compressed_backup_buf.next();
