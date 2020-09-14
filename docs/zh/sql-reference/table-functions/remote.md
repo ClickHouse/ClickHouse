@@ -73,6 +73,6 @@ example01-{01..02}-{1|2}
 如果未指定用户, 将会使用`default`。
 如果未指定密码，则使用空密码。
 
-`remoteSecure` - 与 `remote` 相同，但是会使用加密链接。默认端口 — [tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 配置文件或或9440.
+`remoteSecure` - 与 `remote` 相同，但是会使用加密链接。默认端口为配置文件中的[tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure)，或9440。
 
 [原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->
