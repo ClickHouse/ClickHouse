@@ -6,6 +6,7 @@
 #include <Columns/ColumnVectorHelper.h>
 #include <common/unaligned.h>
 #include <Core/Field.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -131,7 +132,7 @@ public:
 
     void insertFrom(const IColumn & src, size_t n) override
     {
-        data.push_back(static_cast<const Self &>(src).getData()[n]);
+        data.push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
     void insertData(const char * pos, size_t /*length*/) override
@@ -183,7 +184,7 @@ public:
     /// This method implemented in header because it could be possibly devirtualized.
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
     {
-        return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
+        return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
