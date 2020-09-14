@@ -4,6 +4,9 @@
 #include "Selectors.h"
 #include "Algorithms.h"
 
+namespace
+{
+
 namespace DB::GatherUtils
 {
 struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySinkSourceSelector<SliceDynamicOffsetBoundedSelectArraySource>
@@ -14,6 +17,8 @@ struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySinkSourceSelect
         sliceDynamicOffsetBounded(source, sink, offset_column, length_column);
     }
 };
+
+}
 
 void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, const IColumn & offset_column, const IColumn & length_column)
 {

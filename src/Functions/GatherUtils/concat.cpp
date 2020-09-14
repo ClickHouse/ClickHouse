@@ -16,6 +16,9 @@ namespace ErrorCodes
 namespace GatherUtils
 {
 
+namespace
+{
+
 struct ArrayConcat : public ArraySinkSourceSelector<ArrayConcat>
 {
     using Sources = std::vector<std::unique_ptr<IArraySource>>;
@@ -41,6 +44,8 @@ struct ArrayConcat : public ArraySinkSourceSelector<ArrayConcat>
         concat<SourceType, Sink>(sources, sink);
     }
 };
+
+}
 
 void concat(const std::vector<std::unique_ptr<IArraySource>> & sources, IArraySink & sink)
 {
