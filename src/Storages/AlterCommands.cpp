@@ -913,27 +913,24 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             {
                 if (command.to_remove == RemoveProperty::DEFAULT && column_default->kind != ColumnDefaultKind::Default)
                 {
-                    throw Exception{
+                    throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Cannot remove DEFAULT from column {}, because column default type is {}. Use REMOVE {} to delete it.",
-                            backQuote(column_name), toString(column_default->kind), toString(column_default->kind)
-                    };
+                            backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
                 }
                 if (command.to_remove == RemoveProperty::MATERIALIZED && column_default->kind != ColumnDefaultKind::Materialized)
                 {
-                    throw Exception{
+                    throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Cannot remove MATERIALIZED from column {}, because column default type is {}. Use REMOVE {} to delete it.",
-                            backQuote(column_name), toString(column_default->kind), toString(column_default->kind)
-                    };
+                        backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
                 }
                 if (command.to_remove == RemoveProperty::ALIAS && column_default->kind != ColumnDefaultKind::Alias)
                 {
-                    throw Exception{
+                    throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Cannot remove ALIAS from column {}, because column default type is {}. Use REMOVE {} to delete it.",
-                            backQuote(column_name), toString(column_default->kind), toString(column_default->kind)
-                    };
+                        backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
                 }
             }
 
