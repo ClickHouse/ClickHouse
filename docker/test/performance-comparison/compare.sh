@@ -394,12 +394,24 @@ create table query_run_metrics_denorm engine File(TSV, 'analyze/query-run-metric
     order by test, query_index, metric_names, version, query_id
     ;
 
+-- Filter out tests that don't have an even number of runs, to avoid breaking
+-- the further calculations. This may happen if there was an error during the
+-- test runs, e.g. the server died. It will be reported in test errors, so we
+-- don't have to report it again.
+create view broken_queries as
+    select test, query_index
+    from query_runs
+    group by test, query_index
+    having count(*) % 2 != 0
+    ;
+
 -- This is for statistical processing with eqmed.sql
 create table query_run_metrics_for_stats engine File(
         TSV, -- do not add header -- will parse with grep
         'analyze/query-run-metrics-for-stats.tsv')
     as select test, query_index, 0 run, version, metric_values
     from query_run_metric_arrays
+    where (test, query_index) not in broken_queries
     order by test, query_index, run, version
     ;
 
@@ -565,39 +577,53 @@ create table unstable_queries_report engine File(TSV, 'report/unstable-queries.t
         toDecimal64(stat_threshold, 3), unstable_fail, test, query_index, query_display_name
     from queries where unstable_show order by stat_threshold desc;
 
-create table test_time_changes engine File(TSV, 'report/test-time-changes.tsv') as
-    select test, queries, average_time_change from (
-        select test, count(*) queries,
-            sum(left) as left, sum(right) as right,
-            (right - left) / right average_time_change
-        from queries
-        group by test
-        order by abs(average_time_change) desc
-    )
-    ;
 
-create table unstable_tests engine File(TSV, 'report/unstable-tests.tsv') as
-    select test, sum(unstable_show) total_unstable, sum(changed_show) total_changed
+create view test_speedup as
+    select
+        test,
+        exp2(avg(log2(left / right))) times_speedup,
+        count(*) queries,
+        unstable + changed bad,
+        sum(changed_show) changed,
+        sum(unstable_show) unstable
     from queries
     group by test
-    order by total_unstable + total_changed desc
+    order by times_speedup desc
+    ;
+
+create view total_speedup as
+    select
+        'Total' test,
+        exp2(avg(log2(times_speedup))) times_speedup,
+        sum(queries) queries,
+        unstable + changed bad,
+        sum(changed) changed,
+        sum(unstable) unstable
+    from test_speedup
     ;
 
 create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes.tsv') as
-    select test,
-        queries,
-        coalesce(total_unstable, 0) total_unstable,
-        coalesce(total_changed, 0) total_changed,
-        total_unstable + total_changed total_bad,
-        coalesce(toString(toDecimal64(average_time_change, 3)), '??') average_time_change_str
-    from test_time_changes
-    full join unstable_tests
-    using test
-    where (abs(average_time_change) > 0.05 and queries > 5)
-        or (total_bad > 0)
-    order by total_bad desc, average_time_change desc
-    settings join_use_nulls = 1
+    with
+        (times_speedup >= 1
+            ? '-' || toString(toDecimal64(times_speedup, 3)) || 'x'
+            : '+' || toString(toDecimal64(1 / times_speedup, 3)) || 'x')
+        as times_speedup_str
+    select test, times_speedup_str, queries, bad, changed, unstable
+    -- Not sure what's the precedence of UNION ALL vs WHERE & ORDER BY, hence all
+    -- the braces.
+    from (
+        (
+            select * from total_speedup
+        ) union all (
+            select * from test_speedup
+            where
+                (times_speedup >= 1 ? times_speedup : (1 / times_speedup)) >= 1.005
+                or bad
+        )
+    )
+    order by test = 'Total' desc, times_speedup desc
     ;
+
 
 create view total_client_time_per_query as select *
     from file('analyze/client-times.tsv', TSV,
