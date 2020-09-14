@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <sstream>
 #include <functional>
-#include <filesystem>
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
@@ -15,23 +14,14 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/Exception.h>
-#include <common/getResource.h>
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
-
-namespace fs = std::filesystem;
 
 using namespace Poco::XML;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int FILE_DOESNT_EXIST;
-}
 
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
@@ -450,27 +440,9 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
-    XMLDocumentPtr config;
     LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
-    if (fs::exists(path))
-    {
-        config = dom_parser.parse(path);
-    }
-    else
-    {
-        /// When we can use config embedded in binary.
-        if (path == "config.xml")
-        {
-            auto resource = getResource("embedded.xml");
-            if (resource.empty())
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
-            LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
-            config = dom_parser.parseMemory(resource.data(), resource.size());
-        }
-        else
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist", path);
-    }
+    XMLDocumentPtr config = dom_parser.parse(path);
 
     std::vector<std::string> contributing_files;
     contributing_files.push_back(path);
@@ -612,7 +584,6 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
     {
         if (preprocessed_path.empty())
         {
-            fs::path preprocessed_configs_path("preprocessed_configs/");
             auto new_path = loaded_config.config_path;
             if (new_path.substr(0, main_config_path.size()) == main_config_path)
                 new_path.replace(0, main_config_path.size(), "");
@@ -631,17 +602,15 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 }
                 else
                 {
-                    fs::path loaded_config_path(loaded_config.configuration->getString("path"));
-                    preprocessed_dir = loaded_config_path / preprocessed_configs_path;
+                    preprocessed_dir = loaded_config.configuration->getString("path") + "/preprocessed_configs/";
                 }
             }
             else
             {
-                fs::path preprocessed_dir_path(preprocessed_dir);
-                preprocessed_dir = (preprocessed_dir_path / preprocessed_configs_path).string();
+                preprocessed_dir += "/preprocessed_configs/";
             }
 
-            preprocessed_path = (fs::path(preprocessed_dir) / fs::path(new_path)).string();
+            preprocessed_path = preprocessed_dir + new_path;
             auto preprocessed_path_parent = Poco::Path(preprocessed_path).makeParent();
             if (!preprocessed_path_parent.toString().empty())
                 Poco::File(preprocessed_path_parent).createDirectories();

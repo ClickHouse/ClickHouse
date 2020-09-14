@@ -19,8 +19,6 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-namespace
-{
 
 /* Generate random string of specified length with fully random bytes (including zero). */
 template <typename RandImpl>
@@ -124,8 +122,6 @@ public:
 private:
     ImplementationSelector<IFunction> selector;
 };
-
-}
 
 void registerFunctionRandomString(FunctionFactory & factory)
 {

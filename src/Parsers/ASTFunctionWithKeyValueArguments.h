@@ -30,8 +30,6 @@ public:
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-
-    void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 
 
@@ -60,8 +58,6 @@ public:
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-
-    void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 
 }

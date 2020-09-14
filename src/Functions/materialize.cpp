@@ -4,8 +4,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /** materialize(x) - materialize the constant
   */
@@ -45,7 +43,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionMaterialize(FunctionFactory & factory)
 {

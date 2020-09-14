@@ -22,7 +22,6 @@
 #include <Processors/Pipe.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/ConcatProcessor.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -376,8 +375,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs);
-        compression_codec = CompressionCodecFactory::instance().get(method, level);
+        compression_codec = CompressionCodecFactory::instance().get(method, level, !settings->allow_suspicious_codecs);
     }
     else
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
@@ -583,13 +581,10 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
-        if (elem->pipe->numOutputPorts() > 1)
-            elem->pipe->addTransform(std::make_shared<ConcatProcessor>(elem->pipe->getHeader(), elem->pipe->numOutputPorts()));
-
         auto sink = std::make_shared<ExternalTableDataSink>(elem->pipe->getHeader(), *this, *elem, std::move(on_cancel));
-        DB::connect(*elem->pipe->getOutputPort(0), sink->getPort());
+        DB::connect(elem->pipe->getPort(), sink->getPort());
 
-        auto processors = Pipe::detachProcessors(std::move(*elem->pipe));
+        auto processors = std::move(*elem->pipe).detachProcessors();
         processors.push_back(sink);
 
         executor = std::make_shared<PipelineExecutor>(processors);

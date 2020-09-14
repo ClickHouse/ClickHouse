@@ -26,13 +26,14 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
+#include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
-#include <Parsers/queryToString.h>
 
 #include <cmath>
 #include <ctime>
+#include <iomanip>
 #include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -158,7 +159,7 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, si
 }
 
 
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge() const
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge()
 {
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 
@@ -166,7 +167,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge() const
 }
 
 
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used) const
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used)
 {
     if (pool_used > pool_size)
         throw Exception("Logical error: invalid arguments passed to getMaxSourcePartsSize: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
@@ -177,6 +178,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
     /// Always allow maximum size if one or less pool entries is busy.
     /// One entry is probably the entry where this function is executed.
     /// This will protect from bad settings.
+
     UInt64 max_size = 0;
     if (pool_used <= 1 || free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
         max_size = data_settings->max_bytes_to_merge_at_max_space_in_pool;
@@ -190,7 +192,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
 }
 
 
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
 {
     const auto data_settings = data.getSettings();
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
@@ -206,17 +208,16 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
     return 0;
 }
 
+
 bool MergeTreeDataMergerMutator::selectPartsToMerge(
     FutureMergedMutatedPart & future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
-    bool merge_with_ttl_allowed,
     String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
     const auto data_settings = data.getSettings();
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
     if (data_parts.empty())
     {
@@ -276,8 +277,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
-        part_info.ttl_infos = part->ttl_infos;
-        part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
+        part_info.min_ttl = part->ttl_infos.part_min_ttl;
+        part_info.max_ttl = part->ttl_infos.part_max_ttl;
 
         parts_ranges.back().emplace_back(part_info);
 
@@ -293,32 +294,14 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     IMergeSelector::PartsRange parts_to_merge;
 
-    if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
+    if (!ttl_merges_blocker.isCancelled())
     {
-        /// TTL delete is prefered to recompression
-        TTLDeleteMergeSelector delete_ttl_selector(
-                next_delete_ttl_merge_times_by_partition,
+        TTLMergeSelector merge_selector(
+                next_ttl_merge_times_by_partition,
                 current_time,
                 data_settings->merge_with_ttl_timeout,
                 data_settings->ttl_only_drop_parts);
-
-        parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
-        if (!parts_to_merge.empty())
-        {
-            future_part.merge_type = MergeType::TTL_DELETE;
-        }
-        else if (metadata_snapshot->hasAnyRecompressionTTL())
-        {
-            TTLRecompressMergeSelector recompress_ttl_selector(
-                    next_recompress_ttl_merge_times_by_partition,
-                    current_time,
-                    data_settings->merge_with_recompression_ttl_timeout,
-                    metadata_snapshot->getRecompressionTTLs());
-
-            parts_to_merge = recompress_ttl_selector.select(parts_ranges, max_total_size_to_merge);
-            if (!parts_to_merge.empty())
-                future_part.merge_type = MergeType::TTL_RECOMPRESS;
-        }
+        parts_to_merge = merge_selector.select(parts_ranges, max_total_size_to_merge);
     }
 
     if (parts_to_merge.empty())
@@ -419,7 +402,6 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part.assign(std::move(parts));
-
     available_disk_space -= required_disk_space;
     return true;
 }
@@ -542,7 +524,7 @@ public:
   * - time elapsed for current merge.
   */
 
-/// Auxiliary struct that for each merge stage stores its current progress.
+/// Auxilliary struct that for each merge stage stores its current progress.
 /// A stage is: the horizontal stage + a stage for each gathered column (if we are doing a
 /// Vertical merge) or a mutation of a single part. During a single stage all rows are read.
 struct MergeStageProgress
@@ -621,17 +603,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     TableLockHolder &,
     time_t time_of_merge,
     const ReservationPtr & space_reservation,
-    bool deduplicate)
+    bool deduplicate,
+    bool force_ttl)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
     if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
-
-    /// We don't want to perform merge assigned with TTL as normal merge, so
-    /// throw exception
-    if (isTTLMergeType(future_part.merge_type) && ttl_merges_blocker.isCancelled())
-        throw Exception("Cancelled merging parts with TTL", ErrorCodes::ABORTED);
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
 
@@ -674,18 +652,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
-    bool need_remove_expired_values = false;
-    bool force_ttl = false;
+    bool need_remove_expired_values = force_ttl;
     for (const auto & part : parts)
-    {
         new_data_part->ttl_infos.update(part->ttl_infos);
-        if (metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(metadata_snapshot))
-        {
-            LOG_INFO(log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
-            need_remove_expired_values = true;
-            force_ttl = true;
-        }
-    }
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
     if (part_min_ttl && part_min_ttl <= time_of_merge)
@@ -707,7 +676,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    auto compression_codec = data.getCompressionCodecForPart(merge_entry->total_size_bytes_compressed, new_data_part->ttl_infos, time_of_merge);
+    auto compression_codec = data.global_context.chooseCompressionCodec(
+        merge_entry->total_size_bytes_compressed,
+        static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
     /// TODO: Should it go through IDisk interface?
     String rows_sources_file_path;
@@ -775,10 +746,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         if (metadata_snapshot->hasSortingKey())
         {
-            pipe.addSimpleTransform([&metadata_snapshot](const Block & header)
-            {
-                return std::make_shared<ExpressionTransform>(header, metadata_snapshot->getSortingKey().expression);
-            });
+            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), metadata_snapshot->getSortingKey().expression);
+            pipe.addSimpleTransform(std::move(expr));
         }
 
         pipes.emplace_back(std::move(pipe));
@@ -847,8 +816,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
     QueryPipeline pipeline;
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
-    pipeline.addTransform(std::move(merged_transform));
+    pipeline.init(Pipe(std::move(pipes), std::move(merged_transform)));
     pipeline.setMaxThreads(1);
     BlockInputStreamPtr merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
@@ -1128,6 +1096,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto disk = new_data_part->volume->getDisk();
     String new_part_tmp_path = new_data_part->getFullRelativePath();
 
+    /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
+    /// (which is locked in data.getTotalActiveSizeInBytes())
+    /// (which is locked in shared mode when input streams are created) and when inserting new data
+    /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
+    /// deadlock is impossible.
+    auto compression_codec = context.chooseCompressionCodec(
+        source_part->getBytesOnDisk(),
+        static_cast<double>(source_part->getBytesOnDisk()) / data.getTotalActiveSizeInBytes());
+
     disk->createDirectories(new_part_tmp_path);
 
     /// Don't change granularity type while mutating subset of columns
@@ -1142,13 +1119,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// All columns from part are changed and may be some more that were missing before in part
     if (!isWidePart(source_part) || (interpreter && interpreter->isAffectingAllColumns()))
     {
-        /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
-        /// (which is locked in data.getTotalActiveSizeInBytes())
-        /// (which is locked in shared mode when input streams are created) and when inserting new data
-        /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
-        /// deadlock is impossible.
-        auto compression_codec = data.getCompressionCodecForPart(source_part->getBytesOnDisk(), source_part->ttl_infos, time_of_mutation);
-
         auto part_indices = getIndicesForNewDataPart(metadata_snapshot->getSecondaryIndices(), for_file_renames);
         mutateAllPartColumns(
             new_data_part,
@@ -1168,11 +1138,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         auto indices_to_recalc = getIndicesToRecalculate(in, updated_header.getNamesAndTypesList(), metadata_snapshot, context);
 
-        NameSet files_to_skip = collectFilesToSkip(source_part, updated_header, indices_to_recalc, mrk_extension);
+        NameSet files_to_skip = collectFilesToSkip(updated_header, indices_to_recalc, mrk_extension);
         NameToNameVector files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
         if (need_remove_expired_values)
             files_to_skip.insert("ttl.txt");
+
         /// Create hardlinks for unchanged files
         for (auto it = disk->iterateDirectory(source_part->getFullRelativePath()); it->isValid(); it->next())
         {
@@ -1199,8 +1170,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         merge_entry->columns_written = storage_columns.size() - updated_header.columns();
 
         new_data_part->checksums = source_part->checksums;
-
-        auto compression_codec = source_part->default_codec;
 
         if (in)
         {
@@ -1231,7 +1200,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             }
         }
 
-        finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values, compression_codec);
+        finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values);
     }
 
     return new_data_part;
@@ -1495,12 +1464,9 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
 }
 
 NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
-    const MergeTreeDataPartPtr & source_part,
-    const Block & updated_header,
-    const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-    const String & mrk_extension)
+    const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension)
 {
-    NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
+    NameSet files_to_skip = {"checksums.txt", "columns.txt"};
 
     /// Skip updated files
     for (const auto & entry : updated_header)
@@ -1787,8 +1753,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
 void MergeTreeDataMergerMutator::finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
-    bool need_remove_expired_values,
-    const CompressionCodecPtr & codec)
+    bool need_remove_expired_values)
 {
     auto disk = new_data_part->volume->getDisk();
     if (need_remove_expired_values)
@@ -1807,10 +1772,6 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
         new_data_part->checksums.write(*out_checksums);
     } /// close fd
 
-    {
-        auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
-        DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
-    }
 
     {
         /// Write a file with a description of columns.
@@ -1825,7 +1786,6 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     new_data_part->modification_time = time(nullptr);
     new_data_part->setBytesOnDisk(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), new_data_part->getFullRelativePath()));
-    new_data_part->default_codec = codec;
     new_data_part->calculateColumnsSizesOnDisk();
 }
 

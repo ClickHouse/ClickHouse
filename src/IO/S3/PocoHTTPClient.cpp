@@ -38,24 +38,13 @@ namespace DB::ErrorCodes
 
 namespace DB::S3
 {
-
-PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
-        const Aws::Client::ClientConfiguration & cfg,
-        const RemoteHostFilter & remote_host_filter_)
-    : Aws::Client::ClientConfiguration(cfg)
-    , remote_host_filter(remote_host_filter_)
-{
-}
-
-
-PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfiguration)
+PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & clientConfiguration)
     : per_request_configuration(clientConfiguration.perRequestConfiguration)
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(clientConfiguration.connectTimeoutMs * 1000), /// connection timeout.
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000), /// send timeout.
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000) /// receive timeout.
           ))
-    , remote_host_filter(clientConfiguration.remote_host_filter)
 {
 }
 
@@ -210,7 +199,6 @@ void PocoHTTPClient::MakeRequestInternal(
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             {
                 auto location = poco_response.get("location");
-                remote_host_filter.checkURL(Poco::URI(location));
                 uri = location;
                 LOG_DEBUG(log, "Redirecting request to new location: {}", location);
 

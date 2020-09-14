@@ -1,4 +1,3 @@
-
 import pytest
 from helpers.cluster import ClickHouseCluster
 
@@ -13,7 +12,7 @@ disk_types = {
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", main_configs=["configs/storage.xml"], with_minio=True)
+        cluster.add_instance("node", config_dir="configs", with_minio=True)
         cluster.start()
         yield cluster
     finally:

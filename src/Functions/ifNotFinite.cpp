@@ -8,8 +8,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// ifNotFinite(x, y) is equivalent to isFinite(x) ? x : y.
 class FunctionIfNotFinite : public IFunction
@@ -65,7 +63,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionIfNotFinite(FunctionFactory & factory)
 {

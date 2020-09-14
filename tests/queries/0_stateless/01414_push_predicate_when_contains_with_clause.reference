@@ -1,12 +1,12 @@
 999	1998
 999	1998
-SELECT
+SELECT 
     number,
     square_number
 FROM 
 (
     WITH number * 2 AS square_number
-    SELECT
+    SELECT 
         number,
         square_number
     FROM numbers_indexed

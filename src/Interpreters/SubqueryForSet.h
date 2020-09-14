@@ -5,7 +5,6 @@
 #include <Parsers/IAST.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/PreparedSets.h>
-#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -19,7 +18,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct SubqueryForSet
 {
     /// The source is obtained using the InterpreterSelectQuery subquery.
-    Pipe source;
+    BlockInputStreamPtr source;
 
     /// If set, build it from result.
     SetPtr set;
@@ -38,7 +37,7 @@ struct SubqueryForSet
     void setJoinActions(ExpressionActionsPtr actions);
 
     bool insertJoinedBlock(Block & block);
-    void setTotals(Block totals);
+    void setTotals();
 
 private:
     NamesWithAliases joined_block_aliases; /// Rename column from joined block from this list.

@@ -11,7 +11,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
     extern const int UNKNOWN_JOIN;
     extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
 }
 
 
@@ -91,9 +90,5 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(LogQueriesType, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS,
     {{"Ordinary", DefaultDatabaseEngine::Ordinary},
      {"Atomic",   DefaultDatabaseEngine::Atomic}})
-
-IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
-    {{"decimal",    MySQLDataTypesSupport::DECIMAL},
-     {"datetime64", MySQLDataTypesSupport::DATETIME64}})
 
 }

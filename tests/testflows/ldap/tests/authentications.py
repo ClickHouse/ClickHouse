@@ -34,7 +34,7 @@ def login_and_execute_query(self, username, password, exitcode=None, message=Non
         message=message, steps=steps)
 
 @TestScenario
-def add_user_to_ldap_and_login(self, server, user=None, ch_user=None, login=None, exitcode=None, message=None, rbac=False):
+def add_user_to_ldap_and_login(self, server, user=None, ch_user=None, login=None, exitcode=None, message=None):
     """Add user to LDAP and ClickHouse and then try to login."""
     self.context.ldap_node = self.context.cluster.node(server)
 
@@ -49,7 +49,7 @@ def add_user_to_ldap_and_login(self, server, user=None, ch_user=None, login=None
         ch_user["username"] = ch_user.get("username", user["cn"])
         ch_user["server"] = ch_user.get("server", user["_server"])
 
-        with ldap_authenticated_users(ch_user, config_file=f"ldap_users_{getuid()}.xml", restart=True, rbac=rbac):
+        with ldap_authenticated_users(ch_user, config_file=f"ldap_users_{getuid()}.xml", restart=True):
             username = login.get("username", user["cn"])
             password = login.get("password", user["userpassword"])
             login_and_execute_query(username=username, password=password, exitcode=exitcode, message=message)
@@ -59,7 +59,7 @@ def add_user_to_ldap_and_login(self, server, user=None, ch_user=None, login=None
     RQ_SRS_007_LDAP_Authentication_Parallel("1.0"),
     RQ_SRS_007_LDAP_Authentication_Parallel_ValidAndInvalid("1.0")
 )
-def parallel_login(self, server, user_count=10, timeout=200, rbac=False):
+def parallel_login(self, server, user_count=10, timeout=200):
     """Check that login of valid and invalid LDAP authenticated users works in parallel."""
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
@@ -67,7 +67,7 @@ def parallel_login(self, server, user_count=10, timeout=200, rbac=False):
     users = [{"cn": f"parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)]
 
     with ldap_users(*users):
-        with ldap_authenticated_users(*[{"username": user["cn"], "server": server} for user in users], rbac=rbac):
+        with ldap_authenticated_users(*[{"username": user["cn"], "server": server} for user in users]):
 
             def login_with_valid_username_and_password(users, i, iterations=10):
                 with When(f"valid users try to login #{i}"):
@@ -113,7 +113,7 @@ def parallel_login(self, server, user_count=10, timeout=200, rbac=False):
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0"),
     RQ_SRS_007_LDAP_Authentication_Invalid_DeletedUser("1.0")
 )
-def login_after_user_is_deleted_from_ldap(self, server, rbac=False):
+def login_after_user_is_deleted_from_ldap(self, server):
     """Check that login fails after user is deleted from LDAP."""
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
@@ -123,8 +123,7 @@ def login_after_user_is_deleted_from_ldap(self, server, rbac=False):
             user = {"cn": "myuser", "userpassword": "myuser"}
             user = add_user_to_ldap(**user)
 
-        with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml",
-                restart=True, rbac=rbac):
+        with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml", restart=True):
             login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
             with When("I delete this user from LDAP"):
@@ -145,7 +144,7 @@ def login_after_user_is_deleted_from_ldap(self, server, rbac=False):
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0"),
     RQ_SRS_007_LDAP_Authentication_PasswordChanged("1.0")
 )
-def login_after_user_password_changed_in_ldap(self, server, rbac=False):
+def login_after_user_password_changed_in_ldap(self, server):
     """Check that login fails after user password is changed in LDAP."""
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
@@ -155,8 +154,7 @@ def login_after_user_password_changed_in_ldap(self, server, rbac=False):
             user = {"cn": "myuser", "userpassword": "myuser"}
             user = add_user_to_ldap(**user)
 
-        with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml",
-                restart=True, rbac=rbac):
+        with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml", restart=True):
             login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
             with When("I change user password in LDAP"):
@@ -181,23 +179,21 @@ def login_after_user_password_changed_in_ldap(self, server, rbac=False):
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0"),
     RQ_SRS_007_LDAP_Authentication_UsernameChanged("1.0")
 )
-def login_after_user_cn_changed_in_ldap(self, server, rbac=False):
+def login_after_user_cn_changed_in_ldap(self, server):
     """Check that login fails after user cn is changed in LDAP."""
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
-    new_user = None
 
     try:
         with Given(f"I add user to LDAP"):
             user = {"cn": "myuser", "userpassword": "myuser"}
             user = add_user_to_ldap(**user)
 
-        with ldap_authenticated_users({"username": user["cn"], "server": server},
-                config_file=f"ldap_users_{getuid()}.xml", restart=True, rbac=rbac):
+        with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml", restart=True):
             login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
             with When("I change user password in LDAP"):
-                new_user = change_user_cn_in_ldap(user, "myuser2")
+                change_user_cn_in_ldap(user, "myuser2")
 
             with Then("when I try to login again it should fail"):
                 login_and_execute_query(username=user["cn"], password=user["userpassword"],
@@ -206,15 +202,15 @@ def login_after_user_cn_changed_in_ldap(self, server, rbac=False):
                 )
     finally:
         with Finally("I make sure LDAP user is deleted"):
-            if new_user is not None:
-                delete_user_from_ldap(new_user, exitcode=None)
+            if user is not None:
+                delete_user_from_ldap(user, exitcode=None)
 
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Valid("1.0"),
     RQ_SRS_007_LDAP_Authentication_LDAPServerRestart("1.0")
 )
-def login_after_ldap_server_is_restarted(self, server, timeout=60, rbac=False):
+def login_after_ldap_server_is_restarted(self, server, timeout=60):
     """Check that login succeeds after LDAP server is restarted."""
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
@@ -224,7 +220,7 @@ def login_after_ldap_server_is_restarted(self, server, timeout=60, rbac=False):
             user = {"cn": "myuser", "userpassword": getuid()}
             user = add_user_to_ldap(**user)
 
-        with ldap_authenticated_users({"username": user["cn"], "server": server}, rbac=rbac):
+        with ldap_authenticated_users({"username": user["cn"], "server": server}):
             login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
             with When("I restart LDAP server"):
@@ -249,7 +245,7 @@ def login_after_ldap_server_is_restarted(self, server, timeout=60, rbac=False):
     RQ_SRS_007_LDAP_Authentication_Valid("1.0"),
     RQ_SRS_007_LDAP_Authentication_ClickHouseServerRestart("1.0")
 )
-def login_after_clickhouse_server_is_restarted(self, server, timeout=60, rbac=False):
+def login_after_clickhouse_server_is_restarted(self, server, timeout=60):
     """Check that login succeeds after ClickHouse server is restarted."""
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
@@ -259,7 +255,7 @@ def login_after_clickhouse_server_is_restarted(self, server, timeout=60, rbac=Fa
             user = {"cn": "myuser", "userpassword": getuid()}
             user = add_user_to_ldap(**user)
 
-        with ldap_authenticated_users({"username": user["cn"], "server": server}, rbac=rbac):
+        with ldap_authenticated_users({"username": user["cn"], "server": server}):
             login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
             with When("I restart ClickHouse server"):
@@ -284,20 +280,20 @@ def login_after_clickhouse_server_is_restarted(self, server, timeout=60, rbac=Fa
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0"),
     RQ_SRS_007_LDAP_Authentication_Password_Empty("1.0")
 )
-def valid_username_with_valid_empty_password(self, server, rbac=False):
+def valid_username_with_valid_empty_password(self, server):
     """Check that we can't login using valid username that has empty password."""
     user = {"cn": "empty_password", "userpassword": ""}
     exitcode = 4
     message = f"DB::Exception: {user['cn']}: Authentication failed: password is incorrect or there is no user with such name"
 
-    add_user_to_ldap_and_login(user=user, exitcode=exitcode, message=message, server=server, rbac=rbac)
+    add_user_to_ldap_and_login(user=user, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0"),
     RQ_SRS_007_LDAP_Authentication_Password_Empty("1.0")
 )
-def valid_username_and_invalid_empty_password(self, server, rbac=False):
+def valid_username_and_invalid_empty_password(self, server):
     """Check that we can't login using valid username but invalid empty password."""
     username = "user_non_empty_password"
     user = {"cn": username, "userpassword": username}
@@ -306,25 +302,25 @@ def valid_username_and_invalid_empty_password(self, server, rbac=False):
     exitcode = 4
     message = f"DB::Exception: {username}: Authentication failed: password is incorrect or there is no user with such name"
 
-    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server, rbac=rbac)
+    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Valid("1.0")
 )
-def valid_username_and_password(self, server, rbac=False):
+def valid_username_and_password(self, server):
     """Check that we can login using valid username and password."""
     username = "valid_username_and_password"
     user = {"cn": username, "userpassword": username}
 
     with When(f"I add user {username} to LDAP and try to login"):
-        add_user_to_ldap_and_login(user=user, server=server, rbac=rbac)
+        add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0")
 )
-def valid_username_and_password_invalid_server(self, server=None, rbac=False):
+def valid_username_and_password_invalid_server(self, server=None):
     """Check that we can't login using valid username and valid
     password but for a different server."""
     self.context.ldap_node = self.context.cluster.node("openldap1")
@@ -334,8 +330,8 @@ def valid_username_and_password_invalid_server(self, server=None, rbac=False):
     exitcode = 4
     message = f"DB::Exception: user2: Authentication failed: password is incorrect or there is no user with such name"
 
-    with ldap_authenticated_users(user, config_file=f"ldap_users_{getuid()}.xml", restart=True, rbac=rbac):
-       login_and_execute_query(username="user2", password="user2", exitcode=exitcode, message=message)
+    with ldap_authenticated_users(user, config_file=f"ldap_users_{getuid()}.xml", restart=True):
+        login_and_execute_query(username="user2", password="user2", exitcode=exitcode, message=message)
 
 @TestScenario
 @Requirements(
@@ -343,18 +339,18 @@ def valid_username_and_password_invalid_server(self, server=None, rbac=False):
     RQ_SRS_007_LDAP_Authentication_Username_Long("1.0"),
     RQ_SRS_007_LDAP_Configuration_User_Name_Long("1.0")
 )
-def valid_long_username_and_short_password(self, server, rbac=False):
+def valid_long_username_and_short_password(self, server):
     """Check that we can login using valid very long username and short password."""
     username = "long_username_12345678901234567890123456789012345678901234567890123456789012345678901234567890"
     user = {"cn": username, "userpassword": "long_username"}
 
-    add_user_to_ldap_and_login(user=user, server=server, rbac=rbac)
+    add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0")
 )
-def invalid_long_username_and_valid_short_password(self, server, rbac=False):
+def invalid_long_username_and_valid_short_password(self, server):
     """Check that we can't login using slightly invalid long username but valid password."""
     username = "long_username_12345678901234567890123456789012345678901234567890123456789012345678901234567890"
     user = {"cn": username, "userpassword": "long_username"}
@@ -363,24 +359,24 @@ def invalid_long_username_and_valid_short_password(self, server, rbac=False):
     exitcode = 4
     message=f"DB::Exception: {login['username']}: Authentication failed: password is incorrect or there is no user with such name"
 
-    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server, rbac=rbac)
+    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Valid("1.0"),
     RQ_SRS_007_LDAP_Authentication_Password_Long("1.0")
 )
-def valid_short_username_and_long_password(self, server, rbac=False):
+def valid_short_username_and_long_password(self, server):
     """Check that we can login using valid short username with very long password."""
     username = "long_password"
     user = {"cn": username, "userpassword": "long_password_12345678901234567890123456789012345678901234567890123456789012345678901234567890"}
-    add_user_to_ldap_and_login(user=user, server=server, rbac=rbac)
+    add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0")
 )
-def valid_short_username_and_invalid_long_password(self, server, rbac=False):
+def valid_short_username_and_invalid_long_password(self, server):
     """Check that we can't login using valid short username and invalid long password."""
     username = "long_password"
     user = {"cn": username, "userpassword": "long_password_12345678901234567890123456789012345678901234567890123456789012345678901234567890"}
@@ -389,13 +385,13 @@ def valid_short_username_and_invalid_long_password(self, server, rbac=False):
     exitcode = 4
     message=f"DB::Exception: {username}: Authentication failed: password is incorrect or there is no user with such name"
 
-    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server, rbac=rbac)
+    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0")
 )
-def valid_username_and_invalid_password(self, server, rbac=False):
+def valid_username_and_invalid_password(self, server):
     """Check that we can't login using valid username and invalid password."""
     username = "valid_username_and_invalid_password"
     user = {"cn": username, "userpassword": username}
@@ -404,13 +400,13 @@ def valid_username_and_invalid_password(self, server, rbac=False):
     exitcode = 4
     message=f"DB::Exception: {username}: Authentication failed: password is incorrect or there is no user with such name"
 
-    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server, rbac=rbac)
+    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0")
 )
-def invalid_username_and_valid_password(self, server, rbac=False):
+def invalid_username_and_valid_password(self, server):
     """Check that we can't login using slightly invalid username but valid password."""
     username = "invalid_username_and_valid_password"
     user = {"cn": username, "userpassword": username}
@@ -419,7 +415,7 @@ def invalid_username_and_valid_password(self, server, rbac=False):
     exitcode = 4
     message=f"DB::Exception: {login['username']}: Authentication failed: password is incorrect or there is no user with such name"
 
-    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server, rbac=rbac)
+    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
@@ -427,44 +423,37 @@ def invalid_username_and_valid_password(self, server, rbac=False):
     RQ_SRS_007_LDAP_Authentication_Username_UTF8("1.0"),
     RQ_SRS_007_LDAP_Configuration_User_Name_UTF8("1.0")
 )
-def valid_utf8_username_and_ascii_password(self, server, rbac=False):
+def valid_utf8_username_and_ascii_password(self, server):
     """Check that we can login using valid utf-8 username with ascii password."""
     username = "utf8_username_Gãńdåłf_Thê_Gręât"
     user = {"cn": username, "userpassword": "utf8_username"}
 
-    add_user_to_ldap_and_login(user=user, server=server, rbac=rbac)
+    add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Valid("1.0"),
     RQ_SRS_007_LDAP_Authentication_Password_UTF8("1.0")
 )
-def valid_ascii_username_and_utf8_password(self, server, rbac=False):
+def valid_ascii_username_and_utf8_password(self, server):
     """Check that we can login using valid ascii username with utf-8 password."""
     username = "utf8_password"
     user = {"cn": username, "userpassword": "utf8_password_Gãńdåłf_Thê_Gręât"}
 
-    add_user_to_ldap_and_login(user=user, server=server, rbac=rbac)
+    add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
-def empty_username_and_empty_password(self, server=None, rbac=False):
+def empty_username_and_empty_password(self, server=None):
     """Check that we can login using empty username and empty password as
     it will use the default user and that has an empty password."""
     login_and_execute_query(username="", password="")
 
-@TestOutline(Feature)
+@TestFeature
 @Name("user authentications")
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Mechanism_NamePassword("1.0")
 )
-@Examples("rbac", [
-    (False,),
-    (True, Requirements(RQ_SRS_007_LDAP_Configuration_User_RBAC("1.0")))
-])
-def feature(self, rbac, servers=None, node="clickhouse1"):
-    """Check that users can be authenticated using an LDAP server when
-    users are configured either using an XML configuration file or RBAC.
-    """
+def feature(self, servers=None, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
     if servers is None:
@@ -472,4 +461,4 @@ def feature(self, rbac, servers=None, node="clickhouse1"):
 
     with ldap_servers(servers):
         for scenario in loads(current_module(), Scenario):
-            scenario(server="openldap1", rbac=rbac)
+            scenario(server="openldap1")

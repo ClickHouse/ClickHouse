@@ -119,11 +119,6 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY ORDER BY " << (settings.hilite ? hilite_none : "");
         order_by->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::MODIFY_SAMPLE_BY)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY SAMPLE BY " << (settings.hilite ? hilite_none : "");
-        sample_by->formatImpl(settings, state, frame);
-    }
     else if (type == ASTAlterCommand::ADD_INDEX)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");

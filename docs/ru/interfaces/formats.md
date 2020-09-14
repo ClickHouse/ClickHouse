@@ -28,8 +28,6 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [PrettySpace](#prettyspace)                                     | ✗      | ✔      |
 | [Protobuf](#protobuf)                                           | ✔      | ✔      |
 | [Parquet](#data-format-parquet)                                 | ✔      | ✔      |
-| [Arrow](#data-format-arrow)                                     | ✔      | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                        | ✔      | ✔      |
 | [ORC](#data-format-orc)                                         | ✔      | ✗      |
 | [RowBinary](#rowbinary)                                         | ✔      | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)       | ✔      | ✔      |
@@ -434,7 +432,7 @@ JSON совместим с JavaScript. Для этого, дополнитель
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
-ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`. Чтобы включить отображение в результате значений  `+nan`, `-nan`, `+inf`, `-inf`, установите параметр [output\_format\_json\_quote\_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) равным 1.
+ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`.
 
 Смотрите также формат [JSONEachRow](#jsoneachrow) .
 
@@ -949,12 +947,6 @@ ClickHouse пишет и читает сообщения `Protocol Buffers` в �
 
 ## Avro {#data-format-avro}
 
-[Apache Avro](https://avro.apache.org/) — это ориентированный на строки фреймворк для сериализации данных. Разработан в рамках проекта Apache Hadoop.
-
-В ClickHouse формат Avro поддерживает чтение и запись [файлов данных Avro](https://avro.apache.org/docs/current/spec.html#Object+Container+Files).
-
-[Логические типы Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
-
 ## AvroConfluent {#data-format-avro-confluent}
 
 Для формата `AvroConfluent` ClickHouse поддерживает декодирование сообщений `Avro` с одним объектом. Такие сообщения используются с [Kafka] (http://kafka.apache.org/) и  реестром схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html). 
@@ -1004,7 +996,7 @@ SELECT * FROM topic1_stream;
 
 ## Parquet {#data-format-parquet}
 
-[Apache Parquet](https://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.
+[Apache Parquet](http://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.
 
 ### Соответствие типов данных {#sootvetstvie-tipov-dannykh}
 
@@ -1049,16 +1041,6 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 ```
 
 Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../engines/table-engines/integrations/hdfs.md).
-
-## Arrow {data-format-arrow}
-
-[Apache Arrow](https://arrow.apache.org/) поставляется с двумя встроенными поколоночнами форматами хранения. ClickHouse поддерживает операции чтения и записи для этих форматов.
-
-`Arrow` — это Apache Arrow's "file mode" формат. Он предназначен для произвольного доступа в памяти.
-
-## ArrowStream {data-format-arrow-stream}
-
-`ArrowStream` — это Apache Arrow's "stream mode" формат. Он предназначен для обработки потоков в памяти.
 
 ## ORC {#data-format-orc}
 

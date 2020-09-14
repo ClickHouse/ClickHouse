@@ -1,4 +1,6 @@
 ---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 12
 toc_title: "\u6559\u7A0B"
 ---
@@ -7,27 +9,27 @@ toc_title: "\u6559\u7A0B"
 
 ## 从本教程中可以期待什么？ {#what-to-expect-from-this-tutorial}
 
-通过本教程，您将学习如何设置一个简单的ClickHouse集群。 它会很小，但却是容错和可扩展的。 然后，我们将使用其中一个示例数据集来填充数据并执行一些演示查询。
+通过本教程，您将学习如何设置一个简单的ClickHouse集群。 它会很小，但容错和可扩展。 然后，我们将使用其中一个示例数据集来填充数据并执行一些演示查询。
 
 ## 单节点设置 {#single-node-setup}
 
-为了推迟分布式环境的复杂性，我们将首先在单个服务器或虚拟机上部署ClickHouse。 ClickHouse通常是从[deb](install.md#install-from-deb-packages) 或 [rpm](install.md#from-rpm-packages) 包安装，但对于不支持它们的操作系统也有 [替代方法](install.md#from-docker-image) 。
+为了推迟分布式环境的复杂性，我们将首先在单个服务器或虚拟机上部署ClickHouse。 ClickHouse通常是从安装 [黛布](install.md#install-from-deb-packages) 或 [rpm](install.md#from-rpm-packages) 包，但也有 [替代办法](install.md#from-docker-image) 对于不支持它们的操作系统。
 
-例如，您选择了从 `deb` 包安装，执行:
+例如，您选择了 `deb` 包和执行:
 
 ``` bash
 {% include 'install/deb.sh' %}
 ```
 
-在我们安装的软件中包含这些包:
+我们在安装的软件包中有什么:
 
--   `clickhouse-client` 包，包含 [clickhouse-client](../interfaces/cli.md) 应用程序，它是交互式ClickHouse控制台客户端。
--   `clickhouse-common` 包，包含一个ClickHouse可执行文件。
--   `clickhouse-server` 包，包含要作为服务端运行的ClickHouse配置文件。
+-   `clickhouse-client` 包包含 [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 应用程序，交互式ClickHouse控制台客户端。
+-   `clickhouse-common` 包包含一个ClickHouse可执行文件。
+-   `clickhouse-server` 包包含要作为服务器运行ClickHouse的配置文件。
 
-服务端配置文件位于 `/etc/clickhouse-server/`。 在进一步讨论之前，请注意 `config.xml`文件中的`<path>` 元素. Path决定了数据存储的位置，因此该位置应该位于磁盘容量较大的卷上；默认值为 `/var/lib/clickhouse/`。 如果你想调整配置，考虑到它可能会在未来的软件包更新中被重写，直接编辑`config.xml` 文件并不方便。 推荐的方法是在[配置文件](../operations/configuration-files.md)目录创建文件，作为config.xml文件的“补丁”，用以复写配置元素。
+服务器配置文件位于 `/etc/clickhouse-server/`. 在进一步讨论之前，请注意 `<path>` 元素in `config.xml`. Path确定数据存储的位置，因此应该位于磁盘容量较大的卷上；默认值为 `/var/lib/clickhouse/`. 如果你想调整配置，直接编辑并不方便 `config.xml` 文件，考虑到它可能会在未来的软件包更新中被重写。 复盖配置元素的推荐方法是创建 [在配置文件。d目录](../operations/configuration-files.md) 它作为 “patches” 要配置。xml
 
-你可能已经注意到了, `clickhouse-server` 安装后不会自动启动。 它也不会在更新后自动重新启动。 您启动服务端的方式取决于您的初始系统，通常情况下是这样:
+你可能已经注意到了, `clickhouse-server` 安装包后不会自动启动。 它也不会在更新后自动重新启动。 您启动服务器的方式取决于您的init系统，通常情况下，它是:
 
 ``` bash
 sudo service clickhouse-server start
@@ -39,13 +41,13 @@ sudo service clickhouse-server start
 sudo /etc/init.d/clickhouse-server start
 ```
 
-服务端日志的默认位置是 `/var/log/clickhouse-server/`。当服务端在日志中记录 `Ready for connections` 消息，即表示服务端已准备好处理客户端连接。
+服务器日志的默认位置是 `/var/log/clickhouse-server/`. 服务器已准备好处理客户端连接一旦它记录 `Ready for connections` 消息
 
-一旦 `clickhouse-server` 启动并运行，我们可以利用 `clickhouse-client` 连接到服务端，并运行一些测试查询，如 `SELECT "Hello, world!";`.
+一旦 `clickhouse-server` 正在运行我们可以利用 `clickhouse-client` 连接到服务器并运行一些测试查询，如 `SELECT "Hello, world!";`.
 
 <details markdown="1">
 
-<summary>Clickhouse-client的快速提示</summary>
+<summary>Clickhouse-客户端的快速提示</summary>
 
 交互模式:
 

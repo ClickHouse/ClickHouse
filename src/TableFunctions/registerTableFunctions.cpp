@@ -30,8 +30,6 @@ void registerTableFunctions()
     registerTableFunctionODBC(factory);
     registerTableFunctionJDBC(factory);
 
-    registerTableFunctionView(factory);
-
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);
 #endif

@@ -7,8 +7,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function assumeNotNull which takes 1 argument and works as follows:
 /// - if the argument is a nullable column, return its embedded column;
@@ -51,7 +49,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionAssumeNotNull(FunctionFactory & factory)
 {

@@ -180,9 +180,3 @@
 [submodule "contrib/stats"]
 	path = contrib/stats
 	url = https://github.com/kthohr/stats.git
-[submodule "contrib/krb5"]
-	path = contrib/krb5
-	url = https://github.com/krb5/krb5
-[submodule "contrib/cyrus-sasl"]
-	path = contrib/cyrus-sasl
-	url = https://github.com/cyrusimap/cyrus-sasl

@@ -222,22 +222,17 @@ for query_index, q in enumerate(test_queries):
             query_error_on_connection[conn_index] = traceback.format_exc();
             continue
 
-
-    # Report all errors that ocurred during prewarm and decide what to do next.
-    # If prewarm fails for the query on all servers -- skip the query and
-    # continue testing the next query.
-    # If prewarm fails on one of the servers, run the query on the rest of them.
-    no_errors = []
-    for i, e in enumerate(query_error_on_connection):
-        if e:
-            print(e, file = sys.stderr)
-        else:
-            no_errors.append(i)
-
-    if len(no_errors) == 0:
+    # If prewarm fails for the query on both servers -- report the error, skip
+    # the query and continue testing the next query.
+    if query_error_on_connection.count(None) == 0:
+        print(query_error_on_connection[0], file = sys.stderr)
         continue
-    elif len(no_errors) < len(connections):
-        print(f'partial\t{query_index}\t{no_errors}')
+
+    # If prewarm fails on one of the servers, run the query on the rest of them.
+    # Useful for queries that use new functions added in the new server version.
+    if query_error_on_connection.count(None) < len(query_error_on_connection):
+        no_error = [i for i, e in enumerate(query_error_on_connection) if not e]
+        print(f'partial\t{query_index}\t{no_error}')
 
     # Now, perform measured runs.
     # Track the time spent by the client to process this query, so that we can
@@ -250,24 +245,9 @@ for query_index, q in enumerate(test_queries):
         for conn_index, c in enumerate(connections):
             if query_error_on_connection[conn_index]:
                 continue
-
-            try:
-                res = c.execute(q, query_id = run_id)
-            except Exception as e:
-                # Add query id to the exception to make debugging easier.
-                e.args = (run_id, *e.args)
-                e.message = run_id + ': ' + e.message
-                raise
-
+            res = c.execute(q, query_id = run_id)
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
             server_seconds += c.last_query.elapsed
-
-            if c.last_query.elapsed > 10:
-                # Stop processing pathologically slow queries, to avoid timing out
-                # the entire test task. This shouldn't really happen, so we don't
-                # need much handling for this case and can just exit.
-                print(f'The query no. {query_index} is taking too long to run ({c.last_query.elapsed} s)', file=sys.stderr)
-                exit(2)
 
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')

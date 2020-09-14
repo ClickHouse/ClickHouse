@@ -3,9 +3,6 @@ toc_priority: 58
 toc_title: External Dictionaries
 ---
 
-!!! attention "Attention"
-    `dict_name` parameter must be fully qualified for dictionaries created with DDL queries. Eg. `<database>.<dict_name>`.
-
 # Functions for Working with External Dictionaries {#ext_dict_functions}
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).

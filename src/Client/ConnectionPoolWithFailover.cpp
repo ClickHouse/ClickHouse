@@ -100,14 +100,13 @@ Int64 ConnectionPoolWithFailover::getPriority() const
 
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
 {
-    const auto [states, pools, error_decrease_time] = getPoolExtendedStates();
-    // NOTE: to avoid data races do not touch any data of ConnectionPoolWithFailover or PoolWithFailoverBase in the code below.
-
+    const Base::PoolStates states = getPoolStates();
+    const Base::NestedPools pools = nested_pools;
     assert(states.size() == pools.size());
 
     ConnectionPoolWithFailover::Status result;
     result.reserve(states.size());
-    const time_t since_last_error_decrease = time(nullptr) - error_decrease_time;
+    const time_t since_last_error_decrease = time(nullptr) - last_error_decrease_time;
 
     for (size_t i = 0; i < states.size(); ++i)
     {
@@ -115,7 +114,7 @@ ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
         const auto seconds_to_zero_errors = std::max(static_cast<time_t>(0), rounds_to_zero_errors * decrease_error_period - since_last_error_decrease);
 
         result.emplace_back(NestedPoolStatus{
-            pools[i],
+            pools[i].get(),
             states[i].error_count,
             std::chrono::seconds{seconds_to_zero_errors}
         });

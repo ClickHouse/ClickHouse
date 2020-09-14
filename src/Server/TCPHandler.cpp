@@ -1045,12 +1045,8 @@ void TCPHandler::initBlockOutput(const Block & block)
                 level = query_settings.network_zstd_compression_level;
 
             if (state.compression == Protocol::Compression::Enable)
-            {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs);
-
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionCodecFactory::instance().get(method, level));
-            }
+                    *out, CompressionCodecFactory::instance().get(method, level, !query_settings.allow_suspicious_codecs));
             else
                 state.maybe_compressed_out = out;
         }

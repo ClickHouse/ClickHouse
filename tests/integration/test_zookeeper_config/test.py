@@ -12,8 +12,8 @@ def test_chroot_with_same_root():
     cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
     cluster_2 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
 
-    node1 = cluster_1.add_instance('node1', main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"], with_zookeeper=True, zookeeper_use_tmpfs=False)
-    node2 = cluster_2.add_instance('node2', main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"], with_zookeeper=True, zookeeper_use_tmpfs=False)
+    node1 = cluster_1.add_instance('node1', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
+    node2 = cluster_2.add_instance('node2', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
     nodes = [node1, node2]
 
     def create_zk_root(zk):
@@ -51,8 +51,8 @@ def test_chroot_with_different_root():
     cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
     cluster_2 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_b.xml')
 
-    node1 = cluster_1.add_instance('node1', main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"], with_zookeeper=True, zookeeper_use_tmpfs=False)
-    node2 = cluster_2.add_instance('node2', main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_b.xml"], with_zookeeper=True, zookeeper_use_tmpfs=False)
+    node1 = cluster_1.add_instance('node1', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
+    node2 = cluster_2.add_instance('node2', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
     nodes = [node1, node2]
 
     def create_zk_roots(zk):
@@ -90,8 +90,8 @@ def test_identity():
     cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_with_password.xml')
     cluster_2 = ClickHouseCluster(__file__)
 
-    node1 = cluster_1.add_instance('node1', main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_with_password.xml"], with_zookeeper=True, zookeeper_use_tmpfs=False)
-    node2 = cluster_2.add_instance('node2', main_configs=["configs/remote_servers.xml"], with_zookeeper=True, zookeeper_use_tmpfs=False)
+    node1 = cluster_1.add_instance('node1', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
+    node2 = cluster_2.add_instance('node2', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
 
     try:
         cluster_1.start()
@@ -145,12 +145,10 @@ def test_secure_connection():
     )
     docker_compose.close()
 
-    node1 = cluster.add_instance('node1', main_configs=["configs_secure/client.crt", "configs_secure/client.key",
-                                                        "configs_secure/conf.d/remote_servers.xml", "configs_secure/conf.d/ssl_conf.xml"],
-                                 with_zookeeper=True, zookeeper_docker_compose_path=docker_compose.name, zookeeper_use_tmpfs=False)
-    node2 = cluster.add_instance('node2', main_configs=["configs_secure/client.crt", "configs_secure/client.key",
-                                                        "configs_secure/conf.d/remote_servers.xml", "configs_secure/conf.d/ssl_conf.xml"],
-                                 with_zookeeper=True, zookeeper_docker_compose_path=docker_compose.name, zookeeper_use_tmpfs=False)
+    node1 = cluster.add_instance('node1', config_dir='configs_secure', with_zookeeper=True,
+                                 zookeeper_docker_compose_path=docker_compose.name, zookeeper_use_tmpfs=False)
+    node2 = cluster.add_instance('node2', config_dir='configs_secure', with_zookeeper=True,
+                                 zookeeper_docker_compose_path=docker_compose.name, zookeeper_use_tmpfs=False)
 
     try:
         cluster.start()

@@ -68,14 +68,8 @@ String Macros::expand(const String & s,
             res += database_name;
         else if (macro_name == "table" && !table_name.empty())
             res += table_name;
-        else if (macro_name == "uuid")
-        {
-            if (uuid == UUIDHelpers::Nil)
-                throw Exception("Macro 'uuid' and empty arguments of ReplicatedMergeTree "
-                                "are supported only for ON CLUSTER queries with Atomic database engine",
-                                ErrorCodes::SYNTAX_ERROR);
+        else if (macro_name == "uuid" && uuid != UUIDHelpers::Nil)
             res += toString(uuid);
-        }
         else
             throw Exception("No macro '" + macro_name +
                 "' in config while processing substitutions in '" + s + "' at '"
