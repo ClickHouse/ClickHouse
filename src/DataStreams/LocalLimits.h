@@ -1,3 +1,4 @@
+#pragma once
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/ExecutionSpeedLimits.h>
 
