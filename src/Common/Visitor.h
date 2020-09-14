@@ -65,6 +65,8 @@ class Visitor<>
 {
 public:
     using List = TypeList<>;
+
+    virtual ~Visitor() = default;
 };
 
 template <typename Type>
@@ -73,11 +75,7 @@ class Visitor<Type> : public Visitor<>
 public:
     using List = TypeList<Type>;
 
-    void visit(Type &)
-    {
-        throw Exception("visit(" + demangle(typeid(Type).name()) + " &)" + " is not implemented for class"
-                        + demangle(typeid(Visitor<Type>).name()), ErrorCodes::LOGICAL_ERROR);
-    }
+    virtual void visit(Type &) = 0;
 };
 
 template <typename Type, typename ... Types>
@@ -87,11 +85,7 @@ public:
     using List = TypeList<Type, Types ...>;
     using Visitor<Types ...>::visit;
 
-    void visit(Type &)
-    {
-        throw Exception("visit(" + demangle(typeid(Type).name()) + " &)" + " is not implemented for class"
-                        + demangle(typeid(Visitor<Type>).name()), ErrorCodes::LOGICAL_ERROR);
-    }
+    virtual void visit(Type &) = 0;
 };
 
 
@@ -108,7 +102,7 @@ class VisitorImplHelper<Derived, VisitorBase, Type> : public VisitorBase
 {
 public:
     using VisitorBase::visit;
-    void visit(Type & value) { static_cast<Derived *>(this)->visitImpl(value); }
+    void visit(Type & value) override { static_cast<Derived *>(this)->visitImpl(value); }
 
 protected:
     template <typename T>
@@ -125,7 +119,7 @@ class VisitorImplHelper<Derived, VisitorBase, Type, Types ...>
 {
 public:
     using VisitorImplHelper<Derived, VisitorBase, Types ...>::visit;
-    void visit(Type & value) { static_cast<Derived *>(this)->visitImpl(value); }
+    void visit(Type & value) override { static_cast<Derived *>(this)->visitImpl(value); }
 
 protected:
     template <typename T>
