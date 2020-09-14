@@ -155,6 +155,8 @@ class IColumn;
     M(UInt64, max_concurrent_queries_for_user, 0, "The maximum number of concurrent requests per user.", 0) \
     \
     M(Bool, insert_deduplicate, true, "For INSERT queries in the replicated table, specifies that deduplication of insertings blocks should be performed", 0) \
+    M(String, default_replica_path, "", "Default replica path for ReplicatedMergeTree. Allow to omit arguments for Replicated table engine if default_replica_path and default_replica_name are specified.", 0) \
+    M(String, default_replica_name, "", "Default replica name for ReplicatedMergeTree. Allow to omit arguments for Replicated table engine if default_replica_path and default_replica_name are specified.", 0) \
     \
     M(UInt64, insert_quorum, 0, "For INSERT queries in the replicated table, wait writing for the specified number of replicas and linearize the addition of the data. 0 - disabled.", 0) \
     M(Milliseconds, insert_quorum_timeout, 600000, "", 0) \
