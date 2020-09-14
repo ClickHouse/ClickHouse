@@ -3,6 +3,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
+#include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <memory>
@@ -47,6 +48,7 @@ struct MergeInfo
     UInt64 memory_usage;
     UInt64 thread_id;
     std::string merge_type;
+    std::string merge_algorithm;
 };
 
 struct FutureMergedMutatedPart;
@@ -90,6 +92,7 @@ struct MergeListElement : boost::noncopyable
 
     UInt64 thread_id;
     MergeType merge_type;
+    MergeAlgorithm merge_algorithm;
 
     MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
 

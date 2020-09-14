@@ -46,6 +46,9 @@ int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_GIT_IMPORT
+int mainEntryClickHouseGitImport(int argc, char ** argv);
+#endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
@@ -90,6 +93,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
     {"obfuscator", mainEntryClickHouseObfuscator},
+#endif
+#if ENABLE_CLICKHOUSE_GIT_IMPORT
+    {"git-import", mainEntryClickHouseGitImport},
 #endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},

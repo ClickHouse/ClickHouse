@@ -893,6 +893,8 @@ private:
             cancelLoading(info);
         }
 
+        putBackFinishedThreadsToPool();
+
         /// All loadings have unique loading IDs.
         size_t loading_id = next_id_counter++;
         info.loading_id = loading_id;
@@ -912,6 +914,21 @@ private:
             /// Perform the loading immediately.
             doLoading(info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, false);
         }
+    }
+
+    void putBackFinishedThreadsToPool()
+    {
+        for (auto loading_id : recently_finished_loadings)
+        {
+            auto it = loading_threads.find(loading_id);
+            if (it != loading_threads.end())
+            {
+                auto thread = std::move(it->second);
+                loading_threads.erase(it);
+                thread.join(); /// It's very likely that `thread` has already finished.
+            }
+        }
+        recently_finished_loadings.clear();
     }
 
     static void cancelLoading(Info & info)
@@ -1095,12 +1112,11 @@ private:
         }
         min_id_to_finish_loading_dependencies.erase(std::this_thread::get_id());
 
-        auto it = loading_threads.find(loading_id);
-        if (it != loading_threads.end())
-        {
-            it->second.detach();
-            loading_threads.erase(it);
-        }
+        /// Add `loading_id` to the list of recently finished loadings.
+        /// This list is used to later put the threads which finished loading back to the thread pool.
+        /// (We can't put the loading thread back to the thread pool immediately here because at this point
+        /// the loading thread is about to finish but it's not finished yet right now.)
+        recently_finished_loadings.push_back(loading_id);
     }
 
     /// Calculate next update time for loaded_object. Can be called without mutex locking,
@@ -1158,6 +1174,7 @@ private:
     bool always_load_everything = false;
     std::atomic<bool> enable_async_loading = false;
     std::unordered_map<size_t, ThreadFromGlobalPool> loading_threads;
+    std::vector<size_t> recently_finished_loadings;
     std::unordered_map<std::thread::id, size_t> min_id_to_finish_loading_dependencies;
     size_t next_id_counter = 1; /// should always be > 0
     mutable pcg64 rnd_engine{randomSeed()};
