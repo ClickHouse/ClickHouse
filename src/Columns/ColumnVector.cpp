@@ -218,7 +218,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
                         if (isNaN(data[res[reverse ? i : s - 1 - i]]))
                             ++nans_to_move;
                         else
-                            break;completeThread
+                            break;
                     }
 
                     if (nans_to_move)
