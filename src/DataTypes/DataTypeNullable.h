@@ -97,6 +97,9 @@ public:
     size_t getSizeOfValueInMemory() const override;
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
+    DataTypePtr getSubcolumnType(const String & subcolumn_name) const override;
+    std::vector<String> getSubcolumnNames() const override;
+    String getEscapedFileName(const NameAndTypePair & column) const override;
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 

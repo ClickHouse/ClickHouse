@@ -17,7 +17,6 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
 {
     NameSet required_columns{std::begin(columns), std::end(columns)};
     NameSet injected_columns;
-
     auto all_column_files_missing = true;
 
     const auto & storage_columns = metadata_snapshot->getColumns();
@@ -30,8 +29,10 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
         if (alter_conversions.isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
+        auto column_in_storage = storage_columns.getPhysicalOrSubcolumn(column_name_in_part);
+
         /// column has files and hence does not require evaluation
-        if (part->hasColumnFiles(column_name_in_part, *storage_columns.getPhysical(columns[i]).type))
+        if (part->hasColumnFiles(column_in_storage))
         {
             all_column_files_missing = false;
             continue;
@@ -256,7 +257,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (check_columns)
     {
-        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllPhysical();
+        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllWithSubcolumns();
         result.pre_columns = physical_columns.addTypes(pre_column_names);
         result.columns = physical_columns.addTypes(column_names);
     }

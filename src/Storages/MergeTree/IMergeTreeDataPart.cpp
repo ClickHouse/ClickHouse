@@ -366,7 +366,7 @@ String IMergeTreeDataPart::getColumnNameWithMinumumCompressedSize(const StorageM
         if (alter_conversions.isColumnRenamed(column.name))
             column_name = alter_conversions.getColumnOldName(column.name);
 
-        if (!hasColumnFiles(column_name, *column_type))
+        if (!hasColumnFiles(column))
             continue;
 
         const auto size = getColumnSize(column_name, *column_type).data_compressed;

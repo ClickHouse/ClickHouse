@@ -27,6 +27,8 @@ using DataTypes = std::vector<DataTypePtr>;
 class ProtobufReader;
 class ProtobufWriter;
 
+struct NameAndTypePair;
+
 
 /** Properties of data type.
   * Contains methods for serialization/deserialization.
@@ -226,6 +228,9 @@ public:
     /** Serialize to a protobuf. */
     virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
     virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
+
+    virtual DataTypePtr getSubcolumnType(const String & /* subcolumn_path */) const { return nullptr; }
+    virtual std::vector<String> getSubcolumnNames() const { return {}; }
 
     /** Text serialization with escaping but without quoting.
       */
@@ -437,9 +442,12 @@ public:
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
 
+    virtual String getEscapedFileName(const NameAndTypePair & column) const;
+
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 
+    static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & column_name, const SubstreamPath & path);
 
 private:
@@ -450,6 +458,8 @@ private:
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
+
+    static String getFileNameForStreamImpl(String stream_name, const SubstreamPath & path);
 
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }

@@ -77,6 +77,7 @@ public:
     NamesAndTypesList getAliases() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
     NamesAndTypesList getAll() const; /// ordinary + materialized + aliases
+    NamesAndTypesList getAllWithSubcolumns() const;
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
@@ -106,6 +107,7 @@ public:
     Names getNamesOfPhysical() const;
     bool hasPhysical(const String & column_name) const;
     NameAndTypePair getPhysical(const String & column_name) const;
+    NameAndTypePair getPhysicalOrSubcolumn(const String & column_name) const;
 
     ColumnDefaults getDefaults() const; /// TODO: remove
     bool hasDefault(const String & column_name) const;

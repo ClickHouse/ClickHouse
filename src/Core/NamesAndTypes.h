@@ -15,11 +15,17 @@ namespace DB
 
 struct NameAndTypePair
 {
-    String name;
-    DataTypePtr type;
-
-    NameAndTypePair() {}
+public:
+    NameAndTypePair() = default;
     NameAndTypePair(const String & name_, const DataTypePtr & type_) : name(name_), type(type_) {}
+    NameAndTypePair(const String & name_, const String & subcolumn_name_,
+        const DataTypePtr & storage_type_, const DataTypePtr & type_);
+
+    String getStorageName() const;
+    String getSubcolumnName() const;
+
+    bool isSubcolumn() const { return subcolumn_delimiter_position != -1; }
+    DataTypePtr getStorageType() const { return storage_type; }
 
     bool operator<(const NameAndTypePair & rhs) const
     {
@@ -30,7 +36,23 @@ struct NameAndTypePair
     {
         return name == rhs.name && type->equals(*rhs.type);
     }
+
+    String name;
+    DataTypePtr type;
+
+private:
+    DataTypePtr storage_type;
+    ssize_t subcolumn_delimiter_position = -1;
 };
+
+template<int I>
+auto get(const NameAndTypePair & name_and_type)
+{
+    if constexpr (I == 0)
+        return name_and_type.name;
+    else if constexpr (I == 1)
+        return name_and_type.type;
+}
 
 using NamesAndTypes = std::vector<NameAndTypePair>;
 
@@ -80,4 +102,11 @@ public:
     std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
 };
 
+}
+
+namespace std
+{
+    template <> struct tuple_size<DB::NameAndTypePair> : std::integral_constant<size_t, 2> {};
+    template <> struct tuple_element<0, DB::NameAndTypePair> { using type = DB::String; };
+    template <> struct tuple_element<1, DB::NameAndTypePair> { using type = DB::DataTypePtr; };
 }

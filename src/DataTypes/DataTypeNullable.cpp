@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
+#include <Core/NamesAndTypes.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -13,6 +14,7 @@
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/escapeForFileName.h>
 
 
 namespace DB
@@ -509,6 +511,27 @@ size_t DataTypeNullable::getSizeOfValueInMemory() const
 bool DataTypeNullable::equals(const IDataType & rhs) const
 {
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
+}
+
+DataTypePtr DataTypeNullable::getSubcolumnType(const String & subcolumn_name) const
+{
+    if (subcolumn_name == "null")
+        return std::make_shared<DataTypeUInt8>();
+
+    return nullptr;
+}
+
+std::vector<String> DataTypeNullable::getSubcolumnNames() const
+{
+    return {"null"};
+}
+
+String DataTypeNullable::getEscapedFileName(const NameAndTypePair & column) const
+{
+    if (column.isSubcolumn())
+        return escapeForFileName(column.getStorageName()) + "." + column.getSubcolumnName();
+
+    return escapeForFileName(column.name);
 }
 
 

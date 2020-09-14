@@ -9,7 +9,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
-
 namespace DB
 {
 
@@ -50,7 +49,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         for (const NameAndTypePair & column : columns)
         {
             auto column_from_part = getColumnFromPart(column);
-            addStreams(column_from_part.name, *column_from_part.type, profile_callback_, clock_type_);
+            addStreams(column_from_part, profile_callback_, clock_type_);
         }
     }
     catch (...)
@@ -77,7 +76,8 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            auto [name, type] = getColumnFromPart(*name_and_type);
+            auto column_from_part = getColumnFromPart(*name_and_type);
+            const auto & [name, type] = column_from_part;
 
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
@@ -114,7 +114,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
             {
                 size_t column_size_before_reading = column->size();
 
-                readData(name, *type, *column, from_mark, continue_reading, max_rows_to_read, read_offsets);
+                readData(column_from_part, *column, from_mark, continue_reading, max_rows_to_read, read_offsets);
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -159,12 +159,12 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
     return read_rows;
 }
 
-void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type,
+void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
-        String stream_name = IDataType::getFileNameForStream(name, substream_path);
+        String stream_name = IDataType::getFileNameForStream(name_and_type, substream_path);
 
         if (streams.count(stream_name))
             return;
@@ -186,12 +186,12 @@ void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type
     };
 
     IDataType::SubstreamPath substream_path;
-    type.enumerateStreams(callback, substream_path);
+    name_and_type.type->enumerateStreams(callback, substream_path);
 }
 
 
 void MergeTreeReaderWide::readData(
-    const String & name, const IDataType & type, IColumn & column,
+    const NameAndTypePair & name_and_type, IColumn & column,
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
     bool with_offsets)
 {
@@ -203,7 +203,7 @@ void MergeTreeReaderWide::readData(
             if (!with_offsets && substream_path.size() == 1 && substream_path[0].type == IDataType::Substream::ArraySizes)
                 return nullptr;
 
-            String stream_name = IDataType::getFileNameForStream(name, substream_path);
+            String stream_name = IDataType::getFileNameForStream(name_and_type, substream_path);
 
             auto it = streams.find(stream_name);
             if (it == streams.end())
@@ -223,20 +223,20 @@ void MergeTreeReaderWide::readData(
         };
     };
 
-    double & avg_value_size_hint = avg_value_size_hints[name];
+    double & avg_value_size_hint = avg_value_size_hints[name_and_type.name];
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.avg_value_size_hint = avg_value_size_hint;
 
-    if (deserialize_binary_bulk_state_map.count(name) == 0)
+    if (deserialize_binary_bulk_state_map.count(name_and_type.name) == 0)
     {
         deserialize_settings.getter = get_stream_getter(true);
-        type.deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
+        name_and_type.type->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.name]);
     }
 
     deserialize_settings.getter = get_stream_getter(false);
     deserialize_settings.continuous_reading = continue_reading;
-    auto & deserialize_state = deserialize_binary_bulk_state_map[name];
-    type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state);
+    auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
+    name_and_type.type->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state);
     IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
 }
 

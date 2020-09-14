@@ -15,7 +15,10 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/escapeForFileName.h>
+#include <IO/ReadHelpers.h>
 
+#include <Core/NamesAndTypes.h>
 
 namespace DB
 {
@@ -499,6 +502,33 @@ bool DataTypeArray::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && nested->equals(*static_cast<const DataTypeArray &>(rhs).nested);
 }
 
+DataTypePtr DataTypeArray::getSubcolumnType(const String & subcolumn_name) const
+{
+    ReadBufferFromString buf(subcolumn_name);
+    size_t dim;
+    if (checkString("size", buf) && tryReadIntText(dim, buf) && dim < getNumberOfDimensions())
+        return std::make_shared<DataTypeUInt64>();
+
+    return nullptr;
+}
+
+std::vector<String> DataTypeArray::getSubcolumnNames() const
+{
+    size_t num_of_dimentions = getNumberOfDimensions();
+    std::vector<String> res(num_of_dimentions);
+    for (size_t i = 0; i < num_of_dimentions; ++i)
+        res[i] = "size" + std::to_string(i);
+
+    return res;
+}
+
+String DataTypeArray::getEscapedFileName(const NameAndTypePair & column) const
+{
+    if (column.isSubcolumn())
+        return escapeForFileName(column.getStorageName()) + "." + column.getSubcolumnName();
+
+    return escapeForFileName(column.name);
+}
 
 size_t DataTypeArray::getNumberOfDimensions() const
 {

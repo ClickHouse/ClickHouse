@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Core/NamesAndTypes.h>
 
 
 namespace DB
@@ -201,13 +202,13 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
     }
 }
 
-bool MergeTreeDataPartWide::hasColumnFiles(const String & column_name, const IDataType & type) const
+bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 {
     bool res = true;
 
-    type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
-        String file_name = IDataType::getFileNameForStream(column_name, substream_path);
+        String file_name = IDataType::getFileNameForStream(column, substream_path);
 
         auto bin_checksum = checksums.files.find(file_name + ".bin");
         auto mrk_checksum = checksums.files.find(file_name + index_granularity_info.marks_file_extension);

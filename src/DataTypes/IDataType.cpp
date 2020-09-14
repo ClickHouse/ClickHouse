@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
 
-
 namespace DB
 {
 
@@ -93,6 +92,20 @@ size_t IDataType::getSizeOfValueInMemory() const
     throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
 }
 
+String IDataType::getEscapedFileName(const NameAndTypePair & column) const
+{
+    return escapeForFileName(column.name);
+}
+
+String IDataType::getFileNameForStream(const NameAndTypePair & column, const IDataType::SubstreamPath & path)
+{
+
+    if (!column.isSubcolumn())
+        return getFileNameForStream(column.name, path);
+
+    auto stream_name = column.getStorageType()->getEscapedFileName(column);
+    return getFileNameForStreamImpl(std::move(stream_name), path);
+}
 
 String IDataType::getFileNameForStream(const String & column_name, const IDataType::SubstreamPath & path)
 {
@@ -105,8 +118,13 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
         && path[0].type == IDataType::Substream::ArraySizes
         && nested_table_name != column_name;
 
+    auto stream_name = escapeForFileName(is_sizes_of_nested_type ? nested_table_name : column_name);
+    return getFileNameForStreamImpl(std::move(stream_name), path);
+}
+
+String IDataType::getFileNameForStreamImpl(String stream_name, const IDataType::SubstreamPath & path)
+{
     size_t array_level = 0;
-    String stream_name = escapeForFileName(is_sizes_of_nested_type ? nested_table_name : column_name);
     for (const Substream & elem : path)
     {
         if (elem.type == Substream::NullMap)
@@ -126,6 +144,7 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
         else if (elem.type == Substream::DictionaryKeys)
             stream_name += ".dict";
     }
+
     return stream_name;
 }
 

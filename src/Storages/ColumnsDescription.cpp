@@ -23,6 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -322,6 +323,19 @@ NamesAndTypesList ColumnsDescription::getAll() const
     return ret;
 }
 
+NamesAndTypesList ColumnsDescription::getAllWithSubcolumns() const
+{
+    NamesAndTypesList ret;
+    for (const auto & col : columns)
+    {
+        ret.emplace_back(col.name, col.type);
+        for (const auto & subcolumn : col.type->getSubcolumnNames())
+            ret.emplace_back(col.name, subcolumn, col.type, col.type->getSubcolumnType(subcolumn));
+    }
+
+    return ret;
+}
+
 
 bool ColumnsDescription::has(const String & column_name) const
 {
@@ -371,12 +385,43 @@ NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) cons
     return NameAndTypePair(it->name, it->type);
 }
 
+NameAndTypePair ColumnsDescription::getPhysicalOrSubcolumn(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    if (it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias)
+        return NameAndTypePair(it->name, it->type);
+
+    std::optional<NameAndTypePair> res;
+    for (const auto & storage_column : columns)
+    {
+        if (startsWith(column_name, storage_column.name))
+        {
+            ReadBufferFromString buf(column_name);
+            if (checkString(storage_column.name, buf) && checkChar('.', buf))
+            {
+                String subcolumn_name;
+                readString(subcolumn_name, buf);
+                auto subcolumn_type = storage_column.type->getSubcolumnType(subcolumn_name);
+                if (subcolumn_type)
+                {
+                    res.emplace(storage_column.name, subcolumn_name, storage_column.type, subcolumn_type);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!res)
+        throw Exception("There is no physical column or subcolumn " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+
+    return *res;
+}
+
 bool ColumnsDescription::hasPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
     return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
 }
-
 
 ColumnDefaults ColumnsDescription::getDefaults() const
 {
