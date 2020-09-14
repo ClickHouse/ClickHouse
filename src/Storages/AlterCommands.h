@@ -144,6 +144,7 @@ struct AlterCommand
     /// Checks that any TTL changed by alter
     bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
 
+    /// Command removing some property from column or table
     bool isRemovingProperty() const;
 
     /// If possible, convert alter command to mutation command. In other case
