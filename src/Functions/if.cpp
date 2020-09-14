@@ -604,7 +604,6 @@ private:
         const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         /// Convert both columns to the common type (if needed).
-
         const ColumnWithTypeAndName & arg1 = block.getByPosition(arguments[1]);
         const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[2]);
 
@@ -765,10 +764,22 @@ private:
         return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
     }
 
-    static ColumnPtr getNestedColumn(const ColumnPtr & column)
+    /// Return nested column recursively removing Nullable, examples:
+    /// Nullable(size = 1, Int32(size = 1), UInt8(size = 1)) -> Int32(size = 1)
+    /// Const(size = 0, Nullable(size = 1, Int32(size = 1), UInt8(size = 1))) ->
+    /// Const(size = 0, Int32(size = 1))
+    static ColumnPtr recursiveGetNestedColumnWithoutNullable(const ColumnPtr & column)
     {
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
+        {
+            /// Nullable cannot contain Nullable
             return nullable->getNestedColumnPtr();
+        }
+        else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*column))
+        {
+            /// Save Constant, but remove Nullable
+            return ColumnConst::create(recursiveGetNestedColumnWithoutNullable(column_const->getDataColumnPtr()), column->size());
+        }
 
         return column;
     }
@@ -826,12 +837,12 @@ private:
             {
                 arg_cond,
                 {
-                    getNestedColumn(arg_then.column),
+                    recursiveGetNestedColumnWithoutNullable(arg_then.column),
                     removeNullable(arg_then.type),
                     ""
                 },
                 {
-                    getNestedColumn(arg_else.column),
+                    recursiveGetNestedColumnWithoutNullable(arg_else.column),
                     removeNullable(arg_else.type),
                     ""
                 },
