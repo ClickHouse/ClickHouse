@@ -13,6 +13,11 @@ namespace DB
 
 struct Null {};
 
+/// Ignore strange gcc warning https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55776
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#endif
 /// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
 enum class TypeIndex
 {
@@ -52,6 +57,9 @@ enum class TypeIndex
     AggregateFunction,
     LowCardinality,
 };
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
 
 /// Other int defines are in common/types.h
 using UInt256 = ::wUInt256;
