@@ -99,6 +99,7 @@ SRCS(
     array/indexOf.cpp
     array/length.cpp
     array/mapOp.cpp
+    array/mapPopulateSeries.cpp
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
