@@ -776,7 +776,7 @@ private:
         }
         else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*column))
         {
-            /// Save Constant, but remove Nullable
+            /// Save Constant, but remove Nullable.
             return ColumnConst::create(recursiveGetNestedColumnWithoutNullable(column_const->getDataColumnPtr()), column->size());
         }
 
