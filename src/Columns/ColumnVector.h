@@ -7,6 +7,7 @@
 #include <common/unaligned.h>
 #include <Core/Field.h>
 #include <Core/BigInt.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -130,7 +131,7 @@ public:
 
     void insertFrom(const IColumn & src, size_t n) override
     {
-        data.push_back(static_cast<const Self &>(src).getData()[n]);
+        data.push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
     void insertData(const char * pos, size_t) override
@@ -205,14 +206,14 @@ public:
     /// This method implemented in header because it could be possibly devirtualized.
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
     {
-        return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
+        return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override
     {
-        return this->template doCompareColumn<Self>(static_cast<const Self &>(rhs), rhs_row_num, row_indexes,
+        return this->template doCompareColumn<Self>(assert_cast<const Self &>(rhs), rhs_row_num, row_indexes,
                                                     compare_results, direction, nan_direction_hint);
     }
 
