@@ -11,7 +11,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Databases/DatabaseAtomic.h>
+#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 
 
 namespace DB
@@ -94,7 +94,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->shutdown();
             TableExclusiveLockHolder table_lock;
-            if (database->getEngineName() != "Atomic")
+            if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
             database->detachTable(table_id.table_name);
@@ -117,7 +117,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             table->shutdown();
 
             TableExclusiveLockHolder table_lock;
-            if (database->getEngineName() != "Atomic")
+            if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
             database->dropTable(context, table_id.table_name, query.no_delay);
@@ -222,6 +222,9 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
             bool drop = kind == ASTDropQuery::Kind::Drop;
             context.checkAccess(AccessType::DROP_DATABASE, database_name);
 
+            if (database->getEngineName() == "MaterializeMySQL")
+                stopDatabaseSynchronization(database);
+
             if (database->shouldBeEmptyOnDetach())
             {
                 /// DETACH or DROP all tables and dictionaries inside database.
@@ -246,9 +249,8 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
             /// Protects from concurrent CREATE TABLE queries
             auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
 
-            auto * database_atomic = typeid_cast<DatabaseAtomic *>(database.get());
-            if (!drop && database_atomic)
-                database_atomic->assertCanBeDetached(true);
+            if (!drop)
+                database->assertCanBeDetached(true);
 
             /// DETACH or DROP database itself
             DatabaseCatalog::instance().detachDatabase(database_name, drop, database->shouldBeEmptyOnDetach());

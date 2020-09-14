@@ -35,7 +35,7 @@ public:
 };
 
 
-DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, Context & context_)
+DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const Context & context_)
     : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", "DatabaseAtomic (" + name_ + ")", context_)
     , path_to_table_symlinks(global_context.getPath() + "data/" + escapeForFileName(name_) + "/")
     , path_to_metadata_symlink(global_context.getPath() + "metadata/" + escapeForFileName(name_))
@@ -323,9 +323,9 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleenupDetachedTables()
     return not_in_use;
 }
 
-void DatabaseAtomic::assertCanBeDetached(bool cleenup)
+void DatabaseAtomic::assertCanBeDetached(bool cleanup)
 {
-    if (cleenup)
+    if (cleanup)
     {
         DetachedTables not_in_use;
         {

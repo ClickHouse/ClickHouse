@@ -4,7 +4,9 @@
         <default>
             <allow_experimental_database_materialize_mysql>1</allow_experimental_database_materialize_mysql>
             <allow_introspection_functions>1</allow_introspection_functions>
+            <default_database_engine>Atomic</default_database_engine>
         </default>
+
     </profiles>
 
     <users>
