@@ -633,7 +633,8 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 {
     if (ignore)
         return false;
-
+    
+    /// We remove properties on metadata level
     if (isRemovingProperty())
         return false;
 
@@ -641,10 +642,6 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
         return true;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
-        return false;
-
-    /// We remove properties on metadata level
-    if (type == MODIFY_COLUMN)
         return false;
 
     for (const auto & column : metadata.columns.getAllPhysical())
