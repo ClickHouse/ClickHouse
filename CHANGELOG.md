@@ -96,11 +96,13 @@
 * Add `QueryTimeMicroseconds`, `SelectQueryTimeMicroseconds` and `InsertQueryTimeMicroseconds` to system.events. [#13336](https://github.com/ClickHouse/ClickHouse/pull/13336) ([ianton-ru](https://github.com/ianton-ru)).
 * Fix debug assertion when Decimal has too large negative exponent. Fixes [#13188](https://github.com/ClickHouse/ClickHouse/issues/13188). [#13228](https://github.com/ClickHouse/ClickHouse/pull/13228) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Added cache layer for DiskS3 (cache to local disk mark and index files). `DiskS3` is an experimental feature. [#13076](https://github.com/ClickHouse/ClickHouse/pull/13076) ([Pavel Kovalenko](https://github.com/Jokser)).
+* Fix readline so it dumps history to file now. [#13600](https://github.com/ClickHouse/ClickHouse/pull/13600) ([Amos Bird](https://github.com/amosbird)).
+* Create `system` database with `Atomic` engine by default (a preparation to enable `Atomic` database engine by default everywhere). [#13680](https://github.com/ClickHouse/ClickHouse/pull/13680) ([tavplubix](https://github.com/tavplubix)).
 
 #### Performance Improvement
 
-* Slightly optimize very short queries with LowCardinality. [#14129](https://github.com/ClickHouse/ClickHouse/pull/14129) ([Anton Popov](https://github.com/CurtizJ)).
-* Enable parallel INSERTs for table engines `Null`, `Memory`, `Distributed` and `Buffer`. [#14120](https://github.com/ClickHouse/ClickHouse/pull/14120) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Slightly optimize very short queries with `LowCardinality`. [#14129](https://github.com/ClickHouse/ClickHouse/pull/14129) ([Anton Popov](https://github.com/CurtizJ)).
+* Enable parallel INSERTs for table engines `Null`, `Memory`, `Distributed` and `Buffer` when the setting `max_insert_threads` is set. [#14120](https://github.com/ClickHouse/ClickHouse/pull/14120) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Fail fast if `max_rows_to_read` limit is exceeded on parts scan. The motivation behind this change is to skip ranges scan for all selected parts if it is clear that `max_rows_to_read` is already exceeded. The change is quite noticeable for queries over big number of parts. [#13677](https://github.com/ClickHouse/ClickHouse/pull/13677) ([Roman Khavronenko](https://github.com/hagen1778)).
 * Slightly improve performance of aggregation by UInt8/UInt16 keys. [#13099](https://github.com/ClickHouse/ClickHouse/pull/13099) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Optimize `has()`, `indexOf()` and `countEqual()` functions for `Array(LowCardinality(T))` and constant right arguments. [#12550](https://github.com/ClickHouse/ClickHouse/pull/12550) ([myrrc](https://github.com/myrrc)).
@@ -112,37 +114,30 @@
 
 #### Build/Testing/Packaging Improvement
 
-* Actually there are no symlinks there, so `-type f` is enough ``` ~/workspace/ClickHouse/contrib/cctz/testdata/zoneinfo$ find . -type l -ls | wc -l 0 ``` Closes [#14209](https://github.com/ClickHouse/ClickHouse/issues/14209). [#14215](https://github.com/ClickHouse/ClickHouse/pull/14215) ([filimonov](https://github.com/filimonov)).
-* Switch tests docker images to use test-base parent. [#14167](https://github.com/ClickHouse/ClickHouse/pull/14167) ([Ilya Yatsishin](https://github.com/qoega)).
+* Added `clickhouse install` script, that is useful if you only have a single binary. [#13528](https://github.com/ClickHouse/ClickHouse/pull/13528) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Allow to run `clickhouse` binary without configuration. [#13515](https://github.com/ClickHouse/ClickHouse/pull/13515) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Enable check for typos in code with `codespell`. [#13513](https://github.com/ClickHouse/ClickHouse/pull/13513) [#13511](https://github.com/ClickHouse/ClickHouse/pull/13511) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Enable Shellcheck in CI as a linter of .sh tests. This closes [#13168](https://github.com/ClickHouse/ClickHouse/issues/13168). [#13530](https://github.com/ClickHouse/ClickHouse/pull/13530) [#13529](https://github.com/ClickHouse/ClickHouse/pull/13529) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Add a CMake option to fail configuration instead of auto-reconfiguration, enabled by default. [#13687](https://github.com/ClickHouse/ClickHouse/pull/13687) ([Konstantin](https://github.com/podshumok)).
+* Expose version of embedded tzdata via TZDATA_VERSION in system.build_options. [#13648](https://github.com/ClickHouse/ClickHouse/pull/13648) ([filimonov](https://github.com/filimonov)).
+* Improve generation of system.time_zones table during build. Closes [#14209](https://github.com/ClickHouse/ClickHouse/issues/14209). [#14215](https://github.com/ClickHouse/ClickHouse/pull/14215) ([filimonov](https://github.com/filimonov)).
+* Build ClickHouse with the most fresh tzdata from package repository. [#13623](https://github.com/ClickHouse/ClickHouse/pull/13623) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Add the ability to write js-style comments in skip_list.json. [#14159](https://github.com/ClickHouse/ClickHouse/pull/14159) ([alesapin](https://github.com/alesapin)).
-* * Adding retry logic when bringing up docker-compose cluster * Increasing COMPOSE_HTTP_TIMEOUT. [#14112](https://github.com/ClickHouse/ClickHouse/pull/14112) ([vzakaznikov](https://github.com/vzakaznikov)).
-* Enabled text-log in stress test to find more bugs. [#13855](https://github.com/ClickHouse/ClickHouse/pull/13855) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Ensure that there is no copy-pasted GPL code. [#13514](https://github.com/ClickHouse/ClickHouse/pull/13514) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Switch tests docker images to use test-base parent. [#14167](https://github.com/ClickHouse/ClickHouse/pull/14167) ([Ilya Yatsishin](https://github.com/qoega)).
+* Adding retry logic when bringing up docker-compose cluster; Increasing COMPOSE_HTTP_TIMEOUT. [#14112](https://github.com/ClickHouse/ClickHouse/pull/14112) ([vzakaznikov](https://github.com/vzakaznikov)).
+* Enabled `system.text_log` in stress test to find more bugs. [#13855](https://github.com/ClickHouse/ClickHouse/pull/13855) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * Testflows LDAP module: adding missing certificates and dhparam.pem for openldap4. [#13780](https://github.com/ClickHouse/ClickHouse/pull/13780) ([vzakaznikov](https://github.com/vzakaznikov)).
 * ZooKeeper cannot work reliably in unit tests in CI infrastructure. Using unit tests for ZooKeeper interaction with real ZooKeeper is bad idea from the start (unit tests are not supposed to verify complex distributed systems). We already using integration tests for this purpose and they are better suited. [#13745](https://github.com/ClickHouse/ClickHouse/pull/13745) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Added docker image for style check. Added style check that all docker and docker compose files are located in docker directory. [#13724](https://github.com/ClickHouse/ClickHouse/pull/13724) ([Ilya Yatsishin](https://github.com/qoega)).
-* FIx cassandra build on Mac OS. [#13708](https://github.com/ClickHouse/ClickHouse/pull/13708) ([Ilya Yatsishin](https://github.com/qoega)).
+* Fix cassandra build on Mac OS. [#13708](https://github.com/ClickHouse/ClickHouse/pull/13708) ([Ilya Yatsishin](https://github.com/qoega)).
 * Fix link error in shared build. [#13700](https://github.com/ClickHouse/ClickHouse/pull/13700) ([Amos Bird](https://github.com/amosbird)).
-* Add a CMake option to fail configuration instead of auto-reconfiguration, enabled by default. [#13687](https://github.com/ClickHouse/ClickHouse/pull/13687) ([Konstantin](https://github.com/podshumok)).
 * Updating LDAP user authentication suite to check that it works with RBAC. [#13656](https://github.com/ClickHouse/ClickHouse/pull/13656) ([vzakaznikov](https://github.com/vzakaznikov)).
-* Expose version of embedded tzdata via TZDATA_VERSION in system.build_options. [#13648](https://github.com/ClickHouse/ClickHouse/pull/13648) ([filimonov](https://github.com/filimonov)).
 * Removed `-DENABLE_CURL_CLIENT` for `contrib/aws`. [#13628](https://github.com/ClickHouse/ClickHouse/pull/13628) ([Vladimir Chebotarev](https://github.com/excitoon)).
-* Build ClickHouse with the most fresh tzdata from package repository. [#13623](https://github.com/ClickHouse/ClickHouse/pull/13623) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Increasing health-check timeouts for ClickHouse nodes and adding support to dump docker-compose logs if unhealthy containers found. [#13612](https://github.com/ClickHouse/ClickHouse/pull/13612) ([vzakaznikov](https://github.com/vzakaznikov)).
 * Make sure https://github.com/ClickHouse/ClickHouse/issues/10977 is invalid. [#13539](https://github.com/ClickHouse/ClickHouse/pull/13539) ([Amos Bird](https://github.com/amosbird)).
-* Enable Shellcheck in CI as a linter of .sh tests. This closes [#13168](https://github.com/ClickHouse/ClickHouse/issues/13168). [#13530](https://github.com/ClickHouse/ClickHouse/pull/13530) ([alexey-milovidov](https://github.com/alexey-milovidov)).
-* Fix the remaining shellcheck notices. A preparation to enable Shellcheck. [#13529](https://github.com/ClickHouse/ClickHouse/pull/13529) ([alexey-milovidov](https://github.com/alexey-milovidov)).
-* Added `clickhouse install` script, that is useful if you only have a single binary. [#13528](https://github.com/ClickHouse/ClickHouse/pull/13528) ([alexey-milovidov](https://github.com/alexey-milovidov)).
-* Allow to run `clickhouse` binary without configuration. [#13515](https://github.com/ClickHouse/ClickHouse/pull/13515) ([alexey-milovidov](https://github.com/alexey-milovidov)).
-* Ensure that there is no copy-pasted GPL code. [#13514](https://github.com/ClickHouse/ClickHouse/pull/13514) ([alexey-milovidov](https://github.com/alexey-milovidov)).
-* Enable check for typos in code with `codespell`. [#13513](https://github.com/ClickHouse/ClickHouse/pull/13513) ([alexey-milovidov](https://github.com/alexey-milovidov)).
-* Fix typos in code with codespell. [#13511](https://github.com/ClickHouse/ClickHouse/pull/13511) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Skip PR's from robot-clickhouse. [#13489](https://github.com/ClickHouse/ClickHouse/pull/13489) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * Move Dockerfiles from integration tests to `docker/test` directory. docker_compose files are available in `runner` docker container. Docker images are built in CI and not in integration tests. [#13448](https://github.com/ClickHouse/ClickHouse/pull/13448) ([Ilya Yatsishin](https://github.com/qoega)).
-
-#### Other
-
-* Create `system` database with `Atomic` engine by default. [#13680](https://github.com/ClickHouse/ClickHouse/pull/13680) ([tavplubix](https://github.com/tavplubix)).
-* Fix readline so it dumps history to file now. [#13600](https://github.com/ClickHouse/ClickHouse/pull/13600) ([Amos Bird](https://github.com/amosbird)).
 
 
 ## ClickHouse release 20.7
