@@ -76,6 +76,8 @@ public:
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
     std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
+    std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
+
     bool attach_short_syntax{false};
 
     /** Get the text that identifies this element. */

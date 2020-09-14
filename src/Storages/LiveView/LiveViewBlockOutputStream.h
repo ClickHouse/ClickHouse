@@ -34,6 +34,7 @@ public:
         {
             new_blocks_metadata->hash = key_str;
             new_blocks_metadata->version = storage.getBlocksVersion() + 1;
+            new_blocks_metadata->time = std::chrono::system_clock::now();
 
             for (auto & block : *new_blocks)
             {
@@ -47,6 +48,15 @@ public:
             (*storage.blocks_metadata_ptr) = new_blocks_metadata;
 
             storage.condition.notify_all();
+        }
+        else
+        {
+            // only update blocks time
+            new_blocks_metadata->hash = storage.getBlocksHashKey();
+            new_blocks_metadata->version = storage.getBlocksVersion();
+            new_blocks_metadata->time = std::chrono::system_clock::now();
+
+            (*storage.blocks_metadata_ptr) = new_blocks_metadata;
         }
 
         new_blocks.reset();
