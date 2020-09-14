@@ -7,12 +7,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 class FunctionRegexpQuoteMeta : public IFunction
 {
@@ -104,11 +106,13 @@ public:
 
         block.getByPosition(result).column = std::move(dst_column);
     }
-
 };
+
+}
 
 void registerFunctionRegexpQuoteMeta(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRegexpQuoteMeta>();
 }
+
 }

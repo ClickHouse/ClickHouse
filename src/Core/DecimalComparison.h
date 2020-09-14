@@ -129,7 +129,7 @@ private:
         Shift shift;
         if (decimal0 && decimal1)
         {
-            auto result_type = decimalResultType(*decimal0, *decimal1, false, false);
+            auto result_type = decimalResultType<false, false>(*decimal0, *decimal1);
             shift.a = static_cast<CompareInt>(result_type.scaleFactorFor(*decimal0, false).value);
             shift.b = static_cast<CompareInt>(result_type.scaleFactorFor(*decimal1, false).value);
         }

@@ -9,7 +9,6 @@ template <typename A, typename B>
 struct MultiplyImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
-    static const constexpr bool allow_decimal = true;
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
