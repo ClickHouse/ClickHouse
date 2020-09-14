@@ -6,6 +6,7 @@
 #include <functional>
 #include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeType.h>
 
 
@@ -225,12 +226,6 @@ public :
       */
     ActionBlocker merges_blocker;
     ActionBlocker ttl_merges_blocker;
-
-    enum class MergeAlgorithm
-    {
-        Horizontal, /// per-row merge of all columns
-        Vertical    /// per-row merge of PK and secondary indices columns, per-column gather for non-PK columns
-    };
 
 private:
 
