@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
-#pragma GCC visibility pop
+#pragma GCC visibility push(hidden)
 
 struct IArraySource
 {
