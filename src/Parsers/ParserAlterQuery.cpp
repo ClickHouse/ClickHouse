@@ -83,12 +83,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_to("TO");
 
     ParserKeyword s_remove("REMOVE");
-    ParserKeyword s_default("DEFAULT");
-    ParserKeyword s_materialized("MATERIALIZED");
-    ParserKeyword s_alias("ALIAS");
-    ParserKeyword s_comment("COMMENT");
-    ParserKeyword s_codec("CODEC");
-    ParserKeyword s_ttl("TTL");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
