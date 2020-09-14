@@ -187,7 +187,7 @@ inline ALWAYS_INLINE void writeSlice(const NumericValueSlice<T> & slice, Generic
 
 
 template <typename SourceA, typename SourceB, typename Sink>
-void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
+void ALWAYS_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
 {
     sink.reserve(src_a.getSizeForReserve() + src_b.getSizeForReserve());
 
@@ -251,7 +251,7 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
 }
 
 template <typename Sink>
-void NO_INLINE concat(StringSources & sources, Sink && sink)
+void ALWAYS_INLINE concat(StringSources & sources, Sink && sink)
 {
     while (!sink.isEnd())
     {
@@ -266,7 +266,7 @@ void NO_INLINE concat(StringSources & sources, Sink && sink)
 
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
+void ALWAYS_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
 {
     while (!src.isEnd())
     {
@@ -277,7 +277,7 @@ void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink,
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
+void ALWAYS_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
     {
@@ -294,7 +294,7 @@ void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, s
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
+void ALWAYS_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
 {
     while (!src.isEnd())
     {
@@ -305,7 +305,7 @@ void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
+void ALWAYS_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
     {
@@ -322,7 +322,7 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
+void ALWAYS_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
     const bool is_null = offset_column.onlyNull();
     const auto * nullable = typeid_cast<const ColumnNullable *>(&offset_column);
@@ -353,7 +353,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
+void ALWAYS_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
 {
     const bool is_offset_null = offset_column.onlyNull();
     const auto * offset_nullable = typeid_cast<const ColumnNullable *>(&offset_column);
@@ -395,7 +395,7 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
 
 
 template <typename SourceA, typename SourceB, typename Sink>
-void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)
+void ALWAYS_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)
 {
     sink.reserve(std::max(src_a.getSizeForReserve(), src_b.getSizeForReserve()));
 
@@ -664,7 +664,7 @@ bool sliceHas(const NullableSlice<FirstArraySlice> & first, NullableSlice<Second
 }
 
 template <ArraySearchType search_type, typename FirstSource, typename SecondSource>
-void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnUInt8 & result)
+void ALWAYS_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnUInt8 & result)
 {
     auto size = result.size();
     auto & data = result.getData();

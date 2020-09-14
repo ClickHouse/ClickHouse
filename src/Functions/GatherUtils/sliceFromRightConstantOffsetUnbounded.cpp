@@ -6,8 +6,12 @@
 
 namespace DB::GatherUtils
 {
+
+namespace
+{
+
 struct SliceFromRightConstantOffsetUnboundedSelectArraySource
-    : public ArraySinkSourceSelector<SliceFromRightConstantOffsetUnboundedSelectArraySource>
+        : public ArraySinkSourceSelector<SliceFromRightConstantOffsetUnboundedSelectArraySource>
 {
     template <typename Source, typename Sink>
     static void selectSourceSink(Source && source, Sink && sink, size_t & offset)
@@ -15,6 +19,8 @@ struct SliceFromRightConstantOffsetUnboundedSelectArraySource
         sliceFromRightConstantOffsetUnbounded(source, sink, offset);
     }
 };
+
+}
 
 void sliceFromRightConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset)
 {

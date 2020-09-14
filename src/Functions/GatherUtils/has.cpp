@@ -5,6 +5,9 @@
 namespace DB::GatherUtils
 {
 
+namespace
+{
+
 struct ArrayHasSelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSelectArraySourcePair>
 {
     template <typename FirstSource, typename SecondSource>
@@ -26,6 +29,7 @@ struct ArrayHasSelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSe
     }
 };
 
+}
 
 void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result)
 {
