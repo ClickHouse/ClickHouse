@@ -57,7 +57,7 @@ void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
     });
 
     LocalLimits limits;
-    limits.mode = IBlockInputStream::LIMITS_CURRENT;
+    limits.mode = LimitsMode::LIMITS_CURRENT;
     limits.size_limits = size_limits;
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
