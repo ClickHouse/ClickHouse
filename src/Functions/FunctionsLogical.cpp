@@ -98,15 +98,10 @@ static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 
     for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
     {
-        UInt8 x;
-
-        if (in[i]->onlyNull())
-            x = func(Null());
-        else if (isColumnConst(*in[i]))
-            x = func((*in[i])[0]);
-        else
+        if (!isColumnConst(*in[i]))
             continue;
 
+        UInt8 x = func((*in[i])[0]);
         if (has_res)
         {
             res = Op::apply(res, x);
@@ -204,20 +199,12 @@ struct ValueGetterBuilderImpl<Type, Types...>
 {
     static TernaryValueGetter build(const IColumn * x)
     {
-        if (x->onlyNull())
-        {
-            return [](size_t){ return Ternary::Null; };
-        }
-        else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
+        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
         {
             if (const auto * nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
             {
-                return [
-                    &null_data = nullable_column->getNullMapData(),
-                    &column_data = nested_column->getData()](size_t i)
-                {
-                    return Ternary::makeValue(column_data[i], null_data[i]);
-                };
+                return [&null_data = nullable_column->getNullMapData(), &column_data = nested_column->getData()](size_t i)
+                { return Ternary::makeValue(column_data[i], null_data[i]); };
             }
             else
                 return ValueGetterBuilderImpl<Types...>::build(x);
@@ -235,7 +222,7 @@ struct ValueGetterBuilderImpl<>
     static TernaryValueGetter build(const IColumn * x)
     {
         throw Exception(
-                std::string("Unknown numeric column of type: ") + demangle(typeid(*x).name()),
+                std::string("Unknown numeric column of type: ") + demangle(typeid(x).name()),
                 ErrorCodes::LOGICAL_ERROR);
     }
 };
@@ -512,7 +499,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
 
 template <typename Impl, typename Name>
 void FunctionAnyArityLogical<Impl, Name>::executeImpl(
-    Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count) const
+    Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count)
 {
     ColumnRawPtrs args_in;
     for (const auto arg_index : arguments)
@@ -572,7 +559,7 @@ bool functionUnaryExecuteType(Block & block, const ColumnNumbers & arguments, si
 }
 
 template <template <typename> class Impl, typename Name>
-void FunctionUnaryLogical<Impl, Name>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+void FunctionUnaryLogical<Impl, Name>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     if (!(functionUnaryExecuteType<Impl, UInt8>(block, arguments, result)
         || functionUnaryExecuteType<Impl, UInt16>(block, arguments, result)

@@ -54,7 +54,7 @@ String FilterBlockInputStream::getName() const { return "Filter"; }
 Block FilterBlockInputStream::getTotals()
 {
     totals = children.back()->getTotals();
-    expression->execute(totals);
+    expression->executeOnTotals(totals);
 
     return totals;
 }

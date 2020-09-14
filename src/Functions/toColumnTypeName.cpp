@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Returns name of IColumn instance.
 class FunctionToColumnTypeName : public IFunction
@@ -36,7 +34,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column
             = DataTypeString().createColumnConst(input_rows_count, block.getByPosition(arguments[0]).column->getName());
@@ -48,7 +46,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionToColumnTypeName(FunctionFactory & factory)
 {

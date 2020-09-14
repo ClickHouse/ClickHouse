@@ -204,7 +204,7 @@ public:
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called
      * and "execute" otherwise.
      */
-    void selectAndExecute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    void selectAndExecute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         if (implementations.empty())
             throw Exception("There are no available implementations for function " "TODO(dakovalkov): add name",
@@ -232,7 +232,7 @@ public:
 
     /* Register new implementation for function.
      *
-     * Arch - required instruction set for running the implementation. It's guaranteed that no method would
+     * Arch - required instruction set for running the implementation. It's guarantied that no method would
      * be called (even the constructor and static methods) if the processor doesn't support this instruction set.
      *
      * FunctionImpl - implementation, should be inherited from template argument FunctionInterface.
@@ -257,7 +257,7 @@ public:
 private:
     const Context & context;
     std::vector<ImplementationPtr> implementations;
-    mutable detail::PerformanceStatistics statistics; /// It is protected by internal mutex.
+    detail::PerformanceStatistics statistics;
 };
 
 }

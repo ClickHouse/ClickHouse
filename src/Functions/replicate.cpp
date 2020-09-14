@@ -7,14 +7,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
-
-namespace
-{
 
 /** Creates an array, multiplying the column (the first argument) by the number of elements in the array (the second argument).
   */
@@ -48,7 +46,7 @@ public:
         return std::make_shared<DataTypeArray>(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
         ColumnPtr first_column = block.getByPosition(arguments[0]).column;
         const ColumnArray * array_column = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[1]).column.get());
@@ -66,7 +64,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionReplicate(FunctionFactory & factory)
 {

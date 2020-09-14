@@ -23,7 +23,7 @@ public:
         return name;
     }
 
-protected:
+private:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         const Context & context,
@@ -40,18 +40,6 @@ protected:
         const String & compression_method);
 
     const char * getStorageTypeName() const override { return "S3"; }
-};
-
-class TableFunctionCOS : public TableFunctionS3
-{
-public:
-    static constexpr auto name = "cosn";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "COSN"; }
 };
 
 }

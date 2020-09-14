@@ -19,8 +19,6 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-namespace
-{
 
 /* Generate random string of specified length with fully random bytes (including zero). */
 template <typename RandImpl>
@@ -57,7 +55,7 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         auto col_to = ColumnString::create();
         ColumnString::Chars & data_to = col_to->getChars();
@@ -111,7 +109,7 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
@@ -124,8 +122,6 @@ public:
 private:
     ImplementationSelector<IFunction> selector;
 };
-
-}
 
 void registerFunctionRandomString(FunctionFactory & factory)
 {

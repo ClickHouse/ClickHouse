@@ -1,6 +1,5 @@
 #include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemDatabases.h>
@@ -16,7 +15,6 @@ NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
         {"engine", std::make_shared<DataTypeString>()},
         {"data_path", std::make_shared<DataTypeString>()},
         {"metadata_path", std::make_shared<DataTypeString>()},
-        {"uuid", std::make_shared<DataTypeUUID>()},
     };
 }
 
@@ -35,7 +33,6 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, const Contex
         res_columns[1]->insert(database.second->getEngineName());
         res_columns[2]->insert(context.getPath() + database.second->getDataPath());
         res_columns[3]->insert(database.second->getMetadataPath());
-        res_columns[4]->insert(database.second->getUUID());
    }
 }
 

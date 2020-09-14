@@ -9,7 +9,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -72,6 +71,9 @@ struct FixedStringUnaryOperationImpl
 template <typename FunctionName>
 struct FunctionUnaryArithmeticMonotonicity;
 
+template <typename> struct AbsImpl;
+template <typename> struct NegateImpl;
+
 /// Used to indicate undefined operation
 struct InvalidType;
 
@@ -79,7 +81,7 @@ struct InvalidType;
 template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
-    static constexpr bool allow_decimal = IsUnaryOperation<Op>::negate || IsUnaryOperation<Op>::abs;
+    static constexpr bool allow_decimal = std::is_same_v<Op<Int8>, NegateImpl<Int8>> || std::is_same_v<Op<Int8>, AbsImpl<Int8>>;
     static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
 
     template <typename F>
@@ -90,19 +92,15 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeUInt16,
             DataTypeUInt32,
             DataTypeUInt64,
-            DataTypeUInt256,
             DataTypeInt8,
             DataTypeInt16,
             DataTypeInt32,
             DataTypeInt64,
-            DataTypeInt128,
-            DataTypeInt256,
             DataTypeFloat32,
             DataTypeFloat64,
             DataTypeDecimal<Decimal32>,
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
-            DataTypeDecimal<Decimal256>,
             DataTypeFixedString
         >(type, std::forward<F>(f));
     }
@@ -154,7 +152,7 @@ public:
         return result;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         bool valid = castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
         {
@@ -214,9 +212,6 @@ public:
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes & arguments) const override
     {
-        if (1 != arguments.size())
-            return false;
-
         return castType(arguments[0].get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
@@ -229,8 +224,6 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
-        assert(1 == types.size() && 1 == values.size());
-
         llvm::Value * result = nullptr;
         castType(types[0].get(), [&](const auto & type)
         {

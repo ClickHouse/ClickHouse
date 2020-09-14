@@ -54,8 +54,7 @@ def started_cluster():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
-                        main_configs=["configs/conf.d/query_log.xml", "configs/conf.d/ddl.xml", "configs/conf.d/clusters.xml"],
-                        user_configs=["configs/users.xml"],
+                        config_dir="configs",
                         macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
                         with_zookeeper=True)
 
@@ -79,7 +78,7 @@ class Task1:
 
         for cluster_num in ["0", "1"]:
             ddl_check_query(instance, "DROP DATABASE IF EXISTS default ON CLUSTER cluster{}".format(cluster_num))
-            ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{} ENGINE=Ordinary".format(cluster_num))
+            ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{}".format(cluster_num))
 
         ddl_check_query(instance, "CREATE TABLE hits ON CLUSTER cluster0 (d UInt64, d1 UInt64 MATERIALIZED d+1) " +
                                   "ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/hits', '{replica}') " +
@@ -116,7 +115,7 @@ class Task2:
 
         for cluster_num in ["0", "1"]:
             ddl_check_query(instance, "DROP DATABASE IF EXISTS default ON CLUSTER cluster{}".format(cluster_num))
-            ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{} ENGINE=Ordinary".format(cluster_num))
+            ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{}".format(cluster_num))
 
         ddl_check_query(instance, "CREATE TABLE a ON CLUSTER cluster0 (date Date, d UInt64, d1 UInt64 ALIAS d+1) ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/a', '{replica}', date, intHash64(d), (date, intHash64(d)), 8192)")
         ddl_check_query(instance, "CREATE TABLE a_all ON CLUSTER cluster0 (date Date, d UInt64) ENGINE=Distributed(cluster0, default, a, d)")
@@ -227,7 +226,6 @@ def execute_task(task, cmd_options):
     zk.ensure_path(zk_task_path)
     zk.create(zk_task_path + "/description", task.copier_task_config)
 
-
     # Run cluster-copier processes on each node
     docker_api = docker.from_env().api
     copiers_exec_ids = []
@@ -243,11 +241,9 @@ def execute_task(task, cmd_options):
     for instance_name in copiers:
         instance = cluster.instances[instance_name]
         container = instance.get_docker_handle()
-        instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs/config-copier.xml"), "/etc/clickhouse-server/config-copier.xml")
-        print "Copied copier config to {}".format(instance.name)
         exec_id = docker_api.exec_create(container.id, cmd, stderr=True)
-        output = docker_api.exec_start(exec_id).decode('utf8')
-        print(output)
+        docker_api.exec_start(exec_id, detach=True)
+
         copiers_exec_ids.append(exec_id)
         print "Copier for {} ({}) has started".format(instance.name, instance.ip_address)
 

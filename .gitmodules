@@ -10,7 +10,7 @@
 	url = https://github.com/lz4/lz4.git
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
-	url = https://github.com/ClickHouse-Extras/librdkafka.git
+	url = https://github.com/edenhill/librdkafka.git
 [submodule "contrib/cctz"]
 	path = contrib/cctz
 	url = https://github.com/ClickHouse-Extras/cctz.git
@@ -49,7 +49,7 @@
 	url = https://github.com/ClickHouse-Extras/boost.git
 [submodule "contrib/base64"]
 	path = contrib/base64
-	url = https://github.com/ClickHouse-Extras/Turbo-Base64.git
+	url = https://github.com/powturbo/Turbo-Base64.git
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/apache/arrow
@@ -76,7 +76,7 @@
 	url = https://github.com/google/snappy
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
-	url = https://github.com/mfontanini/cppkafka.git
+	url = https://github.com/ClickHouse-Extras/cppkafka.git
 [submodule "contrib/brotli"]
 	path = contrib/brotli
 	url = https://github.com/google/brotli.git
@@ -91,10 +91,10 @@
 	url = https://github.com/ClickHouse-Extras/libunwind.git
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
-	url = https://github.com/ClickHouse-Extras/simdjson.git
+	url = https://github.com/lemire/simdjson.git
 [submodule "contrib/rapidjson"]
 	path = contrib/rapidjson
-	url = https://github.com/ClickHouse-Extras/rapidjson
+	url = https://github.com/Tencent/rapidjson
 [submodule "contrib/fastops"]
 	path = contrib/fastops
 	url = https://github.com/ClickHouse-Extras/fastops
@@ -173,16 +173,4 @@
 	url = https://github.com/fmtlib/fmt.git
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
-	url = https://github.com/ClickHouse-Extras/sentry-native.git
-[submodule "contrib/gcem"]
-	path = contrib/gcem
-	url = https://github.com/kthohr/gcem.git
-[submodule "contrib/stats"]
-	path = contrib/stats
-	url = https://github.com/kthohr/stats.git
-[submodule "contrib/krb5"]
-	path = contrib/krb5
-	url = https://github.com/krb5/krb5
-[submodule "contrib/cyrus-sasl"]
-	path = contrib/cyrus-sasl
-	url = https://github.com/cyrusimap/cyrus-sasl
+	url = https://github.com/getsentry/sentry-native.git

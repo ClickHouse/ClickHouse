@@ -10,6 +10,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -17,8 +18,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
 
 /** runningAccumulate(agg_state) - takes the states of the aggregate function and returns a column with values,
   * are the result of the accumulation of these states for a set of block lines, from the first to the current line.
@@ -73,7 +72,7 @@ public:
         return type->getReturnType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const ColumnAggregateFunction * column_with_states
             = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
@@ -134,7 +133,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionRunningAccumulate(FunctionFactory & factory)
 {

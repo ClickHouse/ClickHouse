@@ -1,3 +1,5 @@
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Exception.h>
@@ -5,6 +7,7 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 
 #include <ext/scope_guard.h>
+#include <pcg_random.hpp>
 
 #include <iostream>
 

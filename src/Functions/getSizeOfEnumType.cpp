@@ -7,13 +7,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
 
 /// Returns number of fields in Enum data type of passed value.
 class FunctionGetSizeOfEnumType : public IFunction
@@ -49,7 +48,7 @@ public:
         throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments)->cloneResized(input_rows_count);
     }
@@ -65,7 +64,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionGetSizeOfEnumType(FunctionFactory & factory)
 {

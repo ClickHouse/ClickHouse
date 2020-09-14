@@ -9,8 +9,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function isNotNull which returns true if a value
 /// is not null, false otherwise.
@@ -39,7 +37,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
@@ -61,8 +59,6 @@ public:
         }
     }
 };
-
-}
 
 void registerFunctionIsNotNull(FunctionFactory & factory)
 {

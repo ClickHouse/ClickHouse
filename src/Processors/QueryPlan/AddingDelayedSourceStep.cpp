@@ -4,19 +4,13 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits()
+static ITransformingStep::DataStreamTraits getTraits()
 {
-    return ITransformingStep::Traits
+    return ITransformingStep::DataStreamTraits
     {
-        {
-            .preserves_distinct_columns = false,
-            .returns_single_stream = false,
-            .preserves_number_of_streams = false,
-            .preserves_sorting = false,
-        },
-        {
-            .preserves_number_of_rows = false, /// New rows are added from delayed stream
-        }
+        .preserves_distinct_columns = false,
+        .returns_single_stream = false,
+        .preserves_number_of_streams = false,
     };
 }
 

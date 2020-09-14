@@ -126,10 +126,10 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
             std::string codecs_line = boost::algorithm::join(codecs, ",");
             auto ast = parseQuery(codec_parser, "(" + codecs_line + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-            codec = CompressionCodecFactory::instance().get(ast, nullptr);
+            codec = CompressionCodecFactory::instance().get(ast, nullptr, false);
         }
         else
-            codec = CompressionCodecFactory::instance().get(method_family, level);
+            codec = CompressionCodecFactory::instance().get(method_family, level, false);
 
 
         ReadBufferFromFileDescriptor rb(STDIN_FILENO);

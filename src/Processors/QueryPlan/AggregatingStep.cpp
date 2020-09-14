@@ -7,19 +7,13 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits()
+static ITransformingStep::DataStreamTraits getTraits()
 {
-    return ITransformingStep::Traits
+    return ITransformingStep::DataStreamTraits
     {
-        {
             .preserves_distinct_columns = false, /// Actually, we may check that distinct names are in aggregation keys
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
-            .preserves_sorting = false,
-        },
-        {
-            .preserves_number_of_rows = false,
-        }
     };
 }
 
@@ -101,7 +95,7 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
                     group_by_sort_description,
                     max_block_size);
 
-                pipeline.addTransform(std::move(transform));
+                pipeline.addPipe({ std::move(transform) });
                 aggregating_sorted = collector.detachProcessors(1);
             }
             else
@@ -120,6 +114,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
             });
 
             finalizing = collector.detachProcessors(2);
+
+            pipeline.enableQuotaForCurrentStreams();
             return;
         }
     }
@@ -154,6 +150,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
 
         aggregating = collector.detachProcessors(0);
     }
+
+    pipeline.enableQuotaForCurrentStreams();
 }
 
 void AggregatingStep::describeActions(FormatSettings & settings) const

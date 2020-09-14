@@ -10,14 +10,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
-
-namespace
-{
 
 /** Get the value of macro from configuration file.
   * For example, it may be used as a sophisticated replacement for the function 'hostName' if servers have complicated hostnames
@@ -64,7 +62,7 @@ public:
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.
       */
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const IColumn * arg_column = block.getByPosition(arguments[0]).column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
@@ -77,7 +75,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionGetMacro(FunctionFactory & factory)
 {

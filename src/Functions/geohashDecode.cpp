@@ -6,6 +6,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -14,13 +15,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
 
 // geohashDecode(string) => (lon float64, lat float64)
 class FunctionGeohashDecode : public IFunction
@@ -47,7 +47,7 @@ public:
     }
 
     template <typename ColumnTypeEncoded>
-    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column) const
+    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column)
     {
         const auto * encoded = checkAndGetColumn<ColumnTypeEncoded>(encoded_column);
         if (!encoded)
@@ -75,7 +75,7 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IColumn * encoded = block.getByPosition(arguments[0]).column.get();
         ColumnPtr & res_column = block.getByPosition(result).column;
@@ -90,7 +90,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionGeohashDecode(FunctionFactory & factory)
 {

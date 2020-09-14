@@ -57,7 +57,7 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
-#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -67,7 +67,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ParserQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -217,7 +216,7 @@ private:
     ConnectionParameters connection_parameters;
 
     QueryFuzzer fuzzer;
-    int query_fuzzer_runs = 0;
+    int query_fuzzer_runs;
 
     void initialize(Poco::Util::Application & self) override
     {
@@ -233,10 +232,10 @@ private:
         context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (const auto & setting : context.getSettingsRef().allUnchanged())
+        for (const auto & setting : context.getSettingsRef())
         {
-            const auto & name = setting.getName();
-            if (config().has(name))
+            const String & name = setting.getName().toString();
+            if (config().has(name) && !setting.isChanged())
                 context.setSetting(name, config().getString(name));
         }
 
@@ -790,7 +789,7 @@ private:
         // in particular, it can't distinguish the end of partial input buffer
         // and the final end of input file. This means we have to try to split
         // the input into separate queries here. Two patterns of input are
-        // especially interesting:
+        // especially interesing:
         // 1) multiline query:
         //      select 1
         //      from system.numbers;
@@ -847,28 +846,32 @@ private:
             }
 
             // Parse and execute what we've read.
+            fprintf(stderr, "will now parse '%s'\n", text.c_str());
+
             const auto * new_end = processWithFuzzing(text);
 
             if (new_end > &text[0])
             {
                 const auto rest_size = text.size() - (new_end - &text[0]);
 
+                fprintf(stderr, "total %zd, rest %zd\n", text.size(), rest_size);
+
                 memcpy(&text[0], new_end, rest_size);
                 text.resize(rest_size);
             }
             else
             {
-                // We didn't read enough text to parse a query. Will read more.
+                fprintf(stderr, "total %zd, can't parse\n", text.size());
             }
 
-            // Ensure that we're still connected to the server. If the server died,
-            // the reconnect is going to fail with an exception, and the fuzzer
-            // will exit. The ping() would be the best match here, but it's
-            // private, probably for a good reason that the protocol doesn't allow
-            // pings at any possible moment.
-            // Don't forget to reset the default database which might have changed.
-            connection->setDefaultDatabase("");
-            connection->forceConnected(connection_parameters.timeouts);
+            if (!connection->isConnected())
+            {
+                // Uh-oh...
+                std::cerr << "Lost connection to the server." << std::endl;
+                last_exception_received_from_server
+                    = std::make_unique<Exception>(210, "~");
+                return;
+            }
 
             if (text.size() > 4 * 1024)
             {
@@ -876,6 +879,9 @@ private:
                 // and we still cannot parse a single query in it. Abort.
                 std::cerr << "Read too much text and still can't parse a query."
                      " Aborting." << std::endl;
+                last_exception_received_from_server
+                    = std::make_unique<Exception>(1, "~");
+                // return;
                 exit(1);
             }
         }
@@ -902,127 +908,74 @@ private:
         return processMultiQuery(text);
     }
 
-    bool processMultiQuery(const String & all_queries_text)
+    bool processMultiQuery(const String & text)
     {
         const bool test_mode = config().has("testmode");
 
         {   /// disable logs if expects errors
-            TestHint test_hint(test_mode, all_queries_text);
+            TestHint test_hint(test_mode, text);
             if (test_hint.clientError() || test_hint.serverError())
                 processTextAsSingleQuery("SET send_logs_level = 'none'");
         }
 
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
-        /// An exception is VALUES format where we also support semicolon in
-        /// addition to end of line.
 
-        const char * this_query_begin = all_queries_text.data();
-        const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
+        const char * begin = text.data();
+        const char * end = begin + text.size();
 
-        while (this_query_begin < all_queries_end)
+        while (begin < end)
         {
-            // Use the token iterator to skip any whitespace, semicolons and
-            // comments at the beginning of the query. An example from regression
-            // tests:
-            //      insert into table t values ('invalid'); -- { serverError 469 }
-            //      select 1
-            // Here the test hint comment gets parsed as a part of second query.
-            // We parse the `INSERT VALUES` up to the semicolon, and the rest
-            // looks like a two-line query:
-            //      -- { serverError 469 }
-            //      select 1
-            // and we expect it to fail with error 469, but this hint is actually
-            // for the previous query. Test hints should go after the query, so
-            // we can fix this by skipping leading comments. Token iterator skips
-            // comments and whitespace by itself, so we only have to check for
-            // semicolons.
-            // The code block is to limit visibility of `tokens` because we have
-            // another such variable further down the code, and get warnings for
-            // that.
-            {
-                Tokens tokens(this_query_begin, all_queries_end);
-                IParser::Pos token_iterator(tokens,
-                    context.getSettingsRef().max_parser_depth);
-                while (token_iterator->type == TokenType::Semicolon
-                        && token_iterator.isValid())
-                {
-                    ++token_iterator;
-                }
-                this_query_begin = token_iterator->begin;
-                if (this_query_begin >= all_queries_end)
-                {
-                    break;
-                }
-            }
+            const char * pos = begin;
+            ASTPtr orig_ast = parseQuery(pos, end, true);
 
-            // Try to parse the query.
-            const char * this_query_end = this_query_begin;
-            parsed_query = parseQuery(this_query_end, all_queries_end, true);
-
-            if (!parsed_query)
+            if (!orig_ast)
             {
                 if (ignore_error)
                 {
-                    Tokens tokens(this_query_begin, all_queries_end);
+                    Tokens tokens(begin, end);
                     IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
                     while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                         ++token_iterator;
-                    this_query_begin = token_iterator->end;
+                    begin = token_iterator->end;
 
                     continue;
                 }
                 return true;
             }
 
-            // INSERT queries may have the inserted data in the query text
-            // that follow the query itself, e.g. "insert into t format CSV 1;2".
-            // They need special handling. First of all, here we find where the
-            // inserted data ends. In multy-query mode, it is delimited by a
-            // newline.
-            // The VALUES format needs even more handling -- we also allow the
-            // data to be delimited by semicolon. This case is handled later by
-            // the format parser itself.
-            auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-            if (insert_ast && insert_ast->data)
+            auto * insert = orig_ast->as<ASTInsertQuery>();
+
+            if (insert && insert->data)
             {
-                this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
-                insert_ast->end = this_query_end;
-                query_to_send = all_queries_text.substr(
-                    this_query_begin - all_queries_text.data(),
-                    insert_ast->data - this_query_begin);
-            }
-            else
-            {
-                query_to_send = all_queries_text.substr(
-                    this_query_begin - all_queries_text.data(),
-                    this_query_end - this_query_begin);
+                pos = find_first_symbols<'\n'>(insert->data, end);
+                insert->end = pos;
             }
 
-            // full_query is the query + inline INSERT data.
-            full_query = all_queries_text.substr(
-                this_query_begin - all_queries_text.data(),
-                this_query_end - this_query_begin);
+            String str = text.substr(begin - text.data(), pos - begin);
 
-            // Look for the hint in the text of query + insert data, if any.
-            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-            TestHint test_hint(test_mode, full_query);
+            begin = pos;
+            while (isWhitespaceASCII(*begin) || *begin == ';')
+                ++begin;
+
+            TestHint test_hint(test_mode, str);
             expected_client_error = test_hint.clientError();
             expected_server_error = test_hint.serverError();
 
             try
             {
-                processParsedSingleQuery();
-
-                if (insert_ast && insert_ast->data)
+                auto ast_to_process = orig_ast;
+                if (insert && insert->data)
                 {
-                    // For VALUES format: use the end of inline data as reported
-                    // by the format parser (it is saved in sendData()). This
-                    // allows us to handle queries like:
-                    //   insert into t values (1); select 1
-                    //, where the inline data is delimited by semicolon and not
-                    // by a newline.
-                    this_query_end = parsed_query->as<ASTInsertQuery>()->end;
+                    ast_to_process = nullptr;
+                    processTextAsSingleQuery(str);
+                }
+                else
+                {
+                    parsed_query = ast_to_process;
+                    full_query = str;
+                    query_to_send = str;
+                    processParsedSingleQuery();
                 }
             }
             catch (...)
@@ -1030,7 +983,7 @@ private:
                 last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                 actual_client_error = last_exception_received_from_server->code();
                 if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                    std::cerr << "Error on processing query: " << full_query << std::endl << last_exception_received_from_server->message();
+                    std::cerr << "Error on processing query: " << str << std::endl << last_exception_received_from_server->message();
                 received_exception_from_server = true;
             }
 
@@ -1044,8 +997,6 @@ private:
                 else
                     return false;
             }
-
-            this_query_begin = this_query_end;
         }
 
         return true;
@@ -1089,25 +1040,11 @@ private:
             full_query = text.substr(this_query_begin - text.data(),
                 begin - text.data());
 
-            // Don't repeat inserts, the tables grow too big. Also don't repeat
-            // creates because first we run the unmodified query, it will succeed,
-            // and the subsequent queries will fail. When we run out of fuzzer
-            // errors, it may be interesting to add fuzzing of create queries that
-            // wraps columns into LowCardinality or Nullable. Also there are other
-            // kinds of create queries such as CREATE DICTIONARY, we could fuzz
-            // them as well.
-            int this_query_runs = query_fuzzer_runs;
-            if (as_insert
-                || orig_ast->as<ASTCreateQuery>())
-            {
-                this_query_runs = 1;
-            }
-
             ASTPtr fuzz_base = orig_ast;
-            for (int fuzz_step = 0; fuzz_step < this_query_runs; fuzz_step++)
+            for (int fuzz_step = 0; fuzz_step < query_fuzzer_runs; fuzz_step++)
             {
-                fprintf(stderr, "fuzzing step %d out of %d for query at pos %zd\n",
-                    fuzz_step, this_query_runs, this_query_begin - text.data());
+                fprintf(stderr, "fuzzing step %d for query at pos %zd\n",
+                    fuzz_step, this_query_begin - text.data());
 
                 ASTPtr ast_to_process;
                 try
@@ -1117,15 +1054,7 @@ private:
                     auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
                     ast_to_process = fuzz_base->clone();
-
-                    std::stringstream dump_of_cloned_ast;
-                    ast_to_process->dumpTree(dump_of_cloned_ast);
-
-                    // Run the original query as well.
-                    if (fuzz_step > 0)
-                    {
-                        fuzzer.fuzzMain(ast_to_process);
-                    }
+                    fuzzer.fuzzMain(ast_to_process);
 
                     auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
@@ -1137,8 +1066,6 @@ private:
                             base_after_fuzz.c_str());
                         fprintf(stderr, "dump before fuzz:\n%s\n",
                             dump_before_fuzz.str().c_str());
-                        fprintf(stderr, "dump of cloned ast:\n%s\n",
-                            dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
                         fuzz_base->dumpTree(std::cerr);
                         assert(false);
@@ -1160,9 +1087,7 @@ private:
                 {
                     last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     received_exception_from_server = true;
-                    fmt::print(stderr, "Error on processing query '{}': {}\n",
-                        ast_to_process->formatForErrorMessage(),
-                        last_exception_received_from_server->message());
+                    std::cerr << "Error on processing query: " << ast_to_process->formatForErrorMessage() << std::endl << last_exception_received_from_server->message();
                 }
 
                 if (!connection->isConnected())
@@ -1470,7 +1395,7 @@ private:
     void sendData(Block & sample, const ColumnsDescription & columns_description)
     {
         /// If INSERT data must be sent.
-        auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
+        const auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
         if (!parsed_insert_query)
             return;
 
@@ -1479,9 +1404,6 @@ private:
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
             sendDataFrom(data_in, sample, columns_description);
-            // Remember where the data ended. We use this info later to determine
-            // where the next query begins.
-            parsed_insert_query->end = data_in.buffer().begin() + data_in.count();
         }
         else if (!is_interactive)
         {
@@ -1692,8 +1614,7 @@ private:
                 return false;
 
             default:
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
-                    packet.type, connection->getDescription());
+                throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         }
     }
 
@@ -2327,9 +2248,9 @@ public:
 
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?
-        for (const auto & setting : context.getSettingsRef().all())
+        for (const auto & setting : context.getSettingsRef())
         {
-            const auto & name = setting.getName();
+            const String name = setting.getName().toString();
             if (options.count(name))
                 config().setString(name, options[name].as<std::string>());
         }

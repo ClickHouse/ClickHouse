@@ -8,7 +8,6 @@
 #include <common/getFQDNOrHostName.h>
 #include <common/logger_useful.h>
 
-#include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -46,7 +45,7 @@ void setExtras()
     sentry_set_extra("version_patch", sentry_value_new_int32(VERSION_PATCH));
 }
 
-void sentry_logger(sentry_level_e level, const char * message, va_list args, void *)
+void sentry_logger(sentry_level_t level, const char * message, va_list args)
 {
     auto * logger = &Poco::Logger::get("SentryWriter");
     size_t size = 1024;
@@ -107,7 +106,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 
         sentry_options_t * options = sentry_options_new();  /// will be freed by sentry_init or sentry_shutdown
         sentry_options_set_release(options, VERSION_STRING_SHORT);
-        sentry_options_set_logger(options, &sentry_logger, nullptr);
+        sentry_options_set_logger(options, &sentry_logger);
         if (debug)
         {
             sentry_options_set_debug(options, 1);
@@ -158,7 +157,7 @@ void SentryWriter::shutdown()
         sentry_shutdown();
 }
 
-void SentryWriter::onFault(int sig, const std::string & error_message, const StackTrace & stack_trace)
+void SentryWriter::onFault(int sig, const std::string & error_message, const StackTrace & stack_trace, const std::string & build_id_hex)
 {
     auto * logger = &Poco::Logger::get("SentryWriter");
     if (initialized)
@@ -166,12 +165,10 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
         sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fault", error_message.c_str());
         sentry_set_tag("signal", strsignal(sig));
         sentry_set_extra("signal_number", sentry_value_new_int32(sig));
-
-        #if defined(__ELF__) && !defined(__FreeBSD__)
-            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
+        if (!build_id_hex.empty())
+        {
             sentry_set_tag("build_id", build_id_hex.c_str());
-        #endif
-
+        }
         setExtras();
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/stacktrace/
@@ -243,6 +240,6 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
 
 void SentryWriter::initialize(Poco::Util::LayeredConfiguration &) {}
 void SentryWriter::shutdown() {}
-void SentryWriter::onFault(int, const std::string &, const StackTrace &) {}
+void SentryWriter::onFault(int, const std::string &, const StackTrace &, const std::string &) {}
 
 #endif

@@ -12,14 +12,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
-
-namespace
-{
 
 class FunctionH3ToParent : public IFunction
 {
@@ -50,7 +48,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
         const auto * col_resolution = block.getByPosition(arguments[1]).column.get();
@@ -77,7 +75,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionH3ToParent(FunctionFactory & factory)
 {

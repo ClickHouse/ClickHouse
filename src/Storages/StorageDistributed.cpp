@@ -39,7 +39,7 @@
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -56,15 +56,12 @@
 
 #include <memory>
 #include <filesystem>
-#include <optional>
 
 
 namespace
 {
 const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
 const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
-
-const UInt64 DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION = 2;
 }
 
 namespace DB
@@ -188,7 +185,7 @@ std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, const NamesAndTypesList & columns, bool project)
 {
     ASTPtr query = sharding_key;
-    auto syntax_result = TreeRewriter(context).analyze(query, columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns);
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
@@ -238,89 +235,29 @@ void replaceConstantExpressions(
     ConstStoragePtr storage,
     const StorageMetadataPtr & metadata_snapshot)
 {
-    auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, metadata_snapshot);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns, storage, metadata_snapshot);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
     InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
     visitor.visit(node);
 }
 
-/// Returns one of the following:
-/// - QueryProcessingStage::Complete
-/// - QueryProcessingStage::WithMergeableStateAfterAggregation
-/// - none (in this case regular WithMergeableState should be used)
-std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const ASTPtr & query_ptr, bool extremes, const Block & sharding_key_block)
+QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & context, QueryProcessingStage::Enum to_stage, const ClusterPtr & cluster)
 {
-    const auto & select = query_ptr->as<ASTSelectQuery &>();
+    const Settings & settings = context.getSettingsRef();
 
-    auto sharding_block_has = [&](const auto & exprs, size_t limit = SIZE_MAX) -> bool
-    {
-        size_t i = 0;
-        for (auto & expr : exprs)
-        {
-            ++i;
-            if (i > limit)
-                break;
-
-            auto id = expr->template as<ASTIdentifier>();
-            if (!id)
-                return false;
-            /// TODO: if GROUP BY contains multiIf()/if() it should contain only columns from sharding_key
-            if (!sharding_key_block.has(id->name))
-                return false;
-        }
-        return true;
-    };
-
-    // GROUP BY qualifiers
-    // - TODO: WITH TOTALS can be implemented
-    // - TODO: WITH ROLLUP can be implemented (I guess)
-    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
-        return {};
-
-    // TODO: extremes support can be implemented
-    if (extremes)
-        return {};
-
-    // DISTINCT
-    if (select.distinct)
-    {
-        if (!sharding_block_has(select.select()->children))
-            return {};
-    }
-
-    // GROUP BY
-    const ASTPtr group_by = select.groupBy();
-    if (!group_by)
-    {
-        if (!select.distinct)
-            return {};
-    }
-    else
-    {
-        if (!sharding_block_has(group_by->children, 1))
-            return {};
-    }
-
-    // ORDER BY
-    const ASTPtr order_by = select.orderBy();
-    if (order_by)
-        return QueryProcessingStage::WithMergeableStateAfterAggregation;
-
-    // LIMIT BY
-    // LIMIT
-    if (select.limitBy() || select.limitLength())
-        return QueryProcessingStage::WithMergeableStateAfterAggregation;
-
-    // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
-    return QueryProcessingStage::Complete;
-}
-
-size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & cluster)
-{
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    return (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
+    size_t result_size = (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
+
+    if (settings.distributed_group_by_no_merge)
+        return QueryProcessingStage::Complete;
+    /// Nested distributed query cannot return Complete stage,
+    /// since the parent query need to aggregate the results after.
+    if (to_stage == QueryProcessingStage::WithMergeableState)
+        return QueryProcessingStage::WithMergeableState;
+    return result_size == 1 ? QueryProcessingStage::Complete
+                            : QueryProcessingStage::WithMergeableState;
 }
 
 }
@@ -353,7 +290,7 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & storage_policy_name_,
+    const String & storage_policy_,
     const String & relative_data_path_,
     bool attach_)
     : IStorage(id_)
@@ -363,6 +300,7 @@ StorageDistributed::StorageDistributed(
     , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , cluster_name(global_context->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
+    , storage_policy(storage_policy_)
     , relative_data_path(relative_data_path_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -378,11 +316,7 @@ StorageDistributed::StorageDistributed(
     }
 
     if (!relative_data_path.empty())
-    {
-        storage_policy = global_context->getStoragePolicy(storage_policy_name_);
-        if (storage_policy->getVolumes().size() != 1)
-            throw Exception("Storage policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
-    }
+        createStorage();
 
     /// Sanity check. Skip check if the table is already created to allow the server to start.
     if (!attach_ && !cluster_name.empty())
@@ -402,14 +336,34 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & storage_policy_name_,
+    const String & storage_policy_,
     const String & relative_data_path_,
     bool attach)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, attach)
+    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_, relative_data_path_, attach)
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
 
+void StorageDistributed::createStorage()
+{
+    /// Create default policy with the relative_data_path_
+    if (storage_policy.empty())
+    {
+        std::string path(global_context->getPath());
+        /// Disk must ends with '/'
+        if (!path.ends_with('/'))
+            path += '/';
+        auto disk = std::make_shared<DiskLocal>("default", path, 0);
+        volume = std::make_shared<VolumeJBOD>("default", std::vector<DiskPtr>{disk}, 0);
+    }
+    else
+    {
+        auto policy = global_context->getStoragePolicy(storage_policy);
+        if (policy->getVolumes().size() != 1)
+             throw Exception("Policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
+        volume = policy->getVolume(0);
+    }
+}
 
 StoragePtr StorageDistributed::createWithOwnCluster(
     const StorageID & table_id_,
@@ -437,23 +391,87 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     return res;
 }
 
+
+bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+{
+    const auto & settings = context.getSettingsRef();
+    std::string reason;
+
+    if (settings.distributed_group_by_no_merge)
+        return true;
+    if (!settings.optimize_distributed_group_by_sharding_key)
+        return false;
+
+    /// Distributed-over-Distributed (see getQueryProcessingStageImpl())
+    if (to_stage == QueryProcessingStage::WithMergeableState)
+        return false;
+    if (!settings.optimize_skip_unused_shards)
+        return false;
+    if (!has_sharding_key)
+        return false;
+
+    const auto & select = query_ptr->as<ASTSelectQuery &>();
+
+    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
+        return false;
+
+    // TODO: The following can be optimized too (but with some caveats, will be addressed later):
+    // - ORDER BY
+    // - LIMIT BY
+    // - LIMIT
+    if (select.orderBy())
+        return false;
+    if (select.limitBy() || select.limitLength())
+        return false;
+
+    if (select.distinct)
+    {
+        for (auto & expr : select.select()->children)
+        {
+            const auto * id = expr->as<ASTIdentifier>();
+            if (!id)
+                return false;
+            if (!sharding_key_expr->getSampleBlock().has(id->name))
+                return false;
+        }
+
+        reason = "DISTINCT " + backQuote(serializeAST(*select.select(), true));
+    }
+
+    const ASTPtr group_by = select.groupBy();
+    if (!group_by)
+    {
+        if (!select.distinct)
+            return false;
+    }
+    else
+    {
+        // injective functions are optimized out in optimizeGroupBy()
+        // hence all we need to check is that column in GROUP BY matches sharding expression
+        auto & group_exprs = group_by->children;
+        if (group_exprs.empty())
+            throw Exception("No ASTExpressionList in GROUP BY", ErrorCodes::LOGICAL_ERROR);
+
+        const auto * id = group_exprs[0]->as<ASTIdentifier>();
+        if (!id)
+            return false;
+        if (!sharding_key_expr->getSampleBlock().has(id->name))
+            return false;
+
+        reason = "GROUP BY " + backQuote(serializeAST(*group_by, true));
+    }
+
+    LOG_DEBUG(log, "Force distributed_group_by_no_merge for {} (injective)", reason);
+    return true;
+}
+
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     const auto & settings = context.getSettingsRef();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    if (settings.distributed_group_by_no_merge)
-    {
-        if (settings.distributed_group_by_no_merge == DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION)
-            return QueryProcessingStage::WithMergeableStateAfterAggregation;
-        else
-            return QueryProcessingStage::Complete;
-    }
-
-    /// Nested distributed query cannot return Complete stage,
-    /// since the parent query need to aggregate the results after.
-    if (to_stage == QueryProcessingStage::WithMergeableState)
-        return QueryProcessingStage::WithMergeableState;
+    if (canForceGroupByNoMerge(context, to_stage, query_ptr))
+        return QueryProcessingStage::Complete;
 
     ClusterPtr cluster = getCluster();
     if (settings.optimize_skip_unused_shards)
@@ -463,29 +481,10 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
             cluster = optimized_cluster;
     }
 
-    /// If there is only one node, the query can be fully processed by the
-    /// shard, initiator will work as a proxy only.
-    if (getClusterQueriedNodes(settings, cluster) == 1)
-        return QueryProcessingStage::Complete;
-
-    if (settings.optimize_skip_unused_shards &&
-        settings.optimize_distributed_group_by_sharding_key &&
-        has_sharding_key &&
-        sharding_key_is_deterministic)
-    {
-        Block sharding_key_block = sharding_key_expr->getSampleBlock();
-        auto stage = getOptimizedQueryProcessingStage(query_ptr, settings.extremes, sharding_key_block);
-        if (stage)
-        {
-            LOG_DEBUG(log, "Force processing stage to {}", QueryProcessingStage::toString(*stage));
-            return *stage;
-        }
-    }
-
-    return QueryProcessingStage::WithMergeableState;
+    return getQueryProcessingStageImpl(context, to_stage, cluster);
 }
 
-Pipe StorageDistributed::read(
+Pipes StorageDistributed::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -540,7 +539,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     const auto & settings = context.getSettingsRef();
 
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
-    if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync)
+    if (!volume && !owned_cluster && !settings.insert_distributed_sync)
     {
         throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
                         ErrorCodes::BAD_ARGUMENTS);
@@ -596,10 +595,10 @@ void StorageDistributed::startup()
     if (remote_database.empty() && !remote_table_function_ptr)
         LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
 
-    if (!storage_policy)
+    if (!volume)
         return;
 
-    for (const DiskPtr & disk : storage_policy->getDisks())
+    for (const DiskPtr & disk : volume->getDisks())
         createDirectoryMonitors(disk->getPath());
 
     for (const String & path : getDataPaths())
@@ -633,7 +632,7 @@ void StorageDistributed::drop()
 
     LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on DROP TABLE");
 
-    auto disks = storage_policy->getDisks();
+    auto disks = volume->getDisks();
     for (const auto & disk : disks)
         disk->removeRecursive(relative_data_path);
 
@@ -647,7 +646,7 @@ Strings StorageDistributed::getDataPaths() const
     if (relative_data_path.empty())
         return paths;
 
-    for (const DiskPtr & disk : storage_policy->getDisks())
+    for (const DiskPtr & disk : volume->getDisks())
         paths.push_back(disk->getPath() + relative_data_path);
 
     return paths;
@@ -670,7 +669,9 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, co
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 {
-    return storage_policy;
+    if (storage_policy.empty())
+        return {};
+    return global_context->getStoragePolicy(storage_policy);
 }
 
 void StorageDistributed::createDirectoryMonitors(const std::string & disk)
@@ -715,6 +716,11 @@ std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getD
 size_t StorageDistributed::getShardCount() const
 {
     return getCluster()->getShardCount();
+}
+
+std::pair<const std::string &, const std::string &> StorageDistributed::getPath()
+{
+    return {volume->getNextDisk()->getPath(), relative_data_path};
 }
 
 ClusterPtr StorageDistributed::getCluster() const
@@ -862,11 +868,9 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
 }
-
-
 void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
-    for (const DiskPtr & disk : storage_policy->getDisks())
+    for (const DiskPtr & disk : volume->getDisks())
     {
         const String path(disk->getPath());
         auto new_path = path + new_path_to_table_data;
@@ -921,7 +925,7 @@ void registerStorageDistributed(StorageFactory & factory)
         String remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
         const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
-        const auto & storage_policy = engine_args.size() >= 5 ? engine_args[4]->as<ASTLiteral &>().value.safeGet<String>() : "default";
+        const auto & storage_policy = engine_args.size() >= 5 ? engine_args[4]->as<ASTLiteral &>().value.safeGet<String>() : "";
 
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)

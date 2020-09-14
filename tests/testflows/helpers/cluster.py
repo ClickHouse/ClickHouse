@@ -92,7 +92,7 @@ class ClickHouseNode(Node):
                     name, value = setting
                     command += f" --{name} \"{value}\""
                 description = f"""
-                    echo -e \"{sql[:100]}...\" > {query.name}
+                    echo -e \"{sql[:100]}...\" > {query.name} 
                     {command}
                 """
                 with step("executing command", description=description) if steps else NullStep():
@@ -128,12 +128,12 @@ class ClickHouseNode(Node):
 class Cluster(object):
     """Simple object around docker-compose cluster.
     """
-    def __init__(self, local=False,
-            clickhouse_binary_path=None, configs_dir=None,
+    def __init__(self, local=False, 
+            clickhouse_binary_path=None, configs_dir=None, 
             nodes=None,
-            docker_compose="docker-compose", docker_compose_project_dir=None,
+            docker_compose="docker-compose", docker_compose_project_dir=None, 
             docker_compose_file="docker-compose.yml"):
-
+        
         self._bash = {}
         self.clickhouse_binary_path = clickhouse_binary_path
         self.configs_dir = configs_dir
@@ -159,28 +159,15 @@ class Cluster(object):
             if os.path.exists(caller_project_dir):
                 docker_compose_project_dir = caller_project_dir
 
-        docker_compose_file_path = os.path.join(docker_compose_project_dir or "", docker_compose_file)
+        docker_compose_file_path = os.path.join(docker_compose_project_dir or "", docker_compose_file) 
 
         if not os.path.exists(docker_compose_file_path):
             raise TypeError("docker compose file '{docker_compose_file_path}' does not exist")
 
-        self.docker_compose += f" --no-ansi --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
+        self.docker_compose += f" --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
         self.lock = threading.Lock()
 
-    def shell(self, node, timeout=120):
-        """Returns unique shell terminal to be used.
-        """
-        if node is None:
-            return Shell()
-
-        shell = Shell(command=[
-                "/bin/bash", "--noediting", "-c", f"{self.docker_compose} exec {node} bash --noediting"
-            ], name=node)
-
-        shell.timeout = timeout
-        return shell
-
-    def bash(self, node, timeout=120):
+    def bash(self, node, timeout=60):
         """Returns thread-local bash terminal
         to a specific node.
 
@@ -237,7 +224,7 @@ class Cluster(object):
         finally:
             return self.command(None, f"{self.docker_compose} down", timeout=timeout)
 
-    def up(self, timeout=30*60):
+    def up(self):
         if self.local:
             with Given("I am running in local mode"):
                 with Then("check --clickhouse-binary-path is specified"):
@@ -245,41 +232,20 @@ class Cluster(object):
                 with And("path should exist"):
                     assert os.path.exists(self.clickhouse_binary_path)
 
-            with And("I set all the necessary environment variables"):
-                os.environ["COMPOSE_HTTP_TIMEOUT"] = "300"
-                os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = self.clickhouse_binary_path
-                os.environ["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = os.path.join(
-                    os.path.dirname(self.clickhouse_binary_path), "clickhouse-odbc-bridge")
-                os.environ["CLICKHOUSE_TESTS_DIR"] = self.configs_dir
+            os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = self.clickhouse_binary_path
+            os.environ["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = os.path.join(os.path.dirname(self.clickhouse_binary_path),
+                                                                               "clickhouse-odbc-bridge")
+            os.environ["CLICKHOUSE_TESTS_DIR"] = self.configs_dir
 
-            with And("I list environment variables to show their values"):
+            with Given("docker-compose"):
                 self.command(None, "env | grep CLICKHOUSE")
+                cmd = self.command(None, f'{self.docker_compose} up -d 2>&1 | tee', timeout=30 * 60)
+        else:
+            with Given("docker-compose"):
+                cmd = self.command(None, f'{self.docker_compose} up -d --no-recreate 2>&1 | tee')
 
-        with Given("docker-compose"):
-            max_attempts = 5
-            for attempt in range(max_attempts):
-                with When(f"attempt {attempt}/{max_attempts}"):
-                    with By("pulling images for all the services"):
-                        cmd = self.command(None, f"{self.docker_compose} pull 2>&1 | tee", exitcode=None, timeout=timeout)
-                        if cmd.exitcode != 0:
-                            continue
-                    with And("executing docker-compose down just in case it is up"):
-                        cmd = self.command(None, f"{self.docker_compose} down 2>&1 | tee", exitcode=None, timeout=timeout)
-                        if cmd.exitcode != 0:
-                            continue
-                    with And("executing docker-compose up"):
-                        cmd = self.command(None, f"{self.docker_compose} up -d 2>&1 | tee", timeout=timeout)
-
-                    with Then("check there are no unhealthy containers"):
-                        if "is unhealthy" in cmd.output:
-                            self.command(None, f"{self.docker_compose} ps | tee")
-                            self.command(None, f"{self.docker_compose} logs | tee")
-
-                    if cmd.exitcode == 0:
-                        break
-
-            if cmd.exitcode != 0:
-                fail("could not bring up docker-compose cluster")
+        with Then("check there are no unhealthy containers"):
+            assert "is unhealthy" not in cmd.output, error()
 
         with Then("wait all nodes report healhy"):
             for name in self.nodes["clickhouse"]:
