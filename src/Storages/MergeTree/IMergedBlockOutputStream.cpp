@@ -53,7 +53,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         column.type->enumerateStreams(
             [&](const IDataType::SubstreamPath & substream_path)
             {
-                ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
+                ++stream_counts[IDataType::getFileNameForStream(column, substream_path)];
             },
             {});
     }

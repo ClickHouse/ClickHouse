@@ -529,6 +529,16 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
     return res;
 }
 
+DataTypePtr DataTypeTuple::getSubcolumnType(const String & subcolumn_name) const
+{
+    return elems[getPositionByName(subcolumn_name)];
+}
+
+std::vector<String> DataTypeTuple::getSubcolumnNames() const
+{
+    return names;
+}
+
 
 static DataTypePtr create(const ASTPtr & arguments)
 {

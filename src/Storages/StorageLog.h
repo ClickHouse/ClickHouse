@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Core/NamesAndTypes.h>
 
 
 namespace DB
@@ -92,7 +93,7 @@ private:
     String marks_file_path;
 
     /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
-    void addFiles(const String & column_name, const IDataType & type);
+    void addFiles(const NameAndTypePair & column);
 
     bool loaded_marks = false;
 

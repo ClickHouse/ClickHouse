@@ -94,6 +94,8 @@ public:
     bool haveMaximumSizeOfValue() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
+    DataTypePtr getSubcolumnType(const String & subcolumn_name) const override;
+    std::vector<String> getSubcolumnNames() const override;
 
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }

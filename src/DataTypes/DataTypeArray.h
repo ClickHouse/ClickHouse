@@ -111,6 +111,10 @@ public:
         return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
     }
 
+    DataTypePtr getSubcolumnType(const String & subcolumn_name) const override;
+    std::vector<String> getSubcolumnNames() const override;
+    String getEscapedFileName(const NameAndTypePair & column) const override;
+
     const DataTypePtr & getNestedType() const { return nested; }
 
     /// 1 for plain array, 2 for array of arrays and so on.

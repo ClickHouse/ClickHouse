@@ -54,7 +54,7 @@ public:
 
     ~MergeTreeDataPartWide() override;
 
-    bool hasColumnFiles(const String & column, const IDataType & type) const override;
+    bool hasColumnFiles(const NameAndTypePair & column) const override;
 
 private:
     void checkConsistency(bool require_part_metadata) const override;

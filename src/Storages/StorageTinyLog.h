@@ -74,7 +74,7 @@ private:
 
     Poco::Logger * log;
 
-    void addFiles(const String & column_name, const IDataType & type);
+    void addFiles(const NameAndTypePair & column);
 };
 
 }

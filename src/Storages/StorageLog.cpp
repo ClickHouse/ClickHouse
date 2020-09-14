@@ -107,7 +107,7 @@ private:
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
-    void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read);
+    void readData(const NameAndTypePair & name_and_type, IColumn & column, size_t max_rows_to_read);
 };
 
 
@@ -185,9 +185,9 @@ private:
     using SerializeStates = std::map<String, SerializeState>;
     SerializeStates serialize_states;
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenStreams & written_streams);
+    IDataType::OutputStreamGetter createStreamGetter(const NameAndTypePair & name_and_type, WrittenStreams & written_streams);
 
-    void writeData(const String & name, const IDataType & type, const IColumn & column,
+    void writeData(const NameAndTypePair & name_and_type, const IColumn & column,
         MarksForColumns & out_marks,
         WrittenStreams & written_streams);
 
@@ -214,7 +214,7 @@ Chunk LogSource::generate()
 
         try
         {
-            readData(name_type.name, *name_type.type, *column, max_rows_to_read);
+            readData(name_type, *column, max_rows_to_read);
         }
         catch (Exception & e)
         {
@@ -244,15 +244,16 @@ Chunk LogSource::generate()
 }
 
 
-void LogSource::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
+void LogSource::readData(const NameAndTypePair & name_and_type, IColumn & column, size_t max_rows_to_read)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
+    const auto & [name, type] = name_and_type;
 
     auto create_string_getter = [&](bool stream_for_prefix)
     {
         return [&, stream_for_prefix] (const IDataType::SubstreamPath & path) -> ReadBuffer *
         {
-            String stream_name = IDataType::getFileNameForStream(name, path);
+            String stream_name = IDataType::getFileNameForStream(name_and_type, path);
 
             const auto & file_it = storage.files.find(stream_name);
             if (storage.files.end() == file_it)
@@ -271,11 +272,11 @@ void LogSource::readData(const String & name, const IDataType & type, IColumn & 
     if (deserialize_states.count(name) == 0)
     {
         settings.getter = create_string_getter(true);
-        type.deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
+        type->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
     }
 
     settings.getter = create_string_getter(false);
-    type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name]);
+    type->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name]);
 }
 
 
@@ -292,7 +293,7 @@ void LogBlockOutputStream::write(const Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
-        writeData(column.name, *column.type, *column.column, marks, written_streams);
+        writeData(NameAndTypePair(column.name, column.type), *column.column, marks, written_streams);
     }
 
     writeMarks(std::move(marks));
@@ -311,7 +312,7 @@ void LogBlockOutputStream::writeSuffix()
         auto it = serialize_states.find(column.name);
         if (it != serialize_states.end())
         {
-            settings.getter = createStreamGetter(column.name, written_streams);
+            settings.getter = createStreamGetter(NameAndTypePair(column.name, column.type), written_streams);
             column.type->serializeBinaryBulkStateSuffix(settings, it->second);
         }
     }
@@ -337,12 +338,12 @@ void LogBlockOutputStream::writeSuffix()
 }
 
 
-IDataType::OutputStreamGetter LogBlockOutputStream::createStreamGetter(const String & name,
+IDataType::OutputStreamGetter LogBlockOutputStream::createStreamGetter(const NameAndTypePair & name_and_type,
                                                                        WrittenStreams & written_streams)
 {
     return [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
             return nullptr;
 
@@ -355,14 +356,15 @@ IDataType::OutputStreamGetter LogBlockOutputStream::createStreamGetter(const Str
 }
 
 
-void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
+void LogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, const IColumn & column,
     MarksForColumns & out_marks, WrittenStreams & written_streams)
 {
     IDataType::SerializeBinaryBulkSettings settings;
+    const auto & [name, type] = name_and_type;
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    type->enumerateStreams([&] (const IDataType::SubstreamPath & path)
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
             return;
 
@@ -371,18 +373,18 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
             stream_name,
             storage.disk,
             storage.files[stream_name].data_file_path,
-            columns.getCodecOrDefault(name),
+            columns.getCodecOrDefault(name_and_type.name),
             storage.max_compress_block_size);
     }, settings.path);
 
-    settings.getter = createStreamGetter(name, written_streams);
+    settings.getter = createStreamGetter(name_and_type, written_streams);
 
     if (serialize_states.count(name) == 0)
-         type.serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+         type->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    type->enumerateStreams([&] (const IDataType::SubstreamPath & path)
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
             return;
 
@@ -396,11 +398,11 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
         out_marks.emplace_back(file.column_index, mark);
     }, settings.path);
 
-    type.serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
+    type->serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    type->enumerateStreams([&] (const IDataType::SubstreamPath & path)
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
         if (!written_streams.emplace(stream_name).second)
             return;
 
@@ -469,7 +471,7 @@ StorageLog::StorageLog(
     }
 
     for (const auto & column : storage_metadata.getColumns().getAllPhysical())
-        addFiles(column.name, *column.type);
+        addFiles(column);
 
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
 
@@ -479,15 +481,15 @@ StorageLog::StorageLog(
 }
 
 
-void StorageLog::addFiles(const String & column_name, const IDataType & type)
+void StorageLog::addFiles(const NameAndTypePair & column)
 {
-    if (files.end() != files.find(column_name))
-        throw Exception("Duplicate column with name " + column_name + " in constructor of StorageLog.",
+    if (files.end() != files.find(column.name))
+        throw Exception("Duplicate column with name " + column.name + " in constructor of StorageLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
     IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
-        String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
+        String stream_name = IDataType::getFileNameForStream(column, substream_path);
 
         if (!files.count(stream_name))
         {
@@ -501,7 +503,7 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
     };
 
     IDataType::SubstreamPath substream_path;
-    type.enumerateStreams(stream_callback, substream_path);
+    column.type->enumerateStreams(stream_callback, substream_path);
 }
 
 
@@ -573,7 +575,7 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     disk->clearDirectory(table_path);
 
     for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-        addFiles(column.name, *column.type);
+        addFiles(column);
 
     file_checker = FileChecker{disk, table_path + "sizes.json"};
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
@@ -583,8 +585,7 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMetadataPtr & metadata_snapshot) const
 {
     /// There should be at least one physical column
-    const String column_name = metadata_snapshot->getColumns().getAllPhysical().begin()->name;
-    const auto column_type = metadata_snapshot->getColumns().getAllPhysical().begin()->type;
+    auto column = *metadata_snapshot->getColumns().getAllPhysical().begin();
     String filename;
 
     /** We take marks from first column.
@@ -592,10 +593,10 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
     IDataType::SubstreamPath substream_root_path;
-    column_type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
         if (filename.empty())
-            filename = IDataType::getFileNameForStream(column_name, substream_path);
+            filename = IDataType::getFileNameForStream(column, substream_path);
     }, substream_root_path);
 
     Files::const_iterator it = files.find(filename);
