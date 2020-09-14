@@ -19,10 +19,13 @@
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+
 namespace DB
 {
 
-StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseMaterializeMySQL * database_)
+template<typename DatabaseT>
+StorageMaterializeMySQL<DatabaseT>::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseT * database_)
     : IStorage(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
     auto nested_memory_metadata = nested_storage->getInMemoryMetadata();
@@ -31,7 +34,8 @@ StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_stora
     setInMemoryMetadata(in_memory_metadata);
 }
 
-Pipe StorageMaterializeMySQL::read(
+template<typename DatabaseT>
+Pipe StorageMaterializeMySQL<DatabaseT>::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
@@ -98,12 +102,17 @@ Pipe StorageMaterializeMySQL::read(
     return pipe;
 }
 
-NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
+template<typename DatabaseT>
+NamesAndTypesList StorageMaterializeMySQL<DatabaseT>::getVirtuals() const
 {
     /// If the background synchronization thread has exception.
     database->rethrowExceptionIfNeed();
     return nested_storage->getVirtuals();
 }
+
+template class StorageMaterializeMySQL<DatabaseMaterializeMySQL<DatabaseOrdinary>>;
+template class StorageMaterializeMySQL<DatabaseMaterializeMySQL<DatabaseAtomic>>;
+
 
 }
 

@@ -330,6 +330,8 @@ public:
     /// All tables and dictionaries should be detached before detaching the database.
     virtual bool shouldBeEmptyOnDetach() const { return true; }
 
+    virtual void assertCanBeDetached(bool /*cleanup*/) {}
+
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
 

@@ -69,15 +69,27 @@ static BlockIO tryToExecuteQuery(const String & query_to_execute, Context & quer
     }
 }
 
-static inline DatabaseMaterializeMySQL & getDatabase(const String & database_name)
-{
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
+//static inline DatabaseMaterializeMySQL & getDatabase(const String & database_name)
+//{
+//    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
+//
+//    if (DatabaseMaterializeMySQL * database_materialize = typeid_cast<DatabaseMaterializeMySQL *>(database.get()))
+//        return *database_materialize;
+//
+//    throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
+//}
 
-    if (DatabaseMaterializeMySQL * database_materialize = typeid_cast<DatabaseMaterializeMySQL *>(database.get()))
-        return *database_materialize;
-
-    throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
-}
+//static inline void setSyncException(const String & database_name, const std::exception_ptr & exception)
+//{
+//    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
+//
+//    if (auto * database_materialize = typeid_cast<DatabaseMaterializeMySQL<DatabaseOrdinary> *>(database.get()))
+//        return database_materialize->setException(exception);
+//    if (auto * database_materialize = typeid_cast<DatabaseMaterializeMySQL<DatabaseAtomic> *>(database.get()))
+//        return database_materialize->setException(exception);
+//
+//    throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
+//}
 
 MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
 {
@@ -196,7 +208,9 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
     catch (...)
     {
         tryLogCurrentException(log);
-        getDatabase(database_name).setException(std::current_exception());
+        auto db = DatabaseCatalog::instance().getDatabase(database_name);
+        setSynchronizationThreadException(db, std::current_exception());
+        //setSyncException(database_name, std::current_exception());
     }
 }
 
@@ -310,7 +324,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             opened_transaction = false;
 
             MaterializeMetadata metadata(
-                connection, getDatabase(database_name).getMetadataPath() + "/.metadata",
+                connection, DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata",
                 mysql_database_name, opened_transaction, mysql_version);
 
             if (!metadata.need_dumping_tables.empty())

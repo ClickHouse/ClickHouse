@@ -106,7 +106,7 @@ def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_
         materialize_with_ddl.alter_rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
         materialize_with_ddl.alter_modify_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
     except:
-        print(clickhouse_node.query("select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw"))
+        #print(clickhouse_node.query("select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw"))
         raise
 
 

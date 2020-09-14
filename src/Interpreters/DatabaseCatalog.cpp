@@ -4,7 +4,7 @@
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
-#include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Poco/File.h>
 #include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
@@ -13,6 +13,16 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 #include <Common/renameat2.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_MYSQL
+#    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#    include <Storages/StorageMaterializeMySQL.h>
+#endif
 
 #include <filesystem>
 
@@ -196,6 +206,24 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                 exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
             return {};
         }
+
+#if USE_MYSQL
+        /// It's definetly not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
+        if (db_and_table.first->getEngineName() == "MaterializeMySQL")
+        {
+            if (MaterializeMySQLSyncThread::isMySQLSyncThread())
+                return db_and_table;
+
+            //db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), mysql);
+            if (auto * mysql_ordinary = typeid_cast<DatabaseMaterializeMySQL<DatabaseOrdinary> *>(db_and_table.first.get()))
+                db_and_table.second = std::make_shared<StorageMaterializeMySQL<DatabaseMaterializeMySQL<DatabaseOrdinary>>>(std::move(db_and_table.second), mysql_ordinary);
+            else if (auto * mysql_atomic = typeid_cast<DatabaseMaterializeMySQL<DatabaseAtomic> *>(db_and_table.first.get()))
+                db_and_table.second = std::make_shared<StorageMaterializeMySQL<DatabaseMaterializeMySQL<DatabaseAtomic>>>(std::move(db_and_table.second), mysql_atomic);
+            else
+                throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
+            return db_and_table;
+        }
+#endif
         return db_and_table;
     }
 
@@ -265,7 +293,6 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
     UUID db_uuid = database->getUUID();
-    assert((db_uuid != UUIDHelpers::Nil) ^ (dynamic_cast<DatabaseAtomic *>(database.get()) == nullptr));
     if (db_uuid != UUIDHelpers::Nil)
         db_uuid_map.emplace(db_uuid, database);
 }
@@ -292,9 +319,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
             if (!db->empty())
                 throw Exception("New table appeared in database being dropped or detached. Try again.",
                                 ErrorCodes::DATABASE_NOT_EMPTY);
-            auto * database_atomic = typeid_cast<DatabaseAtomic *>(db.get());
-            if (!drop && database_atomic)
-                database_atomic->assertCanBeDetached(false);
+            if (!drop)
+                db->assertCanBeDetached(false);
         }
         catch (...)
         {
@@ -411,9 +437,24 @@ DatabasePtr DatabaseCatalog::getSystemDatabase() const
     return getDatabase(SYSTEM_DATABASE);
 }
 
+//namespace
+//{
+//
+//void addWrappersIfNeed(DatabasePtr & database)
+//{
+//    /// FIXME IDatabase::attachTable(...) and similar methods are called from the nested database of MaterializeMySQL, so we need such hacks
+//    if (MaterializeMySQLSyncThread::isMySQLSyncThread())
+//    {
+//        database = DatabaseCatalog::instance().getDatabase(database->getUUID());
+//    }
+//}
+//
+//}
+
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    //addWrappersIfNeed(database);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto [_, inserted] = map_part.map.try_emplace(uuid, std::move(database), std::move(table));
@@ -433,6 +474,7 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
 void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    //addWrappersIfNeed(database);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto it = map_part.map.find(uuid);

@@ -128,9 +128,14 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 if (engine_define->settings)
                     materialize_mode_settings->loadFromQuery(*engine_define);
 
-                return std::make_shared<DatabaseMaterializeMySQL>(
-                    context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_pool), std::move(client)
-                    , std::move(materialize_mode_settings));
+                if (create.uuid == UUIDHelpers::Nil)
+                    return std::make_shared<DatabaseMaterializeMySQL<DatabaseOrdinary>>(
+                        context, database_name, metadata_path, uuid, engine_define, mysql_database_name, std::move(mysql_pool), std::move(client)
+                        , std::move(materialize_mode_settings));
+                else
+                    return std::make_shared<DatabaseMaterializeMySQL<DatabaseAtomic>>(
+                        context, database_name, metadata_path, uuid, engine_define, mysql_database_name, std::move(mysql_pool), std::move(client)
+                        , std::move(materialize_mode_settings));
             }
 
             return std::make_shared<DatabaseConnectionMySQL>(

@@ -13,8 +13,11 @@ namespace DB
  * When MySQLSync thread accesses, it always returns MergeTree
  * Other cases always convert MergeTree to StorageMaterializeMySQL
  */
+template<typename DatabaseT>
 class DatabaseMaterializeTablesIterator final : public IDatabaseTablesIterator
 {
+    //static_assert(std::is_same_v<DatabaseT, DatabaseMaterializeMySQL<DatabaseOrdinary>> ||
+    //              std::is_same_v<DatabaseT, DatabaseMaterializeMySQL<DatabaseAtomic>>);
 public:
     void next() override { nested_iterator->next(); }
 
@@ -24,13 +27,13 @@ public:
 
     const StoragePtr & table() const override
     {
-        StoragePtr storage = std::make_shared<StorageMaterializeMySQL>(nested_iterator->table(), database);
+        StoragePtr storage = std::make_shared<StorageMaterializeMySQL<DatabaseT>>(nested_iterator->table(), database);
         return tables.emplace_back(storage);
     }
 
     UUID uuid() const override { return nested_iterator->uuid(); }
 
-    DatabaseMaterializeTablesIterator(DatabaseTablesIteratorPtr nested_iterator_, DatabaseMaterializeMySQL * database_)
+    DatabaseMaterializeTablesIterator(DatabaseTablesIteratorPtr nested_iterator_, DatabaseT * database_)
         : nested_iterator(std::move(nested_iterator_)), database(database_)
     {
     }
@@ -38,8 +41,7 @@ public:
 private:
     mutable std::vector<StoragePtr> tables;
     DatabaseTablesIteratorPtr nested_iterator;
-    DatabaseMaterializeMySQL * database;
-
+    DatabaseT * database;
 };
 
 }
