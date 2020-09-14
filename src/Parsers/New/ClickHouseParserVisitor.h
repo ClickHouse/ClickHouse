@@ -112,7 +112,25 @@ public:
 
     virtual antlrcpp::Any visitDataClauseSelect(ClickHouseParser::DataClauseSelectContext *context) = 0;
 
+    virtual antlrcpp::Any visitDataExprCSV(ClickHouseParser::DataExprCSVContext *context) = 0;
+
+    virtual antlrcpp::Any visitDataExprJSON(ClickHouseParser::DataExprJSONContext *context) = 0;
+
+    virtual antlrcpp::Any visitDataExprTSV(ClickHouseParser::DataExprTSVContext *context) = 0;
+
+    virtual antlrcpp::Any visitDataExprValues(ClickHouseParser::DataExprValuesContext *context) = 0;
+
+    virtual antlrcpp::Any visitValuesExpr(ClickHouseParser::ValuesExprContext *context) = 0;
+
     virtual antlrcpp::Any visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *context) = 0;
+
+    virtual antlrcpp::Any visitJsonExprLiteral(ClickHouseParser::JsonExprLiteralContext *context) = 0;
+
+    virtual antlrcpp::Any visitJsonExprBoolean(ClickHouseParser::JsonExprBooleanContext *context) = 0;
+
+    virtual antlrcpp::Any visitJsonExprObject(ClickHouseParser::JsonExprObjectContext *context) = 0;
+
+    virtual antlrcpp::Any visitJsonValueExpr(ClickHouseParser::JsonValueExprContext *context) = 0;
 
     virtual antlrcpp::Any visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *context) = 0;
 
@@ -287,6 +305,8 @@ public:
     virtual antlrcpp::Any visitNumberLiteral(ClickHouseParser::NumberLiteralContext *context) = 0;
 
     virtual antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *context) = 0;
+
+    virtual antlrcpp::Any visitDataLiteral(ClickHouseParser::DataLiteralContext *context) = 0;
 
     virtual antlrcpp::Any visitKeyword(ClickHouseParser::KeywordContext *context) = 0;
 

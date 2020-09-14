@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
+#include <Parsers/New/AST/DataExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/TableExpr.h>
@@ -98,9 +99,7 @@ antlrcpp::Any ParseTreeVisitor::visitDataClauseSelect(ClickHouseParser::DataClau
 
 antlrcpp::Any ParseTreeVisitor::visitDataClauseValues(ClickHouseParser::DataClauseValuesContext *ctx)
 {
-    auto list = std::make_shared<ColumnExprList>();
-    for (auto * expr : ctx->valueTupleExpr()) list->append(visit(expr));
-    return DataClause::createValues(list);
+    return DataClause::createValues(visit(ctx->valuesExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx)
@@ -111,6 +110,13 @@ antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtCont
     if (ctx->FUNCTION()) return InsertQuery::createFunction(visit(ctx->tableFunctionExpr()), columns, data);
     if (ctx->tableIdentifier()) return InsertQuery::createTable(visit(ctx->tableIdentifier()), columns, data);
     __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitValuesExpr(ClickHouseParser::ValuesExprContext *ctx)
+{
+    auto list = std::make_shared<ColumnExprList>();
+    for (auto * expr : ctx->valueTupleExpr()) list->append(visit(expr));
+    return list;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *ctx)

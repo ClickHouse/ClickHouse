@@ -1,5 +1,6 @@
 #include <Parsers/New/AST/TruncateQuery.h>
 
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
@@ -13,6 +14,15 @@ TruncateQuery::TruncateQuery(bool temporary_, bool if_exists_, PtrTo<TableIdenti
     children.push_back(identifier);
 
     (void) temporary, (void) if_exists; // TODO
+}
+
+ASTPtr TruncateQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTDropQuery>();
+
+    // TODO
+
+    return query;
 }
 
 }

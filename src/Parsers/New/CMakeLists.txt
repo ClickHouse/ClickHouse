@@ -9,6 +9,7 @@ set (SRCS
     AST/CreateMaterializedViewQuery.cpp
     AST/CreateTableQuery.cpp
     AST/CreateViewQuery.cpp
+    AST/DataExpr.cpp
     AST/DDLQuery.cpp
     AST/DescribeQuery.cpp
     AST/DropQuery.cpp
@@ -17,6 +18,7 @@ set (SRCS
     AST/Identifier.cpp
     AST/InsertQuery.cpp
     AST/JoinExpr.cpp
+    AST/JsonExpr.cpp
     AST/LimitExpr.cpp
     AST/Literal.cpp
     AST/OptimizeQuery.cpp

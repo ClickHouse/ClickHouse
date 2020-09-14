@@ -2,6 +2,7 @@
 
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 
 
 namespace DB::AST
@@ -12,6 +13,15 @@ ExistsQuery::ExistsQuery(bool temporary_, PtrTo<TableIdentifier> identifier) : t
     children.push_back(identifier);
 
     (void)temporary; // TODO
+}
+
+ASTPtr ExistsQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTExistsTableQuery>();
+
+    // TODO
+
+    return query;
 }
 
 }

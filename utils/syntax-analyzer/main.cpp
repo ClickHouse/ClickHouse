@@ -28,11 +28,11 @@ int main(int argc, const char **)
     std::cout << std::endl << "Original AST:" << std::endl;
     {
         std::vector<String> queries;
-        splitMultipartQuery(query, queries, 100000, 10000);
+        splitMultipartQuery(query, queries, 10000000, 10000);
         for (const auto & q : queries)
         {
             ParserQuery parser(q.data() + q.size(), true);
-            ASTPtr orig_ast = parseQuery(parser, q, 100000, 10000);
+            ASTPtr orig_ast = parseQuery(parser, q, 10000000, 10000);
             if (orig_ast) orig_ast->dumpTree(std::cout);
         }
     }

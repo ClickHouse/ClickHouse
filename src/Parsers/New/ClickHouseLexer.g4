@@ -142,12 +142,14 @@ WHERE: W H E R E;
 WITH: W I T H;
 YEAR: Y E A R | Y Y Y Y;
 
+JSON_FALSE: 'false';
+JSON_TRUE: 'true';
+
 // Tokens
 
 IDENTIFIER
     : (LETTER | UNDERSCORE) (LETTER | UNDERSCORE | DEC_DIGIT)*
     | BACKQUOTE ( ~([\\`]) | (BACKSLASH .) )* BACKQUOTE
-    | QUOTE_DOUBLE ( ~([\\"]) | (BACKSLASH .) )* QUOTE_DOUBLE
     ;
 FLOATING_LITERAL
     : HEXADECIMAL_LITERAL DOT HEX_DIGIT* (P | E) (PLUS | DASH)? DEC_DIGIT+
@@ -158,7 +160,10 @@ FLOATING_LITERAL
     ;
 HEXADECIMAL_LITERAL: '0' X HEX_DIGIT+;
 INTEGER_LITERAL: DEC_DIGIT+;
-STRING_LITERAL: QUOTE_SINGLE ( ~([\\']) | (BACKSLASH .) | (QUOTE_SINGLE QUOTE_SINGLE) )* QUOTE_SINGLE;  // It's important that quote-symbol is a single character.
+
+// It's important that quote-symbol is a single character.
+STRING_LITERAL: QUOTE_SINGLE ( ~([\\']) | (BACKSLASH .) | (QUOTE_SINGLE QUOTE_SINGLE) )* QUOTE_SINGLE;
+DATA_STRING_LITERAL: QUOTE_DOUBLE ( ~([\\"]) | (BACKSLASH .) )* QUOTE_DOUBLE;
 
 // Alphabet and allowed symbols
 
@@ -206,6 +211,7 @@ EQ_DOUBLE: '==';
 EQ_SINGLE: '=';
 GE: '>=';
 GT: '>';
+LBRACE: '{';
 LBRACKET: '[';
 LE: '<=';
 LPAREN: '(';
@@ -216,6 +222,7 @@ PLUS: '+';
 QUERY: '?';
 QUOTE_DOUBLE: '"';
 QUOTE_SINGLE: '\'';
+RBRACE: '}';
 RBRACKET: ']';
 RPAREN: ')';
 SEMICOLON: ';';

@@ -1,15 +1,14 @@
 #include <Parsers/New/AST/ColumnExpr.h>
 
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
-
 #include <Parsers/New/ClickHouseLexer.h>
 #include <Parsers/New/ClickHouseParser.h>
 #include <Parsers/New/ParseTreeVisitor.h>
-
-#include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTFunction.h>
 
 
 namespace DB::AST
@@ -123,7 +122,11 @@ ASTPtr ColumnExpr::convertToOld() const
         case ExprType::LITERAL:
             return children[LITERAL]->convertToOld();
         case ExprType::SUBQUERY:
-            return children[SUBQUERY]->convertToOld();
+        {
+            auto subquery = std::make_shared<ASTSubquery>();
+            subquery->children.push_back(children[SUBQUERY]->convertToOld());
+            return subquery;
+        }
     }
 }
 

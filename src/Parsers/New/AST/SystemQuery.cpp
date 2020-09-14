@@ -1,5 +1,6 @@
 #include <Parsers/New/AST/SystemQuery.h>
 
+#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
@@ -36,6 +37,15 @@ SystemQuery::SystemQuery(QueryType type, PtrList exprs) : query_type(type)
     (void)query_type; // TODO
 }
 
+ASTPtr SystemQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTSystemQuery>();
+
+    // TODO
+
+    return query;
+}
+
 }
 
 namespace DB
@@ -47,6 +57,7 @@ antlrcpp::Any ParseTreeVisitor::visitSystemStmt(ClickHouseParser::SystemStmtCont
 {
     if (ctx->SYNC()) return SystemQuery::createSync(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
     if (ctx->MERGES()) return SystemQuery::createMerges(!!ctx->STOP(), visit(ctx->tableIdentifier()));
+    if (ctx->FETCHES()) return SystemQuery::createFetches(!!ctx->STOP(), visit(ctx->tableIdentifier()));
     __builtin_unreachable();
 }
 

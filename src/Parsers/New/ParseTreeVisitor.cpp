@@ -40,7 +40,7 @@ antlrcpp::Any ParseTreeVisitor::visitInput(ClickHouseParser::InputContext * ctx)
     if (ctx->insertStmt())
     {
         auto list = std::make_shared<QueryList>();
-        list->append(visit(ctx->insertStmt()));
+        list->append(visit(ctx->insertStmt()).as<PtrTo<InsertQuery>>());
         return list;
     }
     if (ctx->queryList()) return visit(ctx->queryList());
@@ -71,7 +71,6 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
 #define TRY_POINTER_CAST(TYPE) if (query.is<PtrTo<TYPE>>()) return std::static_pointer_cast<Query>(query.as<PtrTo<TYPE>>());
     TRY_POINTER_CAST(AlterPartitionQuery)
     TRY_POINTER_CAST(AlterTableQuery)
-    TRY_POINTER_CAST(AlterPartitionQuery)
     TRY_POINTER_CAST(AnalyzeQuery)
     TRY_POINTER_CAST(CheckQuery)
     TRY_POINTER_CAST(CreateDatabaseQuery)
@@ -91,6 +90,8 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     TRY_POINTER_CAST(TruncateQuery)
     TRY_POINTER_CAST(UseQuery)
 #undef TRY_POINTER_CAST
+
+    throw std::runtime_error("Query is unknown: " + ctx->children[0]->getText());
 
     __builtin_unreachable();
 }

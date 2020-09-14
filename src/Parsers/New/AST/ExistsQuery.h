@@ -11,6 +11,8 @@ class ExistsQuery : public Query
     public:
         ExistsQuery(bool temporary, PtrTo<TableIdentifier> identifier);
 
+        ASTPtr convertToOld() const override;
+
     private:
         const bool temporary;
 };

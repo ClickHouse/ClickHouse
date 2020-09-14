@@ -74,14 +74,16 @@ schemaClause
     | AS tableIdentifier                                        # SchemaAsTableClause
     | AS tableFunctionExpr                                      # SchemaAsFunctionClause
     ;
-engineClause:
+engineClause
+locals [std::set<std::string> clauses]:
     engineExpr
-    orderByClause?
-    partitionByClause?
-    primaryKeyClause?
-    sampleByClause?
-    ttlClause?
-    settingsClause?
+    ( {!$clauses.count("orderByClause")}?     orderByClause     {$clauses.insert("orderByClause");}
+    | {!$clauses.count("partitionByClause")}? partitionByClause {$clauses.insert("partitionByClause");}
+    | {!$clauses.count("primaryKeyClause")}?  primaryKeyClause  {$clauses.insert("primaryKeyClause");}
+    | {!$clauses.count("sampleByClause")}?    sampleByClause    {$clauses.insert("sampleByClause");}
+    | {!$clauses.count("ttlClause")}?         ttlClause         {$clauses.insert("ttlClause");}
+    | {!$clauses.count("settingsClause")}?    settingsClause    {$clauses.insert("settingsClause");}
+    )*
     ;
 partitionByClause: PARTITION BY columnExpr;
 primaryKeyClause: PRIMARY KEY columnExpr;
@@ -118,16 +120,30 @@ existsStmt: EXISTS TEMPORARY? TABLE tableIdentifier;
 
 // INSERT statement
 
-insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) columnsClause? dataClause?;
+insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) columnsClause? dataClause;
 
 columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
 dataClause
-    : FORMAT identifier                               # DataClauseFormat
-    | VALUES valueTupleExpr (COMMA? valueTupleExpr)*  # DataClauseValues
-    | selectUnionStmt                                 # DataClauseSelect
+    : FORMAT identifier dataExpr  # DataClauseFormat
+    | VALUES valuesExpr           # DataClauseValues
+    | selectUnionStmt             # DataClauseSelect
+    ;
+dataExpr
+    : dataLiteral (COMMA dataLiteral)*  # DataExprCSV
+    | jsonExpr (COMMA jsonExpr)*        # DataExprJSON
+    | dataLiteral+                      # DataExprTSV
+    | valuesExpr                        # DataExprValues
     ;
 
+valuesExpr: valueTupleExpr (COMMA? valueTupleExpr)*;
 valueTupleExpr: LPAREN columnExprList RPAREN; // same as ColumnExprTuple
+
+jsonExpr
+    : dataLiteral                                         # JsonExprLiteral
+    | (JSON_TRUE | JSON_FALSE)                            # JsonExprBoolean
+    | LBRACE jsonValueExpr (COMMA jsonValueExpr)* RBRACE  # JsonExprObject
+    ;
+jsonValueExpr: DATA_STRING_LITERAL COLON jsonExpr;
 
 // OPTIMIZE statement
 
@@ -315,17 +331,21 @@ literal
     | STRING_LITERAL
     | NULL_SQL
     ;
+dataLiteral
+    : numberLiteral
+    | DATA_STRING_LITERAL
+    ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER, FOR
     : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
     | CHECK | CLEAR | CLUSTER | COLLATE | COLUMN | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE
     | DESC | DESCENDING | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FETCHES | FINAL | FIRST
-    | FORMAT | FULL | FUNCTION | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST
-    | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE
-    | OR | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLACE | REPLICA | RIGHT | SAMPLE | SECOND | SEMI | SET
-    | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM
-    | TRUNCATE | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
+    | FORMAT | FULL | FUNCTION | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE
+    | JSON_TRUE | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS
+    | OFFSET | ON | OPTIMIZE | OR | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLACE | REPLICA | RIGHT
+    | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES
+    | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
-identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
+identifier: IDENTIFIER | DATA_STRING_LITERAL | INTERVAL_TYPE | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
 unaryOp: DASH | NOT;
 binaryOp

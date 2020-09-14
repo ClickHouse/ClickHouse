@@ -1,7 +1,7 @@
 #include <Parsers/New/AST/AlterPartitionQuery.h>
 
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/New/AST/Identifier.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -43,6 +43,15 @@ AlterPartitionQuery::AlterPartitionQuery(PtrTo<TableIdentifier> identifier, PtrT
 {
     children.push_back(identifier);
     children.push_back(clauses);
+}
+
+ASTPtr AlterPartitionQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTAlterQuery>();
+
+    // TODO
+
+    return query;
 }
 
 }

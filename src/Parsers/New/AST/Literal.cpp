@@ -89,13 +89,20 @@ namespace DB
 
 using namespace AST;
 
-antlrcpp::Any ParseTreeVisitor::visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitDataLiteral(ClickHouseParser::DataLiteralContext * ctx)
+{
+    if (ctx->DATA_STRING_LITERAL()) return static_pointer_cast<Literal>(Literal::createString(ctx->DATA_STRING_LITERAL()));
+    if (ctx->numberLiteral()) return static_pointer_cast<Literal>(visit(ctx->numberLiteral()).as<PtrTo<NumberLiteral>>());
+    __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext * ctx)
 {
     // TODO: implement this.
     return Literal::createNumber("0");
 }
 
-antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext * ctx)
 {
     if (ctx->NULL_SQL())
         return Literal::createNull(ctx->NULL_SQL());

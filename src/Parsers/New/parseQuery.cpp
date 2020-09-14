@@ -34,7 +34,7 @@ ASTPtr parseQuery(const std::string & query)
 
     ParseTreeVisitor visitor;
 
-    AST::PtrTo<AST::QueryList> new_ast = visitor.visit(parser.queryList());
+    AST::PtrTo<AST::QueryList> new_ast = visitor.visit(parser.input());
 
     new_ast->dump();
 

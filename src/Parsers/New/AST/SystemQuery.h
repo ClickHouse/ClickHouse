@@ -13,6 +13,8 @@ class SystemQuery : public Query
         static PtrTo<SystemQuery> createMerges(bool stop, PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createSync(PtrTo<TableIdentifier> identifier);
 
+        ASTPtr convertToOld() const override;
+
     private:
         enum class QueryType
         {

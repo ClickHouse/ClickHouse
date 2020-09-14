@@ -92,12 +92,12 @@ antlrcpp::Any ParseTreeVisitor::visitEngineClause(ClickHouseParser::EngineClause
 {
     auto clause = std::make_shared<EngineClause>(visit(ctx->engineExpr()).as<PtrTo<EngineExpr>>());
 
-    if (ctx->orderByClause()) clause->setOrderByClause(visit(ctx->orderByClause()));
-    if (ctx->partitionByClause()) clause->setPartitionByClause(visit(ctx->partitionByClause()));
-    if (ctx->primaryKeyClause()) clause->setPrimaryKeyClause(visit(ctx->primaryKeyClause()));
-    if (ctx->sampleByClause()) clause->setSampleByClause(visit(ctx->sampleByClause()));
-    if (ctx->ttlClause()) clause->setTTLClause(visit(ctx->ttlClause()));
-    if (ctx->settingsClause()) clause->setSettingsClause(visit(ctx->settingsClause()));
+    if (!ctx->orderByClause().empty()) clause->setOrderByClause(visit(ctx->orderByClause(0)));
+    if (!ctx->partitionByClause().empty()) clause->setPartitionByClause(visit(ctx->partitionByClause(0)));
+    if (!ctx->primaryKeyClause().empty()) clause->setPrimaryKeyClause(visit(ctx->primaryKeyClause(0)));
+    if (!ctx->sampleByClause().empty()) clause->setSampleByClause(visit(ctx->sampleByClause(0)));
+    if (!ctx->ttlClause().empty()) clause->setTTLClause(visit(ctx->ttlClause(0)));
+    if (!ctx->settingsClause().empty()) clause->setSettingsClause(visit(ctx->settingsClause(0)));
 
     return clause;
 }

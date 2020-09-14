@@ -32,6 +32,8 @@ class AlterPartitionQuery : public DDLQuery
 {
     public:
         AlterPartitionQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterPartitionClause>> clauses);
+
+        ASTPtr convertToOld() const override;
 };
 
 }

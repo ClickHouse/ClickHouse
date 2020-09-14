@@ -26,8 +26,6 @@ void ParserErrorListener::syntaxError(
     auto * parser = dynamic_cast<ClickHouseParser*>(recognizer);
     auto * stream = parser->getTokenStream();
 
-    // std::cerr << parser->getContext()->toStringTree(true) << std::endl;
-
     std::string tokens[9];
     try
     {
@@ -45,7 +43,7 @@ void ParserErrorListener::syntaxError(
     {
     }
 
-    std::cerr << "Parser error: " << message << std::endl;
+    std::cerr << "Parser error: " << "(pos " << token->getStartIndex() << ") " << message << std::endl;
     std::cerr << tokens[0]
        << " " << tokens[1]
        << " " << tokens[2]

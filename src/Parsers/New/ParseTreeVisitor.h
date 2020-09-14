@@ -50,6 +50,12 @@ public:
     // CreateViewQuery
     antlrcpp::Any visitCreateViewStmt(ClickHouseParser::CreateViewStmtContext * ctx) override;
 
+    // DataExpr
+    antlrcpp::Any visitDataExprCSV(ClickHouseParser::DataExprCSVContext * ctx) override;
+    antlrcpp::Any visitDataExprJSON(ClickHouseParser::DataExprJSONContext * ctx) override;
+    antlrcpp::Any visitDataExprTSV(ClickHouseParser::DataExprTSVContext * ctx) override;
+    antlrcpp::Any visitDataExprValues(ClickHouseParser::DataExprValuesContext * ctx) override;
+
     // DescribeQuery
     antlrcpp::Any visitDescribeStmt(ClickHouseParser::DescribeStmtContext * ctx) override;
 
@@ -78,6 +84,14 @@ public:
     antlrcpp::Any visitDataClauseSelect(ClickHouseParser::DataClauseSelectContext * ctx) override;
     antlrcpp::Any visitDataClauseValues(ClickHouseParser::DataClauseValuesContext * ctx) override;
     antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext * ctx) override;
+    antlrcpp::Any visitValuesExpr(ClickHouseParser::ValuesExprContext * ctx) override;
+    antlrcpp::Any visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext * ctx) override;
+
+    // JsonExpr
+    antlrcpp::Any visitJsonExprBoolean(ClickHouseParser::JsonExprBooleanContext * ctx) override;
+    antlrcpp::Any visitJsonExprLiteral(ClickHouseParser::JsonExprLiteralContext * ctx) override;
+    antlrcpp::Any visitJsonExprObject(ClickHouseParser::JsonExprObjectContext * ctx) override;
+    antlrcpp::Any visitJsonValueExpr(ClickHouseParser::JsonValueExprContext * ctx) override;
 
     // OptimizeQuery
     antlrcpp::Any visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext * ctx) override;
@@ -134,10 +148,6 @@ public:
     antlrcpp::Any visitSchemaAsTableClause(ClickHouseParser::SchemaAsTableClauseContext *ctx) override;
     antlrcpp::Any visitSchemaAsFunctionClause(ClickHouseParser::SchemaAsFunctionClauseContext *ctx) override;
     antlrcpp::Any visitSubqueryClause(ClickHouseParser::SubqueryClauseContext *ctx) override;
-
-    // INSERT expressions
-
-    antlrcpp::Any visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *ctx) override;
 
     // OPTIMIZE clauses
 
@@ -225,6 +235,7 @@ public:
     // Basic expressions (alphabetically)
 
     antlrcpp::Any visitBinaryOp(ClickHouseParser::BinaryOpContext *ctx) override;  // returns |AST::ColumnExpr::BinaryOpType|
+    antlrcpp::Any visitDataLiteral(ClickHouseParser::DataLiteralContext * ctx) override;
     antlrcpp::Any visitEnumValue(ClickHouseParser::EnumValueContext *ctx) override;
     antlrcpp::Any visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext *ctx) override;
     antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *ctx) override;
