@@ -55,4 +55,18 @@ INSERT INTO prop_table (column_materialized, column_alias, column_codec, column_
 
 SELECT column_default, column_materialized, column_alias, column_codec, column_comment, column_ttl FROM prop_table ORDER BY column_ttl;
 
+ALTER TABLE prop_table MODIFY TTL REMOVE;
+
+SHOW CREATE TABLE prop_table;
+
+ALTER TABLE prop_table MODIFY COLUMN column_ttl REMOVE TTL;
+
+SHOW CREATE TABLE prop_table;
+
+SYSTEM START TTL MERGES prop_table;
+
+OPTIMIZE TABLE prop_table FINAL;
+
+SELECT COUNT() FROM prop_table;
+
 DROP TABLE IF EXISTS prop_table;

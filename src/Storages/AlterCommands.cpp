@@ -236,6 +236,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_TTL;
         command.ttl = command_ast->ttl;
+        command.to_remove = command_ast->to_remove;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_SETTING)
@@ -852,7 +853,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
         }
         else if (command.type == AlterCommand::MODIFY_TTL)
         {
-            if (command.to_remove == RemoveProperty::TTL && !metadata.hasAnyTTL())
+            if (command.to_remove == RemoveProperty::TTL && !metadata.hasAnyTableTTL())
                 command.ignore = true;
         }
     }
