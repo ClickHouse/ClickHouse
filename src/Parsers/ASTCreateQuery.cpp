@@ -248,9 +248,24 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
                           << quoteString(toString(uuid));
-        if (live_view_timeout)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
-                          << *live_view_timeout;
+
+        if (live_view_timeout || live_view_periodic_refresh)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH";
+
+            if (live_view_timeout)
+                settings.ostr << " TIMEOUT " << (settings.hilite ? hilite_none : "") << *live_view_timeout;
+
+            if (live_view_periodic_refresh)
+            {
+                if (live_view_timeout)
+                    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AND" << (settings.hilite ? hilite_none : "");
+
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
+                    << *live_view_periodic_refresh;
+            }
+        }
+
         formatOnCluster(settings);
     }
     else
