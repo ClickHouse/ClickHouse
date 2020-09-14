@@ -852,7 +852,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
         }
         else if (command.type == AlterCommand::MODIFY_TTL)
         {
-            if (!metadata.hasAnyTTL())
+            if (command.to_remove == RemoveProperty::TTL && !metadata.hasAnyTTL())
                 command.ignore = true;
         }
     }
