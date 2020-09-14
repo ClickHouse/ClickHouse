@@ -7,11 +7,11 @@ check_cxx_compiler_flag("-Wsuggest-override" HAS_SUGGEST_OVERRIDE)
 check_cxx_compiler_flag("-Wsuggest-destructor-override" HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
 
 if (HAS_SUGGEST_OVERRIDE)
-    target_compile_definitions(clickhouse_functions_gatherutils PRIVATE HAS_SUGGEST_OVERRIDE)
+    target_compile_definitions(clickhouse_functions_gatherutils PUBLIC HAS_SUGGEST_OVERRIDE)
 endif()
 
 if (HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
-    target_compile_definitions(clickhouse_functions_gatherutils PRIVATE HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
+    target_compile_definitions(clickhouse_functions_gatherutils PUBLIC HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
 endif()
 
 if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
