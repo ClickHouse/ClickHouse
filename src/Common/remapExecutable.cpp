@@ -115,26 +115,19 @@ __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, v
     int64_t offset = reinterpret_cast<intptr_t>(scratch) - reinterpret_cast<intptr_t>(begin);
     int64_t (*syscall_func)(...) = reinterpret_cast<int64_t (*)(...)>(reinterpret_cast<intptr_t>(our_syscall) + offset);
 
-    //char dot = '.';
-    //syscall_func(SYS_write, 2, &dot, 1);
-
     int64_t munmap_res = syscall_func(SYS_munmap, begin, size);
     if (munmap_res != 0)
         return;
-
-    //syscall_func(SYS_write, 2, &dot, 1);
 
     /// Map new anonymous memory region in place of old region with code.
 
     int64_t mmap_res = syscall_func(SYS_mmap, begin, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
     if (-1 == mmap_res)
         syscall_func(SYS_exit, 1);
-    //syscall_func(SYS_write, 2, &dot, 1);
 
     /// As the memory region is anonymous, we can do madvise with MADV_HUGEPAGE.
 
     syscall_func(SYS_madvise, begin, size, MADV_HUGEPAGE);
-    //syscall_func(SYS_write, 2, &dot, 1);
 
     /// Copy the code from scratch area to the old memory location.
 
@@ -151,12 +144,9 @@ __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, v
         }
     }
 
-    //syscall_func(SYS_write, 2, &dot, 1);
-
     /// Make the memory area with the code executable and non-writable.
 
     syscall_func(SYS_mprotect, begin, size, PROT_READ | PROT_EXEC);
-    //syscall_func(SYS_write, 2, &dot, 1);
 
     /** Step 3 function should unmap the scratch area.
       * The currently executed code is located in the scratch area and cannot be removed here.
