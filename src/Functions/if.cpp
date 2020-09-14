@@ -772,7 +772,7 @@ private:
     {
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
         {
-            /// Nullable cannot contain Nullable
+            /// Nullable cannot contain Nullable.
             return nullable->getNestedColumnPtr();
         }
         else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*column))
