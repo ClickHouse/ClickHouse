@@ -1367,7 +1367,7 @@ public:
             // variable / constant
             else if (right.column && isColumnConst(*right.column))
             {
-                auto constant = (*left.column)[0];
+                auto constant = (*right.column)[0];
                 if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
                     return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
 
