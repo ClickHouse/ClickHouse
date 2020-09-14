@@ -4,11 +4,12 @@
 #include "Selectors.h"
 #include "Algorithms.h"
 
+namespace DB::GatherUtils
+{
+
 namespace
 {
 
-namespace DB::GatherUtils
-{
 struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySinkSourceSelector<SliceDynamicOffsetBoundedSelectArraySource>
 {
     template <typename Source, typename Sink>
