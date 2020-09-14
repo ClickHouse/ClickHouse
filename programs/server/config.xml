@@ -670,18 +670,22 @@
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
 
-    <!-- Uncomment to use query masking rules.
+    <!-- Default query masking rules, matching lines would be replaced with something else in the logs
+        (both text logs and system.query_log).
         name - name for the rule (optional)
         regexp - RE2 compatible regular expression (mandatory)
         replace - substitution string for sensitive data (optional, by default - six asterisks)
+    -->
     <query_masking_rules>
         <rule>
-            <name>hide SSN</name>
-            <regexp>\b\d{3}-\d{2}-\d{4}\b</regexp>
-            <replace>000-00-0000</replace>
+            <name>hide encrypt/decrypt arguments</name>
+            <regexp>((?:aes_)?(?:encrypt|decrypt)(?:_mysql)?)\s*\(\s*(?:'(?:\\'|.)+'|.*?)\s*\)</regexp>
+            <!-- or more secure, but also more invasive:
+                (aes_\w+)\s*\(.*\)
+            -->
+            <replace>\1(???)</replace>
         </rule>
     </query_masking_rules>
-    -->
 
     <!-- Uncomment to use custom http handlers.
         rules are checked from top to bottom, first match runs the handler

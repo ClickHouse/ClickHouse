@@ -29,8 +29,6 @@ set (CLICKHOUSE_SERVER_LINK
 clickhouse_program_add(server)
 
 install(FILES config.xml users.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-server COMPONENT clickhouse)
-install(FILES config.xml users.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-server COMPONENT clickhouse)
-install(FILES config.d/query_masking_rules.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-server/config.d COMPONENT clickhouse)
 
 # TODO We actually need this on Mac, FreeBSD.
 if (OS_LINUX)
