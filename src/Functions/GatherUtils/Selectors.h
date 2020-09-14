@@ -33,7 +33,7 @@ void callSelectMemberFunctionWithTupleArgument(Tuple & tuple, Args && ... args)
 }
 
 template <typename Base, typename ... Args>
-struct ArraySourceSelectorVisitor : public ArraySourceVisitorImpl<ArraySourceSelectorVisitor<Base, Args ...>>
+struct ArraySourceSelectorVisitor final : public ArraySourceVisitorImpl<ArraySourceSelectorVisitor<Base, Args ...>>
 {
     explicit ArraySourceSelectorVisitor(Args && ... args) : packed_args(args ...) {}
 
@@ -61,7 +61,7 @@ struct ArraySourceSelector
 
 
 template <typename Base, typename ... Args>
-struct ArraySinkSelectorVisitor : public ArraySinkVisitorImpl<ArraySinkSelectorVisitor<Base, Args ...>>
+struct ArraySinkSelectorVisitor final : public ArraySinkVisitorImpl<ArraySinkSelectorVisitor<Base, Args ...>>
 {
     explicit ArraySinkSelectorVisitor(Args && ... args) : packed_args(args ...) {}
 
@@ -89,7 +89,7 @@ struct ArraySinkSelector
 
 
 template <typename Base, typename ... Args>
-struct ValueSourceSelectorVisitor : public ValueSourceVisitorImpl<ValueSourceSelectorVisitor<Base, Args ...>>
+struct ValueSourceSelectorVisitor final : public ValueSourceVisitorImpl<ValueSourceSelectorVisitor<Base, Args ...>>
 {
     explicit ValueSourceSelectorVisitor(Args && ... args) : packed_args(args ...) {}
 
