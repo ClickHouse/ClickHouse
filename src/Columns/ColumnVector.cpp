@@ -19,7 +19,6 @@
 #include <pdqsort.h>
 
 
-
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #    if USE_OPENCL
@@ -219,7 +218,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
                         if (isNaN(data[res[reverse ? i : s - 1 - i]]))
                             ++nans_to_move;
                         else
-                            break;
+                            break;completeThread
                     }
 
                     if (nans_to_move)
