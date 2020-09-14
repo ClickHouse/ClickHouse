@@ -4,6 +4,7 @@
 
 namespace DB::GatherUtils
 {
+#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericArraySource;
@@ -28,4 +29,5 @@ class ArraySourceVisitor : public ApplyTypeListForClass<Visitor, TypeListArraySo
 template <typename Derived>
 class ArraySourceVisitorImpl : public VisitorImpl<Derived, ArraySourceVisitor> {};
 
+#pragma GCC visibility pop
 }
