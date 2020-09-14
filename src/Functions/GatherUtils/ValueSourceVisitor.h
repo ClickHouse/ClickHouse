@@ -4,6 +4,7 @@
 
 namespace DB::GatherUtils
 {
+#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericValueSource;
@@ -28,4 +29,5 @@ class ValueSourceVisitor : public ApplyTypeListForClass<Visitor, TypeListValueSo
 template <typename Derived>
 class ValueSourceVisitorImpl : public VisitorImpl<Derived, ValueSourceVisitor> {};
 
+#pragma GCC visibility pop
 }

@@ -28,6 +28,7 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
+#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
@@ -775,4 +776,5 @@ struct NullableValueSource : public ValueSource
 
 }
 
+#pragma GCC visibility pop
 }
