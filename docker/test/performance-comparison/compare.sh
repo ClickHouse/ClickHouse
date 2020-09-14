@@ -198,12 +198,13 @@ function run_tests
         echo test "$test_name"
 
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
-        # the grep is to filter out set -x output and keep only time output
+        # The grep is to filter out set -x output and keep only time output.
+        # The '2>&1 >/dev/null' redirects stderr to stdout, and discards stdout.
         { \
             time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 \
                 --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
                 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
-        } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" \
+        } 2>&1 >/dev/null | tee >(grep -v ^+ >> "wall-clock-times.tsv") \
             || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
     done
 
