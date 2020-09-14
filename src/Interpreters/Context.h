@@ -258,6 +258,11 @@ public:
     /// Sets the current user, checks the password and that the specified host is allowed.
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
+    /// Sets the current user, *do not checks the password* but check that the specified host is allowed.
+    /// Must be called before getClientInfo.
+    ///
+    /// (Used only internally in cluster, if the secret matches)
+    void setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address);
     void setQuotaKey(String quota_key_);
 
     UserPtr getUser() const;
@@ -638,6 +643,9 @@ private:
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
+
+    /// If the password is not set, the password will not be checked
+    void setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address);
 };
 
 
