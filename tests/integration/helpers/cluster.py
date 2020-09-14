@@ -1165,11 +1165,12 @@ class ClickHouseInstance:
 
         db_dir = p.abspath(p.join(self.path, 'database'))
         print "Setup database dir {}".format(db_dir)
-        os.mkdir(db_dir)
         if self.clickhouse_path_dir is not None:
             print "Database files taken from {}".format(self.clickhouse_path_dir)
             shutil.copytree(self.clickhouse_path_dir, db_dir)
             print "Database copied from {} to {}".format(self.clickhouse_path_dir, db_dir)
+        else:
+            os.mkdir(db_dir)
 
         logs_dir = p.abspath(p.join(self.path, 'logs'))
         print "Setup logs dir {}".format(logs_dir)
