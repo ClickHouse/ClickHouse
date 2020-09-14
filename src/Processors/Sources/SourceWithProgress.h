@@ -2,6 +2,7 @@
 #include <Processors/ISource.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Common/Stopwatch.h>
+#include <DataStreams/LocalLimits.h>
 
 namespace DB
 {
@@ -12,9 +13,6 @@ class ISourceWithProgress : public ISource
 {
 public:
     using ISource::ISource;
-
-    using LocalLimits = IBlockInputStream::LocalLimits;
-    using LimitsMode = IBlockInputStream::LimitsMode;
 
     /// Set limitations that checked on each chunk.
     virtual void setLimits(const LocalLimits & limits_) = 0;
@@ -46,9 +44,6 @@ public:
     using ISourceWithProgress::ISourceWithProgress;
     /// If enable_auto_progress flag is set, progress() will be automatically called on each generated chunk.
     SourceWithProgress(Block header, bool enable_auto_progress);
-
-    using LocalLimits = IBlockInputStream::LocalLimits;
-    using LimitsMode = IBlockInputStream::LimitsMode;
 
     void setLimits(const LocalLimits & limits_) final { limits = limits_; }
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) final { quota = quota_; }

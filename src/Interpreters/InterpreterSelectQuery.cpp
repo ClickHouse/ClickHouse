@@ -1409,12 +1409,43 @@ void InterpreterSelectQuery::executeFetchColumns(
             query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
         }
 
-        auto read_step = std::make_unique<ReadFromStorageStep>(
-            table_lock, metadata_snapshot, options, storage,
-                required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+        LocalLimits limits;
+        std::shared_ptr<const EnabledQuota> quota;
 
-        read_step->setStepDescription("Read from " + storage->getName());
-        query_plan.addStep(std::move(read_step));
+        /// Set the limits and quota for reading data, the speed and time of the query.
+        if (!options.ignore_limits)
+        {
+            limits.mode = LimitsMode::LIMITS_TOTAL;
+            limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read,
+                                            settings.read_overflow_mode);
+            limits.speed_limits.max_execution_time = settings.max_execution_time;
+            limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+
+            /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
+              *  because the initiating server has a summary of the execution of the request on all servers.
+              *
+              * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
+              *  additionally on each remote server, because these limits are checked per block of data processed,
+              *  and remote servers may process way more blocks of data than are received by initiator.
+              *
+              * The limits to throttle maximum execution speed is also checked on all servers.
+              */
+            if (options.to_stage == QueryProcessingStage::Complete)
+            {
+                limits.speed_limits.min_execution_rps = settings.min_execution_speed;
+                limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
+            }
+
+            limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+            limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
+            limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+        }
+
+        if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
+            quota = context->getQuota();
+
+        storage->read(query_plan, table_lock, metadata_snapshot, limits, std::move(quota),
+                      required_columns, query_info, context, processing_stage, max_block_size, max_streams);
     }
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);

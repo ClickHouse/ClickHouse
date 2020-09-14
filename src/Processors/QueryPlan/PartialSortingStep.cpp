@@ -56,7 +56,7 @@ void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
         return std::make_shared<PartialSortingTransform>(header, sort_description, limit);
     });
 
-    IBlockInputStream::LocalLimits limits;
+    LocalLimits limits;
     limits.mode = IBlockInputStream::LIMITS_CURRENT;
     limits.size_limits = size_limits;
 

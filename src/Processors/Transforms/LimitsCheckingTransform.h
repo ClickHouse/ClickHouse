@@ -4,7 +4,7 @@
 #include <Poco/Timespan.h>
 #include <Interpreters/ProcessList.h>
 
-#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/LocalLimits.h>
 
 namespace DB
 {
@@ -25,9 +25,6 @@ struct ProcessorProfileInfo
 class LimitsCheckingTransform : public ISimpleTransform
 {
 public:
-
-    using LocalLimits = IBlockInputStream::LocalLimits;
-    using LimitsMode = IBlockInputStream::LimitsMode;
 
     LimitsCheckingTransform(const Block & header_, LocalLimits limits_);
 
