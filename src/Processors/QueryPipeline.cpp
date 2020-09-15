@@ -204,7 +204,7 @@ void QueryPipeline::addCreatingSetsTransform(SubqueriesForSets subqueries_for_se
 
     for (auto & subquery : subqueries_for_sets)
     {
-        if (!subquery.second.source.empty())
+        if (subquery.second.source)
         {
             auto & source = sources.emplace_back(std::move(subquery.second.source));
             if (source.numOutputPorts() > 1)
@@ -313,6 +313,20 @@ QueryPipeline QueryPipeline::unitePipelines(
     }
 
     return pipeline;
+}
+
+void QueryPipeline::addDelayedPipeline(QueryPipeline pipeline)
+{
+    pipeline.resize(1);
+
+    auto * collected_processors = pipe.collected_processors;
+
+    Pipes pipes;
+    pipes.emplace_back(QueryPipeline::getPipe(std::move(pipeline)));
+    pipes.emplace_back(std::move(pipe));
+    pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
+
+    pipe.addTransform(std::make_shared<ConcatProcessor>(getHeader(), 2));
 }
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)

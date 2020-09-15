@@ -12,9 +12,10 @@ void SubqueryForSet::makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery>
                                 NamesWithAliases && joined_block_aliases_)
 {
     joined_block_aliases = std::move(joined_block_aliases_);
-    source = QueryPipeline::getPipe(interpreter->execute().pipeline);
+    source = std::make_unique<QueryPlan>();
+    interpreter->buildQueryPlan(*source);
 
-    sample_block = source.getHeader();
+    sample_block = interpreter->getSampleBlock();
     renameColumns(sample_block);
 }
 

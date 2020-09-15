@@ -87,6 +87,8 @@ public:
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
+    void addDelayedPipeline(QueryPipeline);
+
     PipelineExecutorPtr execute();
 
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
