@@ -207,6 +207,7 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
     }
     catch (...)
     {
+        client.disconnect();
         tryLogCurrentException(log);
         auto db = DatabaseCatalog::instance().getDatabase(database_name);
         setSynchronizationThreadException(db, std::current_exception());
@@ -220,6 +221,7 @@ void MaterializeMySQLSyncThread::stopSynchronization()
     {
         sync_quit = true;
         background_thread_pool->join();
+        client.disconnect();
     }
 }
 

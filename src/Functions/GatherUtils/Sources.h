@@ -129,8 +129,12 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
     #pragma GCC diagnostic ignored "-Wsuggest-override"
 #elif __clang_major__ >= 11
     #pragma GCC diagnostic push
+#ifdef HAS_SUGGEST_OVERRIDE
     #pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
+#ifdef HAS_SUGGEST_DESTRUCTOR_OVERRIDE
     #pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
+#endif
 #endif
 
 template <typename Base>
