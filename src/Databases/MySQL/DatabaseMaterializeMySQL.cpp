@@ -27,32 +27,24 @@ namespace ErrorCodes
 
 template<>
 DatabaseMaterializeMySQL<DatabaseOrdinary>::DatabaseMaterializeMySQL(
-    const Context & context, const String & database_name_, const String & metadata_path_, UUID /*uuid*/, const IAST * /*database_engine_define_*/
-    , const String & mysql_database_name_, mysqlxx::Pool && pool_, MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_)
-    : DatabaseOrdinary(database_name_, metadata_path_, context)
-    //, global_context(context.getGlobalContext())
-    //, engine_define(database_engine_define_->clone())
-    //, nested_database(uuid == UUIDHelpers::Nil
-    //                  ? std::make_shared<DatabaseOrdinary>(database_name_, metadata_path_, context)
-    //                  : std::make_shared<DatabaseAtomic>(database_name_, metadata_path_, uuid, context))
+    const Context & context, const String & database_name_, const String & metadata_path_, UUID /*uuid*/,
+    const String & mysql_database_name_, mysqlxx::Pool && pool_, MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_)
+    : DatabaseOrdinary(database_name_
+                      , metadata_path_
+                      , "data/" + escapeForFileName(database_name_) + "/"
+                      , "DatabaseMaterializeMySQL<Ordinary> (" + database_name_ + ")", context
+                      )
     , settings(std::move(settings_))
-    //, log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
     , materialize_thread(context, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
 {
 }
 
 template<>
 DatabaseMaterializeMySQL<DatabaseAtomic>::DatabaseMaterializeMySQL(
-    const Context & context, const String & database_name_, const String & metadata_path_, UUID uuid, const IAST * /*database_engine_define_*/
-    , const String & mysql_database_name_, mysqlxx::Pool && pool_, MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid, context)
-    //, global_context(context.getGlobalContext())
-    //, engine_define(database_engine_define_->clone())
-    //, nested_database(uuid == UUIDHelpers::Nil
-    //                  ? std::make_shared<DatabaseOrdinary>(database_name_, metadata_path_, context)
-    //                  : std::make_shared<DatabaseAtomic>(database_name_, metadata_path_, uuid, context))
+    const Context & context, const String & database_name_, const String & metadata_path_, UUID uuid,
+    const String & mysql_database_name_, mysqlxx::Pool && pool_, MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_)
+    : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializeMySQL<Atomic> (" + database_name_ + ")", context)
     , settings(std::move(settings_))
-    //, log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
     , materialize_thread(context, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
 {
 }
@@ -64,14 +56,7 @@ void DatabaseMaterializeMySQL<Base>::rethrowExceptionIfNeed() const
 
     if (!settings->allows_query_when_mysql_lost && exception)
     {
-        try
-        {
-            std::rethrow_exception(exception);
-        }
-        catch (Exception & ex)
-        {
-            throw Exception(ex);
-        }
+        std::rethrow_exception(exception);
     }
 }
 
@@ -82,23 +67,12 @@ void DatabaseMaterializeMySQL<Base>::setException(const std::exception_ptr & exc
     exception = exception_;
 }
 
-//ASTPtr DatabaseMaterializeMySQL::getCreateDatabaseQuery() const
-//{
-//    const auto & create_query = std::make_shared<ASTCreateQuery>();
-//    create_query->database = database_name;
-//    create_query->uuid = nested_database->getUUID();
-//    create_query->set(create_query->storage, engine_define);
-//    return create_query;
-//}
-
 template<typename Base>
 void DatabaseMaterializeMySQL<Base>::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
     Base::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
     try
     {
-        //std::unique_lock<std::mutex> lock(Base::mutex);
-        //Base::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
         materialize_thread.startSynchronization();
         started_up = true;
     }
@@ -112,77 +86,16 @@ void DatabaseMaterializeMySQL<Base>::loadStoredObjects(Context & context, bool h
 }
 
 template<typename Base>
-void DatabaseMaterializeMySQL<Base>::shutdown()
-{
-    //materialize_thread.stopSynchronization();
-    //started_up = false;
-
-    Base::shutdown();
-
-//    //FIXME
-//    //auto iterator = nested_database->getTablesIterator(global_context, {});
-//    auto iterator = Base::getTablesIterator(Base::global_context, {});
-//
-//    /// We only shutdown the table, The tables is cleaned up when destructed database
-//    for (; iterator->isValid(); iterator->next())
-//        iterator->table()->shutdown();
-}
-
-//bool DatabaseMaterializeMySQL::empty() const
-//{
-//    return nested_database->empty();
-//}
-//
-//String DatabaseMaterializeMySQL::getDataPath() const
-//{
-//    return nested_database->getDataPath();
-//}
-//
-//String DatabaseMaterializeMySQL::getMetadataPath() const
-//{
-//    return nested_database->getMetadataPath();
-//}
-//
-//String DatabaseMaterializeMySQL::getTableDataPath(const String & table_name) const
-//{
-//    return nested_database->getTableDataPath(table_name);
-//}
-//
-//String DatabaseMaterializeMySQL::getTableDataPath(const ASTCreateQuery & query) const
-//{
-//    return nested_database->getTableDataPath(query);
-//}
-//
-//String DatabaseMaterializeMySQL::getObjectMetadataPath(const String & table_name) const
-//{
-//    return nested_database->getObjectMetadataPath(table_name);
-//}
-//
-//UUID DatabaseMaterializeMySQL::tryGetTableUUID(const String & table_name) const
-//{
-//    return nested_database->tryGetTableUUID(table_name);
-//}
-//
-//time_t DatabaseMaterializeMySQL::getObjectMetadataModificationTime(const String & name) const
-//{
-//    return nested_database->getObjectMetadataModificationTime(name);
-//}
-
-template<typename Base>
 void DatabaseMaterializeMySQL<Base>::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
 {
     assertCalledFromSyncThreadOrDrop("create table");
-
-    //nested_database->createTable(context, name, std::make_shared<StorageMaterializeMySQL>(std::move(table), this), query);
     Base::createTable(context, name, table, query);
 }
 
 template<typename Base>
 void DatabaseMaterializeMySQL<Base>::dropTable(const Context & context, const String & name, bool no_delay)
 {
-    ///FIXME cannot be called from DROP DATABASE, so we need hack with shouldBeEmptyOnDetach = false
     assertCalledFromSyncThreadOrDrop("drop table");
-
     Base::dropTable(context, name, no_delay);
 }
 
@@ -190,8 +103,6 @@ template<typename Base>
 void DatabaseMaterializeMySQL<Base>::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     assertCalledFromSyncThreadOrDrop("attach table");
-
-    //nested_database->attachTable(name, std::make_shared<StorageMaterializeMySQL>(std::move(table), this), relative_table_path);
     Base::attachTable(name, table, relative_table_path);
 }
 
@@ -199,7 +110,6 @@ template<typename Base>
 StoragePtr DatabaseMaterializeMySQL<Base>::detachTable(const String & name)
 {
     assertCalledFromSyncThreadOrDrop("detach table");
-    //return std::dynamic_pointer_cast<StorageMaterializeMySQL>(nested_database->detachTable(name));
     return Base::detachTable(name);
 }
 
@@ -227,36 +137,6 @@ void DatabaseMaterializeMySQL<Base>::alterTable(const Context & context, const S
     Base::alterTable(context, table_id, metadata);
 }
 
-//template<typename Base>
-//bool DatabaseMaterializeMySQL<Base>::shouldBeEmptyOnDetach() const
-//{
-//    return false;   /// FIXME
-//}
-
-//template<typename Base>
-//void DatabaseMaterializeMySQL<Base>::drop(const Context & context)
-//{
-//    /// FIXME
-//    if (Base::shouldBeEmptyOnDetach())
-//    {
-//        for (auto iterator = Base::getTablesIterator(context, {}); iterator->isValid(); iterator->next())
-//        {
-//            TableExclusiveLockHolder table_lock = iterator->table()->lockExclusively(
-//                context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-//
-//            Base::dropTable(context, iterator->name(), true);
-//        }
-//
-//        /// Remove metadata info
-//        Poco::File metadata(Base::getMetadataPath() + "/.metadata");
-//
-//        if (metadata.exists())
-//            metadata.remove(false);
-//    }
-//
-//    Base::drop(context);
-//}
-
 template<typename Base>
 void DatabaseMaterializeMySQL<Base>::drop(const Context & context)
 {
@@ -269,30 +149,20 @@ void DatabaseMaterializeMySQL<Base>::drop(const Context & context)
     Base::drop(context);
 }
 
-//bool DatabaseMaterializeMySQL::isTableExist(const String & name, const Context & context) const
-//{
-//    return nested_database->isTableExist(name, context);
-//}
-
 template<typename Base>
 StoragePtr DatabaseMaterializeMySQL<Base>::tryGetTable(const String & name, const Context & context) const
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
     {
-        using Storage = StorageMaterializeMySQL<DatabaseMaterializeMySQL<Base>>;
         StoragePtr nested_storage = Base::tryGetTable(name, context);
 
         if (!nested_storage)
             return {};
 
-        return std::make_shared<Storage>(std::move(nested_storage), this);
+        return std::make_shared<StorageMaterializeMySQL>(std::move(nested_storage), this);
     }
 
     return Base::tryGetTable(name, context);
-    //auto table = nested_database->tryGetTable(name, context);
-    //if (table && MaterializeMySQLSyncThread::isMySQLSyncThread())
-    //    return typeid_cast<const StorageMaterializeMySQL &>(*table).getNested();
-    //return table;
 }
 
 template<typename Base>
@@ -300,18 +170,12 @@ DatabaseTablesIteratorPtr DatabaseMaterializeMySQL<Base>::getTablesIterator(cons
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
     {
-        using TablesIterator = DatabaseMaterializeTablesIterator<DatabaseMaterializeMySQL<Base>>;
         DatabaseTablesIteratorPtr iterator = Base::getTablesIterator(context, filter_by_table_name);
-        return std::make_unique<TablesIterator>(std::move(iterator), this);
+        return std::make_unique<DatabaseMaterializeTablesIterator>(std::move(iterator), this);
     }
 
     return Base::getTablesIterator(context, filter_by_table_name);
 }
-
-//void DatabaseMaterializeMySQL::assertCanBeDetached(bool cleanup)
-//{
-//    nested_database->assertCanBeDetached(cleanup);
-//}
 
 template<typename Base>
 void DatabaseMaterializeMySQL<Base>::assertCalledFromSyncThreadOrDrop(const char * method) const
@@ -327,24 +191,37 @@ void DatabaseMaterializeMySQL<Base>::shutdownSynchronizationThread()
     started_up = false;
 }
 
-void setSynchronizationThreadException(const DatabasePtr & materialize_mysql_db, const std::exception_ptr & exception)
+template<typename Database, template<class> class Helper, typename... Args>
+auto castToMaterializeMySQLAndCallHelper(Database * database, Args && ... args)
 {
-    if (auto * database_materialize = typeid_cast<DatabaseMaterializeMySQL<DatabaseOrdinary> *>(materialize_mysql_db.get()))
-        return database_materialize->setException(exception);
-    if (auto * database_materialize = typeid_cast<DatabaseMaterializeMySQL<DatabaseAtomic> *>(materialize_mysql_db.get()))
-        return database_materialize->setException(exception);
+    using Ordinary = DatabaseMaterializeMySQL<DatabaseOrdinary>;
+    using Atomic = DatabaseMaterializeMySQL<DatabaseAtomic>;
+    using ToOrdinary = typename std::conditional_t<std::is_const_v<Database>, const Ordinary *, Ordinary *>;
+    using ToAtomic = typename std::conditional_t<std::is_const_v<Database>, const Atomic *, Atomic *>;
+    if (auto * database_materialize = typeid_cast<ToOrdinary>(database))
+        return (database_materialize->*Helper<Ordinary>::v)(std::forward<Args>(args)...);
+    if (auto * database_materialize = typeid_cast<ToAtomic>(database))
+        return (database_materialize->*Helper<Atomic>::v)(std::forward<Args>(args)...);
 
     throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
+template<typename T> struct HelperSetException { static constexpr auto v = &T::setException; };
+void setSynchronizationThreadException(const DatabasePtr & materialize_mysql_db, const std::exception_ptr & exception)
+{
+    castToMaterializeMySQLAndCallHelper<IDatabase, HelperSetException>(materialize_mysql_db.get(), exception);
+}
+
+template<typename T> struct HelperStopSync { static constexpr auto v = &T::shutdownSynchronizationThread; };
 void stopDatabaseSynchronization(const DatabasePtr & materialize_mysql_db)
 {
-    if (auto * database_materialize = typeid_cast<DatabaseMaterializeMySQL<DatabaseOrdinary> *>(materialize_mysql_db.get()))
-        return database_materialize->shutdownSynchronizationThread();
-    if (auto * database_materialize = typeid_cast<DatabaseMaterializeMySQL<DatabaseAtomic> *>(materialize_mysql_db.get()))
-        return database_materialize->shutdownSynchronizationThread();
+    castToMaterializeMySQLAndCallHelper<IDatabase, HelperStopSync>(materialize_mysql_db.get());
+}
 
-    throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
+template<typename T> struct HelperRethrow { static constexpr auto v = &T::rethrowExceptionIfNeed; };
+void rethrowSyncExceptionIfNeed(const IDatabase * materialize_mysql_db)
+{
+    castToMaterializeMySQLAndCallHelper<const IDatabase, HelperRethrow>(materialize_mysql_db);
 }
 
 template class DatabaseMaterializeMySQL<DatabaseOrdinary>;

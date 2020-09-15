@@ -9,19 +9,16 @@
 namespace DB
 {
 
-template<typename DatabaseT>
-class StorageMaterializeMySQL final : public ext::shared_ptr_helper<StorageMaterializeMySQL<DatabaseT>>, public IStorage
+class StorageMaterializeMySQL final : public ext::shared_ptr_helper<StorageMaterializeMySQL>, public IStorage
 {
-    //static_assert(std::is_same_v<DatabaseT, DatabaseMaterializeMySQL<DatabaseOrdinary>> ||
-    //              std::is_same_v<DatabaseT, DatabaseMaterializeMySQL<DatabaseAtomic>>);
-    friend struct ext::shared_ptr_helper<StorageMaterializeMySQL<DatabaseT>>;
+    friend struct ext::shared_ptr_helper<StorageMaterializeMySQL>;
 public:
     String getName() const override { return "MaterializeMySQL"; }
 
     bool supportsFinal() const override { return nested_storage->supportsFinal(); }
     bool supportsSampling() const override { return nested_storage->supportsSampling(); }
 
-    StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseT * database_);
+    StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_);
 
     Pipe read(
         const Names & column_names, const StorageMetadataPtr & metadata_snapshot, const SelectQueryInfo & query_info,
@@ -35,7 +32,7 @@ public:
 
 private:
     StoragePtr nested_storage;
-    const DatabaseT * database;
+    const IDatabase * database;
 };
 
 }

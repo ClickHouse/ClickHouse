@@ -20,7 +20,6 @@
 
 #if USE_MYSQL
 #    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
-#    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #    include <Storages/StorageMaterializeMySQL.h>
 #endif
 
@@ -208,19 +207,11 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         }
 
 #if USE_MYSQL
-        /// It's definetly not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
+        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
         if (db_and_table.first->getEngineName() == "MaterializeMySQL")
         {
-            if (MaterializeMySQLSyncThread::isMySQLSyncThread())
-                return db_and_table;
-
-            //db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), mysql);
-            if (auto * mysql_ordinary = typeid_cast<DatabaseMaterializeMySQL<DatabaseOrdinary> *>(db_and_table.first.get()))
-                db_and_table.second = std::make_shared<StorageMaterializeMySQL<DatabaseMaterializeMySQL<DatabaseOrdinary>>>(std::move(db_and_table.second), mysql_ordinary);
-            else if (auto * mysql_atomic = typeid_cast<DatabaseMaterializeMySQL<DatabaseAtomic> *>(db_and_table.first.get()))
-                db_and_table.second = std::make_shared<StorageMaterializeMySQL<DatabaseMaterializeMySQL<DatabaseAtomic>>>(std::move(db_and_table.second), mysql_atomic);
-            else
-                throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
+            if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
+                db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), db_and_table.first.get());
             return db_and_table;
         }
 #endif
@@ -437,24 +428,9 @@ DatabasePtr DatabaseCatalog::getSystemDatabase() const
     return getDatabase(SYSTEM_DATABASE);
 }
 
-//namespace
-//{
-//
-//void addWrappersIfNeed(DatabasePtr & database)
-//{
-//    /// FIXME IDatabase::attachTable(...) and similar methods are called from the nested database of MaterializeMySQL, so we need such hacks
-//    if (MaterializeMySQLSyncThread::isMySQLSyncThread())
-//    {
-//        database = DatabaseCatalog::instance().getDatabase(database->getUUID());
-//    }
-//}
-//
-//}
-
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
-    //addWrappersIfNeed(database);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto [_, inserted] = map_part.map.try_emplace(uuid, std::move(database), std::move(table));
@@ -474,7 +450,6 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
 void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
-    //addWrappersIfNeed(database);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto it = map_part.map.find(uuid);
