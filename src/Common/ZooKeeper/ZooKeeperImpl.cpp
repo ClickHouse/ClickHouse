@@ -1276,11 +1276,16 @@ void ZooKeeper::receiveEvent()
             response->removeRootPath(root_path);
         }
 
-        /// Find from operations
+        /// Instead of setting the watch in sendEvent, set it in receiveEvent becuase need to check the response.
+        /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
+        /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
         if (request_info.watch)
         {
             bool add_watch = false;
-            if (request_info.isExists)
+            /// 3 indicates the ZooKeeperExistsRequest. 
+            // For exists, we set the watch on both node exist and nonexist case.
+            // For other case like getData, we only set the watch when node exists.
+            if (request_info.request->getOpNum() == 3)
                 add_watch = (response->error == Error::ZOK || response->error == Error::ZNONODE);
             else
                 add_watch = response->error == Error::ZOK;
@@ -1559,7 +1564,6 @@ void ZooKeeper::exists(
     request_info.request = std::make_shared<ZooKeeperExistsRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ExistsResponse &>(response)); };
     request_info.watch = watch;
-    request_info.isExists = true;
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
@@ -1578,7 +1582,6 @@ void ZooKeeper::get(
     request_info.request = std::make_shared<ZooKeeperGetRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetResponse &>(response)); };
     request_info.watch = watch;
-    request_info.isExists = false;
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
@@ -1617,7 +1620,6 @@ void ZooKeeper::list(
     request_info.request = std::make_shared<ZooKeeperListRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
     request_info.watch = watch;
-    request_info.isExists = false;
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperList);
