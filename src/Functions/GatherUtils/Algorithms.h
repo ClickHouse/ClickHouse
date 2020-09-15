@@ -146,7 +146,7 @@ inline ALWAYS_INLINE void writeSlice(const Slice & slice, NullableArraySink<Arra
 
 
 template <typename T, typename U>
-void ALWAYS_INLINE writeSlice(const NumericValueSlice<T> & slice, NumericArraySink<U> & sink)
+void inline ALWAYS_INLINE writeSlice(const NumericValueSlice<T> & slice, NumericArraySink<U> & sink)
 {
     sink.elements.resize(sink.current_offset + 1);
     sink.elements[sink.current_offset] = slice.value;
