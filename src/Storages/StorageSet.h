@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/SetSettings.h>
 
 
 namespace DB
@@ -31,12 +32,12 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        bool disable_set_and_join_persistency_,
-        const Context & context_);
+        const Context & context_,
+        bool disable_persistency_);
 
     String base_path;
     String path;
-    bool disable_set_and_join_persistency;
+    bool disable_persistency;
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
@@ -84,8 +85,8 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        bool disable_set_and_join_persistency_,
-        const Context & context_);
+        const Context & context_,
+        bool disable_persistency_);
 };
 
 }

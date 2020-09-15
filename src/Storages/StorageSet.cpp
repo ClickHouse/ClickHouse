@@ -38,7 +38,7 @@ public:
     SetOrJoinBlockOutputStream(
         StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
-        const String & backup_file_name_, bool disable_set_and_join_persistency_);
+        const String & backup_file_name_, bool disable_persistency_);
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
     void write(const Block & block) override;
@@ -53,7 +53,7 @@ private:
     WriteBufferFromFile backup_buf;
     CompressedWriteBuffer compressed_backup_buf;
     NativeBlockOutputStream backup_stream;
-    bool disable_set_and_join_persistency;
+    bool disable_persistency;
 };
 
 
@@ -63,7 +63,7 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
     const String & backup_path_,
     const String & backup_tmp_path_,
     const String & backup_file_name_,
-    bool disable_set_and_join_persistency_)
+    bool disable_persistency_)
     : table(table_)
     , metadata_snapshot(metadata_snapshot_)
     , backup_path(backup_path_)
@@ -72,7 +72,7 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
     , backup_buf(backup_tmp_path + backup_file_name)
     , compressed_backup_buf(backup_buf)
     , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
-    , disable_set_and_join_persistency(disable_set_and_join_persistency_)
+    , disable_persistency(disable_persistency_)
 {
 }
 
@@ -82,14 +82,14 @@ void SetOrJoinBlockOutputStream::write(const Block & block)
     Block sorted_block = block.sortColumns();
 
     table.insertBlock(sorted_block);
-    if (!disable_set_and_join_persistency)
+    if (!disable_persistency)
         backup_stream.write(sorted_block);
 }
 
 void SetOrJoinBlockOutputStream::writeSuffix()
 {
     table.finishInsert();
-    if (!disable_set_and_join_persistency)
+    if (!disable_persistency)
     {
         backup_stream.flush();
         compressed_backup_buf.next();
@@ -103,7 +103,7 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", disable_set_and_join_persistency);
+    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", disable_persistency);
 }
 
 
@@ -112,10 +112,10 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    bool disable_set_and_join_persistency_,
-    const Context & context_)
+    const Context & context_,
+    bool disable_persistency_)
     : IStorage(table_id_),
-    disable_set_and_join_persistency(disable_set_and_join_persistency_)
+    disable_persistency(disable_persistency_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -136,9 +136,9 @@ StorageSet::StorageSet(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    bool disable_set_and_join_persistency_,
-    const Context & context_)
-    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, disable_set_and_join_persistency_, context_},
+    const Context & context_,
+    bool disable_persistency_)
+    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_, disable_persistency_},
     set(std::make_shared<Set>(SizeLimits(), false, true))
 {
 
@@ -242,23 +242,15 @@ void registerStorageSet(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        const auto & settings = args.context.getSettingsRef();
-        auto disable_set_and_join_persistency = settings.disable_set_and_join_persistency;
+        bool has_settings = args.storage_def->settings;
 
-        if (args.storage_def && args.storage_def->settings)
+        auto set_settings = std::make_unique<SetSettings>();
+        if (has_settings)
         {
-            for (const auto & setting : args.storage_def->settings->changes)
-            {
-                if (setting.name == "disable_set_and_join_persistency")
-                    disable_set_and_join_persistency = setting.value;
-                else
-                    throw Exception(
-                        "Unknown setting " + setting.name + " for storage " + args.engine_name,
-                        ErrorCodes::BAD_ARGUMENTS);
-            }
+            set_settings->loadFromQuery(*args.storage_def);
         }
 
-        return StorageSet::create(args.relative_data_path, args.table_id, args.columns, args.constraints, disable_set_and_join_persistency, args.context);
+        return StorageSet::create(args.relative_data_path, args.table_id, args.columns, args.constraints, args.context, set_settings->disable_persistency);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 

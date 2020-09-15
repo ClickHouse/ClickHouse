@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/StorageSet.h>
+#include <Storages/JoinSettings.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 
@@ -72,8 +73,8 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         bool overwrite,
-        bool disable_set_and_join_persistency_,
-        const Context & context_);
+        const Context & context_,
+        bool disable_persistency_);
 };
 
 }
