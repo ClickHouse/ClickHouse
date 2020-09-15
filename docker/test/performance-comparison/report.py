@@ -168,12 +168,6 @@ def nextRowAnchor():
     global table_anchor
     return f'{table_anchor}.{row_anchor + 1}'
 
-def setRowAnchor(anchor_row_part):
-    global row_anchor
-    global table_anchor
-    row_anchor = anchor_row_part
-    return currentRowAnchor()
-
 def advanceRowAnchor():
     global row_anchor
     global table_anchor
@@ -376,9 +370,9 @@ if args.report == 'main':
         columns = [
             'Old,&nbsp;s',                                          # 0
             'New,&nbsp;s',                                          # 1
-            'Times speedup / slowdown',                 # 2
+            'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)',                 # 2
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 3
-            'p&nbsp;<&nbsp;0.001 threshold',                   # 4
+            'p&nbsp;<&nbsp;0.01 threshold',                   # 4
             # Failed                                           # 5
             'Test',                                            # 6
             '#',                                               # 7
@@ -422,7 +416,7 @@ if args.report == 'main':
             'Old,&nbsp;s', #0
             'New,&nbsp;s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
-            'p&nbsp;&lt;&nbsp;0.001 threshold', #3
+            'p&nbsp;&lt;&nbsp;0.01 threshold', #3
             # Failed #4
             'Test', #5
             '#',    #6
@@ -453,7 +447,7 @@ if args.report == 'main':
     addSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
 
     addSimpleTable('Test performance changes',
-        ['Test', 'Queries', 'Unstable', 'Changed perf', 'Total not OK', 'Avg relative time diff'],
+        ['Test', 'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)', 'Queries', 'Total not OK', 'Changed perf', 'Unstable'],
         tsvRows('report/test-perf-changes.tsv'))
 
     def add_test_times():
@@ -476,15 +470,17 @@ if args.report == 'main':
         text = tableStart('Test times')
         text += tableHeader(columns)
 
-        nominal_runs = 13  # FIXME pass this as an argument
+        nominal_runs = 7  # FIXME pass this as an argument
         total_runs = (nominal_runs + 1) * 2  # one prewarm run, two servers
+        allowed_average_run_time = allowed_single_run_time + 60 / total_runs; # some allowance for fill/create queries
         attrs = ['' for c in columns]
         for r in rows:
-            if float(r[6]) > 1.5 * total_runs:
+            anchor = f'{currentTableAnchor()}.{r[0]}'
+            if float(r[6]) > allowed_average_run_time * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
                 attrs[6] = f'style="background: {color_bad}"'
-                errors_explained.append([f'<a href="./all-queries.html#all-query-times.{r[0]}.0">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up'])
+                errors_explained.append([f'<a href="#{anchor}">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up'])
             else:
                 attrs[6] = ''
 
@@ -495,7 +491,7 @@ if args.report == 'main':
             else:
                 attrs[5] = ''
 
-            text += tableRow(r, attrs)
+            text += tableRow(r, attrs, anchor)
 
         text += tableEnd()
         tables.append(text)
@@ -652,9 +648,9 @@ elif args.report == 'all-queries':
             # Unstable #1
             'Old,&nbsp;s', #2
             'New,&nbsp;s', #3
-            'Times speedup / slowdown',                 #4
+            'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)',                 #4
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #5
-            'p&nbsp;&lt;&nbsp;0.001 threshold',          #6
+            'p&nbsp;&lt;&nbsp;0.01 threshold',          #6
             'Test',                                   #7
             '#',                                      #8
             'Query',                                  #9

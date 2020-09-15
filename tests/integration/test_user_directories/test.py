@@ -12,10 +12,8 @@ def started_cluster():
     try:
         cluster.start()
 
-        node.exec_in_container("cp /etc/clickhouse-server/users.xml /etc/clickhouse-server/users2.xml")
-        node.exec_in_container("cp /etc/clickhouse-server/users.xml /etc/clickhouse-server/users3.xml")
-        node.exec_in_container("cp /etc/clickhouse-server/users.xml /etc/clickhouse-server/users4.xml")
-        node.exec_in_container("cp /etc/clickhouse-server/users.xml /etc/clickhouse-server/users5.xml")
+        for i in range(2, 8):
+            node.exec_in_container("cp /etc/clickhouse-server/users.xml /etc/clickhouse-server/users{}.xml".format(i))
 
         yield cluster
 
@@ -49,3 +47,17 @@ def test_memory():
     node.restart_clickhouse()
     assert node.query("SELECT * FROM system.user_directories") == TSV([["users.xml", "users.xml", "/etc/clickhouse-server/users5.xml", 1, 1],
                                                                        ["memory",    "memory",    "",                                  0, 2]])
+
+def test_mixed_style():
+    node.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/mixed_style.xml"), '/etc/clickhouse-server/config.d/z.xml')
+    node.restart_clickhouse()
+    assert node.query("SELECT * FROM system.user_directories") == TSV([["users.xml",       "users.xml",       "/etc/clickhouse-server/users6.xml", 1, 1],
+                                                                       ["local directory", "local directory", "/var/lib/clickhouse/access6/",      0, 2],
+                                                                       ["local directory", "local directory", "/var/lib/clickhouse/access6a/",     0, 3],
+                                                                       ["memory",          "memory",          "",                                  0, 4]])
+
+def test_duplicates():
+    node.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/duplicates.xml"), '/etc/clickhouse-server/config.d/z.xml')
+    node.restart_clickhouse()
+    assert node.query("SELECT * FROM system.user_directories") == TSV([["users.xml",       "users.xml",       "/etc/clickhouse-server/users7.xml", 1, 1],
+                                                                       ["local directory", "local directory", "/var/lib/clickhouse/access7/",      0, 2]])

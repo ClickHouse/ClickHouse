@@ -103,10 +103,7 @@ void FilterTransform::transform(Chunk & chunk)
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
 
-        if (on_totals)
-            expression->executeOnTotals(block);
-        else
-            expression->execute(block);
+        expression->execute(block);
 
         num_rows_before_filtration = block.rows();
         columns = block.getColumns();

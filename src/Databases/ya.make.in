@@ -4,6 +4,8 @@ PEERDIR(
     clickhouse/src/Common
 )
 
+CFLAGS(-g0)
+
 SRCS(
 <? find . -name '*.cpp' | sed 's/^\.\//    /' | sort ?>
 )

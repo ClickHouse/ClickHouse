@@ -21,6 +21,8 @@
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
 
+namespace fs = std::filesystem;
+
 using namespace Poco::XML;
 
 namespace DB
@@ -451,7 +453,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     XMLDocumentPtr config;
     LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
-    if (std::filesystem::exists(path))
+    if (fs::exists(path))
     {
         config = dom_parser.parse(path);
     }
@@ -610,6 +612,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
     {
         if (preprocessed_path.empty())
         {
+            fs::path preprocessed_configs_path("preprocessed_configs/");
             auto new_path = loaded_config.config_path;
             if (new_path.substr(0, main_config_path.size()) == main_config_path)
                 new_path.replace(0, main_config_path.size(), "");
@@ -628,15 +631,17 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 }
                 else
                 {
-                    preprocessed_dir = loaded_config.configuration->getString("path") + "/preprocessed_configs/";
+                    fs::path loaded_config_path(loaded_config.configuration->getString("path"));
+                    preprocessed_dir = loaded_config_path / preprocessed_configs_path;
                 }
             }
             else
             {
-                preprocessed_dir += "/preprocessed_configs/";
+                fs::path preprocessed_dir_path(preprocessed_dir);
+                preprocessed_dir = (preprocessed_dir_path / preprocessed_configs_path).string();
             }
 
-            preprocessed_path = preprocessed_dir + new_path;
+            preprocessed_path = (fs::path(preprocessed_dir) / fs::path(new_path)).string();
             auto preprocessed_path_parent = Poco::Path(preprocessed_path).makeParent();
             if (!preprocessed_path_parent.toString().empty())
                 Poco::File(preprocessed_path_parent).createDirectories();

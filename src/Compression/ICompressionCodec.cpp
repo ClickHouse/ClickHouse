@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <common/unaligned.h>
 #include <Common/Exception.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -20,8 +21,25 @@ ASTPtr ICompressionCodec::getFullCodecDesc() const
 {
     std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
     result->name = "CODEC";
-    result->arguments = getCodecDesc();
+    ASTPtr codec_desc = getCodecDesc();
+    if (codec_desc->as<ASTExpressionList>())
+    {
+        result->arguments = codec_desc;
+    }
+    else
+    {
+        result->arguments = std::make_shared<ASTExpressionList>();
+        result->arguments->children.push_back(codec_desc);
+    }
+    result->children.push_back(result->arguments);
     return result;
+}
+
+UInt64 ICompressionCodec::getHash() const
+{
+    SipHash hash;
+    updateHash(hash);
+    return hash.get64();
 }
 
 UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const

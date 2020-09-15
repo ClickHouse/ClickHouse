@@ -534,9 +534,6 @@ public:
         return DB::extractKeyExpressionList(node);
     }
 
-    /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
-
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
@@ -649,6 +646,11 @@ public:
     /// TTL rule.
     bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
 
+    /// Get count of total merges with TTL in MergeList (system.merges) for all
+    /// tables (not only current table).
+    /// Method is cheap and doesn't require any locks.
+    size_t getTotalMergesWithTTLInMergeList() const;
+
     using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
     WriteAheadLogPtr getWriteAheadLog();
 
@@ -670,7 +672,9 @@ public:
     ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
     ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
 
-    std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
+    /// Get compression codec for part according to TTL rules and <compression>
+    /// section from config.xml.
+    CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};

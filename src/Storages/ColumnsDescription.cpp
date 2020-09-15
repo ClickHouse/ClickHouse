@@ -404,6 +404,13 @@ std::optional<ColumnDefault> ColumnsDescription::getDefault(const String & colum
 }
 
 
+bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
+{
+    const auto it = columns.get<1>().find(column_name);
+
+    return it != columns.get<1>().end() && it->codec != nullptr;
+}
+
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
     const auto it = columns.get<1>().find(column_name);
@@ -477,8 +484,8 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
-            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
-                throw Exception("Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+            if (action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
         return actions->getSampleBlock();
     }
