@@ -4,4 +4,5 @@ usr/bin/clickhouse-compressor
 usr/bin/clickhouse-benchmark
 usr/bin/clickhouse-format
 usr/bin/clickhouse-obfuscator
+usr/bin/clickhouse-git-import
 etc/clickhouse-client/config.xml
