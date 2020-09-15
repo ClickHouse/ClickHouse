@@ -1,0 +1,3 @@
+<test>
+    <query>INSERT INTO function null('number UInt64') SELECT * FROM numbers_mt(1000000000);</query>
+</test>
