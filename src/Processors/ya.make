@@ -33,6 +33,7 @@ SRCS(
     Formats/Impl/JSONEachRowRowOutputFormat.cpp
     Formats/Impl/JSONEachRowWithProgressRowOutputFormat.cpp
     Formats/Impl/JSONRowOutputFormat.cpp
+    Formats/Impl/LineAsStringRowInputFormat.cpp
     Formats/Impl/MarkdownRowOutputFormat.cpp
     Formats/Impl/MsgPackRowInputFormat.cpp
     Formats/Impl/MsgPackRowOutputFormat.cpp

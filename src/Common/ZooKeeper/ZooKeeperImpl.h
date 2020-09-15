@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
