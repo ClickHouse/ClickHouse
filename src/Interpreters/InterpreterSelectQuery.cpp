@@ -1862,14 +1862,38 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
 
     const Settings & settings = context->getSettingsRef();
 
-    auto creating_sets = std::make_unique<CreatingSetsStep>(
-            query_plan.getCurrentDataStream(),
-            std::move(subqueries_for_sets),
-            SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
-            *context);
+    if (subqueries_for_sets.empty())
+        return;
 
-    creating_sets->setStepDescription("Create sets for subqueries and joins");
-    query_plan.addStep(std::move(creating_sets));
+    SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+
+    std::vector<QueryPlan> plans;
+    DataStreams input_streams;
+    input_streams.emplace_back(query_plan.getCurrentDataStream());
+
+    for (auto & [description, set] : subqueries_for_sets)
+    {
+        auto plan = std::move(set.source);
+        std::string type = (set.join != nullptr) ? "JOIN"
+                                                 : "subquery";
+
+        auto creating_set = std::make_unique<CreatingSetStep>(
+                plan->getCurrentDataStream(),
+                query_plan.getCurrentDataStream().header,
+                std::move(description),
+                std::move(set),
+                limits,
+                *context);
+        creating_set->setStepDescription("Create set for " + type);
+        plan->addStep(std::move(creating_set));
+
+        input_streams.emplace_back(plan->getCurrentDataStream());
+        plans.emplace_back(std::move(*plan));
+    }
+
+    auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));
+    creating_sets->setStepDescription("Create sets before main query execution");
+    query_plan.unitePlans(std::move(creating_sets), std::move(plans));
 }
 
 
