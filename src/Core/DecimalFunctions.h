@@ -1,5 +1,4 @@
 #pragma once
-// Moved Decimal-related functions out from Core/Types.h to reduce compilation time.
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
