@@ -1,4 +1,10 @@
-37533
-32214
-139160
-3349087
+git log --reverse --no-merges --pretty=%H
+Total 37569 commits to process.
+Warning: skipping commit without parents
+Warning: skipping commit without parents
+Warning: skipping commit without parents
+Warning: skipping commit without parents
+Warning: skipping commit without parents
+32252
+139466
+3351342

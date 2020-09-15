@@ -5,7 +5,7 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_GIT_IMPORT --stop-after-commit a78b04b56a7aa45865ca1091821194b476c0a421 --skip-paths 'generated\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch ' 2>&1 | wc -l
+$CLICKHOUSE_GIT_IMPORT --stop-after-commit a78b04b56a7aa45865ca1091821194b476c0a421 --skip-paths 'generated\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch ' 2>&1 | grep -vP '\d+%  '
 
 $CLICKHOUSE_CLIENT -n -q "
 
