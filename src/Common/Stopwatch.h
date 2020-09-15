@@ -13,13 +13,6 @@ inline UInt64 clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)
     return UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
 }
 
-inline UInt64 clock_gettime_microseconds(clockid_t clock_type = CLOCK_MONOTONIC)
-{
-    struct timespec ts;
-    clock_gettime(clock_type, &ts);
-    return UInt64((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
-}
-
 /** Differs from Poco::Stopwatch only by using 'clock_gettime' instead of 'gettimeofday',
   *  returns nanoseconds instead of microseconds, and also by other minor differencies.
   */
