@@ -5,7 +5,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/ExecutionSpeedLimits.h>
-#include <DataStreams/LocalLimits.h>
+#include <DataStreams/StreamLocalLimits.h>
 #include <IO/Progress.h>
 #include <Storages/TableLockHolder.h>
 #include <Common/TypePromotion.h>
@@ -175,12 +175,12 @@ public:
     bool isCancelledOrThrowIfKilled() const;
 
     /** Set limitations that checked on each block. */
-    virtual void setLimits(const LocalLimits & limits_)
+    virtual void setLimits(const StreamLocalLimits & limits_)
     {
         limits = limits_;
     }
 
-    const LocalLimits & getLimits() const
+    const StreamLocalLimits & getLimits() const
     {
         return limits;
     }
@@ -244,7 +244,7 @@ private:
 
     /// Limitations and quotas.
 
-    LocalLimits limits;
+    StreamLocalLimits limits;
 
     std::shared_ptr<const EnabledQuota> quota;    /// If nullptr - the quota is not used.
     UInt64 prev_elapsed = 0;

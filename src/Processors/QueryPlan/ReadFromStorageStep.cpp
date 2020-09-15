@@ -14,7 +14,7 @@ namespace DB
 ReadFromStorageStep::ReadFromStorageStep(
     TableLockHolder table_lock_,
     StorageMetadataPtr metadata_snapshot_,
-    LocalLimits & limits_,
+    StreamLocalLimits & limits_,
     std::shared_ptr<const EnabledQuota> quota_,
     StoragePtr storage_,
     const Names & required_columns_,

@@ -19,7 +19,7 @@ enum class LimitsMode
 };
 
 /// It is a subset of limitations from Limits.
-struct LocalLimits
+struct StreamLocalLimits
 {
     LimitsMode mode = LimitsMode::LIMITS_CURRENT;
 

@@ -17,7 +17,7 @@ limitations under the License. */
 #include <Access/AccessFlags.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/LocalLimits.h>
+#include <DataStreams/StreamLocalLimits.h>
 
 
 namespace DB
@@ -77,7 +77,7 @@ BlockIO InterpreterWatchQuery::execute()
     /// Constraints on the result, the quota on the result, and also callback for progress.
     if (IBlockInputStream * stream = dynamic_cast<IBlockInputStream *>(streams[0].get()))
     {
-        LocalLimits limits;
+        StreamLocalLimits limits;
         limits.mode = LimitsMode::LIMITS_CURRENT;
         limits.size_limits.max_rows = settings.max_result_rows;
         limits.size_limits.max_bytes = settings.max_result_bytes;
