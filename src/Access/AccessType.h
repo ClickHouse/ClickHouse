@@ -1,13 +1,17 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <array>
+#include <vector>
 
 
 namespace DB
 {
+
+using Strings = std::vector<String>;
+
 /// Represents an access type which can be granted on databases, tables, columns, etc.
 enum class AccessType
 {
