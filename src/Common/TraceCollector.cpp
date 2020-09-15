@@ -141,8 +141,13 @@ void TraceCollector::run()
 
         if (trace_log)
         {
-            UInt64 time = clock_gettime_ns(CLOCK_REALTIME);
-            UInt64  time_in_microseconds = clock_gettime_microseconds(CLOCK_REALTIME);
+            // time and time_in_microseconds are both being constructed from the same timespec so that the
+            // times will be equal upto the precision of a second.
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+
+            UInt64 time = UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
+            UInt64 time_in_microseconds = UInt64((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
             TraceLogElement element{time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, trace, size};
             trace_log->add(element);
         }
