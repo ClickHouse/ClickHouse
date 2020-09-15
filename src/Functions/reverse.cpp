@@ -9,13 +9,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
 
 /** Reverse the string as a sequence of bytes.
   */
@@ -143,6 +144,7 @@ private:
     const Context & context;
 };
 
+}
 
 void registerFunctionReverse(FunctionFactory & factory)
 {

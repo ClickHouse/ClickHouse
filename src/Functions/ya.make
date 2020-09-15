@@ -10,7 +10,6 @@ ADDINCL(
     contrib/libs/farmhash
     contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
-    contrib/libs/icu/common
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
@@ -100,6 +99,7 @@ SRCS(
     array/indexOf.cpp
     array/length.cpp
     array/mapOp.cpp
+    array/mapPopulateSeries.cpp
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp

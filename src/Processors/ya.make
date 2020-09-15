@@ -33,6 +33,7 @@ SRCS(
     Formats/Impl/JSONEachRowRowOutputFormat.cpp
     Formats/Impl/JSONEachRowWithProgressRowOutputFormat.cpp
     Formats/Impl/JSONRowOutputFormat.cpp
+    Formats/Impl/LineAsStringRowInputFormat.cpp
     Formats/Impl/MarkdownRowOutputFormat.cpp
     Formats/Impl/MsgPackRowInputFormat.cpp
     Formats/Impl/MsgPackRowOutputFormat.cpp
@@ -137,7 +138,7 @@ SRCS(
     Transforms/FillingTransform.cpp
     Transforms/FilterTransform.cpp
     Transforms/FinishSortingTransform.cpp
-    Transforms/InflatingExpressionTransform.cpp
+    Transforms/JoiningTransform.cpp
     Transforms/LimitByTransform.cpp
     Transforms/LimitsCheckingTransform.cpp
     Transforms/MaterializingTransform.cpp

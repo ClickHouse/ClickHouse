@@ -32,7 +32,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/InflatingExpressionTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
@@ -66,7 +66,7 @@
 
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
@@ -913,12 +913,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (expressions.hasJoin())
             {
                 Block join_result_sample;
-                JoinPtr join = expressions.join->getTableJoinAlgo();
+                JoinPtr join = expressions.join;
 
-                join_result_sample = InflatingExpressionTransform::transformHeader(
+                join_result_sample = JoiningTransform::transformHeader(
                     query_plan.getCurrentDataStream().header, expressions.join);
 
-                QueryPlanStepPtr join_step = std::make_unique<InflatingExpressionStep>(
+                QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                     query_plan.getCurrentDataStream(),
                     expressions.join);
 
