@@ -1908,7 +1908,7 @@ If set, `CAST(something_nullable AS Type)` returns `Nullable(Type)`.
 Possible values:
 
 -  0 — The final type of `CAST` exactly the destination data type specified.
--  1 — The final type of `CAST` becomes `Nullable(DestinationDataType). 
+-  1 — The final type of `CAST` becomes `Nullable(DestinationDataType)`. 
 
 Default value: `0`.
 
