@@ -49,10 +49,35 @@ TEST(MySQLBinlogEventReadBuffer, BadBufferSizes)
     ConcatReadBuffer concat_buffer(nested_buffers);
     MySQLBinlogEventReadBuffer binlog_in(concat_buffer);
     binlog_in.readStrict(res, 4);
-    ASSERT_EQ(res[0], 0x01);
-    ASSERT_EQ(res[1], 0x01);
-    ASSERT_EQ(res[2], 0x01);
-    ASSERT_EQ(res[3], 0x01);
+
+    for (size_t index = 0; index < 4; ++index)
+        ASSERT_EQ(res[index], 0x01);
+
+    ASSERT_TRUE(binlog_in.eof());
+}
+
+TEST(MySQLBinlogEventReadBuffer, NiceAndBadBufferSizes)
+{
+    char res[12];
+    std::vector<ReadBufferPtr> buffers;
+    std::vector<ReadBuffer *> nested_buffers;
+    std::vector<std::shared_ptr<std::vector<char>>> memory_buffers_data;
+    std::vector<size_t> buffers_size = {6, 1, 3, 6};
+
+    for (const auto & bad_buffer_size : buffers_size)
+    {
+        memory_buffers_data.emplace_back(std::make_shared<std::vector<char>>(bad_buffer_size, 0x01));
+        buffers.emplace_back(std::make_shared<ReadBufferFromMemory>(memory_buffers_data.back()->data(), bad_buffer_size));
+        nested_buffers.emplace_back(buffers.back().get());
+    }
+
+    ConcatReadBuffer concat_buffer(nested_buffers);
+    MySQLBinlogEventReadBuffer binlog_in(concat_buffer);
+    binlog_in.readStrict(res, 12);
+
+    for (size_t index = 0; index < 12; ++index)
+        ASSERT_EQ(res[index], 0x01);
+
     ASSERT_TRUE(binlog_in.eof());
 }
 
