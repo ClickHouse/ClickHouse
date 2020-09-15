@@ -18,7 +18,7 @@ public:
             SizeLimits network_transfer_limits_,
             const Context & context_);
 
-    String getName() const override { return "CreatingSets"; }
+    String getName() const override { return "CreatingSet"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
@@ -45,5 +45,11 @@ public:
 private:
     Processors processors;
 };
+
+void addCreatingSetsStep(
+    QueryPlan & query_plan,
+    SubqueriesForSets subqueries_for_sets,
+    const SizeLimits & limits,
+    const Context & context);
 
 }

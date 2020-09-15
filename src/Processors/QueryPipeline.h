@@ -55,8 +55,6 @@ public:
     void addTotalsHavingTransform(ProcessorPtr transform);
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
     void addExtremesTransform();
-    /// Adds transform which creates sets. It will be executed before reading any data from input ports.
-    void addCreatingSetsTransform(SubqueriesForSets subqueries_for_sets, const SizeLimits & network_transfer_limits, const Context & context);
     /// Resize pipeline to single output and add IOutputFormat. Pipeline will be completed after this transformation.
     void setOutputFormat(ProcessorPtr output);
     /// Get current OutputFormat.
@@ -87,7 +85,9 @@ public:
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
-    void addDelayedPipeline(QueryPipeline);
+    /// Add other pipeline and execute it before current one.
+    /// Pipeline must have same header.
+    void addDelayingPipeline(QueryPipeline pipeline);
 
     PipelineExecutorPtr execute();
 

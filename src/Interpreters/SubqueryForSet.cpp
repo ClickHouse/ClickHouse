@@ -8,6 +8,11 @@
 namespace DB
 {
 
+SubqueryForSet::SubqueryForSet() = default;
+SubqueryForSet::~SubqueryForSet() = default;
+SubqueryForSet::SubqueryForSet(SubqueryForSet &&) = default;
+SubqueryForSet & SubqueryForSet::operator= (SubqueryForSet &&) = default;
+
 void SubqueryForSet::makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
                                 NamesWithAliases && joined_block_aliases_)
 {
