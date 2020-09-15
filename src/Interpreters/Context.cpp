@@ -694,7 +694,9 @@ void Context::setUserImpl(const String & name, const std::optional<String> & pas
     if (new_user_id)
     {
         new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, settings, current_database, client_info);
-        if (!new_access->isClientHostAllowed() || (password && !new_access->isCorrectPassword(*password)))
+        /// Access w/o password is done under interserver-secret (remote_servers.secret)
+        /// So it is okay not to check client's host (since there is trust).
+        if (password && (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(*password)))
         {
             new_user_id = {};
             new_access = nullptr;
