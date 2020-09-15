@@ -13,15 +13,15 @@ footer_file_name: str = "cmake_files_footer.md"
 
 ch_master_url: str = "https://github.com/clickhouse/clickhouse/blob/master/"
 
-name_str: str = "<a name=\"{anchor}\"></a>(`{name}`)[" + ch_master_url + "{path}#L{line}]"
-default_anchor_str: str = "(`{name}`)[#{anchor}]"
+name_str: str = "<a name=\"{anchor}\"></a>[`{name}`](" + ch_master_url + "{path}#L{line})"
+default_anchor_str: str = "[`{name}`](#{anchor})"
 
 def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> str:
     (line, comment) = line_comment
-    (_name, description, default) = entity
+    (_name, _description, default) = entity
 
     def anchor(t: str) -> str:
-        return ''.join([i.lower() for i in t if i.isalpha() or i == "_"])
+        return "".join(["-" if i == "_" else i.lower() for i in t if i.isalpha() or i == "_"])
 
     if (len(default) == 0):
         default = "`OFF`"
@@ -39,11 +39,11 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> st
         path=path,
         line=line)
 
+    description: str = "".join(_description.split("\n"))
+
     return "| " + name + " | " + default + " | " + description + " | " + comment + " |"
 
 def process_file(input_name: str) -> List[str]:
-    print("Processing", input_name)
-
     out: List[str] = []
 
     with open(input_name, 'r') as cmake_file:
@@ -57,11 +57,11 @@ def process_file(input_name: str) -> List[str]:
                 if line.find(target) == -1:
                     continue
 
-                for maybe_comment_line in contents_list[n::-1]:
-                    if (re.match("\s*#\s*", maybe_comment_line)):
-                        comment = re.sub("\s*#\s*", "", maybe_comment_line) + "\n" + comment
-                    else:
+                for maybe_comment_line in contents_list[n - 1::-1]:
+                    if not re.match("\s*#\s*", maybe_comment_line):
                         break
+
+                    comment = re.sub("\s*#\s*", "", maybe_comment_line) + ". " + comment
 
                 return n, comment
 
@@ -78,8 +78,6 @@ def write_file(output: TextIO, in_file_name: str) -> None:
 
 def process_folder(output: TextIO, name: str) -> None:
     for root, _, files in os.walk(name):
-        print("Processing ", root)
-
         for f in files:
             if f == "CMakeLists.txt" or ".cmake" in f:
                 write_file(output, root + "/" + f)
