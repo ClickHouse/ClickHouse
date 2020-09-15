@@ -385,7 +385,7 @@ else ()
 endif ()
 
 # https://github.com/include-what-you-use/include-what-you-use
-option (USE_INCLUDE_WHAT_YOU_USE)
+option (USE_INCLUDE_WHAT_YOU_USE OFF)
 
 if (USE_INCLUDE_WHAT_YOU_USE)
     find_program(IWYU_PATH NAMES include-what-you-use iwyu)
