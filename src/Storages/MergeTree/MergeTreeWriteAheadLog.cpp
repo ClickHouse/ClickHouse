@@ -83,6 +83,7 @@ void MergeTreeWriteAheadLog::dropPart(const String & part_name)
     writeIntBinary(static_cast<UInt8>(0), *out);
     writeIntBinary(static_cast<UInt8>(ActionType::DROP_PART), *out);
     writeStringBinary(part_name, *out);
+    out->next();
     sync(lock);
 }
 
