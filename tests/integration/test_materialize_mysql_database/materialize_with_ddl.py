@@ -5,7 +5,11 @@ import pymysql.cursors
 def check_query(clickhouse_node, query, result_set, retry_count=3, interval_seconds=3):
     lastest_result = ''
     for index in range(retry_count):
-        lastest_result = clickhouse_node.query(query)
+        try:
+            lastest_result = clickhouse_node.query(query)
+        except Exception as e:
+            print(e)
+            continue
 
         if result_set == lastest_result:
             return
