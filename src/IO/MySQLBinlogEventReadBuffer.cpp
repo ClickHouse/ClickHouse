@@ -12,6 +12,7 @@ namespace ErrorCodes
 MySQLBinlogEventReadBuffer::MySQLBinlogEventReadBuffer(ReadBuffer & in_)
     : ReadBuffer(nullptr, 0, 0), in(in_)
 {
+    nextIfAtEnd();
 }
 
 bool MySQLBinlogEventReadBuffer::nextImpl()
