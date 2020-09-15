@@ -1,8 +1,0 @@
-<yandex>
-    <trace_log>
-        <database>system</database>
-        <table>trace_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
-    </trace_log>
-</yandex>
