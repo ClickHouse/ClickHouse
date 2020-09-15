@@ -9,7 +9,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 
 #include <IO/WriteBuffer.h>
