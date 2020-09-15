@@ -29,7 +29,8 @@ endforeach()
 project(ClickHouse)
 
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
-   "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF) but is not possible to satisfy" ON)
+   "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)
+   but is not possible to satisfy" ON)
 
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
@@ -60,7 +61,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # Need cmake 3.9+
 # Usually impractical.
 # See also ENABLE_THINLTO
-option(ENABLE_IPO "Enable full link time optimization")
+option(ENABLE_IPO "Full link time optimization")
 
 if(ENABLE_IPO)
     cmake_policy(SET CMP0069 NEW)
@@ -91,12 +92,16 @@ message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
-option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
-option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
+option(USE_STATIC_LIBRARIES "Disable to use shared libraries" ON)
+option(MAKE_STATIC_LIBRARIES "Disable to make shared libraries" ${USE_STATIC_LIBRARIES})
 
 if (NOT MAKE_STATIC_LIBRARIES)
-    option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
-    option (CLICKHOUSE_SPLIT_BINARY "Make several binaries instead one bundled (clickhouse-server, clickhouse-client, ... )" OFF)
+    # DEVELOPER ONLY.
+    # Faster linking if turned on.
+    option(SPLIT_SHARED_LIBRARIES "Keep all internal libraries as separate .so files")
+
+    option(CLICKHOUSE_SPLIT_BINARY
+        "Make several binaries (clickhouse-server, clickhouse-client etc.) instead of one bundled")
 endif ()
 
 if (MAKE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
@@ -111,7 +116,9 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-option (ENABLE_FUZZING "Enables fuzzing instrumentation" OFF)
+# Enable fuzzy testing using libfuzzer
+# Implies ${WITH_COVERAGE}
+option (ENABLE_FUZZING "Enables fuzzing instrumentation")
 
 if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
@@ -143,10 +150,13 @@ if (COMPILER_CLANG)
     endif ()
 endif ()
 
-option (ENABLE_TESTS "Enables tests" ON)
+# Adds a Google.Test target binary containing unit tests.
+option (ENABLE_TESTS ON)
 
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
-    option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies ENABLE_FASTMEMCPY." ON)
+    # Only for Linux, x86_64.
+    # Implies ${ENABLE_FASTMEMCPY}
+    option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
@@ -179,7 +189,8 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
-option (ADD_GDB_INDEX_FOR_GOLD "Set to add .gdb-index to resulting binaries for gold linker. NOOP if lld is used." 0)
+option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker. NOOP if lld is used.")
+
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     if (LINKER_NAME STREQUAL "lld")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
@@ -200,6 +211,7 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
 endif()
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
+
 if(NOT AVAILABLE_PHYSICAL_MEMORY OR AVAILABLE_PHYSICAL_MEMORY GREATER 8000)
     option(COMPILER_PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
 endif()
@@ -213,7 +225,8 @@ if(NOT DISABLE_CPU_OPTIMIZE)
     include(cmake/cpu_features.cmake)
 endif()
 
-option(ARCH_NATIVE "Enable -march=native compiler flag" 0)
+option(ARCH_NATIVE "Add -march=native compiler flag")
+
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
@@ -224,6 +237,7 @@ if (UNBUNDLED AND (COMPILER_GCC OR COMPILER_CLANG))
 else()
     set (_CXX_STANDARD "-std=c++2a")
 endif()
+
 # cmake < 3.12 doesn't support 20. We'll set CMAKE_CXX_FLAGS for now
 # set (CMAKE_CXX_STANDARD 20)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_CXX_STANDARD}")
@@ -236,7 +250,8 @@ if (COMPILER_GCC OR COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 endif ()
 
-option(WITH_COVERAGE "Build with coverage." 0)
+# Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
+option(WITH_COVERAGE)
 
 if (WITH_COVERAGE AND COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
@@ -270,10 +285,13 @@ if (COMPILER_CLANG)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
     if (NOT ENABLE_TESTS AND NOT SANITIZE)
-        option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
+        # https://clang.llvm.org/docs/ThinLTO.html
+        # Applies to clang only.
+        # Disabled when building with tests or sanitizers.
+        option(ENABLE_THINLTO ON)
     endif()
 
-    # We cannot afford to use LTO when compiling unitests, and it's not enough
+    # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
     # completely.
     if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
@@ -286,8 +304,8 @@ if (COMPILER_CLANG)
     endif ()
 
     # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
-
     find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
+
     if (LLVM_AR_PATH)
         message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
         set (CMAKE_AR ${LLVM_AR_PATH})
@@ -306,20 +324,25 @@ elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
 endif ()
 
-option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
+option(ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
 
-option (UNBUNDLED "Try find all libraries in system. We recommend to avoid this mode for production builds, because we cannot guarantee exact versions and variants of libraries your system has installed. This mode exists for enthusiastic developers who search for trouble. Also it is useful for maintainers of OS packages." OFF)
+# We recommend avoiding this mode for production builds because we can't guarantee all needed libraries exist in your
+# system.
+# This mode exists for enthusiastic developers who are searching for trouble.
+# Useful for maintainers of OS packages.
+option (UNBUNDLED "Use system libraries instead of ones in contrib/")
+
 if (UNBUNDLED)
-    set(NOT_UNBUNDLED 0)
+    set(NOT_UNBUNDLED OFF)
 else ()
-    set(NOT_UNBUNDLED 1)
+    set(NOT_UNBUNDLED ON)
 endif ()
 
 if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
-    option (WERROR "Enable -Werror compiler option" OFF)
+    option(WERROR "Enable -Werror compiler option")
 else ()
-    option (WERROR "Enable -Werror compiler option" ON)
+    option(WERROR "Enable -Werror compiler option" ON)
 endif ()
 
 if (WERROR)
@@ -361,8 +384,9 @@ else ()
     set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
-# Using "include-what-you-use" tool.
-option (USE_INCLUDE_WHAT_YOU_USE "Use 'include-what-you-use' tool" OFF)
+# https://github.com/include-what-you-use/include-what-you-use
+option (USE_INCLUDE_WHAT_YOU_USE)
+
 if (USE_INCLUDE_WHAT_YOU_USE)
     find_program(IWYU_PATH NAMES include-what-you-use iwyu)
     if (NOT IWYU_PATH)
@@ -376,6 +400,7 @@ endif ()
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
 endif ()
+
 enable_testing() # Enable for tests without binary
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
@@ -385,7 +410,13 @@ else ()
     set (CLICKHOUSE_ETC_DIR "${CMAKE_INSTALL_PREFIX}/etc")
 endif ()
 
-message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
+message (STATUS
+    "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ;
+    USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES}
+    MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES}
+    SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES}
+    UNBUNDLED=${UNBUNDLED}
+    CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include (GNUInstallDirs)
 include (cmake/contrib_finder.cmake)
