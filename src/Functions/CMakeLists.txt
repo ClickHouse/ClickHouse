@@ -62,12 +62,10 @@ else()
 endif()
 
 
-option(STRIP_DEBUG_SYMBOLS_FUNCTIONS
-    "Do not generate debugger info for ClickHouse functions.
-    Provides faster linking and lower binary size.
-    Tradeoff is the inability to debug some source files with e.g. gdb
-    (empty stack frames and no local variables)."
-    ${STRIP_DSF_DEFAULT})
+#  Provides faster linking and lower binary size.
+#  Tradeoff is the inability to debug some source files with e.g. gdb
+#  (empty stack frames and no local variables)."
+option(STRIP_DEBUG_SYMBOLS_FUNCTIONS "Do not generate debugger info for ClickHouse functions" ${STRIP_DSF_DEFAULT})
 
 if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
     message(WARNING "Not generating debugger info for ClickHouse functions")

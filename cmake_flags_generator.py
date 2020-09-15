@@ -16,34 +16,37 @@ ch_master_url: str = "https://github.com/clickhouse/clickhouse/blob/master/"
 name_str: str = "<a name=\"{anchor}\"></a>[`{name}`](" + ch_master_url + "{path}#L{line})"
 default_anchor_str: str = "[`{name}`](#{anchor})"
 
-def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> str:
+def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str], **options) -> str:
     (line, comment) = line_comment
     (_name, _description, default) = entity
 
-    def anchor(t: str) -> str:
+    def make_anchor(t: str) -> str:
         return "".join(["-" if i == "_" else i.lower() for i in t if i.isalpha() or i == "_"])
 
-    if (len(default) == 0):
+    if len(default) == 0:
         default = "`OFF`"
     elif default[0] == "$":
         default = default[2:-1]
         default = default_anchor_str.format(
             name=default,
-            anchor=anchor(default))
+            anchor=make_anchor(default))
     else:
         default = "`" + default + "`"
 
     name: str = name_str.format(
-        anchor=anchor(_name),
+        anchor=make_anchor(_name),
         name=_name,
         path=path,
         line=line)
 
-    description: str = "".join(_description.split("\n"))
+    if options.get("no_desc", False):
+        description: str = ""
+    else:
+        description: str = "".join(_description.split("\n")) + " | "
 
-    return "| " + name + " | " + default + " | " + description + " | " + comment + " |"
+    return "| " + name + " | " + default + " | " + description + comment + " |"
 
-def process_file(input_name: str) -> List[str]:
+def process_file(input_name: str, **options) -> List[str]:
     out: List[str] = []
 
     with open(input_name, 'r') as cmake_file:
@@ -69,12 +72,17 @@ def process_file(input_name: str) -> List[str]:
 
         if matches:
             for entity in matches:
-                out.append(build_entity(input_name, entity, get_line_and_comment(entity[0])))
+                out.append(
+                    build_entity(
+                        input_name,
+                        entity,
+                        get_line_and_comment(entity[0]),
+                    **options))
 
     return out
 
-def write_file(output: TextIO, in_file_name: str) -> None:
-    output.write("\n".join(sorted(process_file(in_file_name))))
+def write_file(output: TextIO, in_file_name: str, **options) -> None:
+    output.write("\n".join(sorted(process_file(in_file_name, **options))))
 
 def process_folder(output: TextIO, name: str) -> None:
     for root, _, files in os.walk(name):
@@ -93,8 +101,17 @@ def process() -> None:
         process_folder(f, "base")
         process_folder(f, "cmake")
         process_folder(f, "src")
-        process_folder(f, "programs")
-        process_folder(f, "utils")
+
+        # Various ClickHouse extern parts (Copier/Obfuscator/...)
+
+        f.write("""
+
+### ClickHouse additory parts
+| Name | Default value | Description |
+|------|---------------|-------------|
+""")
+
+        write_file(f, "programs/CMakeLists.txt", no_desc=True)
 
         with open(footer_file_name, "r") as footer:
             f.write(footer.read())

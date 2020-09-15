@@ -2,30 +2,45 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-# 'clickhouse' binary is a multi purpose tool,
-# that contain multiple execution modes (client, server, etc.)
-# each of them is built and linked as a separate library, defined below.
+# The 'clickhouse' binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
+# each of them may be built and linked as a separate library.
+option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse tools by default" ON)
 
-option (ENABLE_CLICKHOUSE_ALL "Enable all tools" ON)
-option (ENABLE_CLICKHOUSE_SERVER "Enable clickhouse-server" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_CLIENT "Enable clickhouse-client" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_LOCAL "Enable clickhouse-local" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_BENCHMARK "Enable clickhouse-benchmark" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG "Enable clickhouse-extract-from-config" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_COMPRESSOR "Enable clickhouse-compressor" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_COPIER "Enable clickhouse-copier" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_FORMAT "Enable clickhouse-format" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_OBFUSCATOR "Enable clickhouse-obfuscator" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "Enable clickhouse-odbc-bridge" ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_SERVER ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_CLIENT ${ENABLE_CLICKHOUSE_ALL})
+
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-local/
+option (ENABLE_CLICKHOUSE_LOCAL ${ENABLE_CLICKHOUSE_ALL})
+
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-benchmark/
+option (ENABLE_CLICKHOUSE_BENCHMARK ${ENABLE_CLICKHOUSE_ALL})
+
+# ???
+option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG ${ENABLE_CLICKHOUSE_ALL})
+
+# ???
+option (ENABLE_CLICKHOUSE_COMPRESSOR ${ENABLE_CLICKHOUSE_ALL})
+
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-copier/
+option (ENABLE_CLICKHOUSE_COPIER ${ENABLE_CLICKHOUSE_ALL})
+
+# ???
+option (ENABLE_CLICKHOUSE_FORMAT ${ENABLE_CLICKHOUSE_ALL})
+
+# ???
+option (ENABLE_CLICKHOUSE_OBFUSCATOR ${ENABLE_CLICKHOUSE_ALL})
+
+# ???
+option (ENABLE_CLICKHOUSE_ODBC_BRIDGE ${ENABLE_CLICKHOUSE_ALL})
 
 if (CLICKHOUSE_SPLIT_BINARY)
-    option (ENABLE_CLICKHOUSE_INSTALL "Enable clickhouse-install" OFF)
+    option(ENABLE_CLICKHOUSE_INSTALL)
 else ()
-    option (ENABLE_CLICKHOUSE_INSTALL "Enable clickhouse-install" ${ENABLE_CLICKHOUSE_ALL})
+    option(ENABLE_CLICKHOUSE_INSTALL ${ENABLE_CLICKHOUSE_ALL})
 endif ()
 
 if(NOT (MAKE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
-    set(CLICKHOUSE_ONE_SHARED 1)
+    set(CLICKHOUSE_ONE_SHARED ON)
 endif()
 
 configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
