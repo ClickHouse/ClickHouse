@@ -1929,7 +1929,7 @@ Result:
 └───┴───────────────────────────────────────────────────┘
 ```
 
-Query with nullable type converstion enabled:
+The following query results in the `Nullable` modification on the destination data type:
 
 ```sql
 SET cast_keep_nullable = 1;
