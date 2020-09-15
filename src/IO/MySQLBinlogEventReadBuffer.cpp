@@ -22,15 +22,15 @@ bool MySQLBinlogEventReadBuffer::nextImpl()
     if (in.eof())
         return false;
 
-    if (likely(in.available() > CHECKSUM_CRC32_SIGNATURE_LENGTH))
-    {
-        working_buffer = ReadBuffer::Buffer(in.position(), in.buffer().end() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
-        in.ignore(working_buffer.size());
-        return true;
-    }
-
     if (checksum_buff_size == checksum_buff_limit)
     {
+        if (likely(in.available() > CHECKSUM_CRC32_SIGNATURE_LENGTH))
+        {
+            working_buffer = ReadBuffer::Buffer(in.position(), in.buffer().end() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
+            in.ignore(working_buffer.size());
+            return true;
+        }
+
         in.readStrict(checksum_buf, CHECKSUM_CRC32_SIGNATURE_LENGTH);
         checksum_buff_size = checksum_buff_limit = CHECKSUM_CRC32_SIGNATURE_LENGTH;
     }
