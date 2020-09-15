@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser(description='Run performance test.')
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
 parser.add_argument('--host', nargs='*', default=['localhost'], help="Server hostname(s). Corresponds to '--port' options.")
 parser.add_argument('--port', nargs='*', default=[9000], help="Server port(s). Corresponds to '--host' options.")
-parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 13)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
+parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 7)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
 parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
@@ -285,6 +285,13 @@ for query_index, q in enumerate(test_queries):
         else:
             if run >= args.runs:
                 break
+
+            if c.last_query.elapsed > 10:
+                # Stop processing pathologically slow queries, to avoid timing out
+                # the entire test task. This shouldn't really happen, so we don't
+                # need much handling for this case and can just exit.
+                print(f'The query no. {query_index} is taking too long to run ({c.last_query.elapsed} s)', file=sys.stderr)
+                exit(2)
 
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')

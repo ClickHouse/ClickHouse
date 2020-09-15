@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **参数**
 
--   `ver` — 版本列。类型为 `UInt*`, `Date`, `DateTime` 或 `DateTime64`。可选参数。
+-   `ver` — 版本列。类型为 `UInt*`, `Date` 或 `DateTime`。可选参数。
 
         合并的时候，`ReplacingMergeTree` 从所有具有相同主键的行中选择一行留下：
         - 如果 `ver` 列未指定，选择最后一条。

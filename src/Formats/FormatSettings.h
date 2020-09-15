@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -78,6 +78,7 @@ struct FormatSettings
     {
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
+        String null_representation = "\\N";
     };
 
     TSV tsv;

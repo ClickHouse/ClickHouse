@@ -178,7 +178,7 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
     mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_1 INT NOT NULL")
     mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_2 INT NOT NULL FIRST")
     mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1")
-    mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + ("0" if service_name == "mysql5_7" else "(id)"))
+    mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + ("0" if service_name == "mysql1" else "(id)"))
 
     # create mapping
     clickhouse_node.query(
@@ -194,9 +194,9 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
     mysql_node.query("ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_1 INT NOT NULL, ADD COLUMN add_column_2 INT NOT NULL FIRST")
     mysql_node.query(
         "ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1, ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + (
-            "0" if service_name == "mysql5_7" else "(id)"))
+            "0" if service_name == "mysql1" else "(id)"))
 
-    default_expression = "DEFAULT\t0" if service_name == "mysql5_7" else "DEFAULT\tid"
+    default_expression = "DEFAULT\t0" if service_name == "mysql1" else "DEFAULT\tid"
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
         "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t" + default_expression + "\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
 
@@ -323,7 +323,6 @@ def alter_rename_table_with_materialize_mysql_database(clickhouse_node, mysql_no
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
 
-
 def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name):
     mysql_node.query("CREATE DATABASE test_database")
 
@@ -336,12 +335,10 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
             service_name))
 
     # Reject one empty GTID QUERY event with 'BEGIN' and 'COMMIT'
-    mysql_cursor = mysql_node.cursor(pymysql.cursors.DictCursor)
+    mysql_cursor = mysql_node.alloc_connection().cursor(pymysql.cursors.DictCursor)
     mysql_cursor.execute("SHOW MASTER STATUS")
     (uuid, seqs) = mysql_cursor.fetchall()[0]["Executed_Gtid_Set"].split(":")
     (seq_begin, seq_end) = seqs.split("-")
-    assert int(seq_begin) == 1
-    assert int(seq_end) == 3
     next_gtid = uuid + ":" + str(int(seq_end) + 1)
     mysql_node.query("SET gtid_next='" + next_gtid + "'")
     mysql_node.query("BEGIN")
