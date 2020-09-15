@@ -11,7 +11,14 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_MYSQL
+#   include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#endif
 
 
 namespace DB
@@ -222,8 +229,10 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
             bool drop = kind == ASTDropQuery::Kind::Drop;
             context.checkAccess(AccessType::DROP_DATABASE, database_name);
 
+#if USE_MYSQL
             if (database->getEngineName() == "MaterializeMySQL")
                 stopDatabaseSynchronization(database);
+#endif
 
             if (database->shouldBeEmptyOnDetach())
             {
