@@ -1901,20 +1901,20 @@ Default value: `120`.
 
 ## cast_keep_nullable {#cast_keep_nullable}
 
-Enables or disables converstion to nullable types for [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) operator. 
+Enables or disables keeping of the `Nullable` data type in [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) operations.
 
 If set, `CAST(something_nullable AS Type)` returns `Nullable(Type)`.
 
 Possible values:
 
--   0 — Nullable type converstion disabled.
--   1 — Nullable type converstion enabled.
+-  0 — The final type of `CAST` exactly the destination data type specified.
+-  1 — The final type of `CAST` becomes `Nullable(DestinationDataType). 
 
 Default value: `0`.
 
 **Examples** 
 
-Query with nullable type converstion disabled:
+The following query exactly results in the destination data type:
 
 ```sql
 SET cast_keep_nullable = 0;
