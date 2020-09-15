@@ -203,6 +203,11 @@ void SelectUnionQuery::appendSelect(PtrTo<SelectStmt> stmt)
     children.push_back(stmt);
 }
 
+void SelectUnionQuery::appendSelect(PtrTo<SelectUnionQuery> query)
+{
+    children.insert(children.end(), query->children.begin(), query->children.end());
+}
+
 ASTPtr SelectUnionQuery::convertToOld() const
 {
     auto old_select_union = std::make_shared<ASTSelectWithUnionQuery>();
@@ -302,10 +307,27 @@ antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCont
     return select_stmt;
 }
 
+antlrcpp::Any ParseTreeVisitor::visitSelectStmtWithParens(ClickHouseParser::SelectStmtWithParensContext *ctx)
+{
+    PtrTo<SelectUnionQuery> query;
+
+    if (ctx->selectStmt())
+    {
+        query = std::make_shared<SelectUnionQuery>();
+        query->appendSelect(visit(ctx->selectStmt()).as<PtrTo<SelectStmt>>());
+    }
+    else if (ctx->selectUnionStmt())
+    {
+         query = visit(ctx->selectUnionStmt());
+    }
+
+    return query;
+}
+
 antlrcpp::Any ParseTreeVisitor::visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx)
 {
     auto select_union_query = std::make_shared<SelectUnionQuery>();
-    for (auto * stmt : ctx->selectStmt()) select_union_query->appendSelect(visit(stmt));
+    for (auto * stmt : ctx->selectStmtWithParens()) select_union_query->appendSelect(visit(stmt).as<PtrTo<SelectUnionQuery>>());
     return select_union_query;
 }
 

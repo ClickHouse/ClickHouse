@@ -31,23 +31,21 @@ query
 // ALTER statement
 
 alterStmt
-    : ALTER TABLE tableIdentifier alterTableClause (COMMA alterTableClause)*          # AlterTableStmt
-    | ALTER TABLE tableIdentifier alterPartitionClause (COMMA alterPartitionClause)*  # AlterPartitionStmt
+    : ALTER TABLE tableIdentifier alterTableClause (COMMA alterTableClause)*  # AlterTableStmt
     ;
 
 alterTableClause
-    : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER nestedIdentifier)?  # AlterTableAddClause
-    | CLEAR COLUMN (IF EXISTS)? nestedIdentifier IN partitionClause          # AlterTableClearClause
-    | COMMENT COLUMN (IF EXISTS)? nestedIdentifier STRING_LITERAL            # AlterTableCommentClause
-    | DROP COLUMN (IF EXISTS)? nestedIdentifier                              # AlterTableDropClause
-    | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                             # AlterTableModifyClause
-    | MODIFY ORDER BY columnExpr                                             # AlterTableOrderByClause
-    ;
-alterPartitionClause
-    : ATTACH partitionClause (FROM tableIdentifier)?  # AlterPartitionAttachClause
-    | DETACH partitionClause                          # AlterPartitionDetachClause
-    | DROP partitionClause                            # AlterPartitionDropClause
-    | REPLACE partitionClause FROM tableIdentifier    # AlterPartitionReplaceClause
+    : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER nestedIdentifier)?  # AlterTableClauseAdd
+    | ATTACH partitionClause (FROM tableIdentifier)?                         # AlterTableClauseAttach
+    | CLEAR COLUMN (IF EXISTS)? nestedIdentifier IN partitionClause          # AlterTableClauseClear
+    | COMMENT COLUMN (IF EXISTS)? nestedIdentifier STRING_LITERAL            # AlterTableClauseComment
+    | DELETE WHERE columnExpr                                                # AlterTableClauseDelete
+    | DETACH partitionClause                                                 # AlterTableClauseDetach
+    | DROP COLUMN (IF EXISTS)? nestedIdentifier                              # AlterTableClauseDropColumn
+    | DROP partitionClause                                                   # AlterTableClauseDropPartition
+    | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                             # AlterTableClauseModify
+    | MODIFY ORDER BY columnExpr                                             # AlterTableClauseOrderBy
+    | REPLACE partitionClause FROM tableIdentifier                           # AlterTableClauseReplace
     ;
 
 // ANALYZE statement
@@ -130,7 +128,7 @@ dataClause
     ;
 dataExpr
     : dataLiteral (COMMA dataLiteral)*  # DataExprCSV
-    | jsonExpr (COMMA jsonExpr)*        # DataExprJSON
+    | jsonExpr (COMMA? jsonExpr)*        # DataExprJSON
     | dataLiteral+                      # DataExprTSV
     | valuesExpr                        # DataExprValues
     ;
@@ -160,7 +158,8 @@ renameStmt: RENAME TABLE tableIdentifier TO tableIdentifier (COMMA tableIdentifi
 
 // SELECT statement
 
-selectUnionStmt: selectStmt (UNION ALL selectStmt)*;
+selectUnionStmt: selectStmtWithParens (UNION ALL selectStmtWithParens)*;
+selectStmtWithParens: selectStmt | LPAREN selectUnionStmt RPAREN;
 selectStmt:
     withClause?
     SELECT DISTINCT? columnExprList

@@ -1,4 +1,3 @@
-#include <Parsers/New/AST/AlterPartitionQuery.h>
 #include <Parsers/New/AST/AlterTableQuery.h>
 #include <Parsers/New/AST/AnalyzeQuery.h>
 #include <Parsers/New/AST/CheckQuery.h>
@@ -69,7 +68,6 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     auto query = visit(ctx->children[0]);
 
 #define TRY_POINTER_CAST(TYPE) if (query.is<PtrTo<TYPE>>()) return std::static_pointer_cast<Query>(query.as<PtrTo<TYPE>>());
-    TRY_POINTER_CAST(AlterPartitionQuery)
     TRY_POINTER_CAST(AlterTableQuery)
     TRY_POINTER_CAST(AnalyzeQuery)
     TRY_POINTER_CAST(CheckQuery)

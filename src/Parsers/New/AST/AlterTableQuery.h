@@ -11,21 +11,31 @@ class AlterTableClause : public INode
 {
     public:
         static PtrTo<AlterTableClause> createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
+        static PtrTo<AlterTableClause> createAttach(PtrTo<PartitionExprList> list, PtrTo<TableIdentifier> identifier);
         static PtrTo<AlterTableClause> createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionExprList> clause);
         static PtrTo<AlterTableClause> createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> literal);
-        static PtrTo<AlterTableClause> createDrop(bool if_exists, PtrTo<Identifier> identifier);
+        static PtrTo<AlterTableClause> createDelete(PtrTo<ColumnExpr> expr);
+        static PtrTo<AlterTableClause> createDetach(PtrTo<PartitionExprList> list);
+        static PtrTo<AlterTableClause> createDropColumn(bool if_exists, PtrTo<Identifier> identifier);
+        static PtrTo<AlterTableClause> createDropPartition(PtrTo<PartitionExprList> list);
         static PtrTo<AlterTableClause> createModify(bool if_exists, PtrTo<TableElementExpr> element);
         static PtrTo<AlterTableClause> createOrderBy(PtrTo<ColumnExpr> expr);
+        static PtrTo<AlterTableClause> createReplace(PtrTo<PartitionExprList> list, PtrTo<TableIdentifier> identifier);
 
     private:
         enum class ClauseType
         {
             ADD,
+            ATTACH,
             CLEAR,
             COMMENT,
-            DROP,
+            DELETE,
+            DETACH,
+            DROP_COLUMN,
+            DROP_PARTITION,
             MODIFY,
             ORDER_BY,
+            REPLACE,
         };
 
         const ClauseType clause_type;

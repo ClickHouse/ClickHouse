@@ -184,6 +184,7 @@ class SelectUnionQuery : public Query
         explicit SelectUnionQuery(std::list<PtrTo<SelectStmt>> stmts);
 
         void appendSelect(PtrTo<SelectStmt> stmt);
+        void appendSelect(PtrTo<SelectUnionQuery> query);
         void shouldBeScalar() { is_scalar = true; }
 
         ASTPtr convertToOld() const override;

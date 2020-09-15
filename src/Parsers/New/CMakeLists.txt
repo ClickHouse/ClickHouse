@@ -1,5 +1,4 @@
 set (SRCS
-    AST/AlterPartitionQuery.cpp
     AST/AlterTableQuery.cpp
     AST/AnalyzeQuery.cpp
     AST/CheckQuery.cpp
