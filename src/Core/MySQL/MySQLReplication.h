@@ -505,7 +505,7 @@ namespace MySQLReplication
     class MySQLFlavor : public IFlavor
     {
     public:
-        void readPayloadImpl(ReadBuffer & event_payload) override;
+        void readPayloadImpl(ReadBuffer & payload) override;
         String getName() const override { return "MySQL"; }
         Position getPosition() const override { return position; }
         BinlogEventPtr readOneEvent() override { return event; }
