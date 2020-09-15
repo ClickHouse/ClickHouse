@@ -27,4 +27,8 @@
 
 -    `default_roles_except` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Все предоставленные роли задаются по умолчанию, за исключением перечисленных.
 
+## Смотрите также {#see-also}
+
+-   [SHOW USERS](../../sql-reference/statements/show.md#show-users-statement)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/users) <!--hide-->

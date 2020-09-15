@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace MySQLReplication
@@ -99,8 +100,7 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(schema.data()), schema_len);
         payload.ignore(1);
 
-        size_t len
-            = header.event_size - EVENT_HEADER_LENGTH - 4 - 4 - 1 - 2 - 2 - status_len - schema_len - 1 - CHECKSUM_CRC32_SIGNATURE_LENGTH;
+        size_t len = payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH;
         query.resize(len);
         payload.readStrict(reinterpret_cast<char *>(query.data()), len);
         if (query.starts_with("BEGIN") || query.starts_with("COMMIT"))
@@ -110,12 +110,12 @@ namespace MySQLReplication
         else if (query.starts_with("XA"))
         {
             if (query.starts_with("XA ROLLBACK"))
-                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
+                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
             typ = QUERY_EVENT_XA;
         }
         else if (query.starts_with("SAVEPOINT"))
         {
-            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
+            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -171,7 +171,7 @@ namespace MySQLReplication
 
         /// Ignore MySQL 8.0 optional metadata fields.
         /// https://mysqlhighavailability.com/more-metadata-is-written-into-binary-log/
-        payload.ignore(payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
+        payload.ignoreAll();
     }
 
     /// Types that do not used in the binlog event:
@@ -221,6 +221,7 @@ namespace MySQLReplication
                 }
                 case MYSQL_TYPE_NEWDECIMAL:
                 case MYSQL_TYPE_STRING: {
+                    /// Big-Endian
                     auto b0 = UInt16(meta[pos] << 8);
                     auto b1 = UInt8(meta[pos + 1]);
                     column_meta.emplace_back(UInt16(b0 + b1));
@@ -231,6 +232,7 @@ namespace MySQLReplication
                 case MYSQL_TYPE_BIT:
                 case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
+                    /// Little-Endian
                     auto b0 = UInt8(meta[pos]);
                     auto b1 = UInt16(meta[pos + 1] << 8);
                     column_meta.emplace_back(UInt16(b0 + b1));
@@ -741,7 +743,9 @@ namespace MySQLReplication
 
     void GTIDEvent::dump(std::ostream & out) const
     {
-        auto gtid_next = gtid.uuid.toUnderType().toHexString() + ":" + std::to_string(gtid.seq_no);
+        WriteBufferFromOwnString ws;
+        writeUUIDText(gtid.uuid, ws);
+        auto gtid_next = ws.str() + ":" + std::to_string(gtid.seq_no);
 
         header.dump(out);
         out << "GTID Next: " << gtid_next << std::endl;
@@ -778,11 +782,8 @@ namespace MySQLReplication
                 gtid_sets.update(gtid_event->gtid);
                 break;
             }
-            default: {
-                /// DryRun event.
-                binlog_pos = event->header.log_pos;
-                break;
-            }
+            default:
+                throw ReplicationError("Position update with unsupport event", ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -909,11 +910,10 @@ namespace MySQLReplication
                 event = std::make_shared<DryRunEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.update(event);
                 break;
             }
         }
-        payload.tryIgnore(CHECKSUM_CRC32_SIGNATURE_LENGTH);
+        payload.ignoreAll();
     }
 }
 
