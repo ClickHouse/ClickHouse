@@ -97,7 +97,7 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines)
         delayed_pipeline = std::move(*pipelines.front());
 
     QueryPipelineProcessorsCollector collector(*main_pipeline, this);
-    main_pipeline->addDelayedPipeline(std::move(delayed_pipeline));
+    main_pipeline->addDelayingPipeline(std::move(delayed_pipeline));
     auto added_processors = collector.detachProcessors();
     processors.insert(processors.end(), added_processors.begin(), added_processors.end());
 
@@ -107,6 +107,41 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines)
 void CreatingSetsStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
+}
+
+void addCreatingSetsStep(
+    QueryPlan & query_plan, SubqueriesForSets subqueries_for_sets, const SizeLimits & limits, const Context & context)
+{
+    DataStreams input_streams;
+    input_streams.emplace_back(query_plan.getCurrentDataStream());
+
+    std::vector<std::unique_ptr<QueryPlan>> plans;
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
+    query_plan = QueryPlan();
+
+    for (auto & [description, set] : subqueries_for_sets)
+    {
+        auto plan = std::move(set.source);
+        std::string type = (set.join != nullptr) ? "JOIN"
+                                                 : "subquery";
+
+        auto creating_set = std::make_unique<CreatingSetStep>(
+                plan->getCurrentDataStream(),
+                input_streams.front().header,
+                std::move(description),
+                std::move(set),
+                limits,
+                context);
+        creating_set->setStepDescription("Create set for " + type);
+        plan->addStep(std::move(creating_set));
+
+        input_streams.emplace_back(plan->getCurrentDataStream());
+        plans.emplace_back(std::move(plan));
+    }
+
+    auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));
+    creating_sets->setStepDescription("Create sets before main query execution");
+    query_plan.unitePlans(std::move(creating_sets), std::move(plans));
 }
 
 }

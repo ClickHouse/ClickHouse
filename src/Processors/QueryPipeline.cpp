@@ -196,59 +196,6 @@ void QueryPipeline::addExtremesTransform()
     pipe.addTransform(std::move(transform), nullptr, port);
 }
 
-void QueryPipeline::addCreatingSetsTransform(SubqueriesForSets subqueries_for_sets, const SizeLimits & network_transfer_limits, const Context & context)
-{
-    checkInitializedAndNotCompleted();
-
-    Pipes sources;
-
-    for (auto & subquery : subqueries_for_sets)
-    {
-        if (subquery.second.source)
-        {
-            auto & source = sources.emplace_back(std::move(subquery.second.source));
-            if (source.numOutputPorts() > 1)
-                source.addTransform(std::make_shared<ResizeProcessor>(source.getHeader(), source.numOutputPorts(), 1));
-
-            source.dropExtremes();
-
-            auto creating_sets = std::make_shared<CreatingSetsTransform>(
-                    source.getHeader(),
-                    getHeader(),
-                    std::move(subquery.second),
-                    network_transfer_limits,
-                    context);
-
-            InputPort * totals = nullptr;
-            if (source.getTotalsPort())
-                totals = creating_sets->addTotalsPort();
-
-            source.addTransform(std::move(creating_sets), totals, nullptr);
-        }
-    }
-
-    if (sources.empty())
-        return;
-
-    auto * collected_processors = pipe.collected_processors;
-
-    /// We unite all sources together.
-    /// Set collected_processors to attach all newly-added processors to current query plan step.
-    auto source = Pipe::unitePipes(std::move(sources), collected_processors);
-    if (source.numOutputPorts() > 1)
-        source.addTransform(std::make_shared<ResizeProcessor>(source.getHeader(), source.numOutputPorts(), 1));
-    source.collected_processors = nullptr;
-
-    resize(1);
-
-    Pipes pipes;
-    pipes.emplace_back(std::move(source));
-    pipes.emplace_back(std::move(pipe));
-    pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
-
-    pipe.addTransform(std::make_shared<ConcatProcessor>(getHeader(), 2));
-}
-
 void QueryPipeline::setOutputFormat(ProcessorPtr output)
 {
     checkInitializedAndNotCompleted();
@@ -315,7 +262,7 @@ QueryPipeline QueryPipeline::unitePipelines(
     return pipeline;
 }
 
-void QueryPipeline::addDelayedPipeline(QueryPipeline pipeline)
+void QueryPipeline::addDelayingPipeline(QueryPipeline pipeline)
 {
     pipeline.resize(1);
 
