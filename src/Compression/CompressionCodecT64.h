@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Compression/ICompressionCodec.h>
 
 
@@ -34,6 +34,8 @@ public:
     uint8_t getMethodByte() const override;
 
     ASTPtr getCodecDesc() const override;
+
+    void updateHash(SipHash & hash) const override;
 
 protected:
     UInt32 doCompressData(const char * src, UInt32 src_size, char * dst) const override;

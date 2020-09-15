@@ -29,6 +29,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
+
 class FunctionAddressToLine : public IFunction
 {
 public:
@@ -143,6 +146,8 @@ private:
         return it->getMapped();
     }
 };
+
+}
 
 void registerFunctionAddressToLine(FunctionFactory & factory)
 {

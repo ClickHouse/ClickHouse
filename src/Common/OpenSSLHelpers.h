@@ -5,7 +5,7 @@
 #endif
 
 #if USE_SSL
-#    include <Core/Types.h>
+#    include <common/types.h>
 
 
 namespace DB
