@@ -88,16 +88,14 @@ std::optional<String> findFirstNonDeterministicFunctionName(const MutationComman
             if (finder_data.nondeterministic_function_name)
                 return finder_data.nondeterministic_function_name;
 
+            /// Currently UPDATE and DELETE both always have predicates so we can use fallthrough
             [[fallthrough]];
         }
 
         case MutationCommand::DELETE:
         {
-            if (command.predicate)
-            {
-                auto predicate_ast = command.predicate->clone();
-                FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
-            }
+            auto predicate_ast = command.predicate->clone();
+            FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
 
             return finder_data.nondeterministic_function_name;
         }
@@ -116,6 +114,8 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     /// changes how many rows satisfy the predicates of the subsequent commands).
     /// But we can be sure that if count = 0, then no rows will be touched.
 
+    /// N.B.: This method is only called when for all commands there is a predicate.
+
     auto select = std::make_shared<ASTSelectQuery>();
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
@@ -124,13 +124,10 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     count_func->arguments = std::make_shared<ASTExpressionList>();
     select->select()->children.push_back(count_func);
 
-    std::vector<ASTPtr> conditions;
+    ASTs conditions;
     for (const MutationCommand & command : commands)
-    {
-        ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command, storage, context);
-        if (condition)
-            conditions.emplace_back(std::move(condition));
-    }
+        conditions.emplace_back(getPartitionAndPredicateExpressionForMutationCommand(command, storage, context));
+
     if (conditions.size() > 1)
     {
         auto coalesced_predicates = makeASTFunction("or");
@@ -231,7 +228,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const Context & context
 )
 {
-    ASTPtr result;
+    ASTPtr result = command.predicate->clone();
     if (command.partition)
     {
         String partition_id;
@@ -245,18 +242,15 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         else
             throw Exception("ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables", ErrorCodes::NOT_IMPLEMENTED);
 
-        result = makeASTFunction("equals",
+        result = makeASTFunction("and",
+            makeASTFunction("equals",
                     std::make_shared<ASTIdentifier>("_partition_id"),
                     std::make_shared<ASTLiteral>(partition_id)
+            ),
+            std::move(result)
         );
     }
-    if (command.predicate)
-    {
-        if (!result)
-            result = command.predicate->clone();
-        else
-            result = makeASTFunction("and", std::move(result), command.predicate->clone());
-    }
+
     return result;
 }
 

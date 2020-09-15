@@ -3798,10 +3798,6 @@ void StorageReplicatedMergeTree::alter(
         alter_entry.emplace();
         mutation_znode.reset();
 
-        /// We can safely read structure, because we guarded with alter_intention_lock
-        if (is_readonly)
-            throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
-
         auto current_metadata = getInMemoryMetadataPtr();
 
         StorageInMemoryMetadata future_metadata = *current_metadata;
@@ -4894,7 +4890,17 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
             zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
 
         for (const auto & lock : block_number_locks.getLocks())
-            entry.block_numbers[lock.partition_id] = lock.number;
+        {
+            /// Add block numbers for affected partitions only.
+            for (const auto & command : entry.commands)
+            {
+                if (!command.partition || getPartitionIDFromQuery(command.partition, query_context) == lock.partition_id)
+                {
+                    entry.block_numbers[lock.partition_id] = lock.number;
+                    break;
+                }
+            }
+        }
 
         entry.create_time = time(nullptr);
 
