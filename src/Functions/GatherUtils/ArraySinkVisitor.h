@@ -19,10 +19,18 @@ using BasicArraySinks = typename AppendToTypeList<GenericArraySink, NumericArray
 using NullableArraySinks = typename TypeListMap<NullableArraySink, BasicArraySinks>::Type;
 using TypeListArraySinks = typename TypeListConcat<BasicArraySinks, NullableArraySinks>::Type;
 
-using ArraySinkVisitor = typename ApplyTypeListForClass<Visitor, TypeListArraySinks>::Type;
+class ArraySinkVisitor : public ApplyTypeListForClass<Visitor, TypeListArraySinks>::Type
+{
+protected:
+    ~ArraySinkVisitor() = default;
+};
 
 template <typename Derived>
-using ArraySinkVisitorImpl = VisitorImpl<Derived, ArraySinkVisitor>;
+class ArraySinkVisitorImpl : public VisitorImpl<Derived, ArraySinkVisitor>
+{
+protected:
+    ~ArraySinkVisitorImpl() = default;
+};
 
 #pragma GCC visibility pop
 }

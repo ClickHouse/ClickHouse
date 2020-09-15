@@ -24,10 +24,18 @@ using BasicAndNullableArraySources = typename TypeListConcat<BasicArraySources, 
 using ConstArraySources = typename TypeListMap<ConstSource, BasicAndNullableArraySources>::Type;
 using TypeListArraySources = typename TypeListConcat<BasicAndNullableArraySources, ConstArraySources>::Type;
 
-using ArraySourceVisitor = typename ApplyTypeListForClass<Visitor, TypeListArraySources>::Type;
+class ArraySourceVisitor : public ApplyTypeListForClass<Visitor, TypeListArraySources>::Type
+{
+protected:
+    ~ArraySourceVisitor() = default;
+};
 
 template <typename Derived>
-using ArraySourceVisitorImpl = VisitorImpl<Derived, ArraySourceVisitor>;
+class ArraySourceVisitorImpl : public VisitorImpl<Derived, ArraySourceVisitor>
+{
+protected:
+    ~ArraySourceVisitorImpl() = default;
+};
 
 #pragma GCC visibility pop
 }
