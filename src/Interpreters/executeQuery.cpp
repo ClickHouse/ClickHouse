@@ -319,8 +319,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto query_for_logging = prepareQueryForLogging(query, context);
         logQuery(query_for_logging, context, internal);
 
-        if (!internal)
+        if (!internal) {
             onExceptionBeforeStart(query_for_logging, context, current_time, current_time_microseconds, ast);
+        }
 
         throw;
     }
@@ -556,9 +557,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElementType::QUERY_FINISH;
 
-                elem.event_time = time(nullptr);
-                elem.event_time_microseconds = getCurrentTimeMicroseconds();
+                // event_time and event-time_microseconds are being constructed from the same timespec
+                // to ensure that both the times are equal upto the precision of a second.
+                struct timespec tspec;
+                clock_gettime(CLOCK_MONOTONIC, &tspec);
 
+                elem.event_time = tspec.tv_sec;
+                elem.event_time_microseconds = UInt64((tspec.tv_sec * 1000000LL) + (tspec.tv_nsec / 1000));
                 status_info_to_query_log(elem, info, ast);
 
                 auto progress_callback = context.getProgressCallback();
@@ -618,8 +623,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
 
-                elem.event_time = time(nullptr);
-                elem.event_time_microseconds = getCurrentTimeMicroseconds();
+                // event_time and event_time_microseconds are being constructed from the timespec
+                // to ensure that both the times will be equal upto the precision of a second.
+                struct timespec tspec;
+                clock_gettime(CLOCK_MONOTONIC, &tspec);
+
+                elem.event_time = tspec.tv_sec;
+                elem.event_time_microseconds = UInt64((tspec.tv_sec * 1000000LL) + (tspec.tv_nsec / 1000));
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception_code = getCurrentExceptionCode();
                 elem.exception = getCurrentExceptionMessage(false);
