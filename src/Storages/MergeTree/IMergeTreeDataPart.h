@@ -187,6 +187,10 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
+    /// Cluster level partition fingerprint.
+    /// Used for resolving conflicts during cross-shard data movement.
+    String fingerprint;
+
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
      * Part state should be modified under data_parts mutex.
@@ -398,6 +402,9 @@ private:
 
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
+
+    /// TODO(nv) This is just for POC. Should probably live in another place and for Replicated* should be in ZK.
+    void loadFingerprint();
 
     void loadPartitionAndMinMaxIndex();
 
