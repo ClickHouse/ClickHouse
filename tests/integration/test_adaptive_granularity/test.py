@@ -298,7 +298,7 @@ def test_mixed_granularity_single_node(start_dynamic_cluster, node):
     #still works
     assert node.query("SELECT count() from table_with_default_granularity") == '6\n'
 
-
+@pytest.mark.skip(reason="flaky")
 def test_version_update_two_nodes(start_dynamic_cluster):
     node11.query("INSERT INTO table_with_default_granularity VALUES (toDate('2018-10-01'), 1, 333), (toDate('2018-10-02'), 2, 444)")
     node12.query("SYSTEM SYNC REPLICA table_with_default_granularity", timeout=20)

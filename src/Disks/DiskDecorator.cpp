@@ -165,4 +165,19 @@ void DiskDecorator::truncateFile(const String & path, size_t size)
     delegate->truncateFile(path, size);
 }
 
+int DiskDecorator::open(const String & path, mode_t mode) const
+{
+    return delegate->open(path, mode);
+}
+
+void DiskDecorator::close(int fd) const
+{
+    delegate->close(fd);
+}
+
+void DiskDecorator::sync(int fd) const
+{
+    delegate->sync(fd);
+}
+
 }
