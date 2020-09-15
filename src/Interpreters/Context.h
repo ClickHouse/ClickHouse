@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
@@ -445,11 +445,7 @@ public:
 
     void makeQueryContext() { query_context = this; }
     void makeSessionContext() { session_context = this; }
-    void makeGlobalContext()
-    {
-        global_context = this;
-        DatabaseCatalog::init(this);
-    }
+    void makeGlobalContext() { initGlobal(); global_context = this; }
 
     const Settings & getSettingsRef() const { return settings; }
 
@@ -624,6 +620,8 @@ public:
     MySQLWireContext mysql;
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
+
+    void initGlobal();
 
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateAccessRights();
