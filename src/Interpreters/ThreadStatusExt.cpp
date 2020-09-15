@@ -318,17 +318,29 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 #endif
 }
 
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
 void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 {
     QueryThreadLogElement elem;
 
-    // event_time and event_time_microseconds are being constructed from the same timespec
-    // to ensure that both the times are equal upto the precision of a second.
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    // construct current_time and current_time_microseconds using the same time point
+    // so that the two times will always be equal up to a precision of a second.
+    const auto now = std::chrono::system_clock::now();
+    auto current_time =  time_in_seconds(now);
+    auto current_time_microseconds =  time_in_microseconds(now);
 
-    elem.event_time = ts.tv_sec;
-    elem.event_time_microseconds = UInt64((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
+    elem.event_time = current_time;
+    elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = query_start_time;
     elem.query_start_time_microseconds = query_start_time_microseconds;
     elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
