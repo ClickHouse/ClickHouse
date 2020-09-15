@@ -803,20 +803,20 @@ namespace MySQLReplication
 
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
     {
-        MySQLBinlogEventReadBuffer event_payload(payload);
-        UInt16 header = static_cast<unsigned char>(*event_payload.position());
+        UInt16 header = static_cast<unsigned char>(*payload.position());
         switch (header)
         {
             case PACKET_EOF:
                 throw ReplicationError("Master maybe lost", ErrorCodes::UNKNOWN_EXCEPTION);
             case PACKET_ERR:
                 ERRPacket err;
-                err.readPayloadWithUnpacked(event_payload);
+                err.readPayloadWithUnpacked(payload);
                 throw ReplicationError(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
         }
         // skip the header flag.
-        event_payload.ignore(1);
+        payload.ignore(1);
 
+        MySQLBinlogEventReadBuffer event_payload(payload);
         EventType event_type = static_cast<EventType>(*(event_payload.position() + 4));
         switch (event_type)
         {
