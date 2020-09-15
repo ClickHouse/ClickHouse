@@ -57,7 +57,16 @@ ShellCommand::~ShellCommand()
             LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
     }
     else if (!wait_called)
-        tryWait();
+    {
+        try
+        {
+            tryWait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger());
+        }
+    }
 }
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
@@ -74,7 +83,8 @@ void ShellCommand::logCommand(const char * filename, char * const argv[])
     LOG_TRACE(ShellCommand::getLogger(), "Will start shell command '{}' with arguments {}", filename, args.str());
 }
 
-std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor)
+std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
+    const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor)
 {
     logCommand(filename, argv);
 
@@ -130,7 +140,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
         _exit(int(ReturnCodes::CANNOT_EXEC));
     }
 
-    std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
+    std::unique_ptr<ShellCommand> res(new ShellCommand(
+        pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
 
     LOG_TRACE(getLogger(), "Started shell command '{}' with pid {}", filename, pid);
 
@@ -143,7 +154,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
 }
 
 
-std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command, bool pipe_stdin_only, bool terminate_in_destructor)
+std::unique_ptr<ShellCommand> ShellCommand::execute(
+    const std::string & command, bool pipe_stdin_only, bool terminate_in_destructor)
 {
     /// Arguments in non-constant chunks of memory (as required for `execv`).
     /// Moreover, their copying must be done before calling `vfork`, so after `vfork` do a minimum of things.
@@ -157,7 +169,8 @@ std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command,
 }
 
 
-std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & path, const std::vector<std::string> & arguments, bool terminate_in_destructor)
+std::unique_ptr<ShellCommand> ShellCommand::executeDirect(
+    const std::string & path, const std::vector<std::string> & arguments, bool terminate_in_destructor)
 {
     size_t argv_sum_size = path.size() + 1;
     for (const auto & arg : arguments)
@@ -185,6 +198,10 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & pa
 int ShellCommand::tryWait()
 {
     wait_called = true;
+
+    in.close();
+    out.close();
+    err.close();
 
     LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 

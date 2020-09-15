@@ -66,7 +66,7 @@
 
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
