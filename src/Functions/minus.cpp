@@ -9,7 +9,6 @@ template <typename A, typename B>
 struct MinusImpl
 {
     using ResultType = typename NumberTraits::ResultOfSubtraction<A, B>::Type;
-    static const constexpr bool allow_decimal = true;
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
@@ -44,7 +43,7 @@ struct MinusImpl
 };
 
 struct NameMinus { static constexpr auto name = "minus"; };
-using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
+using FunctionMinus = BinaryArithmeticOverloadResolver<MinusImpl, NameMinus>;
 
 void registerFunctionMinus(FunctionFactory & factory)
 {
