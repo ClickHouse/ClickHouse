@@ -29,9 +29,8 @@ endforeach()
 project(ClickHouse)
 
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
-       "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF) but is not possible to satisfy"
-       ON
-)
+   "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF) but is not possible to satisfy" ON)
+
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
 else()
@@ -58,7 +57,11 @@ set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a pos
 # For more info see https://cmake.org/cmake/help/latest/prop_gbl/USE_FOLDERS.html
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-option(ENABLE_IPO "Enable full link time optimization (it's usually impractical; see also ENABLE_THINLTO)" OFF) # need cmake 3.9+
+# Need cmake 3.9+
+# Usually impractical.
+# See also ENABLE_THINLTO
+option(ENABLE_IPO "Enable full link time optimization")
+
 if(ENABLE_IPO)
     cmake_policy(SET CMP0069 NEW)
     include(CheckIPOSupported)
@@ -90,6 +93,7 @@ string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
+
 if (NOT MAKE_STATIC_LIBRARIES)
     option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
     option (CLICKHOUSE_SPLIT_BINARY "Make several binaries instead one bundled (clickhouse-server, clickhouse-client, ... )" OFF)
