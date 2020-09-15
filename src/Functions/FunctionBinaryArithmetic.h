@@ -22,6 +22,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include "IFunctionImpl.h"
 #include "FunctionHelpers.h"
+#include "IsOperation.h"
 #include "DivisionUtils.h"
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
@@ -167,17 +168,6 @@ struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op, ResultType>
 };
 
 
-template <typename, typename> struct PlusImpl;
-template <typename, typename> struct MinusImpl;
-template <typename, typename> struct MultiplyImpl;
-template <typename, typename> struct DivideFloatingImpl;
-template <typename, typename> struct DivideIntegralImpl;
-template <typename, typename> struct DivideIntegralOrZeroImpl;
-template <typename, typename> struct LeastBaseImpl;
-template <typename, typename> struct GreatestBaseImpl;
-template <typename, typename> struct ModuloImpl;
-
-
 /// Binary operations for Decimals need scale args
 /// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
 /// *   no agrs scale. ScaleR = Scale1 + Scale2;
@@ -185,15 +175,15 @@ template <typename, typename> struct ModuloImpl;
 template <typename A, typename B, template <typename, typename> typename Operation, typename ResultType_, bool _check_overflow = true>
 struct DecimalBinaryOperation
 {
-    static constexpr bool is_plus_minus =   std::is_same_v<Operation<Int32, Int32>, PlusImpl<Int32, Int32>> ||
-                                            std::is_same_v<Operation<Int32, Int32>, MinusImpl<Int32, Int32>>;
-    static constexpr bool is_multiply =     std::is_same_v<Operation<Int32, Int32>, MultiplyImpl<Int32, Int32>>;
-    static constexpr bool is_float_division = std::is_same_v<Operation<Int32, Int32>, DivideFloatingImpl<Int32, Int32>>;
-    static constexpr bool is_int_division = std::is_same_v<Operation<Int32, Int32>, DivideIntegralImpl<Int32, Int32>> ||
-                                            std::is_same_v<Operation<Int32, Int32>, DivideIntegralOrZeroImpl<Int32, Int32>>;
+    static constexpr bool is_plus_minus =   IsOperation<Operation>::plus ||
+                                            IsOperation<Operation>::minus;
+    static constexpr bool is_multiply =     IsOperation<Operation>::multiply;
+    static constexpr bool is_float_division = IsOperation<Operation>::div_floating;
+    static constexpr bool is_int_division = IsOperation<Operation>::div_int ||
+                                            IsOperation<Operation>::div_int_or_zero;
     static constexpr bool is_division = is_float_division || is_int_division;
-    static constexpr bool is_compare =      std::is_same_v<Operation<Int32, Int32>, LeastBaseImpl<Int32, Int32>> ||
-                                            std::is_same_v<Operation<Int32, Int32>, GreatestBaseImpl<Int32, Int32>>;
+    static constexpr bool is_compare =      IsOperation<Operation>::least ||
+                                            IsOperation<Operation>::greatest;
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
     static constexpr bool can_overflow = is_plus_minus || is_multiply;
 
@@ -361,12 +351,8 @@ private:
                 return apply(a.value, b);
             else if constexpr (IsDecimalNumber<U>)
                 return apply(a, b.value);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return apply(UInt16(a), b);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return apply(a, UInt16(b));
             else
-                return applyNative(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b));
+                return applyNative(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b));
         }
         else
             return applyNative(a, b);
@@ -381,12 +367,8 @@ private:
                 return applyScaled<scale_left>(a.value, b, scale);
             else if constexpr (IsDecimalNumber<U>)
                 return applyScaled<scale_left>(a, b.value, scale);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return applyScaled<scale_left>(UInt16(a), b, scale);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return applyScaled<scale_left>(a, UInt16(b), scale);
             else
-                return applyNativeScaled<scale_left>(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
+                return applyNativeScaled<scale_left>(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b), scale);
         }
         else
             return applyNativeScaled<scale_left>(a, b, scale);
@@ -401,12 +383,8 @@ private:
                 return applyScaledDiv(a.value, b, scale);
             else if constexpr (IsDecimalNumber<U>)
                 return applyScaledDiv(a, b.value, scale);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return applyScaledDiv(UInt16(a), b, scale);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return applyScaledDiv(a, UInt16(b), scale);
             else
-                return applyNativeScaledDiv(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
+                return applyNativeScaledDiv(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b), scale);
         }
         else
             return applyNativeScaledDiv(a, b, scale);
@@ -541,15 +519,7 @@ private: /// it's not correct for Decimal
     using Op = Operation<T0, T1>;
 public:
 
-    static constexpr bool allow_decimal =
-        std::is_same_v<Operation<T0, T0>, PlusImpl<T0, T0>> ||
-        std::is_same_v<Operation<T0, T0>, MinusImpl<T0, T0>> ||
-        std::is_same_v<Operation<T0, T0>, MultiplyImpl<T0, T0>> ||
-        std::is_same_v<Operation<T0, T0>, DivideFloatingImpl<T0, T0>> ||
-        std::is_same_v<Operation<T0, T0>, DivideIntegralImpl<T0, T0>> ||
-        std::is_same_v<Operation<T0, T0>, DivideIntegralOrZeroImpl<T0, T0>> ||
-        std::is_same_v<Operation<T0, T0>, LeastBaseImpl<T0, T0>> ||
-        std::is_same_v<Operation<T0, T0>, GreatestBaseImpl<T0, T0>>;
+    static constexpr bool allow_decimal = IsOperation<Operation>::allow_decimal;
 
     /// Appropriate result type for binary operator on numeric types. "Date" can also mean
     /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
@@ -568,21 +538,21 @@ public:
             DataTypeFromFieldType<typename Op::ResultType>>,
         /// Date + Integral -> Date
         /// Integral + Date -> Date
-        Case<std::is_same_v<Op, PlusImpl<T0, T1>>, Switch<
+        Case<IsOperation<Operation>::plus, Switch<
             Case<IsIntegral<RightDataType>, LeftDataType>,
             Case<IsIntegral<LeftDataType>, RightDataType>>>,
         /// Date - Date     -> Int32
         /// Date - Integral -> Date
-        Case<std::is_same_v<Op, MinusImpl<T0, T1>>, Switch<
+        Case<IsOperation<Operation>::minus, Switch<
             Case<std::is_same_v<LeftDataType, RightDataType>, DataTypeInt32>,
             Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, LeftDataType>>>,
         /// least(Date, Date) -> Date
         /// greatest(Date, Date) -> Date
-        Case<std::is_same_v<LeftDataType, RightDataType> && (std::is_same_v<Op, LeastBaseImpl<T0, T1>> || std::is_same_v<Op, GreatestBaseImpl<T0, T1>>),
+        Case<std::is_same_v<LeftDataType, RightDataType> && (IsOperation<Operation>::least || IsOperation<Operation>::greatest),
             LeftDataType>,
         /// Date % Int32 -> Int32
         /// Date % Float -> Float64
-        Case<std::is_same_v<Op, ModuloImpl<T0, T1>>, Switch<
+        Case<IsOperation<Operation>::modulo, Switch<
             Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
             Case<IsDateOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>>>>;
 };
@@ -591,6 +561,11 @@ public:
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
+    static constexpr const bool is_plus = IsOperation<Op>::plus;
+    static constexpr const bool is_minus = IsOperation<Op>::minus;
+    static constexpr const bool is_multiply = IsOperation<Op>::multiply;
+    static constexpr const bool is_division = IsOperation<Op>::division;
+
     const Context & context;
     bool check_decimal_overflow = true;
 
@@ -639,10 +614,7 @@ class FunctionBinaryArithmetic : public IFunction
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         /// We construct another function (example: addMonths) and call it.
 
-        static constexpr bool function_is_plus = std::is_same_v<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>;
-        static constexpr bool function_is_minus = std::is_same_v<Op<UInt8, UInt8>, MinusImpl<UInt8, UInt8>>;
-
-        if (!function_is_plus && !function_is_minus)
+        if constexpr (!is_plus && !is_minus)
             return {};
 
         const DataTypePtr & type_time = first_is_date_or_datetime ? type0 : type1;
@@ -659,21 +631,21 @@ class FunctionBinaryArithmetic : public IFunction
                 return {};
         }
 
-        if (second_is_date_or_datetime && function_is_minus)
+        if (second_is_date_or_datetime && is_minus)
             throw Exception("Wrong order of arguments for function " + getName() + ": argument of type Interval cannot be first.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         std::string function_name;
         if (interval_data_type)
         {
-            function_name = String(function_is_plus ? "add" : "subtract") + interval_data_type->getKind().toString() + 's';
+            function_name = String(is_plus ? "add" : "subtract") + interval_data_type->getKind().toString() + 's';
         }
         else
         {
             if (isDate(type_time))
-                function_name = function_is_plus ? "addDays" : "subtractDays";
+                function_name = is_plus ? "addDays" : "subtractDays";
             else
-                function_name = function_is_plus ? "addSeconds" : "subtractSeconds";
+                function_name = is_plus ? "addSeconds" : "subtractSeconds";
         }
 
         return FunctionFactory::instance().get(function_name, context);
@@ -681,7 +653,7 @@ class FunctionBinaryArithmetic : public IFunction
 
     bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
-        if constexpr (!std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>)
+        if constexpr (!is_multiply)
             return false;
 
         WhichDataType which0(type0);
@@ -693,7 +665,7 @@ class FunctionBinaryArithmetic : public IFunction
 
     bool isAggregateAddition(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
-        if constexpr (!std::is_same_v<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>)
+        if constexpr (!is_plus)
             return false;
 
         WhichDataType which0(type0);
@@ -889,7 +861,7 @@ public:
                     return false;
                 else if constexpr (std::is_same_v<LeftDataType, RightDataType>)
                 {
-                   if (left.getN() == right.getN())
+                    if (left.getN() == right.getN())
                     {
                         type_res = std::make_shared<LeftDataType>(left.getN());
                         return true;
@@ -903,12 +875,7 @@ public:
                 {
                     if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
-                        constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
-                        constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>> ||
-                                                   std::is_same_v<Op<UInt8, UInt8>, DivideIntegralImpl<UInt8, UInt8>> ||
-                                                   std::is_same_v<Op<UInt8, UInt8>, DivideIntegralOrZeroImpl<UInt8, UInt8>>;
-
-                        ResultDataType result_type = decimalResultType(left, right, is_multiply, is_division);
+                        ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
                     else if constexpr (IsDataTypeDecimal<LeftDataType>)
@@ -932,7 +899,7 @@ public:
                         type_res = std::make_shared<ResultDataType>();
                     return true;
                 }
-           }
+            }
             return false;
         });
         if (!valid)
@@ -1027,12 +994,6 @@ public:
 
         if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
         {
-            constexpr bool result_is_decimal = IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>;
-            constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
-            constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>> ||
-                                            std::is_same_v<Op<UInt8, UInt8>, DivideIntegralImpl<UInt8, UInt8>> ||
-                                            std::is_same_v<Op<UInt8, UInt8>, DivideIntegralOrZeroImpl<UInt8, UInt8>>;
-
             using T0 = typename LeftDataType::FieldType;
             using T1 = typename RightDataType::FieldType;
             using ResultType = typename ResultDataType::FieldType;
@@ -1040,111 +1001,91 @@ public:
             using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
             using ColVecResult = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
 
-            /// Decimal operations need scale. Operations are on result type.
-            using OpImpl = std::conditional_t<IsDataTypeDecimal<ResultDataType>,
-                DecimalBinaryOperation<T0, T1, Op, ResultType>,
-                BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>>;
-
             auto col_left_raw = block.getByPosition(arguments[0]).column.get();
             auto col_right_raw = block.getByPosition(arguments[1]).column.get();
-            if (auto col_left = checkAndGetColumnConst<ColVecT0>(col_left_raw))
-            {
-                if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                {
-                    /// the only case with a non-vector result
-                    if constexpr (result_is_decimal)
-                    {
-                        ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
-                        typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
-                        typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
-                        if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
-                            scale_a = right.getScaleMultiplier();
 
-                        auto res = OpImpl::constantConstant(col_left->template getValue<T0>(), col_right->template getValue<T1>(),
-                                                                scale_a, scale_b, check_decimal_overflow);
-                        block.getByPosition(result).column =
-                            ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
-                                col_left->size(), toField(res, type.getScale()));
-
-                    }
-                    else
-                    {
-                        auto res = OpImpl::constantConstant(col_left->template getValue<T0>(), col_right->template getValue<T1>());
-                        block.getByPosition(result).column = ResultDataType().createColumnConst(col_left->size(), toField(res));
-                    }
-                    return true;
-                }
-            }
+            auto col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw);
+            auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw);
 
             typename ColVecResult::MutablePtr col_res = nullptr;
-            if constexpr (result_is_decimal)
-            {
-                ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
-                col_res = ColVecResult::create(0, type.getScale());
-            }
-            else
-                col_res = ColVecResult::create();
 
-            auto & vec_res = col_res->getData();
-            vec_res.resize(block.rows());
+            auto col_left = checkAndGetColumn<ColVecT0>(col_left_raw);
+            auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
 
-            if (auto col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw))
+            if constexpr (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>)
             {
-                if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
+                using OpImpl = DecimalBinaryOperation<T0, T1, Op, ResultType>;
+
+                ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
+
+                typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
+                typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
+                if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
+                    scale_a = right.getScaleMultiplier();
+
+                /// non-vector result
+                if (col_left_const && col_right_const)
                 {
-                    if constexpr (result_is_decimal)
-                    {
-                        ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                    auto res = OpImpl::constantConstant(col_left_const->template getValue<T0>(), col_right_const->template getValue<T1>(),
+                                                        scale_a, scale_b, check_decimal_overflow);
 
-                        typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
-                        typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
-                        if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
-                            scale_a = right.getScaleMultiplier();
+                    block.getByPosition(result).column = ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
+                            col_left_const->size(), toField(res, type.getScale()));
+                    return true;
+                }
 
-                        OpImpl::constantVector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res,
-                                                scale_a, scale_b, check_decimal_overflow);
-                    }
-                    else
-                        OpImpl::constantVector(col_left_const->template getValue<T0>(), col_right->getData().data(), vec_res.data(), vec_res.size());
+                col_res = ColVecResult::create(0, type.getScale());
+                auto & vec_res = col_res->getData();
+                vec_res.resize(block.rows());
+
+                if (col_left && col_right)
+                {
+                    OpImpl::vectorVector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b, check_decimal_overflow);
+                }
+                else if (col_left_const && col_right)
+                {
+                    OpImpl::constantVector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res,
+                                           scale_a, scale_b, check_decimal_overflow);
+                }
+                else if (col_left && col_right_const)
+                {
+                    OpImpl::vectorConstant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res,
+                                           scale_a, scale_b, check_decimal_overflow);
                 }
                 else
                     return false;
             }
-            else if (auto col_left = checkAndGetColumn<ColVecT0>(col_left_raw))
+            else
             {
-                if constexpr (result_is_decimal)
-                {
-                    ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>;
 
-                    typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
-                    typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
-                    if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
-                        scale_a = right.getScaleMultiplier();
-                    if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
-                    {
-                        OpImpl::vectorVector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b,
-                                              check_decimal_overflow);
-                    }
-                    else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                    {
-                        OpImpl::vectorConstant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res,
-                                                scale_a, scale_b, check_decimal_overflow);
-                    }
-                    else
-                        return false;
+                /// non-vector result
+                if (col_left_const && col_right_const)
+                {
+                    auto res = OpImpl::constantConstant(col_left_const->template getValue<T0>(), col_right_const->template getValue<T1>());
+                    block.getByPosition(result).column = ResultDataType().createColumnConst(col_left_const->size(), toField(res));
+                    return true;
+                }
+
+                col_res = ColVecResult::create();
+                auto & vec_res = col_res->getData();
+                vec_res.resize(block.rows());
+
+                if (col_left && col_right)
+                {
+                    OpImpl::vectorVector(col_left->getData().data(), col_right->getData().data(), vec_res.data(), vec_res.size());
+                }
+                else if (col_left_const && col_right)
+                {
+                    OpImpl::constantVector(col_left_const->template getValue<T0>(), col_right->getData().data(), vec_res.data(), vec_res.size());
+                }
+                else if (col_left && col_right_const)
+                {
+                    OpImpl::vectorConstant(col_left->getData().data(), col_right_const->template getValue<T1>(), vec_res.data(), vec_res.size());
                 }
                 else
-                {
-                    if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
-                        OpImpl::vectorVector(col_left->getData().data(), col_right->getData().data(), vec_res.data(), vec_res.size());
-                    else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                        OpImpl::vectorConstant(col_left->getData().data(), col_right_const->template getValue<T1>(), vec_res.data(), vec_res.size());
-                    else
-                        return false;
-                }
+                    return false;
             }
-            else
-                return false;
 
             block.getByPosition(result).column = std::move(col_res);
             return true;

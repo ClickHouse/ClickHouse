@@ -17,4 +17,8 @@ Columns:
 
 -    `apply_to_except` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — The setting profile is applied to all roles and/or users excepting of the listed ones.
 
+## See Also {#see-also}
+
+-   [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
+
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/settings_profiles) <!--hide-->

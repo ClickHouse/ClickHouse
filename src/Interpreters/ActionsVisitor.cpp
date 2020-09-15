@@ -447,6 +447,19 @@ void ScopeStack::addAction(const ExpressionAction & action)
     }
 }
 
+void ScopeStack::addActionNoInput(const ExpressionAction & action)
+{
+    size_t level = 0;
+    Names required = action.getNeededColumns();
+    for (const auto & elem : required)
+        level = std::max(level, getColumnLevel(elem));
+
+    Names added;
+    stack[level].actions->add(action, added);
+
+    stack[level].new_columns.insert(added.begin(), added.end());
+}
+
 ExpressionActionsPtr ScopeStack::popLevel()
 {
     ExpressionActionsPtr res = stack.back().actions;
@@ -549,7 +562,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             /// It could have been possible to implement arrayJoin which keeps source column,
             /// but in this case it will always be replicated (as many arrays), which is expensive.
             String tmp_name = data.getUniqueName("_array_join_" + arg->getColumnName());
-            data.addAction(ExpressionAction::copyColumn(arg->getColumnName(), tmp_name));
+            data.addActionNoInput(ExpressionAction::copyColumn(arg->getColumnName(), tmp_name));
             data.addAction(ExpressionAction::arrayJoin(tmp_name, result_name));
         }
 
@@ -887,38 +900,10 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           *   in the subquery_for_set object, this subquery is set as source and the temporary table _data1 as the table.
           * - this function shows the expression IN_data1.
           */
-        if (!subquery_for_set.source && data.no_storage_or_local)
+        if (subquery_for_set.source.empty() && data.no_storage_or_local)
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
-            subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().getInputStream(); });
-
-            /** Why is LazyBlockInputStream used?
-              *
-              * The fact is that when processing a query of the form
-              *  SELECT ... FROM remote_test WHERE column GLOBAL IN (subquery),
-              *  if the distributed remote_test table contains localhost as one of the servers,
-              *  the query will be interpreted locally again (and not sent over TCP, as in the case of a remote server).
-              *
-              * The query execution pipeline will be:
-              * CreatingSets
-              *  subquery execution, filling the temporary table with _data1 (1)
-              *  CreatingSets
-              *   reading from the table _data1, creating the set (2)
-              *   read from the table subordinate to remote_test.
-              *
-              * (The second part of the pipeline under CreateSets is a reinterpretation of the query inside StorageDistributed,
-              *  the query differs in that the database name and tables are replaced with subordinates, and the subquery is replaced with _data1.)
-              *
-              * But when creating the pipeline, when creating the source (2), it will be found that the _data1 table is empty
-              *  (because the query has not started yet), and empty source will be returned as the source.
-              * And then, when the query is executed, an empty set will be created in step (2).
-              *
-              * Therefore, we make the initialization of step (2) lazy
-              *  - so that it does not occur until step (1) is completed, on which the table will be populated.
-              *
-              * Note: this solution is not very good, you need to think better.
-              */
+            subquery_for_set.source = QueryPipeline::getPipe(interpreter->execute().pipeline);
         }
 
         subquery_for_set.set = set;
