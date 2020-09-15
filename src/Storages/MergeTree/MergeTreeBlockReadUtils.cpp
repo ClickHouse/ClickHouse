@@ -10,14 +10,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace
 {
 
 /// Columns absent in part may depend on other absent columns so we are
-/// searching all required columns recursively. Return true if found at least
-/// one existing column in part.
+/// searching all required physical columns recursively. Return true if found at
+/// least one existing (physical) column in part.
 bool injectRequiredColumnsRecursively(
     const String & column_name,
     const ColumnsDescription & storage_columns,
@@ -73,9 +74,15 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
     const auto & storage_columns = metadata_snapshot->getColumns();
     auto alter_conversions = storage.getAlterConversionsForPart(part);
     for (size_t i = 0; i < columns.size(); ++i)
+    {
+        /// We are going to fetch only physical columns
+        if (!storage_columns.hasPhysical(columns[i]))
+            throw Exception("There is no physical column " + columns[i] + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
             columns[i], storage_columns, alter_conversions,
             part, columns, required_columns, injected_columns);
+    }
 
     /** Add a column of the minimum size.
         * Used in case when no column is needed or files are missing, but at least you need to know number of rows.
