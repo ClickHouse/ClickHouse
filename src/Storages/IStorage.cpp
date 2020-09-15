@@ -96,7 +96,7 @@ void IStorage::read(
         QueryPlan & query_plan,
         TableLockHolder table_lock,
         StorageMetadataPtr metadata_snapshot,
-        LocalLimits & limits,
+        StreamLocalLimits & limits,
         std::shared_ptr<const EnabledQuota> quota,
         const Names & column_names,
         const SelectQueryInfo & query_info,

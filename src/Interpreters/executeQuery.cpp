@@ -382,7 +382,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
         }
 
-        LocalLimits limits;
+        StreamLocalLimits limits;
         if (!interpreter->ignoreLimits())
         {
             limits.mode = LimitsMode::LIMITS_CURRENT;

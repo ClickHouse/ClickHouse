@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Core/QueryProcessingStage.h>
 #include <Storages/TableLockHolder.h>
-#include <DataStreams/LocalLimits.h>
+#include <DataStreams/StreamLocalLimits.h>
 
 namespace DB
 {
@@ -25,7 +25,7 @@ public:
     ReadFromStorageStep(
         TableLockHolder table_lock,
         StorageMetadataPtr metadata_snapshot,
-        LocalLimits & limits,
+        StreamLocalLimits & limits,
         std::shared_ptr<const EnabledQuota> quota,
         StoragePtr storage,
         const Names & required_columns,
@@ -46,7 +46,7 @@ public:
 private:
     TableLockHolder table_lock;
     StorageMetadataPtr metadata_snapshot;
-    LocalLimits limits;
+    StreamLocalLimits limits;
     std::shared_ptr<const EnabledQuota> quota;
 
     StoragePtr storage;

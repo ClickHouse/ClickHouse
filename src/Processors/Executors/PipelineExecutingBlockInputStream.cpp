@@ -103,7 +103,7 @@ void PipelineExecutingBlockInputStream::setProcessListElement(QueryStatus * elem
     pipeline->setProcessListElement(elem);
 }
 
-void PipelineExecutingBlockInputStream::setLimits(const LocalLimits & limits_)
+void PipelineExecutingBlockInputStream::setLimits(const StreamLocalLimits & limits_)
 {
     throwIfExecutionStarted(is_execution_started, "setLimits");
 
