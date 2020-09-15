@@ -107,11 +107,11 @@ bool TTLDeleteMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & 
     /// return true -- this part can not be selected
     /// return false -- this part can be selected
 
-    /// Dropping whole part is an exception to `can_participate_in_merges` logic.
+    /// Dropping whole part is an exception to `shall_participate_in_merges` logic.
     if (only_drop_parts)
         return false;
 
-    return !part.can_participate_in_merges;
+    return !part.shall_participate_in_merges;
 }
 
 time_t TTLRecompressMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
@@ -125,7 +125,7 @@ bool TTLRecompressMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Par
     /// return true -- this part can not be selected
     /// return false -- this part can be selected
 
-    if (!part.can_participate_in_merges)
+    if (!part.shall_participate_in_merges)
         return true;
 
     if (recompression_ttls.empty())

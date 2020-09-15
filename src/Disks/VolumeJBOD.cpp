@@ -57,7 +57,7 @@ VolumeJBOD::VolumeJBOD(
     /// Default value is 'true' due to backward compatibility.
     perform_ttl_move_on_insert = config.getBool(config_prefix + ".perform_ttl_move_on_insert", true);
 
-    are_merges_allowed = !config.getBool(config_prefix + ".disable_merges", false);
+    are_merges_avoided = config.getBool(config_prefix + ".prefer_not_to_merge", false);
 }
 
 VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
@@ -66,7 +66,7 @@ VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
         DiskSelectorPtr disk_selector)
     : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
 {
-    are_merges_allowed_user_override = volume_jbod.are_merges_allowed_user_override;
+    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override;
     last_used = volume_jbod.last_used.load(std::memory_order_relaxed);
 }
 
@@ -99,17 +99,17 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
     return {};
 }
 
-bool VolumeJBOD::areMergesAllowed() const
+bool VolumeJBOD::areMergesAvoided() const
 {
-    if (are_merges_allowed_user_override)
-        return *are_merges_allowed_user_override;
+    if (are_merges_avoided_user_override)
+        return *are_merges_avoided_user_override;
     else
-        return are_merges_allowed;
+        return are_merges_avoided;
 }
 
-void VolumeJBOD::setAllowMergesUserOverride(bool allow)
+void VolumeJBOD::setAvoidMergesUserOverride(bool avoid)
 {
-    are_merges_allowed_user_override = allow;
+    are_merges_avoided_user_override = avoid;
 }
 
 }

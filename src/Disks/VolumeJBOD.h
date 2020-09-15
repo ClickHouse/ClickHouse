@@ -22,9 +22,9 @@ using VolumesJBOD = std::vector<VolumeJBODPtr>;
 class VolumeJBOD : public IVolume
 {
 public:
-    VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_allowed_)
+    VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_avoided_)
         : IVolume(name_, disks_, max_data_part_size_)
-        , are_merges_allowed(are_merges_allowed_)
+        , are_merges_avoided(are_merges_avoided_)
     {
     }
 
@@ -55,15 +55,15 @@ public:
     /// Returns valid reservation or nullptr if there is no space left on any disk.
     ReservationPtr reserve(UInt64 bytes) override;
 
-    bool areMergesAllowed() const override;
+    bool areMergesAvoided() const override;
 
-    void setAllowMergesUserOverride(bool allow) override;
+    void setAvoidMergesUserOverride(bool avoid) override;
 
     /// True if parts on this volume participate in merges according to configuration.
-    bool are_merges_allowed = true;
+    bool are_merges_avoided = true;
 
     /// True if parts on this volume participate in merges according to START/STOP MERGES ON VOLUME.
-    std::optional<bool> are_merges_allowed_user_override;
+    std::optional<bool> are_merges_avoided_user_override;
 
 private:
     mutable std::atomic<size_t> last_used = 0;

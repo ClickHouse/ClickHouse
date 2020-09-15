@@ -164,7 +164,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 }
 
                 if (volume_ptr && action_type == ActionLocks::PartsMerge)
-                    volume_ptr->setAllowMergesUserOverride(start);
+                    volume_ptr->setAvoidMergesUserOverride(!start);
                 else if (start)
                     manager->remove(table, action_type);
                 else

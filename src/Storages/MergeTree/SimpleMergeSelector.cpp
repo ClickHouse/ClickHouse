@@ -153,7 +153,7 @@ void selectWithinPartition(
         if (begin > 1000)
             break;
 
-        if (!parts[begin].can_participate_in_merges)
+        if (!parts[begin].shall_participate_in_merges)
             continue;
 
         size_t sum_size = parts[begin].size;
@@ -165,7 +165,7 @@ void selectWithinPartition(
             if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
                 break;
 
-            if (!parts[end - 1].can_participate_in_merges)
+            if (!parts[end - 1].shall_participate_in_merges)
                 break;
 
             size_t cur_size = parts[end - 1].size;
