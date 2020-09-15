@@ -640,6 +640,12 @@ bool StorageMergeTree::merge(
 
         auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
         {
+            /// Ignore fingerprinted parts.
+            if ((left && !left->fingerprint.empty()) || !right->fingerprint.empty())
+            {
+                return false;
+            }
+
             /// This predicate is checked for the first part of each partition.
             /// (left = nullptr, right = "first part of partition")
             if (!left)

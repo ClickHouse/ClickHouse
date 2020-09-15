@@ -417,6 +417,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
     loadTTLInfos();
+    loadFingerprint();
+
     if (check_consistency)
         checkConsistency(require_columns_checksums);
     loadDefaultCompressionCodec();
@@ -722,6 +724,21 @@ void IMergeTreeDataPart::loadTTLInfos()
         }
         else
             throw Exception("Unknown ttl format version: " + toString(format_version), ErrorCodes::BAD_TTL_FILE);
+    }
+}
+
+void IMergeTreeDataPart::loadFingerprint()
+{
+
+
+    String path = getFullRelativePath() + "fingerprint.txt";
+    if (volume->getDisk()->exists(path))
+    {
+        auto in = openForReading(volume->getDisk(), path);
+
+        readText(fingerprint, *in);
+        if (fingerprint.empty())
+            throw Exception("Found fingerprint.txt but it is empty in part: " + name, ErrorCodes::LOGICAL_ERROR);
     }
 }
 
