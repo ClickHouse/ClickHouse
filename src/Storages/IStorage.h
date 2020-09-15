@@ -281,6 +281,8 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/);
 
+    /// Other version of read which adds reading step to query plan.
+    /// Default implementation creates ReadFromStorageStep and uses usual read.
     virtual void read(
         QueryPlan & query_plan,
         TableLockHolder table_lock,
