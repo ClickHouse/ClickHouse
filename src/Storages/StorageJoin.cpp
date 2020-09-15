@@ -44,9 +44,9 @@ StorageJoin::StorageJoin(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     bool overwrite_,
-    bool disable_set_and_join_persistency_,
-    const Context & context_)
-    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, disable_set_and_join_persistency_, context_}
+    const Context & context_,
+    bool disable_persistency_)
+    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_, disable_persistency_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -119,7 +119,7 @@ void registerStorageJoin(StorageFactory & factory)
         auto join_overflow_mode = settings.join_overflow_mode;
         auto join_any_take_last_row = settings.join_any_take_last_row;
         auto old_any_join = settings.any_join_distinct_right_table_keys;
-        auto disable_set_and_join_persistency = settings.disable_set_and_join_persistency;
+        bool disable_persistency = false;
 
         if (args.storage_def && args.storage_def->settings)
         {
@@ -137,8 +137,12 @@ void registerStorageJoin(StorageFactory & factory)
                     join_any_take_last_row = setting.value;
                 else if (setting.name == "any_join_distinct_right_table_keys")
                     old_any_join = setting.value;
-                else if (setting.name == "disable_set_and_join_persistency")
-                    disable_set_and_join_persistency = setting.value;
+                else if (setting.name == "disable_persistency")
+                {
+                    auto join_settings = std::make_unique<JoinSettings>();
+                    join_settings->loadFromQuery(*args.storage_def);
+                    disable_persistency = join_settings->disable_persistency;
+                }
                 else
                     throw Exception(
                         "Unknown setting " + setting.name + " for storage " + args.engine_name,
@@ -221,8 +225,8 @@ void registerStorageJoin(StorageFactory & factory)
             args.columns,
             args.constraints,
             join_any_take_last_row,
-            disable_set_and_join_persistency,
-            args.context);
+            args.context,
+            disable_persistency);
     };
 
     factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
