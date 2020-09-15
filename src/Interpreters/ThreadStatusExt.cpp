@@ -322,8 +322,13 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 {
     QueryThreadLogElement elem;
 
-    elem.event_time = time(nullptr);
-    elem.event_time_microseconds = getCurrentTimeMicroseconds();
+    // event_time and event_time_microseconds are being constructed from the same timespec
+    // to ensure that both the times are equal upto the precision of a second.
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+
+    elem.event_time = ts.tv_sec;
+    elem.event_time_microseconds = UInt64((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
     elem.query_start_time = query_start_time;
     elem.query_start_time_microseconds = query_start_time_microseconds;
     elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
