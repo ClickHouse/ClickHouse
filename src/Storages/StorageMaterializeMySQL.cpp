@@ -24,8 +24,7 @@
 namespace DB
 {
 
-template<typename DatabaseT>
-StorageMaterializeMySQL<DatabaseT>::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseT * database_)
+StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_)
     : IStorage(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
     auto nested_memory_metadata = nested_storage->getInMemoryMetadata();
@@ -34,8 +33,7 @@ StorageMaterializeMySQL<DatabaseT>::StorageMaterializeMySQL(const StoragePtr & n
     setInMemoryMetadata(in_memory_metadata);
 }
 
-template<typename DatabaseT>
-Pipe StorageMaterializeMySQL<DatabaseT>::read(
+Pipe StorageMaterializeMySQL::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
@@ -45,7 +43,7 @@ Pipe StorageMaterializeMySQL<DatabaseT>::read(
     unsigned int num_streams)
 {
     /// If the background synchronization thread has exception.
-    database->rethrowExceptionIfNeed();
+    rethrowSyncExceptionIfNeed(database);
 
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
     auto lock = nested_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
@@ -102,17 +100,12 @@ Pipe StorageMaterializeMySQL<DatabaseT>::read(
     return pipe;
 }
 
-template<typename DatabaseT>
-NamesAndTypesList StorageMaterializeMySQL<DatabaseT>::getVirtuals() const
+NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
 {
     /// If the background synchronization thread has exception.
-    database->rethrowExceptionIfNeed();
+    rethrowSyncExceptionIfNeed(database);
     return nested_storage->getVirtuals();
 }
-
-template class StorageMaterializeMySQL<DatabaseMaterializeMySQL<DatabaseOrdinary>>;
-template class StorageMaterializeMySQL<DatabaseMaterializeMySQL<DatabaseAtomic>>;
-
 
 }
 

@@ -69,27 +69,6 @@ static BlockIO tryToExecuteQuery(const String & query_to_execute, Context & quer
     }
 }
 
-//static inline DatabaseMaterializeMySQL & getDatabase(const String & database_name)
-//{
-//    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
-//
-//    if (DatabaseMaterializeMySQL * database_materialize = typeid_cast<DatabaseMaterializeMySQL *>(database.get()))
-//        return *database_materialize;
-//
-//    throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
-//}
-
-//static inline void setSyncException(const String & database_name, const std::exception_ptr & exception)
-//{
-//    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
-//
-//    if (auto * database_materialize = typeid_cast<DatabaseMaterializeMySQL<DatabaseOrdinary> *>(database.get()))
-//        return database_materialize->setException(exception);
-//    if (auto * database_materialize = typeid_cast<DatabaseMaterializeMySQL<DatabaseAtomic> *>(database.get()))
-//        return database_materialize->setException(exception);
-//
-//    throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
-//}
 
 MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
 {
@@ -211,7 +190,6 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
         tryLogCurrentException(log);
         auto db = DatabaseCatalog::instance().getDatabase(database_name);
         setSynchronizationThreadException(db, std::current_exception());
-        //setSyncException(database_name, std::current_exception());
     }
 }
 

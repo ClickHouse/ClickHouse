@@ -20,7 +20,7 @@ namespace DB
 class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
-
+    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, const Context & context_);
     DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const Context & context_);
 
     String getEngineName() const override { return "Atomic"; }
