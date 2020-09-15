@@ -53,6 +53,9 @@ class QueryPlan;
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
+struct StreamLocalLimits;
+class EnabledQuota;
+
 struct ColumnSize
 {
     size_t marks = 0;
