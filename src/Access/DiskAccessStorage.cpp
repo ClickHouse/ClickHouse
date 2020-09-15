@@ -33,6 +33,9 @@
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -342,9 +345,22 @@ DiskAccessStorage::~DiskAccessStorage()
 }
 
 
-bool DiskAccessStorage::isStoragePathEqual(const String & directory_path_) const
+String DiskAccessStorage::getStorageParamsJSON() const
 {
-    return getStoragePath() == makeDirectoryPathCanonical(directory_path_);
+    std::lock_guard lock{mutex};
+    Poco::JSON::Object json;
+    json.set("path", directory_path);
+    if (readonly)
+        json.set("readonly", readonly.load());
+    std::ostringstream oss;
+    Poco::JSON::Stringifier::stringify(json, oss);
+    return oss.str();
+}
+
+
+bool DiskAccessStorage::isPathEqual(const String & directory_path_) const
+{
+    return getPath() == makeDirectoryPathCanonical(directory_path_);
 }
 
 

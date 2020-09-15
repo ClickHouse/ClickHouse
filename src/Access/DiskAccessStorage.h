@@ -18,12 +18,13 @@ public:
     ~DiskAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
+    String getStorageParamsJSON() const override;
 
-    String getStoragePath() const override { return directory_path; }
-    bool isStoragePathEqual(const String & directory_path_) const;
+    String getPath() const { return directory_path; }
+    bool isPathEqual(const String & directory_path_) const;
 
     void setReadOnly(bool readonly_) { readonly = readonly_; }
-    bool isStorageReadOnly() const override { return readonly; }
+    bool isReadOnly() const { return readonly; }
 
 private:
     std::optional<UUID> findImpl(EntityType type, const String & name) const override;

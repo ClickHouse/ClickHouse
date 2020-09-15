@@ -186,7 +186,7 @@ void AccessControlManager::addUsersConfigStorage(
     {
         if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
         {
-            if (users_config_storage->getStoragePath() == users_config_path_)
+            if (users_config_storage->isPathEqual(users_config_path_))
                 return;
         }
     }
@@ -229,7 +229,7 @@ void AccessControlManager::addDiskStorage(const String & storage_name_, const St
     {
         if (auto disk_storage = typeid_cast<std::shared_ptr<DiskAccessStorage>>(storage))
         {
-            if (disk_storage->isStoragePathEqual(directory_))
+            if (disk_storage->isPathEqual(directory_))
             {
                 if (readonly_)
                     disk_storage->setReadOnly(readonly_);
