@@ -633,7 +633,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 {
     if (ignore)
         return false;
-    
+
     /// We remove properties on metadata level
     if (isRemovingProperty())
         return false;
