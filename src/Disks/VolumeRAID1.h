@@ -18,8 +18,8 @@ using VolumeRAID1Ptr = std::shared_ptr<VolumeRAID1>;
 class VolumeRAID1 : public VolumeJBOD
 {
 public:
-    VolumeRAID1(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_allowed_in_config_)
-        : VolumeJBOD(name_, disks_, max_data_part_size_, are_merges_allowed_in_config_)
+    VolumeRAID1(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_avoided_in_config_)
+        : VolumeJBOD(name_, disks_, max_data_part_size_, are_merges_avoided_in_config_)
     {
     }
 
