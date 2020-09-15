@@ -285,14 +285,11 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::MODIFY_TTL)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
-        if (ttl)
-        {
-            ttl->formatImpl(settings, state, frame);
-        }
-        else if (remove_property == "TTL")
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " REMOVE " << (settings.hilite ? hilite_none : "");
-        }
+        ttl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::REMOVE_TTL)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REMOVE TTL" << (settings.hilite ? hilite_none : "");
     }
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {

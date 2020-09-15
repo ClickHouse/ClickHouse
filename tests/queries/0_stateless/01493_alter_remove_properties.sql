@@ -55,7 +55,7 @@ INSERT INTO prop_table (column_materialized, column_alias, column_codec, column_
 
 SELECT column_default, column_materialized, column_alias, column_codec, column_comment, column_ttl FROM prop_table ORDER BY column_ttl;
 
-ALTER TABLE prop_table MODIFY TTL REMOVE;
+ALTER TABLE prop_table REMOVE TTL;
 
 SHOW CREATE TABLE prop_table;
 

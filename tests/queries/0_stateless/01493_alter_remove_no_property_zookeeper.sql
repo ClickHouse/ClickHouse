@@ -17,7 +17,7 @@ ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE CODEC;
 ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE COMMENT;
 ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE TTL;
 
-ALTER TABLE no_prop_table MODIFY TTL REMOVE;
+ALTER TABLE no_prop_table REMOVE TTL;
 
 SHOW CREATE TABLE no_prop_table;
 
@@ -41,11 +41,11 @@ ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE CODEC;
 ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE COMMENT;
 ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE TTL;
 
-ALTER TABLE r_no_prop_table MODIFY TTL REMOVE;
+ALTER TABLE r_no_prop_table REMOVE TTL;
 
 SHOW CREATE TABLE r_no_prop_table;
 
 ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE ttl;
-ALTER TABLE r_no_prop_table MODIFY TTL remove;
+ALTER TABLE r_no_prop_table remove TTL;
 
 DROP TABLE IF EXISTS r_no_prop_table;

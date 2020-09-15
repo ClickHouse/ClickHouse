@@ -90,6 +90,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_codec("CODEC");
     ParserKeyword s_ttl("TTL");
 
+    ParserKeyword s_remove_ttl("REMOVE TTL");
+
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserIdentifier parser_remove_property;
@@ -520,11 +522,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         else if (s_modify_ttl.ignore(pos, expected))
         {
-            if (s_remove.ignore(pos, expected))
-                command->remove_property = "TTL";
-            else if (!parser_ttl_list.parse(pos, command->ttl, expected))
+            if (!parser_ttl_list.parse(pos, command->ttl, expected))
                 return false;
             command->type = ASTAlterCommand::MODIFY_TTL;
+        }
+        else if (s_remove_ttl.ignore(pos, expected))
+        {
+            command->type = ASTAlterCommand::REMOVE_TTL;
         }
         else if (s_materialize_ttl.ignore(pos, expected))
         {

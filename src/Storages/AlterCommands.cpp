@@ -260,7 +260,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_TTL;
         command.ttl = command_ast->ttl;
-        command.to_remove = removePropertyFromString(command_ast->remove_property);
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::REMOVE_TTL)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::REMOVE_TTL;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_SETTING)
@@ -495,10 +501,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     }
     else if (type == MODIFY_TTL)
     {
-        if (to_remove == RemoveProperty::TTL)
-            metadata.table_ttl = TTLTableDescription{};
-        else
-            metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key);
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key);
+    }
+    else if (type == REMOVE_TTL)
+    {
+        metadata.table_ttl = TTLTableDescription{};
     }
     else if (type == MODIFY_QUERY)
     {
@@ -635,7 +642,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
         return false;
 
     /// We remove properties on metadata level
-    if (isRemovingProperty())
+    if (isRemovingProperty() || type == REMOVE_TTL)
         return false;
 
     if (type == DROP_COLUMN || type == DROP_INDEX || type == RENAME_COLUMN)
@@ -775,6 +782,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY QUERY";
     case AlterCommand::Type::RENAME_COLUMN:
         return "RENAME COLUMN";
+    case AlterCommand::Type::REMOVE_TTL:
+        return "REMOVE TTL";
     }
     __builtin_unreachable();
 }
@@ -880,9 +889,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
             if (!has_column && command.if_exists)
                 command.ignore = true;
         }
-        else if (command.type == AlterCommand::MODIFY_TTL)
+        else if (command.type == AlterCommand::REMOVE_TTL)
         {
-            if (command.to_remove == AlterCommand::RemoveProperty::TTL && !metadata.hasAnyTableTTL())
+            if (!metadata.hasAnyTableTTL())
                 command.ignore = true;
         }
     }
@@ -1153,7 +1162,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     {
         for (const auto & alter_cmd : *this)
         {
-            if (alter_cmd.isTTLAlter(metadata) && alter_cmd.to_remove != AlterCommand::RemoveProperty::TTL)
+            if (alter_cmd.isTTLAlter(metadata))
             {
                 result.push_back(createMaterializeTTLCommand());
                 break;

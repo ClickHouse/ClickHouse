@@ -36,6 +36,7 @@ public:
         MATERIALIZE_TTL,
         MODIFY_SETTING,
         MODIFY_QUERY,
+        REMOVE_TTL,
 
         ADD_INDEX,
         DROP_INDEX,

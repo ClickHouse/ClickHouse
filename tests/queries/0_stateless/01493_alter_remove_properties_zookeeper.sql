@@ -69,7 +69,7 @@ SHOW CREATE TABLE r_prop_table1;
 SHOW CREATE TABLE r_prop_table2;
 
 SELECT '====== remove table TTL ======';
-ALTER TABLE r_prop_table1 MODIFY TTL REMOVE;
+ALTER TABLE r_prop_table1 REMOVE TTL;
 
 INSERT INTO r_prop_table1 (column_codec, column_comment, column_ttl) VALUES ('rts', now() - INTERVAL 1 YEAR, 3);
 

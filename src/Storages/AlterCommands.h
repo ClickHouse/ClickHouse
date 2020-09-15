@@ -37,6 +37,7 @@ struct AlterCommand
         MODIFY_SETTING,
         MODIFY_QUERY,
         RENAME_COLUMN,
+        REMOVE_TTL,
     };
 
     /// Which property user wants to remove from column
