@@ -5,17 +5,11 @@ import helpers.cluster
 
 cluster = helpers.cluster.ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1',
-            config_dir='configs',
-            main_configs=['configs/logs_config.xml'],
-            with_zookeeper=True,
-            stay_alive=True)
+node1 = cluster.add_instance('node1', main_configs=['configs/logs_config.xml', 'configs/cluster.xml'],
+            				  with_zookeeper=True, stay_alive=True)
 
-node2 = cluster.add_instance('node2',
-            config_dir='configs',
-            main_configs=['configs/logs_config.xml'],
-            with_zookeeper=True,
-            stay_alive=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/logs_config.xml', 'configs/cluster.xml'],
+							  with_zookeeper=True, stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -77,7 +71,7 @@ def test_trivial_alter_in_partition_replicated_merge_tree(started_cluster):
 
         for node in (node1, node2):
             node.query(
-                "CREATE TABLE {name} (p Int64, x Int64) ENGINE=ReplicatedMergeTree('/clickhouse/{name}', '{instance}') ORDER BY tuple() PARTITION BY p"
+                "CREATE TABLE {name} (p Int64, x Int64) ENGINE=ReplicatedMergeTree('/clickhouse/{name}', '{{instance}}') ORDER BY tuple() PARTITION BY p"
                 .format(name=name))
 
         node1.query("INSERT INTO {} VALUES (1, 2)".format(name))
