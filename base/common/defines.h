@@ -70,12 +70,10 @@
 #    define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
 #    define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
 #    define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
-#    define NO_SANITIZE_MEMORY __attribute__((__no_sanitize__("memory")))
 #else  /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
 #    define NO_SANITIZE_UNDEFINED
 #    define NO_SANITIZE_ADDRESS
 #    define NO_SANITIZE_THREAD
-#    define NO_SANITIZE_MEMORY
 #endif
 
 #if defined __GNUC__ && !defined __clang__
