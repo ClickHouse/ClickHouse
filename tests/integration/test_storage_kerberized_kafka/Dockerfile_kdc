@@ -1,3 +1,5 @@
+# docker build -t arenadata/kdc .
+
 FROM centos:6.6
 # old OS to make is faster and smaller
 

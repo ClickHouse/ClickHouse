@@ -22,6 +22,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
                                 with_kerberized_kafka=True,
+                                clickhouse_path_dir="clickhouse_path"
                                 )
 kafka_id = ''    # instance.cluster.kafka_docker_id
 
@@ -135,6 +136,8 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
 
     assert TSV(result) == TSV(expected)
     assert instance.contains_in_log("StorageKafka (kafka_no_kdc): Nothing to commit")
+    assert instance.contains_in_log("Ticket expired")
+    assert instance.contains_in_log("Kerberos ticket refresh failed")
 
 
 if __name__ == '__main__':

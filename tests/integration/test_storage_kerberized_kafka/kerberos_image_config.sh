@@ -1,16 +1,16 @@
 #!/bin/bash
 
 
-[[ "TRACE" ]] && set -x
+set -x # trace
 
-: ${REALM:=TEST.CLICKHOUSE.TECH}
-: ${DOMAIN_REALM:=test.clickhouse.tech}
-: ${KERB_MASTER_KEY:=masterkey}
-: ${KERB_ADMIN_USER:=admin}
-: ${KERB_ADMIN_PASS:=admin}
+: "${REALM:=TEST.CLICKHOUSE.TECH}"
+: "${DOMAIN_REALM:=test.clickhouse.tech}"
+: "${KERB_MASTER_KEY:=masterkey}"
+: "${KERB_ADMIN_USER:=admin}"
+: "${KERB_ADMIN_PASS:=admin}"
 
 create_config() {
-  : ${KDC_ADDRESS:=$(hostname -f)}
+  : "${KDC_ADDRESS:=$(hostname -f)}"
 
   cat>/etc/krb5.conf<<EOF
 [logging]
@@ -129,4 +129,4 @@ main() {
 
 }
 
-[[ "$0" == "$BASH_SOURCE" ]] && main "$@"
+[[ "$0" == "${BASH_SOURCE[0]}" ]] && main "$@"
