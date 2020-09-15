@@ -146,9 +146,14 @@ void ThreadStatus::initPerformanceCounters()
     memory_tracker.resetCounters();
     memory_tracker.setDescription("(for thread)");
 
-    query_start_time_nanoseconds = getCurrentTimeNanoseconds();
-    query_start_time = time(nullptr);
-    query_start_time_microseconds = getCurrentTimeMicroseconds();
+    // query_start_time_{microseconds, nanoseconds} are all constructed from the same timespec
+    // to ensure that they are all atelast equal upto the precision of a second.
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+
+    query_start_time_nanoseconds = UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
+    query_start_time = ts.tv_sec;
+    query_start_time_microseconds = UInt64((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
     ++queries_started;
 
     *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
