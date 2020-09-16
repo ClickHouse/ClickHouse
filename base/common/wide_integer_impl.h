@@ -462,15 +462,39 @@ private:
     constexpr static auto op_multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
         integer<Bits, Signed> res{};
-
+#if 1
+        integer<Bits, Signed> lhs2 = op_plus(lhs, shift_left(lhs, 1));
+        integer<Bits, Signed> lhs3 = op_plus(lhs2, shift_left(lhs, 2));
+#endif
         for (unsigned i = 0; i < item_count; ++i)
         {
             base_type rhs_item = get_item(rhs, i);
+            unsigned pos = i * base_bits;
 
-            for (unsigned bit = 0; rhs_item; ++bit, rhs_item >>= 1)
+            while (rhs_item)
             {
+#if 1 /// optimization
+                if ((rhs_item & 0x7) == 0x7)
+                {
+                    res = op_plus(res, shift_left(lhs3, pos));
+                    rhs_item >>= 3;
+                    pos += 3;
+                    continue;
+                }
+
+                if ((rhs_item & 0x3) == 0x3)
+                {
+                    res = op_plus(res, shift_left(lhs2, pos));
+                    rhs_item >>= 2;
+                    pos += 2;
+                    continue;
+                }
+#endif
                 if (rhs_item & 1)
-                    res = operator_plus(res, shift_left(lhs, i * base_bits + bit));
+                    res = op_plus(res, shift_left(lhs, pos));
+
+                rhs_item >>= 1;
+                ++pos;
             }
         }
 
