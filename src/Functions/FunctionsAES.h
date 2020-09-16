@@ -7,10 +7,8 @@
 #if USE_SSL
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnNothing.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-
 #include <Functions/FunctionHelpers.h>
 
 #include <fmt/format.h>
