@@ -4,6 +4,7 @@
 #include <zstd.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 
@@ -24,9 +25,16 @@ uint8_t CompressionCodecZSTD::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::ZSTD);
 }
 
-String CompressionCodecZSTD::getCodecDesc() const
+
+ASTPtr CompressionCodecZSTD::getCodecDesc() const
 {
-    return "ZSTD(" + toString(level) + ")";
+    auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(level));
+    return makeASTFunction("ZSTD", literal);
+}
+
+void CompressionCodecZSTD::updateHash(SipHash & hash) const
+{
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) const

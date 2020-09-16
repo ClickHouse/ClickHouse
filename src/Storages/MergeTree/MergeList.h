@@ -3,7 +3,9 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
+#include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeType.h>
 #include <memory>
 #include <list>
 #include <mutex>
@@ -45,6 +47,8 @@ struct MergeInfo
     UInt64 columns_written;
     UInt64 memory_usage;
     UInt64 thread_id;
+    std::string merge_type;
+    std::string merge_algorithm;
 };
 
 struct FutureMergedMutatedPart;
@@ -87,7 +91,8 @@ struct MergeListElement : boost::noncopyable
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
 
     UInt64 thread_id;
-
+    MergeType merge_type;
+    MergeAlgorithm merge_algorithm;
 
     MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
 
@@ -130,6 +135,7 @@ class MergeList
     mutable std::mutex mutex;
     container_t merges;
 
+    std::atomic<size_t> merges_with_ttl_counter = 0;
 public:
     using Entry = MergeListEntry;
     using EntryPtr = std::unique_ptr<Entry>;
@@ -138,7 +144,10 @@ public:
     EntryPtr insert(Args &&... args)
     {
         std::lock_guard lock{mutex};
-        return std::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
+        auto entry = std::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
+        if (isTTLMergeType((*entry)->merge_type))
+            ++merges_with_ttl_counter;
+        return entry;
     }
 
     info_container_t get() const
@@ -161,12 +170,21 @@ public:
                 merge_element.is_cancelled = true;
         }
     }
+
+    size_t getExecutingMergesWithTTLCount() const
+    {
+        return merges_with_ttl_counter;
+    }
 };
 
 
 inline MergeListEntry::~MergeListEntry()
 {
     std::lock_guard lock{list.mutex};
+
+    if (isTTLMergeType(it->merge_type))
+        --list.merges_with_ttl_counter;
+
     list.merges.erase(it);
 }
 

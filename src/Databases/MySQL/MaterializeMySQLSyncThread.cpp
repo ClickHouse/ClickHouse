@@ -195,6 +195,7 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
     }
     catch (...)
     {
+        client.disconnect();
         tryLogCurrentException(log);
         getDatabase(database_name).setException(std::current_exception());
     }
@@ -206,6 +207,7 @@ void MaterializeMySQLSyncThread::stopSynchronization()
     {
         sync_quit = true;
         background_thread_pool->join();
+        client.disconnect();
     }
 }
 
@@ -246,7 +248,7 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
         if (iterator != insert_columns_names.begin())
             insert_columns_str << ", ";
 
-        insert_columns_str << iterator->name;
+        insert_columns_str << backQuoteIfNeed(iterator->name);
     }
 
 

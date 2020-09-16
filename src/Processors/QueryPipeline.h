@@ -21,6 +21,11 @@ class QueryPipelineProcessorsCollector;
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
+class QueryPlan;
+
+struct SubqueryForSet;
+using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
+
 class QueryPipeline
 {
 public:
@@ -51,7 +56,7 @@ public:
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
     void addExtremesTransform();
     /// Adds transform which creates sets. It will be executed before reading any data from input ports.
-    void addCreatingSetsTransform(ProcessorPtr transform);
+    void addCreatingSetsTransform(SubqueriesForSets subqueries_for_sets, const SizeLimits & network_transfer_limits, const Context & context);
     /// Resize pipeline to single output and add IOutputFormat. Pipeline will be completed after this transformation.
     void setOutputFormat(ProcessorPtr output);
     /// Get current OutputFormat.
@@ -93,6 +98,7 @@ public:
     void addTableLock(const TableLockHolder & lock) { pipe.addTableLock(lock); }
     void addInterpreterContext(std::shared_ptr<Context> context) { pipe.addInterpreterContext(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
+    void addQueryPlan(std::unique_ptr<QueryPlan> plan) { pipe.addQueryPlan(std::move(plan)); }
 
     /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);

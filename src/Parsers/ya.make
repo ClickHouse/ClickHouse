@@ -5,11 +5,14 @@ PEERDIR(
     clickhouse/src/Common
 )
 
+CFLAGS(-g0)
+
 SRCS(
     ASTAlterQuery.cpp
     ASTAsterisk.cpp
     ASTColumnDeclaration.cpp
     ASTColumnsMatcher.cpp
+    ASTColumnsTransformers.cpp
     ASTConstraintDeclaration.cpp
     ASTCreateQuery.cpp
     ASTCreateQuotaQuery.cpp

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/ProfileEvents.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -82,6 +82,12 @@ inline UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
     return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
+inline UInt64 getCurrentTimeMicroseconds()
+{
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    return (tv.tv_sec) * 1000000U + (tv.tv_usec);
+}
 
 struct RUsageCounters
 {
