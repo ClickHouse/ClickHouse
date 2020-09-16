@@ -642,6 +642,11 @@ struct NullableArraySource : public ArraySource
     {
     }
 
+    MutableColumnPtr createValuesColumn()
+    {
+        return ColumnNullable::create(static_cast<ArraySource *>(this)->createValuesColumn(), ColumnUInt8::create());
+    }
+
     void accept(ArraySourceVisitor & visitor) override { visitor.visit(*this); }
 
     Slice getWhole() const
