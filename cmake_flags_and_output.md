@@ -77,7 +77,7 @@ TODO describe separate cmake files for contrib + arch-dependent ones + options f
 | <a name="split-shared-libraries"></a>[`SPLIT_SHARED_LIBRARIES`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L100) | `OFF` | Keep all internal libraries as separate .so files | DEVELOPER ONLY.. Faster linking if turned on..  |
 | <a name="strip-debug-symbols-functions"></a>[`STRIP_DEBUG_SYMBOLS_FUNCTIONS`](https://github.com/clickhouse/clickhouse/blob/master/src/Functions/CMakeLists.txt#L67) | [`STRIP_DSF_DEFAULT`](#strip-dsf-default) | Do not generate debugger info for ClickHouse functions | Provides faster linking and lower binary size.. Tradeoff is the inability to debug some source files with e.g. gdb. (empty stack frames and no local variables).".  |
 | <a name="unbundled"></a>[`UNBUNDLED`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L155) | `OFF` | Use system libraries instead of ones in contrib/ |  |
-| <a name="use-include-what-you-use"></a>[`USE_INCLUDE_WHAT_YOU_USE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L387) | `OFF` |  | https://github.com/include-what-you-use/include-what-you-use.  |
+| <a name="use-include-what-you-use"></a>[`USE_INCLUDE_WHAT_YOU_USE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L387) | `OFF` | Automatically reduce unneeded includes in source code (external tool) | https://github.com/include-what-you-use/include-what-you-use.  |
 | <a name="use-internal-avro-library"></a>[`USE_INTERNAL_AVRO_LIBRARY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/avro.cmake#L3) | `ON` | Set to FALSE to use system avro library instead of bundled |  |
 | <a name="use-internal-aws-s-library"></a>[`USE_INTERNAL_AWS_S3_LIBRARY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/s3.cmake#L2) | `ON` | Set to FALSE to use system S3 instead of bundled (experimental set to OFF on your own risk) |  |
 | <a name="use-internal-brotli-library"></a>[`USE_INTERNAL_BROTLI_LIBRARY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/brotli.cmake#L3) | `ON` | Set to FALSE to use system libbrotli library instead of bundled |  |
@@ -117,7 +117,7 @@ TODO describe separate cmake files for contrib + arch-dependent ones + options f
 | <a name="use-unwind"></a>[`USE_UNWIND`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/unwind.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable libunwind (better stacktraces) |  |
 | <a name="werror"></a>[`WERROR`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L342) | `ON` | Enable -Werror compiler option | Using system libs can cause a lot of warnings in includes (on macro expansion)..  |
 | <a name="weverything"></a>[`WEVERYTHING`](https://github.com/clickhouse/clickhouse/blob/master/cmake/warnings.cmake#L20) | `ON` | Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang. |  |
-| <a name="with-coverage"></a>[`WITH_COVERAGE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L119) | `OFF` |  | Enable fuzzy testing using libfuzzer.  |
+| <a name="with-coverage"></a>[`WITH_COVERAGE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L119) | `OFF` | Profile the resulting binary/binaries | Enable fuzzy testing using libfuzzer.  |
 
 ## Developer's guide for adding new CMake options
 
@@ -128,25 +128,29 @@ Bad:
 option (ENABLE_TESTS "Enables testing" OFF)
 ```
 
-This description is quite useless as is neither gives the viewer any additional information nor explains the option
-purpose. If the option's name is quite self-descriptive, prefer the empty description.
+This description is quite useless as is neither gives the viewer any additional information nor explains the option purpose.
 
 Better:
 
 ```cmake
-option(ENABLE_TESTS OFF)
+option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests" OFF)
 ```
 
 If the option's purpose can't be guessed by its name, or the purpose guess may be misleading, leave a comment above
 the `option()` line and explain what it does. The best way would be linking the docs page (if it exists).
 The comment is parsed into a separate column (see below).
 
-Even better (default off value is omitted):
+Even better:
 
 ```cmake
-# Adds the ability to test ClickHouse using Google.Test (would produce another target unit_tests_dbms).
 # see tests/CMakeLists.txt for implementation detail.
-option(ENABLE_GTEST_TESTS)
+option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests")
+```
+
+Note that the default value (`OFF`) can be omitted if you provide a description, e.g.
+
+```
+option(MYOPTION "My description")
 ```
 
 ### If the option's state could produce unwanted (or unusual) result, explicitly warn the user.

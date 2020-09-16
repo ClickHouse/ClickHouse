@@ -8,25 +8,31 @@ Bad:
 option (ENABLE_TESTS "Enables testing" OFF)
 ```
 
-This description is quite useless as is neither gives the viewer any additional information nor explains the option
-purpose. If the option's name is quite self-descriptive, prefer the empty description.
+This description is quite useless as is neither gives the viewer any additional information nor explains the option purpose.
 
 Better:
 
 ```cmake
-option(ENABLE_TESTS OFF)
+option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests" OFF)
 ```
 
-If the option's purpose can't be guessed by its name, or the purpose guess may be misleading, leave a comment above
-the `option()` line and explain what it does. The best way would be linking the docs page (if it exists).
+If the option's purpose can't be guessed by its name, or the purpose guess may be misleading, or option has some 
+pre-conditions, leave a comment above the `option()` line and explain what it does. 
+The best way would be linking the docs page (if it exists).
 The comment is parsed into a separate column (see below).
 
-Even better (default off value is omitted):
+Even better:
 
 ```cmake
-# Adds the ability to test ClickHouse using Google.Test (would produce another target unit_tests_dbms).
+# implies ${TESTS_ARE_ENABLED}
 # see tests/CMakeLists.txt for implementation detail.
-option(ENABLE_GTEST_TESTS)
+option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests")
+```
+
+Note that the default value (`OFF`) can be omitted if you provide a description, e.g.
+
+```
+option(MYOPTION "My description")
 ```
 
 ### If the option's state could produce unwanted (or unusual) result, explicitly warn the user.

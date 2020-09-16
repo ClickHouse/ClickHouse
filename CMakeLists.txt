@@ -116,9 +116,8 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-# Enable fuzzy testing using libfuzzer
 # Implies ${WITH_COVERAGE}
-option (ENABLE_FUZZING "Enables fuzzing instrumentation")
+option (ENABLE_FUZZING "Enable fuzzy testing using libfuzzer")
 
 if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
@@ -150,8 +149,7 @@ if (COMPILER_CLANG)
     endif ()
 endif ()
 
-# Adds a Google.Test target binary containing unit tests.
-option (ENABLE_TESTS ON)
+option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests" ON)
 
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
     # Only for Linux, x86_64.
@@ -251,7 +249,7 @@ if (COMPILER_GCC OR COMPILER_CLANG)
 endif ()
 
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
-option(WITH_COVERAGE)
+option(WITH_COVERAGE "Profile the resulting binary/binaries")
 
 if (WITH_COVERAGE AND COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
@@ -385,7 +383,7 @@ else ()
 endif ()
 
 # https://github.com/include-what-you-use/include-what-you-use
-option (USE_INCLUDE_WHAT_YOU_USE OFF)
+option (USE_INCLUDE_WHAT_YOU_USE "Automatically reduce unneeded includes in source code (external tool)" OFF)
 
 if (USE_INCLUDE_WHAT_YOU_USE)
     find_program(IWYU_PATH NAMES include-what-you-use iwyu)
