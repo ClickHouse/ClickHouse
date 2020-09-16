@@ -1420,8 +1420,50 @@ def _insert_merge_execute(name, policy, parts, cmds, parts_before_cmds, parts_af
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
 
+def _check_merges_are_working(node, storage_policy, volume, shall_work):
+    try:
+        name = "_check_merges_are_working_{storage_policy}_{volume}".format(storage_policy=storage_policy, volume=volume)
+
+        node1.query("""
+            CREATE TABLE {name} (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            PARTITION BY tuple()
+            SETTINGS storage_policy='{storage_policy}'
+        """.format(name=name, storage_policy=storage_policy))
+
+        created_parts = 24
+
+        for i in range(created_parts):
+            node1.query("""INSERT INTO {name} VALUES ({n})""".format(name=name, n=i))
+            try:
+                node1.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO VOLUME '{volume}' """.format(name=name, volume=volume))
+            except:
+                """Ignore 'nothing to move'."""
+
+        expected_disks = set(node1.query("""
+            SELECT disks FROM system.storage_policies ARRAY JOIN disks WHERE volume_name = '{volume_name}'
+        """.format(volume_name=volume)).splitlines())
+
+        disks = get_used_disks_for_table(node1, name)
+        assert set(disks) <= expected_disks
+
+        node1.query("""OPTIMIZE TABLE {name} FINAL""".format(name=name))
+
+        parts = get_used_parts_for_table(node1, name)
+        assert len(parts) == 1 if shall_work else created_parts
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
 def _get_prefer_not_to_merge_for_storage_policy(node, storage_policy):
     return list(map(int, node.query("SELECT prefer_not_to_merge FROM system.storage_policies WHERE policy_name = '{}' ORDER BY volume_priority".format(storage_policy)).splitlines()))
+
+
+def test_simple_merge_tree_merges_are_disabled(start_cluster):
+    _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
 
 
 def test_no_merges_in_configuration_allow_from_query_without_reload(start_cluster):
@@ -1429,10 +1471,13 @@ def test_no_merges_in_configuration_allow_from_query_without_reload(start_cluste
         name = "test_no_merges_in_configuration_allow_from_query_without_reload"
         node1.restart_clickhouse(kill=True)
         assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 1]
+        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
+
         _insert_merge_execute(name, "small_jbod_with_external_no_merges", 2, [
                 "SYSTEM START MERGES ON VOLUME small_jbod_with_external_no_merges.external"
             ], 2, 1)
         assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 0]
+        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", True)
 
     finally:
         node1.query("SYSTEM STOP MERGES ON VOLUME small_jbod_with_external_no_merges.external")
@@ -1443,11 +1488,14 @@ def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
         name = "test_no_merges_in_configuration_allow_from_query_with_reload"
         node1.restart_clickhouse(kill=True)
         assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 1]
+        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
+
         _insert_merge_execute(name, "small_jbod_with_external_no_merges", 2, [
                 "SYSTEM START MERGES ON VOLUME small_jbod_with_external_no_merges.external",
                 "SYSTEM RELOAD CONFIG"
             ], 2, 1)
         assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 0]
+        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", True)
 
     finally:
         node1.query("SYSTEM STOP MERGES ON VOLUME small_jbod_with_external_no_merges.external")
@@ -1458,11 +1506,14 @@ def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cl
         name = "test_yes_merges_in_configuration_allow_from_query_without_reload"
         node1.restart_clickhouse(kill=True)
         assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external") == [0, 0]
+        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", True)
+
         _insert_merge_execute(name, "small_jbod_with_external", 2, [
                 "SYSTEM STOP MERGES ON VOLUME small_jbod_with_external.external",
                 "INSERT INTO {name} VALUES (2)".format(name=name)
             ], 1, 2)
         assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external") == [0, 1]
+        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
 
     finally:
         node1.query("SYSTEM START MERGES ON VOLUME small_jbod_with_external.external")
@@ -1473,12 +1524,15 @@ def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_clust
         name = "test_yes_merges_in_configuration_allow_from_query_with_reload"
         node1.restart_clickhouse(kill=True)
         assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external") == [0, 0]
+        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", True)
+
         _insert_merge_execute(name, "small_jbod_with_external", 2, [
                 "SYSTEM STOP MERGES ON VOLUME small_jbod_with_external.external",
                 "INSERT INTO {name} VALUES (2)".format(name=name),
                 "SYSTEM RELOAD CONFIG"
             ], 1, 2)
         assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external") == [0, 1]
+        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
 
     finally:
         node1.query("SYSTEM START MERGES ON VOLUME small_jbod_with_external.external")
