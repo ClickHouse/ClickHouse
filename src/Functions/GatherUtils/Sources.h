@@ -52,7 +52,7 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
     MutableColumnPtr createValuesColumn()
     {
-        return ColumnVector<T>::create();
+        return ColVecType::create();
     }
 
     explicit NumericArraySource(const ColumnArray & arr)
