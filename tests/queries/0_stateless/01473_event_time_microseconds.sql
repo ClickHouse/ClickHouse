@@ -25,11 +25,13 @@ SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(time
 
 SELECT '01473_trace_log_table_event_start_time_microseconds_test';
 SET log_queries = 1;
-SET query_profiler_real_time_period_ns = 0;
-SET query_profiler_cpu_time_period_ns = 1000000;
+SET query_profiler_real_time_period_ns = 10000000;
+SET query_profiler_cpu_time_period_ns = 10000000;
 -- a long enough query to trigger the query profiler and to record trace log
+SELECT count() FROM numbers(1000000000) FORMAT Null;
 SELECT sleep(2) FORMAT Null;
 SYSTEM FLUSH LOGS;
+SELECT sleep(2) FORMAT Null;
 WITH (
       (
           SELECT event_time_microseconds
