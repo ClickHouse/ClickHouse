@@ -168,7 +168,6 @@ void DatabaseMaterializeMySQL::executeDumpQueries(
 
 void DatabaseMaterializeMySQL::cleanOutdatedTables(const Context & context)
 {
-    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
     const DatabasePtr & clean_database = DatabaseCatalog::instance().getDatabase(database_name);
 
     for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -180,9 +179,8 @@ void DatabaseMaterializeMySQL::cleanOutdatedTables(const Context & context)
     }
 }
 
-void DatabaseMaterializeMySQL::tryDumpTablesData(
+MaterializeMetadataPtr DatabaseMaterializeMySQL::tryDumpTablesData(
     mysqlxx::PoolWithFailover::Entry & connection,
-    Context & context,
     bool & opened_transaction)
 {
     bool locked_tables = false;
@@ -218,8 +216,8 @@ void DatabaseMaterializeMySQL::tryDumpTablesData(
 
         materialize_metadata->transaction(position, [&]()
         {
-            cleanOutdatedTables(context);
-            executeDumpQueries(connection, context, tables_dump_queries);
+            cleanOutdatedTables(global_context);
+            executeDumpQueries(connection, global_context, tables_dump_queries);
         });
 
         const auto & position_message = [&]()
@@ -234,9 +232,10 @@ void DatabaseMaterializeMySQL::tryDumpTablesData(
     if (opened_transaction) {
         connection->query("COMMIT").execute();
     }
+    return materialize_metadata;
 }
 
-void DatabaseMaterializeMySQL::dumpTablesData(Context & context) {
+MaterializeMetadataPtr DatabaseMaterializeMySQL::dumpTablesData() {
     bool opened_transaction = false;
 
     int retry_count = 5; // TODO: take from settings
@@ -248,7 +247,7 @@ void DatabaseMaterializeMySQL::dumpTablesData(Context & context) {
     while (retry_count--) {
         try {
             connection = pool.get();
-            tryDumpTablesData(connection, context, opened_transaction);
+            return tryDumpTablesData(connection, opened_transaction);
         } catch (...) {
             tryLogCurrentException(log);
             if (opened_transaction) {
@@ -263,6 +262,7 @@ void DatabaseMaterializeMySQL::dumpTablesData(Context & context) {
             }
         }
     }
+    return nullptr;
 }
 
 void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
@@ -271,7 +271,6 @@ void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_for
     {
         std::unique_lock<std::mutex> lock(mutex);
         nested_database->loadStoredObjects(context, has_force_restore_data_flag, force_attach);
-        dumpTablesData(context);
 
         // TODO: is there a guarantee that dump queries will finish here?
         materialize_thread = std::make_shared<MaterializeMySQLSyncThread>(
@@ -280,8 +279,8 @@ void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_for
             mysql_database_name,
             pool,
             std::move(client),
-            materialize_metadata,
-            settings.get());
+            settings.get(),
+            this);
 
         materialize_thread->startSynchronization();
     }

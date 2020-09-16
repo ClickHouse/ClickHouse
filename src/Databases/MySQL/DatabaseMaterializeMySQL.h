@@ -67,12 +67,11 @@ public:
         const Context & context,
         std::unordered_map<String, String> tables_dump_queries);
 
-    void tryDumpTablesData(
+    MaterializeMetadataPtr tryDumpTablesData(
         mysqlxx::PoolWithFailover::Entry & connection,
-        Context & context,
         bool & opened_transaction);
 
-    void dumpTablesData(Context & context);
+    MaterializeMetadataPtr dumpTablesData();
 
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
 

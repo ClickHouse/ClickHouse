@@ -24,6 +24,8 @@
 namespace DB
 {
 
+class DatabaseMaterializeMySQL;
+
 /** MySQL table structure and data synchronization thread
  *
  *  When catch exception, it always exits immediately.
@@ -48,8 +50,8 @@ public:
         const String & mysql_database_name_,
         mysqlxx::Pool & pool_,
         MySQLClient && client_,
-        MaterializeMetadataPtr materialize_metadata_,
-        MaterializeMySQLSettings * settings_);
+        MaterializeMySQLSettings * settings_,
+        DatabaseMaterializeMySQL * database_ptr_);
 
     void stopSynchronization();
 
@@ -68,6 +70,7 @@ private:
     mutable MySQLClient client;
     MaterializeMetadataPtr materialize_metadata;
     MaterializeMySQLSettings * settings;
+    DatabaseMaterializeMySQL * database_ptr = nullptr;
     String query_prefix;
 
     struct Buffers

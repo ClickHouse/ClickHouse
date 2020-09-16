@@ -56,16 +56,16 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     const String & mysql_database_name_,
     mysqlxx::Pool & pool_,
     MySQLClient && client_,
-    MaterializeMetadataPtr materialize_metadata_,
-    MaterializeMySQLSettings * settings_)
+    MaterializeMySQLSettings * settings_,
+    DatabaseMaterializeMySQL * database_ptr_)
     : log(&Poco::Logger::get("MaterializeMySQLSyncThread"))
     , global_context(context.getGlobalContext())
     , database_name(database_name_)
     , mysql_database_name(mysql_database_name_)
     , pool(pool_)
     , client(std::move(client_))
-    , materialize_metadata(materialize_metadata_)
     , settings(settings_)
+    , database_ptr(database_ptr_)
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 }
@@ -76,30 +76,36 @@ void MaterializeMySQLSyncThread::synchronization()
 
     try
     {
-        prepareSynchronized();
+        if (database_ptr != nullptr)
+            materialize_metadata = database_ptr->dumpTablesData();
 
-        Stopwatch watch;
-        Buffers buffers(database_name);
-
-        while (!isCancelled())
+        if (materialize_metadata)
         {
-            /// TODO: add gc task for `sign = -1`(use alter table delete, execute by interval. need final state)
-            UInt64 max_flush_time = settings->max_flush_data_time;
-            BinlogEventPtr binlog_event = client.readOneBinlogEvent(std::max(UInt64(1), max_flush_time - watch.elapsedMilliseconds()));
+            prepareSynchronized();
 
+            Stopwatch watch;
+            Buffers buffers(database_name);
+
+            while (!isCancelled())
             {
-                if (binlog_event)
-                    onEvent(buffers, binlog_event, *materialize_metadata);
+                /// TODO: add gc task for `sign = -1`(use alter table delete, execute by interval. need final state)
+                UInt64 max_flush_time = settings->max_flush_data_time;
+                BinlogEventPtr binlog_event = client.readOneBinlogEvent(std::max(UInt64(1), max_flush_time - watch.elapsedMilliseconds()));
 
-                if (watch.elapsedMilliseconds() > max_flush_time || buffers.checkThresholds(
-                        settings->max_rows_in_buffer, settings->max_bytes_in_buffer,
-                        settings->max_rows_in_buffers, settings->max_bytes_in_buffers)
-                    )
                 {
-                    watch.restart();
+                    if (binlog_event)
+                        onEvent(buffers, binlog_event, *materialize_metadata);
 
-                    if (!buffers.data.empty())
-                        flushBuffersData(buffers, *materialize_metadata);
+                    if (watch.elapsedMilliseconds() > max_flush_time || buffers.checkThresholds(
+                            settings->max_rows_in_buffer, settings->max_bytes_in_buffer,
+                            settings->max_rows_in_buffers, settings->max_bytes_in_buffers)
+                        )
+                    {
+                        watch.restart();
+
+                        if (!buffers.data.empty())
+                            flushBuffersData(buffers, *materialize_metadata);
+                    }
                 }
             }
         }
