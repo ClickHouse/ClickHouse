@@ -1,11 +1,8 @@
-import os.path as p
+import os
 import subprocess
 import time
-import os
 
 import docker
-
-from .cluster import CLICKHOUSE_ROOT_DIR
 
 
 class PartitionManager:
@@ -23,20 +20,17 @@ class PartitionManager:
     def __init__(self):
         self._iptables_rules = []
 
-
     def drop_instance_zk_connections(self, instance, action='DROP'):
         self._check_instance(instance)
 
         self._add_rule({'source': instance.ip_address, 'destination_port': 2181, 'action': action})
         self._add_rule({'destination': instance.ip_address, 'source_port': 2181, 'action': action})
 
-
     def restore_instance_zk_connections(self, instance, action='DROP'):
         self._check_instance(instance)
 
         self._delete_rule({'source': instance.ip_address, 'destination_port': 2181, 'action': action})
         self._delete_rule({'destination': instance.ip_address, 'source_port': 2181, 'action': action})
-
 
     def partition_instances(self, left, right, port=None, action='DROP'):
         self._check_instance(left)
@@ -51,7 +45,6 @@ class PartitionManager:
         self._add_rule(create_rule(left, right))
         self._add_rule(create_rule(right, left))
 
-
     def heal_all(self):
         while self._iptables_rules:
             rule = self._iptables_rules.pop()
@@ -65,7 +58,6 @@ class PartitionManager:
     def push_rules(self, rules):
         for rule in rules:
             self._add_rule(rule)
-
 
     @staticmethod
     def _check_instance(instance):
@@ -152,7 +144,6 @@ class _NetworkManager:
             ret.extend(['-j'] + action.split())
         return ret
 
-
     def __init__(
             self,
             container_expire_timeout=50, container_exit_timeout=60):
@@ -175,7 +166,8 @@ class _NetworkManager:
                 except docker.errors.NotFound:
                     pass
 
-            self._container = self._docker_client.containers.run('yandex/clickhouse-integration-helper', auto_remove=True,
+            self._container = self._docker_client.containers.run('yandex/clickhouse-integration-helper',
+                                                                 auto_remove=True,
                                                                  command=('sleep %s' % self.container_exit_timeout),
                                                                  detach=True, network_mode='host')
             container_id = self._container.id
