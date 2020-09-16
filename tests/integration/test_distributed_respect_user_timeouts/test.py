@@ -1,12 +1,11 @@
 import itertools
-import timeit
 import os.path
-import pytest
+import timeit
 
+import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
-
 
 cluster = ClickHouseCluster(__file__)
 
@@ -62,6 +61,7 @@ TIMEOUT_DIFF_UPPER_BOUND = {
     },
 }
 
+
 def _check_exception(exception, expected_tries=3):
     lines = exception.split('\n')
 
@@ -88,7 +88,6 @@ def _check_exception(exception, expected_tries=3):
 
 @pytest.fixture(scope="module", params=["configs", "configs_secure"])
 def started_cluster(request):
-
     cluster = ClickHouseCluster(__file__)
     cluster.__with_ssl_config = request.param == "configs_secure"
     main_configs = []
