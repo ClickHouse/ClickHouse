@@ -164,7 +164,7 @@ function run_tests
         CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
     else
         CHPC_RUNS=${CHPC_RUNS:-7}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-100}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-20}
     fi
     export CHPC_RUNS
     export CHPC_MAX_QUERIES
