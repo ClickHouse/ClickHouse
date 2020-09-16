@@ -28,14 +28,11 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE d = '11'" 2>
 # Delete some values
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE x % 2 = 1"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE s = 'd'"
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE m = 3"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE m = 3 SETTINGS mutations_sync = 2"
 
 # Insert more data
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations_r1(d, x, s) VALUES \
     ('2000-01-01', 5, 'e'), ('2000-02-01', 5, 'e')"
-
-# Wait until the last mutation is done.
-wait_for_mutation "mutations_r2" "0000000003"
 
 # Check that the table contains only the data that should not be deleted.
 ${CLICKHOUSE_CLIENT} --query="SELECT d, x, s, m FROM mutations_r2 ORDER BY d, x"
@@ -65,9 +62,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations_cleaner_r1(x) VALUES (1), (2
 # Add some mutations and wait for their execution
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 1"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 2"
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 3"
-
-wait_for_mutation "mutations_cleaner_r2" "0000000002"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 3 SETTINGS mutations_sync = 2"
 
 # Add another mutation and prevent its execution on the second replica
 ${CLICKHOUSE_CLIENT} --query="SYSTEM STOP REPLICATION QUEUES mutations_cleaner_r2"

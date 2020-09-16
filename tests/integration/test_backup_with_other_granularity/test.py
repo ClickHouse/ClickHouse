@@ -89,7 +89,7 @@ def test_backup_from_old_version_setting(started_cluster):
 
     assert node2.query("SELECT sum(A) FROM dest_table") == "3\n"
 
-    assert node1.query("CHECK TABLE dest_table") == "1\n"
+    assert node2.query("CHECK TABLE dest_table") == "1\n"
 
 
 def test_backup_from_old_version_config(started_cluster):
@@ -128,7 +128,7 @@ def test_backup_from_old_version_config(started_cluster):
 
     assert node3.query("SELECT sum(A) FROM dest_table") == "3\n"
 
-    assert node1.query("CHECK TABLE dest_table") == "1\n"
+    assert node3.query("CHECK TABLE dest_table") == "1\n"
 
 
 def test_backup_and_alter(started_cluster):

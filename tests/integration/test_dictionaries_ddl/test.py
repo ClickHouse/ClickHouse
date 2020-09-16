@@ -4,6 +4,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
 import pymysql
 import warnings
+import time
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -243,6 +244,7 @@ def test_dictionary_with_where(started_cluster):
 
     assert node1.query("SELECT dictGetString('default.special_dict', 'value1', toUInt64(2))") == 'qweqwe\n'
 
+
 def test_clickhouse_remote(started_cluster):
     with pytest.raises(QueryRuntimeException):
         node3.query("""
@@ -256,7 +258,9 @@ def test_clickhouse_remote(started_cluster):
         SOURCE(CLICKHOUSE(HOST 'node4' PORT 9000 USER 'default' TABLE 'xml_dictionary_table' DB 'test'))
         LIFETIME(MIN 1 MAX 10)
         """)
-        node3.query("system reload dictionaries")
+        for i in range(5):
+            node3.query("system reload dictionary test.clickhouse_remote")
+            time.sleep(0.5)
 
     node3.query("detach dictionary if exists test.clickhouse_remote")
     node3.query("""
@@ -272,4 +276,4 @@ def test_clickhouse_remote(started_cluster):
         """)
 
     node3.query("select dictGetUInt8('test.clickhouse_remote', 'SomeValue1', toUInt64(17))") == '17\n'
-    
+

@@ -40,8 +40,11 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_work(start_cluster):
     query = instance.query
+
+    instance.query("SYSTEM RELOAD DICTIONARIES")
 
     assert query("SELECT dictGetString('test_file', 'first', toUInt64(1))") == "\\\'a\n"
     assert query("SELECT dictGetString('test_file', 'second', toUInt64(1))") == "\"b\n"
