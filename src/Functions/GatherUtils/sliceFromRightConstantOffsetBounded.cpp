@@ -10,7 +10,7 @@ struct SliceFromRightConstantOffsetBoundedSelectArraySource
     : public ArraySourceSelector<SliceFromRightConstantOffsetBoundedSelectArraySource>
 {
     template <typename Source>
-    static void selectSourceSink(Source && source, size_t & offset, ssize_t & length, ColumnArray::MutablePtr & result)
+    static void selectImpl(Source && source, size_t & offset, ssize_t & length, ColumnArray::MutablePtr & result)
     {
         using Sink = typename Source::SinkType;
         result = ColumnArray::create(source.createValuesColumn());
