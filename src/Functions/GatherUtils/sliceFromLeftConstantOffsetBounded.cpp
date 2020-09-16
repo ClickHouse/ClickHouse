@@ -12,7 +12,7 @@ struct SliceFromLeftConstantOffsetBoundedSelectArraySource
     template <typename Source>
     static void selectImpl(Source && source, size_t & offset, ssize_t & length, ColumnArray::MutablePtr & result)
     {
-        using Sink = typename Source::SinkType;
+        using Sink = typename std::remove_cv<Source>::type::SinkType;
         result = ColumnArray::create(source.createValuesColumn());
         Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
         sliceFromLeftConstantOffsetBounded(source, sink, offset, length);

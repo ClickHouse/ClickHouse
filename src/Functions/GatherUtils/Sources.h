@@ -44,6 +44,7 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
     using SinkType = NumericArraySink<T>;
 
+    const ColVecType & column;
     const typename ColVecType::Container & elements;
     const typename ColumnArray::Offsets & offsets;
 
@@ -52,11 +53,12 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
     MutableColumnPtr createValuesColumn()
     {
-        return ColVecType::create();
+        return column.cloneEmpty();
     }
 
     explicit NumericArraySource(const ColumnArray & arr)
-            : elements(typeid_cast<const ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
+            : column(typeid_cast<const ColVecType &>(arr.getData()))
+            , elements(typeid_cast<const ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
     {
     }
 
