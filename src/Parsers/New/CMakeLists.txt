@@ -53,7 +53,7 @@ target_compile_options (clickhouse_parsers_new
         -Wno-documentation
         -Wno-documentation-deprecated-sync
         -Wno-shadow-field
-        -Wno-suggest-destructor-override
+        # TODO: -Wno-suggest-destructor-override
         -Wno-unused-parameter
 
     PUBLIC
