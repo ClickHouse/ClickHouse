@@ -1,7 +1,7 @@
 #include "convertMySQLDataType.h"
 
 #include <Core/Field.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/MultiEnum.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTFunction.h>
