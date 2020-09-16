@@ -12,7 +12,7 @@ struct SliceFromLeftConstantOffsetUnboundedSelectArraySource
     template <typename Source>
     static void selectImpl(Source && source, size_t & offset, ColumnArray::MutablePtr & result)
     {
-        using Sink = typename Source::SinkType;
+        using Sink = typename std::remove_cv<Source>::type::SinkType;
         result = ColumnArray::create(source.createValuesColumn());
         Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
         sliceFromLeftConstantOffsetUnbounded(source, sink, offset);
