@@ -183,6 +183,11 @@ protected:
 
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
     StoragePolicyPtr storage_policy;
+    /// The main volume to store data.
+    /// Storage policy may have several configured volumes, but second and other volumes are used for parts movement in MergeTree engine.
+    /// For Distributed engine such configuration doesn't make sense and only the first (main) volume will be used to store data.
+    /// Other volumes will be ignored. It's needed to allow using the same multi-volume policy both for Distributed and other engines.
+    VolumePtr data_volume;
 
     struct ClusterNodeData
     {
