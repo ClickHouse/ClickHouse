@@ -242,7 +242,7 @@ UInt8 getDataBytesSize(DataTypePtr column_type)
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("Gorilla", {});
+    setCodecDescription("Gorilla");
 }
 
 uint8_t CompressionCodecGorilla::getMethodByte() const
