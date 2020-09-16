@@ -22,7 +22,7 @@ namespace
 
 template <typename A, typename B>
 struct ModuloByConstantImpl
-    : BinaryOperationImplBase<A, B, ModuloImpl<A, B>>
+    : BinaryOperation<A, B, ModuloImpl<A, B>>
 {
     using ResultType = typename ModuloImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;

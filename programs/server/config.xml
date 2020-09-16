@@ -302,6 +302,9 @@
     -->
     <mlock_executable>true</mlock_executable>
 
+    <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
+    <remap_executable>false</remap_executable>
+
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
