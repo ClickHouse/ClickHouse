@@ -72,9 +72,7 @@ namespace MySQLReplication
     void RotateEvent::parseImpl(ReadBuffer & payload)
     {
         payload.readStrict(reinterpret_cast<char *>(&position), 8);
-        size_t len = header.event_size - EVENT_HEADER_LENGTH - 8 - CHECKSUM_CRC32_SIGNATURE_LENGTH;
-        next_binlog.resize(len);
-        payload.readStrict(reinterpret_cast<char *>(next_binlog.data()), len);
+        readStringUntilEOF(next_binlog, payload);
     }
 
     void RotateEvent::dump(std::ostream & out) const
