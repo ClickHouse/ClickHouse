@@ -8,7 +8,7 @@ namespace DB::GatherUtils
 struct ArrayHasAnySelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSelectArraySourcePair>
 {
     template <typename FirstSource, typename SecondSource>
-    static void selectSourcePair(FirstSource && first, SecondSource && second, ArraySearchType search_type, ColumnUInt8 & result)
+    static void selectSourcePair(FirstSource && first, SecondSource && second, ColumnUInt8 & result)
     {
         arrayAllAny<ArraySearchType::Any>(first, second, result);
     }
