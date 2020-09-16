@@ -19,7 +19,6 @@ namespace MySQLReplication
 {
     static const int EVENT_VERSION_V4 = 4;
     static const int EVENT_HEADER_LENGTH = 19;
-    static const int CHECKSUM_CRC32_SIGNATURE_LENGTH = 4;
 
     using Bitmap = boost::dynamic_bitset<>;
 
