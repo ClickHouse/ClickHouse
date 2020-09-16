@@ -573,12 +573,12 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
 
     size_t getSizeForReserve() const override
     {
-        return offsets.size();
+        return elements.size();
     }
 
     size_t getColumnSize() const override
     {
-        return elements.size();
+        return offsets.size();
     }
 
     size_t getElementSize() const
