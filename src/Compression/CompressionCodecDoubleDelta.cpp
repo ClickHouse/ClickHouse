@@ -327,7 +327,7 @@ UInt8 getDataBytesSize(DataTypePtr column_type)
 CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("DoubleDelta", {});
+    setCodecDescription("DoubleDelta");
 }
 
 uint8_t CompressionCodecDoubleDelta::getMethodByte() const
