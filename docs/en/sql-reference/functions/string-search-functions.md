@@ -362,13 +362,10 @@ Extracts all the fragments of a string using a regular expression. If ‘haystac
 
 ## extractAllGroupsHorizontal {#extractallgroups-horizontal}
 
-Matches all groups of the `haystack` string using the `pattern` regular expression. 
+Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where the first array includes all fragments matching the first group, the second array - matching the second group, etc.  
 
-The `pattern` must contain groups, each group enclosed in brackets. If `pattern` contains no groups, an exception is thrown. 
-
-The function returns an array of arrays, where the first array includes all expressions matching the first group, the second array - matching the second group, etc. 
-
-If `haystack` doesn’t match the `pattern` regex, an array of empty arrays is returned. 
+!!! note "Note"
+    `extractAllGroupsHorizontal` function is slower than [extractAllGroupsVertical](#extractallgroups-vertical).
 
 **Syntax** 
 
@@ -376,17 +373,16 @@ If `haystack` doesn’t match the `pattern` regex, an array of empty arrays is r
 extractAllGroupsHorizontal(haystack, pattern)
 ```
 
-!!! note "Note"
-    `extractAllGroupsHorizontal` function is slower than `extractAllGroupsVertical`.
-
 **Parameters** 
 
 -   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
--   `pattern` — Regular expression. Type: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parenthesis. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md). 
 
 **Returned value**
 
 -   Type: [Array](../../sql-reference/data-types/array.md).
+
+If `haystack` doesn’t match the `pattern` regex, an array of empty arrays is returned. 
 
 **Example**
 
@@ -409,13 +405,7 @@ Result:
 
 ## extractAllGroupsVertical {#extractallgroups-vertical}
 
-Matches all groups of the `haystack` string using the `pattern` regular expression. 
-
-The `pattern` must contain groups, each group enclosed in brackets. If `pattern` contains no groups, an exception is thrown. 
-
-The function returns an array of arrays, where each array includes matching expressions from every group. 
-
-If `haystack` doesn’t match the `pattern` regex, an empty array is returned. 
+Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where each array includes matching fragments from every group. Fragments are grouped in order of appearance in the `haystack`.
 
 **Syntax** 
 
@@ -426,11 +416,13 @@ extractAllGroupsVertical(haystack, pattern)
 **Parameters** 
 
 -   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
--   `pattern` — Regular expression. Type: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parenthesis. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
 -   Type: [Array](../../sql-reference/data-types/array.md).
+
+If `haystack` doesn’t match the `pattern` regex, an empty array is returned. 
 
 **Example**
 
