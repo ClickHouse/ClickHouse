@@ -6,14 +6,6 @@
 namespace wide
 {
 
-template <size_t Bits>
-inline void offset_add(uint8_t * src_dst, const uint8_t * add, unsigned offset)
-{
-    for (unsigned i = 0; i < Bits - offset; ++i)
-        src_dst[offset + i] += add[i];
-}
-
-
 template <typename T>
 struct IsWideInteger
 {
@@ -466,138 +458,6 @@ private:
         return res;
     }
 
-#if 1
-    constexpr static auto pack_bits(const uint8_t * src, integer<Bits, Signed> & x)
-    {
-        for (unsigned i = 0; i < item_count; ++i)
-        {
-            base_type & item = x.items[i];
-            item = 0;
-
-            for (unsigned byte = 0; byte < sizeof(base_type); ++byte)
-            {
-                base_type packed8 = src[0] | (src[1] << 1) | (src[2] << 2) | (src[3] << 3) |
-                    (src[4] << 4) | (src[5] << 5) | (src[6] << 6) | (src[7] << 7);
-                item |= packed8 << (byte * 8);
-                src += 8;
-            }
-        }
-    }
-
-    constexpr static auto unpack_bits(const integer<Bits, Signed> & x, uint8_t * dst)
-    {
-        for (unsigned i = 0; i < item_count; ++i)
-        {
-            base_type item = get_item(x, i);
-
-            for (unsigned byte = 0; byte < sizeof(base_type); ++byte)
-            {
-                uint8_t packed8 = item;
-                item >>= 8;
-
-                dst[0] = packed8 & 1;
-                dst[1] = (packed8 >> 1) & 1;
-                dst[2] = (packed8 >> 2) & 1;
-                dst[3] = (packed8 >> 3) & 1;
-                dst[4] = (packed8 >> 4) & 1;
-                dst[5] = (packed8 >> 5) & 1;
-                dst[6] = (packed8 >> 6) & 1;
-                dst[7] = (packed8 >> 7) & 1;
-                dst += 8;
-            }
-        }
-    }
-
-    template <typename T>
-    constexpr static auto op_multiply(const integer<Bits, Signed> & lhs, const T & rhs)
-    {
-        static_assert(Bits <= 256, "256-bit max. For bigger ints we need uint16 or several uint8 buckets");
-
-        uint8_t unpacked[Bits];
-        unpack_bits(lhs, unpacked);
-
-        uint8_t track2[Bits];
-        uint8_t track3[Bits];
-        uint8_t track4[Bits];
-
-        /// unpacked contains single 1 multipliers. Make 11, 111, 1111 multipliers
-        {
-            track2[0] = unpacked[0];
-            uint8_t * src = &unpacked[1];
-            uint8_t * dst = &track2[1];
-            for (unsigned i = 0; i < Bits-1; ++i, ++src, ++dst)
-                *dst = *src + unpacked[i];
-
-            track3[0] = track2[0];
-            track3[1] = track2[1];
-            src = &track2[2];
-            dst = &track3[2];
-            for (unsigned i = 0; i < Bits-2; ++i, ++src, ++dst)
-                *dst = *src + unpacked[i];
-
-            track4[0] = track3[0];
-            track4[1] = track3[1];
-            track4[2] = track3[2];
-            src = &track3[3];
-            dst = &track4[3];
-            for (unsigned i = 0; i < Bits-3; ++i, ++src, ++dst)
-                *dst = *src + unpacked[i];
-        }
-
-        uint8_t result[Bits] = {};
-
-        for (unsigned i = 0; i < item_count; ++i)
-        {
-            base_type rhs_item = get_item(rhs, i);
-            unsigned pos = i * base_bits;
-
-            while (rhs_item)
-            {
-                uint32_t little4 = (rhs_item & 0xF);
-                if (little4 == 0xF)
-                {
-                    offset_add<Bits>(result, track4, pos);
-                    rhs_item >>= 4;
-                    pos += 4;
-                    continue;
-                }
-                if (little4 == 0x7)
-                {
-                    offset_add<Bits>(result, track3, pos);
-                    rhs_item >>= 3;
-                    pos += 3;
-                    continue;
-                }
-                if ((little4 & 0x3) == 0x3)
-                {
-                    offset_add<Bits>(result, track2, pos);
-                    rhs_item >>= 2;
-                    pos += 2;
-                    continue;
-                }
-
-                if (little4 & 1)
-                    offset_add<Bits>(result, unpacked, pos);
-
-                rhs_item >>= 1;
-                ++pos;
-            }
-        }
-
-        /// There could be 256-bit overflow in last item. Nevermind.
-        uint32_t overflow = 0;
-        for (unsigned i = 1; i < Bits; ++i)
-        {
-            uint32_t current = overflow + result[i];
-            result[i] = current & 1;
-            overflow = current >> 1;
-        }
-
-        integer<Bits, Signed> res;
-        pack_bits(result, res);
-        return res;
-    }
-#else
     template <typename T>
     constexpr static auto op_multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
@@ -616,7 +476,6 @@ private:
 
         return res;
     }
-#endif
 
 public:
     constexpr static integer<Bits, Signed> operator_unary_tilda(const integer<Bits, Signed> & lhs) noexcept
