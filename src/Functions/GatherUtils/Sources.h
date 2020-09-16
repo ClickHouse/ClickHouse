@@ -29,12 +29,20 @@ namespace ErrorCodes
 namespace GatherUtils
 {
 
+template <typename T> struct NumericArraySink;
+struct StringSink;
+struct FixedStringSink;
+struct GenericArraySink;
+template <typename ArraySink> struct NullableArraySink
+
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 {
     using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
+
+    using SinkType = NumericArraySink<T>;
 
     const typename ColVecType::Container & elements;
     const typename ColumnArray::Offsets & offsets;
@@ -143,6 +151,8 @@ struct ConstSource : public Base
     using Slice = typename Base::Slice;
     using Column = ColumnConst;
 
+    using SinkType = typename Base::SinkType;
+
     size_t total_rows;
     size_t row_num = 0;
 
@@ -223,6 +233,8 @@ struct StringSource
 {
     using Slice = NumericArraySlice<UInt8>;
     using Column = ColumnString;
+
+    using SinkType = StringSink;
 
     const typename ColumnString::Chars & elements;
     const typename ColumnString::Offsets & offsets;
@@ -391,6 +403,8 @@ struct FixedStringSource
     using Slice = NumericArraySlice<UInt8>;
     using Column = ColumnFixedString;
 
+    using SinkType = FixedStringSink;
+
     const UInt8 * pos;
     const UInt8 * end;
     size_t string_size;
@@ -511,6 +525,8 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
     using Slice = GenericArraySlice;
     using Column = ColumnArray;
 
+    using SinkType = GenericArraySink;
+
     const IColumn & elements;
     const typename ColumnArray::Offsets & offsets;
 
@@ -604,6 +620,8 @@ struct NullableArraySource : public ArraySource
     using ArraySource::prev_offset;
     using ArraySource::row_num;
     using ArraySource::offsets;
+
+    using SinkType = NullableArraySink<typename ArraySource::SinkType>;
 
     const NullMap & null_map;
 
