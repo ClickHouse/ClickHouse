@@ -14,7 +14,6 @@
 #include "IArraySource.h"
 #include "IValueSource.h"
 #include "Slices.h"
-#include "ValueSourceVisitor.h"
 #include <Functions/FunctionHelpers.h>
 
 
@@ -29,6 +28,12 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
+
+template <typename T> struct NumericArraySink;
+struct StringSink;
+struct FixedStringSink;
+struct GenericArraySink;
+template <typename ArraySink> struct NullableArraySink;
 
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
