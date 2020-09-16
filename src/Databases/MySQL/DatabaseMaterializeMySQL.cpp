@@ -168,6 +168,7 @@ void DatabaseMaterializeMySQL::executeDumpQueries(
 
 void DatabaseMaterializeMySQL::cleanOutdatedTables(const Context & context)
 {
+    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
     const DatabasePtr & clean_database = DatabaseCatalog::instance().getDatabase(database_name);
 
     for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
