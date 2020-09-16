@@ -39,14 +39,7 @@ CreatingSetStep::CreatingSetStep(
 
 void CreatingSetStep::transformPipeline(QueryPipeline & pipeline)
 {
-    pipeline.resize(1);
-    pipeline.addTransform(
-        std::make_shared<CreatingSetsTransform>(
-            pipeline.getHeader(),
-            getOutputStream().header,
-            std::move(subquery_for_set),
-            network_transfer_limits,
-            context));
+    pipeline.addCreatingSetsTransform();
 }
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const

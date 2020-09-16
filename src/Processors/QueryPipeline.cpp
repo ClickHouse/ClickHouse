@@ -262,6 +262,26 @@ QueryPipeline QueryPipeline::unitePipelines(
     return pipeline;
 }
 
+
+void QueryPipeline::addCreatingSetsTransform()
+{
+    pipeline.resize(1);
+
+    auto transform = std::make_shared<CreatingSetsTransform>(
+            pipeline.getHeader(),
+            getOutputStream().header,
+            std::move(subquery_for_set),
+            network_transfer_limits,
+            context));
+
+    InputPort * totals_port = nullptr;
+
+    if (pipe.getTotalsPort())
+        totals_port = transform->addTotalsPort();
+
+    pipe.addTransform(std::move(transform), totals_port, nullptr);
+}
+
 void QueryPipeline::addDelayingPipeline(QueryPipeline pipeline)
 {
     checkInitializedAndNotCompleted();
