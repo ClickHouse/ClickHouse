@@ -21,7 +21,7 @@ struct ArrayConcat : public ArraySinkSelector<ArrayConcat>
     using Sources = std::vector<std::unique_ptr<IArraySource>>;
 
     template <typename Source>
-    static void selectImpl(Source &&, const Sources & sources, ColumnArray::MutablePtr & result)
+    static void selectImpl(Source && source, const Sources & sources, ColumnArray::MutablePtr & result)
     {
         using SourceType = typename std::decay<Source>::type;
         using Sink = typename SourceType::SinkType;
@@ -32,7 +32,7 @@ struct ArrayConcat : public ArraySinkSelector<ArrayConcat>
     }
 
     template <typename Source>
-    static void selectImpl(ConstSource<Source> &&, const Sources & sources, ColumnArray::MutablePtr & result)
+    static void selectImpl(ConstSource<Source> && source, const Sources & sources, ColumnArray::MutablePtr & result)
     {
         using SourceType = typename std::decay<Source>::type;
         using Sink = typename SourceType::SinkType;
@@ -43,7 +43,7 @@ struct ArrayConcat : public ArraySinkSelector<ArrayConcat>
     }
 
     template <typename Source>
-    static void selectImpl(ConstSource<Source> &, const Sources & sources, ColumnArray::MutablePtr & result)
+    static void selectImpl(ConstSource<Source> & source, const Sources & sources, ColumnArray::MutablePtr & result)
     {
         using SourceType = typename std::decay<Source>::type;
         using Sink = typename SourceType::SinkType;
