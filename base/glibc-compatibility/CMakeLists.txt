@@ -34,9 +34,6 @@ if (GLIBC_COMPATIBILITY)
 
     if (COMPILER_CLANG)
         target_compile_options(glibc-compatibility PRIVATE -Wno-unused-command-line-argument)
-        # disable lto for this library, because for some reason clang-11 fails
-        # to link llvm with it.
-        target_compile_options(glibc-compatibility PRIVATE -fno-lto)
     elseif (COMPILER_GCC)
         target_compile_options(glibc-compatibility PRIVATE -Wno-unused-but-set-variable)
     endif ()
