@@ -724,9 +724,7 @@ void MutationsInterpreter::validate()
 
     QueryPlan plan;
     select_interpreter->buildQueryPlan(plan);
-    addStreamsForLaterStages(stages, plan);
-
-    auto pipeline = plan.buildQueryPipeline();
+    auto pipeline = addStreamsForLaterStages(stages, plan);
 }
 
 BlockInputStreamPtr MutationsInterpreter::execute()
@@ -737,9 +735,7 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     QueryPlan plan;
     select_interpreter->buildQueryPlan(plan);
 
-    addStreamsForLaterStages(stages, plan);
-
-    auto pipeline = plan.buildQueryPipeline();
+    auto pipeline = addStreamsForLaterStages(stages, plan);
     BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
