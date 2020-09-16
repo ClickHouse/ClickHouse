@@ -61,10 +61,10 @@ inline void sliceHas(IArraySource & first, IArraySource & second, ArraySearchTyp
     switch (search_type)
     {
         case ArraySearchType::All:
-            sliceHasAny(first, second, result);
+            sliceHasAll(first, second, result);
             break;
         case ArraySearchType::Any:
-            sliceHasAll(first, second, result);
+            sliceHasAny(first, second, result);
             break;
         case ArraySearchType::Substr:
             sliceHasSubstr(first, second, result);
