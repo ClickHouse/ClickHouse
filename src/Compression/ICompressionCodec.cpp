@@ -24,7 +24,9 @@ void ICompressionCodec::setCodecDescription(const String & codec_name, const AST
 {
     std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
     result->name = "CODEC";
-
+    
+    /// Special case for codec Multiple, which doens't have name. It's just list
+    /// of other codecs.
     if (codec_name.empty())
     {
         ASTPtr codec_desc = std::make_shared<ASTExpressionList>();
@@ -35,9 +37,9 @@ void ICompressionCodec::setCodecDescription(const String & codec_name, const AST
     else
     {
         ASTPtr codec_desc;
-        if (arguments.empty())
+        if (arguments.empty()) /// Codec without arguments is just ASTIdentifier
             codec_desc = std::make_shared<ASTIdentifier>(codec_name);
-        else
+        else /// Codec with arguments represented as ASTFunction
             codec_desc = makeASTFunction(codec_name, arguments);
 
         result->arguments = std::make_shared<ASTExpressionList>();
@@ -62,9 +64,10 @@ ASTPtr ICompressionCodec::getCodecDesc() const
 {
 
     auto arguments = getFullCodecDesc()->as<ASTFunction>()->arguments;
+    /// If it has exactly one argument, than it's single codec, return it
     if (arguments->children.size() == 1)
         return arguments->children[0];
-    else
+    else  /// Otherwise we have multiple codecs and return them as expression list
         return arguments;
 }
 
