@@ -272,11 +272,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -289,11 +290,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -329,11 +331,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -346,11 +349,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
