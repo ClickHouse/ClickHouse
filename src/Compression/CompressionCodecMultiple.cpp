@@ -26,7 +26,7 @@ CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     ASTs arguments;
     for (const auto & codec : codecs)
         arguments.push_back(codec->getCodecDesc());
-
+    /// Special case, codec doesn't have name and contain list of codecs.
     setCodecDescription("", arguments);
 }
 
