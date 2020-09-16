@@ -263,15 +263,15 @@ QueryPipeline QueryPipeline::unitePipelines(
 }
 
 
-void QueryPipeline::addCreatingSetsTransform()
+void QueryPipeline::addCreatingSetsTransform(SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context)
 {
-    pipeline.resize(1);
+    resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
             pipeline.getHeader(),
             getOutputStream().header,
             std::move(subquery_for_set),
-            network_transfer_limits,
+            limits,
             context));
 
     InputPort * totals_port = nullptr;

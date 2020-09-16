@@ -26,6 +26,8 @@ class QueryPlan;
 struct SubqueryForSet;
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
+struct SizeLimits;
+
 class QueryPipeline
 {
 public:
@@ -89,7 +91,7 @@ public:
     /// Pipeline must have same header.
     void addDelayingPipeline(QueryPipeline pipeline);
 
-    void addCreatingSetsTransform();
+    void addCreatingSetsTransform(SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context);
 
     PipelineExecutorPtr execute();
 
