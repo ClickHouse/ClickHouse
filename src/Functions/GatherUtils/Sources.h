@@ -14,6 +14,7 @@
 #include "IArraySource.h"
 #include "IValueSource.h"
 #include "Slices.h"
+#include "ValueSourceVisitor.h"
 #include <Functions/FunctionHelpers.h>
 
 
@@ -28,12 +29,6 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
-
-template <typename T> struct NumericArraySink;
-struct StringSink;
-struct FixedStringSink;
-struct GenericArraySink;
-template <typename ArraySink> struct NullableArraySink;
 
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
@@ -704,6 +699,8 @@ struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
     using Slice = NumericValueSlice<T>;
     using Column = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
+    using SinkType = NumericArraySink<T>;
+
     const T * begin;
     size_t total_rows;
     size_t row_num = 0;
@@ -746,6 +743,7 @@ struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
 struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 {
     using Slice = GenericValueSlice;
+    using SinkType = GenericArraySink;
 
     const IColumn * column;
     size_t total_rows;
@@ -789,6 +787,8 @@ struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 template <typename ValueSource>
 struct NullableValueSource : public ValueSource
 {
+    using SinkType = NullableArraySink<typename ValueSource::SinkType>;
+
     using Slice = NullableSlice<typename ValueSource::Slice>;
     using ValueSource::row_num;
 
