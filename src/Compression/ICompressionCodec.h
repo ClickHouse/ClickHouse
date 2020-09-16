@@ -3,7 +3,7 @@
 #include <memory>
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Parsers/IAST.h>
 #include <Common/SipHash.h>
 

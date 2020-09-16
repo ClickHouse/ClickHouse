@@ -18,7 +18,11 @@ public:
     ~DiskAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
+
     String getStoragePath() const override { return directory_path; }
+    bool isStoragePathEqual(const String & directory_path_) const;
+
+    void setReadOnly(bool readonly_) { readonly = readonly_; }
     bool isStorageReadOnly() const override { return readonly; }
 
 private:
@@ -66,7 +70,7 @@ private:
     void prepareNotifications(const UUID & id, const Entry & entry, bool remove, Notifications & notifications) const;
 
     String directory_path;
-    bool readonly;
+    std::atomic<bool> readonly;
     std::unordered_map<UUID, Entry> entries_by_id;
     std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
     boost::container::flat_set<EntityType> types_of_lists_to_write;

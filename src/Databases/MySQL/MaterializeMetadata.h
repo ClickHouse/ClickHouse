@@ -7,7 +7,7 @@
 #if USE_MYSQL
 
 #include <Core/Block.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/PoolWithFailover.h>

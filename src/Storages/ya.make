@@ -37,6 +37,7 @@ SRCS(
     MergeTree/KeyCondition.cpp
     MergeTree/LevelMergeSelector.cpp
     MergeTree/localBackup.cpp
+    MergeTree/MergeAlgorithm.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
     MergeTree/MergeList.cpp
