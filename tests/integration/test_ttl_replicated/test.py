@@ -1,10 +1,9 @@
 import time
-import pytest
 
 import helpers.client as client
+import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=True)
@@ -35,15 +34,15 @@ def test_ttl_columns(started_cluster):
     drop_table([node1, node2], "test_ttl")
     for node in [node1, node2]:
         node.query(
-        '''
-            CREATE TABLE test_ttl(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
-            ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0;
-        '''.format(replica=node.name))
+            '''
+                CREATE TABLE test_ttl(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+                ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0;
+            '''.format(replica=node.name))
 
     node1.query("INSERT INTO test_ttl VALUES (toDateTime('2000-10-10 00:00:00'), 1, 1, 3)")
     node1.query("INSERT INTO test_ttl VALUES (toDateTime('2000-10-11 10:00:00'), 2, 2, 4)")
-    time.sleep(1) # sleep to allow use ttl merge selector for second time
+    time.sleep(1)  # sleep to allow use ttl merge selector for second time
     node1.query("OPTIMIZE TABLE test_ttl FINAL")
 
     expected = "1\t0\t0\n2\t0\t0\n"
@@ -56,17 +55,18 @@ def test_merge_with_ttl_timeout(started_cluster):
     drop_table([node1, node2], table)
     for node in [node1, node2]:
         node.query(
-        '''
-            CREATE TABLE {table}(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}', '{replica}')
-            ORDER BY id PARTITION BY toDayOfMonth(date);
-        '''.format(replica=node.name, table=table))
+            '''
+                CREATE TABLE {table}(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}', '{replica}')
+                ORDER BY id PARTITION BY toDayOfMonth(date);
+            '''.format(replica=node.name, table=table))
 
     node1.query("SYSTEM STOP TTL MERGES {table}".format(table=table))
     node2.query("SYSTEM STOP TTL MERGES {table}".format(table=table))
 
     for i in range(1, 4):
-        node1.query("INSERT INTO {table} VALUES (toDateTime('2000-10-{day:02d} 10:00:00'), 1, 2, 3)".format(day=i, table=table))
+        node1.query(
+            "INSERT INTO {table} VALUES (toDateTime('2000-10-{day:02d} 10:00:00'), 1, 2, 3)".format(day=i, table=table))
 
     assert node1.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "0\n"
     assert node2.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "0\n"
@@ -74,12 +74,13 @@ def test_merge_with_ttl_timeout(started_cluster):
     node1.query("SYSTEM START TTL MERGES {table}".format(table=table))
     node2.query("SYSTEM START TTL MERGES {table}".format(table=table))
 
-    time.sleep(15) # TTL merges shall happen.
+    time.sleep(15)  # TTL merges shall happen.
 
     for i in range(1, 4):
-        node1.query("INSERT INTO {table} VALUES (toDateTime('2000-10-{day:02d} 10:00:00'), 1, 2, 3)".format(day=i, table=table))
+        node1.query(
+            "INSERT INTO {table} VALUES (toDateTime('2000-10-{day:02d} 10:00:00'), 1, 2, 3)".format(day=i, table=table))
 
-    time.sleep(15) # TTL merges shall not happen.
+    time.sleep(15)  # TTL merges shall not happen.
 
     assert node1.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "3\n"
     assert node2.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "3\n"
@@ -89,15 +90,15 @@ def test_ttl_many_columns(started_cluster):
     drop_table([node1, node2], "test_ttl_2")
     for node in [node1, node2]:
         node.query(
-        '''
-            CREATE TABLE test_ttl_2(date DateTime, id UInt32,
-                a Int32 TTL date,
-                _idx Int32 TTL date,
-                _offset Int32 TTL date,
-                _partition Int32 TTL date)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_2', '{replica}')
-            ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0;
-        '''.format(replica=node.name))
+            '''
+                CREATE TABLE test_ttl_2(date DateTime, id UInt32,
+                    a Int32 TTL date,
+                    _idx Int32 TTL date,
+                    _offset Int32 TTL date,
+                    _partition Int32 TTL date)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_2', '{replica}')
+                ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0;
+            '''.format(replica=node.name))
 
     node1.query("SYSTEM STOP TTL MERGES test_ttl_2")
     node2.query("SYSTEM STOP TTL MERGES test_ttl_2")
@@ -114,7 +115,7 @@ def test_ttl_many_columns(started_cluster):
     node1.query("SYSTEM START TTL MERGES test_ttl_2")
     node2.query("SYSTEM START TTL MERGES test_ttl_2")
 
-    time.sleep(1) # sleep to allow use ttl merge selector for second time
+    time.sleep(1)  # sleep to allow use ttl merge selector for second time
     node1.query("OPTIMIZE TABLE test_ttl_2 FINAL", timeout=5)
 
     node2.query("SYSTEM SYNC REPLICA test_ttl_2", timeout=5)
@@ -132,32 +133,34 @@ def test_ttl_table(started_cluster, delete_suffix):
     drop_table([node1, node2], "test_ttl")
     for node in [node1, node2]:
         node.query(
-        '''
-            CREATE TABLE test_ttl(date DateTime, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
-            ORDER BY id PARTITION BY toDayOfMonth(date)
-            TTL date + INTERVAL 1 DAY {delete_suffix} SETTINGS merge_with_ttl_timeout=0;
-        '''.format(replica=node.name, delete_suffix=delete_suffix))
+            '''
+                CREATE TABLE test_ttl(date DateTime, id UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+                ORDER BY id PARTITION BY toDayOfMonth(date)
+                TTL date + INTERVAL 1 DAY {delete_suffix} SETTINGS merge_with_ttl_timeout=0;
+            '''.format(replica=node.name, delete_suffix=delete_suffix))
 
     node1.query("INSERT INTO test_ttl VALUES (toDateTime('2000-10-10 00:00:00'), 1)")
     node1.query("INSERT INTO test_ttl VALUES (toDateTime('2000-10-11 10:00:00'), 2)")
-    time.sleep(1) # sleep to allow use ttl merge selector for second time
+    time.sleep(1)  # sleep to allow use ttl merge selector for second time
     node1.query("OPTIMIZE TABLE test_ttl FINAL")
 
     assert TSV(node1.query("SELECT * FROM test_ttl")) == TSV("")
     assert TSV(node2.query("SELECT * FROM test_ttl")) == TSV("")
 
+
 def test_modify_ttl(started_cluster):
     drop_table([node1, node2], "test_ttl")
     for node in [node1, node2]:
         node.query(
-        '''
-            CREATE TABLE test_ttl(d DateTime, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
-            ORDER BY id
-        '''.format(replica=node.name))
+            '''
+                CREATE TABLE test_ttl(d DateTime, id UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+                ORDER BY id
+            '''.format(replica=node.name))
 
-    node1.query("INSERT INTO test_ttl VALUES (now() - INTERVAL 5 HOUR, 1), (now() - INTERVAL 3 HOUR, 2), (now() - INTERVAL 1 HOUR, 3)")
+    node1.query(
+        "INSERT INTO test_ttl VALUES (now() - INTERVAL 5 HOUR, 1), (now() - INTERVAL 3 HOUR, 2), (now() - INTERVAL 1 HOUR, 3)")
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
 
     node1.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2")
@@ -169,17 +172,19 @@ def test_modify_ttl(started_cluster):
     node1.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2")
     assert node2.query("SELECT id FROM test_ttl") == ""
 
+
 def test_modify_column_ttl(started_cluster):
     drop_table([node1, node2], "test_ttl")
     for node in [node1, node2]:
         node.query(
-        '''
-            CREATE TABLE test_ttl(d DateTime, id UInt32 DEFAULT 42)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
-            ORDER BY d
-        '''.format(replica=node.name))
+            '''
+                CREATE TABLE test_ttl(d DateTime, id UInt32 DEFAULT 42)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+                ORDER BY d
+            '''.format(replica=node.name))
 
-    node1.query("INSERT INTO test_ttl VALUES (now() - INTERVAL 5 HOUR, 1), (now() - INTERVAL 3 HOUR, 2), (now() - INTERVAL 1 HOUR, 3)")
+    node1.query(
+        "INSERT INTO test_ttl VALUES (now() - INTERVAL 5 HOUR, 1), (now() - INTERVAL 3 HOUR, 2), (now() - INTERVAL 1 HOUR, 3)")
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
 
     node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2")
@@ -190,6 +195,7 @@ def test_modify_column_ttl(started_cluster):
 
     node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2")
     assert node2.query("SELECT id FROM test_ttl") == "42\n42\n42\n"
+
 
 def test_ttl_double_delete_rule_returns_error(started_cluster):
     drop_table([node1, node2], "test_ttl")
@@ -205,6 +211,7 @@ def test_ttl_double_delete_rule_returns_error(started_cluster):
         pass
     except:
         assert False
+
 
 @pytest.mark.parametrize("name,engine", [
     ("test_ttl_alter_delete", "MergeTree()"),
@@ -238,21 +245,24 @@ limitations under the License."""
                 break
             except:
                 time.sleep(0.5)
+
     node1.query(
-    """
-        CREATE TABLE {name} (
-            s1 String,
-            d1 DateTime
-        ) ENGINE = {engine}
-        ORDER BY tuple()
-        TTL d1 + INTERVAL 1 DAY DELETE
-    """.format(name=name, engine=engine))
+        """
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 + INTERVAL 1 DAY DELETE
+        """.format(name=name, engine=engine))
 
     node1.query("""ALTER TABLE {name} MODIFY COLUMN s1 String TTL d1 + INTERVAL 1 SECOND""".format(name=name))
     node1.query("""ALTER TABLE {name} ADD COLUMN b1 Int32""".format(name=name))
 
-    node1.query("""INSERT INTO {name} (s1, b1, d1) VALUES ('hello1', 1, toDateTime({time}))""".format(name=name, time=time.time()))
-    node1.query("""INSERT INTO {name} (s1, b1, d1) VALUES ('hello2', 2, toDateTime({time}))""".format(name=name, time=time.time() + 360))
+    node1.query("""INSERT INTO {name} (s1, b1, d1) VALUES ('hello1', 1, toDateTime({time}))""".format(name=name,
+                                                                                                      time=time.time()))
+    node1.query("""INSERT INTO {name} (s1, b1, d1) VALUES ('hello2', 2, toDateTime({time}))""".format(name=name,
+                                                                                                      time=time.time() + 360))
 
     time.sleep(1)
 
@@ -261,7 +271,8 @@ limitations under the License."""
     assert r == ["\t1", "hello2\t2"]
 
     node1.query("""ALTER TABLE {name} MODIFY COLUMN b1 Int32 TTL d1""".format(name=name))
-    node1.query("""INSERT INTO {name} (s1, b1, d1) VALUES ('hello3', 3, toDateTime({time}))""".format(name=name, time=time.time()))
+    node1.query("""INSERT INTO {name} (s1, b1, d1) VALUES ('hello3', 3, toDateTime({time}))""".format(name=name,
+                                                                                                      time=time.time()))
 
     time.sleep(1)
 

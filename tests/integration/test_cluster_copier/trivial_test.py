@@ -1,13 +1,10 @@
 import os
-import os.path as p
 import sys
 import time
-import datetime
-import pytest
 from contextlib import contextmanager
-import docker
-from kazoo.client import KazooClient
 
+import docker
+import pytest
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
@@ -18,13 +15,14 @@ COPYING_FAIL_PROBABILITY = 0.33
 MOVING_FAIL_PROBABILITY = 0.1
 cluster = None
 
+
 @pytest.fixture(scope="function")
 def started_cluster():
     global cluster
     try:
         clusters_schema = {
-            "0" : {"0" : ["0"]},
-            "1" : {"0" : ["0"]}
+            "0": {"0": ["0"]},
+            "1": {"0": ["0"]}
         }
 
         cluster = ClickHouseCluster(__file__)
@@ -50,11 +48,10 @@ class TaskTrivial:
     def __init__(self, cluster, use_sample_offset):
         self.cluster = cluster
         if use_sample_offset:
-            self.zk_task_path="/clickhouse-copier/task_trivial_use_sample_offset"
+            self.zk_task_path = "/clickhouse-copier/task_trivial_use_sample_offset"
         else:
-            self.zk_task_path="/clickhouse-copier/task_trivial"
+            self.zk_task_path = "/clickhouse-copier/task_trivial"
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_trivial.xml'), 'r').read()
-
 
     def start(self):
         source = cluster.instances['s0_0_0']
@@ -68,8 +65,8 @@ class TaskTrivial:
                      "ENGINE=ReplicatedMergeTree('/clickhouse/tables/source_trivial_cluster/1/trivial', '1') "
                      "PARTITION BY d % 5 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16")
 
-        source.query("INSERT INTO trivial SELECT * FROM system.numbers LIMIT 1002", settings={"insert_distributed_sync": 1})
-
+        source.query("INSERT INTO trivial SELECT * FROM system.numbers LIMIT 1002",
+                     settings={"insert_distributed_sync": 1})
 
     def check(self):
         source = cluster.instances['s0_0_0']
@@ -138,7 +135,6 @@ def execute_task(task, cmd_options):
         True
     ]
 )
-
 def test_trivial_copy(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--experimental-use-sample-offset', '1'])
@@ -146,6 +142,7 @@ def test_trivial_copy(started_cluster, use_sample_offset):
         print("AAAAA")
         execute_task(TaskTrivial(started_cluster, use_sample_offset), [])
 
+
 @pytest.mark.parametrize(
     ('use_sample_offset'),
     [
@@ -153,7 +150,6 @@ def test_trivial_copy(started_cluster, use_sample_offset):
         True
     ]
 )
-
 def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
@@ -161,6 +157,7 @@ def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
     else:
         execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
+
 @pytest.mark.parametrize(
     ('use_sample_offset'),
     [
@@ -168,7 +165,6 @@ def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
         True
     ]
 )
-
 def test_trivial_copy_with_move_fault(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),

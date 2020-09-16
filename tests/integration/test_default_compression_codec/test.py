@@ -1,14 +1,17 @@
-import string
 import random
-import pytest
+import string
 
+import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', main_configs=['configs/default_compression.xml'], with_zookeeper=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/default_compression.xml'], with_zookeeper=True)
-node3 = cluster.add_instance('node3', main_configs=['configs/default_compression.xml'], image='yandex/clickhouse-server', tag='20.3.16', stay_alive=True, with_installed_binary=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/default_compression.xml'],
+                             image='yandex/clickhouse-server', tag='20.3.16', stay_alive=True,
+                             with_installed_binary=True)
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -21,12 +24,14 @@ def start_cluster():
 
 
 def get_compression_codec_byte(node, table_name, part_name):
-    cmd = "tail -c +17 /var/lib/clickhouse/data/default/{}/{}/data1.bin | od -x -N 1 | head -n 1 | awk '{{print $2}}'".format(table_name, part_name)
+    cmd = "tail -c +17 /var/lib/clickhouse/data/default/{}/{}/data1.bin | od -x -N 1 | head -n 1 | awk '{{print $2}}'".format(
+        table_name, part_name)
     return node.exec_in_container(["bash", "-c", cmd]).strip()
 
 
 def get_second_multiple_codec_byte(node, table_name, part_name):
-    cmd = "tail -c +17 /var/lib/clickhouse/data/default/{}/{}/data1.bin | od -x -j 11 -N 1 | head -n 1 | awk '{{print $2}}'".format(table_name, part_name)
+    cmd = "tail -c +17 /var/lib/clickhouse/data/default/{}/{}/data1.bin | od -x -j 11 -N 1 | head -n 1 | awk '{{print $2}}'".format(
+        table_name, part_name)
     return node.exec_in_container(["bash", "-c", cmd]).strip()
 
 
@@ -74,16 +79,22 @@ def test_default_codec_single(start_cluster):
 
     # Same codec for all
     assert get_compression_codec_byte(node1, "compression_table", "1_0_0_0") == CODECS_MAPPING['ZSTD']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_0_0_0'") == "ZSTD(10)\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_0_0_0'") == "ZSTD(10)\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_0_0_0'") == "ZSTD(10)\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_0_0_0'") == "ZSTD(10)\n"
 
     assert get_compression_codec_byte(node1, "compression_table", "2_0_0_0") == CODECS_MAPPING['ZSTD']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_0_0_0'") == "ZSTD(10)\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_0_0_0'") == "ZSTD(10)\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_0_0_0'") == "ZSTD(10)\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_0_0_0'") == "ZSTD(10)\n"
 
     assert get_compression_codec_byte(node1, "compression_table", "3_0_0_0") == CODECS_MAPPING['ZSTD']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_0_0_0'") == "ZSTD(10)\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_0_0_0'") == "ZSTD(10)\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_0_0_0'") == "ZSTD(10)\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_0_0_0'") == "ZSTD(10)\n"
 
     # just to be sure that replication works
     node1.query("OPTIMIZE TABLE compression_table FINAL")
@@ -101,16 +112,22 @@ def test_default_codec_single(start_cluster):
     node2.query("SYSTEM FLUSH LOGS")
 
     assert get_compression_codec_byte(node1, "compression_table", "1_0_0_1") == CODECS_MAPPING['ZSTD']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_0_0_1'") == "ZSTD(10)\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_0_0_1'") == "ZSTD(10)\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_0_0_1'") == "ZSTD(10)\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_0_0_1'") == "ZSTD(10)\n"
 
     assert get_compression_codec_byte(node1, "compression_table", "2_0_0_1") == CODECS_MAPPING['LZ4HC']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_0_0_1'") == "LZ4HC(5)\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_0_0_1'") == "LZ4HC(5)\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_0_0_1'") == "LZ4HC(5)\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_0_0_1'") == "LZ4HC(5)\n"
 
     assert get_compression_codec_byte(node1, "compression_table", "3_0_0_1") == CODECS_MAPPING['LZ4']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_0_0_1'") == "LZ4\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_0_0_1'") == "LZ4\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_0_0_1'") == "LZ4\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_0_0_1'") == "LZ4\n"
 
     assert node1.query("SELECT COUNT() FROM compression_table") == "3\n"
     assert node2.query("SELECT COUNT() FROM compression_table") == "3\n"
@@ -137,18 +154,24 @@ def test_default_codec_multiple(start_cluster):
     # Same codec for all
     assert get_compression_codec_byte(node1, "compression_table_multiple", "1_0_0_0") == CODECS_MAPPING['Multiple']
     assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "1_0_0_0") == CODECS_MAPPING['ZSTD']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '1_0_0_0'") == "ZSTD(10)\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '1_0_0_0'") == "ZSTD(10)\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '1_0_0_0'") == "ZSTD(10)\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '1_0_0_0'") == "ZSTD(10)\n"
 
     assert get_compression_codec_byte(node1, "compression_table_multiple", "2_0_0_0") == CODECS_MAPPING['Multiple']
     assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "2_0_0_0") == CODECS_MAPPING['ZSTD']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '2_0_0_0'") == "ZSTD(10)\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '2_0_0_0'") == "ZSTD(10)\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '2_0_0_0'") == "ZSTD(10)\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '2_0_0_0'") == "ZSTD(10)\n"
 
     assert get_compression_codec_byte(node1, "compression_table_multiple", "3_0_0_0") == CODECS_MAPPING['Multiple']
     assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "3_0_0_0") == CODECS_MAPPING['ZSTD']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_0'") == "ZSTD(10)\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_0'") == "ZSTD(10)\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_0'") == "ZSTD(10)\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_0'") == "ZSTD(10)\n"
 
     node2.query("SYSTEM SYNC REPLICA compression_table_multiple", timeout=15)
 
@@ -156,18 +179,24 @@ def test_default_codec_multiple(start_cluster):
 
     assert get_compression_codec_byte(node1, "compression_table_multiple", "1_0_0_1") == CODECS_MAPPING['Multiple']
     assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "1_0_0_1") == CODECS_MAPPING['ZSTD']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '1_0_0_1'") == "ZSTD(10)\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '1_0_0_1'") == "ZSTD(10)\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '1_0_0_1'") == "ZSTD(10)\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '1_0_0_1'") == "ZSTD(10)\n"
 
     assert get_compression_codec_byte(node1, "compression_table_multiple", "2_0_0_1") == CODECS_MAPPING['Multiple']
     assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "2_0_0_1") == CODECS_MAPPING['LZ4HC']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '2_0_0_1'") == "LZ4HC(5)\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '2_0_0_1'") == "LZ4HC(5)\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '2_0_0_1'") == "LZ4HC(5)\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '2_0_0_1'") == "LZ4HC(5)\n"
 
     assert get_compression_codec_byte(node1, "compression_table_multiple", "3_0_0_1") == CODECS_MAPPING['Multiple']
     assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "3_0_0_1") == CODECS_MAPPING['LZ4']
-    assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_1'") == "LZ4\n"
-    assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_1'") == "LZ4\n"
+    assert node1.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_1'") == "LZ4\n"
+    assert node2.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_1'") == "LZ4\n"
 
     assert node1.query("SELECT COUNT() FROM compression_table_multiple") == "3\n"
     assert node2.query("SELECT COUNT() FROM compression_table_multiple") == "3\n"
@@ -187,15 +216,21 @@ def test_default_codec_version_update(start_cluster):
 
     node3.restart_with_latest_version()
 
-    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_0'") == "ZSTD(1)\n"
-    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_0'") == "ZSTD(1)\n"
-    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_0'") == "ZSTD(1)\n"
+    assert node3.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_0'") == "ZSTD(1)\n"
+    assert node3.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_0'") == "ZSTD(1)\n"
+    assert node3.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_0'") == "ZSTD(1)\n"
 
     node3.query("OPTIMIZE TABLE compression_table FINAL")
 
-    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_1'") == "ZSTD(10)\n"
-    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_1'") == "LZ4HC(5)\n"
-    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_1'") == "LZ4\n"
+    assert node3.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_1'") == "ZSTD(10)\n"
+    assert node3.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_1'") == "LZ4HC(5)\n"
+    assert node3.query(
+        "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_1'") == "LZ4\n"
     assert get_compression_codec_byte(node1, "compression_table_multiple", "2_0_0_1") == CODECS_MAPPING['Multiple']
     assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "2_0_0_1") == CODECS_MAPPING['LZ4HC']
     assert get_compression_codec_byte(node1, "compression_table_multiple", "3_0_0_1") == CODECS_MAPPING['Multiple']

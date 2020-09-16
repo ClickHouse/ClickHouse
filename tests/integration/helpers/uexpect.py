@@ -13,13 +13,12 @@
 # limitations under the License.
 import os
 import pty
-import time
-import sys
 import re
-
-from threading import Thread, Event
-from subprocess import Popen
+import time
 from Queue import Queue, Empty
+from subprocess import Popen
+from threading import Thread, Event
+
 
 class TimeoutError(Exception):
     def __init__(self, timeout):
@@ -27,6 +26,7 @@ class TimeoutError(Exception):
 
     def __str__(self):
         return 'Timeout %.3fs' % float(self.timeout)
+
 
 class ExpectTimeoutError(Exception):
     def __init__(self, pattern, timeout, buffer):
@@ -42,6 +42,7 @@ class ExpectTimeoutError(Exception):
             s += 'buffer %s ' % repr(self.buffer[:])
             s += 'or \'%s\'' % ','.join(['%x' % ord(c) for c in self.buffer[:]])
         return s
+
 
 class IO(object):
     class EOF(object):
@@ -59,7 +60,7 @@ class IO(object):
             self._prefix = prefix
 
         def write(self, data):
-            self._logger.write(('\n' + data).replace('\n','\n' + self._prefix))
+            self._logger.write(('\n' + data).replace('\n', '\n' + self._prefix))
 
         def flush(self):
             self._logger.flush()
@@ -165,7 +166,7 @@ class IO(object):
         data = ''
         timeleft = timeout
         try:
-            while timeleft >= 0 :
+            while timeleft >= 0:
                 start_time = time.time()
                 data += self.queue.get(timeout=timeleft)
                 if data:
@@ -182,6 +183,7 @@ class IO(object):
 
         return data
 
+
 def spawn(command):
     master, slave = pty.openpty()
     process = Popen(command, preexec_fn=os.setsid, stdout=slave, stdin=slave, stderr=slave, bufsize=1)
@@ -193,7 +195,8 @@ def spawn(command):
     thread.daemon = True
     thread.start()
 
-    return IO(process, master, queue, reader={'thread':thread, 'kill_event':reader_kill_event})
+    return IO(process, master, queue, reader={'thread': thread, 'kill_event': reader_kill_event})
+
 
 def reader(process, out, queue, kill_event):
     while True:
