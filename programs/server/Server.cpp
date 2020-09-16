@@ -32,6 +32,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/remapExecutable.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -305,6 +306,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// After full config loaded
     {
+        if (config().getBool("remap_executable", false))
+        {
+            LOG_DEBUG(log, "Will remap executable in memory.");
+            remapExecutable();
+            LOG_DEBUG(log, "The code in memory has been successfully remapped.");
+        }
+
         if (config().getBool("mlock_executable", false))
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))

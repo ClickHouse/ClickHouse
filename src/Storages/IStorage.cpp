@@ -7,6 +7,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Pipe.h>
+#include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
@@ -89,6 +90,27 @@ Pipe IStorage::read(
         unsigned /*num_streams*/)
 {
     throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void IStorage::read(
+        QueryPlan & query_plan,
+        TableLockHolder table_lock,
+        StorageMetadataPtr metadata_snapshot,
+        StreamLocalLimits & limits,
+        std::shared_ptr<const EnabledQuota> quota,
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        std::shared_ptr<Context> context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams)
+{
+    auto read_step = std::make_unique<ReadFromStorageStep>(
+            std::move(table_lock), std::move(metadata_snapshot), limits, std::move(quota), shared_from_this(),
+            column_names, query_info, std::move(context), processed_stage, max_block_size, num_streams);
+
+    read_step->setStepDescription("Read from " + getName());
+    query_plan.addStep(std::move(read_step));
 }
 
 Pipe IStorage::alterPartition(
