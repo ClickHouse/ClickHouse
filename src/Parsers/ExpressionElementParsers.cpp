@@ -1188,6 +1188,7 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword columns("COLUMNS");
+    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserStringLiteral regex;
 
     if (!columns.ignore(pos, expected))
@@ -1197,8 +1198,9 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     ++pos;
 
+    ASTPtr column_list;
     ASTPtr regex_node;
-    if (!regex.parse(pos, regex_node, expected))
+    if (!columns_p.parse(pos, column_list, expected) && !regex.parse(pos, regex_node, expected))
         return false;
 
     if (pos->type != TokenType::ClosingRoundBracket)
@@ -1206,8 +1208,17 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ++pos;
 
     auto res = std::make_shared<ASTColumnsMatcher>();
-    res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
-    res->children.push_back(regex_node);
+    if (column_list)
+    {
+        res->column_list = column_list;
+        res->children.push_back(res->column_list);
+    }
+    else
+    {
+        res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+        res->children.push_back(regex_node);
+    }
+
     ParserColumnsTransformers transformers_p;
     ASTPtr transformer;
     while (transformers_p.parse(pos, transformer, expected))
