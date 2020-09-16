@@ -18,6 +18,8 @@ protected:
     bool nextImpl() override;
 
 public:
+    ~MySQLBinlogEventReadBuffer() override;
+
     MySQLBinlogEventReadBuffer(ReadBuffer & in_);
 
 };

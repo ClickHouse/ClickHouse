@@ -59,4 +59,17 @@ bool MySQLBinlogEventReadBuffer::nextImpl()
     return true;
 }
 
+MySQLBinlogEventReadBuffer::~MySQLBinlogEventReadBuffer()
+{
+    try
+    {
+        /// ignore last 4 bytes
+        nextIfAtEnd();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 }
