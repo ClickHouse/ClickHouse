@@ -15,19 +15,29 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, index_granularity_)
+    , plain_file(data_part->volume->getDisk()->writeFile(
+            part_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
+            settings.max_compress_block_size,
+            WriteMode::Rewrite,
+            settings.estimated_size,
+            settings.aio_threshold))
+    , plain_hashing(*plain_file)
+    , marks_file(data_part->volume->getDisk()->writeFile(
+        part_path + MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
+        4096,
+        WriteMode::Rewrite))
+    , marks(*marks_file)
 {
-    using DataPart = MergeTreeDataPartCompact;
-    String data_file_name = DataPart::DATA_FILE_NAME;
+    const auto & storage_columns = metadata_snapshot->getColumns();
+    for (const auto & column : columns_list)
+    {
+        auto codec = storage_columns.getCodecOrDefault(column.name, default_codec);
+        auto & stream = streams_by_codec[codec->getHash()];
+        if (!stream)
+            stream = std::make_shared<CompressedStream>(plain_hashing, codec);
 
-    stream = std::make_unique<Stream>(
-        data_file_name,
-        data_part->volume->getDisk(),
-        part_path + data_file_name, DataPart::DATA_FILE_EXTENSION,
-        part_path + data_file_name, marks_file_extension,
-        default_codec,
-        settings.max_compress_block_size,
-        settings.estimated_size,
-        settings.aio_threshold);
+        compressed_streams.push_back(stream);
+    }
 }
 
 void MergeTreeDataPartWriterCompact::write(
@@ -97,15 +107,21 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
         if (rows_to_write)
             data_written = true;
 
-        for (const auto & column : columns_list)
+        auto name_and_type = columns_list.begin();
+        for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
-            writeIntBinary(stream->plain_hashing.count(), stream->marks);
-            writeIntBinary(stream->compressed.offset(), stream->marks);
+            auto & stream = compressed_streams[i];
 
-            writeColumnSingleGranule(block.getByName(column.name), current_row, rows_to_write);
+            /// Offset should be 0, because compressed block is written for every granule.
+            assert(stream->hashing_buf.offset() == 0);
+
+            writeIntBinary(plain_hashing.count(), marks);
+            writeIntBinary(UInt64(0), marks);
+
+            writeColumnSingleGranule(block.getByName(name_and_type->name), stream, current_row, rows_to_write);
 
             /// Write one compressed block per column in granule for more optimal reading.
-            stream->compressed.next();
+            stream->hashing_buf.next();
         }
 
         ++from_mark;
@@ -120,19 +136,22 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
             index_granularity.appendMark(rows_written);
         }
 
-        writeIntBinary(rows_to_write, stream->marks);
+        writeIntBinary(rows_to_write, marks);
     }
 
     next_index_offset = 0;
     next_mark = from_mark;
 }
 
-void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column, size_t from_row, size_t number_of_rows) const
+void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(
+    const ColumnWithTypeAndName & column,
+    const CompressedStreamPtr & stream,
+    size_t from_row, size_t number_of_rows)
 {
     IDataType::SerializeBinaryBulkStatePtr state;
     IDataType::SerializeBinaryBulkSettings serialize_settings;
 
-    serialize_settings.getter = [this](IDataType::SubstreamPath) -> WriteBuffer * { return &stream->compressed; };
+    serialize_settings.getter = [&stream](IDataType::SubstreamPath) -> WriteBuffer * { return &stream->hashing_buf; };
     serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
 
@@ -141,24 +160,36 @@ void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTy
     column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
 }
 
-void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     if (columns_buffer.size() != 0)
         writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
+
+#ifndef NDEBUG
+    /// Offsets should be 0, because compressed block is written for every granule.
+    for (const auto & [_, stream] : streams_by_codec)
+        assert(stream->hashing_buf.offset() == 0);
+#endif
 
     if (with_final_mark && data_written)
     {
         for (size_t i = 0; i < columns_list.size(); ++i)
         {
-            writeIntBinary(stream->plain_hashing.count(), stream->marks);
-            writeIntBinary(stream->compressed.offset(), stream->marks);
+            writeIntBinary(plain_hashing.count(), marks);
+            writeIntBinary(UInt64(0), marks);
         }
-        writeIntBinary(0ULL, stream->marks);
+        writeIntBinary(UInt64(0), marks);
     }
 
-    stream->finalize();
-    stream->addToChecksums(checksums);
-    stream.reset();
+    plain_file->next();
+    marks.next();
+    addToChecksums(checksums);
+
+    if (sync)
+    {
+        plain_file->sync();
+        marks_file->sync();
+    }
 }
 
 static void fillIndexGranularityImpl(
@@ -197,6 +228,32 @@ void MergeTreeDataPartWriterCompact::fillIndexGranularity(size_t index_granulari
         getIndexOffset(),
         index_granularity_for_block,
         rows_in_block);
+}
+
+void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums & checksums)
+{
+    String data_file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+    String marks_file_name = MergeTreeDataPartCompact::DATA_FILE_NAME +  marks_file_extension;
+
+    size_t uncompressed_size = 0;
+    CityHash_v1_0_2::uint128 uncompressed_hash{0, 0};
+
+    for (const auto & [_, stream] : streams_by_codec)
+    {
+        uncompressed_size += stream->hashing_buf.count();
+        auto stream_hash = stream->hashing_buf.getHash();
+        uncompressed_hash = CityHash_v1_0_2::CityHash128WithSeed(
+            reinterpret_cast<char *>(&stream_hash), sizeof(stream_hash), uncompressed_hash);
+    }
+
+    checksums.files[data_file_name].is_compressed = true;
+    checksums.files[data_file_name].uncompressed_size = uncompressed_size;
+    checksums.files[data_file_name].uncompressed_hash = uncompressed_hash;
+    checksums.files[data_file_name].file_size = plain_hashing.count();
+    checksums.files[data_file_name].file_hash = plain_hashing.getHash();
+
+    checksums.files[marks_file_name].file_size = marks.count();
+    checksums.files[marks_file_name].file_hash = marks.getHash();
 }
 
 void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && columns)

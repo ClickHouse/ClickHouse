@@ -17,9 +17,10 @@ from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
-config_dir = os.path.join(SCRIPT_DIR, './configs')
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', config_dir=config_dir, env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
+node = cluster.add_instance('node', main_configs=["configs/log_conf.xml", "configs/ssl_conf.xml", "configs/mysql.xml",
+                                                  "configs/dhparam.pem", "configs/server.crt", "configs/server.key"],
+                            user_configs=["configs/users.xml"], env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
 
 server_port = 9001
 
@@ -36,7 +37,7 @@ def server_address():
 @pytest.fixture(scope='module')
 def mysql_client():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
+    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_mysql1_1')
 
 
@@ -62,28 +63,28 @@ def mysql_server(mysql_client):
 @pytest.fixture(scope='module')
 def golang_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_golang_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
+    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_golang1_1')
 
 
 @pytest.fixture(scope='module')
 def php_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_php_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
+    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_php1_1')
 
 
 @pytest.fixture(scope='module')
 def nodejs_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_js_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
+    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_mysqljs1_1')
 
 
 @pytest.fixture(scope='module')
 def java_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_java_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
+    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_java1_1')
 
 
@@ -232,6 +233,9 @@ def test_mysql_federated(mysql_server, server_address):
         node.query('''CREATE TABLE mysql_federated.test (col UInt32) ENGINE = Log''', settings={"password": "123"})
         node.query('''INSERT INTO mysql_federated.test VALUES (0), (1), (5)''', settings={"password": "123"})
 
+        def check_retryable_error_in_stderr(stderr):
+            return "Can't connect to local MySQL server through socket" in stderr or "MySQL server has gone away" in stderr
+
         code, (stdout, stderr) = mysql_server.exec_run('''
             mysql
             -e "DROP SERVER IF EXISTS clickhouse;"
@@ -244,7 +248,7 @@ def test_mysql_federated(mysql_server, server_address):
         if code != 0:
             print("stdout", stdout)
             print("stderr", stderr)
-            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
+            if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
         assert code == 0
@@ -258,7 +262,7 @@ def test_mysql_federated(mysql_server, server_address):
         if code != 0:
             print("stdout", stdout)
             print("stderr", stderr)
-            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
+            if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
         assert code == 0
@@ -274,12 +278,29 @@ def test_mysql_federated(mysql_server, server_address):
         if code != 0:
             print("stdout", stdout)
             print("stderr", stderr)
-            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
+            if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
         assert code == 0
 
         assert stdout == '\n'.join(['col', '0', '0', '1', '1', '5', '5', ''])
+
+
+def test_mysql_set_variables(mysql_client, server_address):
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e
+        "
+        SET NAMES=default;
+        SET character_set_results=default;
+        SET FOREIGN_KEY_CHECKS=false;
+        SET AUTOCOMMIT=1;
+        SET sql_mode='strict';
+        SET @@wait_timeout = 2147483;
+        SET SESSION TRANSACTION ISOLATION LEVEL READ;
+        "
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
 
 
 def test_python_client(server_address):
@@ -329,7 +350,7 @@ def test_python_client(server_address):
 
 def test_golang_client(server_address, golang_container):
     # type: (str, Container) -> None
-    with open(os.path.join(SCRIPT_DIR,'golang.reference')) as fp:
+    with open(os.path.join(SCRIPT_DIR, 'golang.reference')) as fp:
         reference = fp.read()
 
     code, (stdout, stderr) = golang_container.exec_run('./main --host {host} --port {port} --user default --password 123 --database '

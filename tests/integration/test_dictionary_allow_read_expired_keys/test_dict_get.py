@@ -9,11 +9,10 @@ from helpers.cluster import ClickHouseKiller
 from helpers.network import PartitionManager
 from helpers.network import PartitionManagerDisabler
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
+cluster = ClickHouseCluster(__file__)
 
 dictionary_node = cluster.add_instance('dictionary_node', stay_alive=True)
-main_node = cluster.add_instance('main_node', main_configs=['configs/dictionaries/cache_ints_dictionary.xml'])
+main_node = cluster.add_instance('main_node', main_configs=['configs/enable_dictionaries.xml', 'configs/dictionaries/cache_ints_dictionary.xml'])
 
 @pytest.fixture(scope="module")
 def started_cluster():
