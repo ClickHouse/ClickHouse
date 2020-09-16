@@ -160,11 +160,11 @@ function run_tests
     # those values.
     if [ "$PR_TO_TEST" == "0" ]
     then
-        CHPC_RUNS=${CHPC_RUNS:-7}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-100}
-    else
         CHPC_RUNS=${CHPC_RUNS:-13}
         CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
+    else
+        CHPC_RUNS=${CHPC_RUNS:-7}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-100}
     fi
     export CHPC_RUNS
     export CHPC_MAX_QUERIES
