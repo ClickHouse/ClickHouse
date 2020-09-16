@@ -280,7 +280,7 @@ for query_index, q in enumerate(test_queries):
                 break
             # Also limit the number of runs, so that we don't go crazy processing
             # the results -- 'eqmed.sql' is really suboptimal.
-            if run >= 200:
+            if run >= 500:
                 break
         else:
             if run >= args.runs:
