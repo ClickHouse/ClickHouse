@@ -28,7 +28,7 @@ struct ArrayConcat : public ArraySourceSelector<ArrayConcat>
         result = ColumnArray::create(source.createValuesColumn());
         Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
 
-        concat<SourceType, Sink>(sources, sink);
+        concat<SourceType, Sink>(sources, std::move(sink));
     }
 
     template <typename Source>
@@ -39,7 +39,7 @@ struct ArrayConcat : public ArraySourceSelector<ArrayConcat>
         result = ColumnArray::create(source.createValuesColumn());
         Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
 
-        concat<SourceType, Sink>(sources, sink);
+        concat<SourceType, Sink>(sources, std::move(sink));
     }
 
     template <typename Source>
@@ -50,7 +50,7 @@ struct ArrayConcat : public ArraySourceSelector<ArrayConcat>
         result = ColumnArray::create(source.createValuesColumn());
         Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
 
-        concat<SourceType, Sink>(sources, sink);
+        concat<SourceType, Sink>(sources, std::move(sink));
     }
 };
 
