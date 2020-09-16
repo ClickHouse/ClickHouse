@@ -1,11 +1,12 @@
 import pytest
 
-import helpers.client as client
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_zookeeper=True, image='yandex/clickhouse-server', tag='19.17.8.54', stay_alive=True, with_installed_binary=True)
+node1 = cluster.add_instance('node1', with_zookeeper=True, image='yandex/clickhouse-server', tag='19.17.8.54',
+                             stay_alive=True, with_installed_binary=True)
 node2 = cluster.add_instance('node2', with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -13,10 +14,10 @@ def start_cluster():
         cluster.start()
         for i, node in enumerate([node1, node2]):
             node.query(
-            '''CREATE TABLE t(date Date, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/t', '{}')
-            PARTITION BY toYYYYMM(date)
-            ORDER BY id'''.format(i))
+                '''CREATE TABLE t(date Date, id UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/t', '{}')
+                PARTITION BY toYYYYMM(date)
+                ORDER BY id'''.format(i))
 
         yield cluster
 
