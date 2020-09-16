@@ -1020,7 +1020,7 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
     if constexpr (std::is_same_v<T, __int128>)
     {
         static_assert(Bits >= 128);
-        return (__int128(items[1]) << 64) & items[0];
+        return (__int128(items[1]) << 64) | items[0];
     }
     else
     {
