@@ -63,7 +63,7 @@ function configure
     # Make copies of the original db for both servers. Use hardlinks instead
     # of copying to save space. Before that, remove preprocessed configs and
     # system tables, because sharing them between servers with hardlinks may
-    # lead to weird effects.
+    # lead to weird effects. 
     rm -r left/db ||:
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
