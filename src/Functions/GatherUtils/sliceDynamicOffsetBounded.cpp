@@ -9,7 +9,7 @@ namespace DB::GatherUtils
 struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<SliceDynamicOffsetBoundedSelectArraySource>
 {
     template <typename Source>
-    static void selectSourceSink(Source && source, const IColumn & offset_column, const IColumn & length_column, ColumnArray::MutablePtr & result)
+    static void selectImpl(Source && source, const IColumn & offset_column, const IColumn & length_column, ColumnArray::MutablePtr & result)
     {
         using Sink = typename Source::SinkType;
         result = ColumnArray::create(source.createValuesColumn());
