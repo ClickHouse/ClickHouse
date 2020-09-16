@@ -11,7 +11,7 @@ struct SliceDynamicOffsetUnboundedSelectArraySource : public ArraySourceSelector
     template <typename Source>
     static void selectImpl(Source && source, const IColumn & offset_column, ColumnArray::MutablePtr & result)
     {
-        using SourceType = typename std::remove_cv<Source>::type;
+        using SourceType = typename std::decay<Source>::type;
         using Sink = typename SourceType::SinkType;
         result = ColumnArray::create(source.createValuesColumn());
         Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
