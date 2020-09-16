@@ -158,7 +158,10 @@ struct integer<Bits, Signed>::_impl
     template <class T>
     constexpr static bool is_negative(const T & n) noexcept
     {
-        return n < 0;
+        if constexpr (std::is_signed_v<T>)
+            return n < 0;
+        else
+            return false;
     }
 
     template <size_t B, class T>
@@ -168,6 +171,15 @@ struct integer<Bits, Signed>::_impl
             return static_cast<signed_base_type>(n.items[big(0)]) < 0;
         else
             return false;
+    }
+
+    template <typename T>
+    constexpr static auto make_positive(const T & n) noexcept
+    {
+        if constexpr (std::is_signed_v<T>)
+            return n < 0 ? -n : n;
+        else
+            return n;
     }
 
     template <size_t B, class S>
@@ -373,16 +385,6 @@ struct integer<Bits, Signed>::_impl
         return lhs;
     }
 
-    template <typename T>
-    constexpr static integer<Bits, Signed>
-    operator_plus_T(const integer<Bits, Signed> & lhs, T rhs) noexcept(std::is_same_v<Signed, unsigned>)
-    {
-        if (is_negative(rhs))
-            return _operator_minus(lhs, -rhs);
-        else
-            return _operator_plus(lhs, rhs);
-    }
-
 private:
     template <typename T>
     constexpr static base_type get_item(const T & x, unsigned number)
@@ -391,21 +393,19 @@ private:
         {
             if (number < T::_impl::item_count)
                 return x.items[number];
-            else
-                return 0;
+            return 0;
         }
         else
         {
             if (number * sizeof(base_type) < sizeof(T))
                 return x >> (number * base_bits); // & std::numeric_limits<base_type>::max()
-            else
-                return 0;
+            return 0;
         }
     }
 
     template <typename T>
     constexpr static integer<Bits, Signed>
-    _operator_minus(const integer<Bits, Signed> & lhs, T rhs) noexcept(std::is_same_v<Signed, unsigned>)
+    _operator_minus(const integer<Bits, Signed> & lhs, T rhs)
     {
         integer<Bits, Signed> res;
 
@@ -432,7 +432,7 @@ private:
 
     template <typename T>
     constexpr static integer<Bits, Signed>
-    _operator_plus(const integer<Bits, Signed> & lhs, T rhs) noexcept(std::is_same_v<Signed, unsigned>)
+    _operator_plus(const integer<Bits, Signed> & lhs, T rhs)
     {
         integer<Bits, Signed> res;
 
@@ -453,6 +453,25 @@ private:
 
             if (res_item < rhs_item)
                 is_overflow = true;
+        }
+
+        return res;
+    }
+
+    template <typename T>
+    constexpr static auto _operator_star(const integer<Bits, Signed> & lhs, const T & rhs)
+    {
+        integer<Bits, Signed> res{};
+
+        for (unsigned i = 0; i < item_count; ++i)
+        {
+            base_type rhs_item = get_item(rhs, i);
+
+            for (unsigned bit = 0; rhs_item; ++bit, rhs_item >>= 1)
+            {
+                if (rhs_item & 1)
+                    res = operator_plus(res, shift_left(lhs, i * base_bits + bit));
+            }
         }
 
         return res;
@@ -510,28 +529,24 @@ public:
         }
     }
 
-public:
     template <typename T>
     constexpr static auto operator_star(const integer<Bits, Signed> & lhs, const T & rhs)
     {
         if constexpr (should_keep_size<T>())
         {
-            const integer<Bits, unsigned> a = make_positive(lhs);
-            integer<Bits, unsigned> t = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, Signed> res = 0;
+            integer<Bits, Signed> res;
 
-            for (unsigned i = 0; i < item_count; ++i)
+            if constexpr (std::is_signed_v<Signed>)
             {
-                base_type rhs_item = get_item(t, i);
-
-                for (unsigned bit = 0; rhs_item; ++bit, rhs_item >>= 1)
-                {
-                    if (rhs_item & 1)
-                        res = operator_plus(res, shift_left(a, i * base_bits + bit));
-                }
+                res = _operator_star((is_negative(lhs) ? make_positive(lhs) : lhs),
+                                     (is_negative(rhs) ? make_positive(rhs) : rhs));
+            }
+            else
+            {
+                res = _operator_star(lhs, (is_negative(rhs) ? make_positive(rhs) : rhs));
             }
 
-            if (std::is_same_v<Signed, signed> && is_negative(integer<Bits, Signed>(rhs)) != is_negative(lhs))
+            if (std::is_same_v<Signed, signed> && is_negative(lhs) != is_negative(rhs))
                 res = operator_unary_minus(res);
 
             return res;
@@ -775,19 +790,19 @@ public:
             {
                 if (*c >= '0' && *c <= '9')
                 {
-                    res = operator_star(res, 16U);
-                    res = operator_plus_T(res, *c - '0');
+                    res = _operator_star(res, 16U);
+                    res = _operator_plus(res, *c - '0');
                     ++c;
                 }
                 else if (*c >= 'a' && *c <= 'f')
                 {
-                    res = operator_star(res, 16U);
+                    res = _operator_star(res, 16U);
                     res = _operator_plus(res, *c - 'a' + 10U);
                     ++c;
                 }
                 else if (*c >= 'A' && *c <= 'F')
                 { // tolower must be used, but it is not constexpr
-                    res = operator_star(res, 16U);
+                    res = _operator_star(res, 16U);
                     res = _operator_plus(res, *c - 'A' + 10U);
                     ++c;
                 }
@@ -802,7 +817,7 @@ public:
                 if (*c < '0' || *c > '9')
                     throwError("invalid char from");
 
-                res = operator_star(res, 10U);
+                res = _operator_star(res, 10U);
                 res = _operator_plus(res, *c - '0');
                 ++c;
             }
