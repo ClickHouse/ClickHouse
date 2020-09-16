@@ -56,7 +56,7 @@ void sliceHasAny(IArraySource & first, IArraySource & second, ColumnUInt8 & resu
 void sliceHasAll(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 void sliceHasSubstr(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 
-void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result)
+inline void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result)
 {
     switch (search_type)
     {
