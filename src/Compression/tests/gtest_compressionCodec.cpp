@@ -2,7 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -468,7 +468,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 
     parser.parse(token_iterator, codec_ast, expected);
 
-    return CompressionCodecFactory::instance().get(codec_ast, data_type, false);
+    return CompressionCodecFactory::instance().get(codec_ast, data_type);
 }
 
 template <typename Timer>

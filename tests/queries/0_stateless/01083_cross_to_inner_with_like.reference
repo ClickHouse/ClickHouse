@@ -1,18 +1,18 @@
-SELECT 
+SELECT
     k,
     r.k,
     name
 FROM n
 ALL INNER JOIN r ON k = r.k
 WHERE (k = r.k) AND (name = \'A\')
-SELECT 
+SELECT
     k,
     r.k,
     name
 FROM n
 ALL INNER JOIN r ON k = r.k
 WHERE (k = r.k) AND (name LIKE \'A%\')
-SELECT 
+SELECT
     k,
     r.k,
     name

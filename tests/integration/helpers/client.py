@@ -71,7 +71,7 @@ class CommandRequest:
         self.stderr_file = tempfile.TemporaryFile()
         self.ignore_error = ignore_error
 
-        #print " ".join(command)
+        # print " ".join(command)
 
         # we suppress stderror on client becase sometimes thread sanitizer
         # can print some debug information there

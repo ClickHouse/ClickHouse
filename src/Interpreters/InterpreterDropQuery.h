@@ -10,6 +10,7 @@ namespace DB
 {
 class Context;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
+class AccessRightsElements;
 
 /** Allow to either drop table with all its data (DROP),
   * or remove information about table (just forget) from server (DETACH),

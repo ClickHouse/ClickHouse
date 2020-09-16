@@ -5,9 +5,9 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 
-node1 = cluster.add_instance('node1', with_zookeeper=True, image='yandex/clickhouse-server:19.4.5.35', stay_alive=True, with_installed_binary=True)
-node2 = cluster.add_instance('node2', with_zookeeper=True, image='yandex/clickhouse-server:19.4.5.35', stay_alive=True, with_installed_binary=True)
-node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server:19.4.5.35', stay_alive=True, with_installed_binary=True)
+node1 = cluster.add_instance('node1', with_zookeeper=True, image='yandex/clickhouse-server', tag='19.4.5.35', stay_alive=True, with_installed_binary=True)
+node2 = cluster.add_instance('node2', with_zookeeper=True, image='yandex/clickhouse-server', tag='19.4.5.35', stay_alive=True, with_installed_binary=True)
+node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server', tag='19.4.5.35', stay_alive=True, with_installed_binary=True)
 node4 = cluster.add_instance('node4')
 
 
@@ -89,7 +89,7 @@ def test_backup_from_old_version_setting(started_cluster):
 
     assert node2.query("SELECT sum(A) FROM dest_table") == "3\n"
 
-    assert node1.query("CHECK TABLE dest_table") == "1\n"
+    assert node2.query("CHECK TABLE dest_table") == "1\n"
 
 
 def test_backup_from_old_version_config(started_cluster):
@@ -128,7 +128,7 @@ def test_backup_from_old_version_config(started_cluster):
 
     assert node3.query("SELECT sum(A) FROM dest_table") == "3\n"
 
-    assert node1.query("CHECK TABLE dest_table") == "1\n"
+    assert node3.query("CHECK TABLE dest_table") == "1\n"
 
 
 def test_backup_and_alter(started_cluster):

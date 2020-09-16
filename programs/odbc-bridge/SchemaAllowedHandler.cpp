@@ -21,15 +21,14 @@ namespace
 {
     bool isSchemaAllowed(SQLHDBC hdbc)
     {
-        std::string identifier;
-
-        SQLSMALLINT t;
-        SQLRETURN r = POCO_SQL_ODBC_CLASS::SQLGetInfo(hdbc, SQL_SCHEMA_USAGE, nullptr, 0, &t);
+        SQLUINTEGER value;
+        SQLSMALLINT value_length = sizeof(value);
+        SQLRETURN r = POCO_SQL_ODBC_CLASS::SQLGetInfo(hdbc, SQL_SCHEMA_USAGE, &value, sizeof(value), &value_length);
 
         if (POCO_SQL_ODBC_CLASS::Utility::isError(r))
             throw POCO_SQL_ODBC_CLASS::ConnectionException(hdbc);
 
-        return t != 0;
+        return value != 0;
     }
 }
 
