@@ -50,14 +50,13 @@ namespace MySQLReplication
     {
         payload.readStrict(reinterpret_cast<char *>(&binlog_version), 2);
         assert(binlog_version == EVENT_VERSION_V4);
+        server_version.resize(50);
         payload.readStrict(reinterpret_cast<char *>(server_version.data()), 50);
         payload.readStrict(reinterpret_cast<char *>(&create_timestamp), 4);
         payload.readStrict(reinterpret_cast<char *>(&event_header_length), 1);
         assert(event_header_length == EVENT_HEADER_LENGTH);
 
-        size_t len = header.event_size - (2 + 50 + 4 + 1 + EVENT_HEADER_LENGTH) - 1;
-        event_type_header_length.resize(len);
-        payload.readStrict(reinterpret_cast<char *>(event_type_header_length.data()), len);
+        readStringUntilEOF(event_type_header_length, payload);
     }
 
     void FormatDescriptionEvent::dump(std::ostream & out) const
@@ -750,7 +749,7 @@ namespace MySQLReplication
         out << "GTID Next: " << gtid_next << std::endl;
     }
 
-    void DryRunEvent::parseImpl(ReadBuffer & payload) { payload.ignore(header.event_size - EVENT_HEADER_LENGTH); }
+    void DryRunEvent::parseImpl(ReadBuffer & payload) { payload.ignoreAll(); }
 
     void DryRunEvent::dump(std::ostream & out) const
     {
