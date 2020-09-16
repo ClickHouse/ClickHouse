@@ -279,13 +279,8 @@ struct integer<Bits, Signed>::_impl
         return sizeof(T) <= byte_count;
     }
 
-    constexpr static integer<Bits, unsigned> shift_left(const integer<Bits, unsigned> & rhs, int n) noexcept
+    constexpr static integer<Bits, Signed> shift_left(const integer<Bits, Signed> & rhs, unsigned n) noexcept
     {
-        if (static_cast<size_t>(n) >= Bits)
-            return 0;
-        if (n <= 0)
-            return rhs;
-
         integer<Bits, Signed> lhs;
         unsigned items_shift = n / base_bits;
 
@@ -311,53 +306,8 @@ struct integer<Bits, Signed>::_impl
         return lhs;
     }
 
-    constexpr static integer<Bits, signed> shift_left(const integer<Bits, signed> & rhs, int n) noexcept
+    constexpr static integer<Bits, Signed> shift_right(const integer<Bits, Signed> & rhs, unsigned n) noexcept
     {
-        return integer<Bits, signed>(shift_left(integer<Bits, unsigned>(rhs), n));
-    }
-
-    constexpr static integer<Bits, unsigned> shift_right(const integer<Bits, unsigned> & rhs, int n) noexcept
-    {
-        if (static_cast<size_t>(n) >= Bits)
-            return 0;
-        if (n <= 0)
-            return rhs;
-
-        integer<Bits, Signed> lhs;
-        unsigned items_shift = n / base_bits;
-
-        if (unsigned bit_shift = n % base_bits)
-        {
-            unsigned overflow_shift = base_bits - bit_shift;
-
-            lhs.items[little(0)] = rhs.items[little(items_shift)] >> bit_shift;
-            for (unsigned i = 1; i < item_count - items_shift; ++i)
-            {
-                lhs.items[little(i - 1)] |= rhs.items[little(items_shift + i)] << overflow_shift;
-                lhs.items[little(i)] = rhs.items[little(items_shift + i)] >> bit_shift;
-            }
-        }
-        else
-        {
-            for (unsigned i = 0; i < item_count - items_shift; ++i)
-                lhs.items[little(i)] = rhs.items[little(items_shift + i)];
-        }
-
-        for (unsigned i = item_count - items_shift; i < items_shift; ++i)
-            lhs.items[little(i)] = 0;
-        return lhs;
-    }
-
-    constexpr static integer<Bits, signed> shift_right(const integer<Bits, signed> & rhs, int n) noexcept
-    {
-        if (static_cast<size_t>(n) >= Bits)
-            return 0;
-        if (n <= 0)
-            return rhs;
-
-        if (!is_negative(rhs))
-            return shift_right(integer<Bits, unsigned>(rhs), n);
-
         integer<Bits, Signed> lhs;
         unsigned items_shift = n / base_bits;
         unsigned bit_shift = n % base_bits;
@@ -378,10 +328,19 @@ struct integer<Bits, Signed>::_impl
                 lhs.items[little(i)] = rhs.items[little(items_shift + i)];
         }
 
-        lhs.items[big(items_shift)] |= std::numeric_limits<base_type>::max() << overflow_shift;
+        if (is_negative(rhs))
+        {
+            lhs.items[big(items_shift)] |= std::numeric_limits<base_type>::max() << overflow_shift;
 
-        for (unsigned i = item_count - items_shift; i < items_shift; ++i)
-            lhs.items[little(i)] = std::numeric_limits<base_type>::max();
+            for (unsigned i = item_count - items_shift; i < items_shift; ++i)
+                lhs.items[little(i)] = std::numeric_limits<base_type>::max();
+        }
+        else
+        {
+            for (unsigned i = item_count - items_shift; i < items_shift; ++i)
+                lhs.items[little(i)] = 0;
+        }
+
         return lhs;
     }
 
@@ -966,14 +925,25 @@ constexpr integer<Bits, Signed> & integer<Bits, Signed>::operator^=(const T & rh
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> & integer<Bits, Signed>::operator<<=(int n) noexcept
 {
-    *this = _impl::shift_left(*this, n);
+    if (static_cast<size_t>(n) >= Bits)
+        *this = 0;
+    else if (n > 0)
+        *this = _impl::shift_left(*this, n);
     return *this;
 }
 
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> & integer<Bits, Signed>::operator>>=(int n) noexcept
 {
-    *this = _impl::shift_right(*this, n);
+    if (static_cast<size_t>(n) >= Bits)
+    {
+        if (is_negative(*this))
+            *this = -1;
+        else
+            *this = 0;
+    }
+    else if (n > 0)
+        *this = _impl::shift_right(*this, n);
     return *this;
 }
 
@@ -1189,11 +1159,19 @@ std::common_type_t<Integral, Integral2> constexpr operator^(const Integral & lhs
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> operator<<(const integer<Bits, Signed> & lhs, int n) noexcept
 {
+    if (static_cast<size_t>(n) >= Bits)
+        return 0;
+    if (n <= 0)
+        return lhs;
     return integer<Bits, Signed>::_impl::shift_left(lhs, n);
 }
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> operator>>(const integer<Bits, Signed> & lhs, int n) noexcept
 {
+    if (static_cast<size_t>(n) >= Bits)
+        return 0;
+    if (n <= 0)
+        return lhs;
     return integer<Bits, Signed>::_impl::shift_right(lhs, n);
 }
 
