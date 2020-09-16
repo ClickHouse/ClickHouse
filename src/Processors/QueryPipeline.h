@@ -89,6 +89,8 @@ public:
     /// Pipeline must have same header.
     void addDelayingPipeline(QueryPipeline pipeline);
 
+    void addCreatingSetsTransform();
+
     PipelineExecutorPtr execute();
 
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
