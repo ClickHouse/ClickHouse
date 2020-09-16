@@ -263,13 +263,13 @@ QueryPipeline QueryPipeline::unitePipelines(
 }
 
 
-void QueryPipeline::addCreatingSetsTransform(SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context)
+void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context)
 {
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
             pipeline.getHeader(),
-            getOutputStream().header,
+            res_header,
             std::move(subquery_for_set),
             limits,
             context));
