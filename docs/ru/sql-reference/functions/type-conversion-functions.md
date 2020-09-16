@@ -513,6 +513,80 @@ SELECT parseDateTimeBestEffort('10 20:19')
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)
 
+## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
+
+Эта функция похожа на [‘parseDateTimeBestEffort’](#parsedatetimebesteffort), но разница состоит в том, что в она использует американский формат даты (`MM/DD/YYYY` etc.) в случае многозначности.
+
+**Синтаксис**
+
+``` sql
+parseDateTimeBestEffortUS(time_string [, time_zone]);
+```
+
+**Параметры**
+
+-   `time_string` — строка, содержащая дату и время для преобразования. [String](../../sql-reference/data-types/string.md).
+-   `time_zone` — часовой пояс. Функция анализирует `time_string` в соответствии с часовым поясом. [String](../../sql-reference/data-types/string.md).
+
+**Поддерживаемые нестандартные форматы**
+
+-   Строка, содержащая 9-10 цифр [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
+-   Строка, содержащая дату и время: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
+-   Строка с датой, но без времени: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` etc.
+-   Строка, содержащая день и время: `DD`, `DD hh`, `DD hh:mm`. В этом случае `YYYY-MM` заменяется на `2000-01`.
+-   Строка, содержащая дату и время, а также информацию о часовом поясе: `YYYY-MM-DD hh:mm:ss ±h:mm` и т.д. Например, `2020-12-12 17:36:00 -5:00`.
+
+**Возвращаемое значение**
+
+-   `time_string` преобразован в тип данных `DateTime`.
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09/12/2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Ответ:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
+Запрос:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09-12-2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Ответ:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
+Запрос:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09.12.2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Ответ:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
 ## toUnixTimestamp64Milli
 ## toUnixTimestamp64Micro
 ## toUnixTimestamp64Nano
