@@ -91,7 +91,7 @@ public:
     /// Pipeline must have same header.
     void addDelayingPipeline(QueryPipeline pipeline);
 
-    void addCreatingSetsTransform(SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context);
+    void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context);
 
     PipelineExecutorPtr execute();
 
