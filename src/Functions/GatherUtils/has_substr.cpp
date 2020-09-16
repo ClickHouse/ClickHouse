@@ -5,7 +5,7 @@
 namespace DB::GatherUtils
 {
 
-struct ArrayHasSubstrSelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSelectArraySourcePair>
+struct ArrayHasSubstrSelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSubstrSelectArraySourcePair>
 {
     template <typename FirstSource, typename SecondSource>
     static void selectSourcePair(FirstSource && first, SecondSource && second, ColumnUInt8 & result)
