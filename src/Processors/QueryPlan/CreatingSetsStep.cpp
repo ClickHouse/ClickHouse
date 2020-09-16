@@ -121,6 +121,9 @@ void addCreatingSetsStep(
 
     for (auto & [description, set] : subqueries_for_sets)
     {
+        if (!set.source)
+            continue;
+
         auto plan = std::move(set.source);
         std::string type = (set.join != nullptr) ? "JOIN"
                                                  : "subquery";
@@ -137,6 +140,12 @@ void addCreatingSetsStep(
 
         input_streams.emplace_back(plan->getCurrentDataStream());
         plans.emplace_back(std::move(plan));
+    }
+
+    if (plans.size() == 1)
+    {
+        query_plan = std::move(*plans.front());
+        return;
     }
 
     auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));
