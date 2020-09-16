@@ -22,7 +22,7 @@ struct SliceDynamicOffsetUnboundedSelectArraySource : public ArraySourceSelector
 ColumnArray::MutablePtr sliceDynamicOffsetUnbounded(IArraySource & src, const IColumn & offset_column)
 {
     ColumnArray::MutablePtr res;
-    SliceDynamicOffsetUnboundedSelectArraySource::select(src, sink, offset_column, res);
+    SliceDynamicOffsetUnboundedSelectArraySource::select(src, offset_column, res);
     return res;
 }
 }
