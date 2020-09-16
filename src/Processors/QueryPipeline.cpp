@@ -268,11 +268,11 @@ void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryF
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
-            pipeline.getHeader(),
+            getHeader(),
             res_header,
             std::move(subquery_for_set),
             limits,
-            context));
+            context);
 
     InputPort * totals_port = nullptr;
 
