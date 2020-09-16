@@ -52,7 +52,26 @@ ColumnArray::MutablePtr sliceFromRightConstantOffsetBounded(IArraySource & src, 
 ColumnArray::MutablePtr sliceDynamicOffsetUnbounded(IArraySource & src, const IColumn & offset_column);
 ColumnArray::MutablePtr sliceDynamicOffsetBounded(IArraySource & src, const IColumn & offset_column, const IColumn & length_column);
 
-void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result);
+void sliceHasAny(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
+void sliceHasAll(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
+void sliceHasSubstr(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
+
+void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result)
+{
+    switch (search_type)
+    {
+        case ArraySearchType::All:
+            sliceHasAny(first, second, result);
+            break;
+        case ArraySearchType::Any:
+            sliceHasAll(first, second, result);
+            break;
+        case ArraySearchType::Substr:
+            sliceHasSubstr(first, second, result);
+            break;
+
+    }
+}
 
 void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_front);
 
