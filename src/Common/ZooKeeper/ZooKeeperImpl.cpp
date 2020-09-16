@@ -422,6 +422,18 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
 }
 
 
+static void removeRootPath(String & path, const String & root_path)
+{
+    if (root_path.empty())
+        return;
+
+    if (path.size() <= root_path.size())
+        throw Exception("Received path is not longer than root_path", Error::ZDATAINCONSISTENCY);
+
+    path = path.substr(root_path.size());
+}
+
+
 struct ZooKeeperResponse : virtual Response
 {
     virtual ~ZooKeeperResponse() = default;
@@ -1292,8 +1304,11 @@ void ZooKeeper::receiveEvent()
 
             if (add_watch)
             {
+                /// The key of wathces should exclude the root_path
+                String req_path = request_info.request->getPath();
+                removeRootPath(req_path, root_path);
                 std::lock_guard lock(watches_mutex);
-                watches[request_info.request->getPath()].emplace_back(std::move(request_info.watch));
+                watches[req_path].emplace_back(std::move(request_info.watch));
             }
         }
 
