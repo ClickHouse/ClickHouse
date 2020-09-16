@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_TYPE;
+}
+
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
@@ -79,6 +84,9 @@ namespace
                 return Poco::Dynamic::Var(std::to_string(LocalDateTime(time_t(field.get<UInt64>())))).convert<String>();
             case ValueType::vtUUID:
                 return Poco::Dynamic::Var(UUID(field.get<UInt128>()).toUnderType().toHexString()).convert<std::string>();
+             default:
+                 throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
+
         }
         __builtin_unreachable();
     }

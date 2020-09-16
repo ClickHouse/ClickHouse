@@ -32,7 +32,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/InflatingExpressionTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
@@ -64,11 +64,9 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
 
-#include <TableFunctions/ITableFunction.h>
-
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
@@ -553,6 +551,11 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         return res;
     }
 
+    if (options.to_stage == QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
+    {
+        return analysis_result.before_order_and_select->getSampleBlock();
+    }
+
     return analysis_result.final_projection->getSampleBlock();
 }
 
@@ -738,8 +741,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     auto & expressions = analysis_result;
-    const auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+    auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
     bool intermediate_stage = false;
+    bool to_aggregation_stage = false;
+    bool from_aggregation_stage = false;
 
     if (options.only_analyze)
     {
@@ -787,6 +792,14 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             options.to_stage == QueryProcessingStage::WithMergeableState)
             intermediate_stage = true;
+
+        /// Support optimize_distributed_group_by_sharding_key
+        /// Is running on the initiating server during distributed processing?
+        if (from_stage == QueryProcessingStage::WithMergeableStateAfterAggregation)
+            from_aggregation_stage = true;
+        /// Is running on remote servers during distributed processing?
+        if (options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregation)
+            to_aggregation_stage = true;
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
@@ -848,6 +861,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (expressions.need_aggregate)
                 executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final);
         }
+        if (from_aggregation_stage)
+        {
+            if (intermediate_stage || expressions.first_stage || expressions.second_stage)
+                throw Exception("Query with after aggregation stage cannot have any other stages", ErrorCodes::LOGICAL_ERROR);
+        }
+
 
         if (expressions.first_stage)
         {
@@ -894,12 +913,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (expressions.hasJoin())
             {
                 Block join_result_sample;
-                JoinPtr join = expressions.join->getTableJoinAlgo();
+                JoinPtr join = expressions.join;
 
-                join_result_sample = InflatingExpressionTransform::transformHeader(
+                join_result_sample = JoiningTransform::transformHeader(
                     query_plan.getCurrentDataStream().header, expressions.join);
 
-                QueryPlanStepPtr join_step = std::make_unique<InflatingExpressionStep>(
+                QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                     query_plan.getCurrentDataStream(),
                     expressions.join);
 
@@ -939,9 +958,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
         }
 
-        if (expressions.second_stage)
+        if (expressions.second_stage || from_aggregation_stage)
         {
-            if (expressions.need_aggregate)
+            if (from_aggregation_stage)
+            {
+                /// No need to aggregate anything, since this was done on remote shards.
+            }
+            else if (expressions.need_aggregate)
             {
                 /// If you need to combine aggregated results from multiple servers
                 if (!expressions.first_stage)
@@ -994,7 +1017,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
               * limiting the number of rows in each up to `offset + limit`.
               */
             bool has_prelimit = false;
-            if (query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
+            if (!to_aggregation_stage &&
+                query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
                 !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
             {
                 executePreLimit(query_plan, false);
@@ -1023,23 +1047,59 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 has_prelimit = true;
             }
 
-            /** We must do projection after DISTINCT because projection may remove some columns.
-              */
-            executeProjection(query_plan, expressions.final_projection);
+            /// Projection not be done on the shards, since then initiator will not find column in blocks.
+            /// (significant only for WithMergeableStateAfterAggregation).
+            if (!to_aggregation_stage)
+            {
+                /// We must do projection after DISTINCT because projection may remove some columns.
+                executeProjection(query_plan, expressions.final_projection);
+            }
 
-            /** Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
-              */
+            /// Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
             executeExtremes(query_plan);
 
-            if (!has_prelimit)  /// Limit is no longer needed if there is prelimit.
+            /// Limit is no longer needed if there is prelimit.
+            if (!to_aggregation_stage && !has_prelimit)
                 executeLimit(query_plan);
 
-            executeOffset(query_plan);
+            if (!to_aggregation_stage)
+                executeOffset(query_plan);
         }
     }
 
     if (query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
+}
+
+static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
+{
+    StreamLocalLimits limits;
+    limits.mode = LimitsMode::LIMITS_TOTAL;
+    limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read,
+                                    settings.read_overflow_mode);
+    limits.speed_limits.max_execution_time = settings.max_execution_time;
+    limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+
+    /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
+      *  because the initiating server has a summary of the execution of the request on all servers.
+      *
+      * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
+      *  additionally on each remote server, because these limits are checked per block of data processed,
+      *  and remote servers may process way more blocks of data than are received by initiator.
+      *
+      * The limits to throttle maximum execution speed is also checked on all servers.
+      */
+    if (options.to_stage == QueryProcessingStage::Complete)
+    {
+        limits.speed_limits.min_execution_rps = settings.min_execution_speed;
+        limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
+    }
+
+    limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+    limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
+    limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+
+    return limits;
 }
 
 void InterpreterSelectQuery::executeFetchColumns(
@@ -1380,12 +1440,18 @@ void InterpreterSelectQuery::executeFetchColumns(
             query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
         }
 
-        auto read_step = std::make_unique<ReadFromStorageStep>(
-            table_lock, metadata_snapshot, options, storage,
-                required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+        StreamLocalLimits limits;
+        std::shared_ptr<const EnabledQuota> quota;
 
-        read_step->setStepDescription("Read from " + storage->getName());
-        query_plan.addStep(std::move(read_step));
+        /// Set the limits and quota for reading data, the speed and time of the query.
+        if (!options.ignore_limits)
+            limits = getLimitsForStorage(settings, options);
+
+        if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
+            quota = context->getQuota();
+
+        storage->read(query_plan, table_lock, metadata_snapshot, limits, std::move(quota),
+                      required_columns, query_info, context, processing_stage, max_block_size, max_streams);
     }
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
@@ -1826,7 +1892,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
     query_plan.addStep(std::move(extremes_step));
 }
 
-void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, const SubqueriesForSets & subqueries_for_sets)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, SubqueriesForSets & subqueries_for_sets)
 {
     if (query_info.input_order_info)
         executeMergeSorted(query_plan, query_info.input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
@@ -1835,7 +1901,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
 
     auto creating_sets = std::make_unique<CreatingSetsStep>(
             query_plan.getCurrentDataStream(),
-            subqueries_for_sets,
+            std::move(subqueries_for_sets),
             SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
             *context);
 

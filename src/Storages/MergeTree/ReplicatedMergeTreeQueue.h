@@ -46,9 +46,15 @@ private:
         }
     };
 
+    struct OperationsInQueue
+    {
+        size_t merges = 0;
+        size_t mutations = 0;
+        size_t merges_with_ttl = 0;
+    };
+
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
-
 
     StorageReplicatedMergeTree & storage;
     MergeTreeDataFormatVersion format_version;
@@ -325,7 +331,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Count the number of merges and mutations of single parts in the queue.
-    std::pair<size_t, size_t> countMergesAndPartMutations() const;
+    OperationsInQueue countMergesAndPartMutations() const;
 
     /// Count the total number of active mutations.
     size_t countMutations() const;
