@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <unordered_set>
@@ -28,6 +29,10 @@ bool injectRequiredColumnsRecursively(
     NameSet & required_columns,
     NameSet & injected_columns)
 {
+    /// This is needed to prevent stack overflow in case of cyclic defaults or
+    /// huge AST which for some reason was not validated on parsing/interpreter
+    /// stages.
+    checkStackSize();
     String column_name_in_part = column_name;
     if (alter_conversions.isColumnRenamed(column_name_in_part))
         column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
