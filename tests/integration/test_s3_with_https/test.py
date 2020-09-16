@@ -18,7 +18,9 @@ def check_proxy_logs(cluster, proxy_instance):
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml", "configs/config.d/log_conf.xml", "configs/config.d/ssl.xml"], with_minio=True, minio_certs_dir='minio_certs')
+        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml", "configs/config.d/log_conf.xml",
+                                                   "configs/config.d/ssl.xml"], with_minio=True,
+                             minio_certs_dir='minio_certs')
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -43,7 +45,7 @@ def test_s3_with_https(cluster, policy):
         ORDER BY id
         SETTINGS storage_policy='{}'
         """
-        .format(policy)
+            .format(policy)
     )
 
     node.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
