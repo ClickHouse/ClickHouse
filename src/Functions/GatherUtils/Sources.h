@@ -33,7 +33,7 @@ template <typename T> struct NumericArraySink;
 struct StringSink;
 struct FixedStringSink;
 struct GenericArraySink;
-template <typename ArraySink> struct NullableArraySink
+template <typename ArraySink> struct NullableArraySink;
 
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
@@ -49,6 +49,11 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
     size_t row_num = 0;
     ColumnArray::Offset prev_offset = 0;
+
+    MutableColumnPtr createValuesColumn()
+    {
+        return ColumnVector<T>::create();
+    }
 
     explicit NumericArraySource(const ColumnArray & arr)
             : elements(typeid_cast<const ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
@@ -532,6 +537,11 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
 
     size_t row_num = 0;
     ColumnArray::Offset prev_offset = 0;
+
+    MutableColumnPtr createValuesColumn()
+    {
+        return elements.cloneEmpty();
+    }
 
     explicit GenericArraySource(const ColumnArray & arr)
             : elements(arr.getData()), offsets(arr.getOffsets())

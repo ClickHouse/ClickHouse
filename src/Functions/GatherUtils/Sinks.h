@@ -45,11 +45,6 @@ struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
     size_t row_num = 0;
     ColumnArray::Offset current_offset = 0;
 
-    MutableColumnPtr createValuesColumn()
-    {
-        return ColumnVector<T>::create();
-    }
-
     NumericArraySink(IColumn & elements_, ColumnArray::Offsets & offsets_, size_t column_size)
             : elements(elements_), offsets(offsets_)
     {
@@ -203,11 +198,6 @@ struct NullableArraySink : public ArraySink
     using CompatibleValueSource = NullableValueSource<typename ArraySink::CompatibleValueSource>;
 
     NullMap & null_map;
-
-    MutableColumnPtr createValuesColumn()
-    {
-        return ColumnNullable::create(ArraySink::createValuesColumn(), ColumnUInt8::create());
-    }
 
     NullableArraySink(IColumn & elements_, ColumnArray::Offsets & offsets_, size_t column_size)
         : ArraySink(assert_cast<ColumnNullable &>(elements_).getNestedColumn(), offsets_, column_size)

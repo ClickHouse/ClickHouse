@@ -7,18 +7,23 @@
 namespace DB::GatherUtils
 {
 struct SliceFromLeftConstantOffsetUnboundedSelectArraySource
-    : public ArraySinkSourceSelector<SliceFromLeftConstantOffsetUnboundedSelectArraySource>
+    : public ArraySourceSelector<SliceFromLeftConstantOffsetUnboundedSelectArraySource>
 {
-    template <typename Source, typename Sink>
-    static void selectSourceSink(Source && source, Sink && sink, size_t & offset)
+    template <typename Source>
+    static void selectSourceSink(Source && source, size_t & offset, ColumnArray::MutablePtr & result)
     {
+        using Sink = typename Source::SinkType;
+        result = ColumnArray::create(source.createValuesColumn());
+        Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
         sliceFromLeftConstantOffsetUnbounded(source, sink, offset);
     }
 };
 
-void sliceFromLeftConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset)
+ColumnArray::MutablePtr sliceFromLeftConstantOffsetUnbounded(IArraySource & src, size_t offset)
 {
-    SliceFromLeftConstantOffsetUnboundedSelectArraySource::select(src, sink, offset);
+    ColumnArray::MutablePtr res;
+    SliceFromLeftConstantOffsetUnboundedSelectArraySource::select(src, offset, res);
+    return res;
 }
 }
 
