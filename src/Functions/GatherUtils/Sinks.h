@@ -46,7 +46,7 @@ struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
     ColumnArray::Offset current_offset = 0;
 
     NumericArraySink(IColumn & elements_, ColumnArray::Offsets & offsets_, size_t column_size)
-            : elements(assert_cast<ColVecType&>(elements_)), offsets(offsets_)
+            : elements(assert_cast<ColVecType&>(elements_).getData()), offsets(offsets_)
     {
         offsets.resize(column_size);
     }
