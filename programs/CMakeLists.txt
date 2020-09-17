@@ -2,7 +2,6 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-<<<<<<< HEAD
 # The 'clickhouse' binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
 # If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
@@ -34,24 +33,6 @@ option (ENABLE_CLICKHOUSE_OBFUSCATOR ${ENABLE_CLICKHOUSE_ALL})
 
 # ???
 option (ENABLE_CLICKHOUSE_ODBC_BRIDGE ${ENABLE_CLICKHOUSE_ALL})
-=======
-# 'clickhouse' binary is a multi purpose tool,
-# that contain multiple execution modes (client, server, etc.)
-# each of them is built and linked as a separate library, defined below.
-
-option (ENABLE_CLICKHOUSE_ALL "Enable all tools" ON)
-option (ENABLE_CLICKHOUSE_SERVER "Enable clickhouse-server" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_CLIENT "Enable clickhouse-client" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_LOCAL "Enable clickhouse-local" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_BENCHMARK "Enable clickhouse-benchmark" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG "Enable clickhouse-extract-from-config" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_COMPRESSOR "Enable clickhouse-compressor" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_COPIER "Enable clickhouse-copier" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_FORMAT "Enable clickhouse-format" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_OBFUSCATOR "Enable clickhouse-obfuscator" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_GIT_IMPORT "Enable clickhouse-git-import" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "Enable clickhouse-odbc-bridge" ${ENABLE_CLICKHOUSE_ALL})
->>>>>>> upstream/master
 
 if (CLICKHOUSE_SPLIT_BINARY)
     option(ENABLE_CLICKHOUSE_INSTALL)
