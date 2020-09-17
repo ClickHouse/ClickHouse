@@ -12,7 +12,9 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
-} IMPLEMENT_SETTINGS_TRAITS(joinSettingsTraits, LIST_OF_JOIN_SETTINGS)
+}
+
+IMPLEMENT_SETTINGS_TRAITS(joinSettingsTraits, LIST_OF_JOIN_SETTINGS)
 
 void JoinSettings::loadFromQuery(ASTStorage & storage_def)
 {
