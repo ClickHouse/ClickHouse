@@ -32,5 +32,5 @@ def test_replicated_merge_tree_settings(start_cluster):
         "CREATE TABLE test2 (id Int64) ENGINE ReplicatedMergeTree('/clickhouse/test', 'test') ORDER BY id"
     )
 
-    assert node.query("SHOW CREATE test1").strip().endswith("100")
-    assert node.query("SHOW CREATE test2").strip().endswith("200")
+    assert "index_granularity = 100" in node.query("SHOW CREATE test1")
+    assert "index_granularity = 200" in node.query("SHOW CREATE test2")
