@@ -6,7 +6,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitors.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>

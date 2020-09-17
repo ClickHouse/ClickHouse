@@ -181,6 +181,15 @@ void AccessControlManager::addUsersConfigStorage(
     const String & preprocessed_dir_,
     const zkutil::GetZooKeeper & get_zookeeper_function_)
 {
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
+        {
+            if (users_config_storage->isPathEqual(users_config_path_))
+                return;
+        }
+    }
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
     new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
@@ -210,17 +219,36 @@ void AccessControlManager::startPeriodicReloadingUsersConfigs()
 
 void AccessControlManager::addDiskStorage(const String & directory_, bool readonly_)
 {
-    addStorage(std::make_shared<DiskAccessStorage>(directory_, readonly_));
+    addDiskStorage(DiskAccessStorage::STORAGE_TYPE, directory_, readonly_);
 }
 
 void AccessControlManager::addDiskStorage(const String & storage_name_, const String & directory_, bool readonly_)
 {
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto disk_storage = typeid_cast<std::shared_ptr<DiskAccessStorage>>(storage))
+        {
+            if (disk_storage->isPathEqual(directory_))
+            {
+                if (readonly_)
+                    disk_storage->setReadOnly(readonly_);
+                return;
+            }
+        }
+    }
     addStorage(std::make_shared<DiskAccessStorage>(storage_name_, directory_, readonly_));
 }
 
 
 void AccessControlManager::addMemoryStorage(const String & storage_name_)
 {
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto memory_storage = typeid_cast<std::shared_ptr<MemoryAccessStorage>>(storage))
+            return;
+    }
     addStorage(std::make_shared<MemoryAccessStorage>(storage_name_));
 }
 

@@ -565,7 +565,7 @@ bool StorageKafka::streamToViews()
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
-        IBlockInputStream::LocalLimits limits;
+        StreamLocalLimits limits;
 
         limits.speed_limits.max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
                                                  ? kafka_settings->kafka_flush_interval_ms
