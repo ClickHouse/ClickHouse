@@ -46,6 +46,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int TIMEOUT_EXCEEDED;
     extern const int DUPLICATE_COLUMN;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -66,10 +67,19 @@ public:
         return Nested::flatten(res);
     }
 
-    TinyLogSource(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
+    TinyLogSource(
+        size_t block_size_,
+        const NamesAndTypesList & columns_,
+        StorageTinyLog & storage_,
+        std::shared_lock<std::shared_timed_mutex> && lock_,
+        size_t max_read_buffer_size_)
         : SourceWithProgress(getHeader(columns_))
-        , block_size(block_size_), columns(columns_), storage(storage_), lock(storage_.rwlock)
-        , max_read_buffer_size(max_read_buffer_size_) {}
+        , block_size(block_size_), columns(columns_), storage(storage_), lock(std::move(lock_))
+        , max_read_buffer_size(max_read_buffer_size_)
+        {
+            if (!lock)
+                throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        }
 
     String getName() const override { return "TinyLog"; }
 
@@ -80,7 +90,7 @@ private:
     size_t block_size;
     NamesAndTypesList columns;
     StorageTinyLog & storage;
-    std::shared_lock<std::shared_mutex> lock;
+    std::shared_lock<std::shared_timed_mutex> lock;
     bool is_finished = false;
     size_t max_read_buffer_size;
 
@@ -110,9 +120,14 @@ private:
 class TinyLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit TinyLogBlockOutputStream(StorageTinyLog & storage_, const StorageMetadataPtr & metadata_snapshot_)
-        : storage(storage_), metadata_snapshot(metadata_snapshot_), lock(storage_.rwlock)
+    explicit TinyLogBlockOutputStream(
+        StorageTinyLog & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        std::unique_lock<std::shared_timed_mutex> && lock_)
+        : storage(storage_), metadata_snapshot(metadata_snapshot_), lock(std::move(lock_))
     {
+        if (!lock)
+            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
     }
 
     ~TinyLogBlockOutputStream() override
@@ -140,7 +155,7 @@ public:
 private:
     StorageTinyLog & storage;
     StorageMetadataPtr metadata_snapshot;
-    std::unique_lock<std::shared_mutex> lock;
+    std::unique_lock<std::shared_timed_mutex> lock;
     bool done = false;
 
     struct Stream
@@ -410,7 +425,9 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const Storage
 {
     assert(table_path != new_path_to_table_data);
     {
-        std::unique_lock<std::shared_mutex> lock(rwlock);
+        std::unique_lock<std::shared_timed_mutex> lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
+        if (!lock)
+            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
         disk->moveDirectory(table_path, new_path_to_table_data);
 
@@ -421,6 +438,16 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const Storage
             file.second.data_file_path = table_path + fileName(file.second.data_file_path);
     }
     renameInMemory(new_table_id);
+}
+
+
+static std::chrono::seconds getLockTimeout(const Context & context)
+{
+    const Settings & settings = context.getSettingsRef();
+    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
+    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
+        lock_timeout = settings.max_execution_time.totalSeconds();
+    return std::chrono::seconds{lock_timeout};
 }
 
 
@@ -437,27 +464,38 @@ Pipe StorageTinyLog::read(
 
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
+    const Settings & settings = context.getSettingsRef();
+
     return Pipe(std::make_shared<TinyLogSource>(
-        max_block_size, Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
+        max_block_size,
+        Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names)),
+        *this,
+        std::shared_lock{rwlock, getLockTimeout(context)},
+        settings.max_read_buffer_size));
 }
 
 
-BlockOutputStreamPtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    return std::make_shared<TinyLogBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<TinyLogBlockOutputStream>(*this, metadata_snapshot, std::unique_lock{rwlock, getLockTimeout(context)});
 }
 
 
-CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context & /* context */)
+CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context & context)
 {
-    std::shared_lock<std::shared_mutex> lock(rwlock);
+    std::shared_lock<std::shared_timed_mutex> lock(rwlock, getLockTimeout(context));
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
     return file_checker.check();
 }
 
 void StorageTinyLog::truncate(
-    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context & context, TableExclusiveLockHolder &)
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock<std::shared_timed_mutex> lock(rwlock, getLockTimeout(context));
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     disk->clearDirectory(table_path);
 
@@ -470,7 +508,10 @@ void StorageTinyLog::truncate(
 
 void StorageTinyLog::drop()
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock<std::shared_timed_mutex> lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
     if (disk->exists(table_path))
         disk->removeRecursive(table_path);
     files.clear();
