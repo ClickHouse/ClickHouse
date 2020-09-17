@@ -17,8 +17,9 @@ if (USE_DEBUG_HELPERS)
 endif ()
 
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
-
-option (WEVERYTHING "Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang." ON)
+# Intended for exploration of new compiler warnings that may be found useful.
+# Applies to clang only
+option (WEVERYTHING "Enable -Weverything option with some exceptions." ON)
 
 # Control maximum size of stack frames. It can be important if the code is run in fibers with small stack size.
 # Only in release build because debug has too large stack frames.

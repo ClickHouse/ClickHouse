@@ -28,6 +28,7 @@ endforeach()
 
 project(ClickHouse)
 
+# If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
    "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)
    but is not possible to satisfy" ON)
@@ -117,7 +118,7 @@ if (USE_STATIC_LIBRARIES)
 endif ()
 
 # Implies ${WITH_COVERAGE}
-option (ENABLE_FUZZING "Fuzzy testing using libfuzzer")
+option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 
 if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
@@ -325,7 +326,8 @@ elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
 endif ()
 
-option(ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
+# Turns on all external libs like s3, kafka, ODBC, ...
+option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
 # We recommend avoiding this mode for production builds because we can't guarantee all needed libraries exist in your
 # system.
