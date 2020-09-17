@@ -6,7 +6,12 @@
 
 namespace DB::GatherUtils
 {
-struct SliceDynamicOffsetUnboundedSelectArraySource : public ArraySourceSelector<SliceDynamicOffsetUnboundedSelectArraySource>
+
+namespace
+{
+
+struct SliceDynamicOffsetUnboundedSelectArraySource
+        : public ArraySourceSelector<SliceDynamicOffsetUnboundedSelectArraySource>
 {
     template <typename Source>
     static void selectImpl(Source && source, const IColumn & offset_column, ColumnArray::MutablePtr & result)
@@ -19,6 +24,7 @@ struct SliceDynamicOffsetUnboundedSelectArraySource : public ArraySourceSelector
     }
 };
 
+}
 
 ColumnArray::MutablePtr sliceDynamicOffsetUnbounded(IArraySource & src, const IColumn & offset_column)
 {
