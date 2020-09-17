@@ -1874,7 +1874,7 @@ bool MergeTreeData::renameTempPartAndReplace(
         part_info.mutation = 0; /// it's equal to min_block by default
         part_name = part->getNewName(part_info);
     }
-    else
+    else /// Parts from ReplicatedMergeTree already have names
         part_name = part->name;
 
     LOG_TRACE(log, "Renaming temporary part {} to {}.", part->relative_path, part_name);
