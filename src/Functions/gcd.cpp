@@ -5,11 +5,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+namespace
+{
 
 template <typename A, typename B>
 struct GCDImpl
@@ -20,7 +22,7 @@ struct GCDImpl
     template <typename Result = ResultType>
     static inline Result apply([[maybe_unused]] A a, [[maybe_unused]] B b)
     {
-        if constexpr (is_big_int_v<A> || is_big_int_v<B>)
+        if constexpr (is_big_int_v<A> || is_big_int_v<B> || is_big_int_v<Result>)
             throw Exception("GCD is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
         else
         {
@@ -38,7 +40,9 @@ struct GCDImpl
 };
 
 struct NameGCD { static constexpr auto name = "gcd"; };
-using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD, false>;
+using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false>;
+
+}
 
 void registerFunctionGCD(FunctionFactory & factory)
 {

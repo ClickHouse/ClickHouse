@@ -5,6 +5,8 @@
 #include <common/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -633,6 +635,23 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
 uint8_t CompressionCodecT64::getMethodByte() const
 {
     return codecId();
+}
+
+CompressionCodecT64::CompressionCodecT64(TypeIndex type_idx_, Variant variant_)
+    : type_idx(type_idx_)
+    , variant(variant_)
+{
+    if (variant == Variant::Byte)
+        setCodecDescription("T64");
+    else
+        setCodecDescription("T64", {std::make_shared<ASTLiteral>("bit")});
+}
+
+void CompressionCodecT64::updateHash(SipHash & hash) const
+{
+    getCodecDesc()->updateTreeHash(hash);
+    hash.update(type_idx);
+    hash.update(variant);
 }
 
 void registerCodecT64(CompressionCodecFactory & factory)

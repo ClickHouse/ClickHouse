@@ -13,6 +13,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
+
 /// Returns global default value for type name (example: 0 for numeric types, '' for String).
 class FunctionDefaultValueOfTypeName : public IFunction
 {
@@ -40,9 +43,8 @@ public:
     {
         const ColumnConst * col_type_const = typeid_cast<const ColumnConst *>(arguments.front().column.get());
         if (!col_type_const || !isString(arguments.front().type))
-            throw Exception("The argument of function " + getName() + " must be a constant string describing type. "
-                    "Instead there is a column with the following structure: " + arguments.front().column->dumpStructure(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("The argument of function " + getName() + " must be a constant string describing type.",
+                ErrorCodes::ILLEGAL_COLUMN);
 
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
@@ -54,6 +56,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionDefaultValueOfTypeName(FunctionFactory & factory)
 {

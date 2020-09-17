@@ -13,12 +13,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
 
 /** Match all groups of given input string with given re, return array of arrays of matches.
  *
@@ -102,6 +103,8 @@ public:
         block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 };
+
+}
 
 void registerFunctionExtractGroups(FunctionFactory & factory)
 {

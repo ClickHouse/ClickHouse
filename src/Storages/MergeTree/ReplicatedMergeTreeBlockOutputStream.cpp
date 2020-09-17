@@ -428,11 +428,11 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                     throw Exception("Too many transaction retires - it may indicate an error", ErrorCodes::DUPLICATE_DATA_PART);
                 continue;
             }
-            else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
+            else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == block_id_path)
             {
-                transaction.rollback();
-
-                throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
+                /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
+                LOG_INFO(log, "Block with ID {} already exists; ignoring it (removing part {})", block_id, part->name);
+                    throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
             }
             else
             {
