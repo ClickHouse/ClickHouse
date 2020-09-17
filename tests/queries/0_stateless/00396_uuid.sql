@@ -9,5 +9,5 @@ SELECT toString(toUUID('3f1ed72e-f7fe-4459-9cbe-95fe9298f845'));
 -- conversion back and forth to big-endian hex string
 with generateUUIDv4() as uuid,
     identity(lower(hex(reverse(reinterpretAsString(uuid))))) as str,
-    reinterpretAsUUID(reverse(unhex(str))) uuid2
+    reinterpretAsUUID(reverse(unhex(str))) as uuid2
 select uuid = uuid2;
