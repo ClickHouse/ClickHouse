@@ -1981,6 +1981,22 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
     }
 }
 
+void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)
+{
+    auto lock = lockParts();
+
+    for (const auto & part : remove)
+    {
+        auto it_part = data_parts_by_info.find(part->info);
+        if (it_part == data_parts_by_info.end())
+            throw Exception("Part " + part->getNameWithState() + " not found in data_parts", ErrorCodes::LOGICAL_ERROR);
+
+        modifyPartState(part, IMergeTreeDataPart::State::Temporary);
+        /// Erase immediately
+        data_parts_indexes.erase(it_part);
+    }
+}
+
 void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock)
 {
     auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
@@ -3098,6 +3114,25 @@ MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
         return *it;
 
     return nullptr;
+}
+
+
+void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
+{
+    if (!isEmpty())
+    {
+        std::stringstream ss;
+        ss << " Rollbacking parts state to temporary and removing from working set:";
+        for (const auto & part : precommitted_parts)
+            ss << " " << part->relative_path;
+        ss << ".";
+        LOG_DEBUG(data.log, "Undoing transaction.{}", ss.str());
+
+        data.removePartsFromWorkingSetImmediatelyAndSetTemporaryState(
+            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()));
+    }
+
+    clear();
 }
 
 void MergeTreeData::Transaction::rollback()
