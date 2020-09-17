@@ -16,6 +16,9 @@
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/QueryPlan/MaterializingStep.h>
+#include <Processors/QueryPlan/ConvertingStep.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 
 namespace DB
 {
@@ -87,6 +90,55 @@ Pipe StorageView::read(
     });
 
     return QueryPipeline::getPipe(std::move(pipeline));
+}
+
+void StorageView::read(
+        QueryPlan & query_plan,
+        TableLockHolder table_lock,
+        StorageMetadataPtr metadata_snapshot,
+        StreamLocalLimits & limits,
+        std::shared_ptr<const EnabledQuota> quota,
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        std::shared_ptr<Context> context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        const size_t /*max_block_size*/,
+        const unsigned /*num_streams*/)
+{
+    ASTPtr current_inner_query = metadata_snapshot->getSelectQuery().inner_query;
+
+    if (query_info.view_query)
+    {
+        if (!query_info.view_query->as<ASTSelectWithUnionQuery>())
+            throw Exception("Unexpected optimized VIEW query", ErrorCodes::LOGICAL_ERROR);
+        current_inner_query = query_info.view_query->clone();
+    }
+
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, *context, {}, column_names);
+    interpreter.buildQueryPlan(query_plan);
+
+    /// It's expected that the columns read from storage are not constant.
+    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+    auto materializing = std::make_unique<MaterializingStep>(query_plan.getCurrentDataStream());
+    materializing->setStepDescription("Materialize constants after VIEW subquery");
+    query_plan.addStep(std::move(materializing));
+
+    /// And also convert to expected structure.
+    auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto converting = std::make_unique<ConvertingStep>(query_plan.getCurrentDataStream(), header);
+    converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
+    query_plan.addStep(std::move(converting));
+
+    /// Extend lifetime of context, table lock, storage. Set limits and quota.
+    auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
+            query_plan.getCurrentDataStream(),
+            shared_from_this(),
+            std::move(table_lock),
+            limits,
+            std::move(quota),
+            std::move(context));
+    adding_limits_and_quota->setStepDescription("Set limits and quota for VIEW subquery");
+    query_plan.addStep(std::move(adding_limits_and_quota));
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)

@@ -116,6 +116,7 @@ SRCS(
     QueryPlan/ReadFromStorageStep.cpp
     QueryPlan/ReadNothingStep.cpp
     QueryPlan/RollupStep.cpp
+    QueryPlan/SettingQuotaAndLimitsStep.cpp
     QueryPlan/TotalsHavingStep.cpp
     QueryPlan/UnionStep.cpp
     ResizeProcessor.cpp
