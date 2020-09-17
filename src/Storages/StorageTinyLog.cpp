@@ -76,10 +76,10 @@ public:
         : SourceWithProgress(getHeader(columns_))
         , block_size(block_size_), columns(columns_), storage(storage_), lock(std::move(lock_))
         , max_read_buffer_size(max_read_buffer_size_)
-        {
-            if (!lock)
-                throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-        }
+    {
+        if (!lock)
+            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+    }
 
     String getName() const override { return "TinyLog"; }
 
@@ -493,10 +493,6 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context
 void StorageTinyLog::truncate(
     const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context & context, TableExclusiveLockHolder &)
 {
-    std::unique_lock<std::shared_timed_mutex> lock(rwlock, getLockTimeout(context));
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
     disk->clearDirectory(table_path);
 
     files.clear();
@@ -508,10 +504,6 @@ void StorageTinyLog::truncate(
 
 void StorageTinyLog::drop()
 {
-    std::unique_lock<std::shared_timed_mutex> lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
     if (disk->exists(table_path))
         disk->removeRecursive(table_path);
     files.clear();
