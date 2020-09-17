@@ -48,30 +48,6 @@ uintptr_t readAddressHex(DB::ReadBuffer & in)
 }
 
 
-/** Find the address and size of the mapped memory region pointed by ptr.
-  */
-std::pair<void *, size_t> getMappedArea(void * ptr)
-{
-    using namespace DB;
-
-    uintptr_t uintptr = reinterpret_cast<uintptr_t>(ptr);
-    ReadBufferFromFile in("/proc/self/maps");
-
-    while (!in.eof())
-    {
-        uintptr_t begin = readAddressHex(in);
-        assertChar('-', in);
-        uintptr_t end = readAddressHex(in);
-        skipToNextLineOrEOF(in);
-
-        if (begin <= uintptr && uintptr < end)
-            return {reinterpret_cast<void *>(begin), end - begin};
-    }
-
-    throw Exception("Cannot find mapped area for pointer", ErrorCodes::LOGICAL_ERROR);
-}
-
-
 __attribute__((__noinline__)) int64_t our_syscall(...)
 {
     __asm__ __volatile__ (R"(
@@ -181,6 +157,28 @@ __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
 }
 
 
+std::pair<void *, size_t> getMappedArea(void * ptr)
+{
+    using namespace DB;
+
+    uintptr_t uintptr = reinterpret_cast<uintptr_t>(ptr);
+    ReadBufferFromFile in("/proc/self/maps");
+
+    while (!in.eof())
+    {
+        uintptr_t begin = readAddressHex(in);
+        assertChar('-', in);
+        uintptr_t end = readAddressHex(in);
+        skipToNextLineOrEOF(in);
+
+        if (begin <= uintptr && uintptr < end)
+            return {reinterpret_cast<void *>(begin), end - begin};
+    }
+
+    throw Exception("Cannot find mapped area for pointer", ErrorCodes::LOGICAL_ERROR);
+}
+
+
 void remapExecutable()
 {
     auto [begin, size] = getMappedArea(reinterpret_cast<void *>(remapExecutable));
@@ -195,6 +193,7 @@ namespace DB
 {
 
 void remapExecutable() {}
+std::pair<void *, size_t> getMappedArea(void * ptr) { return {}; }
 
 }
 
