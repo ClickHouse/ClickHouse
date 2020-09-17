@@ -252,7 +252,7 @@ void TinyLogSource::readData(const String & name, const IDataType & type, IColum
     };
 
     if (deserialize_states.count(name) == 0)
-         type.deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
+        type.deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
 
     type.deserializeBinaryBulkWithMultipleStreams(column, limit, settings, deserialize_states[name]);
 }
