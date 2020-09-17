@@ -68,10 +68,10 @@
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
 
 /// Minimum revision supporting OpenTelemetry
-#define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54227
+#define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54441
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
-#define DBMS_TCP_PROTOCOL_VERSION 54227
+#define DBMS_TCP_PROTOCOL_VERSION 54441
 
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
