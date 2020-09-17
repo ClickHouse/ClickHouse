@@ -11,9 +11,9 @@ namespace DB
 class CompressionCodecNone : public ICompressionCodec
 {
 public:
-    uint8_t getMethodByte() const override;
+    CompressionCodecNone();
 
-    ASTPtr getCodecDesc() const override;
+    uint8_t getMethodByte() const override;
 
     void updateHash(SipHash & hash) const override;
 

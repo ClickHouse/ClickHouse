@@ -1,29 +1,33 @@
 import time
-import pytest
-
-from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
 
+import pytest
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
+
 
 def _fill_nodes(nodes, shard, connections_count):
     for node in nodes:
         node.query(
-        '''
-            CREATE DATABASE test;
+            '''
+                CREATE DATABASE test;
+    
+                CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}')
+                PARTITION BY date
+                ORDER BY id
+                SETTINGS
+                    replicated_max_parallel_fetches_for_host={connections},
+                    index_granularity=8192;
+            '''.format(shard=shard, replica=node.name, connections=connections_count))
 
-            CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}')
-            PARTITION BY date
-            ORDER BY id
-            SETTINGS
-                replicated_max_parallel_fetches_for_host={connections},
-                index_granularity=8192;
-        '''.format(shard=shard, replica=node.name, connections=connections_count))
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', user_configs=[], main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
-node2 = cluster.add_instance('node2', user_configs=[], main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+node1 = cluster.add_instance('node1', user_configs=[],
+                             main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+node2 = cluster.add_instance('node2', user_configs=[],
+                             main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def start_small_cluster():
@@ -37,8 +41,8 @@ def start_small_cluster():
     finally:
         cluster.shutdown()
 
-def test_single_endpoint_connections_count(start_small_cluster):
 
+def test_single_endpoint_connections_count(start_small_cluster):
     def task(count):
         print("Inserting ten times from {}".format(count))
         for i in xrange(count, count + 10):
@@ -51,6 +55,7 @@ def test_single_endpoint_connections_count(start_small_cluster):
     assert_eq_with_retry(node2, "select count() from test_table", "100")
 
     assert node2.query("SELECT value FROM system.events where event='CreatedHTTPConnections'") == '1\n'
+
 
 def test_keepalive_timeout(start_small_cluster):
     current_count = int(node1.query("select count() from test_table").strip())
@@ -68,9 +73,14 @@ def test_keepalive_timeout(start_small_cluster):
 
     assert not node2.contains_in_log("No message received"), "Found 'No message received' in clickhouse-server.log"
 
-node3 = cluster.add_instance('node3', user_configs=[], main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
-node4 = cluster.add_instance('node4', user_configs=[], main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
-node5 = cluster.add_instance('node5', user_configs=[], main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+
+node3 = cluster.add_instance('node3', user_configs=[],
+                             main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+node4 = cluster.add_instance('node4', user_configs=[],
+                             main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+node5 = cluster.add_instance('node5', user_configs=[],
+                             main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def start_big_cluster():
@@ -84,8 +94,8 @@ def start_big_cluster():
     finally:
         cluster.shutdown()
 
-def test_multiple_endpoint_connections_count(start_big_cluster):
 
+def test_multiple_endpoint_connections_count(start_big_cluster):
     def task(count):
         print("Inserting ten times from {}".format(count))
         if (count / 10) % 2 == 1:
