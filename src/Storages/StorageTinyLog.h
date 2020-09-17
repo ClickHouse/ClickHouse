@@ -43,8 +43,6 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
-    void drop() override;
-
 protected:
     StorageTinyLog(
         DiskPtr disk_,
