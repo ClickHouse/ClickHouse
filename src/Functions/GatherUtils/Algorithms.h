@@ -21,6 +21,7 @@ namespace DB::GatherUtils
 
 inline constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
 
+
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
 
 template <typename T>

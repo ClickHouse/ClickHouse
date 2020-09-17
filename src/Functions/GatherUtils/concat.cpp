@@ -16,6 +16,9 @@ namespace ErrorCodes
 namespace GatherUtils
 {
 
+namespace
+{
+
 struct ArrayConcat : public ArraySourceSelector<ArrayConcat>
 {
     using Sources = std::vector<std::unique_ptr<IArraySource>>;
@@ -53,6 +56,8 @@ struct ArrayConcat : public ArraySourceSelector<ArrayConcat>
         concat<SourceType, Sink>(sources, std::move(sink));
     }
 };
+
+}
 
 ColumnArray::MutablePtr concat(const std::vector<std::unique_ptr<IArraySource>> & sources)
 {

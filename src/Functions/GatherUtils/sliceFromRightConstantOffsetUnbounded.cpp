@@ -6,6 +6,10 @@
 
 namespace DB::GatherUtils
 {
+
+namespace
+{
+
 struct SliceFromRightConstantOffsetUnboundedSelectArraySource
     : public ArraySourceSelector<SliceFromRightConstantOffsetUnboundedSelectArraySource>
 {
@@ -19,6 +23,8 @@ struct SliceFromRightConstantOffsetUnboundedSelectArraySource
         sliceFromRightConstantOffsetUnbounded(source, sink, offset);
     }
 };
+
+}
 
 ColumnArray::MutablePtr sliceFromRightConstantOffsetUnbounded(IArraySource & src, size_t offset)
 {
