@@ -343,9 +343,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             part->name = existing_part_name;
             part->info = MergeTreePartInfo::fromPartName(existing_part_name, storage.format_version);
-
             /// Used only for exception messages.
             block_number = part->info.min_block;
+
 
             /// Do not check for duplicate on commit to ZK.
             block_id_path.clear();
@@ -414,10 +414,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 LOG_INFO(log, "Block with ID {} already exists (it was just appeared). Renaming part {} back to {}. Will retry write.",
                     block_id, part->name, temporary_part_relative_path);
 
-                transaction.rollback();
+                transaction.rollbackPartsToTemporaryState();
 
                 part->is_temp = true;
-                part->state = MergeTreeDataPartState::Temporary;
                 part->renameTo(temporary_part_relative_path, false);
 
                 /// If this part appeared on other replica than it's better to try to write it locally one more time. If it's our part
