@@ -515,6 +515,7 @@ void DDLWorker::scheduleTasks()
         {
             worker_pool.scheduleOrThrowOnError([this, task_ptr = task.release()]()
             {
+                setThreadName("DDLWorkerExec");
                 enqueueTask(DDLTaskPtr(task_ptr));
             });
         }
