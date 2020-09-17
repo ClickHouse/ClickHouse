@@ -866,7 +866,7 @@ void StorageDistributed::flushClusterNodesAllData()
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    if (!relative_data_path.empty())
+    if (!relative_data_path.empty() && relative_data_path != new_path_to_table_data)
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
 }
@@ -878,7 +878,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
     {
         const String path(disk->getPath());
         auto new_path = path + new_path_to_table_data;
-        Poco::File(path + relative_data_path).renameTo(new_path);
+        disk->moveDirectory(path + relative_data_path, new_path);
 
         LOG_DEBUG(log, "Updating path to {}", new_path);
 
