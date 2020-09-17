@@ -41,11 +41,16 @@ BlockIO InterpreterRenameQuery::execute()
 
     for (const auto & elem : rename.elements)
     {
-        descriptions.emplace_back(elem, current_database);
-        const auto & description = descriptions.back();
+        RenameDescription description(elem, current_database);
 
         UniqueTableName from(description.from_database_name, description.from_table_name);
         UniqueTableName to(description.to_database_name, description.to_table_name);
+
+        /// Renaming to itself is noop, don't even take any locks.
+        if (from == to)
+            continue;
+
+        descriptions.emplace_back(std::move(description));
 
         table_guards[from];
         table_guards[to];
@@ -92,11 +97,16 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
 
     const auto & old_name = descriptions.front().from_database_name;
     const auto & new_name = descriptions.back().to_database_name;
-    auto & catalog = DatabaseCatalog::instance();
 
-    auto db = catalog.getDatabase(old_name);
-    catalog.assertDatabaseDoesntExist(new_name);
-    db->renameDatabase(new_name);
+    /// Otherwise rename is noop.
+    if (old_name != new_name)
+    {
+        auto & catalog = DatabaseCatalog::instance();
+
+        auto db = catalog.getDatabase(old_name);
+        catalog.assertDatabaseDoesntExist(new_name);
+        db->renameDatabase(new_name);
+    }
     return {};
 }
 

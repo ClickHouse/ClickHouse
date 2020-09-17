@@ -23,6 +23,11 @@ struct UniqueTableName
     {
         return std::tie(database_name, table_name) < std::tie(rhs.database_name, rhs.table_name);
     }
+
+    bool operator== (const UniqueTableName & rhs) const
+    {
+        return std::tie(database_name, table_name) == std::tie(rhs.database_name, rhs.table_name);
+    }
 };
 
 struct RenameDescription
