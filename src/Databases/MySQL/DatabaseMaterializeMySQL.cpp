@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 template<>
@@ -56,7 +57,17 @@ void DatabaseMaterializeMySQL<Base>::rethrowExceptionIfNeed() const
 
     if (!settings->allows_query_when_mysql_lost && exception)
     {
-        std::rethrow_exception(exception);
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (Exception & ex)
+        {
+            /// This method can be called from multiple threads
+            /// and Exception can be modified concurrently by calling addMessage(...),
+            /// so we rethrow a copy.
+            throw Exception(ex);
+        }
     }
 }
 

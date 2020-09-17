@@ -161,7 +161,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (create_from_user)
         {
-            auto & default_engine = context.getSettingsRef().default_database_engine.value;
+            const auto & default_engine = context.getSettingsRef().default_database_engine.value;
             if (create.uuid == UUIDHelpers::Nil && default_engine == DefaultDatabaseEngine::Atomic)
                 create.uuid = UUIDHelpers::generateV4();    /// Will enable Atomic engine for nested database
         }
