@@ -120,7 +120,6 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 {
     last_block_is_duplicate = false;
 
-    /// TODO Is it possible to not lock the table structure here?
     storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
 
     auto zookeeper = storage.getZooKeeper();
@@ -423,16 +422,18 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 part->state = MergeTreeDataPartState::Temporary;
                 part->renameTo(temporary_part_relative_path, false);
 
+                /// If this part appeared on other replica than it's better to try to write it locally one more time. If it's our part
+                /// than it will be ignored on the next itration.
                 ++loop_counter;
                 if (loop_counter == max_iterations)
-                    throw Exception("Too many transaction retires - it may indicate an error", ErrorCodes::DUPLICATE_DATA_PART);
+                    throw Exception("Too many transaction retries - it may indicate an error", ErrorCodes::DUPLICATE_DATA_PART);
                 continue;
             }
             else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == block_id_path)
             {
                 /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
-                LOG_INFO(log, "Block with ID {} already exists; ignoring it (removing part {})", block_id, part->name);
-                    throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
+                transaction.rollback();
+                throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
             }
             else
             {
