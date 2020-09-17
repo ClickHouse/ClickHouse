@@ -1,5 +1,8 @@
 <yandex>
     <user_directories replace="replace">
+        <local_directory>
+            <path>/var/lib/clickhouse/access6a/</path>
+        </local_directory>
         <memory/>
     </user_directories>
 
