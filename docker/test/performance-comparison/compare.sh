@@ -466,8 +466,6 @@ build_log_column_definitions
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
-short_query_threshold="0.02"
-
 clickhouse-local --query "
 create view query_display_names as select * from
     file('analyze/query-display-names.tsv', TSV,
@@ -653,11 +651,14 @@ create table queries_for_flamegraph engine File(TSVWithNamesAndTypes,
     select test, query_index from queries where unstable_show or changed_show
     ;
 
--- List of queries that have 'short' duration, but are not marked as 'short' by
--- the test author (we report them).
-create table unmarked_short_queries_report
-    engine File(TSV, 'report/unmarked-short-queries.tsv')
-    as select time, test, query_index, query_display_name
+
+create view shortness
+    as select 
+        (test, query_index) in
+            (select * from file('analyze/marked-short-queries.tsv', TSV,
+            'test text, query_index int'))
+            as marked_short,
+        time, test, query_index, query_display_name
     from (
             select right time, test, query_index from queries
             union all
@@ -666,13 +667,24 @@ create table unmarked_short_queries_report
         left join query_display_names
             on times.test = query_display_names.test
                 and times.query_index = query_display_names.query_index
-    where
-        (test, query_index) not in
-            (select * from file('analyze/marked-short-queries.tsv', TSV,
-                'test text, query_index int'))
-        and time < $short_query_threshold
-    order by test, query_index
     ;
+
+-- Report of queries that have inconsistent 'short' markings:
+-- 1) have short duration, but are not marked as 'short'
+-- 2) the reverse -- marked 'short' but take too long.
+-- The threshold for 2) is twice the threshold for 1), to avoid jitter.
+create table inconsistent_short_marking_report
+    engine File(TSV, 'report/inconsistent-short-marking.tsv')
+    as select
+        multiIf(marked_short and time > 0.1, 'marked as short but is too long',
+                not marked_short and time < 0.02, 'is short but not marked as such',
+                '') problem,
+        marked_short, time,
+        test, query_index, query_display_name
+    from shortness
+    where problem != ''
+    ;
+
 
 --------------------------------------------------------------------------------
 -- various compatibility data formats follow, not related to the main report
