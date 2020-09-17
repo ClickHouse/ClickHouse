@@ -1,10 +1,8 @@
-
-import time
-import pytest
 import os
+import time
 
+import pytest
 from helpers.cluster import ClickHouseCluster
-
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=["configs/max_table_size_to_drop.xml"])

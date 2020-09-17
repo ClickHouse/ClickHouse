@@ -779,7 +779,7 @@ void Pipe::transform(const Transformer & transformer)
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
-void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
+void Pipe::setLimits(const StreamLocalLimits & limits)
 {
     for (auto & processor : processors)
     {

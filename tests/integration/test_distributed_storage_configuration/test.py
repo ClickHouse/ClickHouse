@@ -9,8 +9,9 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance('node',
-            main_configs=["configs/config.d/storage_configuration.xml"],
-            tmpfs=['/disk1:size=100M', '/disk2:size=100M'])
+                            main_configs=["configs/config.d/storage_configuration.xml"],
+                            tmpfs=['/disk1:size=100M', '/disk2:size=100M'])
+
 
 @pytest.fixture(scope='module')
 def start_cluster():
@@ -21,13 +22,16 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def _files_in_dist_mon(node, root, table):
     return int(node.exec_in_container([
         'bash',
         '-c',
         # `-maxdepth 1` to avoid /tmp/ subdirectory
-        'find /{root}/data/test/{table}/default@127%2E0%2E0%2E2:9000 -maxdepth 1 -type f 2>/dev/null | wc -l'.format(root=root, table=table)
+        'find /{root}/data/test/{table}/default@127%2E0%2E0%2E2:9000 -maxdepth 1 -type f 2>/dev/null | wc -l'.format(
+            root=root, table=table)
     ]).split('\n')[0])
+
 
 def test_insert(start_cluster):
     node.query('CREATE TABLE test.foo (key Int) Engine=Memory()')
