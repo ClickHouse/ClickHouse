@@ -208,7 +208,7 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
-            primary_key_columns.push_back("`" + pk_column + "`");
+            primary_key_columns.push_back(backQuote(pk_column));
         }
     }
 
