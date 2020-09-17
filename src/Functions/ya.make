@@ -190,7 +190,9 @@ SRCS(
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
     GatherUtils/createValueSource.cpp
-    GatherUtils/has.cpp
+    GatherUtils/has_all.cpp
+    GatherUtils/has_any.cpp
+    GatherUtils/has_substr.cpp
     GatherUtils/push.cpp
     GatherUtils/resizeConstantSize.cpp
     GatherUtils/resizeDynamicSize.cpp

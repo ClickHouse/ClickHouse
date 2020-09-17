@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/SocketAddress.h>
-#include <Core/Types.h>
+#include <common/types.h>
 
 
 namespace DB
