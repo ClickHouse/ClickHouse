@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 StoragePtr TableFunctionNull::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
@@ -25,7 +26,10 @@ StoragePtr TableFunctionNull::executeImpl(const ASTPtr & ast_function, const Con
         if (arguments.size() != 1)
             throw Exception("Table function '" + getName() + "' requires 'structure'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto structure = arguments[0]->as<ASTLiteral &>().value.safeGet<String>();
+        const auto * literal = arguments[0]->as<ASTLiteral>();
+        if (!literal)
+            throw Exception("Table function " + getName() + " requested literal argument.", ErrorCodes::LOGICAL_ERROR);
+        auto structure = literal->value.safeGet<String>();
         ColumnsDescription columns = parseColumnsListFromString(structure, context);
 
         auto res = StorageNull::create(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription());
