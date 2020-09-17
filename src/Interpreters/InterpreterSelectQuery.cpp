@@ -1446,7 +1446,8 @@ void InterpreterSelectQuery::executeFetchColumns(
 
 
         /// Set the limits and quota for reading data, the speed and time of the query.
-        if (!options.ignore_limits) {
+        if (!options.ignore_limits)
+        {
             limits = getLimitsForStorage(settings, options);
             leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, settings.max_bytes_to_read_leaf,
                                           settings.read_overflow_mode_leaf);
