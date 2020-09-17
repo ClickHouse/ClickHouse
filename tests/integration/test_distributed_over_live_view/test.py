@@ -2,16 +2,10 @@ from __future__ import print_function
 
 import sys
 import time
-import itertools
-import timeit
-import logging
 
 import pytest
-
-from helpers.uclient import client, prompt, end_of_block
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV
+from helpers.uclient import client, prompt, end_of_block
 
 cluster = ClickHouseCluster(__file__)
 
@@ -45,6 +39,7 @@ ENGINE = Distributed(test_cluster, default, base_table, rand());
 '''
 
 INSERT_SQL_TEMPLATE = "INSERT INTO base_table VALUES ('{node_id}', {key}, {value})"
+
 
 @pytest.fixture(scope="function")
 def started_cluster():
@@ -86,7 +81,8 @@ class TestLiveViewOverDistributedSuite:
 
             client1.send("DROP TABLE IF EXISTS distributed_over_lv")
             client1.expect(prompt)
-            client1.send("CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
+            client1.send(
+                "CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
             client1.expect(prompt)
 
             client1.send(select_query)
@@ -135,7 +131,8 @@ class TestLiveViewOverDistributedSuite:
 
             client1.send("DROP TABLE IF EXISTS distributed_over_lv")
             client1.expect(prompt)
-            client1.send("CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
+            client1.send(
+                "CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
             client1.expect(prompt)
 
             client1.send(select_query)
@@ -175,7 +172,8 @@ class TestLiveViewOverDistributedSuite:
 
             client1.send("DROP TABLE IF EXISTS distributed_over_lv")
             client1.expect(prompt)
-            client1.send("CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
+            client1.send(
+                "CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
             client1.expect(prompt)
 
             client1.send(select_query)
@@ -218,7 +216,8 @@ class TestLiveViewOverDistributedSuite:
 
             client1.send("DROP TABLE IF EXISTS distributed_over_lv")
             client1.expect(prompt)
-            client1.send("CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
+            client1.send(
+                "CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
             client1.expect(prompt)
 
             client1.send(select_query)
@@ -260,7 +259,8 @@ class TestLiveViewOverDistributedSuite:
 
             client1.send("DROP TABLE IF EXISTS distributed_over_lv")
             client1.expect(prompt)
-            client1.send("CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
+            client1.send(
+                "CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
             client1.expect(prompt)
 
             client1.send("SELECT sum(value) FROM distributed_over_lv")
