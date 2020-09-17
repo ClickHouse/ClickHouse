@@ -51,7 +51,7 @@ services:
 
   kafka_kerberos:
     # build: ${KERBERIZED_KAFKA_DIR}
-    image: arenadata/kdc:latest
+    image: yandex/clickhouse-kerberos-kdc:latest
     hostname: kafka_kerberos
     volumes:
         - ${KERBERIZED_KAFKA_DIR}/secrets:/tmp/keytab
