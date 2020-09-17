@@ -326,8 +326,6 @@ void HTTPHandler::processQuery(
         }
 
         context.getClientInfo().opentelemetry_tracestate = request.get("tracestate", "");
-
-
     }
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
