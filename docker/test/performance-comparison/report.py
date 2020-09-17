@@ -98,6 +98,9 @@ th {{
 
 tr:nth-child(odd) td {{filter: brightness(90%);}}
 
+.inconsistent-short-marking tr :nth-child(2),
+.inconsistent-short-marking tr :nth-child(3),
+.inconsistent-short-marking tr :nth-child(5),
 .all-query-times tr :nth-child(1),
 .all-query-times tr :nth-child(2),
 .all-query-times tr :nth-child(3),
@@ -204,9 +207,11 @@ def tableStart(title):
     global table_anchor
     table_anchor = cls
     anchor = currentTableAnchor()
+    help_anchor = '-'.join(title.lower().split(' '));
     return f"""
         <h2 id="{anchor}">
             <a class="cancela" href="#{anchor}">{title}</a>
+            <a class="cancela" href="https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#{help_anchor}"><sup style="color: #888">?</sup></a>
         </h2>
         <table class="{cls}">
     """
@@ -249,7 +254,7 @@ def addSimpleTable(caption, columns, rows, pos=None):
 def add_tested_commits():
     global report_errors
     try:
-        addSimpleTable('Tested commits', ['Old', 'New'],
+        addSimpleTable('Tested Commits', ['Old', 'New'],
             [['<pre>{}</pre>'.format(x) for x in
                 [open('left-commit.txt').read(),
                  open('right-commit.txt').read()]]])
@@ -275,7 +280,7 @@ def add_report_errors():
     if not report_errors:
         return
 
-    text = tableStart('Errors while building the report')
+    text = tableStart('Errors while Building the Report')
     text += tableHeader(['Error'])
     for x in report_errors:
         text += tableRow([x])
@@ -289,7 +294,7 @@ def add_errors_explained():
         return
 
     text = '<a name="fail1"/>'
-    text += tableStart('Error summary')
+    text += tableStart('Error Summary')
     text += tableHeader(['Description'])
     for row in errors_explained:
         text += tableRow(row)
@@ -307,26 +312,26 @@ if args.report == 'main':
 
     run_error_rows = tsvRows('run-errors.tsv')
     error_tests += len(run_error_rows)
-    addSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
+    addSimpleTable('Run Errors', ['Test', 'Error'], run_error_rows)
     if run_error_rows:
         errors_explained.append([f'<a href="#{currentTableAnchor()}">There were some errors while running the tests</a>']);
 
 
     slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
     error_tests += len(slow_on_client_rows)
-    addSimpleTable('Slow on client',
+    addSimpleTable('Slow on Client',
                      ['Client time,&nbsp;s', 'Server time,&nbsp;s', 'Ratio', 'Test', 'Query'],
                      slow_on_client_rows)
     if slow_on_client_rows:
         errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries are taking noticeable time client-side (missing `FORMAT Null`?)</a>']);
 
-    unmarked_short_rows = tsvRows('report/unmarked-short-queries.tsv')
+    unmarked_short_rows = tsvRows('report/inconsistent-short-marking.tsv')
     error_tests += len(unmarked_short_rows)
-    addSimpleTable('Short queries not marked as short',
-        ['New client time, s', 'Test', '#', 'Query'],
+    addSimpleTable('Inconsistent Short Marking',
+        ['Problem', 'Is marked as short', 'New client time, s', 'Test', '#', 'Query'],
         unmarked_short_rows)
     if unmarked_short_rows:
-        errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries have short duration but are not explicitly marked as "short"</a>']);
+        errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries have inconsistent short marking</a>']);
 
     def add_partial():
         rows = tsvRows('report/partial-queries-report.tsv')
@@ -334,7 +339,7 @@ if args.report == 'main':
             return
 
         global unstable_partial_queries, slow_average_tests, tables
-        text = tableStart('Partial queries')
+        text = tableStart('Partial Queries')
         columns = ['Median time, s', 'Relative time variance', 'Test', '#', 'Query']
         text += tableHeader(columns)
         attrs = ['' for c in columns]
@@ -365,7 +370,7 @@ if args.report == 'main':
 
         global faster_queries, slower_queries, tables
 
-        text = tableStart('Changes in performance')
+        text = tableStart('Changes in Performance')
         columns = [
             'Old,&nbsp;s',                                          # 0
             'New,&nbsp;s',                                          # 1
@@ -422,7 +427,7 @@ if args.report == 'main':
             'Query' #7
         ]
 
-        text = tableStart('Unstable queries')
+        text = tableStart('Unstable Queries')
         text += tableHeader(columns)
 
         attrs = ['' for c in columns]
@@ -443,9 +448,9 @@ if args.report == 'main':
     add_unstable_queries()
 
     skipped_tests_rows = tsvRows('analyze/skipped-tests.tsv')
-    addSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
+    addSimpleTable('Skipped Tests', ['Test', 'Reason'], skipped_tests_rows)
 
-    addSimpleTable('Test performance changes',
+    addSimpleTable('Test Performance Changes',
         ['Test', 'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)', 'Queries', 'Total not OK', 'Changed perf', 'Unstable'],
         tsvRows('report/test-perf-changes.tsv'))
 
@@ -465,7 +470,7 @@ if args.report == 'main':
             'Shortest query<br>(sum for all runs),&nbsp;s',       #6
             ]
 
-        text = tableStart('Test times')
+        text = tableStart('Test Times')
         text += tableHeader(columns)
 
         nominal_runs = 7  # FIXME pass this as an argument
@@ -496,7 +501,7 @@ if args.report == 'main':
 
     add_test_times()
 
-    addSimpleTable('Metric changes',
+    addSimpleTable('Metric Changes',
         ['Metric', 'Old median value', 'New median value',
             'Relative difference', 'Times difference'],
         tsvRows('metrics/changes.tsv'))
@@ -587,7 +592,7 @@ elif args.report == 'all-queries':
             'Query',                                  #9
             ]
 
-        text = tableStart('All query times')
+        text = tableStart('All Query Times')
         text += tableHeader(columns)
 
         attrs = ['' for c in columns]
