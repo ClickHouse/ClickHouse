@@ -32,6 +32,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
