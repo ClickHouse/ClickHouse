@@ -110,6 +110,18 @@
             "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": false
+        }
+    ],
+    "special_build_config": [
+        {
+            "compiler": "clang-11",
+            "build-type": "debug",
+            "sanitizer": "",
+            "package-type": "deb",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "tidy": "enable",
+            "with_coverage": true
         },
         {
             "compiler": "clang-11",
@@ -150,18 +162,6 @@
             "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": false
-        }
-    ],
-    "special_build_config": [
-        {
-            "compiler": "clang-11",
-            "build-type": "debug",
-            "sanitizer": "",
-            "package-type": "deb",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
-            "tidy": "enable",
-            "with_coverage": true
         }
     ],
     "tests_config": {
