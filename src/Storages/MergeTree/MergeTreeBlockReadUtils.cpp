@@ -23,7 +23,6 @@ namespace
 bool injectRequiredColumnsRecursively(
     const String & column_name,
     const ColumnsDescription & storage_columns,
-    const MergeTreeData::AlterConversions & alter_conversions,
     const MergeTreeData::DataPartPtr & part,
     Names & columns,
     NameSet & required_columns,
@@ -33,12 +32,9 @@ bool injectRequiredColumnsRecursively(
     /// huge AST which for some reason was not validated on parsing/interpreter
     /// stages.
     checkStackSize();
-    String column_name_in_part = column_name;
-    if (alter_conversions.isColumnRenamed(column_name_in_part))
-        column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
     /// column has files and hence does not require evaluation
-    if (storage_columns.hasPhysical(column_name) && part->hasColumnFiles(column_name_in_part, *storage_columns.getPhysical(column_name).type))
+    if (storage_columns.hasPhysical(column_name) && part->hasColumnFiles(column_name, *storage_columns.getPhysical(column_name).type))
     {
         /// ensure each column is added only once
         if (required_columns.count(column_name) == 0)
@@ -62,7 +58,7 @@ bool injectRequiredColumnsRecursively(
 
     bool result = false;
     for (const auto & identifier : identifiers)
-        result |= injectRequiredColumnsRecursively(identifier, storage_columns, alter_conversions, part, columns, required_columns, injected_columns);
+        result |= injectRequiredColumnsRecursively(identifier, storage_columns, part, columns, required_columns, injected_columns);
 
     return result;
 }
@@ -75,6 +71,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
     NameSet injected_columns;
 
     bool have_at_least_one_physical_column = false;
+    const auto & storage_columns = storage.getColumns();
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
@@ -83,7 +80,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
             throw Exception("There is no physical column " + columns[i] + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
-            columns[i], storage_columns, alter_conversions,
+            columns[i], storage_columns,
             part, columns, required_columns, injected_columns);
     }
 
