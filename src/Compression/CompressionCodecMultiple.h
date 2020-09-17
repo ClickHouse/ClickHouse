@@ -13,8 +13,6 @@ public:
 
     uint8_t getMethodByte() const override;
 
-    ASTPtr getCodecDesc() const override;
-
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     static std::vector<uint8_t> getCodecsBytesFromData(const char * source);
