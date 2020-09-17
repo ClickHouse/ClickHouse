@@ -416,7 +416,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
                 transaction.rollback();
 
-                part->is_duplicate = true;
                 part->is_temp = true;
                 part->state = MergeTreeDataPartState::Temporary;
                 part->renameTo(temporary_part_relative_path, false);
@@ -425,12 +424,14 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 /// than it will be ignored on the next itration.
                 ++loop_counter;
                 if (loop_counter == max_iterations)
+                {
+                    part->is_duplicate = true; /// Part is duplicate, just remove it from local FS
                     throw Exception("Too many transaction retries - it may indicate an error", ErrorCodes::DUPLICATE_DATA_PART);
+                }
                 continue;
             }
             else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
             {
-                /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
                 transaction.rollback();
                 throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
             }
@@ -463,6 +464,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
     {
         if (is_already_existing_part)
         {
+            /// We get duplicate part without fetch
             storage.updateQuorum(part->name);
         }
 
