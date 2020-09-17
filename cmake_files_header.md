@@ -4,7 +4,7 @@
 
 Developer only!  This command will likely fulfil most of your needs. Run before calling `ninja`.
 
-```
+```cmake
 cmake ..
     -DCMAKE_BUILD_TYPE=Debug
     -DENABLE_CLICKHOUSE_ALL=OFF

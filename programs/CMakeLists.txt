@@ -4,7 +4,8 @@ endif ()
 
 # The 'clickhouse' binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
-option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse tools by default" ON)
+# If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
+option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
 
 option (ENABLE_CLICKHOUSE_SERVER ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_CLIENT ${ENABLE_CLICKHOUSE_ALL})
