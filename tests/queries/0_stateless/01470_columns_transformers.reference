@@ -9,55 +9,61 @@
 222	18	347
 111	11	173.5
 1970-04-11	1970-01-11	1970-11-21
-SELECT 
+SELECT
     sum(i),
     sum(j),
     sum(k)
 FROM columns_transformers
-SELECT 
+SELECT
     avg(i),
     avg(j),
     avg(k)
 FROM columns_transformers
-SELECT 
+SELECT
     toDate(any(i)),
     toDate(any(j)),
     toDate(any(k))
 FROM columns_transformers AS a
-SELECT 
+SELECT
     length(toString(j)),
     length(toString(k))
 FROM columns_transformers
-SELECT 
+SELECT
     sum(j),
     sum(k)
 FROM columns_transformers
-SELECT 
+SELECT
     avg(i),
     avg(k)
 FROM columns_transformers
-SELECT 
+SELECT
     toDate(any(i)),
     toDate(any(j)),
     toDate(any(k))
 FROM columns_transformers AS a
-SELECT 
+SELECT
     sum(i + 1 AS i),
     sum(j),
     sum(k)
 FROM columns_transformers
-SELECT 
+SELECT
     avg(i + 1 AS i),
     avg(j + 2 AS j),
     avg(k)
 FROM columns_transformers
-SELECT 
+SELECT
     toDate(any(i)),
     toDate(any(j)),
     toDate(any(k))
 FROM columns_transformers AS a
-SELECT 
+SELECT
     (i + 1) + 1 AS i,
     j,
     k
+FROM columns_transformers
+220	18	347
+SELECT
+    sum(i),
+    sum(j),
+    sum(k)
 FROM columns_transformers

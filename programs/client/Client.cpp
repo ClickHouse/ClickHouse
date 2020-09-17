@@ -866,6 +866,8 @@ private:
             // will exit. The ping() would be the best match here, but it's
             // private, probably for a good reason that the protocol doesn't allow
             // pings at any possible moment.
+            // Don't forget to reset the default database which might have changed.
+            connection->setDefaultDatabase("");
             connection->forceConnected(connection_parameters.timeouts);
 
             if (text.size() > 4 * 1024)
@@ -900,74 +902,151 @@ private:
         return processMultiQuery(text);
     }
 
-    bool processMultiQuery(const String & text)
+    bool processMultiQuery(const String & all_queries_text)
     {
         const bool test_mode = config().has("testmode");
 
         {   /// disable logs if expects errors
-            TestHint test_hint(test_mode, text);
+            TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
                 processTextAsSingleQuery("SET send_logs_level = 'none'");
         }
 
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
+        /// An exception is VALUES format where we also support semicolon in
+        /// addition to end of line.
 
-        const char * begin = text.data();
-        const char * end = begin + text.size();
+        const char * this_query_begin = all_queries_text.data();
+        const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
-        while (begin < end)
+        while (this_query_begin < all_queries_end)
         {
-            const char * pos = begin;
-            ASTPtr orig_ast = parseQuery(pos, end, true);
+            // Use the token iterator to skip any whitespace, semicolons and
+            // comments at the beginning of the query. An example from regression
+            // tests:
+            //      insert into table t values ('invalid'); -- { serverError 469 }
+            //      select 1
+            // Here the test hint comment gets parsed as a part of second query.
+            // We parse the `INSERT VALUES` up to the semicolon, and the rest
+            // looks like a two-line query:
+            //      -- { serverError 469 }
+            //      select 1
+            // and we expect it to fail with error 469, but this hint is actually
+            // for the previous query. Test hints should go after the query, so
+            // we can fix this by skipping leading comments. Token iterator skips
+            // comments and whitespace by itself, so we only have to check for
+            // semicolons.
+            // The code block is to limit visibility of `tokens` because we have
+            // another such variable further down the code, and get warnings for
+            // that.
+            {
+                Tokens tokens(this_query_begin, all_queries_end);
+                IParser::Pos token_iterator(tokens,
+                    context.getSettingsRef().max_parser_depth);
+                while (token_iterator->type == TokenType::Semicolon
+                        && token_iterator.isValid())
+                {
+                    ++token_iterator;
+                }
+                this_query_begin = token_iterator->begin;
+                if (this_query_begin >= all_queries_end)
+                {
+                    break;
+                }
+            }
 
-            if (!orig_ast)
+            // Try to parse the query.
+            const char * this_query_end = this_query_begin;
+            try
+            {
+                parsed_query = parseQuery(this_query_end, all_queries_end, true);
+            }
+            catch (Exception & e)
+            {
+                if (!test_mode)
+                    throw;
+
+                /// Try find test hint for syntax error
+                const char * end_of_line = find_first_symbols<'\n'>(this_query_begin,all_queries_end);
+                TestHint hint(true, String(this_query_end, end_of_line - this_query_end));
+                if (hint.serverError()) /// Syntax errors are considered as client errors
+                    throw;
+                if (hint.clientError() != e.code())
+                {
+                    if (hint.clientError())
+                        e.addMessage("\nExpected clinet error: " + std::to_string(hint.clientError()));
+                    throw;
+                }
+
+                /// It's expected syntax error, skip the line
+                this_query_begin = end_of_line;
+                continue;
+            }
+
+            if (!parsed_query)
             {
                 if (ignore_error)
                 {
-                    Tokens tokens(begin, end);
+                    Tokens tokens(this_query_begin, all_queries_end);
                     IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
                     while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                         ++token_iterator;
-                    begin = token_iterator->end;
+                    this_query_begin = token_iterator->end;
 
                     continue;
                 }
                 return true;
             }
 
-            auto * insert = orig_ast->as<ASTInsertQuery>();
-
-            if (insert && insert->data)
+            // INSERT queries may have the inserted data in the query text
+            // that follow the query itself, e.g. "insert into t format CSV 1;2".
+            // They need special handling. First of all, here we find where the
+            // inserted data ends. In multy-query mode, it is delimited by a
+            // newline.
+            // The VALUES format needs even more handling -- we also allow the
+            // data to be delimited by semicolon. This case is handled later by
+            // the format parser itself.
+            auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+            if (insert_ast && insert_ast->data)
             {
-                pos = find_first_symbols<'\n'>(insert->data, end);
-                insert->end = pos;
+                this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
+                insert_ast->end = this_query_end;
+                query_to_send = all_queries_text.substr(
+                    this_query_begin - all_queries_text.data(),
+                    insert_ast->data - this_query_begin);
+            }
+            else
+            {
+                query_to_send = all_queries_text.substr(
+                    this_query_begin - all_queries_text.data(),
+                    this_query_end - this_query_begin);
             }
 
-            String str = text.substr(begin - text.data(), pos - begin);
+            // full_query is the query + inline INSERT data.
+            full_query = all_queries_text.substr(
+                this_query_begin - all_queries_text.data(),
+                this_query_end - this_query_begin);
 
-            begin = pos;
-            while (isWhitespaceASCII(*begin) || *begin == ';')
-                ++begin;
-
-            TestHint test_hint(test_mode, str);
+            // Look for the hint in the text of query + insert data, if any.
+            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
+            TestHint test_hint(test_mode, full_query);
             expected_client_error = test_hint.clientError();
             expected_server_error = test_hint.serverError();
 
             try
             {
-                auto ast_to_process = orig_ast;
-                if (insert && insert->data)
+                processParsedSingleQuery();
+
+                if (insert_ast && insert_ast->data)
                 {
-                    ast_to_process = nullptr;
-                    processTextAsSingleQuery(str);
-                }
-                else
-                {
-                    parsed_query = ast_to_process;
-                    full_query = str;
-                    query_to_send = str;
-                    processParsedSingleQuery();
+                    // For VALUES format: use the end of inline data as reported
+                    // by the format parser (it is saved in sendData()). This
+                    // allows us to handle queries like:
+                    //   insert into t values (1); select 1
+                    //, where the inline data is delimited by semicolon and not
+                    // by a newline.
+                    this_query_end = parsed_query->as<ASTInsertQuery>()->end;
                 }
             }
             catch (...)
@@ -975,7 +1054,7 @@ private:
                 last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                 actual_client_error = last_exception_received_from_server->code();
                 if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                    std::cerr << "Error on processing query: " << str << std::endl << last_exception_received_from_server->message();
+                    std::cerr << "Error on processing query: " << full_query << std::endl << last_exception_received_from_server->message();
                 received_exception_from_server = true;
             }
 
@@ -989,6 +1068,8 @@ private:
                 else
                     return false;
             }
+
+            this_query_begin = this_query_end;
         }
 
         return true;
@@ -1103,7 +1184,9 @@ private:
                 {
                     last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     received_exception_from_server = true;
-                    std::cerr << "Error on processing query: " << ast_to_process->formatForErrorMessage() << std::endl << last_exception_received_from_server->message();
+                    fmt::print(stderr, "Error on processing query '{}': {}\n",
+                        ast_to_process->formatForErrorMessage(),
+                        last_exception_received_from_server->message());
                 }
 
                 if (!connection->isConnected())
@@ -1411,7 +1494,7 @@ private:
     void sendData(Block & sample, const ColumnsDescription & columns_description)
     {
         /// If INSERT data must be sent.
-        const auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
+        auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
         if (!parsed_insert_query)
             return;
 
@@ -1420,6 +1503,9 @@ private:
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
             sendDataFrom(data_in, sample, columns_description);
+            // Remember where the data ended. We use this info later to determine
+            // where the next query begins.
+            parsed_insert_query->end = data_in.buffer().begin() + data_in.count();
         }
         else if (!is_interactive)
         {
