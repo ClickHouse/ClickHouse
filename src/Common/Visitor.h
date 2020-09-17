@@ -162,8 +162,6 @@ class Visitable : public Base
 {
 public:
     void accept(Visitor & visitor) override { visitor.visit(*static_cast<Derived *>(this)); }
-
-    //virtual ~Visitable() = default;
 };
 
 }
