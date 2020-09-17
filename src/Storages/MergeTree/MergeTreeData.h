@@ -224,8 +224,10 @@ public:
         DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
         void rollback();
-        void rollbackPartsToTemporaryState();
 
+        /// Immediately remove parts from table's data_parts set and change part
+        /// state to temporary. Useful for new parts which not present in table.
+        void rollbackPartsToTemporaryState();
 
         size_t size() const { return precommitted_parts.size(); }
         bool isEmpty() const { return precommitted_parts.empty(); }
@@ -443,6 +445,9 @@ public:
             DataPartsVector * out_covered_parts = nullptr);
 
 
+    /// Remove parts from working set immediately (without wait for background
+    /// process). Transfer part state to temporary. Have very limited usage only
+    /// for new parts which don't already present in table.
     void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
 
     /// Removes parts from the working set parts.
