@@ -189,13 +189,11 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
                         ErrorCodes::BAD_ARGUMENTS);
 
     Names primary_key_columns;
-    Names sorting_key_columns;
     NameSet primary_key_columns_set;
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
         String sorting_key_column = sorting_key_expr_list->children[i]->getColumnName();
-        sorting_key_columns.push_back(sorting_key_column);
 
         if (i < primary_key_size)
         {
