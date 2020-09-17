@@ -44,7 +44,7 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str], **opt
         anchor=make_anchor(_name),
         name=_name,
         path=path,
-        line=line)
+        line=line if line > 0 else 1)
 
     if options.get("no_desc", False):
         description: str = ""
@@ -69,7 +69,7 @@ def process_file(input_name: str, **options) -> None:
                     if not re.match("\s*#\s*", maybe_comment_line):
                         break
 
-                    comment = re.sub("\s*#\s*", "", maybe_comment_line) + ". " + comment
+                    comment = re.sub("\s*#\s*", "", maybe_comment_line) + " " + comment
 
                 return n, comment
 
