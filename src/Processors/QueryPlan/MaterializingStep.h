@@ -4,7 +4,7 @@
 namespace DB
 {
 
-/// Convert one block structure to another. See ConvertingTransform.
+/// Materialize constants. See MaterializingTransform.
 class MaterializingStep : public ITransformingStep
 {
 public:
