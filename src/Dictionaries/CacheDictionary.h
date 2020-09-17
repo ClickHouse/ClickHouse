@@ -64,6 +64,22 @@ public:
 
     ~CacheDictionary() override;
 
+    using AttributeValue = std::variant<
+        UInt8, UInt16, UInt32, UInt64, UInt128,
+        Int8, Int16, Int32, Int64,
+        Decimal32, Decimal64, Decimal128,
+        Float32, Float64, String>;
+
+    struct AttributeValuesForKey 
+    {
+        bool found{false};
+        std::vector<AttributeValue> values;
+
+        std::string dump();
+    };
+
+    using FoundValuesForKeys = std::unordered_map<Key, AttributeValuesForKey>;
+
     std::string getTypeName() const override { return "Cache"; }
 
     size_t getBytesAllocated() const override;
@@ -224,23 +240,7 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::variant<
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            UInt128,
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            Decimal32,
-            Decimal64,
-            Decimal128,
-            Float32,
-            Float64,
-            String>
-            null_values;
+        AttributeValue null_values;
         std::variant<
             ContainerPtrType<UInt8>,
             ContainerPtrType<UInt16>,
@@ -265,11 +265,11 @@ private:
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
-    void getItemsNumberImpl(
+    void getItemsNumberImpl(const std::string & attribute_name, 
         Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
 
     template <typename DefaultGetter>
-    void getItemsString(Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
+    void getItemsString(const std::string & attribute_name, Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
 
     PaddedPODArray<Key> getCachedIds() const;
 
@@ -281,7 +281,10 @@ private:
 
     void setAttributeValue(Attribute & attribute, const Key idx, const Field & value) const;
 
+    void setAttributeInPlace(AttributeValue & place, AttributeUnderlyingType type, const Field & value) const;
+
     Attribute & getAttribute(const std::string & attribute_name) const;
+    size_t getAttributeIndex(const std::string & attribute_name) const;
 
     using SharedDictionarySourcePtr = std::shared_ptr<IDictionarySource>;
 
@@ -363,11 +366,6 @@ private:
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
 
-    /// Field and methods correlated with update expired and not found keys
-
-    using PresentIdHandler = std::function<void(Key, size_t)>;
-    using AbsentIdHandler  = std::function<void(Key, size_t)>;
-
     /*
      * Disclaimer: this comment is written not for fun.
      *
@@ -384,41 +382,17 @@ private:
      */
     struct UpdateUnit
     {
-        UpdateUnit(std::vector<Key> requested_ids_,
-                PresentIdHandler present_id_handler_,
-                AbsentIdHandler absent_id_handler_) :
+        explicit UpdateUnit(std::vector<Key> && requested_ids_) :
                 requested_ids(std::move(requested_ids_)),
-                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()),
-                present_id_handler(present_id_handler_),
-                absent_id_handler(absent_id_handler_){}
-
-        explicit UpdateUnit(std::vector<Key> requested_ids_) :
-                requested_ids(std::move(requested_ids_)),
-                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()),
-                present_id_handler([](Key, size_t){}),
-                absent_id_handler([](Key, size_t){}){}
-
-
-        void callPresentIdHandler(Key key, size_t cell_idx)
+                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size())
         {
-            std::lock_guard lock(callback_mutex);
-            if (can_use_callback)
-                present_id_handler(key, cell_idx);
-        }
-
-        void callAbsentIdHandler(Key key, size_t cell_idx)
-        {
-            std::lock_guard lock(callback_mutex);
-            if (can_use_callback)
-                absent_id_handler(key, cell_idx);
+            found_ids.reserve(requested_ids.size());
+            for (const auto id : requested_ids)
+                found_ids.insert({id, {}});
         }
 
         std::vector<Key> requested_ids;
-
-        /// It might seem that it is a leak of performance.
-        /// But acquiring a mutex without contention is rather cheap.
-        std::mutex callback_mutex;
-        bool can_use_callback{true};
+        FoundValuesForKeys found_ids;
 
         std::atomic<bool> is_done{false};
         std::exception_ptr current_exception{nullptr};
@@ -427,9 +401,7 @@ private:
         CurrentMetrics::Increment alive_batch{CurrentMetrics::CacheDictionaryUpdateQueueBatches};
         CurrentMetrics::Increment alive_keys;
 
-      private:
-        PresentIdHandler present_id_handler;
-        AbsentIdHandler absent_id_handler;
+        std::string dump_found_ids();
     };
 
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
