@@ -311,10 +311,11 @@ struct integer<Bits, Signed>::_impl
         integer<Bits, Signed> lhs;
         unsigned items_shift = n / base_bits;
         unsigned bit_shift = n % base_bits;
-        unsigned overflow_shift = base_bits - bit_shift;
 
         if (bit_shift)
         {
+            unsigned overflow_shift = base_bits - bit_shift;
+
             lhs.items[little(0)] = rhs.items[little(items_shift)] >> bit_shift;
             for (unsigned i = 1; i < item_count - items_shift; ++i)
             {
@@ -330,7 +331,8 @@ struct integer<Bits, Signed>::_impl
 
         if (is_negative(rhs))
         {
-            lhs.items[big(items_shift)] |= std::numeric_limits<base_type>::max() << overflow_shift;
+            if (bit_shift)
+                lhs.items[big(items_shift)] |= std::numeric_limits<base_type>::max() << (base_bits - bit_shift);
 
             for (unsigned i = item_count - items_shift; i < items_shift; ++i)
                 lhs.items[little(i)] = std::numeric_limits<base_type>::max();
