@@ -94,12 +94,12 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
 
 time_t TTLDeleteMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
 {
-    return only_drop_parts ? part.ttl_infos.part_max_ttl : part.ttl_infos.part_min_ttl;
+    return only_drop_parts ? part.ttl_infos->part_max_ttl : part.ttl_infos->part_min_ttl;
 }
 
 time_t TTLRecompressMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
 {
-    return part.ttl_infos.getMinimalMaxRecompressionTTL();
+    return part.ttl_infos->getMinimalMaxRecompressionTTL();
 }
 
 bool TTLRecompressMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & part) const
@@ -107,7 +107,7 @@ bool TTLRecompressMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Par
     if (recompression_ttls.empty())
         return false;
 
-    auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part.ttl_infos.recompression_ttl, current_time, true);
+    auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part.ttl_infos->recompression_ttl, current_time, true);
 
     if (!ttl_description)
         return true;

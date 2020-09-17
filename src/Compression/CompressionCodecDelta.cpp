@@ -23,17 +23,12 @@ namespace ErrorCodes
 CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
     : delta_bytes_size(delta_bytes_size_)
 {
+    setCodecDescription("Delta", {std::make_shared<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
 }
 
 uint8_t CompressionCodecDelta::getMethodByte() const
 {
     return static_cast<uint8_t>(CompressionMethodByte::Delta);
-}
-
-ASTPtr CompressionCodecDelta::getCodecDesc() const
-{
-    auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(delta_bytes_size));
-    return makeASTFunction("Delta", literal);
 }
 
 void CompressionCodecDelta::updateHash(SipHash & hash) const

@@ -2,6 +2,7 @@ import BaseHTTPServer
 
 RESULT_PATH = '/result.txt'
 
+
 class SentryHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_POST(self):
         post_data = self.__read_and_decode_post_data()
