@@ -701,6 +701,8 @@ private:
             connection_parameters.default_database,
             connection_parameters.user,
             connection_parameters.password,
+            "", /* cluster */
+            "", /* cluster_secret */
             "client",
             connection_parameters.compression,
             connection_parameters.security);

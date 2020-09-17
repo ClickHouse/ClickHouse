@@ -99,6 +99,12 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
     auto modified_query_ast = query->clone();
 
     ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
+
+    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
+    // settings won't break any remote parser. It's also more reasonable since the query settings
+    // are written into the query context and will be sent by the query pipeline.
+    select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+
     if (table_function_ptr)
         select_query.addTableFunction(table_function_ptr);
     else
