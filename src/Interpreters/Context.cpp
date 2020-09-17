@@ -1498,6 +1498,15 @@ void Context::resetZooKeeper() const
     shared->zookeeper.reset();
 }
 
+void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->zookeeper || shared->zookeeper->configChanged(*config, "zookeeper"))
+    {
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
+    }
+}
+
 bool Context::hasZooKeeper() const
 {
     return getConfigRef().has("zookeeper");
