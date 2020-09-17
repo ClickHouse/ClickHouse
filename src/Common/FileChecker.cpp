@@ -41,6 +41,11 @@ void FileChecker::setEmpty(const String & full_file_path)
     map[fileName(full_file_path)] = 0;
 }
 
+FileChecker::Map FileChecker::getFileSizes() const
+{
+    return map;
+}
+
 CheckResults FileChecker::check() const
 {
     // Read the files again every time you call `check` - so as not to violate the constancy.

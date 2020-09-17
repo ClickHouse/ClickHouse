@@ -13,6 +13,7 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/LimitReadBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -56,7 +57,6 @@ namespace ErrorCodes
 class TinyLogSource final : public SourceWithProgress
 {
 public:
-
     static Block getHeader(const NamesAndTypesList & columns)
     {
         Block res;
@@ -71,14 +71,12 @@ public:
         size_t block_size_,
         const NamesAndTypesList & columns_,
         StorageTinyLog & storage_,
-        std::shared_lock<std::shared_timed_mutex> && lock_,
-        size_t max_read_buffer_size_)
+        size_t max_read_buffer_size_,
+        FileChecker::Map file_sizes_)
         : SourceWithProgress(getHeader(columns_))
-        , block_size(block_size_), columns(columns_), storage(storage_), lock(std::move(lock_))
-        , max_read_buffer_size(max_read_buffer_size_)
+        , block_size(block_size_), columns(columns_), storage(storage_)
+        , max_read_buffer_size(max_read_buffer_size_), file_sizes(std::move(file_sizes_))
     {
-        if (!lock)
-            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
     }
 
     String getName() const override { return "TinyLog"; }
@@ -90,19 +88,21 @@ private:
     size_t block_size;
     NamesAndTypesList columns;
     StorageTinyLog & storage;
-    std::shared_lock<std::shared_timed_mutex> lock;
     bool is_finished = false;
     size_t max_read_buffer_size;
+    FileChecker::Map file_sizes;
 
     struct Stream
     {
-        Stream(const DiskPtr & disk, const String & data_path, size_t max_read_buffer_size_)
+        Stream(const DiskPtr & disk, const String & data_path, size_t max_read_buffer_size_, size_t file_size)
             : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path)))),
+            limited(std::make_unique<LimitReadBuffer>(*plain, file_size, false)),
             compressed(*plain)
         {
         }
 
         std::unique_ptr<ReadBuffer> plain;
+        std::unique_ptr<ReadBuffer> limited;
         CompressedReadBuffer compressed;
     };
 
@@ -246,7 +246,11 @@ void TinyLogSource::readData(const String & name, const IDataType & type, IColum
         String stream_name = IDataType::getFileNameForStream(name, path);
 
         if (!streams.count(stream_name))
-            streams[stream_name] = std::make_unique<Stream>(storage.disk, storage.files[stream_name].data_file_path, max_read_buffer_size);
+        {
+            String file_path = storage.files[stream_name].data_file_path;
+            streams[stream_name] = std::make_unique<Stream>(
+                storage.disk, file_path, max_read_buffer_size, file_sizes[fileName(file_path)]);
+        }
 
         return &streams[stream_name]->compressed;
     };
@@ -462,12 +466,17 @@ Pipe StorageTinyLog::read(
     // per column and can't modify it concurrently.
     const Settings & settings = context.getSettingsRef();
 
+    std::shared_lock lock{rwlock, getLockTimeout(context)};
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    /// No need to hold lock while reading because we read fixed range of data that does not change while appending more data.
     return Pipe(std::make_shared<TinyLogSource>(
         max_block_size,
         Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names)),
         *this,
-        std::shared_lock{rwlock, getLockTimeout(context)},
-        settings.max_read_buffer_size));
+        settings.max_read_buffer_size,
+        file_checker.getFileSizes()));
 }
 
 
@@ -479,7 +488,7 @@ BlockOutputStreamPtr StorageTinyLog::write(const ASTPtr & /*query*/, const Stora
 
 CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context & context)
 {
-    std::shared_lock<std::shared_timed_mutex> lock(rwlock, getLockTimeout(context));
+    std::shared_lock lock(rwlock, getLockTimeout(context));
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
