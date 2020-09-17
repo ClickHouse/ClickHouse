@@ -1,3 +1,5 @@
+#include "getMappedArea.h"
+
 #if defined(__linux__)
 
 #include <Common/StringUtils/StringUtils.h>
@@ -5,8 +7,6 @@
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-
-#include "getMappedArea.h"
 
 
 namespace DB
