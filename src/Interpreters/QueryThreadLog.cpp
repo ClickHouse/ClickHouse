@@ -93,7 +93,7 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 
     QueryLogElement::appendClientInfo(client_info, columns, i);
 
-    columns[i++]->insert(ClickHouseRevision::get());
+    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     if (profile_counters)
     {

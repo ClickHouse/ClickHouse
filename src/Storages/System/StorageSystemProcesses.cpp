@@ -91,7 +91,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Contex
         res_columns[i++]->insert(process.client_info.os_user);
         res_columns[i++]->insert(process.client_info.client_hostname);
         res_columns[i++]->insert(process.client_info.client_name);
-        res_columns[i++]->insert(process.client_info.client_revision);
+        res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);
         res_columns[i++]->insert(process.client_info.client_version_major);
         res_columns[i++]->insert(process.client_info.client_version_minor);
         res_columns[i++]->insert(process.client_info.client_version_patch);

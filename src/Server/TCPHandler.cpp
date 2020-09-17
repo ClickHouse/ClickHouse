@@ -1,7 +1,6 @@
 #include <iomanip>
 #include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
-#include <Common/ClickHouseRevision.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
@@ -183,7 +182,7 @@ void TCPHandler::runImpl()
 
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
-            if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
+            if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
                 && client_logs_level != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
@@ -218,7 +217,7 @@ void TCPHandler::runImpl()
                 state.need_receive_data_for_input = true;
 
                 /// Send ColumnsDescription for input storage.
-                if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
+                if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
                     && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
                 {
                     sendTableColumns(metadata_snapshot->getColumns());
@@ -248,7 +247,7 @@ void TCPHandler::runImpl()
 
             customizeContext(*query_context);
 
-            bool may_have_embedded_data = client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
+            bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
             state.io = executeQuery(state.query, *query_context, false, state.stage, may_have_embedded_data);
 
@@ -482,7 +481,7 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
     state.io.out->writePrefix();
 
     /// Send ColumnsDescription for insertion table
-    if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
         const auto & table_id = query_context->getInsertionTable();
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
@@ -638,7 +637,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
 void TCPHandler::processTablesStatusRequest()
 {
     TablesStatusRequest request;
-    request.read(*in, client_revision);
+    request.read(*in, client_tcp_protocol_version);
 
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
@@ -661,13 +660,13 @@ void TCPHandler::processTablesStatusRequest()
     }
 
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
-    response.write(*out, client_revision);
+    response.write(*out, client_tcp_protocol_version);
 }
 
 void TCPHandler::receiveUnexpectedTablesStatusRequest()
 {
     TablesStatusRequest skip_request;
-    skip_request.read(*in, client_revision);
+    skip_request.read(*in, client_tcp_protocol_version);
 
     throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }
@@ -742,7 +741,7 @@ void TCPHandler::receiveHello()
     readVarUInt(client_version_major, *in);
     readVarUInt(client_version_minor, *in);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
-    readVarUInt(client_revision, *in);
+    readVarUInt(client_tcp_protocol_version, *in);
     readStringBinary(default_database, *in);
     readStringBinary(user, *in);
     readStringBinary(password, *in);
@@ -750,7 +749,7 @@ void TCPHandler::receiveHello()
     LOG_DEBUG(log, "Connected {} version {}.{}.{}, revision: {}{}{}.",
         client_name,
         client_version_major, client_version_minor, client_version_patch,
-        client_revision,
+        client_tcp_protocol_version,
         (!default_database.empty() ? ", database: " + default_database : ""),
         (!user.empty() ? ", user: " + user : ""));
 
@@ -781,12 +780,12 @@ void TCPHandler::sendHello()
     writeStringBinary(DBMS_NAME, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
-    writeVarUInt(ClickHouseRevision::get(), *out);
-    if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
+    writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
-    if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
         writeStringBinary(server_display_name, *out);
-    if (client_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         writeVarUInt(DBMS_VERSION_PATCH, *out);
     out->next();
 }
@@ -847,8 +846,8 @@ void TCPHandler::receiveQuery()
 
     /// Client info
     ClientInfo & client_info = query_context->getClientInfo();
-    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-        client_info.read(*in, client_revision);
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+        client_info.read(*in, client_tcp_protocol_version);
 
     /// For better support of old clients, that does not send ClientInfo.
     if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
@@ -858,7 +857,7 @@ void TCPHandler::receiveQuery()
         client_info.client_version_major = client_version_major;
         client_info.client_version_minor = client_version_minor;
         client_info.client_version_patch = client_version_patch;
-        client_info.client_revision = client_revision;
+        client_info.client_tcp_protocol_version = client_tcp_protocol_version;
     }
 
     /// Set fields, that are known apriori.
@@ -879,7 +878,7 @@ void TCPHandler::receiveQuery()
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
     auto settings_format =
-        (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
+        (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
             ? SettingsWriteFormat::STRINGS_WITH_FLAGS
             : SettingsWriteFormat::BINARY;
 
@@ -900,7 +899,7 @@ void TCPHandler::receiveQuery()
 
     // Use the received query id, or generate a random default. It is convenient
     // to also generate the default OpenTelemetry trace id at the same time, and
-    // and and set the trace parent.
+    // set the trace parent.
     // Why is this done here and not earlier:
     // 1) ClientInfo might contain upstream trace id, so we decide whether to use
     // the default ids after we have received the ClientInfo.
@@ -933,11 +932,11 @@ void TCPHandler::receiveUnexpectedQuery()
     readStringBinary(skip_string, *in);
 
     ClientInfo skip_client_info;
-    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-        skip_client_info.read(*in, client_revision);
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+        skip_client_info.read(*in, client_tcp_protocol_version);
 
     Settings skip_settings;
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                       : SettingsWriteFormat::BINARY;
     skip_settings.read(*in, settings_format);
 
@@ -1011,7 +1010,7 @@ void TCPHandler::receiveUnexpectedData()
     auto skip_block_in = std::make_shared<NativeBlockInputStream>(
             *maybe_compressed_in,
             last_block_in.header,
-            client_revision);
+            client_tcp_protocol_version);
 
     skip_block_in->read();
     throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
@@ -1038,7 +1037,7 @@ void TCPHandler::initBlockInput()
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
             header,
-            client_revision);
+            client_tcp_protocol_version);
     }
 }
 
@@ -1069,7 +1068,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
-            client_revision,
+            client_tcp_protocol_version,
             block.cloneEmpty(),
             !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
@@ -1082,7 +1081,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
         /// Use uncompressed stream since log blocks usually contain only one row
         state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
             *out,
-            client_revision,
+            client_tcp_protocol_version,
             block.cloneEmpty(),
             !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
@@ -1186,7 +1185,7 @@ void TCPHandler::sendProgress()
 {
     writeVarUInt(Protocol::Server::Progress, *out);
     auto increment = state.progress.fetchAndResetPiecewiseAtomically();
-    increment.write(*out, client_revision);
+    increment.write(*out, client_tcp_protocol_version);
     out->next();
 }
 
