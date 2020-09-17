@@ -282,12 +282,15 @@ StorageStripeLog::StorageStripeLog(
 
 void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    if (table_path != new_path_to_table_data)
+    {
+        std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    disk->moveDirectory(table_path, new_path_to_table_data);
+        disk->moveDirectory(table_path, new_path_to_table_data);
 
-    table_path = new_path_to_table_data;
-    file_checker.setPath(table_path + "sizes.json");
+        table_path = new_path_to_table_data;
+        file_checker.setPath(table_path + "sizes.json");
+    }
     renameInMemory(new_table_id);
 }
 
