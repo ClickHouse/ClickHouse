@@ -1,14 +1,12 @@
 import json
 import logging
+import os
 import random
 import threading
-import os
-
-import pytest
-
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 import helpers.client
+import pytest
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -292,7 +290,7 @@ def test_s3_glob_scheherazade(cluster):
                     cluster.minio_host, cluster.minio_port, bucket, path, table_format, values)
                 run_query(instance, query)
 
-        jobs.append(threading.Thread(target=add_tales, args=(night, min(night+nights_per_job, 1001))))
+        jobs.append(threading.Thread(target=add_tales, args=(night, min(night + nights_per_job, 1001))))
         jobs[-1].start()
 
     for job in jobs:
@@ -313,9 +311,10 @@ def run_s3_mock(cluster):
 
 
 def test_custom_auth_headers(cluster):
-    ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'), ["curl", "-s", "http://resolver:8080"])
+    ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'),
+                                              ["curl", "-s", "http://resolver:8080"])
     assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
-    
+
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
     get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(
@@ -345,4 +344,3 @@ def test_infinite_redirect(cluster):
         exception_raised = True
     finally:
         assert exception_raised
-

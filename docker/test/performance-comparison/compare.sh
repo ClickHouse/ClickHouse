@@ -394,12 +394,24 @@ create table query_run_metrics_denorm engine File(TSV, 'analyze/query-run-metric
     order by test, query_index, metric_names, version, query_id
     ;
 
+-- Filter out tests that don't have an even number of runs, to avoid breaking
+-- the further calculations. This may happen if there was an error during the
+-- test runs, e.g. the server died. It will be reported in test errors, so we
+-- don't have to report it again.
+create view broken_queries as
+    select test, query_index
+    from query_runs
+    group by test, query_index
+    having count(*) % 2 != 0
+    ;
+
 -- This is for statistical processing with eqmed.sql
 create table query_run_metrics_for_stats engine File(
         TSV, -- do not add header -- will parse with grep
         'analyze/query-run-metrics-for-stats.tsv')
     as select test, query_index, 0 run, version, metric_values
     from query_run_metric_arrays
+    where (test, query_index) not in broken_queries
     order by test, query_index, run, version
     ;
 
@@ -915,13 +927,15 @@ done
 
 function report_metrics
 {
+build_log_column_definitions
+
 rm -rf metrics ||:
 mkdir metrics
 
 clickhouse-local --query "
 create view right_async_metric_log as
     select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
-        'event_date Date, event_time DateTime, name String, value Float64')
+        '$(cat right-async-metric-log.tsv.columns)')
     ;
 
 -- Use the right log as time reference because it may have higher precision.
@@ -930,7 +944,7 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     select name metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
     asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes,
-        'event_date Date, event_time DateTime, name String, value Float64') l
+        '$(cat left-async-metric-log.tsv.columns)') l
     on l.name = r.name and r.event_time <= l.event_time
     order by metric, event_time
     ;
