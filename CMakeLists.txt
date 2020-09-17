@@ -117,7 +117,7 @@ if (USE_STATIC_LIBRARIES)
 endif ()
 
 # Implies ${WITH_COVERAGE}
-option (ENABLE_FUZZING "Enable fuzzy testing using libfuzzer")
+option (ENABLE_FUZZING "Fuzzy testing using libfuzzer")
 
 if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
@@ -213,6 +213,7 @@ cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_P
 if(NOT AVAILABLE_PHYSICAL_MEMORY OR AVAILABLE_PHYSICAL_MEMORY GREATER 8000)
     option(COMPILER_PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
 endif()
+
 if(COMPILER_PIPE)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -pipe")
 else()
@@ -249,7 +250,7 @@ if (COMPILER_GCC OR COMPILER_CLANG)
 endif ()
 
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
-option(WITH_COVERAGE "Profile the resulting binary/binaries")
+option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 
 if (WITH_COVERAGE AND COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
@@ -286,7 +287,7 @@ if (COMPILER_CLANG)
         # https://clang.llvm.org/docs/ThinLTO.html
         # Applies to clang only.
         # Disabled when building with tests or sanitizers.
-        option(ENABLE_THINLTO ON)
+        option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
     endif()
 
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
@@ -312,12 +313,14 @@ if (COMPILER_CLANG)
     endif ()
 
     find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
+
     if (LLVM_RANLIB_PATH)
         message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
         set (CMAKE_RANLIB ${LLVM_RANLIB_PATH})
     else ()
         message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It does not work with ThinLTO.")
     endif ()
+
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
 endif ()
@@ -328,7 +331,7 @@ option(ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
 # system.
 # This mode exists for enthusiastic developers who are searching for trouble.
 # Useful for maintainers of OS packages.
-option (UNBUNDLED "Use system libraries instead of ones in contrib/")
+option (UNBUNDLED "Use system libraries instead of ones in contrib/" OFF)
 
 if (UNBUNDLED)
     set(NOT_UNBUNDLED OFF)
@@ -338,7 +341,7 @@ endif ()
 
 if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
-    option(WERROR "Enable -Werror compiler option")
+    option(WERROR "Enable -Werror compiler option" OFF)
 else ()
     option(WERROR "Enable -Werror compiler option" ON)
 endif ()

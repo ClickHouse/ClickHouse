@@ -10,10 +10,10 @@ option (ENABLE_CLICKHOUSE_SERVER ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_CLIENT ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/clickhouse-local/
-option (ENABLE_CLICKHOUSE_LOCAL ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/clickhouse-benchmark/
-option (ENABLE_CLICKHOUSE_BENCHMARK ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_BENCHMARK "Queries benchmarking mode" ${ENABLE_CLICKHOUSE_ALL})
 
 # ???
 option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG ${ENABLE_CLICKHOUSE_ALL})
@@ -22,7 +22,7 @@ option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_COMPRESSOR ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/clickhouse-copier/
-option (ENABLE_CLICKHOUSE_COPIER ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_COPIER "Inter-cluster data copying mode" ${ENABLE_CLICKHOUSE_ALL})
 
 # ???
 option (ENABLE_CLICKHOUSE_FORMAT ${ENABLE_CLICKHOUSE_ALL})
