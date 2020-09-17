@@ -36,7 +36,7 @@ namespace ErrorCodes
 }
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
-void CacheDictionary::getItemsNumberImpl(
+void CacheDictionary::getItemsNumberImpl(const std::string & attribute_name,
     Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
     /// First fill everything with default values
@@ -44,13 +44,14 @@ void CacheDictionary::getItemsNumberImpl(
     for (const auto row : ext::range(0, rows))
         out[row] = get_default(row);
 
-    /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-    std::unordered_map<Key, std::vector<size_t>> cache_expired_ids;
-    std::unordered_map<Key, std::vector<size_t>> cache_not_found_ids;
+    /// Maybe there are duplicate keys, so we remember their indices.
+    std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
 
     auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 
     size_t cache_hit = 0;
+    size_t cache_not_found_count = 0;
+    size_t cache_expired_cound = 0;
 
     {
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
@@ -84,17 +85,21 @@ void CacheDictionary::getItemsNumberImpl(
                     /// Protection of reading very expired keys.
                     if (now > cells[find_result.cell_idx].strict_max)
                     {
-                        cache_not_found_ids[id].push_back(row);
+                        cache_not_found_count++;
+                        cache_expired_or_not_found_ids[id].push_back(row);
                         continue;
                     }
 
-                    cache_expired_ids[id].push_back(row);
+                    cache_expired_cound++;
+                    cache_expired_or_not_found_ids[id].push_back(row);
+
                     if (allow_read_expired_keys)
                         update_routine();
                 }
                 else
                 {
-                    cache_not_found_ids[id].push_back(row);
+                    cache_not_found_count++;
+                    cache_expired_or_not_found_ids[id].push_back(row);
                 }
             }
             else
@@ -105,29 +110,29 @@ void CacheDictionary::getItemsNumberImpl(
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_ids.size());
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_ids.size());
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_cound);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_count);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    hit_count.fetch_add(rows - cache_expired_ids.size() - cache_not_found_ids.size(), std::memory_order_release);
+    hit_count.fetch_add(rows - cache_not_found_count - cache_expired_cound, std::memory_order_release);
 
-    if (cache_not_found_ids.empty())
+    if (!cache_not_found_count)
     {
         /// Nothing to update - return
-        if (cache_expired_ids.empty())
+        if (!cache_expired_cound)
             return;
 
         /// Update async only if allow_read_expired_keys_is_enabledadd condvar usage and better code
         if (allow_read_expired_keys)
         {
             std::vector<Key> required_expired_ids;
-            required_expired_ids.reserve(cache_expired_ids.size());
-            std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids), std::back_inserter(required_expired_ids),
-                           [](auto & pair) { return pair.first; });
+            required_expired_ids.reserve(cache_expired_cound);
+            std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids), 
+                           std::back_inserter(required_expired_ids), [](auto & pair) { return pair.first; });
 
             /// request new values
-            auto update_unit_ptr = std::make_shared<UpdateUnit>(required_expired_ids);
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_expired_ids));
 
             tryPushToUpdateQueueOrThrow(update_unit_ptr);
 
@@ -141,38 +146,32 @@ void CacheDictionary::getItemsNumberImpl(
     /// and there no cache_not_found_ids but some cache_expired.
 
     std::vector<Key> required_ids;
-    required_ids.reserve(cache_not_found_ids.size() + cache_expired_ids.size());
-    std::transform(
-            std::begin(cache_not_found_ids), std::end(cache_not_found_ids),
-            std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
-    std::transform(
-            std::begin(cache_expired_ids), std::end(cache_expired_ids),
-            std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
-
-    auto on_cell_updated =
-    [&attribute_array, &cache_not_found_ids, &cache_expired_ids, &out]
-    (const auto id, const auto cell_idx)
-    {
-        const auto attribute_value = attribute_array[cell_idx];
-
-        for (const size_t row : cache_not_found_ids[id])
-            out[row] = static_cast<OutputType>(attribute_value);
-
-        for (const size_t row : cache_expired_ids[id])
-            out[row] = static_cast<OutputType>(attribute_value);
-    };
-
-    auto on_id_not_found = [&] (auto, auto) {};
+    required_ids.reserve(cache_not_found_count + cache_expired_cound);
+    std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids), 
+                   std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
 
     /// Request new values
-    auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids, on_cell_updated, on_id_not_found);
+    auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_ids));
 
     tryPushToUpdateQueueOrThrow(update_unit_ptr);
     waitForCurrentUpdateFinish(update_unit_ptr);
+    
+    /// Add updated keys to asnwer.
+
+    const size_t attribute_index = getAttributeIndex(attribute_name);
+
+    for (auto & [key, value] : update_unit_ptr->found_ids)
+    {
+        if (value.found)
+        {
+            for (const size_t row : cache_expired_or_not_found_ids[key])
+                out[row] = std::get<OutputType>(value.values[attribute_index]);
+        }
+    }
 }
 
 template <typename DefaultGetter>
-void CacheDictionary::getItemsString(
+void CacheDictionary::getItemsString(const std::string & attribute_name,
     Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const
 {
     const auto rows = ext::size(ids);
@@ -210,7 +209,7 @@ void CacheDictionary::getItemsString(
         }
     }
 
-    /// optimistic code completed successfully
+    /// Optimistic code completed successfully.
     if (!found_outdated_values)
     {
         query_count.fetch_add(rows, std::memory_order_relaxed);
@@ -218,15 +217,17 @@ void CacheDictionary::getItemsString(
         return;
     }
 
-    /// now onto the pessimistic one, discard possible partial results from the optimistic path
+    /// Now onto the pessimistic one, discard possible partial results from the optimistic path.
     out->getChars().resize_assume_reserved(0);
     out->getOffsets().resize_assume_reserved(0);
 
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-    std::unordered_map<Key, std::vector<size_t>> cache_expired_ids;
-    std::unordered_map<Key, std::vector<size_t>> cache_not_found_ids;
+    std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
     /// we are going to store every string separately
-    std::unordered_map<Key, String> map;
+    std::unordered_map<Key, String> inside_cache;
+
+    size_t cache_not_found_count = 0;
+    size_t cache_expired_count = 0;
 
     size_t total_length = 0;
     size_t cache_hit = 0;
@@ -248,7 +249,7 @@ void CacheDictionary::getItemsString(
                 const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
                 if (!cell.isDefault())
-                    map[id] = String{string_ref};
+                    inside_cache[id] = String{string_ref};
 
                 total_length += string_ref.size + 1;
             };
@@ -260,16 +261,23 @@ void CacheDictionary::getItemsString(
                     /// Protection of reading very expired keys.
                     if (now > cells[find_result.cell_idx].strict_max)
                     {
-                        cache_not_found_ids[id].push_back(row);
+                        cache_not_found_count++;
+                        cache_expired_or_not_found_ids[id].push_back(row);
                         continue;
                     }
-
-                    cache_expired_ids[id].push_back(row);
+                    
+                    cache_expired_count++;
+                    cache_expired_or_not_found_ids[id].push_back(row);
 
                     if (allow_read_expired_keys)
                         insert_value_routine();
-                } else
-                    cache_not_found_ids[id].push_back(row);
+                } 
+                else
+                {
+                    cache_not_found_count++;
+                    cache_expired_or_not_found_ids[id].push_back(row);
+                }
+                    
             } else
             {
                 ++cache_hit;
@@ -278,24 +286,24 @@ void CacheDictionary::getItemsString(
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_ids.size());
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_ids.size());
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_count);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_count);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    hit_count.fetch_add(rows - cache_expired_ids.size() - cache_not_found_ids.size(), std::memory_order_release);
+    hit_count.fetch_add(rows - cache_expired_count - cache_not_found_count, std::memory_order_release);
 
     /// Async update of expired keys.
-    if (cache_not_found_ids.empty())
+    if (!cache_not_found_count)
     {
-        if (allow_read_expired_keys && !cache_expired_ids.empty())
+        if (allow_read_expired_keys && cache_expired_count)
         {
             std::vector<Key> required_expired_ids;
-            required_expired_ids.reserve(cache_not_found_ids.size());
-            std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids),
+            required_expired_ids.reserve(cache_expired_count);
+            std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
                            std::back_inserter(required_expired_ids), [](auto & pair) { return pair.first; });
 
-            auto update_unit_ptr = std::make_shared<UpdateUnit>(required_expired_ids);
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_expired_ids));
 
             tryPushToUpdateQueueOrThrow(update_unit_ptr);
 
@@ -306,41 +314,60 @@ void CacheDictionary::getItemsString(
     /// Request new values sync.
     /// We have request both cache_not_found_ids and cache_expired_ids.
     std::vector<Key> required_ids;
-    required_ids.reserve(cache_not_found_ids.size() + cache_expired_ids.size());
+    required_ids.reserve(cache_not_found_count + cache_expired_count);
     std::transform(
-        std::begin(cache_not_found_ids), std::end(cache_not_found_ids),
-        std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
-    std::transform(
-        std::begin(cache_expired_ids), std::end(cache_expired_ids),
+        std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
         std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
 
-    auto on_cell_updated = [&] (const auto id, const auto cell_idx)
-    {
-        const auto attribute_value = attribute_array[cell_idx];
-
-        map[id] = String{attribute_value};
-        total_length += (attribute_value.size + 1) * cache_not_found_ids[id].size();
-    };
-
-    auto on_id_not_found = [&] (const auto id, const auto)
-    {
-        for (const auto row : cache_not_found_ids[id])
-            total_length += get_default(row).size + 1;
-    };
-
-    auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids, on_cell_updated, on_id_not_found);
+    auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_ids));
 
     tryPushToUpdateQueueOrThrow(update_unit_ptr);
     waitForCurrentUpdateFinish(update_unit_ptr);
+
+    const size_t attribute_index = getAttributeIndex(attribute_name);
+
+    /// Only calculate the total length.
+    for (auto & [key, value] : update_unit_ptr->found_ids)
+    {
+        if (value.found)
+        {
+            const auto found_value_ref = std::get<String>(value.values[attribute_index]);
+            total_length += (found_value_ref.size() + 1) * cache_expired_or_not_found_ids[key].size();
+        }
+        else
+        {
+            for (const auto row : cache_expired_or_not_found_ids[key])
+                total_length += get_default(row).size + 1;
+        }
+    }
+
     out->getChars().reserve(total_length);
 
     for (const auto row : ext::range(0, ext::size(ids)))
     {
         const auto id = ids[row];
-        const auto it = map.find(id);
 
-        const auto string_ref = it != std::end(map) ? StringRef{it->second} : get_default(row);
-        out->insertData(string_ref.data, string_ref.size);
+        StringRef value;
+
+        /// We have two maps: found in cache and found in source.
+        const auto it = inside_cache.find(id);
+        if (it != inside_cache.end())
+            value = StringRef(it->second);
+        else
+        {
+            const auto found_it = update_unit_ptr->found_ids.find(id);
+            if (found_it->second.found)
+            {
+                std::cout << "size " << found_it->second.values.size() << std::endl;
+                std::cout << "attribute_index " << attribute_index << std::endl;
+                value = std::get<String>(found_it->second.values[attribute_index]);
+            }
+                
+            else
+                value = get_default(row);
+        }
+
+        out->insertData(value.data, value.size);
     }
 }
 
