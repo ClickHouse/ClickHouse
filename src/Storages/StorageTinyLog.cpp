@@ -491,7 +491,7 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context
 }
 
 void StorageTinyLog::truncate(
-    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context & context, TableExclusiveLockHolder &)
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
 {
     disk->clearDirectory(table_path);
 
