@@ -11,7 +11,7 @@ RUN apt-get update \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
+    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-11 main" >> \
         /etc/apt/sources.list
 
 # initial packages
@@ -36,12 +36,11 @@ RUN apt-get update \
         clang-${LLVM_VERSION} \
         lld-${LLVM_VERSION} \
         clang-tidy-${LLVM_VERSION} \
-        clang-9 \
-        lld-9 \
-        clang-tidy-9 \
-        clang-8 \
-        lld-8 \
-        clang-tidy-8 \
+        clang-11 \
+        clang-tidy-11 \
+        lld-11 \
+        llvm-11 \
+        llvm-11-dev \
         libicu-dev \
         libreadline-dev \
         ninja-build \
