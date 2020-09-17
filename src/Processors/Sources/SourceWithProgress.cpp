@@ -93,8 +93,8 @@ void SourceWithProgress::progress(const Progress & value)
             }
         }
 
-        if (!leaf_limits.check(rows_to_check_limit, progress.read_bytes,"rows or bytes to read on leaf node",
-                               ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
+        if (!leaf_limits.check(rows_to_check_limit, progress.read_bytes, "rows or bytes to read on leaf node",
+                                          ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
         {
             cancel();
         }

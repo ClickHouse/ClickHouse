@@ -584,12 +584,12 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
         std::atomic<size_t> total_rows {0};
 
         SizeLimits limits;
-        /// bytes limit is ignored since we can't check it on this stage
-        limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
+        if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
+            limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
 
         SizeLimits leaf_limits;
-        /// bytes limit is ignored since we can't check it on this stage
-        leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
+        if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
+            leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
 
         auto process_part = [&](size_t part_index)
         {
@@ -618,7 +618,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
 
             if (!ranges.ranges.empty())
             {
-                if (settings.read_overflow_mode == OverflowMode::THROW && (limits.max_rows || leaf_limits.max_rows))
+                if (limits.max_rows || leaf_limits.max_rows)
                 {
                     /// Fail fast if estimated number of rows to read exceeds the limit
                     auto current_rows_estimate = ranges.getRowsCount();
