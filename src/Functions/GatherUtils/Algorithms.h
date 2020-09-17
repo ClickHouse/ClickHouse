@@ -21,10 +21,11 @@ namespace DB::GatherUtils
 
 inline constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
 
+
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
 
 template <typename T>
-void inline ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
+void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 {
     sink.elements.resize(sink.current_offset + slice.size);
     memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size * sizeof(T));
@@ -32,7 +33,7 @@ void inline ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, Numeric
 }
 
 template <typename T, typename U>
-void inline ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
+void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
     using NativeU = typename NativeType<U>::Type;
 
@@ -145,7 +146,7 @@ inline ALWAYS_INLINE void writeSlice(const Slice & slice, NullableArraySink<Arra
 
 
 template <typename T, typename U>
-void inline ALWAYS_INLINE writeSlice(const NumericValueSlice<T> & slice, NumericArraySink<U> & sink)
+void writeSlice(const NumericValueSlice<T> & slice, NumericArraySink<U> & sink)
 {
     sink.elements.resize(sink.current_offset + 1);
     sink.elements[sink.current_offset] = slice.value;
@@ -186,7 +187,7 @@ inline ALWAYS_INLINE void writeSlice(const NumericValueSlice<T> & slice, Generic
 
 
 template <typename SourceA, typename SourceB, typename Sink>
-void inline ALWAYS_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
+void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
 {
     sink.reserve(src_a.getSizeForReserve() + src_b.getSizeForReserve());
 
@@ -202,7 +203,7 @@ void inline ALWAYS_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sin
 }
 
 template <typename Source, typename Sink>
-void inline ALWAYS_INLINE concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Sink && sink)
+void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Sink && sink)
 {
     size_t sources_num = array_sources.size();
     std::vector<char> is_const(sources_num);
@@ -250,7 +251,7 @@ void inline ALWAYS_INLINE concat(const std::vector<std::unique_ptr<IArraySource>
 }
 
 template <typename Sink>
-void inline ALWAYS_INLINE concat(StringSources & sources, Sink && sink)
+void NO_INLINE concat(StringSources & sources, Sink && sink)
 {
     while (!sink.isEnd())
     {
@@ -265,7 +266,7 @@ void inline ALWAYS_INLINE concat(StringSources & sources, Sink && sink)
 
 
 template <typename Source, typename Sink>
-void inline ALWAYS_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
+void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
 {
     while (!src.isEnd())
     {
@@ -276,7 +277,7 @@ void inline ALWAYS_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Si
 }
 
 template <typename Source, typename Sink>
-void inline ALWAYS_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
+void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
     {
@@ -293,7 +294,7 @@ void inline ALWAYS_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink
 }
 
 template <typename Source, typename Sink>
-void inline ALWAYS_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
+void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
 {
     while (!src.isEnd())
     {
@@ -304,7 +305,7 @@ void inline ALWAYS_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, S
 }
 
 template <typename Source, typename Sink>
-void inline ALWAYS_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
+void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
     {
@@ -321,7 +322,7 @@ void inline ALWAYS_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sin
 }
 
 template <typename Source, typename Sink>
-void inline ALWAYS_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
+void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
     const bool is_null = offset_column.onlyNull();
     const auto * nullable = typeid_cast<const ColumnNullable *>(&offset_column);
@@ -352,7 +353,7 @@ void inline ALWAYS_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sin
 }
 
 template <typename Source, typename Sink>
-void inline ALWAYS_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
+void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
 {
     const bool is_offset_null = offset_column.onlyNull();
     const auto * offset_nullable = typeid_cast<const ColumnNullable *>(&offset_column);
@@ -394,7 +395,7 @@ void inline ALWAYS_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink,
 
 
 template <typename SourceA, typename SourceB, typename Sink>
-void inline ALWAYS_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)
+void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)
 {
     sink.reserve(std::max(src_a.getSizeForReserve(), src_b.getSizeForReserve()));
 
@@ -422,7 +423,7 @@ template <
     typename FirstSliceType,
     typename SecondSliceType,
           bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
-bool inline ALWAYS_INLINE sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
+bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;
@@ -456,7 +457,7 @@ bool inline ALWAYS_INLINE sliceHasImplAnyAll(const FirstSliceType & first, const
 /// https://en.wikipedia.org/wiki/Knuth%E2%80%93Morris%E2%80%93Pratt_algorithm.
 /// A "prefix-function" is defined as: i-th element is the length of the longest of all prefixes that end in i-th position
 template <typename SliceType, typename EqualityFunc>
-std::vector<size_t> inline ALWAYS_INLINE buildKMPPrefixFunction(const SliceType & pattern, const EqualityFunc & isEqualFunc)
+std::vector<size_t> buildKMPPrefixFunction(const SliceType & pattern, const EqualityFunc & isEqualFunc)
 {
     std::vector<size_t> result(pattern.size);
     result[0] = 0;
@@ -483,7 +484,7 @@ template < typename FirstSliceType,
            typename SecondSliceType,
            bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t),
            bool (*isEqualUnary)(const SecondSliceType &, size_t, size_t)>
-bool inline ALWAYS_INLINE sliceHasImplSubstr(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
+bool sliceHasImplSubstr(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
     if (second.size == 0)
         return true;
@@ -540,7 +541,7 @@ template <
     typename SecondSliceType,
     bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t),
     bool (*isEqualSecond)(const SecondSliceType &, size_t, size_t)>
-bool inline ALWAYS_INLINE sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
+bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
     if constexpr (search_type == ArraySearchType::Substr)
         return sliceHasImplSubstr<FirstSliceType, SecondSliceType, isEqual, isEqualSecond>(first, second, first_null_map, second_null_map);
@@ -550,7 +551,7 @@ bool inline ALWAYS_INLINE sliceHasImpl(const FirstSliceType & first, const Secon
 
 
 template <typename T, typename U>
-bool inline ALWAYS_INLINE sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
+bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                         const NumericArraySlice<U> & second [[maybe_unused]],
                         size_t first_ind [[maybe_unused]],
                         size_t second_ind [[maybe_unused]])
@@ -565,13 +566,13 @@ bool inline ALWAYS_INLINE sliceEqualElements(const NumericArraySlice<T> & first 
 }
 
 template <typename T>
-bool inline ALWAYS_INLINE sliceEqualElements(const NumericArraySlice<T> &, const GenericArraySlice &, size_t, size_t)
+bool sliceEqualElements(const NumericArraySlice<T> &, const GenericArraySlice &, size_t, size_t)
 {
     return false;
 }
 
 template <typename U>
-bool inline ALWAYS_INLINE sliceEqualElements(const GenericArraySlice &, const NumericArraySlice<U> &, size_t, size_t)
+bool sliceEqualElements(const GenericArraySlice &, const NumericArraySlice<U> &, size_t, size_t)
 {
     return false;
 }
@@ -582,7 +583,7 @@ inline ALWAYS_INLINE bool sliceEqualElements(const GenericArraySlice & first, co
 }
 
 template <typename T>
-bool inline ALWAYS_INLINE insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
+bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                           size_t first_ind [[maybe_unused]],
                           size_t second_ind [[maybe_unused]])
 {
@@ -597,14 +598,14 @@ inline ALWAYS_INLINE bool insliceEqualElements(const GenericArraySlice & first, 
 }
 
 template <ArraySearchType search_type, typename T, typename U>
-bool inline ALWAYS_INLINE sliceHas(const NumericArraySlice<T> & first, const NumericArraySlice<U> & second)
+bool sliceHas(const NumericArraySlice<T> & first, const NumericArraySlice<U> & second)
 {
     auto impl = sliceHasImpl<search_type, NumericArraySlice<T>, NumericArraySlice<U>, sliceEqualElements<T, U>, insliceEqualElements<U>>;
     return impl(first, second, nullptr, nullptr);
 }
 
 template <ArraySearchType search_type>
-bool inline ALWAYS_INLINE sliceHas(const GenericArraySlice & first, const GenericArraySlice & second)
+bool sliceHas(const GenericArraySlice & first, const GenericArraySlice & second)
 {
     /// Generic arrays should have the same type in order to use column.compareAt(...)
     if (!first.elements->structureEquals(*second.elements))
@@ -615,19 +616,19 @@ bool inline ALWAYS_INLINE sliceHas(const GenericArraySlice & first, const Generi
 }
 
 template <ArraySearchType search_type, typename U>
-bool inline ALWAYS_INLINE sliceHas(const GenericArraySlice & /*first*/, const NumericArraySlice<U> & /*second*/)
+bool sliceHas(const GenericArraySlice & /*first*/, const NumericArraySlice<U> & /*second*/)
 {
     return false;
 }
 
 template <ArraySearchType search_type, typename T>
-bool inline ALWAYS_INLINE sliceHas(const NumericArraySlice<T> & /*first*/, const GenericArraySlice & /*second*/)
+bool sliceHas(const NumericArraySlice<T> & /*first*/, const GenericArraySlice & /*second*/)
 {
     return false;
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool inline ALWAYS_INLINE sliceHas(const FirstArraySlice & first, NullableSlice<SecondArraySlice> & second)
+bool sliceHas(const FirstArraySlice & first, NullableSlice<SecondArraySlice> & second)
 {
     auto impl = sliceHasImpl<
         search_type,
@@ -639,7 +640,7 @@ bool inline ALWAYS_INLINE sliceHas(const FirstArraySlice & first, NullableSlice<
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool inline ALWAYS_INLINE sliceHas(const NullableSlice<FirstArraySlice> & first, SecondArraySlice & second)
+bool sliceHas(const NullableSlice<FirstArraySlice> & first, SecondArraySlice & second)
 {
     auto impl = sliceHasImpl<
         search_type,
@@ -651,7 +652,7 @@ bool inline ALWAYS_INLINE sliceHas(const NullableSlice<FirstArraySlice> & first,
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool inline ALWAYS_INLINE sliceHas(const NullableSlice<FirstArraySlice> & first, NullableSlice<SecondArraySlice> & second)
+bool sliceHas(const NullableSlice<FirstArraySlice> & first, NullableSlice<SecondArraySlice> & second)
 {
     auto impl = sliceHasImpl<
         search_type,
@@ -663,7 +664,7 @@ bool inline ALWAYS_INLINE sliceHas(const NullableSlice<FirstArraySlice> & first,
 }
 
 template <ArraySearchType search_type, typename FirstSource, typename SecondSource>
-void inline ALWAYS_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnUInt8 & result)
+void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnUInt8 & result)
 {
     auto size = result.size();
     auto & data = result.getData();
@@ -676,7 +677,7 @@ void inline ALWAYS_INLINE arrayAllAny(FirstSource && first, SecondSource && seco
 }
 
 template <typename ArraySource, typename ValueSource, typename Sink>
-void inline ALWAYS_INLINE resizeDynamicSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column)
+void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column)
 {
     const auto * size_nullable = typeid_cast<const ColumnNullable *>(&size_column);
     const NullMap * size_null_map = size_nullable ? &size_nullable->getNullMapData() : nullptr;
@@ -735,7 +736,7 @@ void inline ALWAYS_INLINE resizeDynamicSize(ArraySource && array_source, ValueSo
 }
 
 template <typename ArraySource, typename ValueSource, typename Sink>
-void inline ALWAYS_INLINE resizeConstantSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const ssize_t size)
+void resizeConstantSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const ssize_t size)
 {
     while (!sink.isEnd())
     {
