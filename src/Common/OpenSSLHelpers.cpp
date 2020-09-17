@@ -12,11 +12,26 @@ namespace DB
 {
 #pragma GCC diagnostic warning "-Wold-style-cast"
 
+std::string encodeSHA256(const std::string_view & text)
+{
+    return encodeSHA256(text.data(), text.size());
+}
+std::string encodeSHA256(const void * text, size_t size)
+{
+    std::string out;
+    out.resize(32);
+    encodeSHA256(text, size, reinterpret_cast<unsigned char *>(out.data()));
+    return out;
+}
 void encodeSHA256(const std::string_view & text, unsigned char * out)
+{
+    encodeSHA256(text.data(), text.size(), out);
+}
+void encodeSHA256(const void * text, size_t size, unsigned char * out)
 {
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
-    SHA256_Update(&ctx, reinterpret_cast<const UInt8 *>(text.data()), text.size());
+    SHA256_Update(&ctx, reinterpret_cast<const UInt8 *>(text), size);
     SHA256_Final(out, &ctx);
 }
 

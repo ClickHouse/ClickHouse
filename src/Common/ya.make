@@ -74,6 +74,7 @@ SRCS(
     QueryProfiler.cpp
     quoteString.cpp
     randomSeed.cpp
+    remapExecutable.cpp
     RemoteHostFilter.cpp
     renameat2.cpp
     RWLock.cpp
