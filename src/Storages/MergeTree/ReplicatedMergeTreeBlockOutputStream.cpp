@@ -370,14 +370,13 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         {
             if (is_already_existing_part)
             {
-                LOG_INFO(log, "Part {} is duplicate and it is already written by concurrent request or fetched; ignoring it.",
-                         block_id, existing_part_name);
+                LOG_INFO(log, "Part {} is duplicate and it is already written by concurrent request or fetched; ignoring it.", part->name);
                 return;
             }
             else
-                throw Exception("Part with name {} is already written by concurrent request."
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part with name {} is already written by concurrent request."
                     " It should not happen for non-duplicate data parts because unique names are assigned for them. It's a bug",
-                    ErrorCodes::LOGICAL_ERROR);
+                    part->name);
         }
 
         Coordination::Responses responses;
@@ -429,7 +428,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                     throw Exception("Too many transaction retries - it may indicate an error", ErrorCodes::DUPLICATE_DATA_PART);
                 continue;
             }
-            else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == block_id_path)
+            else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
             {
                 /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
                 transaction.rollback();
