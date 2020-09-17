@@ -6,6 +6,8 @@ PEERDIR(
     clickhouse/src/Formats
 )
 
+CFLAGS(-g0)
+
 SRCS(
     convertMySQLDataType.cpp
     DataTypeAggregateFunction.cpp
@@ -38,6 +40,7 @@ SRCS(
     getMostSubtype.cpp
     IDataType.cpp
     NestedUtils.cpp
+    registerDataTypeDateTime.cpp
 
 )
 

@@ -327,6 +327,7 @@ UInt8 getDataBytesSize(DataTypePtr column_type)
 CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
+    setCodecDescription("DoubleDelta");
 }
 
 uint8_t CompressionCodecDoubleDelta::getMethodByte() const
@@ -334,9 +335,10 @@ uint8_t CompressionCodecDoubleDelta::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::DoubleDelta);
 }
 
-ASTPtr CompressionCodecDoubleDelta::getCodecDesc() const
+void CompressionCodecDoubleDelta::updateHash(SipHash & hash) const
 {
-    return std::make_shared<ASTIdentifier>("DoubleDelta");
+    getCodecDesc()->updateTreeHash(hash);
+    hash.update(data_bytes_size);
 }
 
 UInt32 CompressionCodecDoubleDelta::getMaxCompressedDataSize(UInt32 uncompressed_size) const

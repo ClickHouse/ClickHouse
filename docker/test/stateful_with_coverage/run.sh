@@ -71,14 +71,26 @@ ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config
 ln -s --backup=simple --suffix=_original.xml \
     /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
 
+function start()
+{
+    counter=0
+    until clickhouse-client --query "SELECT 1"
+    do
+        if [ "$counter" -gt 120 ]
+        then
+            echo "Cannot start clickhouse-server"
+            cat /var/log/clickhouse-server/stdout.log
+            tail -n1000 /var/log/clickhouse-server/stderr.log
+            tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
+            break
+        fi
+        timeout 120 service clickhouse-server start
+        sleep 0.5
+        counter=$(($counter + 1))
+    done
+}
 
-service zookeeper start
-
-sleep 5
-
-start_clickhouse
-
-sleep 5
+start
 
 if ! /s3downloader --dataset-names $DATASETS; then
     echo "Cannot download datatsets"

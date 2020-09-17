@@ -93,7 +93,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
 
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
 
-    if image_type == "deb":
+    if image_type == "deb" or image_type == "unbundled":
         result.append("DEB_CC={}".format(cc))
         result.append("DEB_CXX={}".format(cxx))
     elif image_type == "binary":
