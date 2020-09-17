@@ -1,30 +1,31 @@
 import base64
-import cassandra.cluster
-import distutils.dir_util
-import docker
 import errno
 import httplib
 import logging
 import os
 import os.path as p
 import pprint
-import psycopg2
 import pwd
-import pymongo
-import pymysql
 import re
-import requests
 import shutil
 import socket
 import subprocess
 import time
+import traceback
 import urllib
+
+import cassandra.cluster
+import docker
+import psycopg2
+import pymongo
+import pymysql
+import requests
 import xml.dom.minidom
+from confluent.schemaregistry.client import CachedSchemaRegistryClient
 from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
-from confluent.schemaregistry.client import CachedSchemaRegistryClient
 
 from .client import Client
 from .hdfs_api import HDFSApi
@@ -67,13 +68,14 @@ def get_odbc_bridge_path():
             return '/usr/bin/clickhouse-odbc-bridge'
     return path
 
+
 def get_docker_compose_path():
     compose_path = os.environ.get('DOCKER_COMPOSE_DIR')
     if compose_path is not None:
         return os.path.dirname(compose_path)
     else:
         if os.path.exists(os.path.dirname('/compose/')):
-            return os.path.dirname('/compose/') #default in docker runner container
+            return os.path.dirname('/compose/')  # default in docker runner container
         else:
             print("Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: {}".format(LOCAL_DOCKER_COMPOSE_DIR))
             return LOCAL_DOCKER_COMPOSE_DIR
@@ -91,12 +93,12 @@ class ClickHouseCluster:
     def __init__(self, base_path, name=None, base_config_dir=None, server_bin_path=None, client_bin_path=None,
                  odbc_bridge_bin_path=None, zookeeper_config_path=None, custom_dockerd_host=None):
         for param in os.environ.keys():
-            print "ENV %40s %s" % (param,os.environ[param])
+            print "ENV %40s %s" % (param, os.environ[param])
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else ''
 
         self.base_config_dir = base_config_dir or os.environ.get('CLICKHOUSE_TESTS_BASE_CONFIG_DIR',
-                                                                   '/etc/clickhouse-server/')
+                                                                 '/etc/clickhouse-server/')
         self.server_bin_path = p.realpath(
             server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse'))
         self.odbc_bridge_bin_path = p.realpath(odbc_bridge_bin_path or get_odbc_bridge_path())
@@ -165,8 +167,10 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries = None, macros=None,
-                     with_zookeeper=False, with_mysql=False, with_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
+    def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
+                     macros=None,
+                     with_zookeeper=False, with_mysql=False, with_kafka=False, with_rabbitmq=False,
+                     clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
@@ -247,7 +251,8 @@ class ClickHouseCluster:
             self.with_mysql = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
             self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
+                                   self.project_name, '--file',
+                                   p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
 
             cmds.append(self.base_mysql_cmd)
 
@@ -255,7 +260,8 @@ class ClickHouseCluster:
             self.with_postgres = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
             self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
+                                      self.project_name, '--file',
+                                      p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
             cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
@@ -264,7 +270,8 @@ class ClickHouseCluster:
                 self.with_mysql = True
                 self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
                 self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
+                                       self.project_name, '--file',
+                                       p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
                 cmds.append(self.base_mysql_cmd)
 
             if not self.with_postgres:
@@ -279,28 +286,32 @@ class ClickHouseCluster:
             self.with_kafka = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
+                                   self.project_name, '--file',
+                                   p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
 
         if with_rabbitmq and not self.with_rabbitmq:
             self.with_rabbitmq = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')])
             self.base_rabbitmq_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
+                                      self.project_name, '--file',
+                                      p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
             cmds.append(self.base_rabbitmq_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')])
             self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                  self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')]
+                                  self.project_name, '--file',
+                                  p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')]
             cmds.append(self.base_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')])
             self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
+                                   self.project_name, '--file',
+                                   p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
             cmds.append(self.base_mongo_cmd)
 
         if self.with_net_trics:
@@ -311,21 +322,24 @@ class ClickHouseCluster:
             self.with_redis = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')])
             self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')]
+                                   self.project_name, '--file',
+                                   p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')]
 
         if with_minio and not self.with_minio:
             self.with_minio = True
             self.minio_certs_dir = minio_certs_dir
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
             self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
+                                   self.project_name, '--file',
+                                   p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
             cmds.append(self.base_minio_cmd)
 
         if with_cassandra and not self.with_cassandra:
             self.with_cassandra = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')])
             self.base_cassandra_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
+                                       self.project_name, '--file',
+                                       p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
 
         return instance
 
@@ -390,7 +404,8 @@ class ClickHouseCluster:
             print("Container {} uses image {}: ".format(container_id, image_id))
             pprint.pprint(image_info)
             print("")
-            message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id, exit_code, output)
+            message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id,
+                                                                                           exit_code, output)
             if nothrow:
                 print(message)
             else:
@@ -401,7 +416,8 @@ class ClickHouseCluster:
         with open(local_path, 'r') as fdata:
             data = fdata.read()
             encoded_data = base64.b64encode(data)
-            self.exec_in_container(container_id, ["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)],
+            self.exec_in_container(container_id,
+                                   ["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)],
                                    user='root')
 
     def wait_mysql_to_start(self, timeout=60):
@@ -650,7 +666,6 @@ class ClickHouseCluster:
             subprocess_check_call(clickhouse_start_cmd)
             print("ClickHouse instance created")
 
-
             start_deadline = time.time() + 20.0  # seconds
             for instance in self.instances.itervalues():
                 instance.docker_client = self.docker_client
@@ -667,6 +682,7 @@ class ClickHouseCluster:
         except BaseException, e:
             print "Failed to start cluster: "
             print str(e)
+            print traceback.print_exc()
             raise
 
     def shutdown(self, kill=True):
@@ -691,7 +707,7 @@ class ClickHouseCluster:
         try:
             subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
         except Exception as e:
-                print "Down + remove orphans failed durung shutdown. {}".format(repr(e))
+            print "Down + remove orphans failed durung shutdown. {}".format(repr(e))
 
         self.is_up = False
 
@@ -703,23 +719,26 @@ class ClickHouseCluster:
             instance.client = None
 
         if not self.zookeeper_use_tmpfs:
-             for i in range(1, 4):
-                 zk_data_path = self.instances_dir + '/zkdata' + str(i)
-                 zk_log_data_path = self.instances_dir + '/zklog' + str(i)
-                 if os.path.exists(zk_data_path):
-                     shutil.rmtree(zk_data_path)
-                 if os.path.exists(zk_log_data_path):
-                     shutil.rmtree(zk_log_data_path)
+            for i in range(1, 4):
+                zk_data_path = self.instances_dir + '/zkdata' + str(i)
+                zk_log_data_path = self.instances_dir + '/zklog' + str(i)
+                if os.path.exists(zk_data_path):
+                    shutil.rmtree(zk_data_path)
+                if os.path.exists(zk_log_data_path):
+                    shutil.rmtree(zk_log_data_path)
 
         if sanitizer_assert_instance is not None:
-            raise Exception("Sanitizer assert found in {} for instance {}".format(self.docker_logs_path, sanitizer_assert_instance))
+            raise Exception(
+                "Sanitizer assert found in {} for instance {}".format(self.docker_logs_path, sanitizer_assert_instance))
 
     def pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ['pause', instance_name])
+
     #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGSTOP', instance_name])
 
     def unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ['unpause', instance_name])
+
     #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGCONT', instance_name])
 
     def open_bash_shell(self, instance_name):
@@ -789,9 +808,12 @@ services:
 class ClickHouseInstance:
 
     def __init__(
-            self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs, custom_dictionaries,
-            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio,
-            with_cassandra, server_bin_path, odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
+            self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
+            custom_dictionaries,
+            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo,
+            with_redis, with_minio,
+            with_cassandra, server_bin_path, odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers,
+            hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test", tag="latest",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
 
@@ -847,15 +869,19 @@ class ClickHouseInstance:
         return "-fsanitize=thread" in build_opts
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None, ignore_error=False):
-        return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database, ignore_error=ignore_error)
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
+              ignore_error=False):
+        return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password,
+                                 database=database, ignore_error=ignore_error)
 
-    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None, ignore_error=False,
+    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
+                         ignore_error=False,
                          retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
         result = None
         for i in range(retry_count):
             try:
-                result = self.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database, ignore_error=ignore_error)
+                result = self.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password,
+                                    database=database, ignore_error=ignore_error)
                 if check_callback(result):
                     return result
                 time.sleep(sleep_time)
@@ -872,12 +898,16 @@ class ClickHouseInstance:
         return self.client.get_query_request(*args, **kwargs)
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
-    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None):
-        return self.client.query_and_get_error(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database)
+    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None,
+                            database=None):
+        return self.client.query_and_get_error(sql, stdin=stdin, timeout=timeout, settings=settings, user=user,
+                                               password=password, database=database)
 
     # The same as query_and_get_error but ignores successful query.
-    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None):
-        return self.client.query_and_get_answer_with_error(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database)
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None,
+                                        database=None):
+        return self.client.query_and_get_answer_with_error(sql, stdin=stdin, timeout=timeout, settings=settings,
+                                                           user=user, password=password, database=database)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False):
@@ -899,7 +929,8 @@ class ClickHouseInstance:
         open_result = urllib.urlopen(url, data)
 
         def http_code_and_message():
-            return str(open_result.getcode()) + " " + httplib.responses[open_result.getcode()] + ": " + open_result.read()
+            return str(open_result.getcode()) + " " + httplib.responses[
+                open_result.getcode()] + ": " + open_result.read()
 
         if expect_fail_and_get_error:
             if open_result.getcode() == 200:
@@ -912,18 +943,19 @@ class ClickHouseInstance:
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_request(self, url, method='GET', params=None, data=None, headers=None):
-        url = "http://" + self.ip_address + ":8123/"+url
+        url = "http://" + self.ip_address + ":8123/" + url
         return requests.request(method=method, url=url, params=params, data=data, headers=headers)
 
     # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
     def http_query_and_get_error(self, sql, data=None, params=None, user=None, password=None):
-        return self.http_query(sql=sql, data=data, params=params, user=user, password=password, expect_fail_and_get_error=True)
+        return self.http_query(sql=sql, data=data, params=params, user=user, password=password,
+                               expect_fail_and_get_error=True)
 
     def kill_clickhouse(self, stop_start_wait_sec=5):
         pid = self.get_process_pid("clickhouse")
         if not pid:
             raise Exception("No clickhouse found")
-        self.exec_in_container(["bash",  "-c", "kill -9 {}".format(pid)], user='root')
+        self.exec_in_container(["bash", "-c", "kill -9 {}".format(pid)], user='root')
         time.sleep(stop_start_wait_sec)
 
     def restore_clickhouse(self, retries=100):
@@ -1029,7 +1061,8 @@ class ClickHouseInstance:
             time_left = deadline - current_time
             if deadline is not None and current_time >= deadline:
                 raise Exception("Timed out while waiting for instance `{}' with ip address {} to start. "
-                                "Container status: {}, logs: {}".format(self.name, self.ip_address, status, handle.logs()))
+                                "Container status: {}, logs: {}".format(self.name, self.ip_address, status,
+                                                                        handle.logs()))
 
             # Repeatedly poll the instance address until there is something that listens there.
             # Usually it means that ClickHouse is ready to accept queries.
@@ -1164,10 +1197,12 @@ class ClickHouseInstance:
 
         db_dir = p.abspath(p.join(self.path, 'database'))
         print "Setup database dir {}".format(db_dir)
-        os.mkdir(db_dir)
         if self.clickhouse_path_dir is not None:
             print "Database files taken from {}".format(self.clickhouse_path_dir)
-            distutils.dir_util.copy_tree(self.clickhouse_path_dir, db_dir)
+            shutil.copytree(self.clickhouse_path_dir, db_dir)
+            print "Database copied from {} to {}".format(self.clickhouse_path_dir, db_dir)
+        else:
+            os.mkdir(db_dir)
 
         logs_dir = p.abspath(p.join(self.path, 'logs'))
         print "Setup logs dir {}".format(logs_dir)
@@ -1228,7 +1263,6 @@ class ClickHouseInstance:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
 
-
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
                 image=self.image,
@@ -1251,8 +1285,8 @@ class ClickHouseInstance:
                 app_net=app_net,
                 ipv4_address=ipv4_address,
                 ipv6_address=ipv6_address,
-                net_aliases = net_aliases,
-                net_alias1 = net_alias1,
+                net_aliases=net_aliases,
+                net_alias1=net_alias1,
             ))
 
     def destroy_dir(self):
