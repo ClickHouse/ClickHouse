@@ -194,7 +194,7 @@ for conn_index, c in enumerate(connections):
 # Run the queries in randomized order, but preserve their indexes as specified
 # in the test XML. To avoid using too much time, limit the number of queries
 # we run per test.
-queries_to_run = random.sample(range(0, len(test_queries)), args.max_queries or len(test_queries))
+queries_to_run = random.sample(range(0, len(test_queries)), min(len(test_queries), args.max_queries or len(test_queries)))
 
 # Run test queries.
 for query_index in queries_to_run:
