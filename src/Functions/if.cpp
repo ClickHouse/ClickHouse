@@ -28,7 +28,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -36,6 +35,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
 
 using namespace GatherUtils;
 
@@ -43,15 +44,6 @@ using namespace GatherUtils;
   * cond - UInt8
   * then, else - numeric types for which there is a general type, or dates, datetimes, or strings, or arrays of these types.
   */
-
-template <typename From, typename To>
-inline To special_cast(From x)
-{
-    if constexpr (is_big_int_v<To> && std::is_same_v<From, UInt8>)
-        return static_cast<To>(static_cast<UInt16>(x));
-    else
-        return static_cast<To>(x);
-}
 
 template <typename A, typename B, typename ResultType>
 struct NumIfImpl
@@ -68,7 +60,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? special_cast<A, ResultType>(a[i]) : special_cast<B, ResultType>(b[i]);
+            res[i] = cond[i] ? bigint_cast<ResultType>(a[i]) : bigint_cast<ResultType>(b[i]);
         block.getByPosition(result).column = std::move(col_res);
     }
 
@@ -79,7 +71,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? special_cast<A, ResultType>(a[i]) : special_cast<B, ResultType>(b);
+            res[i] = cond[i] ? bigint_cast<ResultType>(a[i]) : bigint_cast<ResultType>(b);
         block.getByPosition(result).column = std::move(col_res);
     }
 
@@ -90,7 +82,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? special_cast<A, ResultType>(a) : special_cast<B, ResultType>(b[i]);
+            res[i] = cond[i] ? bigint_cast<ResultType>(a) : bigint_cast<ResultType>(b[i]);
         block.getByPosition(result).column = std::move(col_res);
     }
 
@@ -101,7 +93,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? special_cast<A, ResultType>(a) : special_cast<B, ResultType>(b);
+            res[i] = cond[i] ? bigint_cast<ResultType>(a) : bigint_cast<ResultType>(b);
         block.getByPosition(result).column = std::move(col_res);
     }
 };
@@ -280,11 +272,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -297,11 +290,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -337,11 +331,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -354,11 +349,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -535,13 +531,13 @@ private:
             auto * col_res = assert_cast<ColumnArray *>(res.get());
 
             if (col_arr_then && col_arr_else)
-                conditional(GenericArraySource(*col_arr_then), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
+                conditional(GenericArraySource(*col_arr_then), GenericArraySource(*col_arr_else), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
             else if (col_arr_then && col_arr_else_const)
-                conditional(GenericArraySource(*col_arr_then), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(*col_res, rows), cond_data);
+                conditional(GenericArraySource(*col_arr_then), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
             else if (col_arr_then_const && col_arr_else)
-                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
+                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), GenericArraySource(*col_arr_else), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
             else if (col_arr_then_const && col_arr_else_const)
-                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(*col_res, rows), cond_data);
+                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
             else
                 return false;
 
@@ -612,7 +608,6 @@ private:
         const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         /// Convert both columns to the common type (if needed).
-
         const ColumnWithTypeAndName & arg1 = block.getByPosition(arguments[1]);
         const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[2]);
 
@@ -773,10 +768,22 @@ private:
         return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
     }
 
-    static ColumnPtr getNestedColumn(const ColumnPtr & column)
+    /// Return nested column recursively removing Nullable, examples:
+    /// Nullable(size = 1, Int32(size = 1), UInt8(size = 1)) -> Int32(size = 1)
+    /// Const(size = 0, Nullable(size = 1, Int32(size = 1), UInt8(size = 1))) ->
+    /// Const(size = 0, Int32(size = 1))
+    static ColumnPtr recursiveGetNestedColumnWithoutNullable(const ColumnPtr & column)
     {
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
+        {
+            /// Nullable cannot contain Nullable
             return nullable->getNestedColumnPtr();
+        }
+        else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*column))
+        {
+            /// Save Constant, but remove Nullable
+            return ColumnConst::create(recursiveGetNestedColumnWithoutNullable(column_const->getDataColumnPtr()), column->size());
+        }
 
         return column;
     }
@@ -834,12 +841,12 @@ private:
             {
                 arg_cond,
                 {
-                    getNestedColumn(arg_then.column),
+                    recursiveGetNestedColumnWithoutNullable(arg_then.column),
                     removeNullable(arg_then.type),
                     ""
                 },
                 {
-                    getNestedColumn(arg_else.column),
+                    recursiveGetNestedColumnWithoutNullable(arg_else.column),
                     removeNullable(arg_else.type),
                     ""
                 },
@@ -1058,6 +1065,8 @@ public:
         }
     }
 };
+
+}
 
 void registerFunctionIf(FunctionFactory & factory)
 {

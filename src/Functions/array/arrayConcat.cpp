@@ -59,8 +59,6 @@ public:
             return;
         }
 
-        auto result_column = return_type->createColumn();
-
         size_t rows = input_rows_count;
         size_t num_args = arguments.size();
 
@@ -95,10 +93,9 @@ public:
                 throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
         }
 
-        auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), rows);
-        GatherUtils::concat(sources, *sink);
+        auto sink = GatherUtils::concat(sources);
 
-        block.getByPosition(result).column = std::move(result_column);
+        block.getByPosition(result).column = std::move(sink);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

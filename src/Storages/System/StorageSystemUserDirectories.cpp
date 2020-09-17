@@ -15,8 +15,7 @@ NamesAndTypesList StorageSystemUserDirectories::getNamesAndTypes()
     NamesAndTypesList names_and_types{
         {"name", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
-        {"path", std::make_shared<DataTypeString>()},
-        {"readonly", std::make_shared<DataTypeUInt8>()},
+        {"params", std::make_shared<DataTypeString>()},
         {"precedence", std::make_shared<DataTypeUInt64>()},
     };
     return names_and_types;
@@ -31,21 +30,18 @@ void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, const 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_type = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_path = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_readonly = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]);
+    auto & column_params = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_precedence = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
 
     auto add_row = [&](const IAccessStorage & storage, size_t precedence)
     {
         const String & name = storage.getStorageName();
         std::string_view type = storage.getStorageType();
-        const String & path = storage.getStoragePath();
-        bool readonly = storage.isStorageReadOnly();
+        String params = storage.getStorageParamsJSON();
 
         column_name.insertData(name.data(), name.length());
         column_type.insertData(type.data(), type.length());
-        column_path.insertData(path.data(), path.length());
-        column_readonly.insert(readonly);
+        column_params.insertData(params.data(), params.length());
         column_precedence.insert(precedence);
     };
 

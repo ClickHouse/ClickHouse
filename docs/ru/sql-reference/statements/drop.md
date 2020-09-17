@@ -5,18 +5,35 @@ toc_title: DROP
 
 # DROP {#drop}
 
-Запрос имеет два вида: `DROP DATABASE` и `DROP TABLE`.
+Удаляет существующий объект. 
+Если указано `IF EXISTS` - не выдавать ошибку, если объекта не существует.
+
+## DROP DATABASE {#drop-database}
 
 ``` sql
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
+
+Удаляет все таблицы в базе данных db, затем удаляет саму базу данных db.
+
+
+## DROP TABLE {#drop-table}
 
 ``` sql
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Удаляет таблицу.
-Если указано `IF EXISTS` - не выдавать ошибку, если таблица не существует или база данных не существует.
+
+
+## DROP DICTIONARY {#drop-dictionary}
+
+``` sql
+DROP DICTIONARY [IF EXISTS] [db.]name
+```
+
+Удаляет словарь.
+
 
 ## DROP USER {#drop-user-statement}
 
@@ -40,6 +57,7 @@ DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```sql
 DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
+
 
 ## DROP ROW POLICY {#drop-row-policy-statement}
 
@@ -79,6 +97,14 @@ DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
+
+## DROP VIEW {#drop-view}
+
+``` sql
+DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+Удаляет представление. Представления могут быть удалены и командой `DROP TABLE`, но команда `DROP VIEW` проверяет, что `[db.]name` является представлением.
 
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/drop/) <!--hide-->

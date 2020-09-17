@@ -2,7 +2,7 @@
 #include <Core/Field.h>
 #include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQL/MySQLGtid.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
@@ -345,9 +345,9 @@ namespace MySQLReplication
 
     enum QueryType
     {
-        DDL = 0,
-        BEGIN = 1,
-        XA = 2
+        QUERY_EVENT_DDL = 0,
+        QUERY_EVENT_MULTI_TXN_FLAG = 1,
+        QUERY_EVENT_XA = 2
     };
 
     class QueryEvent : public EventBase
@@ -361,7 +361,7 @@ namespace MySQLReplication
         String status;
         String schema;
         String query;
-        QueryType typ = DDL;
+        QueryType typ = QUERY_EVENT_DDL;
 
         QueryEvent() : thread_id(0), exec_time(0), schema_len(0), error_code(0), status_len(0) { }
         void dump(std::ostream & out) const override;
@@ -499,7 +499,7 @@ namespace MySQLReplication
         virtual BinlogEventPtr readOneEvent() = 0;
         virtual void setReplicateDatabase(String db) = 0;
         virtual void setGTIDSets(GTIDSets sets) = 0;
-        virtual ~IFlavor() = default;
+        virtual ~IFlavor() override = default;
     };
 
     class MySQLFlavor : public IFlavor
