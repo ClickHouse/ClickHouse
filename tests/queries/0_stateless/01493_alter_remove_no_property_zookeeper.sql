@@ -10,14 +10,14 @@ ORDER BY tuple();
 SHOW CREATE TABLE no_prop_table;
 
 -- just nothing happened
-ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE DEFAULT;
-ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE MATERIALIZED;
-ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE ALIAS;
-ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE CODEC;
-ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE COMMENT;
-ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE TTL;
+ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE DEFAULT; --{serverError 36}
+ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE MATERIALIZED; --{serverError 36}
+ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE ALIAS; --{serverError 36}
+ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE CODEC; --{serverError 36}
+ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE COMMENT; --{serverError 36}
+ALTER TABLE no_prop_table MODIFY COLUMN some_column REMOVE TTL; --{serverError 36}
 
-ALTER TABLE no_prop_table REMOVE TTL;
+ALTER TABLE no_prop_table REMOVE TTL; --{serverError 36}
 
 SHOW CREATE TABLE no_prop_table;
 
@@ -34,18 +34,18 @@ ORDER BY tuple();
 
 SHOW CREATE TABLE r_no_prop_table;
 
-ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE DEFAULT;
-ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE MATERIALIZED;
-ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE ALIAS;
-ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE CODEC;
-ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE COMMENT;
-ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE TTL;
+ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE DEFAULT; --{serverError 36}
+ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE MATERIALIZED; --{serverError 36}
+ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE ALIAS; --{serverError 36}
+ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE CODEC; --{serverError 36}
+ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE COMMENT; --{serverError 36}
+ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE TTL; --{serverError 36}
 
-ALTER TABLE r_no_prop_table REMOVE TTL;
+ALTER TABLE r_no_prop_table REMOVE TTL;  --{serverError 36}
 
 SHOW CREATE TABLE r_no_prop_table;
 
-ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE ttl;
-ALTER TABLE r_no_prop_table remove TTL;
+ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE ttl;  --{serverError 36}
+ALTER TABLE r_no_prop_table remove TTL;  --{serverError 36}
 
 DROP TABLE IF EXISTS r_no_prop_table;

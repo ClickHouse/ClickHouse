@@ -854,22 +854,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
             if (has_column)
             {
                 auto column_from_table = columns.get(command.column_name);
-                if (command.isRemovingProperty())
-                {
-                    auto column_default = columns.getDefault(command.column_name);
-                    if (!column_default
-                        && (command.to_remove == AlterCommand::RemoveProperty::ALIAS || command.to_remove == AlterCommand::RemoveProperty::DEFAULT
-                            || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED))
-                        command.ignore = true;
-
-                    if (command.to_remove == AlterCommand::RemoveProperty::TTL && column_from_table.ttl == nullptr)
-                        command.ignore = true;
-                    if (command.to_remove == AlterCommand::RemoveProperty::COMMENT && column_from_table.comment.empty())
-                        command.ignore = true;
-                    if (command.to_remove == AlterCommand::RemoveProperty::CODEC && column_from_table.codec == nullptr)
-                        command.ignore = true;
-                }
-                else if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
+                if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
                 {
                     command.default_kind = column_from_table.default_desc.kind;
                     command.default_expression = column_from_table.default_desc.expression;
@@ -887,11 +872,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 || command.type == AlterCommand::RENAME_COLUMN)
         {
             if (!has_column && command.if_exists)
-                command.ignore = true;
-        }
-        else if (command.type == AlterCommand::REMOVE_TTL)
-        {
-            if (!metadata.hasAnyTableTTL())
                 command.ignore = true;
         }
     }
@@ -953,23 +933,62 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove DEFAULT from column {}, because column default type is {}. Use REMOVE {} to delete it.",
+                        "Cannot remove DEFAULT from column {}, because column default type is {}. Use REMOVE {} to delete it",
                             backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
                 }
                 if (command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED && column_default->kind != ColumnDefaultKind::Materialized)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove MATERIALIZED from column {}, because column default type is {}. Use REMOVE {} to delete it.",
+                        "Cannot remove MATERIALIZED from column {}, because column default type is {}. Use REMOVE {} to delete it",
                         backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
                 }
                 if (command.to_remove == AlterCommand::RemoveProperty::ALIAS && column_default->kind != ColumnDefaultKind::Alias)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove ALIAS from column {}, because column default type is {}. Use REMOVE {} to delete it.",
+                        "Cannot remove ALIAS from column {}, because column default type is {}. Use REMOVE {} to delete it",
                         backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
                 }
+            }
+
+            if (command.isRemovingProperty())
+            {
+                if (!column_default && command.to_remove == AlterCommand::RemoveProperty::DEFAULT)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have DEFAULT, cannot remove it",
+                        backQuote(column_name));
+
+                if (!column_default && command.to_remove == AlterCommand::RemoveProperty::ALIAS)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have ALIAS, cannot remove it",
+                        backQuote(column_name));
+
+                if (!column_default && command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have MATERIALIZED, cannot remove it",
+                        backQuote(column_name));
+
+                auto column_from_table = all_columns.get(column_name);
+                if (command.to_remove == AlterCommand::RemoveProperty::TTL && column_from_table.ttl == nullptr)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have TTL, cannot remove it",
+                        backQuote(column_name));
+                if (command.to_remove == AlterCommand::RemoveProperty::CODEC && column_from_table.codec == nullptr)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have TTL, cannot remove it",
+                        backQuote(column_name));
+                if (command.to_remove == AlterCommand::RemoveProperty::COMMENT && column_from_table.comment.empty())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have COMMENT, cannot remove it",
+                        backQuote(column_name));
+
             }
 
             modified_columns.emplace(column_name);
@@ -1079,6 +1098,10 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             {
                 throw Exception{"Cannot rename column from nested struct to normal column and vice versa", ErrorCodes::BAD_ARGUMENTS};
             }
+        }
+        else if (command.type == AlterCommand::REMOVE_TTL && !metadata.hasAnyTableTTL())
+        {
+            throw Exception{"Table doesn't have any table TTL expression, cannot remove", ErrorCodes::BAD_ARGUMENTS};
         }
 
         /// Collect default expressions for MODIFY and ADD comands
