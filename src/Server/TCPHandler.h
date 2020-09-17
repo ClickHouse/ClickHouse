@@ -123,7 +123,7 @@ private:
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    UInt64 client_revision = 0;
+    UInt64 client_tcp_protocol_version = 0;
 
     Context connection_context;
     std::optional<Context> query_context;
