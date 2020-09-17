@@ -512,7 +512,7 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
 
 void StorageLog::loadMarks(std::chrono::seconds lock_timeout)
 {
-    std::unique_lock<std::shared_timed_mutex> lock(rwlock, lock_timeout);
+    std::unique_lock lock(rwlock, lock_timeout);
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
@@ -638,7 +638,7 @@ Pipe StorageLog::read(
 
     NamesAndTypesList all_columns = Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names));
 
-    std::shared_lock<std::shared_timed_mutex> lock(rwlock, lock_timeout);
+    std::shared_lock lock(rwlock, lock_timeout);
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
@@ -678,7 +678,7 @@ BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMe
     auto lock_timeout = getLockTimeout(context);
     loadMarks(lock_timeout);
 
-    std::unique_lock<std::shared_timed_mutex> lock(rwlock, lock_timeout);
+    std::unique_lock lock(rwlock, lock_timeout);
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
@@ -687,7 +687,7 @@ BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMe
 
 CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & context)
 {
-    std::shared_lock<std::shared_timed_mutex> lock(rwlock, getLockTimeout(context));
+    std::shared_lock lock(rwlock, getLockTimeout(context));
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
