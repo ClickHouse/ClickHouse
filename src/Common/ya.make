@@ -50,6 +50,7 @@ SRCS(
     formatIPv6.cpp
     formatReadable.cpp
     getExecutablePath.cpp
+    getMappedArea.cpp
     getMultipleKeysFromConfig.cpp
     getNumberOfPhysicalCPUCores.cpp
     hasLinuxCapability.cpp
@@ -87,6 +88,7 @@ SRCS(
     StatusFile.cpp
     StatusInfo.cpp
     Stopwatch.cpp
+    StringRef.cpp
     StringUtils/StringUtils.cpp
     StudentTTest.cpp
     SymbolIndex.cpp
