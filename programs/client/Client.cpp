@@ -701,6 +701,8 @@ private:
             connection_parameters.default_database,
             connection_parameters.user,
             connection_parameters.password,
+            "", /* cluster */
+            "", /* cluster_secret */
             "client",
             connection_parameters.compression,
             connection_parameters.security);
@@ -958,7 +960,31 @@ private:
 
             // Try to parse the query.
             const char * this_query_end = this_query_begin;
-            parsed_query = parseQuery(this_query_end, all_queries_end, true);
+            try
+            {
+                parsed_query = parseQuery(this_query_end, all_queries_end, true);
+            }
+            catch (Exception & e)
+            {
+                if (!test_mode)
+                    throw;
+
+                /// Try find test hint for syntax error
+                const char * end_of_line = find_first_symbols<'\n'>(this_query_begin,all_queries_end);
+                TestHint hint(true, String(this_query_end, end_of_line - this_query_end));
+                if (hint.serverError()) /// Syntax errors are considered as client errors
+                    throw;
+                if (hint.clientError() != e.code())
+                {
+                    if (hint.clientError())
+                        e.addMessage("\nExpected clinet error: " + std::to_string(hint.clientError()));
+                    throw;
+                }
+
+                /// It's expected syntax error, skip the line
+                this_query_begin = end_of_line;
+                continue;
+            }
 
             if (!parsed_query)
             {

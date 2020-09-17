@@ -273,7 +273,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
-        part_info.ttl_infos = part->ttl_infos;
+        part_info.ttl_infos = &part->ttl_infos;
         part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
 
         parts_ranges.back().emplace_back(part_info);
