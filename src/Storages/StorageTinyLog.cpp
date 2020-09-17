@@ -425,10 +425,6 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const Storage
 {
     assert(table_path != new_path_to_table_data);
     {
-        std::unique_lock<std::shared_timed_mutex> lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
-        if (!lock)
-            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
         disk->moveDirectory(table_path, new_path_to_table_data);
 
         table_path = new_path_to_table_data;
