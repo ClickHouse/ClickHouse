@@ -1,8 +1,29 @@
-# All about CMake in ClickHouse
+# CMake in ClickHouse
 
-## How ClickHouse uses CMake
+## TL; DR How to make ClickHouse compile and link faster?
 
-TODO describe separate cmake files for contrib + arch-dependent ones + options finding.
+Developer only!  This command will likely fulfil most of your needs. Run before calling `ninja`.
+
+```
+cmake ..
+    -DCMAKE_BUILD_TYPE=Debug
+    -DENABLE_CLICKHOUSE_ALL=OFF
+    -DENABLE_CLICKHOUSE_SERVER=ON
+    -DENABLE_CLICKHOUSE_CLIENT=ON
+    -DUSE_STATIC_LIBRARIES=OFF
+    -DCLICKHOUSE_SPLIT_BINARY=ON
+    -DSPLIT_SHARED_LIBRARIES=ON
+    -DUNBUNDLED=ON
+    -DENABLE_UTILS=OFF
+    -DENABLE_TESTS=OFF
+```
+
+## CMake files types
+
+1. ClickHouse's source CMake files (located in the root directory and in `/src`).
+2. Arch-dependent CMake files (located in `/cmake/*os_name*`).
+3. Libraries finders (search for contrib libraries, located in `/cmake/find`).
+3. Contrib build CMake files (used instead of libraries' own CMake files, located in `/cmake/modules`)
 
 ## List of CMake flags
 

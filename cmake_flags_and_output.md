@@ -1,8 +1,29 @@
-# All about CMake in ClickHouse
+# CMake in ClickHouse
 
-## How ClickHouse uses CMake
+## TL; DR How to make ClickHouse compile and link faster?
 
-TODO describe separate cmake files for contrib + arch-dependent ones + options finding.
+Developer only!  This command will likely fulfil most of your needs. Run before calling `ninja`.
+
+```
+cmake ..
+    -DCMAKE_BUILD_TYPE=Debug
+    -DENABLE_CLICKHOUSE_ALL=OFF
+    -DENABLE_CLICKHOUSE_SERVER=ON
+    -DENABLE_CLICKHOUSE_CLIENT=ON
+    -DUSE_STATIC_LIBRARIES=OFF
+    -DCLICKHOUSE_SPLIT_BINARY=ON
+    -DSPLIT_SHARED_LIBRARIES=ON
+    -DUNBUNDLED=ON
+    -DENABLE_UTILS=OFF
+    -DENABLE_TESTS=OFF
+```
+
+## CMake files types
+
+1. ClickHouse's source CMake files (located in the root directory and in `/src`).
+2. Arch-dependent CMake files (located in `/cmake/*os_name*`).
+3. Libraries finders (search for contrib libraries, located in `/cmake/find`).
+3. Contrib build CMake files (used instead of libraries' own CMake files, located in `/cmake/modules`)
 
 ## List of CMake flags
 
@@ -12,10 +33,10 @@ TODO describe separate cmake files for contrib + arch-dependent ones + options f
 
 | Name | Default value | Description | Comment |
 |------|---------------|-------------|---------|
-| <a name="add-gdb-index-for-gold"></a>[`ADD_GDB_INDEX_FOR_GOLD`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L191) | `OFF` | Add .gdb-index to resulting binaries for gold linker. NOOP if lld is used. |  |
-| <a name="arch-native"></a>[`ARCH_NATIVE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L227) | `OFF` | Add -march=native compiler flag |  |
+| <a name="add-gdb-index-for-gold"></a>[`ADD_GDB_INDEX_FOR_GOLD`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L189) | `OFF` | Add .gdb-index to resulting binaries for gold linker. NOOP if lld is used. |  |
+| <a name="arch-native"></a>[`ARCH_NATIVE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L226) | `OFF` | Add -march=native compiler flag |  |
 | <a name="clickhouse-split-binary"></a>[`CLICKHOUSE_SPLIT_BINARY`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L102) | `OFF` | Make several binaries (clickhouse-server, clickhouse-client etc.) instead of one bundled |  |
-| <a name="compiler-pipe"></a>[`COMPILER_PIPE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L215) | `ON` | -pipe compiler option [less /tmp usage, more ram usage] |  |
+| <a name="compiler-pipe"></a>[`COMPILER_PIPE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L213) | `ON` | -pipe compiler option [less /tmp usage, more ram usage] |  |
 | <a name="enable-amqpcpp"></a>[`ENABLE_AMQPCPP`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/amqpcpp.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enalbe AMQP-CPP |  |
 | <a name="enable-avro"></a>[`ENABLE_AVRO`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/avro.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable Avro |  |
 | <a name="enable-base"></a>[`ENABLE_BASE64`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/base64.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable base64 |  |
@@ -25,21 +46,21 @@ TODO describe separate cmake files for contrib + arch-dependent ones + options f
 | <a name="enable-ccache"></a>[`ENABLE_CCACHE`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/ccache.cmake#L6) | [`ENABLE_CCACHE_BY_DEFAULT`](#enable-ccache-by-default) | Speedup re-compilations using ccache |  |
 | <a name="enable-clang-tidy"></a>[`ENABLE_CLANG_TIDY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/analysis.cmake#L2) | `OFF` | Use 'clang-tidy' static analyzer if present |  |
 | <a name="enable-clickhouse-all"></a>[`ENABLE_CLICKHOUSE_ALL`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L6) | `ON` | Enable all ClickHouse tools by default | The 'clickhouse' binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),. each of them may be built and linked as a separate library..  |
-| <a name="enable-clickhouse-benchmark"></a>[`ENABLE_CLICKHOUSE_BENCHMARK`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L15) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  | https://clickhouse.tech/docs/en/operations/utilities/clickhouse-benchmark/.  |
+| <a name="enable-clickhouse-benchmark"></a>[`ENABLE_CLICKHOUSE_BENCHMARK`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L15) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) | Queries benchmarking mode | https://clickhouse.tech/docs/en/operations/utilities/clickhouse-benchmark/.  |
 | <a name="enable-clickhouse-client"></a>[`ENABLE_CLICKHOUSE_CLIENT`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L9) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  |  |
 | <a name="enable-clickhouse-compressor"></a>[`ENABLE_CLICKHOUSE_COMPRESSOR`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L21) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  | ???.  |
-| <a name="enable-clickhouse-copier"></a>[`ENABLE_CLICKHOUSE_COPIER`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L24) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  | https://clickhouse.tech/docs/en/operations/utilities/clickhouse-copier/.  |
+| <a name="enable-clickhouse-copier"></a>[`ENABLE_CLICKHOUSE_COPIER`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L24) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) | Inter-cluster data copying mode | https://clickhouse.tech/docs/en/operations/utilities/clickhouse-copier/.  |
 | <a name="enable-clickhouse-extract-from-config"></a>[`ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L18) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  | ???.  |
 | <a name="enable-clickhouse-format"></a>[`ENABLE_CLICKHOUSE_FORMAT`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L27) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  | ???.  |
 | <a name="enable-clickhouse-install"></a>[`ENABLE_CLICKHOUSE_INSTALL`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L36) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  |  |
-| <a name="enable-clickhouse-local"></a>[`ENABLE_CLICKHOUSE_LOCAL`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L12) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  | https://clickhouse.tech/docs/en/operations/utilities/clickhouse-local/.  |
+| <a name="enable-clickhouse-local"></a>[`ENABLE_CLICKHOUSE_LOCAL`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L12) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) | Local files fast processing mode | https://clickhouse.tech/docs/en/operations/utilities/clickhouse-local/.  |
 | <a name="enable-clickhouse-obfuscator"></a>[`ENABLE_CLICKHOUSE_OBFUSCATOR`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L30) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  | ???.  |
 | <a name="enable-clickhouse-odbc-bridge"></a>[`ENABLE_CLICKHOUSE_ODBC_BRIDGE`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L33) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  | ???.  |
 | <a name="enable-clickhouse-server"></a>[`ENABLE_CLICKHOUSE_SERVER`](https://github.com/clickhouse/clickhouse/blob/master/programs/CMakeLists.txt#L8) | [`ENABLE_CLICKHOUSE_ALL`](#enable-clickhouse-all) |  |  |
 | <a name="enable-curl"></a>[`ENABLE_CURL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/curl.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable curl |  |
 | <a name="enable-embedded-compiler"></a>[`ENABLE_EMBEDDED_COMPILER`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/llvm.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Set to TRUE to enable support for 'compile_expressions' option for query execution |  |
 | <a name="enable-fastops"></a>[`ENABLE_FASTOPS`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/fastops.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable fast vectorized mathematical functions library by Mikhail Parakhin |  |
-| <a name="enable-fuzzing"></a>[`ENABLE_FUZZING`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L120) | `OFF` | Enables fuzzing instrumentation | Enable fuzzy testing using libfuzzer. Implies ${WITH_COVERAGE}.  |
+| <a name="enable-fuzzing"></a>[`ENABLE_FUZZING`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L119) | `OFF` | Fuzzy testing using libfuzzer | Implies ${WITH_COVERAGE}.  |
 | <a name="enable-gperf"></a>[`ENABLE_GPERF`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/gperf.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Use gperf function hash generator tool |  |
 | <a name="enable-grpc"></a>[`ENABLE_GRPC`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/grpc.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Use gRPC |  |
 | <a name="enable-gsasl-library"></a>[`ENABLE_GSASL_LIBRARY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/libgsasl.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable gsasl library |  |
@@ -49,7 +70,7 @@ TODO describe separate cmake files for contrib + arch-dependent ones + options f
 | <a name="enable-icu"></a>[`ENABLE_ICU`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/icu.cmake#L1) | `0` | Enable ICU |  |
 | <a name="enable-ipo"></a>[`ENABLE_IPO`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L63) | `OFF` | Full link time optimization | Need cmake 3.9+. Usually impractical.. See also ENABLE_THINLTO.  |
 | <a name="enable-ldap"></a>[`ENABLE_LDAP`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/ldap.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable LDAP |  |
-| <a name="enable-libraries"></a>[`ENABLE_LIBRARIES`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L326) | `ON` | Enable all libraries (Global default switch) |  |
+| <a name="enable-libraries"></a>[`ENABLE_LIBRARIES`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L327) | `ON` | Enable all libraries (Global default switch) |  |
 | <a name="enable-msgpack"></a>[`ENABLE_MSGPACK`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/msgpack.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable msgpack library |  |
 | <a name="enable-multitarget-code"></a>[`ENABLE_MULTITARGET_CODE`](https://github.com/clickhouse/clickhouse/blob/master/src/Functions/CMakeLists.txt#L115) | `ON` |  |  |
 | <a name="enable-mysql"></a>[`ENABLE_MYSQL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/mysqlclient.cmake#L1) | `FALSE` | Enable MySQL |  |
@@ -63,11 +84,11 @@ TODO describe separate cmake files for contrib + arch-dependent ones + options f
 | <a name="enable-s"></a>[`ENABLE_S3`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/s3.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable S3 |  |
 | <a name="enable-ssl"></a>[`ENABLE_SSL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/ssl.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable ssl |  |
 | <a name="enable-stats"></a>[`ENABLE_STATS`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/stats.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enalbe StatsLib library |  |
-| <a name="enable-tests"></a>[`ENABLE_TESTS`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L153) | `ON` |  | Adds a Google.Test target binary containing unit tests..  |
-| <a name="enable-thinlto"></a>[`ENABLE_THINLTO`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L62) | `ON` |  | Need cmake 3.9+. Usually impractical..  |
+| <a name="enable-tests"></a>[`ENABLE_TESTS`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L151) | `ON` | Provide unit_test_dbms target with Google.test unit tests |  |
+| <a name="enable-thinlto"></a>[`ENABLE_THINLTO`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L62) | `ON` | Clang-specific link time optimization | Need cmake 3.9+. Usually impractical..  |
 | <a name="fail-on-unsupported-options-combination"></a>[`FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L30) | `ON` | Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)   but is not possible to satisfy |  |
 | <a name="fuzzer"></a>[`FUZZER`](https://github.com/clickhouse/clickhouse/blob/master/cmake/fuzzer.cmake#L0) | `OFF` | Enable fuzzer: libfuzzer |  |
-| <a name="glibc-compatibility"></a>[`GLIBC_COMPATIBILITY`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L158) | `ON` | Enable compatibility with older glibc libraries. | Only for Linux, x86_64.. Implies ${ENABLE_FASTMEMCPY}.  |
+| <a name="glibc-compatibility"></a>[`GLIBC_COMPATIBILITY`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L156) | `ON` | Enable compatibility with older glibc libraries. | Only for Linux, x86_64.. Implies ${ENABLE_FASTMEMCPY}.  |
 | <a name="linker-name"></a>[`LINKER_NAME`](https://github.com/clickhouse/clickhouse/blob/master/cmake/tools.cmake#L42) | `OFF` | Linker name or full path |  |
 | <a name="llvm-has-rtti"></a>[`LLVM_HAS_RTTI`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/llvm.cmake#L39) | `ON` | Enable if LLVM was build with RTTI enabled |  |
 | <a name="make-static-libraries"></a>[`MAKE_STATIC_LIBRARIES`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L95) | [`USE_STATIC_LIBRARIES`](#use-static-libraries) | Disable to make shared libraries |  |
@@ -76,8 +97,8 @@ TODO describe separate cmake files for contrib + arch-dependent ones + options f
 | <a name="sanitize"></a>[`SANITIZE`](https://github.com/clickhouse/clickhouse/blob/master/cmake/sanitize.cmake#L0) | `""` | Enable sanitizer: address, memory, thread, undefined |  |
 | <a name="split-shared-libraries"></a>[`SPLIT_SHARED_LIBRARIES`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L100) | `OFF` | Keep all internal libraries as separate .so files | DEVELOPER ONLY.. Faster linking if turned on..  |
 | <a name="strip-debug-symbols-functions"></a>[`STRIP_DEBUG_SYMBOLS_FUNCTIONS`](https://github.com/clickhouse/clickhouse/blob/master/src/Functions/CMakeLists.txt#L67) | [`STRIP_DSF_DEFAULT`](#strip-dsf-default) | Do not generate debugger info for ClickHouse functions | Provides faster linking and lower binary size.. Tradeoff is the inability to debug some source files with e.g. gdb. (empty stack frames and no local variables).".  |
-| <a name="unbundled"></a>[`UNBUNDLED`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L155) | `OFF` | Use system libraries instead of ones in contrib/ |  |
-| <a name="use-include-what-you-use"></a>[`USE_INCLUDE_WHAT_YOU_USE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L387) | `OFF` | Automatically reduce unneeded includes in source code (external tool) | https://github.com/include-what-you-use/include-what-you-use.  |
+| <a name="unbundled"></a>[`UNBUNDLED`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L153) | `OFF` | Use system libraries instead of ones in contrib/ |  |
+| <a name="use-include-what-you-use"></a>[`USE_INCLUDE_WHAT_YOU_USE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L388) | `OFF` | Automatically reduce unneeded includes in source code (external tool) | https://github.com/include-what-you-use/include-what-you-use.  |
 | <a name="use-internal-avro-library"></a>[`USE_INTERNAL_AVRO_LIBRARY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/avro.cmake#L3) | `ON` | Set to FALSE to use system avro library instead of bundled |  |
 | <a name="use-internal-aws-s-library"></a>[`USE_INTERNAL_AWS_S3_LIBRARY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/s3.cmake#L2) | `ON` | Set to FALSE to use system S3 instead of bundled (experimental set to OFF on your own risk) |  |
 | <a name="use-internal-brotli-library"></a>[`USE_INTERNAL_BROTLI_LIBRARY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/brotli.cmake#L3) | `ON` | Set to FALSE to use system libbrotli library instead of bundled |  |
@@ -115,9 +136,9 @@ TODO describe separate cmake files for contrib + arch-dependent ones + options f
 | <a name="use-snappy"></a>[`USE_SNAPPY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/snappy.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable support of snappy library |  |
 | <a name="use-static-libraries"></a>[`USE_STATIC_LIBRARIES`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L94) | `ON` | Disable to use shared libraries |  |
 | <a name="use-unwind"></a>[`USE_UNWIND`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/unwind.cmake#L0) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable libunwind (better stacktraces) |  |
-| <a name="werror"></a>[`WERROR`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L342) | `ON` | Enable -Werror compiler option | Using system libs can cause a lot of warnings in includes (on macro expansion)..  |
+| <a name="werror"></a>[`WERROR`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L343) | `ON` | Enable -Werror compiler option | Using system libs can cause a lot of warnings in includes (on macro expansion)..  |
 | <a name="weverything"></a>[`WEVERYTHING`](https://github.com/clickhouse/clickhouse/blob/master/cmake/warnings.cmake#L20) | `ON` | Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang. |  |
-| <a name="with-coverage"></a>[`WITH_COVERAGE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L119) | `OFF` | Profile the resulting binary/binaries | Enable fuzzy testing using libfuzzer.  |
+| <a name="with-coverage"></a>[`WITH_COVERAGE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L118) | `OFF` | Profile the resulting binary/binaries |  |
 
 ## Developer's guide for adding new CMake options
 
@@ -136,13 +157,15 @@ Better:
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests" OFF)
 ```
 
-If the option's purpose can't be guessed by its name, or the purpose guess may be misleading, leave a comment above
-the `option()` line and explain what it does. The best way would be linking the docs page (if it exists).
+If the option's purpose can't be guessed by its name, or the purpose guess may be misleading, or option has some 
+pre-conditions, leave a comment above the `option()` line and explain what it does. 
+The best way would be linking the docs page (if it exists).
 The comment is parsed into a separate column (see below).
 
 Even better:
 
 ```cmake
+# implies ${TESTS_ARE_ENABLED}
 # see tests/CMakeLists.txt for implementation detail.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests")
 ```
