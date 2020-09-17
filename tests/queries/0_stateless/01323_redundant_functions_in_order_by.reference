@@ -34,11 +34,11 @@ FROM
 (
     SELECT number AS x
     FROM numbers(3)
-    ORDER BY 
+    ORDER BY
         exp(x) ASC,
         x ASC
 )
-SELECT 
+SELECT
     key,
     a,
     b,
@@ -49,17 +49,17 @@ FROM
     FROM numbers(4)
 ) AS s
 ALL FULL OUTER JOIN test AS t USING (key)
-ORDER BY 
+ORDER BY
     key ASC,
     t.key ASC
-SELECT 
+SELECT
     key,
     a
 FROM test
-ORDER BY 
+ORDER BY
     key ASC,
     a ASC
-SELECT 
+SELECT
     key,
     a
 FROM test
@@ -86,7 +86,7 @@ FROM
 (
     SELECT number AS x
     FROM numbers(3)
-    ORDER BY 
+    ORDER BY
         x ASC,
         exp(x) ASC
 )
@@ -95,7 +95,7 @@ FROM
 (
     SELECT number AS x
     FROM numbers(3)
-    ORDER BY 
+    ORDER BY
         x ASC,
         exp(exp(x)) ASC
 )
@@ -104,11 +104,11 @@ FROM
 (
     SELECT number AS x
     FROM numbers(3)
-    ORDER BY 
+    ORDER BY
         exp(x) ASC,
         x ASC
 )
-SELECT 
+SELECT
     key,
     a,
     b,
@@ -119,21 +119,21 @@ FROM
     FROM numbers(4)
 ) AS s
 ALL FULL OUTER JOIN test AS t USING (key)
-ORDER BY 
+ORDER BY
     key ASC,
     t.key ASC
-SELECT 
+SELECT
     key,
     a
 FROM test
-ORDER BY 
+ORDER BY
     key ASC,
     a ASC,
     exp(key + a) ASC
-SELECT 
+SELECT
     key,
     a
 FROM test
-ORDER BY 
+ORDER BY
     key ASC,
     exp(key + a) ASC

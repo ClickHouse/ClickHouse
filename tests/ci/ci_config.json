@@ -1,7 +1,7 @@
 {
     "build_config": [
         {
-            "compiler": "gcc-9",
+            "compiler": "gcc-10",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -12,7 +12,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-9",
+            "compiler": "gcc-10",
             "build-type": "",
             "sanitizer": "",
             "package-type": "performance",
@@ -22,7 +22,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-9",
+            "compiler": "gcc-10",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -227,7 +227,7 @@
         },
         "Functional stateful tests (release)": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -239,7 +239,7 @@
         },
         "Functional stateful tests (release, DatabaseAtomic)": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -311,7 +311,7 @@
         },
         "Functional stateless tests (release)": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -335,7 +335,7 @@
         },
         "Functional stateless tests (release, polymorphic parts enabled)": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -347,7 +347,7 @@
         },
         "Functional stateless tests (release, DatabaseAtomic)": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -443,7 +443,7 @@
         },
         "Compatibility check": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -467,7 +467,7 @@
         },
         "Testflows check": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -479,7 +479,7 @@
         },
         "Unit tests release gcc": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",

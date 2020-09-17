@@ -340,7 +340,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
         if (multi_code == Coordination::Error::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
         {
-            /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
+            /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
             LOG_INFO(log, "Block with ID {} already exists; ignoring it (removing part {})", block_id, part->name);
 
             part->is_duplicate = true;

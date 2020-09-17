@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 
 namespace DB
 {
@@ -17,6 +17,8 @@ enum class MergeType
     REGULAR = 1,
     /// Merge assigned to delete some data from parts (with TTLMergeSelector)
     TTL_DELETE = 2,
+    /// Merge with recompression
+    TTL_RECOMPRESS = 3,
 };
 
 /// Check parsed merge_type from raw int and get enum value.
