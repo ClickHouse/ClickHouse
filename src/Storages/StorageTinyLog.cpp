@@ -502,13 +502,6 @@ void StorageTinyLog::truncate(
         addFiles(column.name, *column.type);
 }
 
-void StorageTinyLog::drop()
-{
-    if (disk->exists(table_path))
-        disk->removeRecursive(table_path);
-    files.clear();
-}
-
 
 void registerStorageTinyLog(StorageFactory & factory)
 {
