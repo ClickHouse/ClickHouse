@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/FieldVisitors.h>
 #include "Sources.h"
 #include "Sinks.h"
@@ -45,21 +45,14 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 
         if constexpr (OverBigInt<T> || OverBigInt<U>)
         {
-            if constexpr (std::is_same_v<T, UInt8> || std::is_same_v<U, UInt8>)
-            {
-                if constexpr (IsDecimalNumber<T>)
-                    dst = static_cast<NativeU>(static_cast<UInt16>(src.value));
-                else
-                    dst = static_cast<NativeU>(static_cast<UInt16>(src));
-            }
-            else if constexpr (std::is_same_v<U, UInt128>)
+            if constexpr (std::is_same_v<U, UInt128>)
             {
                 throw Exception("No conversion between UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
             }
             else if constexpr (IsDecimalNumber<T>)
-                dst = static_cast<NativeU>(src.value);
+                dst = bigint_cast<NativeU>(src.value);
             else
-                dst = static_cast<NativeU>(src);
+                dst = bigint_cast<NativeU>(src);
         }
         else
             dst = static_cast<NativeU>(src);
@@ -565,7 +558,7 @@ bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
 {
     /// TODO: Decimal scale
     if constexpr (IsDecimalNumber<T> && IsDecimalNumber<U>)
-        return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename U::NativeType(second.data[second_ind]));
+        return accurate::equalsOp(first.data[first_ind].value, second.data[second_ind].value);
     else if constexpr (IsDecimalNumber<T> || IsDecimalNumber<U>)
         return false;
     else
@@ -595,7 +588,7 @@ bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                           size_t second_ind [[maybe_unused]])
 {
     if constexpr (IsDecimalNumber<T>)
-        return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename T::NativeType(first.data[second_ind]));
+        return accurate::equalsOp(first.data[first_ind].value, first.data[second_ind].value);
     else
         return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);
 }
@@ -789,3 +782,4 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
 }
 
 }
+

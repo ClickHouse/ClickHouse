@@ -32,6 +32,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/remapExecutable.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -305,6 +306,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// After full config loaded
     {
+        if (config().getBool("remap_executable", false))
+        {
+            LOG_DEBUG(log, "Will remap executable in memory.");
+            remapExecutable();
+            LOG_DEBUG(log, "The code in memory has been successfully remapped.");
+        }
+
         if (config().getBool("mlock_executable", false))
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))
@@ -530,6 +538,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
+            if (config->has("zookeeper"))
+                global_context->reloadZooKeeperIfChanged(config);
+
             global_context->updateStorageConfiguration(*config);
         },
         /* already_loaded = */ true);
@@ -716,6 +727,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// Disable DNS caching at all
         DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
     }
     else
     {

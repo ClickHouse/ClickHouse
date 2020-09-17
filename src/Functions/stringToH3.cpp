@@ -18,6 +18,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
+
 using namespace GatherUtils;
 
 class FunctionStringToH3 : public IFunction
@@ -90,6 +93,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionStringToH3(FunctionFactory & factory)
 {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
@@ -260,7 +260,7 @@ struct ZooKeeperRequest : virtual Request
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
-    virtual ~ZooKeeperRequest() = default;
+    virtual ~ZooKeeperRequest() override = default;
 
     virtual ZooKeeper::OpNum getOpNum() const = 0;
 
