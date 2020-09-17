@@ -414,6 +414,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 LOG_INFO(log, "Block with ID {} already exists (it was just appeared). Renaming part {} back to {}. Will retry write.",
                     block_id, part->name, temporary_part_relative_path);
 
+                /// We will try to add this part again on the new iteration as it's just a new part.
+                /// So remove it from storage parts set immediately and transfer state to temporary.
                 transaction.rollbackPartsToTemporaryState();
 
                 part->is_temp = true;
