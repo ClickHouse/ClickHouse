@@ -927,7 +927,7 @@ void TCPHandler::receiveQuery()
 
     /// Interserver secret.
     std::string received_hash;
-    if (client_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
     {
         readStringBinary(received_hash, *in, 32);
     }
@@ -1019,7 +1019,7 @@ void TCPHandler::receiveUnexpectedQuery()
     skip_settings.read(*in, settings_format);
 
     std::string skip_hash;
-    bool interserver_secret = client_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET;
+    bool interserver_secret = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET;
     if (interserver_secret)
         readStringBinary(skip_hash, *in, 32);
 
