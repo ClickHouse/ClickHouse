@@ -12,7 +12,7 @@ namespace DB
     { \
         auto & attribute = getAttribute(attribute_name); \
         checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-        getItemsNumberImpl<TYPE, TYPE>(attribute, ids, out, [&](const size_t row) { return def[row]; }); \
+        getItemsNumberImpl<TYPE, TYPE>(attribute_name, attribute, ids, out, [&](const size_t row) { return def[row]; }); \
     }
 
 DEFINE(UInt8)
