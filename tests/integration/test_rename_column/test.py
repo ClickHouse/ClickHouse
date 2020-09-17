@@ -1,14 +1,12 @@
 from __future__ import print_function
 
-import time
 import random
-import pytest
-
+import time
 from multiprocessing.dummy import Pool
-from helpers.cluster import ClickHouseCluster
+
+import pytest
 from helpers.client import QueryRuntimeException
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV
+from helpers.cluster import ClickHouseCluster
 
 node_options = dict(
     with_zookeeper=True,
@@ -83,7 +81,7 @@ def create_table(nodes, table_name, with_storage_policy=False, with_time_column=
 
 
 def create_distributed_table(node, table_name):
-        sql = """
+    sql = """
             CREATE TABLE %(table_name)s_replicated ON CLUSTER test_cluster
             (
                 num UInt32,
@@ -92,12 +90,12 @@ def create_distributed_table(node, table_name):
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/%(table_name)s_replicated', '{replica}')
             ORDER BY num PARTITION BY num %% 100;
         """ % dict(table_name=table_name)
-        node.query(sql)
-        sql = """
+    node.query(sql)
+    sql = """
             CREATE TABLE %(table_name)s ON CLUSTER test_cluster AS %(table_name)s_replicated
             ENGINE = Distributed(test_cluster, default, %(table_name)s_replicated, rand())
         """ % dict(table_name=table_name)
-        node.query(sql)
+    node.query(sql)
 
 
 def drop_distributed_table(node, table_name):
@@ -107,7 +105,7 @@ def drop_distributed_table(node, table_name):
 
 
 def insert(node, table_name, chunk=1000, col_names=None, iterations=1, ignore_exception=False,
-        slow=False, with_many_parts=False, offset=0, with_time_column=False):
+           slow=False, with_many_parts=False, offset=0, with_time_column=False):
     if col_names is None:
         col_names = ['num', 'num2']
     for i in range(iterations):
@@ -118,28 +116,32 @@ def insert(node, table_name, chunk=1000, col_names=None, iterations=1, ignore_ex
             if with_time_column:
                 query.append(
                     "INSERT INTO {table_name} ({col0}, {col1}, time) SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time FROM numbers_mt({chunk})"
-                .format(table_name=table_name, chunk=chunk, col0=col_names[0], col1=col_names[1]))
+                        .format(table_name=table_name, chunk=chunk, col0=col_names[0], col1=col_names[1]))
             elif slow:
                 query.append(
                     "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk})"
-                .format(table_name=table_name, chunk=chunk, col0=col_names[0], col1=col_names[1]))
+                        .format(table_name=table_name, chunk=chunk, col0=col_names[0], col1=col_names[1]))
             else:
                 query.append(
                     "INSERT INTO {table_name} ({col0},{col1}) SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1} FROM numbers_mt({chunk})"
-                .format(table_name=table_name, chunk=chunk, col0=col_names[0], col1=col_names[1], offset=str(offset)))
+                        .format(table_name=table_name, chunk=chunk, col0=col_names[0], col1=col_names[1],
+                                offset=str(offset)))
             node.query(";\n".join(query))
         except QueryRuntimeException as ex:
             if not ignore_exception:
                 raise
 
 
-def select(node, table_name, col_name="num", expected_result=None, iterations=1, ignore_exception=False, slow=False, poll=None):
+def select(node, table_name, col_name="num", expected_result=None, iterations=1, ignore_exception=False, slow=False,
+           poll=None):
     for i in range(iterations):
         start_time = time.time()
         while True:
             try:
                 if slow:
-                    r = node.query("SELECT count() FROM (SELECT num2, sleepEachRow(0.5) FROM {} WHERE {} % 1000 > 0)".format(table_name, col_name))
+                    r = node.query(
+                        "SELECT count() FROM (SELECT num2, sleepEachRow(0.5) FROM {} WHERE {} % 1000 > 0)".format(
+                            table_name, col_name))
                 else:
                     r = node.query("SELECT count() FROM {} WHERE {} % 1000 > 0".format(table_name, col_name))
                 if expected_result:
@@ -180,7 +182,7 @@ def alter_move(node, table_name, iterations=1, ignore_exception=False):
         move_volume = 'external'
         try:
             node.query("ALTER TABLE {table_name} MOVE PARTITION '{move_part}' TO VOLUME '{move_volume}'"
-                .format(table_name=table_name, move_part=move_part, move_volume=move_volume))
+                       .format(table_name=table_name, move_part=move_part, move_volume=move_volume))
         except QueryRuntimeException as ex:
             if not ignore_exception:
                 raise
@@ -306,7 +308,7 @@ def test_rename_with_parallel_merges(started_cluster):
     try:
         create_table(nodes, table_name)
         for i in range(20):
-            insert(node1, table_name, 100, ["num","num2"], 1, False, False, True, offset=i*100)
+            insert(node1, table_name, 100, ["num", "num2"], 1, False, False, True, offset=i * 100)
 
         def merge_parts(node, table_name, iterations=1):
             for i in range(iterations):
@@ -347,7 +349,7 @@ def test_rename_with_parallel_slow_insert(started_cluster):
         p = Pool(15)
         tasks = []
         tasks.append(p.apply_async(insert, (node1, table_name, 10000, ["num", "num2"], 1, False, True)))
-        tasks.append(p.apply_async(insert, (node1, table_name, 10000, ["num", "num2"], 1, True, True))) # deduplicated
+        tasks.append(p.apply_async(insert, (node1, table_name, 10000, ["num", "num2"], 1, True, True)))  # deduplicated
         time.sleep(0.5)
         tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2")))
 
@@ -451,7 +453,9 @@ def test_rename_with_parallel_ttl_move(started_cluster):
             task.get(timeout=240)
 
         # check some parts got moved
-        assert "external" in set(node1.query("SELECT disk_name FROM system.parts WHERE table == '{}' AND active=1 ORDER BY modification_time".format(table_name)).strip().splitlines())
+        assert "external" in set(node1.query(
+            "SELECT disk_name FROM system.parts WHERE table == '{}' AND active=1 ORDER BY modification_time".format(
+                table_name)).strip().splitlines())
 
         # rename column back to original
         rename_column(node1, table_name, "foo2", "num2", 1, True)
@@ -507,7 +511,7 @@ def test_rename_distributed(started_cluster):
         rename_column_on_cluster(node1, table_name, 'num2', 'foo2')
         rename_column_on_cluster(node1, '%s_replicated' % table_name, 'num2', 'foo2')
 
-        insert(node1, table_name, 1000, col_names=['num','foo2'])
+        insert(node1, table_name, 1000, col_names=['num', 'foo2'])
 
         select(node1, table_name, "foo2", '1998\n', poll=30)
     finally:
@@ -524,11 +528,14 @@ def test_rename_distributed_parallel_insert_and_select(started_cluster):
         tasks = []
         for i in range(1):
             tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'num2', 'foo2', 3, True)))
-            tasks.append(p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'num2', 'foo2', 3, True)))
+            tasks.append(
+                p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'num2', 'foo2', 3, True)))
             tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'foo2', 'foo3', 3, True)))
-            tasks.append(p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'foo2', 'foo3', 3, True)))
+            tasks.append(
+                p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'foo2', 'foo3', 3, True)))
             tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'foo3', 'num2', 3, True)))
-            tasks.append(p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'foo3', 'num2', 3, True)))
+            tasks.append(
+                p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'foo3', 'num2', 3, True)))
             tasks.append(p.apply_async(insert, (node1, table_name, 10, ["num", "foo3"], 5, True)))
             tasks.append(p.apply_async(insert, (node2, table_name, 10, ["num", "num2"], 5, True)))
             tasks.append(p.apply_async(insert, (node3, table_name, 10, ["num", "foo2"], 5, True)))
@@ -543,7 +550,7 @@ def test_rename_distributed_parallel_insert_and_select(started_cluster):
         rename_column_on_cluster(node1, table_name, 'foo3', 'num2', 1, True)
         rename_column_on_cluster(node1, '%s_replicated' % table_name, 'foo3', 'num2', 1, True)
 
-        insert(node1, table_name, 1000, col_names=['num','num2'])
+        insert(node1, table_name, 1000, col_names=['num', 'num2'])
         select(node1, table_name, "num2")
         select(node2, table_name, "num2")
         select(node3, table_name, "num2")
