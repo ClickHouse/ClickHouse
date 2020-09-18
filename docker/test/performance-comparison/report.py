@@ -457,25 +457,25 @@ if args.report == 'main':
             return
 
         columns = [
-            'Test',                                          #0
+            'Test',                                               #0
             'Wall clock time,&nbsp;s',                            #1
             'Total client time,&nbsp;s',                          #2
-            'Total queries',                                 #3
-            'Ignored short queries',                         #4
+            'Total queries',                                      #3
+            'Ignored short queries',                              #4
             'Longest query<br>(sum for all runs),&nbsp;s',        #5
             'Avg wall clock time<br>(sum for all runs),&nbsp;s',  #6
             'Shortest query<br>(sum for all runs),&nbsp;s',       #7
+            # 'Runs'                                              #8
             ]
 
         text = tableStart('Test times')
         text += tableHeader(columns)
 
-        nominal_runs = 7  # FIXME pass this as an argument
-        total_runs = (nominal_runs + 1) * 2  # one prewarm run, two servers
-        allowed_average_run_time = allowed_single_run_time + 60 / total_runs; # some allowance for fill/create queries
+        allowed_average_run_time = 3.75 # 60 seconds per test at 7 runs
         attrs = ['' for c in columns]
         for r in rows:
             anchor = f'{currentTableAnchor()}.{r[0]}'
+            total_runs = (int(r[8]) + 1) * 2  # one prewarm run, two servers
             if float(r[6]) > allowed_average_run_time * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
