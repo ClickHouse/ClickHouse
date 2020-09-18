@@ -15,16 +15,17 @@
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/New/parseQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Storages/StorageInput.h>
 
@@ -142,10 +143,11 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & initial_query_id = context.getClientInfo().initial_query_id;
         const auto & current_user = context.getClientInfo().current_user;
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}) {}",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser) {}",
             context.getClientInfo().current_address.toString(),
             (current_user != "default" ? ", user: " + context.getClientInfo().current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
+            (context.getSettingsRef().use_antlr_parser ? "new" : "old"),
             joinLines(query));
     }
 }
@@ -264,19 +266,25 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context.getSettingsRef();
 
-    ParserQuery parser(end, settings.enable_debug_queries);
     ASTPtr ast;
     const char * query_end;
 
     /// Don't limit the size of internal queries.
     size_t max_query_size = 0;
-    if (!internal)
-        max_query_size = settings.max_query_size;
+    if (!internal) max_query_size = settings.max_query_size;
 
     try
     {
-        /// TODO Parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        if (settings.use_antlr_parser)
+        {
+            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth);
+        }
+        else {
+            ParserQuery parser(end, settings.enable_debug_queries);
+
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        }
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
@@ -734,7 +742,7 @@ void executeQuery(
         end = istr.buffer().end();
         istr.position() += end - begin;
         /// Actually we don't know will query has additional data or not.
-        /// But we can't check istr.eof(), because begin and end pointers will became invalid
+        /// But we can't check istr.eof(), because begin and end pointers will become invalid
         may_have_tail = true;
     }
     else

@@ -11,8 +11,6 @@ public:
     virtual ~ParseTreeVisitor() override = default;
 
     // Top-level statements
-    antlrcpp::Any visitInput(ClickHouseParser::InputContext * ctx) override;
-    antlrcpp::Any visitQueryList(ClickHouseParser::QueryListContext * ctx) override;
     antlrcpp::Any visitQueryStmt(ClickHouseParser::QueryStmtContext * ctx) override;
     antlrcpp::Any visitQuery(ClickHouseParser::QueryContext * ctx) override;
 

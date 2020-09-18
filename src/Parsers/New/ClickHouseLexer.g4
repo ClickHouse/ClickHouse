@@ -150,6 +150,7 @@ JSON_TRUE: 'true';
 IDENTIFIER
     : (LETTER | UNDERSCORE) (LETTER | UNDERSCORE | DEC_DIGIT)*
     | BACKQUOTE ( ~([\\`]) | (BACKSLASH .) )* BACKQUOTE
+    | QUOTE_DOUBLE ( ~([\\"]) | (BACKSLASH .) )* QUOTE_DOUBLE
     ;
 FLOATING_LITERAL
     : HEXADECIMAL_LITERAL DOT HEX_DIGIT* (P | E) (PLUS | DASH)? DEC_DIGIT+
@@ -163,7 +164,6 @@ INTEGER_LITERAL: DEC_DIGIT+;
 
 // It's important that quote-symbol is a single character.
 STRING_LITERAL: QUOTE_SINGLE ( ~([\\']) | (BACKSLASH .) | (QUOTE_SINGLE QUOTE_SINGLE) )* QUOTE_SINGLE;
-DATA_STRING_LITERAL: QUOTE_DOUBLE ( ~([\\"]) | (BACKSLASH .) )* QUOTE_DOUBLE;
 
 // Alphabet and allowed symbols
 
@@ -231,6 +231,7 @@ UNDERSCORE: '_';
 
 // Comments and whitespace
 
-SINGLE_LINE_COMMENT: '--' ~('\n'|'\r')* ('\n' | '\r' | EOF) -> skip;
+EOL: '\n';
 MULTI_LINE_COMMENT: '/*' .*? '*/' -> skip;
-WHITESPACE: [ \u000B\u000C\t\r\n] -> skip;
+SINGLE_LINE_COMMENT: '--' ~('\n'|'\r')* ('\n' | '\r' | EOF) -> skip;
+WHITESPACE: [ \u000B\u000C\t\r] -> skip;

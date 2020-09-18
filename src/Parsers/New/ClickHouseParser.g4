@@ -6,9 +6,7 @@ options {
 
 // Top-level statements
 
-input: insertStmt | queryList;
-queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON? EOF;
-queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)?;
+queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)? | insertStmt;
 query
     : alterStmt     // DDL
     | analyzeStmt
@@ -17,7 +15,6 @@ query
     | describeStmt
     | dropStmt      // DDL
     | existsStmt
-    | insertStmt
     | optimizeStmt  // DDL
     | renameStmt    // DDL
     | selectUnionStmt
@@ -122,26 +119,10 @@ insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) co
 
 columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
 dataClause
-    : FORMAT identifier dataExpr  # DataClauseFormat
-    | VALUES valuesExpr           # DataClauseValues
-    | selectUnionStmt             # DataClauseSelect
+    : FORMAT identifier  # DataClauseFormat
+    | VALUES             # DataClauseValues
+    | selectUnionStmt    # DataClauseSelect
     ;
-dataExpr
-    : dataLiteral (COMMA dataLiteral)*  # DataExprCSV
-    | jsonExpr (COMMA? jsonExpr)*        # DataExprJSON
-    | dataLiteral+                      # DataExprTSV
-    | valuesExpr                        # DataExprValues
-    ;
-
-valuesExpr: valueTupleExpr (COMMA? valueTupleExpr)*;
-valueTupleExpr: LPAREN columnExprList RPAREN; // same as ColumnExprTuple
-
-jsonExpr
-    : dataLiteral                                         # JsonExprLiteral
-    | (JSON_TRUE | JSON_FALSE)                            # JsonExprBoolean
-    | LBRACE jsonValueExpr (COMMA jsonValueExpr)* RBRACE  # JsonExprObject
-    ;
-jsonValueExpr: DATA_STRING_LITERAL COLON jsonExpr;
 
 // OPTIMIZE statement
 
@@ -330,10 +311,6 @@ literal
     | STRING_LITERAL
     | NULL_SQL
     ;
-dataLiteral
-    : numberLiteral
-    | DATA_STRING_LITERAL
-    ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER, FOR
     : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
     | CHECK | CLEAR | CLUSTER | COLLATE | COLUMN | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE
@@ -344,7 +321,7 @@ keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORD
     | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES
     | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
-identifier: IDENTIFIER | DATA_STRING_LITERAL | INTERVAL_TYPE | keyword;
+identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
 unaryOp: DASH | NOT;
 binaryOp

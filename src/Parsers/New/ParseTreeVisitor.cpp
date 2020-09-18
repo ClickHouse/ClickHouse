@@ -34,25 +34,6 @@ namespace DB
 
 using namespace AST;
 
-antlrcpp::Any ParseTreeVisitor::visitInput(ClickHouseParser::InputContext * ctx)
-{
-    if (ctx->insertStmt())
-    {
-        auto list = std::make_shared<QueryList>();
-        list->append(visit(ctx->insertStmt()).as<PtrTo<InsertQuery>>());
-        return list;
-    }
-    if (ctx->queryList()) return visit(ctx->queryList());
-    __builtin_unreachable();
-}
-
-antlrcpp::Any ParseTreeVisitor::visitQueryList(ClickHouseParser::QueryListContext *ctx)
-{
-    auto query_list = std::make_shared<QueryList>();
-    for (auto * query : ctx->queryStmt()) query_list->append(visit(query));
-    return query_list;
-}
-
 antlrcpp::Any ParseTreeVisitor::visitQueryStmt(ClickHouseParser::QueryStmtContext *ctx)
 {
     auto query = visit(ctx->query()).as<PtrTo<Query>>();

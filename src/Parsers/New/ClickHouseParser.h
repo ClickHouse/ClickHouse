@@ -48,33 +48,32 @@ public:
   };
 
   enum {
-    RuleInput = 0, RuleQueryList = 1, RuleQueryStmt = 2, RuleQuery = 3, 
-    RuleAlterStmt = 4, RuleAlterTableClause = 5, RuleAnalyzeStmt = 6, RuleCheckStmt = 7, 
-    RuleCreateStmt = 8, RuleDestinationClause = 9, RuleSubqueryClause = 10, 
-    RuleSchemaClause = 11, RuleEngineClause = 12, RulePartitionByClause = 13, 
-    RulePrimaryKeyClause = 14, RuleSampleByClause = 15, RuleTtlClause = 16, 
-    RuleEngineExpr = 17, RuleTableElementExpr = 18, RuleTableColumnDfnt = 19, 
-    RuleTableColumnPropertyExpr = 20, RuleTtlExpr = 21, RuleDescribeStmt = 22, 
-    RuleDropStmt = 23, RuleExistsStmt = 24, RuleInsertStmt = 25, RuleColumnsClause = 26, 
-    RuleDataClause = 27, RuleDataExpr = 28, RuleValuesExpr = 29, RuleValueTupleExpr = 30, 
-    RuleJsonExpr = 31, RuleJsonValueExpr = 32, RuleOptimizeStmt = 33, RulePartitionClause = 34, 
-    RuleRenameStmt = 35, RuleSelectUnionStmt = 36, RuleSelectStmtWithParens = 37, 
-    RuleSelectStmt = 38, RuleWithClause = 39, RuleFromClause = 40, RuleSampleClause = 41, 
-    RuleArrayJoinClause = 42, RulePrewhereClause = 43, RuleWhereClause = 44, 
-    RuleGroupByClause = 45, RuleHavingClause = 46, RuleOrderByClause = 47, 
-    RuleLimitByClause = 48, RuleLimitClause = 49, RuleSettingsClause = 50, 
-    RuleJoinExpr = 51, RuleJoinOp = 52, RuleJoinOpCross = 53, RuleJoinConstraintClause = 54, 
-    RuleLimitExpr = 55, RuleOrderExprList = 56, RuleOrderExpr = 57, RuleRatioExpr = 58, 
-    RuleSettingExprList = 59, RuleSettingExpr = 60, RuleSetStmt = 61, RuleShowStmt = 62, 
-    RuleSystemStmt = 63, RuleTruncateStmt = 64, RuleUseStmt = 65, RuleColumnTypeExpr = 66, 
-    RuleColumnExprList = 67, RuleColumnsExpr = 68, RuleColumnExpr = 69, 
-    RuleColumnArgList = 70, RuleColumnArgExpr = 71, RuleColumnLambdaExpr = 72, 
-    RuleColumnIdentifier = 73, RuleNestedIdentifier = 74, RuleTableExpr = 75, 
-    RuleTableFunctionExpr = 76, RuleTableIdentifier = 77, RuleTableArgList = 78, 
-    RuleTableArgExpr = 79, RuleDatabaseIdentifier = 80, RuleFloatingLiteral = 81, 
-    RuleNumberLiteral = 82, RuleLiteral = 83, RuleDataLiteral = 84, RuleKeyword = 85, 
-    RuleIdentifier = 86, RuleIdentifierOrNull = 87, RuleUnaryOp = 88, RuleBinaryOp = 89, 
-    RuleEnumValue = 90
+    RuleQueryStmt = 0, RuleQuery = 1, RuleAlterStmt = 2, RuleAlterTableClause = 3, 
+    RuleAnalyzeStmt = 4, RuleCheckStmt = 5, RuleCreateStmt = 6, RuleDestinationClause = 7, 
+    RuleSubqueryClause = 8, RuleSchemaClause = 9, RuleEngineClause = 10, 
+    RulePartitionByClause = 11, RulePrimaryKeyClause = 12, RuleSampleByClause = 13, 
+    RuleTtlClause = 14, RuleEngineExpr = 15, RuleTableElementExpr = 16, 
+    RuleTableColumnDfnt = 17, RuleTableColumnPropertyExpr = 18, RuleTtlExpr = 19, 
+    RuleDescribeStmt = 20, RuleDropStmt = 21, RuleExistsStmt = 22, RuleInsertStmt = 23, 
+    RuleColumnsClause = 24, RuleDataClause = 25, RuleDataExpr = 26, RuleValuesExpr = 27, 
+    RuleValueTupleExpr = 28, RuleJsonExpr = 29, RuleJsonValueExpr = 30, 
+    RuleOptimizeStmt = 31, RulePartitionClause = 32, RuleRenameStmt = 33, 
+    RuleSelectUnionStmt = 34, RuleSelectStmtWithParens = 35, RuleSelectStmt = 36, 
+    RuleWithClause = 37, RuleFromClause = 38, RuleSampleClause = 39, RuleArrayJoinClause = 40, 
+    RulePrewhereClause = 41, RuleWhereClause = 42, RuleGroupByClause = 43, 
+    RuleHavingClause = 44, RuleOrderByClause = 45, RuleLimitByClause = 46, 
+    RuleLimitClause = 47, RuleSettingsClause = 48, RuleJoinExpr = 49, RuleJoinOp = 50, 
+    RuleJoinOpCross = 51, RuleJoinConstraintClause = 52, RuleLimitExpr = 53, 
+    RuleOrderExprList = 54, RuleOrderExpr = 55, RuleRatioExpr = 56, RuleSettingExprList = 57, 
+    RuleSettingExpr = 58, RuleSetStmt = 59, RuleShowStmt = 60, RuleSystemStmt = 61, 
+    RuleTruncateStmt = 62, RuleUseStmt = 63, RuleColumnTypeExpr = 64, RuleColumnExprList = 65, 
+    RuleColumnsExpr = 66, RuleColumnExpr = 67, RuleColumnArgList = 68, RuleColumnArgExpr = 69, 
+    RuleColumnLambdaExpr = 70, RuleColumnIdentifier = 71, RuleNestedIdentifier = 72, 
+    RuleTableExpr = 73, RuleTableFunctionExpr = 74, RuleTableIdentifier = 75, 
+    RuleTableArgList = 76, RuleTableArgExpr = 77, RuleDatabaseIdentifier = 78, 
+    RuleFloatingLiteral = 79, RuleNumberLiteral = 80, RuleLiteral = 81, 
+    RuleDataLiteral = 82, RuleKeyword = 83, RuleIdentifier = 84, RuleIdentifierOrNull = 85, 
+    RuleUnaryOp = 86, RuleBinaryOp = 87, RuleEnumValue = 88
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -87,8 +86,6 @@ public:
   virtual antlr4::dfa::Vocabulary& getVocabulary() const override;
 
 
-  class InputContext;
-  class QueryListContext;
   class QueryStmtContext;
   class QueryContext;
   class AlterStmtContext;
@@ -178,35 +175,6 @@ public:
   class UnaryOpContext;
   class BinaryOpContext;
   class EnumValueContext; 
-
-  class  InputContext : public antlr4::ParserRuleContext {
-  public:
-    InputContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    InsertStmtContext *insertStmt();
-    QueryListContext *queryList();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  InputContext* input();
-
-  class  QueryListContext : public antlr4::ParserRuleContext {
-  public:
-    QueryListContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    std::vector<QueryStmtContext *> queryStmt();
-    QueryStmtContext* queryStmt(size_t i);
-    antlr4::tree::TerminalNode *EOF();
-    std::vector<antlr4::tree::TerminalNode *> SEMICOLON();
-    antlr4::tree::TerminalNode* SEMICOLON(size_t i);
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  QueryListContext* queryList();
 
   class  QueryStmtContext : public antlr4::ParserRuleContext {
   public:

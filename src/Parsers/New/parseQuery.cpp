@@ -1,12 +1,11 @@
 #include <Parsers/New/parseQuery.h>
 
 #include <Parsers/New/AST/Query.h>
-
 #include <Parsers/New/ClickHouseLexer.h>
 #include <Parsers/New/ClickHouseParser.h>
 #include <Parsers/New/LexerErrorListener.h>
-#include <Parsers/New/ParserErrorListener.h>
 #include <Parsers/New/ParseTreeVisitor.h>
+#include <Parsers/New/ParserErrorListener.h>
 
 #include <ANTLRInputStream.h>
 #include <CommonTokenStream.h>
@@ -15,9 +14,14 @@
 namespace DB
 {
 
-ASTPtr parseQuery(const std::string & query)
+using namespace antlr4;
+using namespace AST;
+
+ASTPtr parseQuery(const char * begin, const char * end, size_t, size_t)
 {
-    using namespace antlr4;
+    // TODO: do not ignore |max_parser_depth|.
+
+    String query(begin, end); // FIXME: implement zero-copy ANTLRInputStream which checks for |max_query_size| internally.
 
     ANTLRInputStream input(query);
     ClickHouseLexer lexer(&input);
@@ -27,16 +31,15 @@ ASTPtr parseQuery(const std::string & query)
     ParserErrorListener parser_error_listener;
 
     lexer.removeErrorListeners();
-    lexer.addErrorListener(&lexer_error_listener);
-
     parser.removeErrorListeners();
+    lexer.addErrorListener(&lexer_error_listener);
     parser.addErrorListener(&parser_error_listener);
 
     ParseTreeVisitor visitor;
 
-    AST::PtrTo<AST::QueryList> new_ast = visitor.visit(parser.input());
+    PtrTo<Query> new_ast = visitor.visit(parser.queryStmt());
 
-    new_ast->dump();
+    // new_ast->dump();
 
     return new_ast->convertToOld();
 }

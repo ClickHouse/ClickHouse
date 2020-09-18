@@ -20,10 +20,6 @@ public:
   /**
    * Visit parse trees produced by ClickHouseParser.
    */
-    virtual antlrcpp::Any visitInput(ClickHouseParser::InputContext *context) = 0;
-
-    virtual antlrcpp::Any visitQueryList(ClickHouseParser::QueryListContext *context) = 0;
-
     virtual antlrcpp::Any visitQueryStmt(ClickHouseParser::QueryStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *context) = 0;
