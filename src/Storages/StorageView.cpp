@@ -55,52 +55,21 @@ Pipe StorageView::read(
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
 {
-    Pipes pipes;
-
-    ASTPtr current_inner_query = metadata_snapshot->getSelectQuery().inner_query;
-
-    if (query_info.view_query)
-    {
-        if (!query_info.view_query->as<ASTSelectWithUnionQuery>())
-            throw Exception("Unexpected optimized VIEW query", ErrorCodes::LOGICAL_ERROR);
-        current_inner_query = query_info.view_query->clone();
-    }
-
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
-
-    auto pipeline = interpreter.execute().pipeline;
-
-    /// It's expected that the columns read from storage are not constant.
-    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    pipeline.addSimpleTransform([](const Block & header)
-    {
-        return std::make_shared<MaterializingTransform>(header);
-    });
-
-    /// And also convert to expected structure.
-    pipeline.addSimpleTransform([&](const Block & header)
-    {
-        return std::make_shared<ConvertingTransform>(
-            header, metadata_snapshot->getSampleBlockForColumns(
-                column_names, getVirtuals(), getStorageID()), ConvertingTransform::MatchColumnsMode::Name);
-    });
-
-    return QueryPipeline::getPipe(std::move(pipeline));
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return QueryPipeline::getPipe(std::move(*plan.buildQueryPipeline()));
 }
 
 void StorageView::read(
         QueryPlan & query_plan,
-        TableLockHolder table_lock,
-        StorageMetadataPtr metadata_snapshot,
-        StreamLocalLimits & limits,
-        std::shared_ptr<const EnabledQuota> quota,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        std::shared_ptr<Context> context,
+        const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
         const size_t /*max_block_size*/,
         const unsigned /*num_streams*/)
@@ -114,7 +83,7 @@ void StorageView::read(
         current_inner_query = query_info.view_query->clone();
     }
 
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, *context, {}, column_names);
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
     interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.
@@ -128,17 +97,6 @@ void StorageView::read(
     auto converting = std::make_unique<ConvertingStep>(query_plan.getCurrentDataStream(), header);
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
-
-    /// Extend lifetime of context, table lock, storage. Set limits and quota.
-    auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-            query_plan.getCurrentDataStream(),
-            shared_from_this(),
-            std::move(table_lock),
-            limits,
-            std::move(quota),
-            std::move(context));
-    adding_limits_and_quota->setStepDescription("Set limits and quota for VIEW subquery");
-    query_plan.addStep(std::move(adding_limits_and_quota));
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)

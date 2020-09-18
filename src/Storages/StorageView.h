@@ -32,13 +32,10 @@ public:
 
     void read(
         QueryPlan & query_plan,
-        TableLockHolder table_lock,
-        StorageMetadataPtr metadata_snapshot,
-        StreamLocalLimits & limits,
-        std::shared_ptr<const EnabledQuota> quota,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        std::shared_ptr<Context> context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;

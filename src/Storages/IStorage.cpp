@@ -94,21 +94,16 @@ Pipe IStorage::read(
 
 void IStorage::read(
         QueryPlan & query_plan,
-        TableLockHolder table_lock,
-        StorageMetadataPtr metadata_snapshot,
-        StreamLocalLimits & limits,
-        SizeLimits & leaf_limits,
-        std::shared_ptr<const EnabledQuota> quota,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        std::shared_ptr<Context> context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams)
 {
     auto read_step = std::make_unique<ReadFromStorageStep>(
-            std::move(table_lock), std::move(metadata_snapshot), limits, leaf_limits, std::move(quota), shared_from_this(),
-            column_names, query_info, std::move(context), processed_stage, max_block_size, num_streams);
+            shared_from_this(), column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
     read_step->setStepDescription("Read from " + getName());
     query_plan.addStep(std::move(read_step));

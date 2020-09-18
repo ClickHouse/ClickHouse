@@ -100,6 +100,7 @@ public:
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
     void addQueryPlan(std::unique_ptr<QueryPlan> plan) { pipe.addQueryPlan(std::move(plan)); }
     void setLimits(const StreamLocalLimits & limits) { pipe.setLimits(limits); }
+    void setLeafLimits(const SizeLimits & limits) { pipe.setLeafLimits(limits); }
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota) { pipe.setQuota(quota); }
 
     /// For compatibility with IBlockInputStream.

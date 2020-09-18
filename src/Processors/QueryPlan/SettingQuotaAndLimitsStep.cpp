@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPipeline.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -24,13 +25,15 @@ SettingQuotaAndLimitsStep::SettingQuotaAndLimitsStep(
     const DataStream & input_stream_,
     StoragePtr storage_,
     TableLockHolder table_lock_,
-    StreamLocalLimits limits_,
+    StreamLocalLimits & limits_,
+    SizeLimits & leaf_limits_,
     std::shared_ptr<const EnabledQuota> quota_,
     std::shared_ptr<Context> context_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , storage(std::move(storage_))
     , table_lock(std::move(table_lock_))
-    , limits(std::move(limits_))
+    , limits(limits_)
+    , leaf_limits(leaf_limits_)
     , quota(std::move(quota_))
     , context(std::move(context_))
 {
@@ -42,6 +45,16 @@ void SettingQuotaAndLimitsStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.addTableLock(table_lock);
 
     pipeline.setLimits(limits);
+
+    /**
+      * Leaf size limits should be applied only for local processing of distributed queries.
+      * Such limits allow to control the read stage on leaf nodes and exclude the merging stage.
+      * Consider the case when distributed query needs to read from multiple shards. Then leaf
+      * limits will be applied on the shards only (including the root node) but will be ignored
+      * on the results merging stage.
+      */
+    if (!storage->isRemote())
+        pipeline.setLeafLimits(leaf_limits);
 
     if (quota)
         pipeline.setQuota(quota);
