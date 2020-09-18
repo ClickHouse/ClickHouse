@@ -186,5 +186,5 @@ if __name__ == "__main__":
         command=args.command
     )
 
-    print("Running pytest container as: '" + cmd + "'.")
+    print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)

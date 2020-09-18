@@ -2,7 +2,7 @@
 
 import subprocess
 import threading
-import Queue as queue
+import queue as queue
 import os
 import sys
 import signal

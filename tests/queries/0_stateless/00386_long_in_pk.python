@@ -45,9 +45,9 @@ def main():
     for q in gen_queries():
         resp = requests.post(url, data=q)
         if resp.status_code != 200 or resp.text.strip() not in ('1', ''):
-            print 'Query:', q
-            print 'Code:', resp.status_code
-            print resp.text
+            print('Query:', q)
+            print('Code:', resp.status_code)
+            print(resp.text)
             break
 
 if __name__ == "__main__":

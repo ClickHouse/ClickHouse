@@ -117,6 +117,6 @@ if __name__ == "__main__":
         command=args.command
     )
 
-    print("Running testflows container as: '" + cmd + "'.")
+    print(("Running testflows container as: '" + cmd + "'."))
     # testflows return non zero error code on failed tests
     subprocess.call(cmd, shell=True)

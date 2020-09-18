@@ -1,14 +1,14 @@
 #!/usr/bin/env python
-from __future__ import print_function
+
 import csv
 import sys
 import time
 import tempfile
 import threading
-import os, urllib
+import os, urllib.request, urllib.parse, urllib.error
 import subprocess
 from io import StringIO
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
 CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
@@ -30,7 +30,7 @@ CSV_DATA = os.path.join(tempfile._get_default_tempdir(), next(tempfile._get_cand
 
 def get_ch_answer(query):
     url = os.environ.get('CLICKHOUSE_URL', 'http://{host}:{port}'.format(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP))
-    return urllib.urlopen(url, data=query).read()
+    return urllib.request.urlopen(url, data=query).read()
 
 def check_answers(query, answer):
     ch_answer = get_ch_answer(query)
@@ -93,7 +93,7 @@ def start_server(requests_amount):
     httpd = HTTPServer(HTTP_SERVER_ADDRESS, CSVHTTPServer)
 
     def real_func():
-        for i in xrange(requests_amount):
+        for i in range(requests_amount):
             httpd.handle_request()
 
     t = threading.Thread(target=real_func)
@@ -113,7 +113,7 @@ def test_select(table_name="", schema="str String,numuint UInt32,numint Int32,do
         get_ch_answer("drop table if exists {}".format(table_name))
         get_ch_answer("create table {} ({}) engine=URL('{}', 'CSV')".format(table_name, schema, HTTP_SERVER_URL_STR))
 
-    for i in xrange(len(requests)):
+    for i in range(len(requests)):
         tbl = table_name
         if not tbl:
             tbl = "url('{addr}', 'CSV', '{schema}')".format(addr=HTTP_SERVER_URL_STR, schema=schema)
@@ -137,7 +137,7 @@ def test_insert(table_name="", schema="str String,numuint UInt32,numint Int32,do
         get_ch_answer(req.format(tbl=tbl))
 
 
-    for i in xrange(len(requests_select)):
+    for i in range(len(requests_select)):
         tbl = table_name
         if not tbl:
             tbl = "url('{addr}', 'CSV', '{schema}')".format(addr=HTTP_SERVER_URL_STR, schema=schema)
@@ -161,7 +161,7 @@ def main():
     ]
 
     select_requests = {
-        "select distinct numuint from {tbl} order by numuint": '\n'.join([str(i) for i in xrange(11)]),
+        "select distinct numuint from {tbl} order by numuint": '\n'.join([str(i) for i in range(11)]),
         "select count(*) from {tbl}": '12',
         'select double, count(*) from {tbl} group by double': "7.7\t2\n9.9\t10"
     }
@@ -169,13 +169,13 @@ def main():
     t = start_server(len(select_only_requests) * 2 + (len(insert_requests) + len(select_requests)) * 2)
     t.start()
     # test table with url engine
-    test_select(table_name="test_table_select", requests=select_only_requests.keys(), answers=select_only_requests.values(), test_data=test_data)
+    test_select(table_name="test_table_select", requests=list(select_only_requests.keys()), answers=list(select_only_requests.values()), test_data=test_data)
     # test table function url
-    test_select(requests=select_only_requests.keys(), answers=select_only_requests.values(), test_data=test_data)
+    test_select(requests=list(select_only_requests.keys()), answers=list(select_only_requests.values()), test_data=test_data)
     #test insert into table with url engine
-    test_insert(table_name="test_table_insert", requests_insert=insert_requests, requests_select=select_requests.keys(), answers=select_requests.values())
+    test_insert(table_name="test_table_insert", requests_insert=insert_requests, requests_select=list(select_requests.keys()), answers=list(select_requests.values()))
     #test insert into table function url
-    test_insert(requests_insert=insert_requests, requests_select=select_requests.keys(), answers=select_requests.values())
+    test_insert(requests_insert=insert_requests, requests_select=list(select_requests.keys()), answers=list(select_requests.values()))
     t.join()
     print("PASSED")
 
