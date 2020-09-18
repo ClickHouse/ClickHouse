@@ -387,7 +387,7 @@ class SourceHTTPBase(ExternalSource):
         self.node.exec_in_container([
             "bash",
             "-c",
-            "python2 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem".format(
+            "python3 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem".format(
                 tbl=path, schema=self._get_schema(), host=self.docker_hostname, port=self.http_port)
         ], detach=True)
         self.ordered_names = structure.get_ordered_names()

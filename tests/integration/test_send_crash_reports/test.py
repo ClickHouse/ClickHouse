@@ -25,7 +25,7 @@ def started_node():
 
 def test_send_segfault(started_node, ):
     started_node.copy_file_to_container(os.path.join(SCRIPT_DIR, "fake_sentry_server.py"), "/fake_sentry_server.py")
-    started_node.exec_in_container(["bash", "-c", "python2 /fake_sentry_server.py"], detach=True, user="root")
+    started_node.exec_in_container(["bash", "-c", "python3 /fake_sentry_server.py"], detach=True, user="root")
     time.sleep(0.5)
     started_node.exec_in_container(["bash", "-c", "pkill -11 clickhouse"], user="root")
 
