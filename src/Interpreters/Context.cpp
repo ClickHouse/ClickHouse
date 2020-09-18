@@ -2198,8 +2198,7 @@ void Context::resetInputCallbacks()
 
 StorageID Context::resolveStorageID(const ASTPtr & table, StorageNamespace where) const
 {
-    if (auto * ptr = table->as<ASTTableIdentifier>()) return resolveStorageID(ptr->getStorageId(), where);
-    else return StorageID(table);
+    return resolveStorageID(table->as<ASTTableIdentifier>()->getStorageId(), where);
 }
 
 StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const

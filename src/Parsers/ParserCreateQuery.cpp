@@ -467,7 +467,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
 
-    if (as_table) query->set(query->as_table, std::make_shared<ASTTableIdentifier>(as_database, as_table));
+    query->set(query->as_table, std::make_shared<ASTTableIdentifier>(as_database, as_table));
     query->set(query->select, select);
 
     return true;
