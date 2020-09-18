@@ -23,7 +23,8 @@ public:
         const DataStream & input_stream_,
         StoragePtr storage_,
         TableLockHolder table_lock_,
-        StreamLocalLimits limits_,
+        StreamLocalLimits & limits_,
+        SizeLimits & leaf_limits_,
         std::shared_ptr<const EnabledQuota> quota_,
         std::shared_ptr<Context> context_);
 
@@ -35,6 +36,7 @@ private:
     StoragePtr storage;
     TableLockHolder table_lock;
     StreamLocalLimits limits;
+    SizeLimits leaf_limits;
     std::shared_ptr<const EnabledQuota> quota;
     std::shared_ptr<Context> context;
 };

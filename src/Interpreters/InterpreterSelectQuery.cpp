@@ -35,7 +35,7 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/ReadFromStorageStep.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -1456,8 +1456,20 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
             quota = context->getQuota();
 
-        storage->read(query_plan, table_lock, metadata_snapshot, limits, leaf_limits, std::move(quota),
-                      required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+        storage->read(query_plan, required_columns, metadata_snapshot,
+                      query_info, *context, processing_stage, max_block_size, max_streams);
+
+        /// Extend lifetime of context, table lock, storage. Set limits and quota.
+        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
+                query_plan.getCurrentDataStream(),
+                storage,
+                std::move(table_lock),
+                limits,
+                leaf_limits,
+                std::move(quota),
+                std::move(context));
+        adding_limits_and_quota->setStepDescription("Set limits and quota after reading from storage");
+        query_plan.addStep(std::move(adding_limits_and_quota));
     }
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
