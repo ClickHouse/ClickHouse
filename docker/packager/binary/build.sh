@@ -20,7 +20,7 @@ rm -f CMakeCache.txt
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS ..
 ninja $NINJA_FLAGS clickhouse-bundle
 mv ./programs/clickhouse* /output
-mv ./src/unit_tests_dbms /output
+mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
 

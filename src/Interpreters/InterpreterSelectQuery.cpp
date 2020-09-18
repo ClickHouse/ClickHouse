@@ -1441,16 +1441,22 @@ void InterpreterSelectQuery::executeFetchColumns(
         }
 
         StreamLocalLimits limits;
+        SizeLimits leaf_limits;
         std::shared_ptr<const EnabledQuota> quota;
+
 
         /// Set the limits and quota for reading data, the speed and time of the query.
         if (!options.ignore_limits)
+        {
             limits = getLimitsForStorage(settings, options);
+            leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, settings.max_bytes_to_read_leaf,
+                                          settings.read_overflow_mode_leaf);
+        }
 
         if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
             quota = context->getQuota();
 
-        storage->read(query_plan, table_lock, metadata_snapshot, limits, std::move(quota),
+        storage->read(query_plan, table_lock, metadata_snapshot, limits, leaf_limits, std::move(quota),
                       required_columns, query_info, context, processing_stage, max_block_size, max_streams);
     }
     else

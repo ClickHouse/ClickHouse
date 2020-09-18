@@ -97,6 +97,7 @@ void IStorage::read(
         TableLockHolder table_lock,
         StorageMetadataPtr metadata_snapshot,
         StreamLocalLimits & limits,
+        SizeLimits & leaf_limits,
         std::shared_ptr<const EnabledQuota> quota,
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -106,7 +107,7 @@ void IStorage::read(
         unsigned num_streams)
 {
     auto read_step = std::make_unique<ReadFromStorageStep>(
-            std::move(table_lock), std::move(metadata_snapshot), limits, std::move(quota), shared_from_this(),
+            std::move(table_lock), std::move(metadata_snapshot), limits, leaf_limits, std::move(quota), shared_from_this(),
             column_names, query_info, std::move(context), processed_stage, max_block_size, num_streams);
 
     read_step->setStepDescription("Read from " + getName());
