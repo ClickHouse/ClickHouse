@@ -6,6 +6,10 @@
 
 namespace DB::GatherUtils
 {
+
+namespace
+{
+
 struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<SliceDynamicOffsetBoundedSelectArraySource>
 {
     template <typename Source>
@@ -18,6 +22,8 @@ struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<S
         sliceDynamicOffsetBounded(source, sink, offset_column, length_column);
     }
 };
+
+}
 
 ColumnArray::MutablePtr sliceDynamicOffsetBounded(IArraySource & src, const IColumn & offset_column, const IColumn & length_column)
 {
