@@ -752,7 +752,7 @@ bool StorageRabbitMQ::streamToViews()
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
-        IBlockInputStream::LocalLimits limits;
+        StreamLocalLimits limits;
 
         limits.speed_limits.max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
                                                   ? rabbitmq_settings->rabbitmq_flush_interval_ms
