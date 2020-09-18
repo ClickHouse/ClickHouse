@@ -1113,6 +1113,7 @@ limitations under the License."""
 def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
     try:
         node1.query("SYSTEM STOP MOVES")
+        node2.query("SYSTEM STOP MOVES")
 
         node1.query("""
             CREATE TABLE {name} (
@@ -1132,14 +1133,15 @@ def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
         node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == "jbod1"
+        assert set(used_disks) == {"jbod1"}
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
 
         node1.query("SYSTEM START MOVES")
+        node2.query("SYSTEM START MOVES")
         time.sleep(3)
 
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == "external"
+        assert set(used_disks) == {"external"}
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
 
     finally:
