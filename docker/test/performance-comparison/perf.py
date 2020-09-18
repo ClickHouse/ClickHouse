@@ -279,7 +279,7 @@ for query_index, q in enumerate(test_queries):
 
         # Try to run any query for at least the specified number of times,
         # before considering other stop conditions.
-        if run < arg.runs:
+        if run < args.runs:
             continue
 
         # For very short queries we have a special mode where we run them for at
