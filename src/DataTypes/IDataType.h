@@ -99,15 +99,17 @@ public:
         /// Index of tuple element, starting at 1.
         String tuple_element_name;
 
+        bool is_specialized_codecs_allowed = true;
+
         Substream(Type type_) : type(type_) {}
     };
 
     using SubstreamPath = std::vector<Substream>;
 
-    using StreamCallback = std::function<void(const SubstreamPath &)>;
+    using StreamCallback = std::function<void(const SubstreamPath &, const IDataType & substream_type)>;
     virtual void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
     {
-        callback(path);
+        callback(path, *this);
     }
     void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
@@ -685,4 +687,3 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = t
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
 
 }
-

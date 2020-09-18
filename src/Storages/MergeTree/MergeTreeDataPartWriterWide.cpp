@@ -37,7 +37,7 @@ void MergeTreeDataPartWriterWide::addStreams(
     const CompressionCodecPtr & effective_codec,
     size_t estimated_size)
 {
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
         /// Shared offsets for Nested type.
@@ -130,7 +130,7 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
     size_t number_of_rows,
     DB::IDataType::SubstreamPath & path)
 {
-     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
      {
          bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
 
@@ -170,7 +170,7 @@ size_t MergeTreeDataPartWriterWide::writeSingleGranule(
     type.serializeBinaryBulkWithMultipleStreams(column, from_row, number_of_rows, serialize_settings, serialization_state);
 
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
 
@@ -251,7 +251,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
             current_column_mark++;
     }
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
         if (is_offsets)
@@ -312,7 +312,7 @@ void MergeTreeDataPartWriterWide::writeFinalMark(
 {
     writeSingleMark(column_name, *column_type, offset_columns, 0, path);
     /// Memoize information about offsets
-    column_type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+    column_type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
         if (is_offsets)

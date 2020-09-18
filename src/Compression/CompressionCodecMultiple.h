@@ -17,6 +17,8 @@ public:
 
     static std::vector<uint8_t> getCodecsBytesFromData(const char * source);
 
+    static CompressionCodecPtr filterNonGeneralCompressionCodecs(const CompressionCodecMultiple * codec);
+
     void updateHash(SipHash & hash) const override;
 
 protected:
