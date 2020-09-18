@@ -465,11 +465,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints);
     }
-    else if (create.as_table)
+    else if (!create.as_table.empty())
     {
-        auto * as_table = create.as_table->as<ASTTableIdentifier>();
-        String as_database_name = context.resolveDatabase(as_table->getDatabaseName());
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable(as_table->getStorageId(), context);
+        String as_database_name = context.resolveDatabase(create.as_database);
+        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, context);
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
@@ -593,13 +592,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         storage_ast->set(storage_ast->engine, engine_ast);
         create.set(create.storage, storage_ast);
     }
-    else if (create.as_table)
+    else if (!create.as_table.empty())
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
-        auto * as_table = create.as_table->as<ASTTableIdentifier>();
-        String as_database_name = context.resolveDatabase(as_table->getDatabaseName());
-        String as_table_name = as_table->getTableName();
+        String as_database_name = context.resolveDatabase(create.as_database);
+        String as_table_name = create.as_table;
 
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, context);
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
@@ -799,7 +797,8 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     if (create.select && !create.attach
         && !create.is_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
     {
-        auto insert = std::make_shared<ASTInsertQuery>(StorageID{create.database, create.table, create.uuid});
+        auto insert = std::make_shared<ASTInsertQuery>();
+        insert->table_id = {create.database, create.table, create.uuid};
         insert->select = create.select->clone();
 
         if (create.temporary && !context.getSessionContext().hasQueryContext())

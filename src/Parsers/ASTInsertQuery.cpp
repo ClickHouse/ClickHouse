@@ -14,11 +14,6 @@ namespace ErrorCodes
 }
 
 
-ASTInsertQuery::ASTInsertQuery(const StorageID & id)
-{
-    table = std::make_shared<ASTTableIdentifier>(id);
-}
-
 void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
@@ -30,12 +25,8 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         table_function->formatImpl(settings, state, frame);
     }
     else
-    {
-        auto * table_ptr = table->as<ASTTableIdentifier>();
         settings.ostr << (settings.hilite ? hilite_none : "")
-                      << (!table_ptr->getDatabaseName().empty() ? backQuoteIfNeed(table_ptr->getDatabaseName()) + "." : "")
-                      << backQuoteIfNeed(table_ptr->getTableName());
-    }
+                      << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
 
     if (columns)
     {

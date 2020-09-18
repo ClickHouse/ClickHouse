@@ -690,7 +690,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-    auto insert = std::make_shared<ASTInsertQuery>(destination_id);
+    auto insert = std::make_shared<ASTInsertQuery>();
+    insert->table_id = destination_id;
 
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
       * This will support some of the cases (but not all) when the table structure does not match.

@@ -124,7 +124,9 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 /// the sample block instead.
 ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
 {
-    auto query = std::make_shared<ASTInsertQuery>(StorageID{database, table});
+    auto query = std::make_shared<ASTInsertQuery>();
+    query->table_id = StorageID(database, table);
+
     auto columns = std::make_shared<ASTExpressionList>();
     query->columns = columns;
     query->children.push_back(columns);

@@ -82,10 +82,12 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
 
-            std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>(inner_table_id);
+            std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+            insert->table_id = inner_table_id;
 
             /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, *select_context, SelectQueryOptions().analyze()).getSampleBlock();
+            auto header = InterpreterSelectQuery(query, *select_context, SelectQueryOptions().analyze())
+                .getSampleBlock();
 
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();

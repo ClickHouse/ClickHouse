@@ -1,12 +1,11 @@
-#include <DataStreams/InputStreamFromASTInsertQuery.h>
-
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
-#include <DataStreams/BlockIO.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <Parsers/ASTInsertQuery.h>
+#include <DataStreams/BlockIO.h>
+#include <DataStreams/InputStreamFromASTInsertQuery.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 
@@ -61,10 +60,9 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
 
     res_stream = context.getInputFormat(format, *input_buffer_contacenated, header, context.getSettings().max_insert_block_size);
 
-    if (context.getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table && !input_function)
+    if (context.getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
     {
-        auto * table = ast_insert_query->table->as<ASTTableIdentifier>();
-        StoragePtr storage = DatabaseCatalog::instance().getTable(table->getStorageId(), context);
+        StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto column_defaults = metadata_snapshot->getColumns().getDefaults();
         if (!column_defaults.empty())

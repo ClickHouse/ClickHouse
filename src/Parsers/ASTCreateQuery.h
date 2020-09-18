@@ -66,7 +66,8 @@ public:
     //FIXME
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
     ASTStorage * storage = nullptr;
-    ASTPtr as_table;
+    String as_database;
+    String as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
 

@@ -2196,11 +2196,6 @@ void Context::resetInputCallbacks()
 }
 
 
-StorageID Context::resolveStorageID(const ASTPtr & table, StorageNamespace where) const
-{
-    return resolveStorageID(table->as<ASTTableIdentifier>()->getStorageId(), where);
-}
-
 StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
     if (storage_id.uuid != UUIDHelpers::Nil)

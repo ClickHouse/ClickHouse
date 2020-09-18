@@ -164,7 +164,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        query->table = std::make_shared<ASTTableIdentifier>(database, table);
+        tryGetIdentifierNameInto(database, query->table_id.database_name);
+        tryGetIdentifierNameInto(table, query->table_id.table_name);
     }
 
     tryGetIdentifierNameInto(format, query->format);

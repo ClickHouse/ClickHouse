@@ -24,7 +24,9 @@ namespace
 
     std::string getInsertQuery(const std::string & db_name, const std::string & table_name, const ColumnsWithTypeAndName & columns, IdentifierQuotingStyle quoting)
     {
-        ASTInsertQuery query({db_name, table_name});
+        ASTInsertQuery query;
+        query.table_id.database_name = db_name;
+        query.table_id.table_name = table_name;
         query.columns = std::make_shared<ASTExpressionList>(',');
         query.children.push_back(query.columns);
         for (const auto & column : columns)
