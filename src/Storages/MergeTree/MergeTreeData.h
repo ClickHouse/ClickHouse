@@ -642,7 +642,7 @@ public:
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
     /// Returns destination disk or volume for the TTL rule according to current storage policy
     /// 'is_insert' - is TTL move performed on new data part insert.
-    SpacePtr getDestinationForTTL(const TTLDescription & ttl, bool is_insert = false) const;
+    SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl, bool is_insert = false) const;
 
     /// Checks if given part already belongs destination disk or volume for the
     /// TTL rule.

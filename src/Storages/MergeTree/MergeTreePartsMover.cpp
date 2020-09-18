@@ -136,9 +136,9 @@ bool MergeTreePartsMover::selectPartsForMove(
         ReservationPtr reservation;
         if (ttl_entry)
         {
-            auto destination = data->getDestinationForTTL(*ttl_entry);
+            auto destination = data->getDestinationForMoveTTL(*ttl_entry);
             if (destination && !data->isPartInTTLDestination(*ttl_entry, *part))
-                reservation = data->tryReserveSpace(part->getBytesOnDisk(), data->getDestinationForTTL(*ttl_entry));
+                reservation = data->tryReserveSpace(part->getBytesOnDisk(), data->getDestinationForMoveTTL(*ttl_entry));
         }
 
         if (reservation) /// Found reservation by TTL rule.
