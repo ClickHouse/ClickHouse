@@ -55,6 +55,9 @@
 #include <thread>
 #include <future>
 
+#include <algorithm>
+#include <city.h>
+
 #include <boost/algorithm/string/join.hpp>
 
 namespace ProfileEvents
@@ -1014,6 +1017,54 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     }
 
     const auto storage_settings_ptr = getSettings();
+
+
+    /// In some use cases merging can be more expensive than fetching
+    /// and it may be better to spread merges tasks across the replicas
+    /// instead of doing exactly the same merges cluster-wise
+    if (
+        storage_settings_ptr->execute_merges_on_single_replica_time_threshold.totalSeconds() > 0
+        &&
+        ( entry.create_time + storage_settings_ptr->execute_merges_on_single_replica_time_threshold.totalSeconds() > time(nullptr) )
+       )
+    {
+        auto zookeeper = getZooKeeper();
+        auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+
+        // TODO: do we need that sort or we can rely that zookeeper will return them in deterministic order?
+        std::sort(all_replicas.begin(), all_replicas.end());
+
+        Strings active_replicas;
+
+        int current_replica_index = -1;
+
+        for (const String & replica : all_replicas)
+        {
+            if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+            {
+                active_replicas.push_back(replica);
+                if (replica == replica_name)
+                {
+                    current_replica_index = active_replicas.size() - 1;
+                }
+            }
+        }
+
+        if (current_replica_index >= 0 && active_replicas.size() >= 1)
+        {
+            auto replica_index = static_cast<int>(CityHash_v1_0_2::CityHash64(entry.new_part_name.c_str(), entry.new_part_name.length()) % active_replicas.size());
+            if (replica_index != current_replica_index)
+            {
+                LOG_TRACE(log, "Will not run merge for the part " << entry.new_part_name << ", will wait for " << active_replicas.at(replica_index) << " to execute merge.");
+                return false;
+            }
+        }
+        else
+        {
+            LOG_ERROR(log, "Can't find current replica in the active replicas list!");
+        }
+    }
+
     if (!have_all_parts)
     {
         /// If you do not have all the necessary parts, try to take some already merged part from someone.
