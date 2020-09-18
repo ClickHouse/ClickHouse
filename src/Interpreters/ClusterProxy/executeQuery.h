@@ -12,6 +12,7 @@ class Cluster;
 struct SelectQueryInfo;
 
 class Pipe;
+class QueryPlan;
 
 namespace ClusterProxy
 {
@@ -25,7 +26,8 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 /// Execute a distributed query, creating a vector of BlockInputStreams, from which the result can be read.
 /// `stream_factory` object encapsulates the logic of creating streams for a different type of query
 /// (currently SELECT, DESCRIBE).
-Pipe executeQuery(
+void executeQuery(
+    QueryPlan & query_plan,
     IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
     const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info);
 

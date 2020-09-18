@@ -113,7 +113,6 @@ SRCS(
     QueryPlan/PartialSortingStep.cpp
     QueryPlan/QueryPlan.cpp
     QueryPlan/ReadFromPreparedSource.cpp
-    QueryPlan/ReadFromStorageStep.cpp
     QueryPlan/ReadNothingStep.cpp
     QueryPlan/RollupStep.cpp
     QueryPlan/SettingQuotaAndLimitsStep.cpp

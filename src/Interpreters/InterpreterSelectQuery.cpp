@@ -31,9 +31,11 @@
 
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -1102,6 +1104,48 @@ static StreamLocalLimits getLimitsForStorage(const Settings & settings, const Se
     return limits;
 }
 
+static void addEmptySource(QueryPlan & query_plan, const Block & header, SelectQueryInfo & query_info)
+{
+    Pipe pipe(std::make_shared<NullSource>(header));
+
+    if (query_info.prewhere_info)
+    {
+        if (query_info.prewhere_info->alias_actions)
+        {
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
+            });
+        }
+
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FilterTransform>(
+                header,
+                query_info.prewhere_info->prewhere_actions,
+                query_info.prewhere_info->prewhere_column_name,
+                query_info.prewhere_info->remove_prewhere_column);
+        });
+
+        // To remove additional columns
+        // In some cases, we did not read any marks so that the pipeline.streams is empty
+        // Thus, some columns in prewhere are not removed as expected
+        // This leads to mismatched header in distributed table
+        if (query_info.prewhere_info->remove_columns_actions)
+        {
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(
+                        header, query_info.prewhere_info->remove_columns_actions);
+            });
+        }
+    }
+
+    auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+    read_from_pipe->setStepDescription("Read from NullSource");
+    query_plan.addStep(std::move(read_from_pipe));
+}
+
 void InterpreterSelectQuery::executeFetchColumns(
     QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan,
     const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
@@ -1458,6 +1502,14 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         storage->read(query_plan, required_columns, metadata_snapshot,
                       query_info, *context, processing_stage, max_block_size, max_streams);
+
+        /// Create step which reads from empty source if storage has no data.
+        if (!query_plan.isInitialized())
+        {
+            auto header = metadata_snapshot->getSampleBlockForColumns(
+                    required_columns, storage->getVirtuals(), storage->getStorageID());
+            addEmptySource(query_plan, header, query_info);
+        }
 
         /// Extend lifetime of context, table lock, storage. Set limits and quota.
         auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
