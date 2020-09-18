@@ -477,7 +477,7 @@ def revoke_privilege_from_role_via_role_with_grant_option(self, table_type, node
     RQ_SRS_006_RBAC_Privileges_Select("1.0"),
 )
 @Examples("table_type", [
-    (table_type, Requirements(requirement)) for table_type, requirement in table_requirements.items()
+    (table_type, Requirements(requirement)) for table_type, requirement in list(table_requirements.items())
 ])
 @Name("select")
 def feature(self, table_type, node="clickhouse1"):

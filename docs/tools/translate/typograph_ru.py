@@ -42,4 +42,4 @@ def typograph(text):
 
 if __name__ == '__main__':
     import sys
-    print(typograph(sys.stdin.read()))
+    print((typograph(sys.stdin.read())))

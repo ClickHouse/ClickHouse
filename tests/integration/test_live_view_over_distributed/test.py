@@ -1,4 +1,4 @@
-from __future__ import print_function
+
 
 import sys
 
@@ -55,7 +55,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("node", NODES.values()[:1])
+@pytest.mark.parametrize("node", list(NODES.values())[:1])
 @pytest.mark.parametrize("source", ["lv_over_distributed_table"])
 class TestLiveViewOverDistributedSuite:
     def test_select_with_order_by_node(self, started_cluster, node, source):

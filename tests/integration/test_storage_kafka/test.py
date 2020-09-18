@@ -28,7 +28,7 @@ libprotoc 3.0.0
 # to create kafka_pb2.py
 protoc --python_out=. kafka.proto
 """
-import kafka_pb2
+from . import kafka_pb2
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
 # TODO: add test for SELECT LIMIT is working.
@@ -83,7 +83,7 @@ def kafka_produce(topic, messages, timestamp=None):
 def kafka_consume(topic):
     consumer = KafkaConsumer(bootstrap_servers="localhost:9092", auto_offset_reset="earliest")
     consumer.subscribe(topics=(topic))
-    for toppar, messages in consumer.poll(5000).items():
+    for toppar, messages in list(consumer.poll(5000).items()):
         if toppar.topic == topic:
             for message in messages:
                 yield message.value
@@ -102,7 +102,7 @@ def kafka_produce_protobuf_messages(topic, start_index, num_messages):
     producer = KafkaProducer(bootstrap_servers="localhost:9092")
     producer.send(topic=topic, value=data)
     producer.flush()
-    print("Produced {} messages for topic {}".format(num_messages, topic))
+    print(("Produced {} messages for topic {}".format(num_messages, topic)))
 
 
 def avro_confluent_message(schema_registry_client, value):
@@ -420,14 +420,14 @@ def test_kafka_formats(kafka_cluster):
         'AvroConfluent': {
             'data_sample': [
                 avro_confluent_message(cluster.schema_registry_client,
-                                       {'id': 0L, 'blockNo': 0, 'val1': unicode('AM'), 'val2': 0.5, "val3": 1}),
+                                       {'id': 0, 'blockNo': 0, 'val1': str('AM'), 'val2': 0.5, "val3": 1}),
 
-                ''.join(map(lambda id: avro_confluent_message(cluster.schema_registry_client,
-                                                              {'id': id, 'blockNo': 0, 'val1': unicode('AM'),
-                                                               'val2': 0.5, "val3": 1}), range(1, 16))),
+                ''.join([avro_confluent_message(cluster.schema_registry_client,
+                                                              {'id': id, 'blockNo': 0, 'val1': str('AM'),
+                                                               'val2': 0.5, "val3": 1}) for id in range(1, 16)]),
 
                 avro_confluent_message(cluster.schema_registry_client,
-                                       {'id': 0L, 'blockNo': 0, 'val1': unicode('AM'), 'val2': 0.5, "val3": 1}),
+                                       {'id': 0, 'blockNo': 0, 'val1': str('AM'), 'val2': 0.5, "val3": 1}),
             ],
             'extra_settings': ", format_avro_schema_registry_url='http://{}:{}'".format(
                 cluster.schema_registry_host,
@@ -479,8 +479,8 @@ def test_kafka_formats(kafka_cluster):
         # },
     }
 
-    for format_name, format_opts in all_formats.items():
-        print('Set up {}'.format(format_name))
+    for format_name, format_opts in list(all_formats.items()):
+        print(('Set up {}'.format(format_name)))
         topic_name = 'format_tests_{}'.format(format_name)
         data_sample = format_opts['data_sample']
         data_prefix = []
@@ -513,8 +513,8 @@ def test_kafka_formats(kafka_cluster):
 
     time.sleep(12)
 
-    for format_name, format_opts in all_formats.items():
-        print('Checking {}'.format(format_name))
+    for format_name, format_opts in list(all_formats.items()):
+        print(('Checking {}'.format(format_name)))
         topic_name = 'format_tests_{}'.format(format_name)
         # shift offsets by 1 if format supports empty value
         offsets = [1, 2, 3] if format_opts.get('supports_empty_value', False) else [0, 1, 2]
@@ -588,7 +588,7 @@ def kafka_cluster():
         global kafka_id
         cluster.start()
         kafka_id = instance.cluster.kafka_docker_id
-        print("kafka_id is {}".format(kafka_id))
+        print(("kafka_id is {}".format(kafka_id)))
         yield cluster
 
     finally:
@@ -638,7 +638,7 @@ kafka_topic_old	old
     kafka_check_result(result, True)
 
     members = describe_consumer_group('old')
-    assert members[0]['client_id'] == u'ClickHouse-instance-test-kafka'
+    assert members[0]['client_id'] == 'ClickHouse-instance-test-kafka'
     # text_desc = kafka_cluster.exec_in_container(kafka_cluster.get_container_id('kafka1'),"kafka-consumer-groups --bootstrap-server localhost:9092 --describe --members --group old --verbose"))
 
 
@@ -679,7 +679,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     kafka_check_result(result, True)
 
     members = describe_consumer_group('new')
-    assert members[0]['client_id'] == u'instance test 1234'
+    assert members[0]['client_id'] == 'instance test 1234'
 
 
 @pytest.mark.timeout(180)
@@ -1124,7 +1124,7 @@ def test_kafka_flush_on_big_message(kafka_cluster):
     while not received:
         try:
             offsets = client.list_consumer_group_offsets('flush')
-            for topic, offset in offsets.items():
+            for topic, offset in list(offsets.items()):
                 if topic.topic == 'flush' and offset.offset == kafka_messages:
                     received = True
                     break
@@ -1436,8 +1436,8 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
     members = describe_consumer_group('virt2')
     # pprint.pprint(members)
-    members[0]['client_id'] = u'ClickHouse-instance-test-kafka-0'
-    members[1]['client_id'] = u'ClickHouse-instance-test-kafka-1'
+    members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
+    members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
@@ -1717,7 +1717,7 @@ def test_kafka_rebalance(kafka_cluster):
 
     for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
         table_name = 'kafka_consumer{}'.format(consumer_index)
-        print("Setting up {}".format(table_name))
+        print(("Setting up {}".format(table_name)))
 
         instance.query('''
             DROP TABLE IF EXISTS test.{0};
@@ -1744,14 +1744,14 @@ def test_kafka_rebalance(kafka_cluster):
         # kafka_cluster.open_bash_shell('instance')
         while int(
                 instance.query("SELECT count() FROM test.destination WHERE _consumed_by='{}'".format(table_name))) == 0:
-            print("Waiting for test.kafka_consumer{} to start consume".format(consumer_index))
+            print(("Waiting for test.kafka_consumer{} to start consume".format(consumer_index)))
             time.sleep(1)
 
     cancel.set()
 
     # I leave last one working by intent (to finish consuming after all rebalances)
     for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS - 1):
-        print("Dropping test.kafka_consumer{}".format(consumer_index))
+        print(("Dropping test.kafka_consumer{}".format(consumer_index)))
         instance.query('DROP TABLE IF EXISTS test.kafka_consumer{}'.format(consumer_index))
         while int(instance.query(
                 "SELECT count() FROM system.tables WHERE database='test' AND name='kafka_consumer{}'".format(
@@ -1766,9 +1766,9 @@ def test_kafka_rebalance(kafka_cluster):
         if messages_consumed >= msg_index[0]:
             break
         time.sleep(1)
-        print("Waiting for finishing consuming (have {}, should be {})".format(messages_consumed, msg_index[0]))
+        print(("Waiting for finishing consuming (have {}, should be {})".format(messages_consumed, msg_index[0])))
 
-    print(instance.query('SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination'))
+    print((instance.query('SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination')))
 
     # Some queries to debug...
     # SELECT * FROM test.destination where key in (SELECT key FROM test.destination group by key having count() <> 1)
@@ -1793,7 +1793,7 @@ def test_kafka_rebalance(kafka_cluster):
     result = int(instance.query('SELECT count() == uniqExact(key) FROM test.destination'))
 
     for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
-        print("kafka_consumer{}".format(consumer_index))
+        print(("kafka_consumer{}".format(consumer_index)))
         table_name = 'kafka_consumer{}'.format(consumer_index)
         instance.query('''
             DROP TABLE IF EXISTS test.{0};
@@ -2253,5 +2253,5 @@ def test_kafka_csv_with_thread_per_consumer(kafka_cluster):
 
 if __name__ == '__main__':
     cluster.start()
-    raw_input("Cluster created, press any key to destroy...")
+    input("Cluster created, press any key to destroy...")
     cluster.shutdown()

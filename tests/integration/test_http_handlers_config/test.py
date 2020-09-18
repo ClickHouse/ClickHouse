@@ -1,6 +1,6 @@
 import contextlib
 import os
-import urllib
+import urllib.request, urllib.parse, urllib.error
 
 from helpers.cluster import ClickHouseCluster
 
@@ -22,7 +22,7 @@ class SimpleCluster:
 def test_dynamic_query_handler():
     with contextlib.closing(
             SimpleCluster(ClickHouseCluster(__file__), "dynamic_handler", "test_dynamic_handler")) as cluster:
-        test_query = urllib.quote_plus('SELECT * FROM system.settings WHERE name = \'max_threads\'')
+        test_query = urllib.parse.quote_plus('SELECT * FROM system.settings WHERE name = \'max_threads\'')
 
         assert 404 == cluster.instance.http_request('?max_threads=1', method='GET', headers={'XXX': 'xxx'}).status_code
 

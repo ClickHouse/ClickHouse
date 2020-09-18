@@ -19,7 +19,7 @@ import re
 
 from threading import Thread, Event
 from subprocess import Popen
-from Queue import Queue, Empty
+from queue import Queue, Empty
 
 class TimeoutError(Exception):
     def __init__(self, timeout):

@@ -59,14 +59,14 @@ def create_table(cluster):
         SETTINGS storage_policy='s3'
         """
 
-    for node in cluster.instances.values():
+    for node in list(cluster.instances.values()):
         node.query(create_table_statement)
 
 
 @pytest.fixture(autouse=True)
 def drop_table(cluster):
     yield
-    for node in cluster.instances.values():
+    for node in list(cluster.instances.values()):
         node.query("DROP TABLE IF EXISTS s3_test")
 
     minio = cluster.minio_client

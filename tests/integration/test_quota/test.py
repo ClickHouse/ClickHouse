@@ -15,14 +15,14 @@ instance = cluster.add_instance('instance', user_configs=["configs/users.d/assig
 def check_system_quotas(canonical):
     canonical_tsv = TSV(canonical)
     r = TSV(instance.query("SELECT * FROM system.quotas ORDER BY name"))
-    print("system_quotas: {},\ncanonical: {}".format(r, TSV(canonical_tsv)))
+    print(("system_quotas: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
 
 def system_quota_limits(canonical):
     canonical_tsv = TSV(canonical)
     r = TSV(instance.query("SELECT * FROM system.quota_limits ORDER BY quota_name, duration"))
-    print("system_quota_limits: {},\ncanonical: {}".format(r, TSV(canonical_tsv)))
+    print(("system_quota_limits: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
 
@@ -32,7 +32,7 @@ def system_quota_usage(canonical):
             "result_bytes, max_result_bytes, read_rows, max_read_rows, read_bytes, max_read_bytes, max_execution_time " \
             "FROM system.quota_usage ORDER BY duration"
     r = TSV(instance.query(query))
-    print("system_quota_usage: {},\ncanonical: {}".format(r, TSV(canonical_tsv)))
+    print(("system_quota_usage: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
 
@@ -42,7 +42,7 @@ def system_quotas_usage(canonical):
             "result_bytes, max_result_bytes, read_rows, max_read_rows, read_bytes, max_read_bytes, max_execution_time " \
             "FROM system.quotas_usage ORDER BY quota_name, quota_key, duration"
     r = TSV(instance.query(query))
-    print("system_quotas_usage: {},\ncanonical: {}".format(r, TSV(canonical_tsv)))
+    print(("system_quotas_usage: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
 

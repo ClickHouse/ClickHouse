@@ -129,9 +129,9 @@ def create_ldap_servers_config_content(servers, config_d_dir="/etc/clickhouse-se
     xml_servers = root.find("ldap_servers")
     xml_servers.append(xmltree.Comment(text=f"LDAP servers {uid}"))
 
-    for _name, server in servers.items():
+    for _name, server in list(servers.items()):
         xml_server = xmltree.Element(_name)
-        for key, value in server.items():
+        for key, value in list(server.items()):
             xml_append(xml_server, key, value)
         xml_servers.append(xml_server)
 
@@ -288,7 +288,7 @@ def add_user_to_ldap(cn, userpassword, givenname=None, homedirectory=None, sn=No
     }
 
     lines = []
-    for key, value in user.items():
+    for key, value in list(user.items()):
         if key.startswith("_"):
             continue
         elif key == "objectclass":

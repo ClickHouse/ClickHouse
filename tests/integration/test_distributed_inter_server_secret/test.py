@@ -25,7 +25,7 @@ users = pytest.mark.parametrize('user,password', [
 ])
 
 def bootstrap():
-    for n in cluster.instances.values():
+    for n in list(cluster.instances.values()):
         n.query('DROP TABLE IF EXISTS data')
         n.query('DROP TABLE IF EXISTS dist')
         n.query('CREATE TABLE data (key Int) Engine=Memory()')

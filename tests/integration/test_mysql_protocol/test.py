@@ -250,8 +250,8 @@ def test_mysql_federated(mysql_server, server_address):
         '''.format(host=server_address, port=server_port), demux=True)
 
         if code != 0:
-            print("stdout", stdout)
-            print("stderr", stderr)
+            print(("stdout", stdout))
+            print(("stderr", stderr))
             if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
@@ -264,8 +264,8 @@ def test_mysql_federated(mysql_server, server_address):
         '''.format(host=server_address, port=server_port), demux=True)
 
         if code != 0:
-            print("stdout", stdout)
-            print("stderr", stderr)
+            print(("stdout", stdout))
+            print(("stderr", stderr))
             if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
@@ -280,8 +280,8 @@ def test_mysql_federated(mysql_server, server_address):
         '''.format(host=server_address, port=server_port), demux=True)
 
         if code != 0:
-            print("stdout", stdout)
-            print("stderr", stderr)
+            print(("stdout", stdout))
+            print(("stderr", stderr))
             if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import StringIO
+import io
 import gzip
 import subprocess
 from tempfile import NamedTemporaryFile
@@ -58,10 +58,10 @@ class HDFSApi(object):
             raise Exception("Can't create file on hdfs:\n {}".format(output))
 
     def write_gzip_data(self, path, content):
-        out = StringIO.StringIO()
+        out = io.StringIO()
         with gzip.GzipFile(fileobj=out, mode="w") as f:
             f.write(content)
         self.write_data(path, out.getvalue())
 
     def read_gzip_data(self, path):
-        return gzip.GzipFile(fileobj=StringIO.StringIO(self.read_data(path))).read()
+        return gzip.GzipFile(fileobj=io.StringIO(self.read_data(path))).read()

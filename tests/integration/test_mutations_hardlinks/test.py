@@ -122,7 +122,7 @@ def test_delete_and_drop_mutation(started_cluster):
             if int(result.strip()) == 2:
                 break
         except:
-            print "Result", result
+            print("Result", result)
             pass
 
         time.sleep(0.5)

@@ -33,7 +33,7 @@ def start_cluster():
         initialize_database([node1, node2], 1)
         yield cluster
     except Exception as ex:
-        print ex
+        print(ex)
     finally:
         cluster.shutdown()
 

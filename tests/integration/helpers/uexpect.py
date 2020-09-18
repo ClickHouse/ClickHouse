@@ -15,7 +15,7 @@ import os
 import pty
 import re
 import time
-from Queue import Queue, Empty
+from queue import Queue, Empty
 from subprocess import Popen
 from threading import Thread, Event
 

@@ -3,7 +3,7 @@ import argparse
 import csv
 import socket
 import ssl
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 # Decorator used to see if authentication works for external dictionary who use a HTTP source.
@@ -29,7 +29,7 @@ def start_server(server_address, data_path, schema, cert_path, address_family):
         @check_auth
         def do_POST(self):
             ids = self.__read_and_decode_post_ids()
-            print "ids=", ids
+            print("ids=", ids)
             self.__send_headers()
             self.__send_data(ids)
 
@@ -47,7 +47,7 @@ def start_server(server_address, data_path, schema, cert_path, address_family):
 
         def __read_and_decode_post_ids(self):
             data = self.__read_and_decode_post_data()
-            return filter(None, data.split())
+            return [_f for _f in data.split() if _f]
 
         def __read_and_decode_post_data(self):
             transfer_encoding = self.headers.get("Transfer-encoding")

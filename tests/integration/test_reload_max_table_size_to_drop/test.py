@@ -34,8 +34,7 @@ def test_reload_max_table_size_to_drop(start_cluster):
     config = open(CONFIG_PATH, 'r')
     config_lines = config.readlines()
     config.close()
-    config_lines = map(lambda line: line.replace("<max_table_size_to_drop>1", "<max_table_size_to_drop>1000000"),
-                       config_lines)
+    config_lines = [line.replace("<max_table_size_to_drop>1", "<max_table_size_to_drop>1000000") for line in config_lines]
     config = open(CONFIG_PATH, 'w')
     config.writelines(config_lines)
     config.close()

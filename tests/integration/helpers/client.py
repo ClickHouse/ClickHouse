@@ -31,7 +31,7 @@ class Client:
             command += ['--query', sql]
 
         if settings is not None:
-            for setting, value in settings.iteritems():
+            for setting, value in settings.items():
                 command += ['--' + setting, str(value)]
 
         if user is not None:

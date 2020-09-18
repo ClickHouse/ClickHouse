@@ -58,21 +58,21 @@ def test_read_write_storage_with_globs(started_cluster):
         node1.query("insert into HDFSStorageWithEnum values (1, 'NEW', 4.2)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        print ex
+        print(ex)
         assert "in readonly mode" in str(ex)
 
     try:
         node1.query("insert into HDFSStorageWithQuestionMark values (1, 'NEW', 4.2)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        print ex
+        print(ex)
         assert "in readonly mode" in str(ex)
 
     try:
         node1.query("insert into HDFSStorageWithAsterisk values (1, 'NEW', 4.2)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        print ex
+        print(ex)
         assert "in readonly mode" in str(ex)
 
 
@@ -104,20 +104,20 @@ def test_bad_hdfs_uri(started_cluster):
         node1.query(
             "create table BadStorage1 (id UInt32, name String, weight Float64) ENGINE = HDFS('hads:hgsdfs100500:9000/other_storage', 'TSV')")
     except Exception as ex:
-        print ex
+        print(ex)
         assert "Illegal HDFS URI" in str(ex)
     try:
         node1.query(
             "create table BadStorage2 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs100500:9000/other_storage', 'TSV')")
     except Exception as ex:
-        print ex
+        print(ex)
         assert "Unable to create builder to connect to HDFS" in str(ex)
 
     try:
         node1.query(
             "create table BadStorage3 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/<>', 'TSV')")
     except Exception as ex:
-        print ex
+        print(ex)
         assert "Unable to open HDFS file" in str(ex)
 
 

@@ -1,6 +1,6 @@
-from server import ClickHouseServer
-from client import ClickHouseClient
-from table import ClickHouseTable
+from .server import ClickHouseServer
+from .client import ClickHouseClient
+from .table import ClickHouseTable
 import os
 import errno
 from shutil import rmtree
@@ -140,7 +140,7 @@ class ClickHouseServerWithCatboostModels:
         if not os.path.exists(self.models_dir):
             os.makedirs(self.models_dir)
 
-        for name, model in self.models.items():
+        for name, model in list(self.models.items()):
             model_path = os.path.join(self.models_dir, name + '.cbm')
             config_path = os.path.join(self.models_dir, name + '_model.xml')
             params = {

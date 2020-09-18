@@ -33,5 +33,5 @@ def test_different_types(cluster):
 
 def test_select_by_type(cluster):
     node = cluster.instances["node"]
-    for name, disk_type in disk_types.items():
+    for name, disk_type in list(disk_types.items()):
         assert node.query("SELECT name FROM system.disks WHERE type='" + disk_type + "'") == name + "\n"

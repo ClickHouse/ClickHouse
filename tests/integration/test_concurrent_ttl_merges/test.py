@@ -66,7 +66,7 @@ def test_no_ttl_merges_in_busy_pool(started_cluster):
     node1.query("ALTER TABLE test_ttl UPDATE data = data + 1 WHERE sleepEachRow(1) = 0")
 
     while count_running_mutations(node1, "test_ttl") < 6:
-        print "Mutations count", count_running_mutations(node1, "test_ttl")
+        print("Mutations count", count_running_mutations(node1, "test_ttl"))
         assert count_ttl_merges_in_background_pool(node1, "test_ttl") == 0
         time.sleep(0.5)
 
@@ -74,7 +74,7 @@ def test_no_ttl_merges_in_busy_pool(started_cluster):
 
     rows_count = []
     while count_running_mutations(node1, "test_ttl") == 6:
-        print "Mutations count after start TTL", count_running_mutations(node1, "test_ttl")
+        print("Mutations count after start TTL", count_running_mutations(node1, "test_ttl"))
         rows_count.append(int(node1.query("SELECT count() FROM test_ttl").strip()))
         time.sleep(0.5)
 

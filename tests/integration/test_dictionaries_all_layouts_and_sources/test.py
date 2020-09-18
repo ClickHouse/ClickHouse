@@ -160,7 +160,7 @@ def setup_module(module):
             if source.compatible_with_layout(layout):
                 DICTIONARIES.append(get_dict(source, layout, FIELDS[layout.layout_type]))
             else:
-                print "Source", source.name, "incompatible with layout", layout.name
+                print("Source", source.name, "incompatible with layout", layout.name)
 
     cluster = ClickHouseCluster(__file__)
 
@@ -182,9 +182,9 @@ def started_cluster():
     try:
         cluster.start()
         for dictionary in DICTIONARIES:
-            print "Preparing", dictionary.name
+            print("Preparing", dictionary.name)
             dictionary.prepare_source(cluster)
-            print "Prepared"
+            print("Prepared")
 
         yield cluster
 
@@ -242,7 +242,7 @@ def test_simple_dictionaries(started_cluster, fold):
     all_simple_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "simple"]
     simple_dicts = get_dictionaries(fold, 10, all_simple_dicts)
 
-    print "Length of dicts:", len(simple_dicts)
+    print("Length of dicts:", len(simple_dicts))
     for dct in simple_dicts:
         dct.load_data(data)
 
@@ -274,7 +274,7 @@ def test_simple_dictionaries(started_cluster, fold):
             queries_with_answers.append((query, 1))
 
     for query, answer in queries_with_answers:
-        print query
+        print(query)
         if isinstance(answer, list):
             answer = str(answer).replace(' ', '')
         assert node.query(query) == str(answer) + '\n'
@@ -312,7 +312,7 @@ def test_complex_dictionaries(started_cluster, fold):
                         queries_with_answers.append((query, field.default_value_for_get))
 
     for query, answer in queries_with_answers:
-        print query
+        print(query)
         assert node.query(query) == str(answer) + '\n'
 
 
@@ -342,5 +342,5 @@ def test_ranged_dictionaries(started_cluster, fold):
                         queries_with_answers.append((query, row.get_value_by_name(field.name)))
 
     for query, answer in queries_with_answers:
-        print query
+        print(query)
         assert node.query(query) == str(answer) + '\n'

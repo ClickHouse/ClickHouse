@@ -5,7 +5,7 @@ import helpers.cluster
 import helpers.test_tools
 import pytest
 
-import fake_sentry_server
+from . import fake_sentry_server
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 

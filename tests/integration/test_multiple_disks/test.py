@@ -954,7 +954,7 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
         if node1.query("SELECT latest_fail_reason FROM system.mutations WHERE table = '{}'".format(name)) == "":
             assert node1.query("SELECT sum(endsWith(s1, 'x')) FROM {}".format(name)) == "25\n"
         else:  # mutation failed, let's try on another disk
-            print "Mutation failed"
+            print("Mutation failed")
             node1.query("OPTIMIZE TABLE {} FINAL".format(name))
             node1.query("ALTER TABLE {} UPDATE s1 = concat(s1, 'x') WHERE 1".format(name))
             retry = 20
@@ -1114,7 +1114,7 @@ def test_download_appropriate_disk(start_cluster):
 
         for _ in range(10):
             try:
-                print "Syncing replica"
+                print("Syncing replica")
                 node2.query("SYSTEM SYNC REPLICA replicated_table_for_download")
                 break
             except:

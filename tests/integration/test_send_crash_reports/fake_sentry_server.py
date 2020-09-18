@@ -1,9 +1,9 @@
-import BaseHTTPServer
+import http.server
 
 RESULT_PATH = '/result.txt'
 
 
-class SentryHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+class SentryHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         post_data = self.__read_and_decode_post_data()
         with open(RESULT_PATH, 'w') as f:
@@ -37,7 +37,7 @@ class SentryHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 if __name__ == "__main__":
     with open(RESULT_PATH, 'w') as f:
         f.write("INITIAL_STATE")
-    httpd = BaseHTTPServer.HTTPServer(("localhost", 9500,), SentryHandler)
+    httpd = http.server.HTTPServer(("localhost", 9500,), SentryHandler)
     try:
         httpd.serve_forever()
     finally:

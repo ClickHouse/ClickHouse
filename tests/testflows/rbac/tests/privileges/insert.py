@@ -65,9 +65,9 @@ def role(node, role):
 
 def input_output_equality_check(node, input_columns, input_data):
     data_list = [x.strip("'") for x in input_data.split(",")]
-    input_dict = dict(zip(input_columns.split(","), data_list))
+    input_dict = dict(list(zip(input_columns.split(","), data_list)))
     output_dict = json.loads(node.query(f"select {input_columns} from merge_tree format JSONEachRow").output)
-    output_dict = {k:str(v) for (k,v) in output_dict.items()}
+    output_dict = {k:str(v) for (k,v) in list(output_dict.items())}
     return input_dict == output_dict
 
 @TestScenario
@@ -509,7 +509,7 @@ def revoke_privilege_from_role_via_role_with_grant_option(self, table_type, node
     RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
 )
 @Examples("table_type", [
-    (table_type, Requirements(requirement)) for table_type, requirement in table_requirements.items()
+    (table_type, Requirements(requirement)) for table_type, requirement in list(table_requirements.items())
 ])
 @Name("insert")
 def feature(self, table_type, node="clickhouse1"):

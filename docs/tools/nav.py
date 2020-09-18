@@ -59,7 +59,7 @@ def build_docs_nav(lang, args):
     _, _, nav = build_nav_entry(docs_dir, args)
     result = []
     index_key = None
-    for key, value in nav.items():
+    for key, value in list(nav.items()):
         if key and value:
             if value == 'index.md':
                 index_key = key
