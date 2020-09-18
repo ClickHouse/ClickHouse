@@ -33,11 +33,11 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_,
-        bool disable_persistency_);
+        bool persistency_);
 
     String base_path;
     String path;
-    bool disable_persistency;
+    bool persistency;
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
@@ -86,7 +86,7 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_,
-        bool disable_persistency_);
+        bool persistency_);
 };
 
 }
