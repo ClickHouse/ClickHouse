@@ -1467,7 +1467,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 limits,
                 leaf_limits,
                 std::move(quota),
-                std::move(context));
+                context);
         adding_limits_and_quota->setStepDescription("Set limits and quota after reading from storage");
         query_plan.addStep(std::move(adding_limits_and_quota));
     }
