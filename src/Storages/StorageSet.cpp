@@ -37,7 +37,7 @@ public:
     SetOrJoinBlockOutputStream(
         StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
-        const String & backup_file_name_, bool disable_persistency_);
+        const String & backup_file_name_, bool persistency_);
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
     void write(const Block & block) override;
@@ -52,7 +52,7 @@ private:
     WriteBufferFromFile backup_buf;
     CompressedWriteBuffer compressed_backup_buf;
     NativeBlockOutputStream backup_stream;
-    bool disable_persistency;
+    bool persistency;
 };
 
 
@@ -62,7 +62,7 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
     const String & backup_path_,
     const String & backup_tmp_path_,
     const String & backup_file_name_,
-    bool disable_persistency_)
+    bool persistency_)
     : table(table_)
     , metadata_snapshot(metadata_snapshot_)
     , backup_path(backup_path_)
@@ -71,7 +71,7 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
     , backup_buf(backup_tmp_path + backup_file_name)
     , compressed_backup_buf(backup_buf)
     , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
-    , disable_persistency(disable_persistency_)
+    , persistency(persistency_)
 {
 }
 
@@ -81,14 +81,14 @@ void SetOrJoinBlockOutputStream::write(const Block & block)
     Block sorted_block = block.sortColumns();
 
     table.insertBlock(sorted_block);
-    if (!disable_persistency)
+    if (persistency)
         backup_stream.write(sorted_block);
 }
 
 void SetOrJoinBlockOutputStream::writeSuffix()
 {
     table.finishInsert();
-    if (!disable_persistency)
+    if (persistency)
     {
         backup_stream.flush();
         compressed_backup_buf.next();
@@ -102,7 +102,7 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", disable_persistency);
+    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistency);
 }
 
 
@@ -112,9 +112,9 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_,
-    bool disable_persistency_)
+    bool persistency_)
     : IStorage(table_id_),
-    disable_persistency(disable_persistency_)
+    persistency(persistency_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -136,8 +136,8 @@ StorageSet::StorageSet(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_,
-    bool disable_persistency_)
-    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_, disable_persistency_},
+    bool persistency_)
+    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_, persistency_},
     set(std::make_shared<Set>(SizeLimits(), false, true))
 {
 
@@ -249,7 +249,7 @@ void registerStorageSet(StorageFactory & factory)
             set_settings->loadFromQuery(*args.storage_def);
         }
 
-        return StorageSet::create(args.relative_data_path, args.table_id, args.columns, args.constraints, args.context, set_settings->disable_persistency);
+        return StorageSet::create(args.relative_data_path, args.table_id, args.columns, args.constraints, args.context, set_settings->persistency);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 

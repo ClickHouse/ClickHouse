@@ -74,7 +74,7 @@ protected:
         const ConstraintsDescription & constraints_,
         bool overwrite,
         const Context & context_,
-        bool disable_persistency_);
+        bool persistency_);
 };
 
 }
