@@ -181,7 +181,7 @@ String getMechanismAsString(gss_OID mech_type)
     return bufferToString(mechanism_buf);
 }
 
-bool isSameMechanims(const String & left_str, gss_OID right_oid)
+bool areMechanismsSame(const String & left_str, gss_OID right_oid)
 {
     std::scoped_lock lock(gss_global_mutex);
 
@@ -390,7 +390,7 @@ String GSSAcceptorContext::processToken(const String & input_token)
                 user_name.empty() ||
                 realm.empty() ||
                 (!params.realm.empty() && params.realm != realm) ||
-                (!params.mechanism.empty() && isSameMechanims(params.mechanism, mech_type))
+                (!params.mechanism.empty() && areMechanismsSame(params.mechanism, mech_type))
             );
             resetHandles();
         }
