@@ -35,6 +35,8 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
 
+#include <cassert>
+
 
 namespace DB
 {
@@ -282,7 +284,7 @@ StorageStripeLog::StorageStripeLog(
 
 void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    if (table_path != new_path_to_table_data)
+    assert(table_path != new_path_to_table_data);
     {
         std::unique_lock<std::shared_mutex> lock(rwlock);
 

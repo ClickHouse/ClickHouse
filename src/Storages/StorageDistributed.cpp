@@ -57,6 +57,7 @@
 #include <memory>
 #include <filesystem>
 #include <optional>
+#include <cassert>
 
 
 namespace
@@ -866,7 +867,8 @@ void StorageDistributed::flushClusterNodesAllData()
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    if (!relative_data_path.empty() && relative_data_path != new_path_to_table_data)
+    assert(relative_data_path != new_path_to_table_data);
+    if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
 }
