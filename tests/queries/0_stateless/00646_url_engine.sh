@@ -5,4 +5,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # We should have correct env vars from shell_config.sh to run this test
 
-python "$CURDIR"/00646_url_engine.python
+python3 "$CURDIR"/00646_url_engine.python
