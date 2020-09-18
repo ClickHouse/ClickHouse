@@ -17,7 +17,7 @@
 #    include <Common/config.h>
 #endif
 
-#if ENABLE_UNWIND
+#if USE_UNWIND
 #    include <libunwind.h>
 #endif
 
@@ -287,7 +287,7 @@ StackTrace::StackTrace(NoCapture)
 void StackTrace::tryCapture()
 {
     size = 0;
-#if ENABLE_UNWIND
+#if USE_UNWIND
     size = unw_backtrace(frame_pointers.data(), capacity);
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 #endif

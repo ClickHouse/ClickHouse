@@ -289,7 +289,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
-#if ENABLE_SIMDJSON
+#if USE_SIMDJSON
         if (context.getSettingsRef().allow_simdjson)
         {
             FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(block, arguments, result_pos, input_rows_count);

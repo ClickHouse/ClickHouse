@@ -20,7 +20,7 @@ if (CMAKE_CROSSCOMPILING)
         set (ENABLE_PROTOBUF OFF CACHE INTERNAL "")
         set (ENABLE_GRPC OFF CACHE INTERNAL "") # no protobuf -> no grpc
 
-        set (ENABLE_SNAPPY OFF CACHE INTERNAL "")
+        set (USE_SNAPPY OFF CACHE INTERNAL "")
         set (ENABLE_PARQUET OFF CACHE INTERNAL "") # no snappy and protobuf -> no parquet
         set (ENABLE_ORC OFF CACHE INTERNAL "") # no arrow (parquet) -> no orc
 

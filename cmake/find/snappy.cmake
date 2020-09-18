@@ -1,8 +1,8 @@
-option(ENABLE_SNAPPY "Enable snappy library" ${ENABLE_LIBRARIES})
+option(USE_SNAPPY "Enable snappy library" ${ENABLE_LIBRARIES})
 
-if(NOT ENABLE_SNAPPY)
+if(NOT USE_SNAPPY)
     if (USE_INTERNAL_SNAPPY_LIBRARY)
-        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal snappy library with ENABLE_SNAPPY=OFF")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal snappy library with USE_SNAPPY=OFF")
     endif()
     return()
 endif()

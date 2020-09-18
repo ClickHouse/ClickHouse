@@ -1,8 +1,8 @@
-option (ENABLE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ${NOT_UNBUNDLED})
+option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ${NOT_UNBUNDLED})
 
-if (NOT ENABLE_LIBCXX)
+if (NOT USE_LIBCXX)
     if (USE_INTERNAL_LIBCXX_LIBRARY)
-        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal libcxx with ENABLE_LIBCXX=OFF")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal libcxx with USE_LIBCXX=OFF")
     endif()
 
     target_link_libraries(global-libs INTERFACE -l:libstdc++.a -l:libstdc++fs.a) # Always link these libraries as static
