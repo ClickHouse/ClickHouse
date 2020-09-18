@@ -517,8 +517,12 @@ BlockOutputStreamPtr StorageFile::write(
     if (format_name == "Distributed")
         throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
 
+    std::string path;
+    if (!paths.empty())
+        path = paths[0];
+
     return std::make_shared<StorageFileBlockOutputStream>(*this, metadata_snapshot,
-        chooseCompressionMethod(paths[0], compression_method), context);
+        chooseCompressionMethod(path, compression_method), context);
 }
 
 Strings StorageFile::getDataPaths() const

@@ -18,10 +18,15 @@ namespace ErrorCodes
 void TableFunctionView::parseArguments(const ASTPtr & ast_function, const Context & /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();
-    if (function && function->query && function->query->as<ASTSelectWithUnionQuery>())
-        create.set(create.select, function->query);
-    else
-        throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
+    if (function)
+    {
+        if (auto * select = function->tryGetQueryArgument())
+        {
+            create.set(create.select, select->clone());
+            return;
+        }
+    }
+    throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
 }
 
 ColumnsDescription TableFunctionView::getActualTableStructure(const Context & context) const

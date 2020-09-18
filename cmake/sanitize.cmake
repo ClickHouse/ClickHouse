@@ -36,7 +36,15 @@ if (SANITIZE)
         endif ()
 
     elseif (SANITIZE STREQUAL "thread")
-        set (TSAN_FLAGS "-fsanitize=thread -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/tests/tsan_suppressions.txt")
+        set (TSAN_FLAGS "-fsanitize=thread")
+        if (COMPILER_CLANG)
+            set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/tests/tsan_suppressions.txt")
+        else()
+            message (WARNING "TSAN suppressions was not passed to the compiler (since the compiler is not clang)")
+            message (WARNING "Use the following command to pass them manually:")
+            message (WARNING "    export TSAN_OPTIONS=\"$TSAN_OPTIONS suppressions=${CMAKE_SOURCE_DIR}/tests/tsan_suppressions.txt\"")
+        endif()
+
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${TSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${TSAN_FLAGS}")
