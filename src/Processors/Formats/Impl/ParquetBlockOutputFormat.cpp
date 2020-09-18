@@ -43,7 +43,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
         auto sink = std::make_shared<ArrowBufferedOutputStream>(out);
 
         parquet::WriterProperties::Builder builder;
-#if USE_SNAPPY
+#if ENABLE_SNAPPY
         builder.compression(parquet::Compression::SNAPPY);
 #endif
         auto props = builder.build();

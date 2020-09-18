@@ -7,8 +7,9 @@ endif ()
 # If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
 option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
 
-option (ENABLE_CLICKHOUSE_SERVER ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_CLIENT ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
+    ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
@@ -16,28 +17,30 @@ option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLIC
 # https://clickhouse.tech/docs/en/operations/utilities/clickhouse-benchmark/
 option (ENABLE_CLICKHOUSE_BENCHMARK "Queries benchmarking mode" ${ENABLE_CLICKHOUSE_ALL})
 
-# ???
-option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG "Configs processor (extract values etc.)" ${ENABLE_CLICKHOUSE_ALL})
 
-# ???
-option (ENABLE_CLICKHOUSE_COMPRESSOR ${ENABLE_CLICKHOUSE_ALL})
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-compressor/
+option (ENABLE_CLICKHOUSE_COMPRESSOR "Ddata compressor and decompressor" ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/clickhouse-copier/
 option (ENABLE_CLICKHOUSE_COPIER "Inter-cluster data copying mode" ${ENABLE_CLICKHOUSE_ALL})
 
-# ???
-option (ENABLE_CLICKHOUSE_FORMAT ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_FORMAT "Queries pretty-printer and formatter with syntax highlighting"
+    ${ENABLE_CLICKHOUSE_ALL})
 
-# ???
-option (ENABLE_CLICKHOUSE_OBFUSCATOR ${ENABLE_CLICKHOUSE_ALL})
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-obfuscator/
+option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data to benchmark-ready one)"
+    ${ENABLE_CLICKHOUSE_ALL})
 
-# ???
-option (ENABLE_CLICKHOUSE_ODBC_BRIDGE ${ENABLE_CLICKHOUSE_ALL})
+# https://clickhouse.tech/docs/en/operations/utilities/odbc-bridge/
+option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
+    ${ENABLE_CLICKHOUSE_ALL})
 
 if (CLICKHOUSE_SPLIT_BINARY)
-    option(ENABLE_CLICKHOUSE_INSTALL "???" OFF)
+    option(ENABLE_CLICKHOUSE_INSTALL "Install ClickHouse without .deb/.rpm/.tgz packages (having the binary only)" OFF)
 else ()
-    option(ENABLE_CLICKHOUSE_INSTALL ${ENABLE_CLICKHOUSE_ALL})
+    option(ENABLE_CLICKHOUSE_INSTALL "Install ClickHouse without .deb/.rpm/.tgz packages (having the binary only)"
+        ${ENABLE_CLICKHOUSE_ALL})
 endif ()
 
 if(NOT (MAKE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
