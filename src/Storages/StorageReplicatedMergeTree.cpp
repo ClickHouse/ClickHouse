@@ -216,7 +216,31 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
 
     if (global_context.hasZooKeeper())
-        current_zookeeper = global_context.getZooKeeper();
+    {
+        /// It's possible for getZooKeeper() to timeout if  zookeeper host(s) can't
+        /// be reached. In such cases Poco::Exception is thrown after a connection
+        /// timeout - refer to src/Common/ZooKeeper/ZooKeeperImpl.cpp:866 for more info.
+        ///
+        /// Side effect of this is that the CreateQuery gets interrupted and it exits.
+        /// But the data Directories for the tables being created aren't cleaned up.
+        /// This unclean state will hinder table creation on any retries and will
+        /// complain that the Directory for table already exists.
+        ///
+        /// To achieve a clean state on failed table creations, catch this error and
+        /// call dropIfEmpty() method only if the operation isn't ATTACH then proceed
+        /// throwing the exception. Without this, the Directory for the tables need
+        /// to be manually deleted before retrying the CreateQuery.
+        try
+        {
+            current_zookeeper = global_context.getZooKeeper();
+        }
+        catch (...)
+        {
+            if (!attach)
+                dropIfEmpty();
+            throw;
+        }
+    }
 
     bool skip_sanity_checks = false;
 
@@ -239,7 +263,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     if (!current_zookeeper)
     {
         if (!attach)
+        {
+            dropIfEmpty();
             throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+        }
 
         /// Do not activate the replica. It will be readonly.
         LOG_ERROR(log, "No ZooKeeper: table will be in readonly mode.");
@@ -589,7 +616,10 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
         return true;
     }
 
-    throw Exception("Cannot create table, because it is created concurrently every time or because of logical error", ErrorCodes::LOGICAL_ERROR);
+    /// Do not use LOGICAL_ERROR code, because it may happen if user has specified wrong zookeeper_path
+    throw Exception("Cannot create table, because it is created concurrently every time "
+                    "or because of wrong zookeeper_path "
+                    "or because of logical error", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
 }
 
 void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot)
@@ -667,7 +697,9 @@ void StorageReplicatedMergeTree::drop()
 
     if (has_metadata_in_zookeeper)
     {
-        auto zookeeper = tryGetZooKeeper();
+        /// Table can be shut down, restarting thread is not active
+        /// and calling StorageReplicatedMergeTree::getZooKeeper() won't suffice.
+        auto zookeeper = global_context.getZooKeeper();
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (is_readonly || !zookeeper)
@@ -4278,9 +4310,13 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
       * To do this, check its node `log_pointer` - the maximum number of the element taken from `log` + 1.
       */
 
-    const auto & check_replica_become_inactive = [this, &replica]()
+    bool waiting_itself = replica == replica_name;
+
+    const auto & stop_waiting = [&]()
     {
-        return !getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active");
+        bool stop_waiting_itself = waiting_itself && is_dropped;
+        bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active");
+        return stop_waiting_itself || stop_waiting_non_active;
     };
     constexpr auto event_wait_timeout_ms = 1000;
 
@@ -4295,7 +4331,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
         LOG_DEBUG(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
 
         /// Let's wait until entry gets into the replica queue.
-        while (wait_for_non_active || !check_replica_become_inactive())
+        while (!stop_waiting())
         {
             zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -4343,7 +4379,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
             LOG_DEBUG(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
 
             /// Let's wait until the entry gets into the replica queue.
-            while (wait_for_non_active || !check_replica_become_inactive())
+            while (!stop_waiting())
             {
                 zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -4396,10 +4432,8 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
 
     /// Third - wait until the entry disappears from the replica queue or replica become inactive.
     String path_to_wait_on = zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for;
-    if (wait_for_non_active)
-        return getZooKeeper()->waitForDisappear(path_to_wait_on);
 
-    return getZooKeeper()->waitForDisappear(path_to_wait_on, check_replica_become_inactive);
+    return getZooKeeper()->waitForDisappear(path_to_wait_on, stop_waiting);
 }
 
 

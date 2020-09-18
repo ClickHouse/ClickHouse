@@ -63,7 +63,7 @@ function configure
     # Make copies of the original db for both servers. Use hardlinks instead
     # of copying to save space. Before that, remove preprocessed configs and
     # system tables, because sharing them between servers with hardlinks may
-    # lead to weird effects.
+    # lead to weird effects. 
     rm -r left/db ||:
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
@@ -121,7 +121,7 @@ function run_tests
     then
         # Use the explicitly set path to directory with test files.
         test_prefix="$CHPC_TEST_PATH"
-    elif [ "$PR_TO_TEST" = "0" ]
+    elif [ "$PR_TO_TEST" == "0" ]
     then
         # When testing commits from master, use the older test files. This
         # allows the tests to pass even when we add new functions and tests for
@@ -155,6 +155,20 @@ function run_tests
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
+    # For PRs, test only a subset of queries, and run them less times.
+    # If the corresponding environment variables are already set, keep
+    # those values.
+    if [ "$PR_TO_TEST" == "0" ]
+    then
+        CHPC_RUNS=${CHPC_RUNS:-13}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
+    else
+        CHPC_RUNS=${CHPC_RUNS:-7}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-20}
+    fi
+    export CHPC_RUNS
+    export CHPC_MAX_QUERIES
+
     # Determine which concurrent benchmarks to run. For now, the only test
     # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
     # are also going to run it as a normal test.
@@ -184,11 +198,13 @@ function run_tests
         echo test "$test_name"
 
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
-        # the grep is to filter out set -x output and keep only time output
+        # The grep is to filter out set -x output and keep only time output.
+        # The '2>&1 >/dev/null' redirects stderr to stdout, and discards stdout.
         { \
             time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 \
+                --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
                 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
-        } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" \
+        } 2>&1 >/dev/null | tee >(grep -v ^+ >> "wall-clock-times.tsv") \
             || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
     done
 
@@ -394,12 +410,24 @@ create table query_run_metrics_denorm engine File(TSV, 'analyze/query-run-metric
     order by test, query_index, metric_names, version, query_id
     ;
 
+-- Filter out tests that don't have an even number of runs, to avoid breaking
+-- the further calculations. This may happen if there was an error during the
+-- test runs, e.g. the server died. It will be reported in test errors, so we
+-- don't have to report it again.
+create view broken_queries as
+    select test, query_index
+    from query_runs
+    group by test, query_index
+    having count(*) % 2 != 0
+    ;
+
 -- This is for statistical processing with eqmed.sql
 create table query_run_metrics_for_stats engine File(
         TSV, -- do not add header -- will parse with grep
         'analyze/query-run-metrics-for-stats.tsv')
     as select test, query_index, 0 run, version, metric_values
     from query_run_metric_arrays
+    where (test, query_index) not in broken_queries
     order by test, query_index, run, version
     ;
 
@@ -915,13 +943,15 @@ done
 
 function report_metrics
 {
+build_log_column_definitions
+
 rm -rf metrics ||:
 mkdir metrics
 
 clickhouse-local --query "
 create view right_async_metric_log as
     select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
-        'event_date Date, event_time DateTime, name String, value Float64')
+        '$(cat right-async-metric-log.tsv.columns)')
     ;
 
 -- Use the right log as time reference because it may have higher precision.
@@ -930,7 +960,7 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     select name metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
     asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes,
-        'event_date Date, event_time DateTime, name String, value Float64') l
+        '$(cat left-async-metric-log.tsv.columns)') l
     on l.name = r.name and r.event_time <= l.event_time
     order by metric, event_time
     ;

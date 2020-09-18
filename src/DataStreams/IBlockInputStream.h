@@ -5,6 +5,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/ExecutionSpeedLimits.h>
+#include <DataStreams/StreamLocalLimits.h>
 #include <IO/Progress.h>
 #include <Storages/TableLockHolder.h>
 #include <Common/TypePromotion.h>
@@ -173,38 +174,13 @@ public:
     bool isCancelled() const;
     bool isCancelledOrThrowIfKilled() const;
 
-    /** What limitations and quotas should be checked.
-      * LIMITS_CURRENT - checks amount of data returned by current stream only (BlockStreamProfileInfo is used for check).
-      *  Currently it is used in root streams to check max_result_{rows,bytes} limits.
-      * LIMITS_TOTAL - checks total amount of read data from leaf streams (i.e. data read from disk and remote servers).
-      *  It is checks max_{rows,bytes}_to_read in progress handler and use info from ProcessListElement::progress_in for this.
-      *  Currently this check is performed only in leaf streams.
-      */
-    enum LimitsMode
-    {
-        LIMITS_CURRENT,
-        LIMITS_TOTAL,
-    };
-
-    /// It is a subset of limitations from Limits.
-    struct LocalLimits
-    {
-        LimitsMode mode = LIMITS_CURRENT;
-
-        SizeLimits size_limits;
-
-        ExecutionSpeedLimits speed_limits;
-
-        OverflowMode timeout_overflow_mode = OverflowMode::THROW;
-    };
-
     /** Set limitations that checked on each block. */
-    virtual void setLimits(const LocalLimits & limits_)
+    virtual void setLimits(const StreamLocalLimits & limits_)
     {
         limits = limits_;
     }
 
-    const LocalLimits & getLimits() const
+    const StreamLocalLimits & getLimits() const
     {
         return limits;
     }
@@ -268,7 +244,7 @@ private:
 
     /// Limitations and quotas.
 
-    LocalLimits limits;
+    StreamLocalLimits limits;
 
     std::shared_ptr<const EnabledQuota> quota;    /// If nullptr - the quota is not used.
     UInt64 prev_elapsed = 0;

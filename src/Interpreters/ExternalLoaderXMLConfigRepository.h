@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <unordered_map>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <Poco/Timestamp.h>

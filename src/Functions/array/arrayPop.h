@@ -48,8 +48,6 @@ public:
             return;
         }
 
-        auto result_column = return_type->createColumn();
-
         const auto & array_column = block.getByPosition(arguments[0]).column;
 
         std::unique_ptr<GatherUtils::IArraySource> source;
@@ -61,14 +59,14 @@ public:
         else
             throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
-        auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
+        ColumnArray::MutablePtr sink;
 
         if (pop_front)
-            GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, *sink, 1);
+            sink = GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, 1);
         else
-            GatherUtils::sliceFromLeftConstantOffsetBounded(*source, *sink, 0, -1);
+            sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, 0, -1);
 
-        block.getByPosition(result).column = std::move(result_column);
+        block.getByPosition(result).column = std::move(sink);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

@@ -74,6 +74,7 @@ private:
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
+            bool sync,
             const ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in);
 
