@@ -130,7 +130,7 @@ void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<K
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
-    getItemsNumberImpl<UInt64, UInt64>("anime", *hierarchical_attribute, ids, out, [&](const size_t) { return null_value; });
+    getItemsNumberImpl<UInt64, UInt64>(*hierarchical_attribute, ids, out, [&](const size_t) { return null_value; });
 }
 
 
@@ -255,7 +255,7 @@ void CacheDictionary::getString(const std::string & attribute_name, const Padded
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
-    getItemsString(attribute_name, attribute, ids, out, [&](const size_t) { return null_value; });
+    getItemsString(attribute, ids, out, [&](const size_t) { return null_value; });
 }
 
 void CacheDictionary::getString(
@@ -264,7 +264,7 @@ void CacheDictionary::getString(
     auto & attribute = getAttribute(attribute_name);
     checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
-    getItemsString(attribute_name, attribute, ids, out, [&](const size_t row) { return def->getDataAt(row); });
+    getItemsString(attribute, ids, out, [&](const size_t row) { return def->getDataAt(row); });
 }
 
 void CacheDictionary::getString(
@@ -273,7 +273,7 @@ void CacheDictionary::getString(
     auto & attribute = getAttribute(attribute_name);
     checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
-    getItemsString(attribute_name, attribute, ids, out, [&](const size_t) { return StringRef{def}; });
+    getItemsString(attribute, ids, out, [&](const size_t) { return StringRef{def}; });
 }
 
 template<class... Ts>
@@ -489,7 +489,7 @@ void CacheDictionary::createAttributes()
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+        attributes.push_back(createAttributeWithTypeAndName(attribute.underlying_type, attribute.name, attribute.null_value));
 
         if (attribute.hierarchical)
         {
@@ -501,9 +501,9 @@ void CacheDictionary::createAttributes()
     }
 }
 
-CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value)
 {
-    Attribute attr{type, {}, {}};
+    Attribute attr{type, name, {}, {}};
 
     switch (type)
     {
@@ -544,50 +544,25 @@ void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key 
 {
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = std::get<UInt8>(attribute.null_values);
+#define DISPATCH(TYPE) \
+        case AttributeUnderlyingType::ut##TYPE: \
+            std::get<ContainerPtrType<TYPE>>(attribute.arrays)[idx] = std::get<TYPE>(attribute.null_values); /* NOLINT */ \
             break;
-        case AttributeUnderlyingType::utUInt16:
-            std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = std::get<UInt16>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = std::get<UInt32>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = std::get<UInt64>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = std::get<UInt128>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = std::get<Int8>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = std::get<Int16>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = std::get<Int32>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values);
-            break;
-
-        case AttributeUnderlyingType::utDecimal32:
-            std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = std::get<Decimal32>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = std::get<Decimal64>(attribute.null_values);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = std::get<Decimal128>(attribute.null_values);
-            break;
-
+        DISPATCH(UInt8)
+        DISPATCH(UInt16)
+        DISPATCH(UInt32)
+        DISPATCH(UInt64)
+        DISPATCH(UInt128)
+        DISPATCH(Int8)
+        DISPATCH(Int16)
+        DISPATCH(Int32)
+        DISPATCH(Int64)
+        DISPATCH(Decimal32)
+        DISPATCH(Decimal64)
+        DISPATCH(Decimal128)
+        DISPATCH(Float32)
+        DISPATCH(Float64)
+#undef DISPATCH
         case AttributeUnderlyingType::utString:
         {
             const auto & null_value_ref = std::get<String>(attribute.null_values);
@@ -611,37 +586,38 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
     switch (attribute.type)
     {
         case AttributeUnderlyingType::utUInt8:
-            std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>();
+            /// Strange code. Why UInt8 and UInt64? I looked through the history. It's always been like this.
+            std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.safeGet<UInt64>();
             break;
         case AttributeUnderlyingType::utUInt16:
-            std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>();
+            std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.safeGet<UInt64>();
             break;
         case AttributeUnderlyingType::utUInt32:
-            std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>();
+            std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.safeGet<UInt64>();
             break;
         case AttributeUnderlyingType::utUInt64:
-            std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>();
+            std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.safeGet<UInt64>();
             break;
         case AttributeUnderlyingType::utUInt128:
-            std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = value.get<UInt128>();
+            std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = value.safeGet<UInt128>();
             break;
         case AttributeUnderlyingType::utInt8:
-            std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>();
+            std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.safeGet<Int64>();
             break;
         case AttributeUnderlyingType::utInt16:
-            std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>();
+            std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.safeGet<Int64>();
             break;
         case AttributeUnderlyingType::utInt32:
-            std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>();
+            std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.safeGet<Int64>();
             break;
         case AttributeUnderlyingType::utInt64:
-            std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>();
+            std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.safeGet<Int64>();
             break;
         case AttributeUnderlyingType::utFloat32:
-            std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>();
+            std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.safeGet<Float64>();
             break;
         case AttributeUnderlyingType::utFloat64:
-            std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>();
+            std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.safeGet<Float64>();
             break;
 
         case AttributeUnderlyingType::utDecimal32:

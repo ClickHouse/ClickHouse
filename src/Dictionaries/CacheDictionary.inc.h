@@ -36,7 +36,7 @@ namespace ErrorCodes
 }
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
-void CacheDictionary::getItemsNumberImpl(const std::string & attribute_name,
+void CacheDictionary::getItemsNumberImpl(
     Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
     /// First fill everything with default values
@@ -158,7 +158,7 @@ void CacheDictionary::getItemsNumberImpl(const std::string & attribute_name,
     
     /// Add updated keys to asnwer.
 
-    const size_t attribute_index = getAttributeIndex(attribute_name);
+    const size_t attribute_index = getAttributeIndex(attribute.name);
 
     for (auto & [key, value] : update_unit_ptr->found_ids)
     {
@@ -171,7 +171,7 @@ void CacheDictionary::getItemsNumberImpl(const std::string & attribute_name,
 }
 
 template <typename DefaultGetter>
-void CacheDictionary::getItemsString(const std::string & attribute_name,
+void CacheDictionary::getItemsString(
     Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const
 {
     const auto rows = ext::size(ids);
@@ -324,7 +324,7 @@ void CacheDictionary::getItemsString(const std::string & attribute_name,
     tryPushToUpdateQueueOrThrow(update_unit_ptr);
     waitForCurrentUpdateFinish(update_unit_ptr);
 
-    const size_t attribute_index = getAttributeIndex(attribute_name);
+    const size_t attribute_index = getAttributeIndex(attribute.name);
 
     /// Only calculate the total length.
     for (auto & [key, value] : update_unit_ptr->found_ids)
@@ -357,12 +357,7 @@ void CacheDictionary::getItemsString(const std::string & attribute_name,
         {
             const auto found_it = update_unit_ptr->found_ids.find(id);
             if (found_it->second.found)
-            {
-                std::cout << "size " << found_it->second.values.size() << std::endl;
-                std::cout << "attribute_index " << attribute_index << std::endl;
                 value = std::get<String>(found_it->second.values[attribute_index]);
-            }
-                
             else
                 value = get_default(row);
         }
