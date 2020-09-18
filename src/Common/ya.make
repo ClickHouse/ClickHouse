@@ -87,7 +87,6 @@ SRCS(
     StatusFile.cpp
     StatusInfo.cpp
     Stopwatch.cpp
-    StringRef.cpp
     StringUtils/StringUtils.cpp
     StudentTTest.cpp
     SymbolIndex.cpp
