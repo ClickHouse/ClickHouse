@@ -10,7 +10,7 @@ stage=${stage:-}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
-# it being undefined. Also read it as array so that we can pass an empty list 
+# it being undefined. Also read it as array so that we can pass an empty list
 # of additional variable to cmake properly, and it doesn't generate an extra
 # empty parameter.
 read -ra FASTTEST_CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
@@ -127,6 +127,7 @@ ln -s /usr/share/clickhouse-test/config/access_management.xml /etc/clickhouse-se
 ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/
+ln -s /usr/share/clickhouse-test/config/executable_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/
 #ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/
