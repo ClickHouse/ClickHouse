@@ -274,7 +274,6 @@ def test_mixed_granularity_single_node(start_dynamic_cluster, node):
         "INSERT INTO table_with_default_granularity VALUES (toDate('2018-09-01'), 1, 333), (toDate('2018-09-02'), 2, 444)")
 
     def callback(n):
-<<<<<<< HEAD
         new_config = """
 <yandex><merge_tree>
     <enable_mixed_granularity_parts>1</enable_mixed_granularity_parts>
@@ -283,12 +282,6 @@ def test_mixed_granularity_single_node(start_dynamic_cluster, node):
 
         n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml", new_config)
         n.replace_config("/etc/clickhouse-server/config.d/merge_tree_settings.xml", new_config)
-=======
-        n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml",
-                         "<yandex><merge_tree><enable_mixed_granularity_parts>1</enable_mixed_granularity_parts></merge_tree></yandex>")
-        n.replace_config("/etc/clickhouse-server/config.d/merge_tree_settings.xml",
-                         "<yandex><merge_tree><enable_mixed_granularity_parts>1</enable_mixed_granularity_parts></merge_tree></yandex>")
->>>>>>> upstream/master
 
     node.restart_with_latest_version(callback_onstop=callback)
     node.query("SYSTEM RELOAD CONFIG")
@@ -331,7 +324,6 @@ def test_version_update_two_nodes(start_dynamic_cluster):
     assert node12.query("SELECT COUNT() FROM table_with_default_granularity") == '2\n'
 
     def callback(n):
-<<<<<<< HEAD
         new_config = """
 <yandex><merge_tree>
     <enable_mixed_granularity_parts>0</enable_mixed_granularity_parts>
@@ -340,12 +332,6 @@ def test_version_update_two_nodes(start_dynamic_cluster):
 
         n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml", new_config)
         n.replace_config("/etc/clickhouse-server/config.d/merge_tree_settings.xml", new_config)
-=======
-        n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml",
-                         "<yandex><merge_tree><enable_mixed_granularity_parts>0</enable_mixed_granularity_parts></merge_tree></yandex>")
-        n.replace_config("/etc/clickhouse-server/config.d/merge_tree_settings.xml",
-                         "<yandex><merge_tree><enable_mixed_granularity_parts>0</enable_mixed_granularity_parts></merge_tree></yandex>")
->>>>>>> upstream/master
 
     node12.restart_with_latest_version(callback_onstop=callback)
 

@@ -55,20 +55,12 @@ def test_merge_with_ttl_timeout(started_cluster):
     drop_table([node1, node2], table)
     for node in [node1, node2]:
         node.query(
-<<<<<<< HEAD
-        '''
-            CREATE TABLE {table}(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}', '{replica}')
-            ORDER BY id PARTITION BY toDayOfMonth(date)
-            SETTINGS min_bytes_for_wide_part=0;
-        '''.format(replica=node.name, table=table))
-=======
             '''
                 CREATE TABLE {table}(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}', '{replica}')
-                ORDER BY id PARTITION BY toDayOfMonth(date);
+                ORDER BY id PARTITION BY toDayOfMonth(date)
+                SETTINGS min_bytes_for_wide_part=0;
             '''.format(replica=node.name, table=table))
->>>>>>> upstream/master
 
     node1.query("SYSTEM STOP TTL MERGES {table}".format(table=table))
     node2.query("SYSTEM STOP TTL MERGES {table}".format(table=table))
@@ -256,17 +248,6 @@ limitations under the License."""
                 time.sleep(0.5)
 
     node1.query(
-<<<<<<< HEAD
-    """
-        CREATE TABLE {name} (
-            s1 String,
-            d1 DateTime
-        ) ENGINE = {engine}
-        ORDER BY tuple()
-        TTL d1 + INTERVAL 1 DAY DELETE
-        SETTINGS min_bytes_for_wide_part=0
-    """.format(name=name, engine=engine))
-=======
         """
             CREATE TABLE {name} (
                 s1 String,
@@ -274,8 +255,8 @@ limitations under the License."""
             ) ENGINE = {engine}
             ORDER BY tuple()
             TTL d1 + INTERVAL 1 DAY DELETE
+            SETTINGS min_bytes_for_wide_part=0
         """.format(name=name, engine=engine))
->>>>>>> upstream/master
 
     node1.query("""ALTER TABLE {name} MODIFY COLUMN s1 String TTL d1 + INTERVAL 1 SECOND""".format(name=name))
     node1.query("""ALTER TABLE {name} ADD COLUMN b1 Int32""".format(name=name))
