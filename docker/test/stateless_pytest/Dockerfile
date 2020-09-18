@@ -6,7 +6,7 @@ RUN apt-get update -y && \
         python3-pip \
         python3-setuptools
 
-RUN pip install \
+RUN python3 -m pip install \
     pytest \
     pytest-html \
     pytest-timeout \
