@@ -7,7 +7,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPlan/ReadFromStorageStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
@@ -102,10 +102,8 @@ void IStorage::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    auto read_step = std::make_unique<ReadFromStorageStep>(
-            shared_from_this(), column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-
-    read_step->setStepDescription("Read from " + getName());
+    auto pipe = read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName());
     query_plan.addStep(std::move(read_step));
 }
 

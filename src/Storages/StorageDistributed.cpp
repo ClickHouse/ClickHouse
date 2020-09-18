@@ -494,6 +494,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
 }
 
 Pipe StorageDistributed::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -537,7 +538,7 @@ Pipe StorageDistributed::read(
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
-    return ClusterProxy::executeQuery(select_stream_factory, cluster, log,
+    ClusterProxy::executeQuery(query_plan, select_stream_factory, cluster, log,
         modified_query_ast, context, context.getSettingsRef(), query_info);
 }
 

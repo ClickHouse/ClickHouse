@@ -7,6 +7,9 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/Pipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 
 namespace DB
@@ -74,13 +77,16 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     return new_context;
 }
 
-Pipe executeQuery(
+void executeQuery(
+    QueryPlan & query_plan,
     IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
     const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
 {
     assert(log);
 
-    Pipes res;
+    std::vector<QueryPlanPtr> plans;
+    Pipes remote_pipes;
+    Pipes delayed_pipes;
 
     const std::string query = queryToString(query_ast);
 
@@ -104,9 +110,43 @@ Pipe executeQuery(
         throttler = user_level_throttler;
 
     for (const auto & shard_info : cluster->getShardsInfo())
-        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, res);
+        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, plans, remote_pipes, delayed_pipes);
 
-    return Pipe::unitePipes(std::move(res));
+    if (!remote_pipes.empty())
+    {
+        auto plan = std::make_unique<QueryPlan>();
+        auto read_from_remote = std::make_unique<ReadFromPreparedSource>(Pipe::unitePipes(std::move(remote_pipes)));
+        read_from_remote->setStepDescription("Read from remote replica");
+        plan->addStep(std::move(read_from_remote));
+        plans.emplace_back(std::move(plan));
+    }
+
+    if (!delayed_pipes.empty())
+    {
+        auto plan = std::make_unique<QueryPlan>();
+        auto read_from_remote = std::make_unique<ReadFromPreparedSource>(Pipe::unitePipes(std::move(delayed_pipes)));
+        read_from_remote->setStepDescription("Read from delayed local replica");
+        plan->addStep(std::move(read_from_remote));
+        plans.emplace_back(std::move(plan));
+    }
+
+    if (plans.empty())
+        return;
+
+    if (plans.size() == 1)
+    {
+        query_plan = std::move(*plans.front());
+        return;
+    }
+
+    DataStreams input_streams;
+    input_streams.reserve(plans.size());
+    for (auto & plan : plans)
+        input_streams.emplace_back(plan->getCurrentDataStream());
+
+    auto header = input_streams.front().header;
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), header);
+    query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
 }
