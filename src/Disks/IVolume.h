@@ -73,7 +73,7 @@ public:
     UInt64 max_data_part_size = 0;
     /// Should a new data part be synchronously moved to a volume according to ttl on insert
     /// or move this part in background task asynchronously after insert.
-    bool perform_ttl_move_on_insert;
+    bool perform_ttl_move_on_insert = true;
 };
 
 /// Reservation for multiple disks at once. Can be used in RAID1 implementation.
