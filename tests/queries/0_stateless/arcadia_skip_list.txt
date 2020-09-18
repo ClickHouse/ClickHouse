@@ -143,3 +143,4 @@
 01474_bad_global_join
 01473_event_time_microseconds
 01461_query_start_time_microseconds
+01455_shard_leaf_max_rows_bytes_to_read
