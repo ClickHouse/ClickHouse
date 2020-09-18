@@ -15,6 +15,7 @@ ReadFromStorageStep::ReadFromStorageStep(
     TableLockHolder table_lock_,
     StorageMetadataPtr metadata_snapshot_,
     StreamLocalLimits & limits_,
+    SizeLimits & leaf_limits_,
     std::shared_ptr<const EnabledQuota> quota_,
     StoragePtr storage_,
     const Names & required_columns_,
@@ -26,6 +27,7 @@ ReadFromStorageStep::ReadFromStorageStep(
     : table_lock(std::move(table_lock_))
     , metadata_snapshot(std::move(metadata_snapshot_))
     , limits(limits_)
+    , leaf_limits(leaf_limits_)
     , quota(std::move(quota_))
     , storage(std::move(storage_))
     , required_columns(required_columns_)
@@ -85,6 +87,16 @@ ReadFromStorageStep::ReadFromStorageStep(
     pipeline->addTableLock(table_lock);
 
     pipe.setLimits(limits);
+
+    /**
+      * Leaf size limits should be applied only for local processing of distributed queries.
+      * Such limits allow to control the read stage on leaf nodes and exclude the merging stage.
+      * Consider the case when distributed query needs to read from multiple shards. Then leaf
+      * limits will be applied on the shards only (including the root node) but will be ignored
+      * on the results merging stage.
+      */
+    if (!storage->isRemote())
+        pipe.setLeafLimits(leaf_limits);
 
     if (quota)
         pipe.setQuota(quota);
