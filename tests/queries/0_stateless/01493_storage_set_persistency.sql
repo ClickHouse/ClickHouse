@@ -13,20 +13,20 @@ SELECT number FROM number WHERE number IN set LIMIT 1;
 
 DROP TABLE set;
 
-SELECT '----- Settings persistency=1 -----';
-CREATE TABLE set (val UInt64) ENGINE = Set() SETTINGS persistency=1;
+SELECT '----- Settings persistent=1 -----';
+CREATE TABLE set (val UInt64) ENGINE = Set() SETTINGS persistent=1;
 INSERT INTO set VALUES (1);
 DETACH TABLE set;
-ATTACH TABLE set (val UInt64) ENGINE = Set() SETTINGS persistency=1;
+ATTACH TABLE set (val UInt64) ENGINE = Set() SETTINGS persistent=1;
 SELECT number FROM number WHERE number IN set LIMIT 1;
 
 DROP TABLE set;
 
-SELECT '----- Settings persistency=0 -----';
-CREATE TABLE set (val UInt64) ENGINE = Set() SETTINGS persistency=0;
+SELECT '----- Settings persistent=0 -----';
+CREATE TABLE set (val UInt64) ENGINE = Set() SETTINGS persistent=0;
 INSERT INTO set VALUES (1);
 DETACH TABLE set;
-ATTACH TABLE set (val UInt64) ENGINE = Set() SETTINGS persistency=0;
+ATTACH TABLE set (val UInt64) ENGINE = Set() SETTINGS persistent=0;
 SELECT number FROM number WHERE number IN set LIMIT 1;
 
 DROP TABLE set;

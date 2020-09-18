@@ -10,7 +10,7 @@ class ASTStorage;
 
 
 #define JOIN_RELATED_SETTINGS(M) \
-    M(Bool, persistency, true, "Disable setting to avoid the overhead of writing to disk for StorageJoin", 0)
+    M(Bool, persistent, true, "Disable setting to avoid the overhead of writing to disk for StorageJoin", 0)
 
 #define LIST_OF_JOIN_SETTINGS(M) \
     JOIN_RELATED_SETTINGS(M) \
