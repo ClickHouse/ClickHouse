@@ -25,6 +25,7 @@ struct QuotaUsage;
 struct Settings;
 class SettingsConstraints;
 class AccessControlManager;
+class Credentials;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
@@ -63,7 +64,7 @@ public:
     UserPtr getUser() const;
     String getUserName() const;
 
-    bool isCorrectPassword(const String & password) const;
+    bool areCredentialsValid(std::unique_ptr<Credentials> && credentials) const;
     bool isClientHostAllowed() const;
 
     /// Returns information about current and enabled roles.

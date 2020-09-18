@@ -287,13 +287,12 @@ void ContextAccess::calculateAccessRights() const
     }
 }
 
-
-bool ContextAccess::isCorrectPassword(const String & password) const
+bool ContextAccess::areCredentialsValid(std::unique_ptr<Credentials> && credentials) const
 {
     std::lock_guard lock{mutex};
     if (!user)
         return false;
-    return user->authentication.isCorrectPassword(password, user_name, manager->getExternalAuthenticators());
+    return user->authentication.areCredentialsValid(std::move(credentials), user_name, manager->getExternalAuthenticators());
 }
 
 bool ContextAccess::isClientHostAllowed() const

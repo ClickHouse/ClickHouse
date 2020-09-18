@@ -49,7 +49,8 @@ namespace
             std::optional<Authentication::Type> type;
             bool expect_password = false;
             bool expect_hash = false;
-            bool expect_server_name = false;
+            bool expect_ldap_server_name = false;
+            bool expect_kerberos_realm = false;
 
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
@@ -60,7 +61,9 @@ namespace
                         type = check_type;
 
                         if (check_type == Authentication::LDAP_SERVER)
-                            expect_server_name = true;
+                            expect_ldap_server_name = true;
+                        else if (check_type == Authentication::KERBEROS_REALM)
+                            expect_kerberos_realm = true;
                         else if (check_type != Authentication::NO_PASSWORD)
                             expect_password = true;
 
@@ -92,7 +95,7 @@ namespace
             }
 
             String value;
-            if (expect_password || expect_hash || expect_server_name)
+            if (expect_password || expect_hash || expect_ldap_server_name || expect_kerberos_realm)
             {
                 ASTPtr ast;
                 if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
@@ -106,8 +109,10 @@ namespace
                 authentication.setPassword(value);
             else if (expect_hash)
                 authentication.setPasswordHashHex(value);
-            else if (expect_server_name)
-                authentication.setServerName(value);
+            else if (expect_ldap_server_name)
+                authentication.setLDAPServerName(value);
+            else if (expect_kerberos_realm)
+                authentication.setKerberosRealm(value);
 
             return true;
         });

@@ -12,6 +12,7 @@ SRCS(
     AllowedClientHosts.cpp
     Authentication.cpp
     ContextAccess.cpp
+    Credentials.cpp
     DiskAccessStorage.cpp
     EnabledQuota.cpp
     EnabledRoles.cpp
@@ -20,6 +21,7 @@ SRCS(
     EnabledSettings.cpp
     ExternalAuthenticators.cpp
     GrantedRoles.cpp
+    GSSAcceptor.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
     LDAPAccessStorage.cpp

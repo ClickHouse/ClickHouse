@@ -35,7 +35,11 @@ namespace
         String authentication_type_name = Authentication::TypeInfo::get(authentication_type).name;
         std::optional<String> by_value;
 
-        if (show_password || authentication_type == Authentication::LDAP_SERVER)
+        if (
+            show_password ||
+            authentication_type == Authentication::LDAP_SERVER ||
+            authentication_type == Authentication::KERBEROS_REALM
+        )
         {
             switch (authentication_type)
             {
@@ -58,7 +62,12 @@ namespace
                 }
                 case Authentication::LDAP_SERVER:
                 {
-                    by_value = authentication.getServerName();
+                    by_value = authentication.getLDAPServerName();
+                    break;
+                }
+                case Authentication::KERBEROS_REALM:
+                {
+                    by_value = authentication.getKerberosRealm();
                     break;
                 }
 

@@ -161,7 +161,7 @@ std::optional<UUID> LDAPAccessStorage::findOrGenerateImpl(EntityType type, const
         const auto user = std::make_shared<User>();
         user->setName(name);
         user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
-        user->authentication.setServerName(ldap_server);
+        user->authentication.setLDAPServerName(ldap_server);
 
         for (const auto& role_name : default_role_names)
         {

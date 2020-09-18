@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int LDAP_ERROR;
 }
 
-LDAPClient::LDAPClient(const LDAPServerParams & params_)
+LDAPClient::LDAPClient(const Params & params_)
     : params(params_)
 {
 }
@@ -108,7 +108,7 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
         LDAPURLDesc url;
         std::memset(&url, 0, sizeof(url));
 
-        url.lud_scheme = const_cast<char *>(params.enable_tls == LDAPServerParams::TLSEnable::YES ? "ldaps" : "ldap");
+        url.lud_scheme = const_cast<char *>(params.enable_tls == LDAPClient::Params::TLSEnable::YES ? "ldaps" : "ldap");
         url.lud_host = const_cast<char *>(params.host.c_str());
         url.lud_port = params.port;
         url.lud_scope = LDAP_SCOPE_DEFAULT;
@@ -128,8 +128,8 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
         int value = 0;
         switch (params.protocol_version)
         {
-            case LDAPServerParams::ProtocolVersion::V2: value = LDAP_VERSION2; break;
-            case LDAPServerParams::ProtocolVersion::V3: value = LDAP_VERSION3; break;
+            case LDAPClient::Params::ProtocolVersion::V2: value = LDAP_VERSION2; break;
+            case LDAPClient::Params::ProtocolVersion::V3: value = LDAP_VERSION3; break;
         }
         diag(ldap_set_option(handle, LDAP_OPT_PROTOCOL_VERSION, &value));
     }
@@ -173,11 +173,11 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
         int value = 0;
         switch (params.tls_minimum_protocol_version)
         {
-            case LDAPServerParams::TLSProtocolVersion::SSL2:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL2;   break;
-            case LDAPServerParams::TLSProtocolVersion::SSL3:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL3;   break;
-            case LDAPServerParams::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
-            case LDAPServerParams::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
-            case LDAPServerParams::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
+            case LDAPClient::Params::TLSProtocolVersion::SSL2:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL2;   break;
+            case LDAPClient::Params::TLSProtocolVersion::SSL3:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL3;   break;
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
         }
         diag(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MIN, &value));
     }
@@ -188,10 +188,10 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
         int value = 0;
         switch (params.tls_require_cert)
         {
-            case LDAPServerParams::TLSRequireCert::NEVER:  value = LDAP_OPT_X_TLS_NEVER;  break;
-            case LDAPServerParams::TLSRequireCert::ALLOW:  value = LDAP_OPT_X_TLS_ALLOW;  break;
-            case LDAPServerParams::TLSRequireCert::TRY:    value = LDAP_OPT_X_TLS_TRY;    break;
-            case LDAPServerParams::TLSRequireCert::DEMAND: value = LDAP_OPT_X_TLS_DEMAND; break;
+            case LDAPClient::Params::TLSRequireCert::NEVER:  value = LDAP_OPT_X_TLS_NEVER;  break;
+            case LDAPClient::Params::TLSRequireCert::ALLOW:  value = LDAP_OPT_X_TLS_ALLOW;  break;
+            case LDAPClient::Params::TLSRequireCert::TRY:    value = LDAP_OPT_X_TLS_TRY;    break;
+            case LDAPClient::Params::TLSRequireCert::DEMAND: value = LDAP_OPT_X_TLS_DEMAND; break;
         }
         diag(ldap_set_option(handle, LDAP_OPT_X_TLS_REQUIRE_CERT, &value));
     }
@@ -229,14 +229,14 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
     }
 #endif
 
-    if (params.enable_tls == LDAPServerParams::TLSEnable::YES_STARTTLS)
+    if (params.enable_tls == LDAPClient::Params::TLSEnable::YES_STARTTLS)
         diag(ldap_start_tls_s(handle, nullptr, nullptr));
 
     int rc = LDAP_OTHER;
 
     switch (params.sasl_mechanism)
     {
-        case LDAPServerParams::SASLMechanism::SIMPLE:
+        case LDAPClient::Params::SASLMechanism::SIMPLE:
         {
             const String dn = params.auth_dn_prefix + escapeForLDAP(params.user) + params.auth_dn_suffix;
 

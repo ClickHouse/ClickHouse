@@ -214,7 +214,7 @@ try
 
     /// Skip networking
 
-    /// Sets external authenticators config (LDAP).
+    /// Sets external authenticators config (LDAP, Kerberos).
     context->setExternalAuthenticatorsConfig(config());
 
     setupUsers();

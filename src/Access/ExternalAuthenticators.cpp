@@ -16,14 +16,14 @@ namespace ErrorCodes
 namespace
 {
 
-auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const String & ldap_server_name)
+auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const String & name)
 {
-    if (ldap_server_name.empty())
+    if (name.empty())
         throw Exception("LDAP server name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-    LDAPServerParams params;
+    LDAPClient::Params params;
 
-    const String ldap_server_config = "ldap_servers." + ldap_server_name;
+    const String ldap_server_config = "ldap_servers." + name;
 
     const bool has_host = config.has(ldap_server_config + ".host");
     const bool has_port = config.has(ldap_server_config + ".port");
@@ -58,11 +58,11 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
         boost::to_lower(enable_tls_lc_str);
 
         if (enable_tls_lc_str == "starttls")
-            params.enable_tls = LDAPServerParams::TLSEnable::YES_STARTTLS;
+            params.enable_tls = LDAPClient::Params::TLSEnable::YES_STARTTLS;
         else if (config.getBool(ldap_server_config + ".enable_tls"))
-            params.enable_tls = LDAPServerParams::TLSEnable::YES;
+            params.enable_tls = LDAPClient::Params::TLSEnable::YES;
         else
-            params.enable_tls = LDAPServerParams::TLSEnable::NO;
+            params.enable_tls = LDAPClient::Params::TLSEnable::NO;
     }
 
     if (has_tls_minimum_protocol_version)
@@ -71,15 +71,15 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
         boost::to_lower(tls_minimum_protocol_version_lc_str);
 
         if (tls_minimum_protocol_version_lc_str == "ssl2")
-            params.tls_minimum_protocol_version = LDAPServerParams::TLSProtocolVersion::SSL2;
+            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::SSL2;
         else if (tls_minimum_protocol_version_lc_str == "ssl3")
-            params.tls_minimum_protocol_version = LDAPServerParams::TLSProtocolVersion::SSL3;
+            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::SSL3;
         else if (tls_minimum_protocol_version_lc_str == "tls1.0")
-            params.tls_minimum_protocol_version = LDAPServerParams::TLSProtocolVersion::TLS1_0;
+            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_0;
         else if (tls_minimum_protocol_version_lc_str == "tls1.1")
-            params.tls_minimum_protocol_version = LDAPServerParams::TLSProtocolVersion::TLS1_1;
+            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_1;
         else if (tls_minimum_protocol_version_lc_str == "tls1.2")
-            params.tls_minimum_protocol_version = LDAPServerParams::TLSProtocolVersion::TLS1_2;
+            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_2;
         else
             throw Exception("Bad value for 'tls_minimum_protocol_version' entry, allowed values are: 'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2'", ErrorCodes::BAD_ARGUMENTS);
     }
@@ -90,13 +90,13 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
         boost::to_lower(tls_require_cert_lc_str);
 
         if (tls_require_cert_lc_str == "never")
-            params.tls_require_cert = LDAPServerParams::TLSRequireCert::NEVER;
+            params.tls_require_cert = LDAPClient::Params::TLSRequireCert::NEVER;
         else if (tls_require_cert_lc_str == "allow")
-            params.tls_require_cert = LDAPServerParams::TLSRequireCert::ALLOW;
+            params.tls_require_cert = LDAPClient::Params::TLSRequireCert::ALLOW;
         else if (tls_require_cert_lc_str == "try")
-            params.tls_require_cert = LDAPServerParams::TLSRequireCert::TRY;
+            params.tls_require_cert = LDAPClient::Params::TLSRequireCert::TRY;
         else if (tls_require_cert_lc_str == "demand")
-            params.tls_require_cert = LDAPServerParams::TLSRequireCert::DEMAND;
+            params.tls_require_cert = LDAPClient::Params::TLSRequireCert::DEMAND;
         else
             throw Exception("Bad value for 'tls_require_cert' entry, allowed values are: 'never', 'allow', 'try', 'demand'", ErrorCodes::BAD_ARGUMENTS);
     }
@@ -125,26 +125,52 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
         params.port = port;
     }
     else
-        params.port = (params.enable_tls == LDAPServerParams::TLSEnable::YES ? 636 : 389);
+        params.port = (params.enable_tls == LDAPClient::Params::TLSEnable::YES ? 636 : 389);
 
     return params;
 }
 
 void parseAndAddLDAPServers(ExternalAuthenticators & external_authenticators, const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
 {
-    Poco::Util::AbstractConfiguration::Keys ldap_server_names;
-    config.keys("ldap_servers", ldap_server_names);
+    Poco::Util::AbstractConfiguration::Keys names;
+    config.keys("ldap_servers", names);
 
-    for (const auto & ldap_server_name : ldap_server_names)
+    for (const auto & name : names)
     {
         try
         {
-            external_authenticators.setLDAPServerParams(ldap_server_name, parseLDAPServer(config, ldap_server_name));
+            external_authenticators.setLDAPClientParamsBlueprint(name, parseLDAPServer(config, name));
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(ldap_server_name));
+            tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(name));
         }
+    }
+}
+
+void parseAndAddKerberos(ExternalAuthenticators & external_authenticators, const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+{
+    try
+    {
+        if (!config.has("kerberos"))
+            return;
+
+        GSSAcceptorContext::Params params;
+
+        if (config.has("kerberos.principal"))
+            params.principal = config.getString("kerberos.principal");
+
+        if (config.has("kerberos.realm"))
+            params.realm = config.getString("kerberos.realm");
+
+        if (!params.principal.empty() && params.realm.empty())
+            throw Exception("Realm must be specified if proncipal is specified", ErrorCodes::BAD_ARGUMENTS);
+
+        external_authenticators.setKerberosParams(params);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Could not parse Kerberos section");
     }
 }
 
@@ -153,7 +179,8 @@ void parseAndAddLDAPServers(ExternalAuthenticators & external_authenticators, co
 void ExternalAuthenticators::reset()
 {
     std::scoped_lock lock(mutex);
-    ldap_server_params.clear();
+    ldap_client_params_blueprint.clear();
+    kerberos_params.reset();
 }
 
 void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
@@ -161,22 +188,36 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     std::scoped_lock lock(mutex);
     reset();
     parseAndAddLDAPServers(*this, config, log);
+    parseAndAddKerberos(*this, config, log);
 }
 
-void ExternalAuthenticators::setLDAPServerParams(const String & server, const LDAPServerParams & params)
+void ExternalAuthenticators::setLDAPClientParamsBlueprint(const String & server_name, const LDAPClient::Params & params)
 {
     std::scoped_lock lock(mutex);
-    ldap_server_params.erase(server);
-    ldap_server_params[server] = params;
+    ldap_client_params_blueprint.erase(server_name);
+    ldap_client_params_blueprint[server_name] = params;
 }
 
-LDAPServerParams ExternalAuthenticators::getLDAPServerParams(const String & server) const
+LDAPClient::Params ExternalAuthenticators::getLDAPClientParamsBlueprint(const String & server_name) const
 {
     std::scoped_lock lock(mutex);
-    auto it = ldap_server_params.find(server);
-    if (it == ldap_server_params.end())
-        throw Exception("LDAP server '" + server + "' is not configured", ErrorCodes::BAD_ARGUMENTS);
+    auto it = ldap_client_params_blueprint.find(server_name);
+    if (it == ldap_client_params_blueprint.end())
+        throw Exception("LDAP server '" + server_name + "' is not configured", ErrorCodes::BAD_ARGUMENTS);
     return it->second;
+}
+
+void ExternalAuthenticators::setKerberosParams(const GSSAcceptorContext::Params & params)
+{
+    kerberos_params.reset();
+    kerberos_params = params;
+}
+
+GSSAcceptorContext::Params ExternalAuthenticators::getKerberosParams() const
+{
+    if (!kerberos_params.has_value())
+        throw Exception("Kerberos is not configured", ErrorCodes::BAD_ARGUMENTS);
+    return kerberos_params.value();
 }
 
 }

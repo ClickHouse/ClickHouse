@@ -92,6 +92,8 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
 class AccessControlManager;
+class Credentials;
+class GSSAcceptorContext;
 class SettingsConstraints;
 class RemoteHostFilter;
 struct StorageID;
@@ -245,8 +247,11 @@ public:
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
 
-    /// Sets external authenticators config (LDAP).
+    /// Sets external authenticators config (LDAP, Kerberos).
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
+
+    /// Creates GSSAcceptorContext instance based on external authenicator params.
+    std::unique_ptr<GSSAcceptorContext> makeGSSAcceptorContext() const;
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -255,9 +260,10 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user, checks the password and that the specified host is allowed.
-    /// Must be called before getClientInfo.
+    /// Sets the current user, checks the credentials and that the specified host is allowed.
+    /// Must be called before getClientInfo() can be called.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
+    void setUser(std::unique_ptr<Credentials> && credentials, const Poco::Net::SocketAddress & address);
     void setQuotaKey(String quota_key_);
 
     UserPtr getUser() const;

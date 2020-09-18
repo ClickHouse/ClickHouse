@@ -35,6 +35,8 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
+#include <Access/ExternalAuthenticators.h>
+#include <Access/GSSAcceptor.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -650,6 +652,12 @@ void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfigur
     shared->access_control_manager.setExternalAuthenticatorsConfig(config);
 }
 
+std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
+{
+    auto lock = getLock();
+    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager.getExternalAuthenticators().getKerberosParams());
+}
+
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
@@ -663,25 +671,39 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
+{
+    auto credentials = std::make_unique<BasicCredentials>();
+    credentials->setUserName(name);
+    credentials->setPassword(password);
+    return setUser(std::move(credentials), address);
+}
+
+void Context::setUser(std::unique_ptr<Credentials> && credentials, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
-    client_info.current_user = name;
-    client_info.current_address = address;
+    if (!credentials)
+        throw Exception("Authentication failed", ErrorCodes::AUTHENTICATION_FAILED);
 
 #if defined(ARCADIA_BUILD)
-    /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password = password;
+    if (auto * basic_credentials = dynamic_cast<BasicCredentials *>(credentials.get()))
+    {
+        /// This is harmful field that is used only in foreign "Arcadia" build.
+        client_info.current_password = basic_credentials->getPassword();
+    }
 #endif
 
-    auto new_user_id = getAccessControlManager().findOrGenerate<User>(name);
+    client_info.current_user = credentials->getUserName();
+    client_info.current_address = address;
+
+    auto new_user_id = getAccessControlManager().findOrGenerate<User>(client_info.current_user);
     std::shared_ptr<const ContextAccess> new_access;
+
     if (new_user_id)
     {
         new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, settings, current_database, client_info);
-        if (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(password))
+        if (!new_access->isClientHostAllowed() || !new_access->areCredentialsValid(std::move(credentials)))
         {
             new_user_id = {};
             new_access = nullptr;
@@ -689,7 +711,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
     }
 
     if (!new_user_id || !new_access)
-        throw Exception(name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
+        throw Exception(client_info.current_user + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 
     user_id = new_user_id;
     access = std::move(new_access);
