@@ -1498,7 +1498,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
     else
     {
-        // For the case of one continuous range of keys we use binary search algorithm
+        /// In case when SELECT's predicate defines a single continuous interval of keys,
+        /// we can use binary search algorithm to find the left and right endpoint key marks of such interval.
+        /// The returned value is the minumum range of marks, containing all keys for which KeyCondition holds
 
         LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part->name, marks_count);
 
@@ -1536,8 +1538,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         result_range.end = searched_right;
         LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
-
-        if (may_be_true_in_range(result_range))
+        if (result_range.begin < result_range.end && may_be_true_in_range(result_range))
             res.emplace_back(std::move(result_range));
 
         LOG_TRACE(log, "Found {} range in {} steps", res.empty() ? "empty" : "continuous", steps);
