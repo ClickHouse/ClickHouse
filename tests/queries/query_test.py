@@ -10,7 +10,7 @@ import sys
 
 def run_client(bin_prefix, port, query, reference, replace_map={}):
     client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode'],
-                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                              text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = client.communicate(query)
     assert client.returncode is not None, "Client should exit after processing all queries"
 
