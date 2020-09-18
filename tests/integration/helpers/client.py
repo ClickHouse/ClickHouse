@@ -1,8 +1,7 @@
-import errno
-import subprocess as sp
-from threading import Timer
-import tempfile
 import os
+import subprocess as sp
+import tempfile
+from threading import Timer
 
 
 class Client:
@@ -16,12 +15,13 @@ class Client:
 
         self.command += ['--host', self.host, '--port', str(self.port), '--stacktrace']
 
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
+              ignore_error=False):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user,
+                                      password=password, database=database, ignore_error=ignore_error).get_answer()
 
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None, ignore_error=False):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database, ignore_error=ignore_error).get_answer()
-
-
-    def get_query_request(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None, ignore_error=False):
+    def get_query_request(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
+                          ignore_error=False):
         command = self.command[:]
 
         if stdin is None:
@@ -45,13 +45,16 @@ class Client:
 
         return CommandRequest(command, stdin, timeout, ignore_error)
 
+    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None,
+                            database=None):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user,
+                                      password=password, database=database).get_error()
 
-    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database).get_error()
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None,
+                                        database=None):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user,
+                                      password=password, database=database).get_answer_and_error()
 
-
-    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database).get_answer_and_error()
 
 class QueryTimeoutExceedException(Exception):
     pass
@@ -90,7 +93,6 @@ class CommandRequest:
             self.timer = Timer(timeout, kill_process)
             self.timer.start()
 
-
     def get_answer(self):
         self.process.wait()
         self.stdout_file.seek(0)
@@ -103,10 +105,10 @@ class CommandRequest:
             raise QueryTimeoutExceedException('Client timed out!')
 
         if (self.process.returncode != 0 or stderr) and not self.ignore_error:
-            raise QueryRuntimeException('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
+            raise QueryRuntimeException(
+                'Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
 
         return stdout
-
 
     def get_error(self):
         self.process.wait()
@@ -123,7 +125,6 @@ class CommandRequest:
             raise QueryRuntimeException('Client expected to be failed but succeeded! stdout: {}'.format(stdout))
 
         return stderr
-
 
     def get_answer_and_error(self):
         self.process.wait()

@@ -3,10 +3,8 @@
   */
 {
     "thread-sanitizer": [
-        "00281",
         "00877",
         "00985",
-        "avx2",
         "query_profiler",
         "memory_profiler",
         /// 01083 and 00505 and 00505 are critical and temproray disabled
@@ -18,12 +16,11 @@
         "00152_insert_different_granularity",
         "00151_replace_partition_with_different_granularity",
         "00157_cache_dictionary",
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01474_executable_dictionary" /// informational stderr from sanitizer at start
     ],
     "address-sanitizer": [
-        "00281",
         "00877",
-        "avx2",
         "query_profiler",
         "memory_profiler",
         "odbc_roundtrip",
@@ -31,9 +28,7 @@
         "01193_metadata_loading"
     ],
     "ub-sanitizer": [
-        "00281",
         "capnproto",
-        "avx2",
         "query_profiler",
         "memory_profiler",
         "01103_check_cpu_instructions_at_startup",
@@ -41,9 +36,7 @@
         "01193_metadata_loading"
     ],
     "memory-sanitizer": [
-        "00281",
         "capnproto",
-        "avx2",
         "query_profiler",
         "memory_profiler",
         "01103_check_cpu_instructions_at_startup",
@@ -53,8 +46,6 @@
         "01193_metadata_loading"
     ],
     "debug-build": [
-        "00281",
-        "avx2",
         "query_profiler",
         "memory_profiler",
         "00899_long_attach",
@@ -70,12 +61,10 @@
     ],
     "unbundled-build": [
         "00429",
-        "00428",
         "00877",
         "pocopatch",
         "parquet",
         "xxhash",
-        "avx2",
         "_h3",
         "query_profiler",
         "memory_profiler",
@@ -98,33 +87,19 @@
         "01455_time_zones"
     ],
     "release-build": [
-        "avx2"
     ],
     "database-atomic": [
-        "00065_loyalty_with_storage_join",
-        "avx",
         /// Inner tables of materialized views have different names
         "00738_lock_for_inner_table",
-        "00699_materialized_view_mutations",
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
-        /// Create queries contain UUID
+        /// Different database engine
         "00604_show_create_database",
-        "00080_show_tables_and_system_tables",
-        "01272_suspicious_codecs",
         /// UUID must be specified in ATTACH TABLE
-        "01249_bad_arguments_for_bloom_filter",
-        "00423_storage_log_single_thread",
-        "00311_array_primary_key",
-        "00226_zookeeper_deduplication_and_unexpected_parts",
-        "00180_attach_materialized_view",
-        "00116_storage_set",
+        "01190_full_attach_syntax",
         /// Assumes blocking DROP
-        "00816_long_concurrent_alter_column",
-        "00992_system_parts_race_condition_zookeeper", /// FIXME
         "01320_create_sync_race_condition",
-        "01305_replica_create_drop_zookeeper",
-        "01130_in_memory_parts_partitons",
+        /// Internal distionary name is different
         "01225_show_create_table_from_dictionary",
         "01224_no_superfluous_dict_reload"
     ],
@@ -132,7 +107,6 @@
         /// These tests fail with compact parts, because they
         /// check some implementation defined things
         /// like checksums, computed granularity, ProfileEvents, etc.
-        "avx",
         "01045_order_by_pk_special_storages",
         "01042_check_query_and_last_granule_size",
         "00961_checksums_in_system_parts_columns_table",

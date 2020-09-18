@@ -1,7 +1,6 @@
 import logging
 import random
 import string
-import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -15,9 +14,12 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
 
-        cluster.add_instance("node1", main_configs=["configs/config.d/storage_conf.xml"], macros={'cluster': 'test1'}, with_minio=True, with_zookeeper=True)
-        cluster.add_instance("node2", main_configs=["configs/config.d/storage_conf.xml"], macros={'cluster': 'test1'}, with_zookeeper=True)
-        cluster.add_instance("node3", main_configs=["configs/config.d/storage_conf.xml"], macros={'cluster': 'test1'}, with_zookeeper=True)
+        cluster.add_instance("node1", main_configs=["configs/config.d/storage_conf.xml"], macros={'cluster': 'test1'},
+                             with_minio=True, with_zookeeper=True)
+        cluster.add_instance("node2", main_configs=["configs/config.d/storage_conf.xml"], macros={'cluster': 'test1'},
+                             with_zookeeper=True)
+        cluster.add_instance("node3", main_configs=["configs/config.d/storage_conf.xml"], macros={'cluster': 'test1'},
+                             with_zookeeper=True)
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -39,7 +41,7 @@ def random_string(length):
 
 
 def generate_values(date_str, count, sign=1):
-    data = [[date_str, sign*(i + 1), random_string(10)] for i in range(count)]
+    data = [[date_str, sign * (i + 1), random_string(10)] for i in range(count)]
     data.sort(key=lambda tup: tup[1])
     return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
 
@@ -87,7 +89,9 @@ def test_insert_select_replicated(cluster):
 
     for node_idx in range(1, 4):
         node = cluster.instances["node" + str(node_idx)]
-        assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values", settings={"select_sequential_consistency": 1}) == all_values
+        assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values",
+                          settings={"select_sequential_consistency": 1}) == all_values
 
     minio = cluster.minio_client
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 3 * (FILES_OVERHEAD + FILES_OVERHEAD_PER_PART * 3)
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 3 * (
+            FILES_OVERHEAD + FILES_OVERHEAD_PER_PART * 3)

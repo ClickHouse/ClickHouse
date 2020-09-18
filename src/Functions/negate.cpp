@@ -13,7 +13,14 @@ struct NegateImpl
 
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
+#if defined (__GNUC__) && __GNUC__ >= 10
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wvector-operation-performance"
+#endif
         return -static_cast<ResultType>(a);
+#if defined (__GNUC__) && __GNUC__ >= 10
+    #pragma GCC diagnostic pop
+#endif
     }
 
 #if USE_EMBEDDED_COMPILER

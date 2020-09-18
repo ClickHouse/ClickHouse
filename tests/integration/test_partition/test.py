@@ -3,7 +3,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance')
 q = instance.query
@@ -109,7 +108,6 @@ def partition_table_complex(started_cluster):
 
 
 def test_partition_complex(partition_table_complex):
-
     partition_complex_assert_columns_txt()
 
     q("ALTER TABLE test.partition FREEZE")
@@ -131,7 +129,7 @@ def test_partition_complex(partition_table_complex):
     expected = TSV('31\t1\t2\n'
                    '1\t2\t3')
     res = q("SELECT toUInt16(p), k, v1 FROM test.partition ORDER BY k")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
 
 @pytest.fixture
@@ -175,7 +173,7 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     path_to_detached = path_to_data + 'data/test/attach_partition/detached/'
     exec_bash('mkdir {}'.format(path_to_detached + '0_5_5_0'))
     exec_bash('cp -pr {} {}'.format(path_to_detached + '0_1_1_0', path_to_detached + 'attaching_0_6_6_0'))
-    exec_bash('cp -pr {} {}'.format(path_to_detached + '0_3_3_0', path_to_detached +  'deleting_0_7_7_0'))
+    exec_bash('cp -pr {} {}'.format(path_to_detached + '0_3_3_0', path_to_detached + 'deleting_0_7_7_0'))
 
     error = instance.client.query_and_get_error("ALTER TABLE test.attach_partition ATTACH PARTITION 0")
     assert 0 <= error.find('No columns in part 0_5_5_0')
@@ -224,15 +222,18 @@ def test_drop_detached_parts(drop_detached_parts_table):
     exec_bash('mkdir {}'.format(path_to_detached + 'any_other_name'))
     exec_bash('mkdir {}'.format(path_to_detached + 'prefix_1_2_2_0_0'))
 
-    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART '../1_2_2_0'", settings=s)
+    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART '../1_2_2_0'",
+                                                settings=s)
     assert 0 <= error.find('Invalid part name')
 
     q("ALTER TABLE test.drop_detached DROP DETACHED PART '0_1_1_0'", settings=s)
 
-    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'attaching_0_6_6_0'", settings=s)
+    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'attaching_0_6_6_0'",
+                                                settings=s)
     assert 0 <= error.find('Cannot drop part')
 
-    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'deleting_0_7_7_0'", settings=s)
+    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'deleting_0_7_7_0'",
+                                                settings=s)
     assert 0 <= error.find('Cannot drop part')
 
     q("ALTER TABLE test.drop_detached DROP DETACHED PART 'any_other_name'", settings=s)
