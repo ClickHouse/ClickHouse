@@ -4,7 +4,7 @@ import os
 import sys
 import tempfile
 
-from server import ServerThread
+from .server import ServerThread
 
 
 def pytest_addoption(parser):
