@@ -27,6 +27,8 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 
+#include <cassert>
+
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"
@@ -548,7 +550,7 @@ void StorageLog::loadMarks()
 
 void StorageLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    if (table_path != new_path_to_table_data)
+    assert(table_path != new_path_to_table_data);
     {
         std::unique_lock<std::shared_mutex> lock(rwlock);
 

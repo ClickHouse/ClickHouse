@@ -3,6 +3,7 @@
 #include <errno.h>
 
 #include <map>
+#include <cassert>
 
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -407,7 +408,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
 
 void StorageTinyLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    if (table_path != new_path_to_table_data)
+    assert(table_path != new_path_to_table_data);
     {
         std::unique_lock<std::shared_mutex> lock(rwlock);
 
