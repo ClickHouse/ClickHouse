@@ -67,6 +67,8 @@ private:
 
     bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
 
+    bool traverseFunction(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
+
     bool traverseASTIn(const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out);
 
     bool traverseASTIn(

@@ -222,9 +222,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
         }
     }
 
+    return traverseFunction(node, block_with_constants, out);
+}
+
+bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, Block & block_with_constants, RPNElement & out)
+{
+    bool maybe_useful = false;
+
     if (const auto * function = node->as<ASTFunction>())
     {
         const ASTs & arguments = function->arguments->children;
+        for (auto arg : arguments)
+        {
+            if (traverseFunction(arg, block_with_constants, out))
+                maybe_useful = true;
+        }
 
         if (arguments.size() != 2)
             return false;
@@ -232,20 +244,29 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
         if (functionIsInOrGlobalInOperator(function->name))
         {
             if (const auto & prepared_set = getPreparedSet(arguments[1]))
-                return traverseASTIn(function->name, arguments[0], prepared_set, out);
+            {
+                if (traverseASTIn(function->name, arguments[0], prepared_set, out))
+                    maybe_useful = true;
+            }
         }
-        else if (function->name == "equals" || function->name  == "notEquals" || function->name == "has")
+        else if (function->name == "equals" || function->name  == "notEquals" || function->name == "has" || function->name == "indexOf")
         {
             Field const_value;
             DataTypePtr const_type;
             if (KeyCondition::getConstant(arguments[1], block_with_constants, const_value, const_type))
-                return traverseASTEquals(function->name, arguments[0], const_type, const_value, out);
+            {
+                if (traverseASTEquals(function->name, arguments[0], const_type, const_value, out))
+                    maybe_useful = true;
+            }
             else if (KeyCondition::getConstant(arguments[0], block_with_constants, const_value, const_type))
-                return traverseASTEquals(function->name, arguments[1], const_type, const_value, out);
+            {
+                if (traverseASTEquals(function->name, arguments[1], const_type, const_value, out))
+                    maybe_useful = true;
+            }
         }
     }
 
-    return false;
+    return maybe_useful;
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
@@ -311,7 +332,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
-        if (function_name == "has")
+        if (function_name == "has" || function_name == "indexOf")
         {
             out.function = RPNElement::FUNCTION_HAS;
 
