@@ -788,6 +788,15 @@ void Pipe::setLimits(const StreamLocalLimits & limits)
     }
 }
 
+void Pipe::setLeafLimits(const SizeLimits & leaf_limits)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source_with_progress->setLeafLimits(leaf_limits);
+    }
+}
+
 void Pipe::setQuota(const std::shared_ptr<const EnabledQuota> & quota)
 {
     for (auto & processor : processors)
