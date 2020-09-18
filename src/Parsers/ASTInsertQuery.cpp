@@ -19,16 +19,6 @@ ASTInsertQuery::ASTInsertQuery(const StorageID & id)
     table = std::make_shared<ASTTableIdentifier>(id);
 }
 
-String ASTInsertQuery::getID(char delim) const
-{
-    if (table)
-        return "InsertQuery" + (delim + table->as<ASTTableIdentifier>()->getDatabaseName()) + delim
-            + table->as<ASTTableIdentifier>()->getTableName();
-    else if (table_function)
-        return "InsertQuery" + (delim + table_function->getID(delim));
-    __builtin_unreachable();
-}
-
 void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;

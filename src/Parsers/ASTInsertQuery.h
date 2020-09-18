@@ -34,7 +34,11 @@ public:
     void tryFindInputFunction(ASTPtr & input_function) const;
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override;
+    String getID(char delim) const override
+    {
+        return "InsertQuery" + (delim + table->as<ASTTableIdentifier>()->getDatabaseName()) + delim
+            + table->as<ASTTableIdentifier>()->getTableName();
+    }
 
     ASTPtr clone() const override
     {
