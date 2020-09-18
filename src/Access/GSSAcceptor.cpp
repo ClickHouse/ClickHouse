@@ -153,7 +153,7 @@ std::pair<String, String> extractKerberosNameAndRealm(gss_name_t name)
     };
 }
 
-String getMechanismName(gss_OID mech_type)
+String getMechanismAsString(gss_OID mech_type)
 {
     std::scoped_lock lock(gss_global_mutex);
 
@@ -179,6 +179,41 @@ String getMechanismName(gss_OID mech_type)
     );
 
     return bufferToString(mechanism_buf);
+}
+
+bool isSameMechanims(const String & left_str, gss_OID right_oid)
+{
+    std::scoped_lock lock(gss_global_mutex);
+
+    gss_buffer_desc left_buf;
+    left_buf.length = left_str.size();
+    left_buf.value = const_cast<char *>(left_str.c_str());
+
+    gss_OID left_oid = GSS_C_NO_OID;
+
+    SCOPE_EXIT({
+        if (left_oid != GSS_C_NO_OID)
+        {
+            OM_uint32 minor_status = 0;
+            [[maybe_unused]] OM_uint32 major_status = gss_release_oid(
+                &minor_status,
+                &left_oid
+            );
+            left_oid = GSS_C_NO_OID;
+        }
+    });
+
+    OM_uint32 minor_status = 0;
+    OM_uint32 major_status = gss_str_to_oid(
+        &minor_status,
+        &left_buf,
+        &left_oid
+    );
+
+    if (GSS_ERROR(major_status))
+        return false;
+
+    return getMechanismAsString(left_oid) == getMechanismAsString(right_oid);
 }
 
 } // namespace
@@ -347,7 +382,6 @@ String GSSAcceptorContext::processToken(const String & input_token)
         {
             output_token = bufferToString(output_token_buf);
             std::tie(user_name, realm) = extractKerberosNameAndRealm(initiator_name);
-            const auto mechanism = getMechanismName(mech_type);
 
             is_ready = true;
             is_failed = (
@@ -355,9 +389,8 @@ String GSSAcceptorContext::processToken(const String & input_token)
                 !(flags & GSS_C_PROT_READY_FLAG) ||
                 user_name.empty() ||
                 realm.empty() ||
-                (!params.realm.empty() && realm != params.realm) ||
-                mechanism.empty() ||
-                (!params.mechanism.empty() && mechanism != params.mechanism)
+                (!params.realm.empty() && params.realm != realm) ||
+                (!params.mechanism.empty() && isSameMechanims(params.mechanism, mech_type))
             );
             resetHandles();
         }
