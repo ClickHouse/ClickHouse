@@ -154,17 +154,11 @@ void CacheDictionary::getItemsNumberImpl(
     {
         const auto attribute_value = attribute_array[cell_idx];
 
-        auto cache_not_found_it = cache_not_found_ids.find(id);
+        for (const size_t row : cache_not_found_ids[id])
+            out[row] = static_cast<OutputType>(attribute_value);
 
-        if (cache_not_found_it != cache_not_found_ids.end())
-            for (const size_t row : cache_not_found_it->second)
-                out[row] = static_cast<OutputType>(attribute_value);
-
-        auto cache_expired_it = cache_expired_ids.find(id);
-
-        if (cache_expired_it != cache_expired_ids.end())
-            for (const size_t row : cache_expired_it->second)
-                out[row] = static_cast<OutputType>(attribute_value);
+        for (const size_t row : cache_expired_ids[id])
+            out[row] = static_cast<OutputType>(attribute_value);
     };
 
     auto on_id_not_found = [&] (auto, auto) {};
