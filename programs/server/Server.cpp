@@ -672,7 +672,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     ///
     /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
     ///
-#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
+#if ENABLE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -696,7 +696,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Describe multiple reasons when query profiler cannot work.
 
-#if !USE_UNWIND
+#if !ENABLE_UNWIND
     LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind (stack unwinding) library.");
 #endif
 

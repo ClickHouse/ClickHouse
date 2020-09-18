@@ -26,13 +26,7 @@ Even better:
 ```cmake
 # implies ${TESTS_ARE_ENABLED}
 # see tests/CMakeLists.txt for implementation detail.
-option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests")
-```
-
-Note that the default value (`OFF`) can be omitted if you provide a description, e.g.
-
-```
-option(MYOPTION "My description")
+option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests" OFF)
 ```
 
 ### If the option's state could produce unwanted (or unusual) result, explicitly warn the user.
@@ -85,7 +79,7 @@ Better:
 ```cmake
 # Only applicable for clang.
 # Turned off when building with tests or sanitizers.
-option(ENABLE_THINLTO ON).
+option(ENABLE_THINLTO "Clang-specific link time optimisation" ON).
 ```
 
 ### Don't assume other developers know as much as you do.
@@ -105,7 +99,7 @@ Better (combined with the above hint):
 # https://clang.llvm.org/docs/ThinLTO.html
 # Only applicable for clang.
 # Turned off when building with tests or sanitizers.
-option(ENABLE_THINLTO ON).
+option(ENABLE_THINLTO "Clang-specific link time optimisation" ON).
 ```
 
 Other example, bad:
@@ -118,13 +112,10 @@ Better:
 
 ```cmake
 # https://github.com/include-what-you-use/include-what-you-use
-option (USE_INCLUDE_WHAT_YOU_USE)
+option (USE_INCLUDE_WHAT_YOU_USE "Reduce unneeded #include s (external tool)" OFF)
 ```
 
 ### Prefer consistent default values.
 
 CMake allows you to pass a plethora of values representing boolean `true/false`, e.g. `1, ON, YES, ...`.
 Prefer the `ON/OFF` values, if possible.
-
-
-

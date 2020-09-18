@@ -16,8 +16,14 @@ ch_master_url: str = "https://github.com/clickhouse/clickhouse/blob/master/"
 name_str: str = "<a name=\"{anchor}\"></a>[`{name}`](" + ch_master_url + "{path}#L{line})"
 default_anchor_str: str = "[`{name}`](#{anchor})"
 
+table_header: str = """
+| Name | Default value | Description | Comment |
+|------|---------------|-------------|---------|
+"""
+
 # Needed to detect conditional variables (those which are defined twice)
-entities: Dict[str, str] = {}
+# name -> (path, values)
+entities: Dict[str, Tuple[str, str]] = {}
 
 
 def make_anchor(t: str) -> str:
@@ -51,7 +57,7 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str], **opt
     else:
         description: str = "".join(_description.split("\n")) + " | "
 
-    entities[name] = "| " + name + " | " + default + " | " + description + comment + " |"
+    entities[_name] = path, "| " + name + " | " + default + " | " + description + comment + " |"
 
 def process_file(input_name: str, **options) -> None:
     with open(input_name, 'r') as cmake_file:
@@ -97,8 +103,34 @@ def process() -> None:
         with open(header_file_name, "r") as header:
             f.write(header.read())
 
-        for k in sorted(entities.keys()):
-            f.write(entities[k] + "\n")
+        sorted_keys: List[str] = sorted(entities.keys())
+        ignored_keys: List[str] = []
+
+        f.write("### ClickHouse modes\n" + table_header)
+
+        for k in sorted_keys:
+            if k.startswith("ENABLE_CLICKHOUSE_"):
+                f.write(entities[k][1] + "\n")
+                ignored_keys.append(k)
+
+        f.write("### External libraries\n" + table_header)
+
+        for k in sorted_keys:
+            if k.startswith("ENABLE_") and entities[k][0].startswith("cmake"):
+                f.write(entities[k][1] + "\n")
+                ignored_keys.append(k)
+
+        f.write("### External libraries system/bundled mode\n" + table_header)
+
+        for k in sorted_keys:
+            if k.startswith("USE_INTERNAL_"):
+                f.write(entities[k][1] + "\n")
+                ignored_keys.append(k)
+
+        f.write("### Other flags\n" + table_header)
+
+        for k in sorted(set(sorted_keys).difference(set(ignored_keys))):
+            f.write(entities[k][1] + "\n")
 
         with open(footer_file_name, "r") as footer:
             f.write(footer.read())
