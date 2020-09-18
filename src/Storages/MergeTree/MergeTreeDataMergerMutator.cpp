@@ -1080,8 +1080,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     context_for_reading.setSetting("max_streams_to_max_threads_ratio", 1);
     context_for_reading.setSetting("max_threads", 1);
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
-    context_for_reading.setSetting("force_index_by_date", 0);
-    context_for_reading.setSetting("force_primary_key", 0);
+    context_for_reading.setSetting("force_index_by_date", Field(0));
+    context_for_reading.setSetting("force_primary_key", Field(0));
 
     MutationCommands commands_for_part;
     for (const auto & command : commands)
