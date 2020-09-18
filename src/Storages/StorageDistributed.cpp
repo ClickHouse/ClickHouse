@@ -876,10 +876,9 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
     for (const DiskPtr & disk : data_volume->getDisks())
     {
-        const String path(disk->getPath());
-        auto new_path = path + new_path_to_table_data;
-        disk->moveDirectory(path + relative_data_path, new_path);
+        disk->moveDirectory(relative_data_path, new_path_to_table_data);
 
+        auto new_path = disk->getPath() + new_path_to_table_data;
         LOG_DEBUG(log, "Updating path to {}", new_path);
 
         std::lock_guard lock(cluster_nodes_mutex);
