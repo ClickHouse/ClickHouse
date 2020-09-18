@@ -16,7 +16,7 @@
 #    include <Common/config.h>
 #endif
 
-#if ENABLE_SENTRY
+#if USE_SENTRY
 
 #    include <sentry.h> // Y_IGNORE
 #    include <stdio.h>

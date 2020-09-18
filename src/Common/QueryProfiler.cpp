@@ -163,7 +163,7 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
-#if ENABLE_UNWIND
+#if USE_UNWIND
     if (timer_id != nullptr && timer_delete(timer_id))
         LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
 

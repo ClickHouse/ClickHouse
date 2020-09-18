@@ -105,7 +105,7 @@ endif()
 
 target_link_libraries(clickhouse_functions PRIVATE hyperscan)
 
-if(ENABLE_SIMDJSON)
+if(USE_SIMDJSON)
     target_link_libraries(clickhouse_functions PRIVATE simdjson)
 endif()
 

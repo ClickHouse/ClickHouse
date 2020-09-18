@@ -4,7 +4,7 @@
 #    include "config_functions.h"
 #endif
 
-#if ENABLE_SIMDJSON
+#if USE_SIMDJSON
 #    include <common/types.h>
 #    include <Common/Exception.h>
 #    include <common/defines.h>

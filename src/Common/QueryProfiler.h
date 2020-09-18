@@ -40,7 +40,7 @@ private:
 
     Poco::Logger * log;
 
-#if ENABLE_UNWIND
+#if USE_UNWIND
     /// Timer id from timer_create(2)
     timer_t timer_id = nullptr;
 #endif
