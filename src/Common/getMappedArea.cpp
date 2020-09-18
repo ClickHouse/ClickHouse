@@ -1,10 +1,10 @@
 #include "getMappedArea.h"
+#include <Common/Exception.h>
 
 #if defined(__linux__)
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/hex.h>
-#include <Common/Exception.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 
