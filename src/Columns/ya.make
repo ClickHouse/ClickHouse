@@ -2,8 +2,6 @@
 LIBRARY()
 
 ADDINCL(
-    contrib/libs/icu/common
-    contrib/libs/icu/i18n
     contrib/libs/pdqsort
 )
 

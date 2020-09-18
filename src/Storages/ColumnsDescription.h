@@ -106,6 +106,7 @@ public:
 
     Names getNamesOfPhysical() const;
     bool hasPhysical(const String & column_name) const;
+    bool hasPhysicalOrSubcolumn(const String & column_name) const;
     NameAndTypePair getPhysical(const String & column_name) const;
     NameAndTypePair getPhysicalOrSubcolumn(const String & column_name) const;
 
@@ -142,6 +143,7 @@ private:
     Container columns;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
+    std::optional<NameAndTypePair> tryGetPhysicalOrSubcolumn(const String & column_name) const;
 };
 
 /// Validate default expressions and corresponding types compatibility, i.e.

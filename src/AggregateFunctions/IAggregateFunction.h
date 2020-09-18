@@ -5,7 +5,7 @@
 #include <vector>
 #include <type_traits>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Block.h>
 #include <Common/Exception.h>
