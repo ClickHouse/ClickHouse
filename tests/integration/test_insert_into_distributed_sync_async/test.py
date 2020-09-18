@@ -1,4 +1,3 @@
-#!/usr/bin/env python2
 import os
 import sys
 from contextlib import contextmanager

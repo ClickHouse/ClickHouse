@@ -1,5 +1,5 @@
-#!/usr/bin/env python2
-from __future__ import print_function
+#!/usr/bin/env python3
+
 import sys
 import os
 import os.path
@@ -23,7 +23,7 @@ try:
 except ImportError:
     termcolor = None
 from random import random
-import commands
+import subprocess
 import multiprocessing
 from contextlib import closing
 
@@ -99,7 +99,7 @@ def remove_control_characters(s):
     """
     def str_to_int(s, default, base=10):
         if int(s, base) < 0x10000:
-            return unichr(int(s, base))
+            return chr(int(s, base))
         return default
     s = re.sub(r"&#(\d+);?", lambda c: str_to_int(c.group(1), c.group(0)), s)
     s = re.sub(r"&#[xX]([0-9a-fA-F]+);?", lambda c: str_to_int(c.group(1), c.group(0), base=16), s)
@@ -167,9 +167,9 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
 
     stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
-    stdout = unicode(stdout, errors='replace', encoding='utf-8')
+    stdout = str(stdout, errors='replace', encoding='utf-8')
     stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
-    stderr = unicode(stderr, errors='replace', encoding='utf-8')
+    stderr = str(stderr, errors='replace', encoding='utf-8')
 
     return proc, stdout, stderr, total_time
 
@@ -565,7 +565,7 @@ def main(args):
         stop_time = time() + args.global_time_limit
 
     if args.zookeeper is None:
-        code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
+        code, out = subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
             if int(out) > 0:
                 args.zookeeper = True
@@ -575,7 +575,7 @@ def main(args):
             args.zookeeper = False
 
     if args.shard is None:
-        code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
+        code, out = subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
         if out:
             args.shard = True
         else:
@@ -653,7 +653,7 @@ def main(args):
                     return 99997
 
             all_tests = os.listdir(suite_dir)
-            all_tests = filter(lambda case: is_test_from_dir(suite_dir, case), all_tests)
+            all_tests = [case for case in all_tests if is_test_from_dir(suite_dir, case)]
             if args.test:
                 all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
             all_tests.sort(key=key_func)
