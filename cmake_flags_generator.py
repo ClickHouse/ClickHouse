@@ -116,7 +116,7 @@ def process() -> None:
         f.write("### External libraries\n" + table_header)
 
         for k in sorted_keys:
-            if (k.startswith("ENABLE_") or k.startswith("USE_")) and entities[k][0].startswith("cmake"):
+            if k.startswith("ENABLE_") and entities[k][0].startswith("cmake"):
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 
