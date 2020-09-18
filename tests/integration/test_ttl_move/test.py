@@ -1112,9 +1112,6 @@ limitations under the License."""
 ])
 def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
     try:
-        node1.query("SYSTEM STOP MOVES")
-        node2.query("SYSTEM STOP MOVES")
-
         node1.query("""
             CREATE TABLE {name} (
                 s1 String,
@@ -1124,6 +1121,8 @@ def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
             TTL d1 TO {dest_type} 'external'
             SETTINGS storage_policy='jbod_without_instant_ttl_move'
         """.format(name=name, dest_type=dest_type, engine=engine))
+
+        node1.query("SYSTEM STOP MOVES {}".format(name))
 
         data = []  # 10MB in total
         for i in range(10):
@@ -1136,8 +1135,7 @@ def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
         assert set(used_disks) == {"jbod1"}
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
 
-        node1.query("SYSTEM START MOVES")
-        node2.query("SYSTEM START MOVES")
+        node1.query("SYSTEM START MOVES {}").format(name)
         time.sleep(3)
 
         used_disks = get_used_disks_for_table(node1, name)
