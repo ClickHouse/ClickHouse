@@ -240,6 +240,7 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
+        String name;
         AttributeValue null_values;
         std::variant<
             ContainerPtrType<UInt8>,
@@ -262,14 +263,14 @@ private:
 
     void createAttributes();
 
-    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
-    void getItemsNumberImpl(const std::string & attribute_name, 
+    void getItemsNumberImpl( 
         Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
 
     template <typename DefaultGetter>
-    void getItemsString(const std::string & attribute_name, Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
+    void getItemsString(Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
 
     PaddedPODArray<Key> getCachedIds() const;
 
