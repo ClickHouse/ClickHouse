@@ -139,7 +139,6 @@ static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
-
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 {
     std::lock_guard lock(current_zookeeper_mutex);
@@ -202,7 +201,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, global_context.getSettingsRef().background_pool_size)
-    , queue(*this)
+    , merge_strategy_picker(*this)
+    , queue(*this, merge_strategy_picker)
     , fetcher(*this)
     , background_executor(*this, global_context)
     , background_moves_executor(*this, global_context)
@@ -1358,6 +1358,16 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         LOG_INFO(log, "Will try to fetch part {} until '{}' because this part assigned to recompression merge. "
             "Source replica {} will try to merge this part first", entry.new_part_name,
             LocalDateTime(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
+        return false;
+    }
+
+    /// In some use cases merging can be more expensive than fetching
+    /// and it may be better to spread merges tasks across the replicas
+    /// instead of doing exactly the same merge cluster-wise
+    auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+    if (replica_to_execute_merge)
+    {
+        LOG_DEBUG(log, "Prefer fetching part {} from replica {} due execute_merges_on_single_replica_time_threshold", entry.new_part_name, replica_to_execute_merge.value());
         return false;
     }
 
@@ -3011,6 +3021,11 @@ void StorageReplicatedMergeTree::exitLeaderElection()
     leader_election = nullptr;
 }
 
+bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, const String & part_name)
+{
+    auto zookeeper = getZooKeeper();
+    return zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name);
+}
 
 String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active)
 {
@@ -3026,7 +3041,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
         if (replica == replica_name)
             continue;
 
-        if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name) &&
+        if (checkReplicaHavePart(replica, part_name) &&
             (!active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active")))
             return replica;
 
@@ -4015,6 +4030,8 @@ void StorageReplicatedMergeTree::alter(
         /// Also we don't upgrade alter lock to table structure lock.
         StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
         commands.apply(future_metadata, query_context);
+
+        merge_strategy_picker.refreshState();
 
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
