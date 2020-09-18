@@ -52,10 +52,10 @@ RUN apt-get update \
         moreutils \
         ninja-build \
         psmisc \
-        python \
-        python-lxml \
-        python-requests \
-        python-termcolor \
+        python3 \
+        python3-lxml \
+        python3-requests \
+        python3-termcolor \
         qemu-user-static \
         rename \
         software-properties-common \

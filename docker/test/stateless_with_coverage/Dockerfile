@@ -14,10 +14,10 @@ RUN apt-get update -y \
             zookeeper \
             zookeeperd \
             expect \
-            python \
-            python-lxml \
-            python-termcolor \
-            python-requests \
+            python3 \
+            python3-lxml \
+            python3-termcolor \
+            python3-requests \
             sudo \
             openssl \
             ncdu \

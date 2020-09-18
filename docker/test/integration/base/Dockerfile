@@ -4,7 +4,7 @@ FROM ubuntu:19.10
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get -y install \
         tzdata \
-        python \
+        python3 \
         libreadline-dev \
         libicu-dev \
         bsdutils \

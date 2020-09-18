@@ -12,10 +12,10 @@ RUN apt-get update -y \
             ncdu \
             netcat-openbsd \
             openssl \
-            python \
-            python-lxml \
-            python-requests \
-            python-termcolor \
+            python3 \
+            python3-lxml \
+            python3-requests \
+            python3-termcolor \
             qemu-user-static \
             sudo \
             telnet \
