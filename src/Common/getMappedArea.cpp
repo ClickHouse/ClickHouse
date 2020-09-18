@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -69,7 +68,12 @@ std::pair<void *, size_t> getMappedArea(void * ptr)
 namespace DB
 {
 
-std::pair<void *, size_t> getMappedArea(void * ptr)
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+std::pair<void *, size_t> getMappedArea(void *)
 {
     throw Exception("The function getMappedArea is implemented only for Linux", ErrorCodes::NOT_IMPLEMENTED);
 }
