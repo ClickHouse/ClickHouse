@@ -30,6 +30,20 @@ CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     setCodecDescription("", arguments);
 }
 
+
+CompressionCodecPtr CompressionCodecMultiple::filterNonGeneralCompressionCodecs(const CompressionCodecMultiple * codec)
+{
+    Codecs filtered;
+    for (const auto & subcodec : codec->codecs)
+        if (!subcodec->isGenericCompression())
+            filtered.push_back(subcodec);
+
+    if (filtered.empty())
+        return nullptr;
+
+    return std::make_shared<CompressionCodecMultiple>(filtered);
+}
+
 uint8_t CompressionCodecMultiple::getMethodByte() const
 {
     return static_cast<uint8_t>(CompressionMethodByte::Multiple);
