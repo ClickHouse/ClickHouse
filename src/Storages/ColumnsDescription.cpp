@@ -185,6 +185,7 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         insert_it = range.second;
     }
 
+    addSubcolumns(NameAndTypePair(column.name, column.type));
     columns.get<0>().insert(insert_it, std::move(column));
 }
 
@@ -339,7 +340,8 @@ NamesAndTypesList ColumnsDescription::getAllWithSubcolumns() const
 
 bool ColumnsDescription::has(const String & column_name) const
 {
-    return columns.get<1>().find(column_name) != columns.get<1>().end();
+    return columns.get<1>().find(column_name) != columns.get<1>().end()
+        || subcolumns.find(column_name) != subcolumns.end();
 }
 
 bool ColumnsDescription::hasNested(const String & column_name) const
@@ -385,42 +387,21 @@ NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) cons
     return NameAndTypePair(it->name, it->type);
 }
 
-std::optional<NameAndTypePair> ColumnsDescription::tryGetPhysicalOrSubcolumn(const String & column_name) const
-{
-    auto it = columns.get<1>().find(column_name);
-    if (it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias)
-        return NameAndTypePair(it->name, it->type);
-
-    std::optional<NameAndTypePair> res;
-    for (const auto & storage_column : columns)
-    {
-        if (startsWith(column_name, storage_column.name))
-        {
-            ReadBufferFromString buf(column_name);
-            if (checkString(storage_column.name, buf) && checkChar('.', buf))
-            {
-                String subcolumn_name;
-                readString(subcolumn_name, buf);
-                auto subcolumn_type = storage_column.type->getSubcolumnType(subcolumn_name);
-                if (subcolumn_type)
-                {
-                    res.emplace(storage_column.name, subcolumn_name, storage_column.type, subcolumn_type);
-                    break;
-                }
-            }
-        }
-    }
-
-    return res;
-}
-
 NameAndTypePair ColumnsDescription::getPhysicalOrSubcolumn(const String & column_name) const
 {
-    auto res = tryGetPhysicalOrSubcolumn(column_name);
-    if (!res)
-        throw Exception("There is no physical column or subcolumn " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+    if (auto it = columns.get<1>().find(column_name); it != columns.get<1>().end()
+        && it->default_desc.kind != ColumnDefaultKind::Alias)
+    {
+        return NameAndTypePair(it->name, it->type);
+    }
 
-    return *res;
+    if (auto it = subcolumns.find(column_name); it != subcolumns.end())
+    {
+        return it->second;
+    }
+
+    throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+        "There is no physical column or subcolumn {} in table.", column_name);
 }
 
 bool ColumnsDescription::hasPhysical(const String & column_name) const
@@ -431,7 +412,7 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
 
 bool ColumnsDescription::hasPhysicalOrSubcolumn(const String & column_name) const
 {
-    return tryGetPhysicalOrSubcolumn(column_name) != std::nullopt;
+    return hasPhysical(column_name) || subcolumns.find(column_name) != subcolumns.end();
 }
 
 ColumnDefaults ColumnsDescription::getDefaults() const
@@ -521,13 +502,27 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
         ColumnDescription column;
         column.readText(buf);
         buf.ignore(1); /// ignore new line
-        result.add(std::move(column));
+        result.add(column);
     }
 
     assertEOF(buf);
     return result;
 }
 
+void ColumnsDescription::addSubcolumns(NameAndTypePair storage_column)
+{
+    for (const auto & subcolumn_name : storage_column.type->getSubcolumnNames())
+    {
+        auto subcolumn = NameAndTypePair(storage_column.name, subcolumn_name,
+            storage_column.type, storage_column.type->getSubcolumnType(subcolumn_name));
+
+        if (has(subcolumn.name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
+
+        subcolumns[subcolumn.name] = subcolumn;
+    }
+}
 
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context)
 {

@@ -142,8 +142,11 @@ public:
 private:
     Container columns;
 
+    using SubcolumnsContainer = std::unordered_map<String, NameAndTypePair>;
+    SubcolumnsContainer subcolumns;
+
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
-    std::optional<NameAndTypePair> tryGetPhysicalOrSubcolumn(const String & column_name) const;
+    void addSubcolumns(NameAndTypePair storage_column);
 };
 
 /// Validate default expressions and corresponding types compatibility, i.e.
