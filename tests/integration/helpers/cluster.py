@@ -763,6 +763,16 @@ class ClickHouseCluster:
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
 
+    def stop_zookeeper_nodes(self, zk_nodes):
+        for n in zk_nodes:
+            logging.info("Stopping zookeeper node: %s", n)
+            subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
+
+    def start_zookeeper_nodes(self, zk_nodes):
+        for n in zk_nodes:
+            logging.info("Starting zookeeper node: %s", n)
+            subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
+
 
 CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-server/config.xml --log-file=/var/log/clickhouse-server/clickhouse-server.log --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
 
