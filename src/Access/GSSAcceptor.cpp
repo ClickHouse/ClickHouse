@@ -119,7 +119,7 @@ String extractStatusMessages(OM_uint32 major_status_code, OM_uint32 minor_status
     return messages;
 }
 
-std::pair<String, String> extracNameAndRealmHostBased(gss_name_t name)
+std::pair<String, String> extractNameAndRealmHostBased(gss_name_t name)
 {
     std::scoped_lock lock(gss_global_mutex);
 
@@ -381,7 +381,7 @@ String GSSAcceptorContext::processToken(const String & input_token)
         else if (!GSS_ERROR(major_status) && (major_status & GSS_S_COMPLETE))
         {
             output_token = bufferToString(output_token_buf);
-            std::tie(user_name, realm) = extracNameAndRealmHostBased(initiator_name);
+            std::tie(user_name, realm) = extractNameAndRealmHostBased(initiator_name);
 
             is_ready = true;
             is_failed = (
