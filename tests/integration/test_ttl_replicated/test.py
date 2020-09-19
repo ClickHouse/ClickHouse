@@ -29,7 +29,7 @@ def drop_table(nodes, table_name):
         node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
     time.sleep(1)
 
-
+# Column TTL works only with wide parts, because it's very expensive to apply it for compact parts
 def test_ttl_columns(started_cluster):
     drop_table([node1, node2], "test_ttl")
     for node in [node1, node2]:
@@ -37,7 +37,7 @@ def test_ttl_columns(started_cluster):
             '''
                 CREATE TABLE test_ttl(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
-                ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0;
+                ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0, min_bytes_for_wide_part=0;
             '''.format(replica=node.name))
 
     node1.query("INSERT INTO test_ttl VALUES (toDateTime('2000-10-10 00:00:00'), 1, 1, 3)")
@@ -58,7 +58,8 @@ def test_merge_with_ttl_timeout(started_cluster):
             '''
                 CREATE TABLE {table}(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}', '{replica}')
-                ORDER BY id PARTITION BY toDayOfMonth(date);
+                ORDER BY id PARTITION BY toDayOfMonth(date)
+                SETTINGS min_bytes_for_wide_part=0;
             '''.format(replica=node.name, table=table))
 
     node1.query("SYSTEM STOP TTL MERGES {table}".format(table=table))
@@ -204,7 +205,7 @@ def test_ttl_double_delete_rule_returns_error(started_cluster):
             CREATE TABLE test_ttl(date DateTime, id UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
             ORDER BY id PARTITION BY toDayOfMonth(date)
-            TTL date + INTERVAL 1 DAY, date + INTERVAL 2 DAY SETTINGS merge_with_ttl_timeout=0;
+            TTL date + INTERVAL 1 DAY, date + INTERVAL 2 DAY SETTINGS merge_with_ttl_timeout=0
         '''.format(replica=node1.name))
         assert False
     except client.QueryRuntimeException:
@@ -254,6 +255,7 @@ limitations under the License."""
             ) ENGINE = {engine}
             ORDER BY tuple()
             TTL d1 + INTERVAL 1 DAY DELETE
+            SETTINGS min_bytes_for_wide_part=0
         """.format(name=name, engine=engine))
 
     node1.query("""ALTER TABLE {name} MODIFY COLUMN s1 String TTL d1 + INTERVAL 1 SECOND""".format(name=name))
