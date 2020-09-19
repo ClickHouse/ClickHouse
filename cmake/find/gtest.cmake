@@ -1,9 +1,4 @@
-if (NOT ENABLE_TESTS)
-    if(USE_INTERNAL_GTEST_LIBRARY)
-        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal Google Test when ENABLE_TESTS=OFF")
-    endif()
-    return()
-endif()
+# included only if ENABLE_TESTS=1
 
 option (USE_INTERNAL_GTEST_LIBRARY "Set to FALSE to use system Google Test instead of bundled" ${NOT_UNBUNDLED})
 
