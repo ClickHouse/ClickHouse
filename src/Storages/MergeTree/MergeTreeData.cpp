@@ -511,7 +511,7 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
     {
         for (const auto & move_ttl : new_table_ttl.move_ttl)
         {
-            if (!getDestinationForTTL(move_ttl))
+            if (!getDestinationForMoveTTL(move_ttl))
             {
                 String message;
                 if (move_ttl.destination_type == DataDestinationType::DISK)
@@ -2990,11 +2990,12 @@ ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, SpacePtr spa
 ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move,
-        size_t min_volume_index) const
+        size_t min_volume_index,
+        bool is_insert) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move, min_volume_index);
+    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move, min_volume_index, is_insert);
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
@@ -3002,24 +3003,27 @@ ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_siz
 ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move,
-        size_t min_volume_index) const
+        size_t min_volume_index,
+        bool is_insert) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     ReservationPtr reservation;
 
-    auto ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_move, true);
+    auto move_ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_move, true);
 
-    if (ttl_entry)
+    if (move_ttl_entry)
     {
-        SpacePtr destination_ptr = getDestinationForTTL(*ttl_entry);
+        SpacePtr destination_ptr = getDestinationForMoveTTL(*move_ttl_entry, is_insert);
         if (!destination_ptr)
         {
-            if (ttl_entry->destination_type == DataDestinationType::VOLUME)
-                LOG_WARNING(log, "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found", ttl_entry->destination_name, log_name);
-            else if (ttl_entry->destination_type == DataDestinationType::DISK)
-                LOG_WARNING(log, "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found", ttl_entry->destination_name, log_name);
+            if (move_ttl_entry->destination_type == DataDestinationType::VOLUME)
+                LOG_WARNING(log, "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found or rule is not applicable at the moment",
+                    move_ttl_entry->destination_name, log_name);
+            else if (move_ttl_entry->destination_type == DataDestinationType::DISK)
+                LOG_WARNING(log, "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found or rule is not applicable at the moment",
+                    move_ttl_entry->destination_name, log_name);
         }
         else
         {
@@ -3027,10 +3031,12 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
             if (reservation)
                 return reservation;
             else
-                if (ttl_entry->destination_type == DataDestinationType::VOLUME)
-                    LOG_WARNING(log, "Would like to reserve space on volume '{}' by TTL rule of table '{}' but there is not enough space", ttl_entry->destination_name, log_name);
-                else if (ttl_entry->destination_type == DataDestinationType::DISK)
-                    LOG_WARNING(log, "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space", ttl_entry->destination_name, log_name);
+                if (move_ttl_entry->destination_type == DataDestinationType::VOLUME)
+                    LOG_WARNING(log, "Would like to reserve space on volume '{}' by TTL rule of table '{}' but there is not enough space",
+                    move_ttl_entry->destination_name, log_name);
+                else if (move_ttl_entry->destination_type == DataDestinationType::DISK)
+                    LOG_WARNING(log, "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space",
+                        move_ttl_entry->destination_name, log_name);
         }
     }
 
@@ -3039,13 +3045,36 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
     return reservation;
 }
 
-SpacePtr MergeTreeData::getDestinationForTTL(const TTLDescription & ttl) const
+SpacePtr MergeTreeData::getDestinationForMoveTTL(const TTLDescription & move_ttl, bool is_insert) const
 {
     auto policy = getStoragePolicy();
-    if (ttl.destination_type == DataDestinationType::VOLUME)
-        return policy->getVolumeByName(ttl.destination_name);
-    else if (ttl.destination_type == DataDestinationType::DISK)
-        return policy->getDiskByName(ttl.destination_name);
+    if (move_ttl.destination_type == DataDestinationType::VOLUME)
+    {
+        auto volume = policy->getVolumeByName(move_ttl.destination_name);
+
+        if (!volume)
+            return {};
+
+        if (is_insert && !volume->perform_ttl_move_on_insert)
+            return {};
+
+        return volume;
+    }
+    else if (move_ttl.destination_type == DataDestinationType::DISK)
+    {
+        auto disk = policy->getDiskByName(move_ttl.destination_name);
+        if (!disk)
+            return {};
+
+        auto volume = policy->getVolume(policy->getVolumeIndexByDisk(disk));
+        if (!volume)
+            return {};
+
+        if (is_insert && !volume->perform_ttl_move_on_insert)
+            return {};
+
+        return disk;
+    }
     else
         return {};
 }
