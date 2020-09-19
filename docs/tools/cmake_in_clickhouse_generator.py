@@ -8,7 +8,7 @@ Entity = Tuple[str, str, str]
 # https://regex101.com/r/R6iogw/12
 cmake_option_regex: str = r"^\s*option\s*\(([A-Z_0-9${}]+)\s*(?:\"((?:.|\n)*?)\")?\s*(.*)?\).*$"
 
-output_file_name: str = "../en/development/cmake_in_clickhouse.md"
+output_file_name: str = "../en/development/cmake-in-clickhouse.md"
 header_file_name: str = "../_includes/cmake_in_clickhouse_header.md"
 footer_file_name: str = "../_includes/cmake_in_clickhouse_footer.md"
 
@@ -122,12 +122,11 @@ def generate_cmake_flags_files(root_path: str) -> None:
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 
-        f.write("### External libraries\n" + table_header)
-
-        f.write("Note that ClickHouse uses forks of these libraries, see https://github.com/ClickHouse-Extras.")
+        f.write("### External libraries\nNote that ClickHouse uses forks of these libraries, see https://github.com/ClickHouse-Extras.\n" +
+            table_header)
 
         for k in sorted_keys:
-            if k.startswith("ENABLE_") and entities[k][0].startswith("cmake"):
+            if k.startswith("ENABLE_") and entities[k][0].startswith(root_path + "cmake"):
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 
@@ -145,3 +144,5 @@ def generate_cmake_flags_files(root_path: str) -> None:
 
         with open(footer_file_name, "r") as footer:
             f.write(footer.read())
+
+generate_cmake_flags_files("../../")
