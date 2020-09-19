@@ -113,6 +113,7 @@ namespace ErrorCodes
     extern const int ALL_REPLICAS_LOST;
     extern const int REPLICA_STATUS_CHANGED;
     extern const int CANNOT_ASSIGN_ALTER;
+    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -697,7 +698,9 @@ void StorageReplicatedMergeTree::drop()
 
     if (has_metadata_in_zookeeper)
     {
-        auto zookeeper = tryGetZooKeeper();
+        /// Table can be shut down, restarting thread is not active
+        /// and calling StorageReplicatedMergeTree::getZooKeeper() won't suffice.
+        auto zookeeper = global_context.getZooKeeper();
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (is_readonly || !zookeeper)
@@ -3314,6 +3317,15 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             part->renameTo("detached/" + part_name, true);
         }
     }
+    catch (const Exception & e)
+    {
+        /// The same part is being written right now (but probably it's not committed yet).
+        /// We will check the need for fetch later.
+        if (e.code() == ErrorCodes::DIRECTORY_ALREADY_EXISTS)
+            return false;
+
+        throw;
+    }
     catch (...)
     {
         if (!to_detached)
@@ -4308,9 +4320,13 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
       * To do this, check its node `log_pointer` - the maximum number of the element taken from `log` + 1.
       */
 
-    const auto & check_replica_become_inactive = [this, &replica]()
+    bool waiting_itself = replica == replica_name;
+
+    const auto & stop_waiting = [&]()
     {
-        return !getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active");
+        bool stop_waiting_itself = waiting_itself && is_dropped;
+        bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active");
+        return stop_waiting_itself || stop_waiting_non_active;
     };
     constexpr auto event_wait_timeout_ms = 1000;
 
@@ -4325,7 +4341,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
         LOG_DEBUG(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
 
         /// Let's wait until entry gets into the replica queue.
-        while (wait_for_non_active || !check_replica_become_inactive())
+        while (!stop_waiting())
         {
             zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -4373,7 +4389,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
             LOG_DEBUG(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
 
             /// Let's wait until the entry gets into the replica queue.
-            while (wait_for_non_active || !check_replica_become_inactive())
+            while (!stop_waiting())
             {
                 zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -4426,10 +4442,8 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
 
     /// Third - wait until the entry disappears from the replica queue or replica become inactive.
     String path_to_wait_on = zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for;
-    if (wait_for_non_active)
-        return getZooKeeper()->waitForDisappear(path_to_wait_on);
 
-    return getZooKeeper()->waitForDisappear(path_to_wait_on, check_replica_become_inactive);
+    return getZooKeeper()->waitForDisappear(path_to_wait_on, stop_waiting);
 }
 
 
@@ -4771,9 +4785,11 @@ void StorageReplicatedMergeTree::fetchPartition(
         missing_parts.clear();
         for (const String & part : parts_to_fetch)
         {
+            bool fetched = false;
+
             try
             {
-                fetchPart(part, metadata_snapshot, best_replica_path, true, 0, zookeeper);
+                fetched = fetchPart(part, metadata_snapshot, best_replica_path, true, 0, zookeeper);
             }
             catch (const DB::Exception & e)
             {
@@ -4782,8 +4798,10 @@ void StorageReplicatedMergeTree::fetchPartition(
                     throw;
 
                 LOG_INFO(log, e.displayText());
-                missing_parts.push_back(part);
             }
+
+            if (!fetched)
+                missing_parts.push_back(part);
         }
 
         ++try_no;

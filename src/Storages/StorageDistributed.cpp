@@ -57,6 +57,7 @@
 #include <memory>
 #include <filesystem>
 #include <optional>
+#include <cassert>
 
 
 namespace
@@ -99,6 +100,12 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
     auto modified_query_ast = query->clone();
 
     ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
+
+    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
+    // settings won't break any remote parser. It's also more reasonable since the query settings
+    // are written into the query context and will be sent by the query pipeline.
+    select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+
     if (table_function_ptr)
         select_query.addTableFunction(table_function_ptr);
     else
@@ -380,8 +387,10 @@ StorageDistributed::StorageDistributed(
     if (!relative_data_path.empty())
     {
         storage_policy = global_context->getStoragePolicy(storage_policy_name_);
-        if (storage_policy->getVolumes().size() != 1)
-            throw Exception("Storage policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
+        data_volume = storage_policy->getVolume(0);
+        if (storage_policy->getVolumes().size() > 1)
+            LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
+                             "Only {} volume will be used to store data. Other will be ignored.", data_volume->getName());
     }
 
     /// Sanity check. Skip check if the table is already created to allow the server to start.
@@ -599,7 +608,7 @@ void StorageDistributed::startup()
     if (!storage_policy)
         return;
 
-    for (const DiskPtr & disk : storage_policy->getDisks())
+    for (const DiskPtr & disk : data_volume->getDisks())
         createDirectoryMonitors(disk->getPath());
 
     for (const String & path : getDataPaths())
@@ -633,7 +642,7 @@ void StorageDistributed::drop()
 
     LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on DROP TABLE");
 
-    auto disks = storage_policy->getDisks();
+    auto disks = data_volume->getDisks();
     for (const auto & disk : disks)
         disk->removeRecursive(relative_data_path);
 
@@ -647,7 +656,7 @@ Strings StorageDistributed::getDataPaths() const
     if (relative_data_path.empty())
         return paths;
 
-    for (const DiskPtr & disk : storage_policy->getDisks())
+    for (const DiskPtr & disk : data_volume->getDisks())
         paths.push_back(disk->getPath() + relative_data_path);
 
     return paths;
@@ -858,6 +867,7 @@ void StorageDistributed::flushClusterNodesAllData()
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
+    assert(relative_data_path != new_path_to_table_data);
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
@@ -866,12 +876,11 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
 
 void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
-    for (const DiskPtr & disk : storage_policy->getDisks())
+    for (const DiskPtr & disk : data_volume->getDisks())
     {
-        const String path(disk->getPath());
-        auto new_path = path + new_path_to_table_data;
-        Poco::File(path + relative_data_path).renameTo(new_path);
+        disk->moveDirectory(relative_data_path, new_path_to_table_data);
 
+        auto new_path = disk->getPath() + new_path_to_table_data;
         LOG_DEBUG(log, "Updating path to {}", new_path);
 
         std::lock_guard lock(cluster_nodes_mutex);

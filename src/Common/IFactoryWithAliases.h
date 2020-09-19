@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Poco/String.h>
 
 #include <unordered_map>

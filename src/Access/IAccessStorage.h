@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
 #include <ext/scope_guard.h>
 #include <functional>
@@ -25,8 +25,9 @@ public:
     /// Returns the name of this storage.
     const String & getStorageName() const { return storage_name; }
     virtual const char * getStorageType() const = 0;
-    virtual String getStoragePath() const { return {}; }
-    virtual bool isStorageReadOnly() const { return false; }
+
+    /// Returns a JSON with the parameters of the storage. It's up to the storage type to fill the JSON.
+    virtual String getStorageParamsJSON() const { return "{}"; }
 
     using EntityType = IAccessEntity::Type;
     using EntityTypeInfo = IAccessEntity::TypeInfo;

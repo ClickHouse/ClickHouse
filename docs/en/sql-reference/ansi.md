@@ -6,7 +6,7 @@ toc_title: ANSI Compatibility
 # ANSI SQL Compatibility of ClickHouse SQL Dialect {#ansi-sql-compatibility-of-clickhouse-sql-dialect}
 
 !!! note "Note"
-    This article relies on Table 38, “Feature taxonomy and definition for mandatory features”, Annex F of ISO/IEC CD 9075-2:2013.
+    This article relies on Table 38, “Feature taxonomy and definition for mandatory features”, Annex F of [ISO/IEC CD 9075-2:2011](https://www.iso.org/obp/ui/#iso:std:iso-iec:9075:-2:ed-4:v1:en:sec:8).
 
 ## Differences in Behaviour {#differences-in-behaviour}
 
@@ -77,6 +77,16 @@ The following table lists cases when query feature works in ClickHouse, but beha
 | E071-05    | Columns combined via table operators need not have exactly the same data type                                            | Yes{.text-success}         |                                                                                                                                                                                           |
 | E071-06    | Table operators in subqueries                                                                                            | Yes{.text-success}         |                                                                                                                                                                                           |
 | **E081**   | **Basic privileges**                                                                                                     | **Partial**{.text-warning} | Work in progress                                                                                                                                                                          |
+| E081-01    | SELECT privilege at the table level | | |
+| E081-02    | DELETE privilege | | |
+| E081-03    | INSERT privilege at the table level | | |
+| E081-04    | UPDATE privilege at the table level | | |
+| E081-05    | UPDATE privilege at the column level | | |
+| E081-06    | REFERENCES privilege at the table level | | |
+| E081-07    | REFERENCES privilege at the column level | | |
+| E081-08    | WITH GRANT OPTION | | |
+| E081-09    | USAGE privilege | | |
+| E081-10    | EXECUTE privilege | | |
 | **E091**   | **Set functions**                                                                                                        | **Yes**{.text-success}     |                                                                                                                                                                                           |
 | E091-01    | AVG                                                                                                                      | Yes{.text-success}         |                                                                                                                                                                                           |
 | E091-02    | COUNT                                                                                                                    | Yes{.text-success}         |                                                                                                                                                                                           |
@@ -169,6 +179,7 @@ The following table lists cases when query feature works in ClickHouse, but beha
 | **F471**   | **Scalar subquery values**                                                                                               | **Yes**{.text-success}     |                                                                                                                                                                                           |
 | **F481**   | **Expanded NULL predicate**                                                                                              | **Yes**{.text-success}     |                                                                                                                                                                                           |
 | **F812**   | **Basic flagging**                                                                                                       | **No**{.text-danger}       |                                                                                                                                                                                           |
+| **S011**   | **Distinct data types** | | |
 | **T321**   | **Basic SQL-invoked routines**                                                                                           | **No**{.text-danger}       |                                                                                                                                                                                           |
 | T321-01    | User-defined functions with no overloading                                                                               | No{.text-danger}           |                                                                                                                                                                                           |
 | T321-02    | User-defined stored procedures with no overloading                                                                       | No{.text-danger}           |                                                                                                                                                                                           |
