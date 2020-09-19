@@ -119,7 +119,7 @@ void registerStorageJoin(StorageFactory & factory)
         auto join_overflow_mode = settings.join_overflow_mode;
         auto join_any_take_last_row = settings.join_any_take_last_row;
         auto old_any_join = settings.any_join_distinct_right_table_keys;
-        bool persistent_ = true;
+        bool persistent = true;
 
         if (args.storage_def && args.storage_def->settings)
         {
@@ -141,7 +141,7 @@ void registerStorageJoin(StorageFactory & factory)
                 {
                     auto join_settings = std::make_unique<JoinSettings>();
                     join_settings->loadFromQuery(*args.storage_def);
-                    persistent_ = join_settings->persistent;
+                    persistent = join_settings->persistent;
                 }
                 else
                     throw Exception(
@@ -226,7 +226,7 @@ void registerStorageJoin(StorageFactory & factory)
             args.constraints,
             join_any_take_last_row,
             args.context,
-            persistent_);
+            persistent);
     };
 
     factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
