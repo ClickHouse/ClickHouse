@@ -598,14 +598,14 @@ def main(args):
              return random()
 
        if -1 == item.find('_'):
-           return 99998
+           return 99998, ''
 
        prefix, suffix = item.split('_', 1)
 
        try:
            return int(prefix), suffix
        except ValueError:
-           return 99997
+           return 99997, ''
 
     total_tests_run = 0
     for suite in sorted(os.listdir(base_dir), key=sute_key_func):
