@@ -19,7 +19,6 @@ def setup(node):
             node.query("DROP USER IF EXISTS user1")
             node.query("DROP ROLE IF EXISTS role1")
 
-                    
 @TestOutline(Scenario)
 @Examples("privilege on allow_introspection", [
     ("dictGet", ("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Revoke_Privilege_DictGet("1.0"))),
@@ -41,11 +40,11 @@ def setup(node):
     ],)
 def revoke_privileges(self, privilege, on, allow_introspection, node="clickhouse1"):
     revoke_privilege(privilege=privilege, on=on, allow_introspection=allow_introspection, node=node)
-                    
+
 @TestOutline(Scenario)
 @Requirements([RQ_SRS_006_RBAC_Revoke_Privilege_Any("1.0") , RQ_SRS_006_RBAC_Revoke_Privilege_PrivelegeColumns("1.0")])
-def revoke_privilege(self, privilege, on, allow_introspection, node="clickhouse1"):   
-    node = self.context.cluster.node(node) 
+def revoke_privilege(self, privilege, on, allow_introspection, node="clickhouse1"):
+    node = self.context.cluster.node(node)
     for on_ in on:
         with When(f"I revoke {privilege} privilege from user on {on_}"):
             with setup(node):
@@ -59,7 +58,7 @@ def revoke_privilege(self, privilege, on, allow_introspection, node="clickhouse1
                 #revoke column specific for some column 'x'
                 with When("I revoke privilege with columns"):
                     node.query(f"REVOKE {privilege}(x) ON {on_} FROM user0", settings=settings)
-                    	
+
 @TestFeature
 @Name("revoke privilege")
 @Args(format_description=False)
@@ -69,23 +68,23 @@ def feature(self, node="clickhouse1"):
     ```sql
     REVOKE [ON CLUSTER cluster_name] privilege
     [(column_name [,...])] [,...]
-    ON {db.table|db.*|*.*|table|*} 
+    ON {db.table|db.*|*.*|table|*}
     FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
     ```
     """
     node = self.context.cluster.node(node)
-    
+
     Scenario(run=revoke_privileges)
-    
+
     with Scenario("I revoke privilege ON CLUSTER", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Privilege_Cluster("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Privilege_Cluster("1.0"),
             RQ_SRS_006_RBAC_Revoke_Privilege_None("1.0")]):
         with setup(node):
             with When("I revoke privilege ON CLUSTER"):
                 node.query("REVOKE ON CLUSTER sharded_cluster NONE FROM user0")
-    
+
     with Scenario("I revoke privilege ON fake CLUSTER, throws exception", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Privilege_Cluster("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Privilege_Cluster("1.0"),
             RQ_SRS_006_RBAC_Revoke_Privilege_None("1.0")]):
         with setup(node):
             with When("I revoke privilege ON CLUSTER"):
@@ -94,21 +93,21 @@ def feature(self, node="clickhouse1"):
                             exitcode=exitcode, message=message)
 
     with Scenario("I revoke privilege from multiple users and roles", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
             RQ_SRS_006_RBAC_Revoke_Privilege_None("1.0")]):
         with setup(node):
             with When("I revoke privilege from multiple users"):
                 node.query("REVOKE NONE FROM user0, user1, role1")
-                
+
     with Scenario("I revoke privilege from current user", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
             RQ_SRS_006_RBAC_Revoke_Privilege_None("1.0")]):
         with setup(node):
             with When("I revoke privilege from current user"):
                 node.query("REVOKE NONE FROM CURRENT_USER", settings = [("user","user0")])
 
     with Scenario("I revoke privilege from all users", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
             RQ_SRS_006_RBAC_Revoke_Privilege_None("1.0")]):
         with setup(node):
             with When("I revoke privilege from all users"):
@@ -116,16 +115,16 @@ def feature(self, node="clickhouse1"):
                 node.query("REVOKE NONE FROM ALL", exitcode=exitcode,message=message)
 
     with Scenario("I revoke privilege from default user", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
             RQ_SRS_006_RBAC_Revoke_Privilege_None("1.0")]):
         with setup(node):
             with When("I revoke privilege from default user"):
                 exitcode, message = errors.cannot_update_default()
                 node.query("REVOKE NONE FROM default", exitcode=exitcode,message=message)
 
-    #By default, ClickHouse treats unnamed object as role
+    # By default, ClickHouse treats unnamed object as role
     with Scenario("I revoke privilege from nonexistent role, throws exception", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
             RQ_SRS_006_RBAC_Revoke_Privilege_None("1.0")]):
         role = "role5"
         with Given(f"I ensure that role {role} does not exist"):
@@ -135,7 +134,7 @@ def feature(self, node="clickhouse1"):
             node.query(f"REVOKE NONE FROM {role}", exitcode=exitcode,message=message)
 
     with Scenario("I revoke privilege from ALL EXCEPT nonexistent role, throws exception", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
             RQ_SRS_006_RBAC_Revoke_Privilege_None("1.0")]):
         role = "role5"
         with Given(f"I ensure that role {role} does not exist"):
@@ -145,14 +144,14 @@ def feature(self, node="clickhouse1"):
             node.query(f"REVOKE NONE FROM ALL EXCEPT {role}", exitcode=exitcode,message=message)
 
     with Scenario("I revoke privilege from all except some users and roles", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
             RQ_SRS_006_RBAC_Revoke_Privilege_None("1.0")]):
         with setup(node):
             with When("I revoke privilege all except some users"):
                 node.query("REVOKE NONE FROM ALL EXCEPT default, user0, role1")
 
     with Scenario("I revoke privilege from all except current user", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
             RQ_SRS_006_RBAC_Revoke_Privilege_None("1.0")]):
         with setup(node):
             with When("I revoke privilege from all except current user"):

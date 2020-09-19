@@ -88,7 +88,7 @@ using MappedAsof =       WithFlags<AsofRowRefs, false>;
   * - CROSS
   *
   * ALL means usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
-  * ANY uses one line per unique key from right talbe. For LEFT JOIN it would be any row (with needed joined key) from the right table,
+  * ANY uses one line per unique key from right table. For LEFT JOIN it would be any row (with needed joined key) from the right table,
   * for RIGHT JOIN it would be any row from the left table and for INNER one it would be any row from right and any row from left.
   * SEMI JOIN filter left table by keys that are present in right table for LEFT JOIN, and filter right table by keys from left table
   * for RIGHT JOIN. In other words SEMI JOIN returns only rows which joining keys present in another table.
@@ -162,11 +162,11 @@ public:
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
 
-    /// Infer the return type for joinGet function
-    DataTypePtr joinGetReturnType(const String & column_name, bool or_null) const;
+    /// Check joinGet arguments and infer the return type.
+    DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
 
-    /// Used by joinGet function that turns StorageJoin into a dictionary
-    void joinGet(Block & block, const String & column_name, bool or_null) const;
+    /// Used by joinGet function that turns StorageJoin into a dictionary.
+    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
@@ -191,9 +191,15 @@ public:
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
-    TypeIndex getAsofType() const { return *asof_type; }
+    const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
     ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
+
+    const ColumnWithTypeAndName & rightAsofKeyColumn() const
+    {
+        /// It should be nullable if nullable_right_side is true
+        return savedBlockSample().getByName(key_names_right.back());
+    }
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
@@ -239,7 +245,7 @@ public:
         std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;
         std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_fixed_string;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
-        std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>                     keys256;
+        std::unique_ptr<HashMap<DummyUInt256, Mapped, UInt256HashCRC32>>                keys256;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
 
         void create(Type which)
@@ -383,7 +389,7 @@ private:
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
     template <typename Maps>
-    void joinGetImpl(Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
+    ColumnWithTypeAndName joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 };

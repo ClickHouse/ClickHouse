@@ -25,7 +25,7 @@ def feature(self, node="clickhouse1"):
         finally:
             with Finally("I drop the settings profile"):
                 node.query(f"DROP SETTINGS PROFILE IF EXISTS {profile}")
-    
+
     def cleanup_profile(profile):
         with Given(f"I ensure that profile {profile} does not exist"):
             node.query(f"DROP SETTINGS PROFILE IF EXISTS {profile}")

@@ -7,12 +7,14 @@
 #    include <Columns/ColumnNullable.h>
 #    include <Columns/ColumnString.h>
 #    include <Columns/ColumnsNumber.h>
+#    include <Columns/ColumnDecimal.h>
+#    include <DataTypes/IDataType.h>
+#    include <DataTypes/DataTypeNullable.h>
 #    include <IO/ReadHelpers.h>
 #    include <IO/WriteHelpers.h>
 #    include <Common/assert_cast.h>
 #    include <ext/range.h>
 #    include "MySQLBlockInputStream.h"
-
 
 namespace DB
 {
@@ -39,7 +41,7 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    void insertValue(IColumn & column, const ValueType type, const mysqlxx::Value & value)
+    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value)
     {
         switch (type)
         {
@@ -85,6 +87,16 @@ namespace
             case ValueType::vtUUID:
                 assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
                 break;
+            case ValueType::vtDateTime64:[[fallthrough]];
+            case ValueType::vtDecimal32: [[fallthrough]];
+            case ValueType::vtDecimal64: [[fallthrough]];
+            case ValueType::vtDecimal128:[[fallthrough]];
+            case ValueType::vtDecimal256:
+            {
+                ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
+                data_type.deserializeAsWholeText(column, buffer, FormatSettings{});
+                break;
+            }
         }
     }
 
@@ -112,19 +124,21 @@ Block MySQLBlockInputStream::readImpl()
         for (const auto idx : ext::range(0, row.size()))
         {
             const auto value = row[idx];
+            const auto & sample = description.sample_block.getByPosition(idx);
             if (!value.isNull())
             {
                 if (description.types[idx].second)
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
-                    insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
+                    const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
+                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[idx].first, value);
                     column_nullable.getNullMapData().emplace_back(0);
                 }
                 else
-                    insertValue(*columns[idx], description.types[idx].first, value);
+                    insertValue(*sample.type, *columns[idx], description.types[idx].first, value);
             }
             else
-                insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
+                insertDefaultValue(*columns[idx], *sample.column);
         }
 
         ++num_rows;

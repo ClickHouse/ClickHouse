@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
+#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 #include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -82,6 +83,9 @@ namespace CurrentMetrics
 
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
+
+    extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundMessageBrokerSchedulePool;
 }
 
 
@@ -306,6 +310,9 @@ struct ContextShared
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
 
+    mutable std::mutex auxiliary_zookeepers_mutex;
+    mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
+
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_io_user;
@@ -338,6 +345,7 @@ struct ContextShared
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    std::optional<BackgroundSchedulePool> message_broker_schedule_pool;    /// A thread pool that can run different jobs in background (used in kafka streaming)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -423,6 +431,7 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
+        TemporaryLiveViewCleaner::shutdown();
         DatabaseCatalog::shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
@@ -438,6 +447,7 @@ struct ContextShared
         schedule_pool.reset();
         distributed_schedule_pool.reset();
         ddl_worker.reset();
+        message_broker_schedule_pool.reset();
 
         /// Stop trace collector if any
         trace_collector.reset();
@@ -477,6 +487,12 @@ Context Context::createGlobal(ContextShared * shared)
     Context res;
     res.shared = shared;
     return res;
+}
+
+void Context::initGlobal()
+{
+    DatabaseCatalog::init(this);
+    TemporaryLiveViewCleaner::init(*this);
 }
 
 SharedContextHolder Context::createShared()
@@ -661,7 +677,7 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
+void Context::setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
@@ -670,7 +686,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password = password;
+    client_info.current_password = password.value_or("");
 #endif
 
     auto new_user_id = getAccessControlManager().find<User>(name);
@@ -678,7 +694,9 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (new_user_id)
     {
         new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, settings, current_database, client_info);
-        if (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(password))
+        /// Access w/o password is done under interserver-secret (remote_servers.secret)
+        /// So it is okay not to check client's host (since there is trust).
+        if (password && (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(*password)))
         {
             new_user_id = {};
             new_access = nullptr;
@@ -694,6 +712,16 @@ void Context::setUser(const String & name, const String & password, const Poco::
     use_default_roles = true;
 
     setSettings(*access->getDefaultSettings());
+}
+
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
+{
+    setUserImpl(name, std::make_optional(password), address);
+}
+
+void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
+{
+    setUserImpl(name, {} /* no password */, address);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -1070,7 +1098,6 @@ void Context::setCurrentDatabase(const String & name)
     calculateAccessRights();
 }
 
-
 void Context::setCurrentQueryId(const String & query_id)
 {
     if (!client_info.current_query_id.empty())
@@ -1419,6 +1446,18 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
     return *shared->distributed_schedule_pool;
 }
 
+BackgroundSchedulePool & Context::getMessageBrokerSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->message_broker_schedule_pool)
+        shared->message_broker_schedule_pool.emplace(
+            settings.background_message_broker_schedule_pool_size,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundMessageBrokerSchedulePool,
+            "BgMBSchPool");
+    return *shared->message_broker_schedule_pool;
+}
+
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
@@ -1447,10 +1486,37 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
+{
+    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+
+    auto zookeeper = shared->auxiliary_zookeepers.find(name);
+    if (zookeeper == shared->auxiliary_zookeepers.end())
+    {
+        if (!getConfigRef().has("auxiliary_zookeepers." + name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in config.xml", name);
+
+        zookeeper->second = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "auxiliary_zookeepers." + name);
+    }
+    else if (zookeeper->second->expired())
+        zookeeper->second = zookeeper->second->startNewSession();
+
+    return zookeeper->second;
+}
+
 void Context::resetZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper.reset();
+}
+
+void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->zookeeper || shared->zookeeper->configChanged(*config, "zookeeper"))
+    {
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
+    }
 }
 
 bool Context::hasZooKeeper() const
@@ -1796,7 +1862,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
         catch (Exception & e)
         {
-            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: {}", e.message());
+            LOG_ERROR(shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
         }
     }
 
@@ -1953,6 +2019,12 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
+    for (auto & [disk_name, disk] : getDisksMap())
+    {
+        LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
+        disk->shutdown();
+    }
+
     shared->shutdown();
 }
 

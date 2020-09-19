@@ -9,7 +9,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 
 #include <IO/WriteBuffer.h>
@@ -74,6 +74,25 @@ template <typename T>
 void set(T & x) { x = 0; }
 
 }
+
+
+/** Numbers are compared bitwise.
+  * Complex types are compared by operator== as usual (this is important if there are gaps).
+  *
+  * This is needed if you use floats as keys. They are compared by bit equality.
+  * Otherwise the invariants in hash table probing do not met when NaNs are present.
+  */
+template <typename T>
+inline bool bitEquals(T && a, T && b)
+{
+    using RealT = std::decay_t<T>;
+
+    if constexpr (std::is_floating_point_v<RealT>)
+        return 0 == memcmp(&a, &b, sizeof(RealT));  /// Note that memcmp with constant size is compiler builtin.
+    else
+        return a == b;
+}
+
 
 /**
   * getKey/Mapped -- methods to get key/"mapped" values from the LookupResult returned by find() and
@@ -150,9 +169,9 @@ struct HashTableCell
     static const Key & getKey(const value_type & value) { return value; }
 
     /// Are the keys at the cells equal?
-    bool keyEquals(const Key & key_) const { return key == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return key == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return key == key_; }
+    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}

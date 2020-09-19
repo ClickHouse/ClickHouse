@@ -20,7 +20,7 @@ class Backport:
     def getPullRequests(self, from_commit):
         return self._gh.get_pull_requests(from_commit)
 
-    def execute(self, repo, til, number, run_cherrypick):
+    def execute(self, repo, until_commit, number, run_cherrypick):
         repo = LocalRepo(repo, 'origin', self.default_branch_name)
         branches = repo.get_release_branches()[-number:]  # [(branch_name, base_commit)]
 
@@ -31,9 +31,9 @@ class Backport:
         for branch in branches:
             logging.info('Found release branch: %s', branch[0])
 
-        if not til:
-            til = branches[0][1]
-        prs = self.getPullRequests(til)
+        if not until_commit:
+            until_commit = branches[0][1]
+        pull_requests = self.getPullRequests(until_commit)
 
         backport_map = {}
 
@@ -42,9 +42,9 @@ class Backport:
         RE_BACKPORTED = re.compile(r'^v(\d+\.\d+)-backported$')
 
         # pull-requests are sorted by ancestry from the least recent.
-        for pr in prs:
+        for pr in pull_requests:
             while repo.comparator(branches[-1][1]) >= repo.comparator(pr['mergeCommit']['oid']):
-                logging.info("PR #{} is already inside {}. Dropping this branch for futher PRs".format(pr['number'], branches[-1][0]))
+                logging.info("PR #{} is already inside {}. Dropping this branch for further PRs".format(pr['number'], branches[-1][0]))
                 branches.pop()
 
             logging.info("Processing PR #{}".format(pr['number']))
@@ -55,28 +55,28 @@ class Backport:
 
             # First pass. Find all must-backports
             for label in pr['labels']['nodes']:
-                if label['name'].startswith('pr-') and label['color'] == 'ff0000':
+                if label['name'] == 'pr-bugfix':
                     backport_map[pr['number']] = branch_set.copy()
                     continue
-                m = RE_MUST_BACKPORT.match(label['name'])
-                if m:
+                matched = RE_MUST_BACKPORT.match(label['name'])
+                if matched:
                     if pr['number'] not in backport_map:
                         backport_map[pr['number']] = set()
-                    backport_map[pr['number']].add(m.group(1))
+                    backport_map[pr['number']].add(matched.group(1))
 
             # Second pass. Find all no-backports
             for label in pr['labels']['nodes']:
                 if label['name'] == 'pr-no-backport' and pr['number'] in backport_map:
                     del backport_map[pr['number']]
                     break
-                m1 = RE_NO_BACKPORT.match(label['name'])
-                m2 = RE_BACKPORTED.match(label['name'])
-                if m1 and pr['number'] in backport_map and m1.group(1) in backport_map[pr['number']]:
-                    backport_map[pr['number']].remove(m1.group(1))
-                    logging.info('\tskipping %s because of forced no-backport', m1.group(1))
-                elif m2 and pr['number'] in backport_map and m2.group(1) in backport_map[pr['number']]:
-                    backport_map[pr['number']].remove(m2.group(1))
-                    logging.info('\tskipping %s because it\'s already backported manually', m2.group(1))
+                matched_no_backport = RE_NO_BACKPORT.match(label['name'])
+                matched_backported = RE_BACKPORTED.match(label['name'])
+                if matched_no_backport and pr['number'] in backport_map and matched_no_backport.group(1) in backport_map[pr['number']]:
+                    backport_map[pr['number']].remove(matched_no_backport.group(1))
+                    logging.info('\tskipping %s because of forced no-backport', matched_no_backport.group(1))
+                elif matched_backported and pr['number'] in backport_map and matched_backported.group(1) in backport_map[pr['number']]:
+                    backport_map[pr['number']].remove(matched_backported.group(1))
+                    logging.info('\tskipping %s because it\'s already backported manually', matched_backported.group(1))
 
         for pr, branches in backport_map.items():
             logging.info('PR #%s needs to be backported to:', pr)

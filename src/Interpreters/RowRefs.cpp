@@ -1,7 +1,7 @@
 #include <Interpreters/RowRefs.h>
 
 #include <Core/Block.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/typeid_cast.h>
 #include <Common/ColumnsHashing.h>
 #include <Columns/IColumn.h>
@@ -11,6 +11,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_TYPE_OF_FIELD;
+}
 
 namespace
 {
@@ -56,7 +61,7 @@ AsofRowRefs::AsofRowRefs(TypeIndex type)
     callWithType(type, call);
 }
 
-void AsofRowRefs::insert(TypeIndex type, const IColumn * asof_column, const Block * block, size_t row_num)
+void AsofRowRefs::insert(TypeIndex type, const IColumn & asof_column, const Block * block, size_t row_num)
 {
     auto call = [&](const auto & t)
     {
@@ -64,9 +69,9 @@ void AsofRowRefs::insert(TypeIndex type, const IColumn * asof_column, const Bloc
         using LookupPtr = typename Entry<T>::LookupPtr;
 
         using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-        auto * column = typeid_cast<const ColumnType *>(asof_column);
+        const auto & column = typeid_cast<const ColumnType &>(asof_column);
 
-        T key = column->getElement(row_num);
+        T key = column.getElement(row_num);
         auto entry = Entry<T>(key, RowRef(block, row_num));
         std::get<LookupPtr>(lookups)->insert(entry);
     };
@@ -74,7 +79,7 @@ void AsofRowRefs::insert(TypeIndex type, const IColumn * asof_column, const Bloc
     callWithType(type, call);
 }
 
-const RowRef * AsofRowRefs::findAsof(TypeIndex type, ASOF::Inequality inequality, const IColumn * asof_column, size_t row_num) const
+const RowRef * AsofRowRefs::findAsof(TypeIndex type, ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) const
 {
     const RowRef * out = nullptr;
 
@@ -88,8 +93,8 @@ const RowRef * AsofRowRefs::findAsof(TypeIndex type, ASOF::Inequality inequality
         using LookupPtr = typename EntryType::LookupPtr;
 
         using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-        auto * column = typeid_cast<const ColumnType *>(asof_column);
-        T key = column->getElement(row_num);
+        const auto & column = typeid_cast<const ColumnType &>(asof_column);
+        T key = column.getElement(row_num);
         auto & typed_lookup = std::get<LookupPtr>(lookups);
 
         if (is_strict)
@@ -102,9 +107,9 @@ const RowRef * AsofRowRefs::findAsof(TypeIndex type, ASOF::Inequality inequality
     return out;
 }
 
-std::optional<TypeIndex> AsofRowRefs::getTypeSize(const IColumn * asof_column, size_t & size)
+std::optional<TypeIndex> AsofRowRefs::getTypeSize(const IColumn & asof_column, size_t & size)
 {
-    TypeIndex idx = asof_column->getDataType();
+    TypeIndex idx = asof_column.getDataType();
 
     switch (idx)
     {
@@ -152,8 +157,7 @@ std::optional<TypeIndex> AsofRowRefs::getTypeSize(const IColumn * asof_column, s
             break;
     }
 
-    size = 0;
-    return {};
+    throw Exception("ASOF join not supported for type: " + std::string(asof_column.getFamilyName()), ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
 
@@ -20,7 +21,7 @@ namespace ErrorCodes
 template <bool _throw_on_error, typename T>
 inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false)
 {
-    x = 0;
+    x = T(0);
     exponent = 0;
     uint32_t max_digits = digits;
     digits = 0;
@@ -153,19 +154,37 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
     readDigits<true>(buf, x, digits, exponent, digits_only);
 
     if (static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale))
-        throw Exception(fmt::format(
+    {
+        static constexpr const char * pattern =
             "Decimal value is too big: {} digits were read: {}e{}."
-            " Expected to read decimal with scale {} and precision {}",
-            digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            " Expected to read decimal with scale {} and precision {}";
+
+        if constexpr (is_big_int_v<typename T::NativeType>)
+            throw Exception(fmt::format(pattern, digits, bigintToString(x.value), exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        else
+            throw Exception(fmt::format(pattern, digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 
     if (static_cast<int32_t>(scale) + exponent < 0)
     {
-        /// Too many digits after point. Just cut off excessive digits.
-        auto divisor = intExp10OfSize<T>(-exponent - static_cast<int32_t>(scale));
-        assert(divisor > 0);    /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
-        x.value /= divisor;
-        scale = 0;
-        return;
+        auto divisor_exp = -exponent - static_cast<int32_t>(scale);
+
+        if (divisor_exp >= std::numeric_limits<typename T::NativeType>::digits10)
+        {
+            /// Too big negative exponent
+            x.value = 0;
+            scale = 0;
+            return;
+        }
+        else
+        {
+            /// Too many digits after point. Just cut off excessive digits.
+            auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
+            assert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
+            x.value /= divisor;
+            scale = 0;
+            return;
+        }
     }
 
     scale += exponent;

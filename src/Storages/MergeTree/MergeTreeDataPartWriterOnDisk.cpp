@@ -87,7 +87,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         disk->createDirectories(part_path);
 }
 
-// Implemetation is splitted into static functions for ability
+// Implementation is split into static functions for ability
 /// of making unit tests without creation instance of IMergeTreeDataPartWriter,
 /// which requires a lot of dependencies and access to filesystem.
 static size_t computeIndexGranularityImpl(
@@ -261,6 +261,11 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             {
                 limit = current_index_offset;
             }
+            else if (skip_index_current_data_mark == index_granularity.getMarksCount())
+            {
+                /// Case, when last granule was exceeded and no new granule was created.
+                limit = rows - prev_pos;
+            }
             else
             {
                 limit = index_granularity.getMarkRows(skip_index_current_data_mark);
@@ -303,7 +308,8 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
     skip_index_data_mark = skip_index_current_data_mark;
 }
 
-void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums)
+void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
+        MergeTreeData::DataPart::Checksums & checksums, bool sync)
 {
     bool write_final_mark = (with_final_mark && data_written);
     if (write_final_mark && compute_granularity)
@@ -325,12 +331,14 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(MergeTreeDat
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
+        if (sync)
+            index_file_stream->sync();
         index_stream = nullptr;
     }
 }
 
 void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
-        MergeTreeData::DataPart::Checksums & checksums)
+        MergeTreeData::DataPart::Checksums & checksums, bool sync)
 {
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
@@ -343,6 +351,8 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
     {
         stream->finalize();
         stream->addToChecksums(checksums);
+        if (sync)
+            stream->sync();
     }
 
     skip_indices_streams.clear();

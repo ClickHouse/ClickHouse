@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
@@ -36,7 +36,6 @@ public:
     ~DatabaseWithOwnTablesBase() override;
 
 protected:
-    mutable std::mutex mutex;
     Tables tables;
     Poco::Logger * log;
     const Context & global_context;

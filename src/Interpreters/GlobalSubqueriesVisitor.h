@@ -22,7 +22,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int WRONG_GLOBAL_SUBQUERY;
 }
 
 
@@ -73,8 +73,7 @@ public:
                 is_table = true;
 
             if (!subquery_or_table_name)
-                throw Exception("Logical error: unknown AST element passed to ExpressionAnalyzer::addExternalStorage method",
-                                ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
 
             if (is_table)
             {
@@ -103,7 +102,9 @@ public:
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
 
-            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(context, ColumnsDescription{columns}, ConstraintsDescription{});
+            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
+                    context, ColumnsDescription{columns}, ConstraintsDescription{}, nullptr,
+                    /*create_for_global_subquery*/ true);
             StoragePtr external_storage = external_storage_holder->getTable();
 
             /** We replace the subquery with the name of the temporary table.
@@ -134,7 +135,7 @@ public:
                 ast = database_and_table_name;
 
             external_tables[external_table_name] = external_storage_holder;
-            subqueries_for_sets[external_table_name].source = interpreter->execute().getInputStream();
+            subqueries_for_sets[external_table_name].source = QueryPipeline::getPipe(interpreter->execute().pipeline);
             subqueries_for_sets[external_table_name].table = external_storage;
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,

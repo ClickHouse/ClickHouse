@@ -7,15 +7,16 @@
 #include <Processors/Pipe.h>
 #include <Processors/QueryPipeline.h>
 #include <Storages/IStorage.h>
-#include <Processors/Transforms/ConvertingTransform.h>
 
 namespace DB
 {
 
 ReadFromStorageStep::ReadFromStorageStep(
     TableLockHolder table_lock_,
-    StorageMetadataPtr & metadata_snapshot_,
-    SelectQueryOptions options_,
+    StorageMetadataPtr metadata_snapshot_,
+    StreamLocalLimits & limits_,
+    SizeLimits & leaf_limits_,
+    std::shared_ptr<const EnabledQuota> quota_,
     StoragePtr storage_,
     const Names & required_columns_,
     const SelectQueryInfo & query_info_,
@@ -24,8 +25,10 @@ ReadFromStorageStep::ReadFromStorageStep(
     size_t max_block_size_,
     size_t max_streams_)
     : table_lock(std::move(table_lock_))
-    , metadata_snapshot(metadata_snapshot_)
-    , options(std::move(options_))
+    , metadata_snapshot(std::move(metadata_snapshot_))
+    , limits(limits_)
+    , leaf_limits(leaf_limits_)
+    , quota(std::move(quota_))
     , storage(std::move(storage_))
     , required_columns(required_columns_)
     , query_info(query_info_)
@@ -37,34 +40,44 @@ ReadFromStorageStep::ReadFromStorageStep(
     /// Note: we read from storage in constructor of step because we don't know real header before reading.
     /// It will be fixed when storage return QueryPlanStep itself.
 
-    Pipes pipes = storage->read(required_columns, metadata_snapshot, query_info, *context, processing_stage, max_block_size, max_streams);
+    Pipe pipe = storage->read(required_columns, metadata_snapshot, query_info, *context, processing_stage, max_block_size, max_streams);
 
-    if (pipes.empty())
+    if (pipe.empty())
     {
-        Pipe pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID())));
+        pipe = Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID())));
 
         if (query_info.prewhere_info)
         {
             if (query_info.prewhere_info->alias_actions)
-                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(
-                        pipe.getHeader(), query_info.prewhere_info->alias_actions));
+            {
+                pipe.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
+                });
+            }
 
-            pipe.addSimpleTransform(std::make_shared<FilterTransform>(
-                    pipe.getHeader(),
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<FilterTransform>(
+                    header,
                     query_info.prewhere_info->prewhere_actions,
                     query_info.prewhere_info->prewhere_column_name,
-                    query_info.prewhere_info->remove_prewhere_column));
+                    query_info.prewhere_info->remove_prewhere_column);
+            });
 
             // To remove additional columns
             // In some cases, we did not read any marks so that the pipeline.streams is empty
             // Thus, some columns in prewhere are not removed as expected
             // This leads to mismatched header in distributed table
             if (query_info.prewhere_info->remove_columns_actions)
-                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(
-                        pipe.getHeader(), query_info.prewhere_info->remove_columns_actions));
+            {
+                pipe.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<ExpressionTransform>(
+                            header, query_info.prewhere_info->remove_columns_actions);
+                });
+            }
         }
-
-        pipes.emplace_back(std::move(pipe));
     }
 
     pipeline = std::make_unique<QueryPipeline>();
@@ -73,51 +86,22 @@ ReadFromStorageStep::ReadFromStorageStep(
     /// Table lock is stored inside pipeline here.
     pipeline->addTableLock(table_lock);
 
-    /// Set the limits and quota for reading data, the speed and time of the query.
-    {
-        const Settings & settings = context->getSettingsRef();
+    pipe.setLimits(limits);
 
-        IBlockInputStream::LocalLimits limits;
-        limits.mode = IBlockInputStream::LIMITS_TOTAL;
-        limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
-        limits.speed_limits.max_execution_time = settings.max_execution_time;
-        limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+    /**
+      * Leaf size limits should be applied only for local processing of distributed queries.
+      * Such limits allow to control the read stage on leaf nodes and exclude the merging stage.
+      * Consider the case when distributed query needs to read from multiple shards. Then leaf
+      * limits will be applied on the shards only (including the root node) but will be ignored
+      * on the results merging stage.
+      */
+    if (!storage->isRemote())
+        pipe.setLeafLimits(leaf_limits);
 
-        /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
-          *  because the initiating server has a summary of the execution of the request on all servers.
-          *
-          * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
-          *  additionally on each remote server, because these limits are checked per block of data processed,
-          *  and remote servers may process way more blocks of data than are received by initiator.
-          *
-          * The limits to throttle maximum execution speed is also checked on all servers.
-          */
-        if (options.to_stage == QueryProcessingStage::Complete)
-        {
-            limits.speed_limits.min_execution_rps = settings.min_execution_speed;
-            limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
-        }
+    if (quota)
+        pipe.setQuota(quota);
 
-        limits.speed_limits.max_execution_rps = settings.max_execution_speed;
-        limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
-        limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
-
-        auto quota = context->getQuota();
-
-        for (auto & pipe : pipes)
-        {
-            if (!options.ignore_limits)
-                pipe.setLimits(limits);
-
-            if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
-                pipe.setQuota(quota);
-        }
-    }
-
-    for (auto & pipe : pipes)
-        pipe.enableQuota();
-
-    pipeline->init(std::move(pipes));
+    pipeline->init(std::move(pipe));
 
     pipeline->addInterpreterContext(std::move(context));
     pipeline->addStorageHolder(std::move(storage));

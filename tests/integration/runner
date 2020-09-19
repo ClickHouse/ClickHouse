@@ -53,7 +53,7 @@ def check_args_and_update_paths(args):
 
     logging.info("base_configs_dir: {},  binary: {}, cases_dir: {} ".format(args.base_configs_dir, args.binary, args.cases_dir))
 
-    for path in [args.binary, args.base_configs_dir, args.cases_dir, CLICKHOUSE_ROOT]:
+    for path in [args.binary, args.bridge_binary, args.base_configs_dir, args.cases_dir, CLICKHOUSE_ROOT]:
         if not os.path.exists(path):
             raise Exception("Path {} doesn't exist".format(path))
 
@@ -124,6 +124,10 @@ if __name__ == "__main__":
         default="latest",
         help="Version of docker image which runner will use to run tests")
 
+    parser.add_argument(
+        "--docker-compose-images-tags",
+        action="append",
+        help="Set non-default tags for images used in docker compose recipes(yandex/my_container:my_tag)")
 
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
@@ -134,6 +138,26 @@ if __name__ == "__main__":
     net = ""
     if not args.disable_net_host:
         net = "--net=host"
+
+    env_tags = ""
+
+    if args.docker_compose_images_tags is not None:
+        for img_tag in args.docker_compose_images_tags:
+            [image, tag] = img_tag.split(":")
+            if image == "yandex/clickhouse-mysql-golang-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-mysql-java-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-mysql-js-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JS_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-mysql-php-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-postgresql-java-client":
+                env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-integration-test":
+                env_tags += "-e {}={}".format("DOCKER_BASE_TAG", tag)
+            else:
+                logging.info("Unknown image {}".format(image))
 
     # create named volume which will be used inside to store images and other docker related files,
     # to avoid redownloading it every time
@@ -148,13 +172,14 @@ if __name__ == "__main__":
 
     cmd = "docker run {net} {tty} --rm --name {name} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
-        --volume={name}_volume:/var/lib/docker -e PYTEST_OPTS='{opts}' {img} {command}".format(
+        --volume={name}_volume:/var/lib/docker {env_tags} -e PYTEST_OPTS='{opts}' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
         bridge_bin=args.bridge_binary,
         base_cfg=args.base_configs_dir,
         cases_dir=args.cases_dir,
+        env_tags=env_tags,
         opts=' '.join(args.pytest_args),
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,

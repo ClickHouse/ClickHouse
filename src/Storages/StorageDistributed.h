@@ -66,11 +66,9 @@ public:
 
     bool isRemote() const override { return true; }
 
-    /// Return true if distributed_group_by_no_merge may be applied.
-    bool canForceGroupByNoMerge(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const;
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -78,6 +76,8 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    bool supportsParallelInsert() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
@@ -183,6 +183,11 @@ protected:
 
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
     StoragePolicyPtr storage_policy;
+    /// The main volume to store data.
+    /// Storage policy may have several configured volumes, but second and other volumes are used for parts movement in MergeTree engine.
+    /// For Distributed engine such configuration doesn't make sense and only the first (main) volume will be used to store data.
+    /// Other volumes will be ignored. It's needed to allow using the same multi-volume policy both for Distributed and other engines.
+    VolumePtr data_volume;
 
     struct ClusterNodeData
     {

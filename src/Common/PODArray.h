@@ -21,6 +21,15 @@
 
 #include <Common/PODArray_fwd.h>
 
+/** Whether we can use memcpy instead of a loop with assignment to T from U.
+  * It is Ok if types are the same. And if types are integral and of the same size,
+  *  example: char, signed char, unsigned char.
+  * It's not Ok for int and float.
+  * Don't forget to apply std::decay when using this constexpr.
+  */
+template <typename T, typename U>
+constexpr bool memcpy_can_be_used_for_assignment = std::is_same_v<T, U>
+    || (std::is_integral_v<T> && std::is_integral_v<U> && sizeof(T) == sizeof(U));
 
 namespace DB
 {
@@ -35,7 +44,7 @@ namespace ErrorCodes
   * To be more precise - for use in ColumnVector.
   * It differs from std::vector in that it does not initialize the elements.
   *
-  * Made noncopyable so that there are no accidential copies. You can copy the data using `assign` method.
+  * Made noncopyable so that there are no accidental copies. You can copy the data using `assign` method.
   *
   * Only part of the std::vector interface is supported.
   *
@@ -102,7 +111,7 @@ protected:
 
     void alloc_for_num_elements(size_t num_elements)
     {
-        alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)));
+        alloc(minimum_memory_for_elements(num_elements));
     }
 
     template <typename ... TAllocatorParams>
@@ -205,6 +214,9 @@ public:
     void clear() { c_end = c_start; }
 
     template <typename ... TAllocatorParams>
+#if defined(__clang__)
+    ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
+#endif
     void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
@@ -212,9 +224,23 @@ public:
     }
 
     template <typename ... TAllocatorParams>
+    void reserve_exact(size_t n, TAllocatorParams &&... allocator_params)
+    {
+        if (n > capacity())
+            realloc(minimum_memory_for_elements(n), std::forward<TAllocatorParams>(allocator_params)...);
+    }
+
+    template <typename ... TAllocatorParams>
     void resize(size_t n, TAllocatorParams &&... allocator_params)
     {
         reserve(n, std::forward<TAllocatorParams>(allocator_params)...);
+        resize_assume_reserved(n);
+    }
+
+    template <typename ... TAllocatorParams>
+    void resize_exact(size_t n, TAllocatorParams &&... allocator_params)
+    {
+        reserve_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
     }
 
@@ -313,7 +339,15 @@ public:
         insert(from_begin, from_end);
     }
 
-    PODArray(std::initializer_list<T> il) : PODArray(std::begin(il), std::end(il)) {}
+    PODArray(std::initializer_list<T> il)
+    {
+        this->reserve(std::size(il));
+
+        for (const auto & x : il)
+        {
+            this->push_back(x);
+        }
+    }
 
     PODArray(PODArray && other)
     {
@@ -428,17 +462,21 @@ public:
     void insertSmallAllowReadWriteOverflow15(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
         static_assert(pad_right_ >= 15);
+        static_assert(sizeof(T) == sizeof(*from_begin));
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         memcpySmallAllowReadWriteOverflow15(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         this->c_end += bytes_to_copy;
     }
 
+    /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
     template <typename It1, typename It2>
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
+        static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
-        size_t bytes_to_move = (end() - it) * sizeof(T);
+        size_t bytes_to_move = this->byte_size(end() - it);
 
         insertPrepare(from_begin, from_end);
 
@@ -446,12 +484,15 @@ public:
             memcpy(this->c_end + bytes_to_copy - bytes_to_move, this->c_end - bytes_to_move, bytes_to_move);
 
         memcpy(this->c_end - bytes_to_move, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+
         this->c_end += bytes_to_copy;
     }
 
     template <typename It1, typename It2>
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
+        static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         this->c_end += bytes_to_copy;
@@ -577,19 +618,22 @@ public:
     template <typename... TAllocatorParams>
     void assign(size_t n, const T & x, TAllocatorParams &&... allocator_params)
     {
-        this->resize(n, std::forward<TAllocatorParams>(allocator_params)...);
+        this->resize_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
         std::fill(begin(), end(), x);
     }
 
     template <typename It1, typename It2, typename... TAllocatorParams>
     void assign(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
+        static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+
         size_t required_capacity = from_end - from_begin;
         if (required_capacity > this->capacity())
-            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+            this->reserve_exact(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
         memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+
         this->c_end = this->c_start + bytes_to_copy;
     }
 

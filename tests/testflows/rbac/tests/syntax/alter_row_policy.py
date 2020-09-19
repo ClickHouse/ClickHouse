@@ -31,7 +31,7 @@ def feature(self, node="clickhouse1"):
         finally:
             with Finally("I drop the row policy"):
                 node.query(f"DROP ROW POLICY IF EXISTS {policy} ON default.foo")
-    
+
     def cleanup_policy(policy):
         with Given(f"I ensure that policy {policy} does not exist"):
             node.query(f"DROP ROW POLICY IF EXISTS {policy} ON default.foo")
@@ -55,7 +55,7 @@ def feature(self, node="clickhouse1"):
             with cleanup("policy1"):
                 with When("I alter row policy short form"):
                     node.query("ALTER POLICY policy1 ON default.foo")
-        
+
         with Scenario("I alter row policy, does not exist, throws exception", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_RowPolicy_Alter("1.0"),
                 RQ_SRS_006_RBAC_RowPolicy_Alter_On("1.0")]):
@@ -72,7 +72,7 @@ def feature(self, node="clickhouse1"):
             with cleanup("policy2"):
                 with When("I alter row policy using if exists"):
                     node.query("ALTER ROW POLICY IF EXISTS policy2 ON default.foo")
-        
+
         with Scenario("I alter row policy if exists, policy does not exist", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_RowPolicy_Alter_IfExists("1.0"),
                 RQ_SRS_006_RBAC_RowPolicy_Alter_On("1.0")]):
@@ -203,7 +203,7 @@ def feature(self, node="clickhouse1"):
                 RQ_SRS_006_RBAC_RowPolicy_Alter_On("1.0")]):
             with cleanup("policy12"):
                 with When("I alter row policy to no assignment"):
-                    node.query("ALTER ROW POLICY policy12 ON default.foo TO NONE")        
+                    node.query("ALTER ROW POLICY policy12 ON default.foo TO NONE")
 
         # Official syntax: ON CLUSTER cluster_name ON database.table
         # Working syntax: both orderings of ON CLUSTER and TABLE clauses work

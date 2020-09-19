@@ -14,7 +14,7 @@ def feature(self, node="clickhouse1"):
     ```sql
     CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
@@ -31,11 +31,11 @@ def feature(self, node="clickhouse1"):
         finally:
             with Finally("I drop the quota"):
                 node.query(f"DROP QUOTA IF EXISTS {quota}")
-    
+
     def create_quota(quota):
         with And(f"I ensure I do have quota {quota}"):
                 node.query(f"CREATE QUOTA OR REPLACE {quota}")
-                
+
     try:
         with Given("I have a user and a role"):
             node.query(f"CREATE USER user0")
@@ -81,7 +81,7 @@ def feature(self, node="clickhouse1"):
                 with When(f"I create a quota {quota} with or replace"):
                     node.query(f"CREATE QUOTA OR REPLACE {quota}")
             del quota
-        
+
         with Scenario("I create quota or replace, quota does exist", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_Quota_Create_Replace("1.0")]):
             quota = "quota2"
@@ -107,7 +107,7 @@ def feature(self, node="clickhouse1"):
                 with When("I create a quota for randomized interval"):
                     node.query("CREATE QUOTA quota9 FOR RANDOMIZED INTERVAL 1 DAY NO LIMITS")
 
-        intervals = ['SECOND', 'MINUTE', 'HOUR', 'DAY', 'MONTH']
+        intervals = ['SECOND', 'MINUTE', 'HOUR', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
         for i, interval in enumerate(intervals):
             with Scenario(f"I create quota for interval {interval}", flags=TE, requirements=[
                     RQ_SRS_006_RBAC_Quota_Create_Interval("1.0")]):
@@ -214,7 +214,7 @@ def feature(self, node="clickhouse1"):
             finally:
                 with Finally("I drop the quota from cluster"):
                     node.query("DROP QUOTA IF EXISTS quota29 ON CLUSTER sharded_cluster")
-        
+
         with Scenario("I create quota on nonexistent cluster, throws exception", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_Quota_Create_Cluster("1.0")]):
             with When("I run create quota on a cluster"):

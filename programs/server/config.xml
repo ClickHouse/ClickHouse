@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
-  If you have accidentially specified user-level settings here, server won't start.
+  If you have accidentally specified user-level settings here, server won't start.
   You can either move the settings to the right place inside "users.xml" file
    or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
@@ -103,7 +103,7 @@
     <interserver_http_port>9009</interserver_http_port>
 
     <!-- Hostname that is used by other replicas to request this server.
-         If not specified, than it is determined analoguous to 'hostname -f' command.
+         If not specified, than it is determined analogous to 'hostname -f' command.
          This setting could be used to switch replication to another network interface.
       -->
     <!--
@@ -154,7 +154,7 @@
     of the time, in which case a higher number of threads might be required.
     -->
 
-     <max_thread_pool_size>10000</max_thread_pool_size>
+    <max_thread_pool_size>10000</max_thread_pool_size>
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -212,8 +212,17 @@
     <!-- Directory with user provided files that are accessible by 'file' table function. -->
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 
-    <!-- Path to folder where users and roles created by SQL commands are stored. -->
-    <access_control_path>/var/lib/clickhouse/access/</access_control_path>
+    <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
+    <user_directories>
+        <users_xml>
+            <!-- Path to configuration file with predefined users. -->
+            <path>users.xml</path>
+        </users_xml>
+        <local_directory>
+            <!-- Path to folder where users created by SQL commands are stored. -->
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+    </user_directories>
 
     <!-- External user directories (LDAP). -->
     <ldap_servers>
@@ -256,16 +265,13 @@
         -->
     </ldap_servers>
 
-    <!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
-    <users_config>users.xml</users_config>
-
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
 
     <!-- Comma-separated list of prefixes for user-defined settings. -->
     <custom_settings_prefixes></custom_settings_prefixes>
 
-    <!-- System profile of settings. This settings are used by internal processes (Buffer storage, Distibuted DDL worker and so on). -->
+    <!-- System profile of settings. This settings are used by internal processes (Buffer storage, Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
 
     <!-- Default database. -->
@@ -296,12 +302,37 @@
     -->
     <mlock_executable>true</mlock_executable>
 
+    <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
+    <remap_executable>false</remap_executable>
+
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
     <remote_servers incl="clickhouse_remote_servers" >
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
+            <!-- Inter-server per-cluster secret for Distributed queries
+                 default: no secret (no authentication will be performed)
+
+                 If set, then Distributed queries will be validated on shards, so at least:
+                 - such cluster should exist on the shard,
+                 - such cluster should have the same secret.
+
+                 And also (and which is more important), the initial_user will
+                 be used as current user for the query.
+
+                 Right now the protocol is pretty simple and it only takes into account:
+                 - cluster name
+                 - query
+
+                 Also it will be nice if the following will be implemented:
+                 - source hostname (see interserver_http_host), but then it will depends from DNS,
+                   it can use IP address instead, but then the you need to get correct on the initiator node.
+                 - target hostname / ip address (same notes as for source hostname)
+                 - time-based security tokens
+            -->
+            <!-- <secret></secret> -->
+
             <shard>
                 <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <!-- <internal_replication>false</internal_replication> -->
@@ -455,7 +486,7 @@
     </graphite>
     -->
 
-    <!-- Serve endpoint fot Prometheus monitoring. -->
+    <!-- Serve endpoint for Prometheus monitoring. -->
     <!--
         endpoint - mertics path (relative to root, statring with "/")
         port - port to setup server. If not defined or 0 than http_port used
@@ -615,6 +646,9 @@
 
         <!-- Settings from this profile will be used to execute DDL queries -->
         <!-- <profile>default</profile> -->
+
+        <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
+        <!-- <pool_size>1</pool_size> -->
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->

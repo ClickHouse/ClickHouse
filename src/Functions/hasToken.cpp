@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct NameHasToken
 {
@@ -13,6 +15,8 @@ struct NameHasToken
 };
 
 using FunctionHasToken = FunctionsStringSearch<HasTokenImpl<VolnitskyCaseSensitiveToken, false>, NameHasToken>;
+
+}
 
 void registerFunctionHasToken(FunctionFactory & factory)
 {

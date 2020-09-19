@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Disks/Executor.h>
 
 #include <memory>
 #include <mutex>
@@ -66,6 +67,9 @@ using SpacePtr = std::shared_ptr<Space>;
 class IDisk : public Space
 {
 public:
+    /// Default constructor.
+    explicit IDisk(std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>()) : executor(std::move(executor_)) { }
+
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
     virtual const String & getPath() const = 0;
@@ -173,11 +177,29 @@ public:
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
 
+    /// Wrapper for POSIX open
+    virtual int open(const String & path, mode_t mode) const = 0;
+
+    /// Wrapper for POSIX close
+    virtual void close(int fd) const = 0;
+
+    /// Wrapper for POSIX fsync
+    virtual void sync(int fd) const = 0;
+
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 
     /// Return disk type - "local", "s3", etc.
     virtual const String getType() const = 0;
+
+    /// Invoked when Global Context is shutdown.
+    virtual void shutdown() { }
+
+private:
+    /// Returns executor to perform asynchronous operations.
+    Executor & getExecutor() { return *executor; }
+
+    std::unique_ptr<Executor> executor;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

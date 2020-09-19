@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
     extern const int INCORRECT_DISK_INDEX;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -407,12 +408,69 @@ public:
         disk->reserved_bytes += size;
     }
 
-    ~DiskS3Reservation() override;
+    ~DiskS3Reservation() override
+    {
+        try
+        {
+            std::lock_guard lock(disk->reservation_mutex);
+            if (disk->reserved_bytes < size)
+            {
+                disk->reserved_bytes = 0;
+                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+            }
+            else
+            {
+                disk->reserved_bytes -= size;
+            }
+
+            if (disk->reservation_count == 0)
+                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+            else
+                --disk->reservation_count;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
 private:
     DiskS3Ptr disk;
     UInt64 size;
     CurrentMetrics::Increment metric_increment;
+};
+
+/// Runs tasks asynchronously using global thread pool.
+class AsyncExecutor : public Executor
+{
+public:
+    explicit AsyncExecutor() = default;
+
+    std::future<void> execute(std::function<void()> task) override
+    {
+        auto promise = std::make_shared<std::promise<void>>();
+
+        GlobalThreadPool::instance().scheduleOrThrowOnError(
+            [promise, task]()
+            {
+                try
+                {
+                    task();
+                    promise->set_value();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(&Poco::Logger::get("DiskS3"), "Failed to run async task");
+
+                    try
+                    {
+                        promise->set_exception(std::current_exception());
+                    } catch (...) { }
+                }
+            });
+
+        return promise->get_future();
+    }
 };
 
 
@@ -426,7 +484,8 @@ DiskS3::DiskS3(
     size_t min_upload_part_size_,
     size_t min_multi_part_upload_size_,
     size_t min_bytes_for_seek_)
-    : name(std::move(name_))
+    : IDisk(std::make_unique<AsyncExecutor>())
+    , name(std::move(name_))
     , client(std::move(client_))
     , proxy_configuration(std::move(proxy_configuration_))
     , bucket(std::move(bucket_))
@@ -688,30 +747,28 @@ void DiskS3::setReadOnly(const String & path)
     Poco::File(metadata_path + path).setReadOnly(true);
 }
 
-DiskS3Reservation::~DiskS3Reservation()
+int DiskS3::open(const String & /*path*/, mode_t /*mode*/) const
 {
-    try
-    {
-        std::lock_guard lock(disk->reservation_mutex);
-        if (disk->reserved_bytes < size)
-        {
-            disk->reserved_bytes = 0;
-            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
-        }
-        else
-        {
-            disk->reserved_bytes -= size;
-        }
+    throw Exception("Method open is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
+}
 
-        if (disk->reservation_count == 0)
-            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
-        else
-            --disk->reservation_count;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+void DiskS3::close(int /*fd*/) const
+{
+    throw Exception("Method close is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskS3::sync(int /*fd*/) const
+{
+    throw Exception("Method sync is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskS3::shutdown()
+{
+    /// This call stops any next retry attempts for ongoing S3 requests.
+    /// If S3 request is failed and the method below is executed S3 client immediately returns the last failed S3 request outcome.
+    /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
+    /// This should significantly speed up shutdown process if S3 is unhealthy.
+    client->DisableRequestProcessing();
 }
 
 }

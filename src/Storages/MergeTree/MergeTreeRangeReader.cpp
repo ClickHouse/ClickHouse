@@ -877,7 +877,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// If there is still a filter, do the filtering now
         if (result.getFilter())
         {
-            /// filter might be shrinked while columns not
+            /// filter might be shrunk while columns not
             const auto * result_filter = result.getFilterOriginal();
             filterColumns(result.columns, result_filter->getData());
             result.need_filter = true;

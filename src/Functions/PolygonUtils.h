@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <Core/TypeListNumber.h>
 #include <Columns/IColumn.h>
@@ -179,9 +179,9 @@ private:
     {
         inner,                                  /// The cell is completely inside polygon.
         outer,                                  /// The cell is completely outside of polygon.
-        singleLine,                             /// The cell is splitted to inner/outer part by a single line.
-        pairOfLinesSingleConvexPolygon,         /// The cell is splitted to inner/outer part by a polyline of two sections and inner part is convex.
-        pairOfLinesSingleNonConvexPolygons,     /// The cell is splitted to inner/outer part by a polyline of two sections and inner part is non convex.
+        singleLine,                             /// The cell is split to inner/outer part by a single line.
+        pairOfLinesSingleConvexPolygon,         /// The cell is split to inner/outer part by a polyline of two sections and inner part is convex.
+        pairOfLinesSingleNonConvexPolygons,     /// The cell is split to inner/outer part by a polyline of two sections and inner part is non convex.
         pairOfLinesDifferentPolygons,           /// The cell is spliited by two lines to three different parts.
         complexPolygon                          /// Generic case.
     };

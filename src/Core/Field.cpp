@@ -197,6 +197,13 @@ void readBinary(Tuple & x, ReadBuffer & buf)
                 x.push_back(value);
                 break;
             }
+            case Field::Types::Int128:
+            {
+                Int64 value;
+                DB::readVarInt(value, buf);
+                x.push_back(value);
+                break;
+            }
             case Field::Types::Float64:
             {
                 Float64 value;
@@ -208,6 +215,20 @@ void readBinary(Tuple & x, ReadBuffer & buf)
             {
                 std::string value;
                 DB::readStringBinary(value, buf);
+                x.push_back(value);
+                break;
+            }
+            case Field::Types::UInt256:
+            {
+                UInt256 value;
+                DB::readBinary(value, buf);
+                x.push_back(value);
+                break;
+            }
+            case Field::Types::Int256:
+            {
+                Int256 value;
+                DB::readBinary(value, buf);
                 x.push_back(value);
                 break;
             }
@@ -265,6 +286,11 @@ void writeBinary(const Tuple & x, WriteBuffer & buf)
                 DB::writeVarInt(get<Int64>(elem), buf);
                 break;
             }
+            case Field::Types::Int128:
+            {
+                DB::writeVarInt(get<Int64>(elem), buf);
+                break;
+            }
             case Field::Types::Float64:
             {
                 DB::writeFloatBinary(get<Float64>(elem), buf);
@@ -273,6 +299,16 @@ void writeBinary(const Tuple & x, WriteBuffer & buf)
             case Field::Types::String:
             {
                 DB::writeStringBinary(get<std::string>(elem), buf);
+                break;
+            }
+            case Field::Types::UInt256:
+            {
+                DB::writeBinary(get<UInt256>(elem), buf);
+                break;
+            }
+            case Field::Types::Int256:
+            {
+                DB::writeBinary(get<Int256>(elem), buf);
                 break;
             }
             case Field::Types::Array:
@@ -312,7 +348,7 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
     if (exponent > 0)
     {
         scale = 0;
-        if (common::mulOverflow(value.value, T::getScaleMultiplier(exponent), value.value))
+        if (common::mulOverflow(value.value, DecimalUtils::scaleMultiplier<T>(exponent), value.value))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
     else
@@ -324,7 +360,7 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 template void readQuoted<Decimal32>(DecimalField<Decimal32> & x, ReadBuffer & buf);
 template void readQuoted<Decimal64>(DecimalField<Decimal64> & x, ReadBuffer & buf);
 template void readQuoted<Decimal128>(DecimalField<Decimal128> & x, ReadBuffer & buf);
-
+template void readQuoted<Decimal256>(DecimalField<Decimal256> & x, ReadBuffer & buf);
 
 void writeFieldText(const Field & x, WriteBuffer & buf)
 {
@@ -365,6 +401,27 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         return value;
     }
 
+    prefix = std::string_view{"Int128_"};
+    if (dump.starts_with(prefix))
+    {
+        Int128 value = parseFromString<Int128>(dump.substr(prefix.length()));
+        return value;
+    }
+
+    prefix = std::string_view{"Int256_"};
+    if (dump.starts_with(prefix))
+    {
+        Int256 value = parseFromString<Int256>(dump.substr(prefix.length()));
+        return value;
+    }
+
+    prefix = std::string_view{"UInt256_"};
+    if (dump.starts_with(prefix))
+    {
+        UInt256 value = parseFromString<UInt256>(dump.substr(prefix.length()));
+        return value;
+    }
+
     prefix = std::string_view{"Float64_"};
     if (dump.starts_with(prefix))
     {
@@ -394,6 +451,15 @@ Field Field::restoreFromDump(const std::string_view & dump_)
     if (dump_.starts_with(prefix))
     {
         DecimalField<Decimal128> decimal;
+        ReadBufferFromString buf{dump.substr(prefix.length())};
+        readQuoted(decimal, buf);
+        return decimal;
+    }
+
+    prefix = std::string_view{"Decimal256_"};
+    if (dump_.starts_with(prefix))
+    {
+        DecimalField<Decimal256> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
         return decimal;
@@ -521,5 +587,26 @@ template <> bool decimalLessOrEqual(Decimal64 x, Decimal64 y, UInt32 x_scale, UI
 template <> bool decimalEqual(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
 template <> bool decimalLess(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
 template <> bool decimalLessOrEqual(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
+
+template <> bool decimalEqual(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
+template <> bool decimalLess(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
+template <> bool decimalLessOrEqual(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
+
+inline void writeText(const Null &, WriteBuffer & buf)
+{
+    writeText(std::string("Null"), buf);
+}
+
+String toString(const Field & x)
+{
+    return Field::dispatch(
+        [] (const auto & value)
+        {
+            // Use explicit type to prevent implicit construction of Field and
+            // infinite recursion into toString<Field>.
+            return toString<decltype(value)>(value);
+        },
+        x);
+}
 
 }

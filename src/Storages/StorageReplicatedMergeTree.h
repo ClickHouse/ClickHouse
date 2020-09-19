@@ -87,7 +87,7 @@ public:
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -109,9 +109,9 @@ public:
         bool deduplicate,
         const Context & query_context) override;
 
-    void alter(const AlterCommands & params, const Context & query_context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, const Context & query_context, TableLockHolder & table_lock_holder) override;
 
-    Pipes alterPartition(
+    Pipe alterPartition(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         const PartitionCommands & commands,
@@ -379,7 +379,7 @@ private:
     /// Do the merge or recommend to make the fetch instead of the merge
     bool tryExecuteMerge(const LogEntry & entry);
 
-    /// Execute alter of table metadata. Set replica/metdata and replica/columns
+    /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.
     /// New metadata and columns values stored in entry.
     bool executeMetadataAlter(const LogEntry & entry);
@@ -449,9 +449,9 @@ private:
         const String & merged_name,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
-        bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
-        int32_t log_version);
+        int32_t log_version,
+        MergeType merge_type);
 
     CreateMergeEntryResult createLogEntryToMutatePart(
         const IMergeTreeDataPart & part,
@@ -478,7 +478,13 @@ private:
       * If quorum != 0, then the node for tracking the quorum is updated.
       * Returns false if part is already fetching right now.
       */
-    bool fetchPart(const String & part_name, const StorageMetadataPtr & metadata_snapshot, const String & replica_path, bool to_detached, size_t quorum);
+    bool fetchPart(
+        const String & part_name,
+        const StorageMetadataPtr & metadata_snapshot,
+        const String & replica_path,
+        bool to_detached,
+        size_t quorum,
+        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr);
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;

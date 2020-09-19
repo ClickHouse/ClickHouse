@@ -85,8 +85,9 @@ public:
         auto dict = std::atomic_load(&dictionary);
         if (dict)
             return dict;
-        dict = external_loader.getDictionary(dictionary_name);
-        context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getName());
+        String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
+        dict = external_loader.getDictionary(resolved_name);
+        context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
         std::atomic_store(&dictionary, dict);
         return dict;
     }

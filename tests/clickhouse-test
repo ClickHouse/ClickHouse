@@ -16,7 +16,7 @@ from subprocess import Popen
 from subprocess import PIPE
 from subprocess import CalledProcessError
 from datetime import datetime
-from time import sleep
+from time import time, sleep
 from errno import ESRCH
 try:
     import termcolor
@@ -36,6 +36,63 @@ MESSAGES_TO_RETRY = [
 ]
 
 
+def json_minify(string):
+    """
+    Removes all js-style comments from json string. Allows to have comments in skip_list.json.
+    The code taken from https://github.com/getify/JSON.minify/tree/python under the MIT license.
+    """
+
+    tokenizer = re.compile('"|(/\*)|(\*/)|(//)|\n|\r')
+    end_slashes_re = re.compile(r'(\\)*$')
+
+    in_string = False
+    in_multi = False
+    in_single = False
+
+    new_str = []
+    index = 0
+
+    for match in re.finditer(tokenizer, string):
+        if not (in_multi or in_single):
+            tmp = string[index:match.start()]
+            new_str.append(tmp)
+        else:
+            # Replace comments with white space so that the JSON parser reports
+            # the correct column numbers on parsing errors.
+            new_str.append(' ' * (match.start() - index))
+
+        index = match.end()
+        val = match.group()
+
+        if val == '"' and not (in_multi or in_single):
+            escaped = end_slashes_re.search(string, 0, match.start())
+
+            # start of string or unescaped quote character to end string
+            if not in_string or (escaped is None or len(escaped.group()) % 2 == 0):  # noqa
+                in_string = not in_string
+            index -= 1  # include " character in next catch
+        elif not (in_string or in_multi or in_single):
+            if val == '/*':
+                in_multi = True
+            elif val == '//':
+                in_single = True
+        elif val == '*/' and in_multi and not (in_string or in_single):
+            in_multi = False
+            new_str.append(' ' * len(val))
+        elif val in '\r\n' and not (in_multi or in_string) and in_single:
+            in_single = False
+        elif not in_multi or in_single:  # noqa
+            new_str.append(val)
+
+        if val in '\r\n':
+            new_str.append(val)
+        elif in_multi or in_single:
+            new_str.append(' ' * len(val))
+
+    new_str.append(string[index:])
+    return ''.join(new_str)
+
+
 def remove_control_characters(s):
     """
     https://github.com/html5lib/html5lib-python/issues/96#issuecomment-43438438
@@ -49,6 +106,10 @@ def remove_control_characters(s):
     s = re.sub(r"[\x00-\x08\x0b\x0e-\x1f\x7f]", "", s)
     return s
 
+def get_db_engine(args):
+    if args.atomic_db_engine:
+        return " ENGINE=Atomic"
+    return ""
 
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
 
@@ -69,7 +130,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         database = 'test_{suffix}'.format(suffix=random_str())
 
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE " + database)
+        clickhouse_proc_create.communicate("CREATE DATABASE " + database + get_db_engine(args))
 
         os.environ["CLICKHOUSE_DATABASE"] = database
 
@@ -163,6 +224,7 @@ def colored(text, args, color=None, on_color=None, attrs=None):
 
 SERVER_DIED = False
 exit_code = 0
+stop_time = None
 
 
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
@@ -170,6 +232,7 @@ def run_tests_array(all_tests_with_params):
     all_tests, suite, suite_dir, suite_tmp_dir, run_total = all_tests_with_params
     global exit_code
     global SERVER_DIED
+    global stop_time
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=['bold'])
     CL_SQUARE_BRACKET = colored("]", args, attrs=['bold'])
@@ -196,6 +259,10 @@ def run_tests_array(all_tests_with_params):
 
     for case in all_tests:
         if SERVER_DIED:
+            break
+
+        if stop_time and time() > stop_time:
+            print("\nStop tests run because global time limit is exceeded.\n")
             break
 
         case_file = os.path.join(suite_dir, case)
@@ -277,6 +344,10 @@ def run_tests_array(all_tests_with_params):
 
                             if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                 SERVER_DIED = True
+
+                            if os.path.isfile(stdout_file):
+                                print(", result:\n")
+                                print(open(stdout_file).read())
 
                         elif stderr:
                             failures += 1
@@ -435,20 +506,12 @@ def collect_build_flags(client):
     else:
         raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
-    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'")
-
-    if clickhouse_proc.returncode == 0:
-        if '10485760' in stdout:
-            result.append(BuildFlags.POLYMORPHIC_PARTS)
-    else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
-
     return result
 
 
 def main(args):
     global SERVER_DIED
+    global stop_time
     global exit_code
     global server_logs_level
 
@@ -488,6 +551,10 @@ def main(args):
     # Shell scripts could change logging level
     os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
 
+    # This code is bad as the time is not monotonic
+    if args.global_time_limit:
+        stop_time = time() + args.global_time_limit
+
     if args.zookeeper is None:
         code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
@@ -507,10 +574,10 @@ def main(args):
 
     if args.database and args.database != "test":
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
+        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args))
 
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
+    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args))
 
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
@@ -688,7 +755,9 @@ def collect_tests_to_skip(skip_list_path, build_flags):
         return result
 
     with open(skip_list_path, 'r') as skip_list_file:
-        skip_dict = json.load(skip_list_file)
+        content = skip_list_file.read()
+        # allows to have comments in skip_list.json
+        skip_dict = json.loads(json_minify(content))
         for build_flag in build_flags:
             result |= set(skip_dict[build_flag])
 
@@ -708,6 +777,7 @@ if __name__ == '__main__':
     parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help='Preprocessed server config')
     parser.add_argument('-o', '--output', help='Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type=int, default=600, help='Timeout for each test case in seconds')
+    parser.add_argument('--global_time_limit', type=int, help='Stop if executing more than specified time (after current test finished)')
     parser.add_argument('test', nargs='*', help='Optional test case name regex')
     parser.add_argument('-d', '--disabled', action='store_true', default=False, help='Also run disabled tests')
     parser.add_argument('--stop', action='store_true', default=None, dest='stop', help='Stop on network errors')
@@ -722,6 +792,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
     parser.add_argument('--skip-list-path', help="Path to skip-list file")
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
+    parser.add_argument('--atomic-db-engine', action='store_true', help='Create databases with Atomic engine by default')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
@@ -738,18 +809,33 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.queries is None and os.path.isdir('queries'):
+    if args.queries and not os.path.isdir(args.queries):
+        print("Cannot access the specified directory with queries (" + args.queries + ")", file=sys.stderr)
+        exit(1)
+
+    # Autodetect the directory with queries if not specified
+    if args.queries is None:
         args.queries = 'queries'
-    elif args.queries is None:
-        if (os.path.isdir('/usr/local/share/clickhouse-test/queries')):
-            args.queries = '/usr/local/share/clickhouse-test/queries'
-        if (args.queries is None and os.path.isdir('/usr/share/clickhouse-test/queries')):
-            args.queries = '/usr/share/clickhouse-test/queries'
+
+    if not os.path.isdir(args.queries):
+        # If we're running from the repo
+        args.queries = os.path.join(os.path.dirname(os.path.abspath( __file__ )), 'queries')
+
+    if not os.path.isdir(args.queries):
+        # Next we're going to try some system directories, don't write 'stdout' files into them.
         if args.tmp is None:
             args.tmp = '/tmp/clickhouse-test'
-    if args.queries is None:
+
+        args.queries = '/usr/local/share/clickhouse-test/queries'
+
+    if not os.path.isdir(args.queries):
+        args.queries = '/usr/share/clickhouse-test/queries'
+
+    if not os.path.isdir(args.queries):
         print("Failed to detect path to the queries directory. Please specify it with '--queries' option.", file=sys.stderr)
         exit(1)
+
+    print("Using queries from '" + args.queries + "' directory")
 
     if args.skip_list_path is None:
         args.skip_list_path = os.path.join(args.queries, 'skip_list.json')

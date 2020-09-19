@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace ActionLocks
@@ -138,7 +139,6 @@ void StorageMergeTree::shutdown()
         mutation_wait_event.notify_all();
     }
 
-
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
@@ -147,7 +147,6 @@ void StorageMergeTree::shutdown()
 
     if (moving_task_handle)
         global_context.getBackgroundMovePool().removeTask(moving_task_handle);
-
 
     try
     {
@@ -172,7 +171,7 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
-Pipes StorageMergeTree::read(
+Pipe StorageMergeTree::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -220,7 +219,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, cons
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger_mutator.merges_blocker.cancel();
+        auto merge_blocker = stopMergesAndWait();
 
         /// NOTE: It's assumed that this method is called under lockForAlter.
 
@@ -628,11 +627,13 @@ bool StorageMergeTree::merge(
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto data_settings = getSettings();
 
     FutureMergedMutatedPart future_part;
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
+    MergeList::EntryPtr merge_entry;
 
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
@@ -652,8 +653,21 @@ bool StorageMergeTree::merge(
         if (partition_id.empty())
         {
             UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
+            bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < data_settings->max_number_of_merges_with_ttl_in_pool;
+
+            /// TTL requirements is much more strict than for regular merge, so
+            /// if regular not possible, than merge with ttl is not also not
+            /// possible.
             if (max_source_parts_size > 0)
-                selected = merger_mutator.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
+            {
+                selected = merger_mutator.selectPartsToMerge(
+                    future_part,
+                    aggressive,
+                    max_source_parts_size,
+                    can_merge,
+                    merge_with_ttl_allowed,
+                    out_disable_reason);
+            }
             else if (out_disable_reason)
                 *out_disable_reason = "Current value of max_source_parts_size is zero";
         }
@@ -702,10 +716,9 @@ bool StorageMergeTree::merge(
         }
 
         merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
+        auto table_id = getStorageID();
+        merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
     }
-
-    auto table_id = getStorageID();
-    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
 
     /// Logging
     Stopwatch stopwatch;
@@ -725,13 +738,9 @@ bool StorageMergeTree::merge(
 
     try
     {
-        /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
-        ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
-        bool force_ttl = (final && metadata_snapshot->hasAnyTTL());
-
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr),
-            merging_tagger->reserved_space, deduplicate, force_ttl);
+            merging_tagger->reserved_space, deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         write_part_log({});
@@ -1054,7 +1063,7 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
-Pipes StorageMergeTree::alterPartition(
+Pipe StorageMergeTree::alterPartition(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
@@ -1137,15 +1146,41 @@ Pipes StorageMergeTree::alterPartition(
     if (query_context.getSettingsRef().alter_partition_verbose_result)
         return convertCommandsResultToSource(result);
 
-    return { };
+    return {};
 }
+
+
+ActionLock StorageMergeTree::stopMergesAndWait()
+{
+    /// Asks to complete merges and does not allow them to start.
+    /// This protects against "revival" of data for a removed partition after completion of merge.
+    auto merge_blocker = merger_mutator.merges_blocker.cancel();
+
+    {
+        std::unique_lock lock(currently_processing_in_background_mutex);
+        while (!currently_merging_mutating_parts.empty())
+        {
+            LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now)",
+                currently_merging_mutating_parts.size());
+
+            if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
+                lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
+            {
+                throw Exception("Timeout while waiting for already running merges", ErrorCodes::TIMEOUT_EXCEEDED);
+            }
+        }
+    }
+
+    return merge_blocker;
+}
+
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, const Context & context)
 {
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger_mutator.merges_blocker.cancel();
+        auto merge_blocker = stopMergesAndWait();
 
         auto metadata_snapshot = getInMemoryMetadataPtr();
         String partition_id = getPartitionIDFromQuery(partition, context);
@@ -1175,7 +1210,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 }
 
 
-PartitionCommandsResultInfo  StorageMergeTree::attachPartition(
+PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     const ASTPtr & partition, bool attach_part, const Context & context)
 {
     PartitionCommandsResultInfo results;

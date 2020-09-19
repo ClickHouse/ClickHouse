@@ -1,0 +1,20 @@
+left asof using
+0	\N	0	\N	UInt8	Nullable(UInt8)	UInt8	Nullable(UInt8)
+1	\N	1	\N	UInt8	Nullable(UInt8)	UInt8	Nullable(UInt8)
+1	1	2	2	UInt8	Nullable(UInt8)	UInt8	Nullable(UInt8)
+0	\N	0	\N	UInt8	Nullable(UInt8)	Nullable(UInt8)	Nullable(UInt8)
+1	\N	1	\N	UInt8	Nullable(UInt8)	Nullable(UInt8)	Nullable(UInt8)
+1	1	2	2	UInt8	Nullable(UInt8)	Nullable(UInt8)	Nullable(UInt8)
+left asof on
+0	\N	0	\N	UInt8	Nullable(UInt8)	UInt8	Nullable(UInt8)
+1	\N	1	\N	UInt8	Nullable(UInt8)	UInt8	Nullable(UInt8)
+1	1	2	2	UInt8	Nullable(UInt8)	UInt8	Nullable(UInt8)
+0	\N	0	\N	UInt8	Nullable(UInt8)	Nullable(UInt8)	Nullable(UInt8)
+1	\N	1	\N	UInt8	Nullable(UInt8)	Nullable(UInt8)	Nullable(UInt8)
+1	1	2	2	UInt8	Nullable(UInt8)	Nullable(UInt8)	Nullable(UInt8)
+asof using
+1	1	2	2	UInt8	UInt8	UInt8	UInt8
+1	1	2	2	UInt8	UInt8	Nullable(UInt8)	UInt8
+asof on
+1	1	2	2	UInt8	UInt8	UInt8	UInt8
+1	1	2	2	UInt8	UInt8	Nullable(UInt8)	UInt8

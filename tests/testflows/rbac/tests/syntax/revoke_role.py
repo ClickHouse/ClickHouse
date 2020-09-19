@@ -50,7 +50,7 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.role_not_found_in_disk(name="role0")
                 node.query("REVOKE role0 FROM user0", exitcode=exitcode, message=message)
 
-    # with nonexistent object name, REVOKE assumes type role (treats user0 as role)
+    # With nonexistent object name, REVOKE assumes type role (treats user0 as role)
     with Scenario("I revoke a role from a nonexistent user", requirements=[
             RQ_SRS_006_RBAC_Revoke_Role("1.0")]):
         with setup(0,1):
@@ -58,7 +58,7 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.role_not_found_in_disk(name="user0")
                 node.query("REVOKE role0 FROM user0", exitcode=exitcode, message=message)
 
-    # with nonexistent object name, REVOKE assumes type role (treats user0 as role)
+    # With nonexistent object name, REVOKE assumes type role (treats user0 as role)
     with Scenario("I revoke a role from ALL EXCEPT nonexistent user", requirements=[
             RQ_SRS_006_RBAC_Revoke_Role("1.0")]):
         with setup(0,1):
@@ -86,7 +86,7 @@ def feature(self, node="clickhouse1"):
 
     #user is default, expect exception
     with Scenario("I revoke a role from default user", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Role("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Role("1.0"),
             RQ_SRS_006_RBAC_Revoke_Role_Keywords("1.0")]):
         with setup():
             with When("I revoke a role from default user"):
@@ -95,7 +95,7 @@ def feature(self, node="clickhouse1"):
 
     #user is user0
     with Scenario("I revoke a role from current user", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Role("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Role("1.0"),
             RQ_SRS_006_RBAC_Revoke_Role_Keywords("1.0")]):
         with setup():
             with When("I revoke a role from current user"):
@@ -103,16 +103,16 @@ def feature(self, node="clickhouse1"):
 
     #user is default, expect exception
     with Scenario("I revoke a role from all", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Role("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Role("1.0"),
             RQ_SRS_006_RBAC_Revoke_Role_Keywords("1.0")]):
         with setup():
             with When("I revoke a role from all"):
-                exitcode, message = errors.cannot_update_default()               
+                exitcode, message = errors.cannot_update_default()
                 node.query("REVOKE role0 FROM ALL", exitcode=exitcode, message=message)
 
     #user is default, expect exception
     with Scenario("I revoke multiple roles from all", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Role("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Role("1.0"),
             RQ_SRS_006_RBAC_Revoke_Role_Keywords("1.0")]):
         with setup():
             with When("I revoke multiple roles from all"):
@@ -120,14 +120,14 @@ def feature(self, node="clickhouse1"):
                 node.query("REVOKE role0, role1 FROM ALL", exitcode=exitcode, message=message)
 
     with Scenario("I revoke a role from all but current user", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Role("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Role("1.0"),
             RQ_SRS_006_RBAC_Revoke_Role_Keywords("1.0")]):
         with setup():
             with When("I revoke a role from all except current"):
                 node.query("REVOKE role0 FROM ALL EXCEPT CURRENT_USER")
 
     with Scenario("I revoke a role from all but default user", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Role("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Role("1.0"),
             RQ_SRS_006_RBAC_Revoke_Role_Keywords("1.0")]):
         with setup():
             with When("I revoke a role from all except default"):
@@ -135,7 +135,7 @@ def feature(self, node="clickhouse1"):
                             settings = [("user","user0")])
 
     with Scenario("I revoke multiple roles from all but default user", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Role("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Role("1.0"),
             RQ_SRS_006_RBAC_Revoke_Role_Keywords("1.0")]):
         with setup():
             with When("I revoke multiple roles from all except default"):
@@ -152,7 +152,7 @@ def feature(self, node="clickhouse1"):
         with setup():
             with When("I revoke a role from multiple roles"):
                 node.query("REVOKE role0 FROM role1, user0")
-    
+
     with Scenario("I revoke a role from a user on cluster", flags=TE, requirements=[
             RQ_SRS_006_RBAC_Revoke_Role_Cluster("1.0")]):
         with Given("I have a role and a user on a cluster"):
@@ -171,7 +171,7 @@ def feature(self, node="clickhouse1"):
             node.query("REVOKE ON CLUSTER fake_cluster role0 FROM user0", exitcode=exitcode, message=message)
 
     with Scenario("I revoke multiple roles from multiple users on cluster", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Role("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Role("1.0"),
             RQ_SRS_006_RBAC_Revoke_Role_Cluster("1.0")]):
         with Given("I have multiple roles and multiple users on a cluster"):
             for i in range(2):
@@ -191,7 +191,7 @@ def feature(self, node="clickhouse1"):
                 node.query("REVOKE ADMIN OPTION FOR role0 FROM user0")
 
     with Scenario("I revoke admin option for multiple roles from multiple users", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Revoke_Role("1.0"), 
+            RQ_SRS_006_RBAC_Revoke_Role("1.0"),
             RQ_SRS_006_RBAC_Revoke_AdminOption("1.0")]):
         with setup():
             with When("I revoke admin option for multiple roles from multiple users"):

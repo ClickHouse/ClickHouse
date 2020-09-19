@@ -19,6 +19,10 @@ if (ENABLE_STATS)
         set(EIGEN_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/gcem)
         set (USE_STATS 1)
     endif()
+
+    if (NOT USE_STATS)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't enable stats library")
+    endif()
 endif()
 
 message (STATUS "Using stats=${USE_STATS} : ${STATS_INCLUDE_DIR}")

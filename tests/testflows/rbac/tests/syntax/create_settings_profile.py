@@ -44,7 +44,7 @@ def feature(self, node="clickhouse1"):
             with cleanup("profile0"):
                 with When("I create settings profile"):
                     node.query("CREATE SETTINGS PROFILE profile0")
-        
+
         with Scenario("I create settings profile that already exists, throws exception", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_SettingsProfile_Create("1.0")]):
             profile = "profile0"
@@ -54,7 +54,7 @@ def feature(self, node="clickhouse1"):
                     exitcode, message = errors.cannot_insert_settings_profile(name=profile)
                     node.query(f"CREATE SETTINGS PROFILE {profile}", exitcode=exitcode, message=message)
             del profile
-        
+
         with Scenario("I create settings profile if not exists, profile does not exist", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_SettingsProfile_Create_IfNotExists("1.0")]):
             with cleanup("profile1"):

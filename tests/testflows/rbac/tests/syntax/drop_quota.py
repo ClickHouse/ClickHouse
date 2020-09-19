@@ -25,7 +25,7 @@ def feature(self, node="clickhouse1"):
         finally:
             with Finally("I drop the quota"):
                 node.query(f"DROP QUOTA IF EXISTS {quota}")
-    
+
     def cleanup_quota(quota):
         with Given(f"I ensure that quota {quota} does not exist"):
             node.query(f"DROP QUOTA IF EXISTS {quota}")

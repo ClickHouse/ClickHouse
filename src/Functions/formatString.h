@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/memcpySmall.h>
@@ -225,7 +225,7 @@ struct FormatImpl
             index_positions = big_index_positions_buffer.get();
         }
 
-        /// Vector of substrings of pattern that will be copied to the ans, not string view because of escaping and iterators invalidation.
+        /// Vector of substrings of pattern that will be copied to the answer, not string view because of escaping and iterators invalidation.
         /// These are exactly what is between {} tokens, for `Hello {} world {}` we will have [`Hello `, ` world `, ``].
         std::vector<String> substrings;
 
@@ -236,7 +236,7 @@ struct FormatImpl
         for (String & str : substrings)
         {
             /// To use memcpySmallAllowReadWriteOverflow15 for substrings we should allocate a bit more to each string.
-            /// That was chosen due to perfomance issues.
+            /// That was chosen due to performance issues.
             if (!str.empty())
                 str.reserve(str.size() + right_padding);
             final_size += str.size();

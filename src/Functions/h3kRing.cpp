@@ -14,10 +14,16 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
+
+namespace
+{
+
 class FunctionH3KRing : public IFunction
 {
 public:
@@ -65,6 +71,15 @@ public:
             const H3Index origin_hindex = col_hindex->getUInt(row);
             const int k = col_k->getInt(row);
 
+            /// Overflow is possible. The function maxKringSize does not check for overflow.
+            /// The calculation is similar to square of k but several times more.
+            /// Let's use huge underestimation as the safe bound. We should not allow to generate too large arrays nevertheless.
+            constexpr auto max_k = 10000;
+            if (k > max_k)
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Too large 'k' argument for {} function, maximum {}", getName(), max_k);
+            if (k < 0)
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
+
             const auto vec_size = maxKringSize(k);
             hindex_vec.resize(vec_size);
             kRing(origin_hindex, k, hindex_vec.data());
@@ -85,6 +100,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionH3KRing(FunctionFactory & factory)
 {

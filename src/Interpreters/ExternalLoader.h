@@ -3,7 +3,7 @@
 #include <chrono>
 #include <functional>
 #include <unordered_map>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>
@@ -27,6 +27,7 @@ struct ExternalLoaderConfigSettings
     std::string external_config;
     std::string external_name;
     std::string external_database;
+    std::string external_uuid;
 };
 
 /** Interface for manage user-defined objects.

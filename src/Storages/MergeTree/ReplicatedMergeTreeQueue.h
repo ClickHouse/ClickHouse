@@ -46,9 +46,15 @@ private:
         }
     };
 
+    struct OperationsInQueue
+    {
+        size_t merges = 0;
+        size_t mutations = 0;
+        size_t merges_with_ttl = 0;
+    };
+
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
-
 
     StorageReplicatedMergeTree & storage;
     MergeTreeDataFormatVersion format_version;
@@ -87,6 +93,9 @@ private:
     /// Index of the first log entry that we didn't see yet.
     Int64 log_pointer = 0;
 
+    /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
+    bool currently_executing_drop_or_replace_range = false;
+
     /** What will be the set of active parts after executing all log entries up to log_pointer.
       * Used to determine which merges can be assigned (see ReplicatedMergeTreeMergePredicate)
       */
@@ -118,7 +127,7 @@ private:
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
         /// (even if parts_to_do.size() == 0 some relevant parts can still commit in the future).
-        /// Also we can jump over mutation when we dowload mutated part from other replica.
+        /// Also we can jump over mutation when we download mutated part from other replica.
         bool is_done = false;
 
         String latest_failed_part;
@@ -322,7 +331,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Count the number of merges and mutations of single parts in the queue.
-    std::pair<size_t, size_t> countMergesAndPartMutations() const;
+    OperationsInQueue countMergesAndPartMutations() const;
 
     /// Count the total number of active mutations.
     size_t countMutations() const;
@@ -356,7 +365,7 @@ public:
     /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
     void disableMergesInBlockRange(const String & part_name);
 
-    /// Cheks that part is already in virtual parts
+    /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.

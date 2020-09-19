@@ -50,7 +50,7 @@ void ParallelParsingBlockInputStream::cancel(bool kill)
     /*
      * The format parsers themselves are not being cancelled here, so we'll
      * have to wait until they process the current block. Given that the
-     * chunk size is on the order of megabytes, this should't be too long.
+     * chunk size is on the order of megabytes, this shouldn't be too long.
      * We can't call IInputFormat->cancel here, because the parser object is
      * local to the parser thread, and we don't want to introduce any
      * synchronization between parser threads and the other threads to get
@@ -177,7 +177,7 @@ void ParallelParsingBlockInputStream::parserThreadFunction(ThreadGroupStatusPtr 
         unit.block_ext.block_missing_values.clear();
 
         // We don't know how many blocks will be. So we have to read them all
-        // until an empty block occured.
+        // until an empty block occurred.
         Block block;
         while (!finished && (block = parser->read()) != Block())
         {
