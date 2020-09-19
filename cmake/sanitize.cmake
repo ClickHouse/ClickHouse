@@ -1,4 +1,4 @@
-# Possible values: address (ASan), memory (MSan), thread (TSan), undefined (UBSan), and "" (no sanitizing)
+# Possible values: `address` (ASan), `memory` (MSan), `thread` (TSan), `undefined` (UBSan), and "" (no sanitizing)
 option (SANITIZE "Enable one of the code sanitizers" "")
 
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
