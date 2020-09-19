@@ -32,6 +32,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
@@ -89,6 +90,23 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
 }
+
+
+int mainEntryClickHouseServer(int argc, char ** argv)
+{
+    DB::Server app;
+    try
+    {
+        return app.run(argc, argv);
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
+    }
+}
+
 
 namespace
 {
@@ -317,11 +335,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))
             {
-                LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
-                if (0 != mlockall(MCL_CURRENT))
-                    LOG_WARNING(log, "Failed mlockall: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
+                /// Get the memory area with (current) code segment.
+                /// It's better to lock only the code segment instead of calling "mlockall",
+                /// because otherwise debug info will be also locked in memory, and it can be huge.
+                auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
+
+                LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
+                if (0 != mlock(addr, len))
+                    LOG_WARNING(log, "Failed mlock: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
                 else
-                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed");
+                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
             }
             else
             {
@@ -1137,22 +1160,4 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     return Application::EXIT_OK;
 }
-}
-
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
-
-int mainEntryClickHouseServer(int argc, char ** argv)
-{
-    DB::Server app;
-    try
-    {
-        return app.run(argc, argv);
-    }
-    catch (...)
-    {
-        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
-        auto code = DB::getCurrentExceptionCode();
-        return code ? code : 1;
-    }
 }
