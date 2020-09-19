@@ -673,7 +673,7 @@ def main(args):
             if jobs > run_total:
                 run_total = jobs
 
-            batch_size = len(all_tests) / jobs
+            batch_size = len(all_tests) // jobs
             all_tests_array = []
             for i in range(0, len(all_tests), batch_size):
                 all_tests_array.append((all_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir, run_total))
