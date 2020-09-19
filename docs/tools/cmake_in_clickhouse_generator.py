@@ -8,10 +8,6 @@ Entity = Tuple[str, str, str]
 # https://regex101.com/r/R6iogw/12
 cmake_option_regex: str = r"^\s*option\s*\(([A-Z_0-9${}]+)\s*(?:\"((?:.|\n)*?)\")?\s*(.*)?\).*$"
 
-output_file_name: str = "docs/en/development/cmake-in-clickhouse.md"
-header_file_name: str = "docs/_includes/cmake_in_clickhouse_header.md"
-footer_file_name: str = "docs/_includes/cmake_in_clickhouse_footer.md"
-
 ch_master_url: str = "https://github.com/clickhouse/clickhouse/blob/master/"
 
 name_str: str = "<a name=\"{anchor}\"></a>[`{name}`](" + ch_master_url + "{path}#L{line})"
@@ -68,8 +64,8 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
 
     entities[name] = path, formatted_entity
 
-def process_file(input_name: str) -> None:
-    with open(input_name, 'r') as cmake_file:
+def process_file(root_path: str, input_name: str) -> None:
+    with open(root_path + input_name, 'r') as cmake_file:
         contents: str = cmake_file.read()
 
         def get_line_and_comment(target: str) -> Tuple[int, str]:
@@ -94,21 +90,23 @@ def process_file(input_name: str) -> None:
             for entity in matches:
                 build_entity(input_name, entity, get_line_and_comment(entity[0]))
 
-def process_folder(name: str) -> None:
+def process_folder(root_path:str, name: str) -> None:
     for root, _, files in os.walk(name):
         for f in files:
             if f == "CMakeLists.txt" or ".cmake" in f:
-                process_file(root + "/" + f)
+                process_file(root_path, root + "/" + f)
 
 def generate_cmake_flags_files(root_path: str) -> None:
-    os.chdir(root_path)
+    output_file_name: str = root_path + "docs/en/development/cmake-in-clickhouse.md"
+    header_file_name: str = root_path + "docs/_includes/cmake_in_clickhouse_header.md"
+    footer_file_name: str = root_path + "docs/_includes/cmake_in_clickhouse_footer.md"
 
-    process_file("CMakeLists.txt")
-    process_file("programs/CMakeLists.txt")
+    process_file(root_path, "CMakeLists.txt")
+    process_file(root_path, "programs/CMakeLists.txt")
 
-    process_folder("base")
-    process_folder("cmake")
-    process_folder("src")
+    process_folder(root_path, "base")
+    process_folder(root_path, "cmake")
+    process_folder(root_path, "src")
 
     with open(output_file_name, "w") as f:
         with open(header_file_name, "r") as header:
@@ -146,3 +144,6 @@ def generate_cmake_flags_files(root_path: str) -> None:
 
         with open(footer_file_name, "r") as footer:
             f.write(footer.read())
+
+
+generate_cmake_flags_files("../../")
