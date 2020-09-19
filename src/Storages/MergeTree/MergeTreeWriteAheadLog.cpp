@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/File.h>
+#include <sys/time.h>
 
 namespace DB
 {
@@ -16,17 +17,31 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-
 MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
-    const MergeTreeData & storage_,
+    MergeTreeData & storage_,
     const DiskPtr & disk_,
     const String & name_)
     : storage(storage_)
     , disk(disk_)
     , name(name_)
     , path(storage.getRelativeDataPath() + name_)
+    , pool(storage.global_context.getSchedulePool())
 {
     init();
+    sync_task = pool.createTask("MergeTreeWriteAheadLog::sync", [this]
+    {
+        std::lock_guard lock(write_mutex);
+        out->sync();
+        sync_scheduled = false;
+        sync_cv.notify_all();
+    });
+}
+
+MergeTreeWriteAheadLog::~MergeTreeWriteAheadLog()
+{
+    std::unique_lock lock(write_mutex);
+    if (sync_scheduled)
+        sync_cv.wait(lock, [this] { return !sync_scheduled; });
 }
 
 void MergeTreeWriteAheadLog::init()
@@ -38,11 +53,12 @@ void MergeTreeWriteAheadLog::init()
     block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, Block{});
     min_block_number = std::numeric_limits<Int64>::max();
     max_block_number = -1;
+    bytes_at_last_sync = 0;
 }
 
 void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_name)
 {
-    std::lock_guard lock(write_mutex);
+    std::unique_lock lock(write_mutex);
 
     auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
     min_block_number = std::min(min_block_number, part_info.min_block);
@@ -53,6 +69,7 @@ void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_na
     writeStringBinary(part_name, *out);
     block_out->write(block);
     block_out->flush();
+    sync(lock);
 
     auto max_wal_bytes = storage.getSettings()->write_ahead_log_max_bytes;
     if (out->count() > max_wal_bytes)
@@ -61,14 +78,16 @@ void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_na
 
 void MergeTreeWriteAheadLog::dropPart(const String & part_name)
 {
-    std::lock_guard lock(write_mutex);
+    std::unique_lock lock(write_mutex);
 
     writeIntBinary(static_cast<UInt8>(0), *out);
     writeIntBinary(static_cast<UInt8>(ActionType::DROP_PART), *out);
     writeStringBinary(part_name, *out);
+    out->next();
+    sync(lock);
 }
 
-void MergeTreeWriteAheadLog::rotate(const std::lock_guard<std::mutex> &)
+void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
 {
     String new_name = String(WAL_FILE_NAME) + "_"
         + toString(min_block_number) + "_"
@@ -80,7 +99,7 @@ void MergeTreeWriteAheadLog::rotate(const std::lock_guard<std::mutex> &)
 
 MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const StorageMetadataPtr & metadata_snapshot)
 {
-    std::lock_guard lock(write_mutex);
+    std::unique_lock lock(write_mutex);
 
     MergeTreeData::MutableDataPartsVector parts;
     auto in = disk->readFile(path, DBMS_DEFAULT_BUFFER_SIZE);
@@ -173,6 +192,27 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
         [&dropped_parts](const auto & part) { return dropped_parts.count(part->name) == 0; });
 
     return result;
+}
+
+void MergeTreeWriteAheadLog::sync(std::unique_lock<std::mutex> & lock)
+{
+    size_t bytes_to_sync = storage.getSettings()->write_ahead_log_bytes_to_fsync;
+    time_t time_to_sync = storage.getSettings()->write_ahead_log_interval_ms_to_fsync;
+    size_t current_bytes = out->count();
+
+    if (bytes_to_sync && current_bytes - bytes_at_last_sync > bytes_to_sync)
+    {
+        sync_task->schedule();
+        bytes_at_last_sync = current_bytes;
+    }
+    else if (time_to_sync && !sync_scheduled)
+    {
+        sync_task->scheduleAfter(time_to_sync);
+        sync_scheduled = true;
+    }
+
+    if (storage.getSettings()->in_memory_parts_insert_sync)
+        sync_cv.wait(lock, [this] { return !sync_scheduled; });
 }
 
 std::optional<MergeTreeWriteAheadLog::MinMaxBlockNumber>

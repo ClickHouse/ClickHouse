@@ -940,6 +940,8 @@ This algorithm chooses the first replica in the set or a random replica if the f
 
 The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, the load is evenly distributed among replicas that are still available.
 
+It's possible to explicitly define what the first replica is by using the setting `load_balancing_first_offset`. This gives more control to rebalance query workloads among replicas.
+
 ### Round Robin {#load_balancing-round_robin}
 
 ``` sql

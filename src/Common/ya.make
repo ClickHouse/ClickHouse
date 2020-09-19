@@ -50,6 +50,7 @@ SRCS(
     formatIPv6.cpp
     formatReadable.cpp
     getExecutablePath.cpp
+    getMappedArea.cpp
     getMultipleKeysFromConfig.cpp
     getNumberOfPhysicalCPUCores.cpp
     hasLinuxCapability.cpp
@@ -74,6 +75,7 @@ SRCS(
     QueryProfiler.cpp
     quoteString.cpp
     randomSeed.cpp
+    remapExecutable.cpp
     RemoteHostFilter.cpp
     renameat2.cpp
     RWLock.cpp

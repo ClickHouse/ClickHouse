@@ -90,7 +90,8 @@ namespace
             case ValueType::vtDateTime64:[[fallthrough]];
             case ValueType::vtDecimal32: [[fallthrough]];
             case ValueType::vtDecimal64: [[fallthrough]];
-            case ValueType::vtDecimal128:
+            case ValueType::vtDecimal128:[[fallthrough]];
+            case ValueType::vtDecimal256:
             {
                 ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
                 data_type.deserializeAsWholeText(column, buffer, FormatSettings{});
