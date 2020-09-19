@@ -166,9 +166,9 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
 
-    stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
+    stdout = open(stdout_file, 'rb').read() if os.path.exists(stdout_file) else ''
     stdout = str(stdout, errors='replace', encoding='utf-8')
-    stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
+    stderr = open(stderr_file, 'rb').read() if os.path.exists(stderr_file) else ''
     stderr = str(stderr, errors='replace', encoding='utf-8')
 
     return proc, stdout, stderr, total_time
