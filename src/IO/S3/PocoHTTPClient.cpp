@@ -1,3 +1,7 @@
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include "PocoHTTPClient.h"
 
 #include <utility>
@@ -13,6 +17,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <common/logger_useful.h>
+
 
 namespace ProfileEvents
 {
@@ -264,3 +269,5 @@ void PocoHTTPClient::makeRequestInternal(
     }
 }
 }
+
+#endif
