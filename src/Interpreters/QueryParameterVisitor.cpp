@@ -11,7 +11,7 @@ namespace DB
 class QueryParameterVisitor
 {
 public:
-    QueryParameterVisitor(NameSet & parameters_name)
+    explicit QueryParameterVisitor(NameSet & parameters_name)
         : query_parameters(parameters_name)
     {
     }
