@@ -88,8 +88,7 @@ formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%')
 
 # Expanded later to cartesian product of all arguments.
 # NOTE: {N} to be turned into N after str.format() for keys (format string), but not for list of values!
-extra_ops =\
-[
+extra_ops = [
     # With same type:
     (
         ['N {op} N'],
