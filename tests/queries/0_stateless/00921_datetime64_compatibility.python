@@ -172,13 +172,11 @@ COMMENTED_OUT_LINE_RE = re.compile(r"^\s*#")
 FUNCTIONS = list([f for f in FUNCTIONS if len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None])
 TYPES = ['D', 'DT', 'DT64']
 
-if sys.version_info[0] > 2:
-    escape_string_codec = 'unicode_escape'
-else:
-    escape_string_codec = 'string-escape'
-
 def escape_string(s):
-    return s.encode(escape_string_codec).decode('utf-8')
+    if sys.version_info[0] > 2:
+        return s.encode('unicode_escape').decode('utf-8').replace("'", "\\'")
+    else:
+        return s.encode('string-escape').decode('utf-8')
 
 
 def execute_functions_for_types(functions, types):
