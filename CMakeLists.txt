@@ -404,7 +404,6 @@ include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
 include (cmake/find/termcap.cmake) # for external static llvm
-include (cmake/find/opencl.cmake)
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
@@ -449,13 +448,6 @@ endif ()
 include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
-
-if (USE_OPENCL)
-    if (OS_DARWIN)
-        set(OPENCL_LINKER_FLAGS "-framework OpenCL")
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENCL_LINKER_FLAGS}")
-    endif ()
-endif ()
 
 include (cmake/print_flags.cmake)
 
