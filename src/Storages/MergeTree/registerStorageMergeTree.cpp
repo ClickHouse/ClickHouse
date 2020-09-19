@@ -293,13 +293,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     String name_part = args.engine_name.substr(0, args.engine_name.size() - strlen("MergeTree"));
 
     bool replicated = startsWith(name_part, "Replicated");
-    bool has_replicated_default_args = false;
     if (replicated)
-    {
         name_part = name_part.substr(strlen("Replicated"));
-        has_replicated_default_args = args.context.getSettingsRef().default_replica_path.value != ""
-            && args.context.getSettingsRef().default_replica_name.value != "";
-    }
 
     MergeTreeData::MergingParams merging_params;
     merging_params.mode = MergeTreeData::MergingParams::Ordinary;
@@ -343,7 +338,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        if (is_extended_storage_def || has_replicated_default_args)
+        if (is_extended_storage_def)
         {
             add_optional_param("path in ZooKeeper");
             add_optional_param("replica name");
@@ -446,18 +441,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
             ++arg_num;
         }
-        else if (has_replicated_default_args && !has_arguments)
-        {
-            zookeeper_path
-                = args.context.getSettingsRef().default_replica_path.value + "/" + args.table_id.database_name + "." + args.table_id.table_name;
-            replica_name = args.context.getSettingsRef().default_replica_name;
-        }
         else if (is_extended_storage_def && !has_arguments)
         {
             /// Try use default values if arguments are not specified.
-            /// It works for ON CLUSTER queries when database engine is Atomic and there are {shard} and {replica} in config.
-            zookeeper_path = "/clickhouse/tables/{uuid}/{shard}";
-            replica_name = "{replica}"; /// TODO maybe use hostname if {replica} is not defined?
+            /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
+            zookeeper_path = args.context.getConfigRef().getString("default_replica_path", "/clickhouse/tables/{uuid}/{shard}");
+            /// TODO maybe use hostname if {replica} is not defined?
+            replica_name = args.context.getConfigRef().getString("default_replica_name", "{replica}");
         }
         else
             throw Exception("Expected two string literal arguments: zookeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
