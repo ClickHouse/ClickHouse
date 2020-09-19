@@ -251,7 +251,9 @@ for query_index in queries_to_run:
     run = 0
 
     # Arrays of run times for each connection.
-    all_server_times = [[]] * len(this_query_connections)
+    all_server_times = []
+    for conn_index, c in enumerate(this_query_connections):
+        all_server_times.append([])
 
     while True:
         run_id = f'{query_prefix}.run{run}'
@@ -306,15 +308,20 @@ for query_index in queries_to_run:
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
 
+    #print(all_server_times)
+    #print(stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue)
+
     # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
     if len(all_server_times) == 2 and stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue < 0.1:
+        run = 0
         while True:
             run_id = f'{query_prefix}.profile{run}'
 
             for conn_index, c in enumerate(this_query_connections):
                 try:
                     res = c.execute(q, query_id = run_id, settings = {'query_profiler_real_time_period_ns': 10000000})
+                    print(f'profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
                 except Exception as e:
                     # Add query id to the exception to make debugging easier.
                     e.args = (run_id, *e.args)
@@ -324,11 +331,10 @@ for query_index in queries_to_run:
                 elapsed = c.last_query.elapsed
                 profile_seconds += elapsed
 
-            # Don't spend too much time for profile runs
-            if run >= args.runs or profile_seconds > 10:
-                continue
-
             run += 1
+            # Don't spend too much time for profile runs
+            if run > args.runs or profile_seconds > 10:
+                break
             # And don't bother with short queries
 
 # Run drop queries
