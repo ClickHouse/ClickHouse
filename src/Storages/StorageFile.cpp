@@ -525,9 +525,12 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
     if (paths.size() != 1)
         throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
+    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
+    if (path_new == paths[0])
+        return;
+
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
     Poco::File(paths[0]).renameTo(path_new);
 
