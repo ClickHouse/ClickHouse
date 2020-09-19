@@ -1,5 +1,5 @@
 import re
-import os.path
+import os
 from typing import TextIO, List, Tuple, Optional, Dict
 
 # name, default value, description
@@ -8,9 +8,9 @@ Entity = Tuple[str, str, str]
 # https://regex101.com/r/R6iogw/12
 cmake_option_regex: str = r"^\s*option\s*\(([A-Z_0-9${}]+)\s*(?:\"((?:.|\n)*?)\")?\s*(.*)?\).*$"
 
-output_file_name: str = "../en/development/cmake-in-clickhouse.md"
-header_file_name: str = "../_includes/cmake_in_clickhouse_header.md"
-footer_file_name: str = "../_includes/cmake_in_clickhouse_footer.md"
+output_file_name: str = "docs/en/development/cmake-in-clickhouse.md"
+header_file_name: str = "docs/_includes/cmake_in_clickhouse_header.md"
+footer_file_name: str = "docs/_includes/cmake_in_clickhouse_footer.md"
 
 ch_master_url: str = "https://github.com/clickhouse/clickhouse/blob/master/"
 
@@ -101,12 +101,14 @@ def process_folder(name: str) -> None:
                 process_file(root + "/" + f)
 
 def generate_cmake_flags_files(root_path: str) -> None:
-    process_file(root_path + "CMakeLists.txt")
-    process_file(root_path + "programs/CMakeLists.txt")
+    os.chdir(root_path)
 
-    process_folder(root_path + "base")
-    process_folder(root_path + "cmake")
-    process_folder(root_path + "src")
+    process_file("CMakeLists.txt")
+    process_file("programs/CMakeLists.txt")
+
+    process_folder("base")
+    process_folder("cmake")
+    process_folder("src")
 
     with open(output_file_name, "w") as f:
         with open(header_file_name, "r") as header:
@@ -144,5 +146,3 @@ def generate_cmake_flags_files(root_path: str) -> None:
 
         with open(footer_file_name, "r") as footer:
             f.write(footer.read())
-
-generate_cmake_flags_files("../../")
