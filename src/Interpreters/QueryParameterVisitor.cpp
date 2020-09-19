@@ -1,6 +1,5 @@
-#pragma once
-
 #include <Interpreters/QueryParameterVisitor.h>
+#include <Parsers/IAST.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -9,26 +8,36 @@
 namespace DB
 {
 
-QueryParameterVisitor::QueryParameterVisitor(NameSet & parameters_name)
-    : query_parameters(parameters_name)
-{
-}
+class ASTQueryParameter;
 
-void QueryParameterVisitor::visit(const ASTPtr & ast)
+class QueryParameterVisitor
 {
-    for (const auto & child : ast->children)
+public:
+    QueryParameterVisitor(NameSet & parameters_name)
+        : query_parameters(parameters_name)
     {
-        if (const auto & query_parameter = child->as<ASTQueryParameter>())
-            visitQueryParameter(*query_parameter);
-        else
-            visit(child);
     }
-}
 
-void QueryParameterVisitor::visitQueryParameter(const ASTQueryParameter & query_parameter)
-{
-    query_parameters.insert(query_parameter.name);
-}
+    void visit(const ASTPtr & ast)
+    {
+        for (const auto & child : ast->children)
+        {
+            if (const auto & query_parameter = child->as<ASTQueryParameter>())
+                visitQueryParameter(*query_parameter);
+            else
+                visit(child);
+        }
+    }
+
+private:
+    NameSet & query_parameters;
+
+    void visitQueryParameter(const ASTQueryParameter & query_parameter)
+    {
+        query_parameters.insert(query_parameter.name);
+    }
+};
+
 
 NameSet analyzeReceiveQueryParams(const std::string & query)
 {
