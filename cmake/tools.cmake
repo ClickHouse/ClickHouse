@@ -40,7 +40,7 @@ endif ()
 STRING(REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
 LIST(GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 
-# Example values: lld-10, gold
+# Example values: `lld-10`, `gold`.
 option (LINKER_NAME "Linker name or full path")
 
 if (COMPILER_GCC AND NOT LINKER_NAME)

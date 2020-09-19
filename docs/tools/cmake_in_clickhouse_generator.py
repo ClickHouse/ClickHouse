@@ -2,19 +2,23 @@ import re
 import os.path
 from typing import TextIO, List, Tuple, Optional, Dict
 
+# name, default value, description
 Entity = Tuple[str, str, str]
 
-# https://regex101.com/r/R6iogw/11
+# https://regex101.com/r/R6iogw/12
 cmake_option_regex: str = r"^\s*option\s*\(([A-Z_0-9${}]+)\s*(?:\"((?:.|\n)*?)\")?\s*(.*)?\).*$"
 
-output_file_name: str = "cmake_flags_and_output.md"
-header_file_name: str = "cmake_files_header.md"
-footer_file_name: str = "cmake_files_footer.md"
+output_file_name: str = "../en/development/cmake_in_clickhouse.md"
+header_file_name: str = "../_includes/cmake_in_clickhouse_header.md"
+footer_file_name: str = "../_includes/cmake_in_clickhouse_footer.md"
 
 ch_master_url: str = "https://github.com/clickhouse/clickhouse/blob/master/"
 
 name_str: str = "<a name=\"{anchor}\"></a>[`{name}`](" + ch_master_url + "{path}#L{line})"
 default_anchor_str: str = "[`{name}`](#{anchor})"
+
+comment_var_regex: str = r"\${(.+)}"
+comment_var_replace: str = "`\\1`"
 
 table_header: str = """
 | Name | Default value | Description | Comment |
@@ -29,37 +33,42 @@ entities: Dict[str, Tuple[str, str]] = {}
 def make_anchor(t: str) -> str:
     return "".join(["-" if i == "_" else i.lower() for i in t if i.isalpha() or i == "_"])
 
-def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str], **options) -> None:
-    (line, comment) = line_comment
-    (_name, _description, default) = entity
+def process_comment(comment: str) -> str:
+    return re.sub(comment_var_regex, comment_var_replace, comment, flags=re.MULTILINE)
 
-    if _name in entities:
+def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> None:
+    (line, comment) = line_comment
+    (name, description, default) = entity
+
+    if name in entities:
         return
 
     if len(default) == 0:
-        default = "`OFF`"
+        formatted_default: str = "`OFF`"
     elif default[0] == "$":
-        default = default[2:-1]
-        default = default_anchor_str.format(
-            name=default,
-            anchor=make_anchor(default))
+        formatted_default: str = default[2:-1]
+        formatted_default: str = default_anchor_str.format(
+            name=formatted_default,
+            anchor=make_anchor(formatted_default))
     else:
-        default = "`" + default + "`"
+        formatted_default: str = "`" + default + "`"
 
-    name: str = name_str.format(
-        anchor=make_anchor(_name),
-        name=_name,
+    formatted_name: str = name_str.format(
+        anchor=make_anchor(name),
+        name=name,
         path=path,
         line=line if line > 0 else 1)
 
-    if options.get("no_desc", False):
-        description: str = ""
-    else:
-        description: str = "".join(_description.split("\n")) + " | "
+    formatted_description: str = "".join(description.split("\n"))
 
-    entities[_name] = path, "| " + name + " | " + default + " | " + description + comment + " |"
+    formatted_comment: str = process_comment(comment)
 
-def process_file(input_name: str, **options) -> None:
+    formatted_entity: str = "| {} | {} | {} | {} |".format(
+        formatted_name, formatted_default, formatted_description, formatted_comment)
+
+    entities[name] = path, formatted_entity
+
+def process_file(input_name: str) -> None:
     with open(input_name, 'r') as cmake_file:
         contents: str = cmake_file.read()
 
@@ -91,13 +100,13 @@ def process_folder(name: str) -> None:
             if f == "CMakeLists.txt" or ".cmake" in f:
                 process_file(root + "/" + f)
 
-def process() -> None:
-    process_file("CMakeLists.txt")
-    process_file("programs/CMakeLists.txt", no_desc=True)
+def generate_cmake_flags_files(root_path: str) -> None:
+    process_file(root_path + "CMakeLists.txt")
+    process_file(root_path + "programs/CMakeLists.txt")
 
-    process_folder("base")
-    process_folder("cmake")
-    process_folder("src")
+    process_folder(root_path + "base")
+    process_folder(root_path + "cmake")
+    process_folder(root_path + "src")
 
     with open(output_file_name, "w") as f:
         with open(header_file_name, "r") as header:
@@ -114,6 +123,8 @@ def process() -> None:
                 ignored_keys.append(k)
 
         f.write("### External libraries\n" + table_header)
+
+        f.write("Note that ClickHouse uses forks of these libraries, see https://github.com/ClickHouse-Extras.")
 
         for k in sorted_keys:
             if k.startswith("ENABLE_") and entities[k][0].startswith("cmake"):
@@ -134,5 +145,3 @@ def process() -> None:
 
         with open(footer_file_name, "r") as footer:
             f.write(footer.read())
-
-process()

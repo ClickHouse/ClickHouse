@@ -59,9 +59,9 @@ set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a pos
 # For more info see https://cmake.org/cmake/help/latest/prop_gbl/USE_FOLDERS.html
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# Need cmake 3.9+
+# cmake 3.9+ needed.
 # Usually impractical.
-# See also ENABLE_THINLTO
+# See also ${ENABLE_THINLTO}
 option(ENABLE_IPO "Full link time optimization")
 
 if(ENABLE_IPO)
@@ -150,7 +150,8 @@ if (COMPILER_CLANG)
     endif ()
 endif ()
 
-option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests" ON)
+# If turned `ON`, assumes the user has either the system GTest library or the bundled one.
+option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
     # Only for Linux, x86_64.
@@ -188,7 +189,8 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
-option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker. NOOP if lld is used.")
+# Ignored if `lld` is used
+option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     if (LINKER_NAME STREQUAL "lld")
@@ -211,8 +213,10 @@ endif()
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
+
 if(NOT AVAILABLE_PHYSICAL_MEMORY OR AVAILABLE_PHYSICAL_MEMORY GREATER 8000)
-    option(COMPILER_PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
+    # Less `/tmp` usage, more RAM usage.
+    option(COMPILER_PIPE "-pipe compiler option" ON)
 endif()
 
 if(COMPILER_PIPE)

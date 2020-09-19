@@ -2,7 +2,7 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-# The 'clickhouse' binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
+# The `clickhouse` binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
 # If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
 option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
@@ -20,7 +20,7 @@ option (ENABLE_CLICKHOUSE_BENCHMARK "Queries benchmarking mode" ${ENABLE_CLICKHO
 option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG "Configs processor (extract values etc.)" ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/clickhouse-compressor/
-option (ENABLE_CLICKHOUSE_COMPRESSOR "Ddata compressor and decompressor" ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_COMPRESSOR "Data compressor and decompressor" ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/clickhouse-copier/
 option (ENABLE_CLICKHOUSE_COPIER "Inter-cluster data copying mode" ${ENABLE_CLICKHOUSE_ALL})

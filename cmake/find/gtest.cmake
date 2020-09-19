@@ -1,8 +1,6 @@
-option (ENABLE_GTEST_LIBRARY "Enable gtest library" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_GTEST_LIBRARY)
+if (NOT ENABLE_TESTS)
     if(USE_INTERNAL_GTEST_LIBRARY)
-        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal Google Test when ENABLE_GTEST_LIBRARY=OFF")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal Google Test when ENABLE_TESTS=OFF")
     endif()
     return()
 endif()
@@ -15,6 +13,7 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest/CMakeList
        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal gtest")
        set (USE_INTERNAL_GTEST_LIBRARY 0)
    endif ()
+
    set (MISSING_INTERNAL_GTEST_LIBRARY 1)
 endif ()
 
