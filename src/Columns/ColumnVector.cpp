@@ -15,8 +15,9 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
+#include <ext/scope_guard.h>
 #include <pdqsort.h>
-#include <numeric>
+
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -227,10 +228,14 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 template <typename T>
 void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
+    if (equal_range.empty())
+        return;
+
     if (limit >= data.size() || limit >= equal_range.back().second)
         limit = 0;
 
     EqualRanges new_ranges;
+    SCOPE_EXIT({equal_range = std::move(new_ranges);});
 
     for (size_t i = 0; i < equal_range.size() - bool(limit); ++i)
     {
@@ -259,6 +264,12 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
     if (limit)
     {
         const auto & [first, last] = equal_range.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then, we are working inside the interval.
+
         if (reverse)
             std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
         else
@@ -291,7 +302,6 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
             new_ranges.emplace_back(new_first, new_last);
         }
     }
-    equal_range = std::move(new_ranges);
 }
 
 template <typename T>
