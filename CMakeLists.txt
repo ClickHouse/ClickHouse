@@ -405,7 +405,9 @@ if (USE_INCLUDE_WHAT_YOU_USE)
 endif ()
 
 if (ENABLE_TESTS)
-    message (STATUS "Tests are enabled")
+    message (STATUS "Unit tests are enabled")
+else()
+    message(STATUS "Unit tests are disabled")
 endif ()
 
 enable_testing() # Enable for tests without binary
