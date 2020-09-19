@@ -373,7 +373,7 @@ def run_tests_array(all_tests_with_params):
                                 failures += 1
                                 print(MSG_FAIL, end='')
                                 print_test_time(total_time)
-                                print(" - result differs with reference:\n{}".format(diff))
+                                print(" - result differs with reference:\n{}".format(diff.decode()))
                             else:
                                 passed_total += 1
                                 failures_chain = 0
