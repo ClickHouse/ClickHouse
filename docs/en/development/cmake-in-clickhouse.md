@@ -53,6 +53,36 @@ Note that ClickHouse uses forks of these libraries, see https://github.com/Click
 
 | Name | Default value | Description | Comment |
 |------|---------------|-------------|---------|
+| <a name="enable-amqpcpp"></a>[`ENABLE_AMQPCPP`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/amqpcpp.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enalbe AMQP-CPP |  |
+| <a name="enable-avro"></a>[`ENABLE_AVRO`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/avro.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable Avro |  |
+| <a name="enable-base"></a>[`ENABLE_BASE64`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/base64.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable base64 |  |
+| <a name="enable-brotli"></a>[`ENABLE_BROTLI`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/brotli.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable brotli |  |
+| <a name="enable-capnp"></a>[`ENABLE_CAPNP`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/capnp.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable Cap'n Proto |  |
+| <a name="enable-cassandra"></a>[`ENABLE_CASSANDRA`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/cassandra.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable Cassandra |  |
+| <a name="enable-ccache"></a>[`ENABLE_CCACHE`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/ccache.cmake#L6) | [`ENABLE_CCACHE_BY_DEFAULT`](#enable-ccache-by-default) | Speedup re-compilations using ccache (external tool) |  |
+| <a name="enable-clang-tidy"></a>[`ENABLE_CLANG_TIDY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/analysis.cmake#L1) | `OFF` | Use clang-tidy static analyzer | https://clang.llvm.org/extra/clang-tidy/  |
+| <a name="enable-curl"></a>[`ENABLE_CURL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/curl.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable curl |  |
+| <a name="enable-embedded-compiler"></a>[`ENABLE_EMBEDDED_COMPILER`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/llvm.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Set to TRUE to enable support for 'compile_expressions' option for query execution |  |
+| <a name="enable-fastops"></a>[`ENABLE_FASTOPS`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/fastops.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable fast vectorized mathematical functions library by Mikhail Parakhin |  |
+| <a name="enable-gperf"></a>[`ENABLE_GPERF`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/gperf.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Use gperf function hash generator tool |  |
+| <a name="enable-grpc"></a>[`ENABLE_GRPC`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/grpc.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Use gRPC |  |
+| <a name="enable-gsasl-library"></a>[`ENABLE_GSASL_LIBRARY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/libgsasl.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable gsasl library |  |
+| <a name="enable-h"></a>[`ENABLE_H3`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/h3.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable H3 |  |
+| <a name="enable-hdfs"></a>[`ENABLE_HDFS`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/hdfs3.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable HDFS |  |
+| <a name="enable-icu"></a>[`ENABLE_ICU`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/icu.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable ICU |  |
+| <a name="enable-ldap"></a>[`ENABLE_LDAP`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/ldap.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable LDAP |  |
+| <a name="enable-msgpack"></a>[`ENABLE_MSGPACK`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/msgpack.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable msgpack library |  |
+| <a name="enable-mysql"></a>[`ENABLE_MYSQL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/mysqlclient.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable MySQL |  |
+| <a name="enable-odbc"></a>[`ENABLE_ODBC`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/odbc.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable ODBC library |  |
+| <a name="enable-opencl"></a>[`ENABLE_OPENCL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/opencl.cmake#L2) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable OpenCL support |  |
+| <a name="enable-orc"></a>[`ENABLE_ORC`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/orc.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable ORC |  |
+| <a name="enable-parquet"></a>[`ENABLE_PARQUET`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/parquet.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable parquet |  |
+| <a name="enable-protobuf"></a>[`ENABLE_PROTOBUF`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/protobuf.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable protobuf |  |
+| <a name="enable-rapidjson"></a>[`ENABLE_RAPIDJSON`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/rapidjson.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Use rapidjson |  |
+| <a name="enable-rdkafka"></a>[`ENABLE_RDKAFKA`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/rdkafka.cmake#L2) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable kafka |  |
+| <a name="enable-s"></a>[`ENABLE_S3`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/s3.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable S3 |  |
+| <a name="enable-ssl"></a>[`ENABLE_SSL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/ssl.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable ssl |  |
+| <a name="enable-stats"></a>[`ENABLE_STATS`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/stats.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enalbe StatsLib library |  |
 ### External libraries system/bundled mode
 
 | Name | Default value | Description | Comment |
@@ -96,40 +126,10 @@ Note that ClickHouse uses forks of these libraries, see https://github.com/Click
 | <a name="arch-native"></a>[`ARCH_NATIVE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L231) | `OFF` | Add -march=native compiler flag |  |
 | <a name="clickhouse-split-binary"></a>[`CLICKHOUSE_SPLIT_BINARY`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L103) | `OFF` | Make several binaries (clickhouse-server, clickhouse-client etc.) instead of one bundled |  |
 | <a name="compiler-pipe"></a>[`COMPILER_PIPE`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L218) | `ON` | -pipe compiler option | Less `/tmp` usage, more RAM usage.  |
-| <a name="enable-amqpcpp"></a>[`ENABLE_AMQPCPP`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/amqpcpp.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enalbe AMQP-CPP |  |
-| <a name="enable-avro"></a>[`ENABLE_AVRO`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/avro.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable Avro |  |
-| <a name="enable-base"></a>[`ENABLE_BASE64`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/base64.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable base64 |  |
-| <a name="enable-brotli"></a>[`ENABLE_BROTLI`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/brotli.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable brotli |  |
-| <a name="enable-capnp"></a>[`ENABLE_CAPNP`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/capnp.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable Cap'n Proto |  |
-| <a name="enable-cassandra"></a>[`ENABLE_CASSANDRA`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/cassandra.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable Cassandra |  |
-| <a name="enable-ccache"></a>[`ENABLE_CCACHE`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/ccache.cmake#L6) | [`ENABLE_CCACHE_BY_DEFAULT`](#enable-ccache-by-default) | Speedup re-compilations using ccache (external tool) |  |
-| <a name="enable-clang-tidy"></a>[`ENABLE_CLANG_TIDY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/analysis.cmake#L1) | `OFF` | Use clang-tidy static analyzer | https://clang.llvm.org/extra/clang-tidy/  |
-| <a name="enable-curl"></a>[`ENABLE_CURL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/curl.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable curl |  |
-| <a name="enable-embedded-compiler"></a>[`ENABLE_EMBEDDED_COMPILER`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/llvm.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Set to TRUE to enable support for 'compile_expressions' option for query execution |  |
-| <a name="enable-fastops"></a>[`ENABLE_FASTOPS`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/fastops.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable fast vectorized mathematical functions library by Mikhail Parakhin |  |
 | <a name="enable-fuzzing"></a>[`ENABLE_FUZZING`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L120) | `OFF` | Fuzzy testing using libfuzzer | Implies `WITH_COVERAGE`  |
-| <a name="enable-gperf"></a>[`ENABLE_GPERF`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/gperf.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Use gperf function hash generator tool |  |
-| <a name="enable-grpc"></a>[`ENABLE_GRPC`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/grpc.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Use gRPC |  |
-| <a name="enable-gsasl-library"></a>[`ENABLE_GSASL_LIBRARY`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/libgsasl.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable gsasl library |  |
-| <a name="enable-h"></a>[`ENABLE_H3`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/h3.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable H3 |  |
-| <a name="enable-hdfs"></a>[`ENABLE_HDFS`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/hdfs3.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable HDFS |  |
-| <a name="enable-icu"></a>[`ENABLE_ICU`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/icu.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable ICU |  |
 | <a name="enable-ipo"></a>[`ENABLE_IPO`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L64) | `OFF` | Full link time optimization | cmake 3.9+ needed. Usually impractical. See also `ENABLE_THINLTO`  |
-| <a name="enable-ldap"></a>[`ENABLE_LDAP`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/ldap.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable LDAP |  |
 | <a name="enable-libraries"></a>[`ENABLE_LIBRARIES`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L333) | `ON` | Enable all external libraries by default | Turns on all external libs like s3, kafka, ODBC, ...  |
-| <a name="enable-msgpack"></a>[`ENABLE_MSGPACK`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/msgpack.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable msgpack library |  |
 | <a name="enable-multitarget-code"></a>[`ENABLE_MULTITARGET_CODE`](https://github.com/clickhouse/clickhouse/blob/master/src/Functions/CMakeLists.txt#L118) | `ON` | Enable platform-dependent code | ClickHouse developers may use platform-dependent code under some macro (e.g. `ifdef ENABLE_MULTITARGET`). If turned ON, this option defines such macro. See `src/Functions/TargetSpecific.h`  |
-| <a name="enable-mysql"></a>[`ENABLE_MYSQL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/mysqlclient.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable MySQL |  |
-| <a name="enable-odbc"></a>[`ENABLE_ODBC`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/odbc.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable ODBC library |  |
-| <a name="enable-opencl"></a>[`ENABLE_OPENCL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/opencl.cmake#L2) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable OpenCL support |  |
-| <a name="enable-orc"></a>[`ENABLE_ORC`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/orc.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable ORC |  |
-| <a name="enable-parquet"></a>[`ENABLE_PARQUET`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/parquet.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable parquet |  |
-| <a name="enable-protobuf"></a>[`ENABLE_PROTOBUF`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/protobuf.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable protobuf |  |
-| <a name="enable-rapidjson"></a>[`ENABLE_RAPIDJSON`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/rapidjson.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Use rapidjson |  |
-| <a name="enable-rdkafka"></a>[`ENABLE_RDKAFKA`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/rdkafka.cmake#L2) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable kafka |  |
-| <a name="enable-s"></a>[`ENABLE_S3`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/s3.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable S3 |  |
-| <a name="enable-ssl"></a>[`ENABLE_SSL`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/ssl.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enable ssl |  |
-| <a name="enable-stats"></a>[`ENABLE_STATS`](https://github.com/clickhouse/clickhouse/blob/master/cmake/find/stats.cmake#L1) | [`ENABLE_LIBRARIES`](#enable-libraries) | Enalbe StatsLib library |  |
 | <a name="enable-tests"></a>[`ENABLE_TESTS`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L153) | `ON` | Provide unit_test_dbms target with Google.Test unit tests | If turned `ON`, assumes the user has either the system GTest library or the bundled one.  |
 | <a name="enable-thinlto"></a>[`ENABLE_THINLTO`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L63) | `ON` | Clang-specific link time optimization | cmake 3.9+ needed. Usually impractical.  |
 | <a name="fail-on-unsupported-options-combination"></a>[`FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION`](https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L31) | `ON` | Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)   but is not possible to satisfy | If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.  |
