@@ -185,7 +185,7 @@ def build(args):
         test.test_templates(args.website_dir)
 
     if not args.skip_docs:
-        generate_cmake_flags_files(root_path="../../")
+        generate_cmake_flags_files(os.path.join(os.path.dirname(__file__), '..', '..'))
 
         build_docs(args)
         from github import build_releases
@@ -203,6 +203,7 @@ def build(args):
 if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
     website_dir = os.path.join('..', 'website')
+
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,tr,fa')
     arg_parser.add_argument('--blog-lang', default='en,ru')
