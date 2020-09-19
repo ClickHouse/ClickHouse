@@ -3,7 +3,7 @@ import logging
 
 import avro.schema
 import pytest
-from confluent.schemaregistry.serializers import MessageSerializer
+from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 logging.getLogger().setLevel(logging.INFO)

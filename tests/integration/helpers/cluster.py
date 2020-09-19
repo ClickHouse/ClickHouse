@@ -21,7 +21,7 @@ import pymongo
 import pymysql
 import requests
 import xml.dom.minidom
-from confluent.schemaregistry.client import CachedSchemaRegistryClient
+from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
 from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException

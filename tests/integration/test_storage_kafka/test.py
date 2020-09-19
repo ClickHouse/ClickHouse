@@ -7,10 +7,11 @@ import threading
 import time
 
 import avro.schema
+from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
+# from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+
 import kafka.errors
 import pytest
-from confluent.schemaregistry.client import CachedSchemaRegistryClient
-from confluent.schemaregistry.serializers.MessageSerializer import MessageSerializer
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
