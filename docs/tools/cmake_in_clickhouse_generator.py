@@ -146,4 +146,5 @@ def generate_cmake_flags_files(root_path: str) -> None:
             f.write(footer.read())
 
 
-generate_cmake_flags_files("../../")
+if __name__ == '__main__':
+    generate_cmake_flags_files("../../")
