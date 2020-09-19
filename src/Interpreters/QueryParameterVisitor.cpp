@@ -8,8 +8,6 @@
 namespace DB
 {
 
-class ASTQueryParameter;
-
 class QueryParameterVisitor
 {
 public:
