@@ -47,15 +47,6 @@ enum class JoinAlgorithm
 DECLARE_SETTING_ENUM(JoinAlgorithm)
 
 
-enum class SpecialSort
-{
-    NOT_SPECIFIED = 0,
-    OPENCL_BITONIC,
-};
-
-DECLARE_SETTING_ENUM(SpecialSort)
-
-
 /// Which rows should be included in TOTALS.
 enum class TotalsMode
 {
