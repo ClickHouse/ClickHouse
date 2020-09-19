@@ -78,7 +78,7 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     return response;
 }
 
-void PocoHTTPClient::MakeRequestInternal(
+void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<Aws::Http::Standard::StandardHttpResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
