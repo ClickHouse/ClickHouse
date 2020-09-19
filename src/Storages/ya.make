@@ -20,6 +20,7 @@ SRCS(
     getStructureOfRemoteTable.cpp
     IndicesDescription.cpp
     IStorage.cpp
+    JoinSettings.cpp
     KeyDescription.cpp
     LiveView/StorageLiveView.cpp
     LiveView/TemporaryLiveViewCleaner.cpp
@@ -108,6 +109,7 @@ SRCS(
     ReadInOrderOptimizer.cpp
     registerStorages.cpp
     SelectQueryDescription.cpp
+    SetSettings.cpp
     StorageBuffer.cpp
     StorageDictionary.cpp
     StorageDistributed.cpp
