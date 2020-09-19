@@ -301,7 +301,7 @@ def run_tests_array(all_tests_with_params):
 
                     if args.testname:
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-                        clickhouse_proc.communicate(b"SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
+                        clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)).encode())
 
                     reference_file = os.path.join(suite_dir, name) + '.reference'
                     stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
