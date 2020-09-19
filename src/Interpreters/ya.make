@@ -23,6 +23,7 @@ SRCS(
     addTypeConversionToAST.cpp
     AggregateDescription.cpp
     Aggregator.cpp
+    ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
     AsynchronousMetricLog.cpp
