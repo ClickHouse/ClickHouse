@@ -69,7 +69,7 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
     auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHTTPClient", request);
-    MakeRequestInternal(request, response, readLimiter, writeLimiter);
+    makeRequestInternal(request, response, readLimiter, writeLimiter);
     return response;
 }
 
@@ -79,7 +79,7 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
     auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHTTPClient", request);
-    MakeRequestInternal(*request, response, readLimiter, writeLimiter);
+    makeRequestInternal(*request, response, readLimiter, writeLimiter);
     return response;
 }
 
