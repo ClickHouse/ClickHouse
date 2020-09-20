@@ -336,7 +336,7 @@ def run_tests_array(all_tests_with_params):
                             print(" - return code {}".format(proc.returncode))
 
                             if stderr:
-                                print(stderr.encode('utf-8'))
+                                print(stderr)
 
                             # Stop on fatal errors like segmentation fault. They are send to client via logs.
                             if ' <Fatal> ' in stderr:
@@ -354,13 +354,13 @@ def run_tests_array(all_tests_with_params):
                             failures_chain += 1
                             print(MSG_FAIL, end='')
                             print_test_time(total_time)
-                            print(" - having stderror:\n{}".format(stderr.encode('utf-8')))
+                            print(" - having stderror:\n{}".format(stderr))
                         elif 'Exception' in stdout:
                             failures += 1
                             failures_chain += 1
                             print(MSG_FAIL, end='')
                             print_test_time(total_time)
-                            print(" - having exception:\n{}".format(stdout.encode('utf-8')))
+                            print(" - having exception:\n{}".format(stdout))
                         elif not os.path.isfile(reference_file):
                             print(MSG_UNKNOWN, end='')
                             print_test_time(total_time)
