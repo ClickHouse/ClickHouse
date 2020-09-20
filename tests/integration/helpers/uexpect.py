@@ -118,7 +118,7 @@ class IO(object):
         return self.write(data + eol)
 
     def write(self, data):
-        return os.write(self.master, data)
+        return os.write(self.master, data.encode())
 
     def expect(self, pattern, timeout=None, escape=False):
         self.match = None
@@ -201,7 +201,7 @@ def spawn(command):
 def reader(process, out, queue, kill_event):
     while True:
         try:
-            data = os.read(out, 65536)
+            data = os.read(out, 65536).decode()
             queue.put(data)
         except:
             if kill_event.is_set():
