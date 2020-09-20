@@ -6,6 +6,10 @@
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
+#include <sstream>
 
 
 namespace DB
@@ -16,9 +20,10 @@ namespace ErrorCodes
 }
 
 
-LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_)
+LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
     : IAccessStorage(storage_name_)
 {
+    setConfiguration(access_control_manager_, config, prefix);
 }
 
 
@@ -59,12 +64,6 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
             return this->processRoleChange(id, entity);
         }
     );
-}
-
-
-bool LDAPAccessStorage::isConfiguredNoLock() const
-{
-    return !ldap_server.empty() &&/* !roles.empty() &&*/ access_control_manager;
 }
 
 
@@ -122,70 +121,22 @@ const char * LDAPAccessStorage::getStorageType() const
 }
 
 
-bool LDAPAccessStorage::isStorageReadOnly() const
+String LDAPAccessStorage::getStorageParamsJSON() const
 {
-    return true;
+    Poco::JSON::Object params_json;
+
+    params_json.set("server", ldap_server);
+    params_json.set("roles", default_role_names);
+
+    std::ostringstream oss;
+    Poco::JSON::Stringifier::stringify(params_json, oss);
+
+    return oss.str();
 }
 
 
 std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & name) const
 {
-    return memory_storage.find(type, name);
-}
-
-
-std::optional<UUID> LDAPAccessStorage::findOrGenerateImpl(EntityType type, const String & name) const
-{
-    if (type == EntityType::USER)
-    {
-        std::scoped_lock lock(mutex);
-
-        // Return the id immediately if we already have it.
-        const auto id = memory_storage.find(type, name);
-        if (id.has_value())
-            return id;
-
-        if (!isConfiguredNoLock())
-            return {};
-
-        // Stop if entity exists anywhere else, to avoid generating duplicates.
-        const auto * this_base = dynamic_cast<const IAccessStorage *>(this);
-        const auto storages = access_control_manager->getStoragesPtr();
-        for (const auto & storage : *storages)
-        {
-            if (storage.get() != this_base && storage->find(type, name))
-                return {};
-        }
-
-        // Entity doesn't exist. We are going to create one.
-        const auto user = std::make_shared<User>();
-        user->setName(name);
-        user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
-        user->authentication.setServerName(ldap_server);
-
-        for (const auto& role_name : default_role_names)
-        {
-            std::optional<UUID> role_id;
-
-            try
-            {
-                role_id = access_control_manager->find<Role>(role_name);
-                if (!role_id)
-                    throw Exception("Retrieved role info is empty", IAccessEntity::TypeInfo::get(IAccessEntity::Type::ROLE).not_found_error_code);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(getLogger(), "Unable to retrieve role '" + role_name + "' info from access storage '" + access_control_manager->getStorageName() + "'");
-                return {};
-            }
-
-            roles_of_interest.insert(role_id.value());
-            user->granted_roles.grant(role_id.value());
-        }
-
-        return memory_storage.insert(user);
-    }
-
     return memory_storage.find(type, name);
 }
 
@@ -262,4 +213,57 @@ bool LDAPAccessStorage::hasSubscriptionImpl(EntityType type) const
 {
     return memory_storage.hasSubscription(type);
 }
+
+UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+{
+    std::scoped_lock lock(mutex);
+    try
+    {
+        auto id = memory_storage.find<User>(user_name);
+        if (id)
+        {
+            // We try to re-authenticate the existing user, and if not successful, we will remove it, since that would mean
+            // something changed and the user we authenticated previously cannot be authenticated anymore.
+            auto user = memory_storage.tryRead<User>(*id);
+            try
+            {
+                if (user && isAddressAllowedImpl(*user, address) && isPasswordCorrectImpl(*user, password, external_authenticators))
+                    return *id;
+            }
+            catch (...)
+            {
+                memory_storage.remove(*id);
+                throw;
+            }
+            memory_storage.remove(*id);
+        }
+        else
+        {
+            // User does not exist, so we create one, and will add it if authentication is successful.
+            auto user = std::make_shared<User>();
+            user->setName(user_name);
+            user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
+            user->authentication.setServerName(ldap_server);
+
+            if (isAddressAllowedImpl(*user, address) && isPasswordCorrectImpl(*user, password, external_authenticators))
+            {
+                for (const auto& role_name : default_role_names)
+                {
+                    std::optional<UUID> role_id = access_control_manager->find<Role>(role_name);
+                    if (!role_id)
+                        throw Exception("One of the default roles, the role '" + role_name + "', is not found", IAccessEntity::TypeInfo::get(IAccessEntity::Type::ROLE).not_found_error_code);
+                    roles_of_interest.insert(role_id.value());
+                    user->granted_roles.grant(role_id.value());
+                }
+                return memory_storage.insert(user);
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger(), "Authentication failed for user '" + user_name + "' from access storage '" + access_control_manager->getStorageName() + "'");
+    }
+    throwCannotAuthenticate(user_name);
+}
+
 }
