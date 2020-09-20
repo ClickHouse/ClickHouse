@@ -3,7 +3,7 @@
 import os, itertools, urllib.request, urllib.parse, urllib.error, urllib.request, urllib.error, urllib.parse, sys
 
 def get_ch_answer(query):
-    return urllib.request.urlopen(os.environ.get('CLICKHOUSE_URL', 'http://localhost:' + os.environ.get('CLICKHOUSE_PORT_HTTP', '8123') ), data=query).read()
+    return urllib.request.urlopen(os.environ.get('CLICKHOUSE_URL', 'http://localhost:' + os.environ.get('CLICKHOUSE_PORT_HTTP', '8123') ), data=query.encode()).read().decode()
 
 def check_answers(query, answer):
     ch_answer = get_ch_answer(query)
