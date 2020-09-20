@@ -43,7 +43,10 @@ ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/u
 ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
 
+# for clickhouse-server (via service)
 echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
+# for clickhouse-client
+export ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'
 
 start
 
