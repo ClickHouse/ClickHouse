@@ -97,6 +97,7 @@ SRCS(
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
     TraceCollector.cpp
+    UnicodeBar.cpp
     UTF8Helpers.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
