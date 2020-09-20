@@ -1,4 +1,4 @@
-# Функции для битмапов {#funktsii-dlia-bitmapov}
+# Функции для битмапов {#bitmap-functions}
 
 ## bitmapBuild {#bitmap_functions-bitmapbuild}
 
@@ -61,8 +61,8 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 **Параметры**
 
 -   `bitmap` – Битмап. [Bitmap object](#bitmap_functions-bitmapbuild).
--   `range_start` – Начальная точка подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md).
--   `cardinality_limit` – Верхний предел подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md).
+-   `range_start` – Начальная точка подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
+-   `cardinality_limit` – Верхний предел подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
 
 **Возвращаемое значение**
 
@@ -97,7 +97,7 @@ bitmapContains(haystack, needle)
 **Параметры**
 
 -   `haystack` – [объект Bitmap](#bitmap_functions-bitmapbuild), в котором функция ищет значение.
--   `needle` – значение, которое функция ищет. Тип — [UInt32](../../sql-reference/functions/bitmap-functions.md).
+-   `needle` – значение, которое функция ищет. Тип — [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
 
 **Возвращаемые значения**
 
