@@ -515,7 +515,7 @@ SELECT parseDateTimeBestEffort('10 20:19')
 
 ## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
 
-Эта функция похожа на [‘parseDateTimeBestEffort’](#parsedatetimebesteffort), но разница состоит в том, что в она использует американский формат даты (`MM/DD/YYYY` etc.) в случае многозначности.
+Эта функция похожа на [‘parseDateTimeBestEffort’](#parsedatetimebesteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности.
 
 **Синтаксис**
 
