@@ -25,7 +25,8 @@ ForkProcessor::Status ForkProcessor::prepare()
         }
     }
 
-    if (0 == num_active_outputs) {
+    if (0 == num_active_outputs)
+    {
         input.close();
         return Status::Finished;
     }
