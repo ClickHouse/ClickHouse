@@ -15,6 +15,8 @@
 #   define MAYBE_NORETURN [[noreturn]]
 #endif
 
+namespace Poco { class Logger; }
+
 namespace DB
 {
 
@@ -38,7 +40,7 @@ public:
 
     const String & getRealm() const;
     bool isFailed() const;
-    MAYBE_NORETURN String processToken(const String & input_token);
+    MAYBE_NORETURN String processToken(const String & input_token, Poco::Logger * log);
 
 private:
     void resetHandles() noexcept;

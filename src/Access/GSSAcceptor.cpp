@@ -2,6 +2,8 @@
 #include <Common/Exception.h>
 #include <ext/scope_guard.h>
 
+#include <Poco/StringTokenizer.h>
+
 #include <mutex>
 #include <tuple>
 
@@ -43,15 +45,64 @@ namespace
 
 std::recursive_mutex gss_global_mutex;
 
-String bufferToString(gss_buffer_t buf)
+struct PrincipalName
 {
-    if (buf && buf != GSS_C_NO_BUFFER && buf->length > 0 && buf->value != nullptr)
-        return String(static_cast<char *>(buf->value), buf->length);
+    PrincipalName(String principal);
+    operator String() const;
 
-    return {};
+    String name;
+    std::vector<String> instances;
+    String realm;
+};
+
+PrincipalName::PrincipalName(String principal)
+{
+    const auto at_pos = principal.find('@');
+    if (at_pos != std::string::npos)
+    {
+        realm = principal.substr(at_pos + 1);
+        principal.resize(at_pos);
+    }
+
+    Poco::StringTokenizer st(principal, "/");
+    auto it = st.begin();
+    if (it != st.end())
+    {
+        name = *it;
+        instances.assign(++it, st.end());
+    }
 }
 
-String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, gss_OID mech_type)
+PrincipalName::operator String() const
+{
+    String principal = name;
+
+    for (const auto & instance : instances)
+    {
+        principal += '/';
+        principal += instance;
+    }
+
+    principal += '@';
+    principal += realm;
+
+    return principal;
+}
+
+String bufferToString(const gss_buffer_desc & buf)
+{
+    String str;
+
+    if (buf.length > 0 && buf.value != nullptr)
+    {
+        str.assign(static_cast<char *>(buf.value), buf.length);
+        while (!str.empty() && str.back() == '\0') { str.pop_back(); }
+    }
+
+    return str;
+}
+
+String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, const gss_OID & mech_type)
 {
     std::scoped_lock lock(gss_global_mutex);
 
@@ -60,18 +111,16 @@ String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, gss
 
     do
     {
-        gss_buffer_t status_string_buf = GSS_C_NO_BUFFER;
+        gss_buffer_desc status_string_buf;
+        status_string_buf.length = 0;
+        status_string_buf.value = nullptr;
 
         SCOPE_EXIT({
-            if (status_string_buf != GSS_C_NO_BUFFER)
-            {
-                OM_uint32 minor_status = 0;
-                [[maybe_unused]] OM_uint32 major_status = gss_release_buffer(
-                    &minor_status,
-                    status_string_buf
-                );
-                status_string_buf = GSS_C_NO_BUFFER;
-            }
+            OM_uint32 minor_status = 0;
+            [[maybe_unused]] OM_uint32 major_status = gss_release_buffer(
+                &minor_status,
+                &status_string_buf
+            );
         });
 
         OM_uint32 minor_status = 0;
@@ -81,7 +130,7 @@ String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, gss
             status_type,
             mech_type,
             &message_context,
-            status_string_buf
+            &status_string_buf
         );
 
         const auto message = bufferToString(status_string_buf);
@@ -98,7 +147,7 @@ String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, gss
     return messages;
 }
 
-String extractStatusMessages(OM_uint32 major_status_code, OM_uint32 minor_status_code, gss_OID mech_type)
+String extractStatusMessages(OM_uint32 major_status_code, OM_uint32 minor_status_code, const gss_OID & mech_type)
 {
     const auto gss_messages = extractSpecificStatusMessages(major_status_code, GSS_C_GSS_CODE, mech_type);
     const auto mech_messages = extractSpecificStatusMessages(minor_status_code, GSS_C_MECH_CODE, mech_type);
@@ -119,69 +168,60 @@ String extractStatusMessages(OM_uint32 major_status_code, OM_uint32 minor_status
     return messages;
 }
 
-std::pair<String, String> extractNameAndRealmHostBased(gss_name_t name)
+std::pair<String, String> extractNameAndRealm(const gss_name_t & name)
 {
     std::scoped_lock lock(gss_global_mutex);
 
-    gss_buffer_t name_buf = GSS_C_NO_BUFFER;
+    gss_buffer_desc name_buf;
+    name_buf.length = 0;
+    name_buf.value = nullptr;
 
     SCOPE_EXIT({
-        if (name_buf != GSS_C_NO_BUFFER)
-        {
-            OM_uint32 minor_status = 0;
-            [[maybe_unused]] OM_uint32 major_status = gss_release_buffer(
-                &minor_status,
-                name_buf
-            );
-            name_buf = GSS_C_NO_BUFFER;
-        }
+        OM_uint32 minor_status = 0;
+        [[maybe_unused]] OM_uint32 major_status = gss_release_buffer(
+            &minor_status,
+            &name_buf
+        );
     });
 
     OM_uint32 minor_status = 0;
     [[maybe_unused]] OM_uint32 major_status = gss_export_name(
         &minor_status,
         name,
-        name_buf
+        &name_buf
     );
 
-    const auto name_str = bufferToString(name_buf);
-    const auto at_pos = name_str.find('@');
-
-    return {
-        name_str.substr(0, at_pos),
-        (at_pos != std::string::npos ? name_str.substr(at_pos + 1) : String())
-    };
+    const PrincipalName principal = bufferToString(name_buf);
+    return { principal.name, principal.realm };
 }
 
-String getMechanismAsString(gss_OID mech_type)
+String getMechanismAsString(const gss_OID & mech_type)
 {
     std::scoped_lock lock(gss_global_mutex);
 
-    gss_buffer_t mechanism_buf = GSS_C_NO_BUFFER;
+    gss_buffer_desc mechanism_buf;
+    mechanism_buf.length = 0;
+    mechanism_buf.value = nullptr;
 
     SCOPE_EXIT({
-        if (mechanism_buf != GSS_C_NO_BUFFER)
-        {
-            OM_uint32 minor_status = 0;
-            [[maybe_unused]] OM_uint32 major_status = gss_release_buffer(
-                &minor_status,
-                mechanism_buf
-            );
-            mechanism_buf = GSS_C_NO_BUFFER;
-        }
+        OM_uint32 minor_status = 0;
+        [[maybe_unused]] OM_uint32 major_status = gss_release_buffer(
+            &minor_status,
+            &mechanism_buf
+        );
     });
 
     OM_uint32 minor_status = 0;
     [[maybe_unused]] OM_uint32 major_status = gss_oid_to_str(
         &minor_status,
         mech_type,
-        mechanism_buf
+        &mechanism_buf
     );
 
     return bufferToString(mechanism_buf);
 }
 
-bool areMechanismsSame(const String & left_str, gss_OID right_oid)
+bool areMechanismsSame(const String & left_str, const gss_OID & right_oid)
 {
     std::scoped_lock lock(gss_global_mutex);
 
@@ -251,8 +291,8 @@ void GSSAcceptorContext::initHandles()
 
     if (!params.principal.empty())
     {
-        if (params.realm.empty())
-            throw Exception("Realm must be specified if proncipal is specified", ErrorCodes::BAD_ARGUMENTS);
+        if (!params.realm.empty())
+            throw Exception("Realm and principal name cannot be specified simultaneously", ErrorCodes::BAD_ARGUMENTS);
 
         const String acceptor_name_str = params.principal + "@" + params.realm;
 
@@ -282,7 +322,7 @@ void GSSAcceptorContext::initHandles()
             &acceptor_name
         );
 
-        if (!GSS_ERROR(major_status))
+        if (GSS_ERROR(major_status))
         {
             const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
             throw Exception("gss_import_name() failed" + (messages.empty() ? "" : ": " + messages), ErrorCodes::KERBEROS_ERROR);
@@ -300,7 +340,7 @@ void GSSAcceptorContext::initHandles()
             nullptr
         );
 
-        if (!GSS_ERROR(major_status))
+        if (GSS_ERROR(major_status))
         {
             const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
             throw Exception("gss_acquire_cred() failed" + (messages.empty() ? "" : ": " + messages), ErrorCodes::KERBEROS_ERROR);
@@ -308,7 +348,7 @@ void GSSAcceptorContext::initHandles()
     }
 }
 
-String GSSAcceptorContext::processToken(const String & input_token)
+String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger * log)
 {
     std::scoped_lock lock(gss_global_mutex);
 
@@ -329,9 +369,12 @@ String GSSAcceptorContext::processToken(const String & input_token)
         input_token_buf.length = input_token.size();
         input_token_buf.value = const_cast<char *>(input_token.c_str());
 
+        gss_buffer_desc output_token_buf;
+        output_token_buf.length = 0;
+        output_token_buf.value = nullptr;
+
         gss_name_t initiator_name = GSS_C_NO_NAME;
         gss_OID mech_type = GSS_C_NO_OID;
-        gss_buffer_t output_token_buf = GSS_C_NO_BUFFER;
         OM_uint32 flags = 0;
 
         SCOPE_EXIT({
@@ -345,15 +388,11 @@ String GSSAcceptorContext::processToken(const String & input_token)
                 initiator_name = GSS_C_NO_NAME;
             }
 
-            if (output_token_buf != GSS_C_NO_BUFFER)
-            {
-                OM_uint32 minor_status = 0;
-                [[maybe_unused]] OM_uint32 major_status = gss_release_buffer(
-                    &minor_status,
-                    output_token_buf
-                );
-                output_token_buf = GSS_C_NO_BUFFER;
-            }
+            OM_uint32 minor_status = 0;
+            [[maybe_unused]] OM_uint32 major_status = gss_release_buffer(
+                &minor_status,
+                &output_token_buf
+            );
         });
 
         OM_uint32 minor_status = 0;
@@ -365,7 +404,7 @@ String GSSAcceptorContext::processToken(const String & input_token)
             GSS_C_NO_CHANNEL_BINDINGS,
             &initiator_name,
             &mech_type,
-            output_token_buf,
+            &output_token_buf,
             &flags,
             nullptr,
             nullptr
@@ -381,7 +420,7 @@ String GSSAcceptorContext::processToken(const String & input_token)
         else if (!GSS_ERROR(major_status) && (major_status & GSS_S_COMPLETE))
         {
             output_token = bufferToString(output_token_buf);
-            std::tie(user_name, realm) = extractNameAndRealmHostBased(initiator_name);
+            std::tie(user_name, realm) = extractNameAndRealm(initiator_name);
 
             is_ready = true;
             is_failed = (
@@ -402,6 +441,8 @@ String GSSAcceptorContext::processToken(const String & input_token)
     }
     catch (...)
     {
+        tryLogCurrentException(log, "Could not process GSS token");
+
         is_ready = true;
         is_failed = true;
         resetHandles();
@@ -421,7 +462,7 @@ void GSSAcceptorContext::initHandles()
 {
 }
 
-String GSSAcceptorContext::processToken(const String &)
+String GSSAcceptorContext::processToken(const String &, Poco::Logger *)
 {
     throw Exception("ClickHouse was built without GSS-API/Kerberos support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }

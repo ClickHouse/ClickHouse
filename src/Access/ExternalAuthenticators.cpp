@@ -157,14 +157,11 @@ void parseAndAddKerberos(ExternalAuthenticators & external_authenticators, const
 
         GSSAcceptorContext::Params params;
 
-        if (config.has("kerberos.principal"))
-            params.principal = config.getString("kerberos.principal");
+        params.realm = config.getString("kerberos.realm", "");
+        params.principal = config.getString("kerberos.principal", "");
 
-        if (config.has("kerberos.realm"))
-            params.realm = config.getString("kerberos.realm");
-
-        if (!params.principal.empty() && params.realm.empty())
-            throw Exception("Realm must be specified if proncipal is specified", ErrorCodes::BAD_ARGUMENTS);
+        if (!params.realm.empty() && !params.principal.empty())
+            throw Exception("Realm and principal name cannot be specified simultaneously", ErrorCodes::BAD_ARGUMENTS);
 
         external_authenticators.setKerberosParams(params);
     }

@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <iomanip>
+#include <sstream>
 #include <Poco/File.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPServerRequest.h>
@@ -43,6 +44,10 @@
 #include <Access/Credentials.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
+#include <Poco/Base64Encoder.h>
+#include <Poco/Base64Decoder.h>
+#include <Poco/MemoryStream.h>
+#include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -106,6 +111,24 @@ namespace ErrorCodes
     extern const int HTTP_LENGTH_REQUIRED;
 }
 
+static String base64Decode(const String & encoded)
+{
+    String decoded;
+    Poco::MemoryInputStream istr(encoded.data(), encoded.size());
+    Poco::Base64Decoder decoder(istr);
+    Poco::StreamCopier::copyToString(decoder, decoded);
+    return decoded;
+}
+
+static String base64Encode(const String & decoded)
+{
+    std::ostringstream ostr;
+    Poco::Base64Encoder encoder(ostr);
+    encoder.rdbuf()->setLineLength(0);
+    encoder << decoded;
+    encoder.close();
+    return ostr.str();
+}
 
 static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code)
 {
@@ -325,7 +348,7 @@ bool HTTPHandler::authenticateUser(
         if (!gss_acceptor_context)
             throw Exception("Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected", ErrorCodes::AUTHENTICATION_FAILED);
 
-        const auto spnego_response = gss_acceptor_context->processToken(spnego_challenge);
+        const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge)));
 
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
