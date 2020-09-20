@@ -130,7 +130,7 @@ private:
 };
 
 
-QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
     if (destination_id)
     {
@@ -149,7 +149,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 Pipe StorageBuffer::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,

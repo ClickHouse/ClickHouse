@@ -120,7 +120,7 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
         context, QueryProcessingStage::Complete, query_info);
 
     QueryPipeline pipeline;
-    pipeline.init(table->read(column_names, metadata_snapshot, {}, context, stage, 8192, 1));
+    pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
     BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     Block sample;

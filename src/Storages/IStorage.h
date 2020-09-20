@@ -217,7 +217,7 @@ public:
       * QueryProcessingStage::Enum required for Distributed over Distributed,
       * since it cannot return Complete for intermediate queries never.
       */
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const SelectQueryInfo &) const
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
     {
         return QueryProcessingStage::FetchColumns;
     }
@@ -275,7 +275,7 @@ public:
     virtual Pipe read(
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & /*query_info*/,
+        SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
@@ -291,7 +291,7 @@ public:
         SizeLimits & leaf_limits,
         std::shared_ptr<const EnabledQuota> quota,
         const Names & column_names,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         std::shared_ptr<Context> context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,

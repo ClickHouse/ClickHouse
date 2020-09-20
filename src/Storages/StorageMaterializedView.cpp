@@ -101,7 +101,7 @@ StorageMaterializedView::StorageMaterializedView(
         DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
     return getTargetTable()->getQueryProcessingStage(context, to_stage, query_info);
 }
@@ -109,7 +109,7 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(cons
 Pipe StorageMaterializedView::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
