@@ -900,10 +900,17 @@ ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & m
 
         if (metadata_diff.ttl_table_changed)
         {
-            ParserTTLExpressionList parser;
-            auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-            new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                ttl_for_table_ast, new_metadata.columns, global_context, new_metadata.primary_key);
+            if (!metadata_diff.new_ttl_table.empty())
+            {
+                ParserTTLExpressionList parser;
+                auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                    ttl_for_table_ast, new_metadata.columns, global_context, new_metadata.primary_key);
+            }
+            else /// TTL was removed
+            {
+                new_metadata.table_ttl = TTLTableDescription{};
+            }
         }
     }
 
@@ -3818,7 +3825,12 @@ void StorageReplicatedMergeTree::alter(
             future_metadata_in_zk.partition_key = serializeAST(*future_metadata.partition_key.expression_list_ast);
 
         if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata->table_ttl.definition_ast))
-            future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
+        {
+            if (future_metadata.table_ttl.definition_ast)
+                future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
+            else /// TTL was removed
+                future_metadata_in_zk.ttl_table = "";
+        }
 
         String new_indices_str = future_metadata.secondary_indices.toString();
         if (new_indices_str != current_metadata->secondary_indices.toString())
