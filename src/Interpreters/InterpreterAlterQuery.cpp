@@ -222,6 +222,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_TTL, database, table);
             break;
         }
+        case ASTAlterCommand::REMOVE_TTL:
+        {
+            required_access.emplace_back(AccessType::ALTER_TTL, database, table);
+            break;
+        }
         case ASTAlterCommand::MATERIALIZE_TTL:
         {
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_TTL, database, table);
