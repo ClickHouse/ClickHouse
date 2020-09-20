@@ -12,7 +12,7 @@ Passing a tuple of keys and value ​​arrays is identical to passing two array
 
 The number of elements in `key` and `value` must be the same for each row that is totaled.
 
-Returns a tuple of two arrays: keys in sorted order, and values calculated for the corresponding keys.
+Returns a tuple of two arrays: keys and values calculated for the corresponding keys.
 
 Example:
 
