@@ -10,6 +10,7 @@
 #include <ext/bit_cast.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Columns/ColumnTuple.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
@@ -222,10 +223,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
         }
     }
 
-    return traverseFunction(node, block_with_constants, out);
+    return traverseFunction(node, block_with_constants, out, nullptr);
 }
 
-bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, Block & block_with_constants, RPNElement & out)
+bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, Block & block_with_constants, RPNElement & out, const ASTPtr & parent)
 {
     bool maybe_useful = false;
 
@@ -234,7 +235,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
         const ASTs & arguments = function->arguments->children;
         for (const auto & arg : arguments)
         {
-            if (traverseFunction(arg, block_with_constants, out))
+            if (traverseFunction(arg, block_with_constants, out, node))
                 maybe_useful = true;
         }
 
@@ -255,12 +256,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
             DataTypePtr const_type;
             if (KeyCondition::getConstant(arguments[1], block_with_constants, const_value, const_type))
             {
-                if (traverseASTEquals(function->name, arguments[0], const_type, const_value, out))
+                if (traverseASTEquals(function->name, arguments[0], const_type, const_value, out, parent))
                     maybe_useful = true;
             }
             else if (KeyCondition::getConstant(arguments[0], block_with_constants, const_value, const_type))
             {
-                if (traverseASTEquals(function->name, arguments[1], const_type, const_value, out))
+                if (traverseASTEquals(function->name, arguments[1], const_type, const_value, out, parent))
                     maybe_useful = true;
             }
         }
@@ -323,8 +324,50 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
     return false;
 }
 
+static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
+{
+    if (!parent)
+        return true;
+
+    if (const auto * function = parent->as<ASTFunction>())
+    {
+        if (function->name == "arrayElement")
+        {
+            return true;
+        }
+        else if (function->name == "equals"
+            || function->name == "greater" || function->name == "greaterOrEquals"
+            || function->name == "less" || function->name == "lessOrEquals")
+        {
+            if (function->arguments->children.size() != 2)
+                return false;
+
+            if (const ASTLiteral * left = function->arguments->children[0]->as<ASTLiteral>())
+            {
+                    if (function->name == "equals" && left->value.get<Int64>() != 0)
+                        return true;
+                    else if (function->name == "less" && left->value.get<Int64>() >= 0)
+                        return true;
+                    else if (function->name == "lessOrEquals" && left->value.get<Int64>() > 0)
+                        return true;
+            }
+            else if (const ASTLiteral * right = function->arguments->children[1]->as<ASTLiteral>())
+            {
+                    if (function->name == "equals" && right->value.get<Int64>() != 0)
+                        return true;
+                    else if (function->name == "greater" && right->value.get<Int64>() >= 0)
+                        return true;
+                    else if (function->name == "greaterOrEquals" && right->value.get<Int64>() > 0)
+                        return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
-    const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out)
+    const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out, const ASTPtr & parent)
 {
     if (header.has(key_ast->getColumnName()))
     {
@@ -334,19 +377,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         if (function_name == "has" || function_name == "indexOf")
         {
-            out.function = RPNElement::FUNCTION_HAS;
-
             if (!array_type)
-                throw Exception("First argument for function has must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception("First argument for function " + function_name + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-            Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+            if (function_name == "has" || indexOfCanUseBloomFilter(parent))
+            {
+                out.function = RPNElement::FUNCTION_HAS;
+                const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+                Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+            }
         }
         else
         {
             if (array_type)
-                throw Exception("An array type of bloom_filter supports only has() function.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception("An array type of bloom_filter supports only has() and indexOf() function.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -374,7 +419,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             const DataTypes & subtypes = value_tuple_data_type->getElements();
 
             for (size_t index = 0; index < tuple.size(); ++index)
-                match_with_subtype |= traverseASTEquals(function_name, arguments[index], subtypes[index], tuple[index], out);
+                match_with_subtype |= traverseASTEquals(function_name, arguments[index], subtypes[index], tuple[index], out, key_ast);
 
             return match_with_subtype;
         }
