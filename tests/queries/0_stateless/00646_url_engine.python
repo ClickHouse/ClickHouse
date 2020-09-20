@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import socket
 import csv
 import sys
 import time
@@ -9,6 +10,11 @@ import os, urllib.request, urllib.parse, urllib.error
 import subprocess
 from io import StringIO
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+def get_local_port(host):
+    with socket.socket() as fd:
+        fd.bind((host, 0))
+        return fd.getsockname()[1]
 
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
 CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
@@ -21,7 +27,7 @@ CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 
 # IP-address of this host accessible from outside world.
 HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip()
-HTTP_SERVER_PORT = 55123
+HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST)
 
 # IP address and port of the HTTP server started from this script.
 HTTP_SERVER_ADDRESS = (HTTP_SERVER_HOST, HTTP_SERVER_PORT)
@@ -181,15 +187,9 @@ def main():
 
 
 if __name__ == "__main__":
-    exception_text = ''
-    for i in range(1, 5):
-        try:
-            main()
-            break
-        except Exception as ex:
-            exception_text = str(ex)
-            time.sleep(0.1)
-
-    if exception_text:
-        print("Exception: {}".format(exception_text), file=sys.stderr)
+    try:
+        main()
+    except Exception as ex:
+        print(ex, file=sys.stderr)
+        sys.stderr.flush()
         os._exit(1)
