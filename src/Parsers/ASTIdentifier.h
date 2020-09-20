@@ -66,6 +66,8 @@ class ASTTableIdentifier : public ASTIdentifier
         explicit ASTTableIdentifier(const StorageID & id);
         ASTTableIdentifier(const String & database, const String & table);
 
+        StorageID getStorageId() const;
+
         void setDatabase(const String & database);
         void setTable(const String & table);
 };
@@ -78,7 +80,6 @@ void setIdentifierSpecial(ASTPtr & ast);
 String getIdentifierName(const IAST * ast);
 std::optional<String> tryGetIdentifierName(const IAST * ast);
 bool tryGetIdentifierNameInto(const IAST * ast, String & name);
-StorageID getTableIdentifier(const ASTPtr & ast);
 
 inline String getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }
 inline std::optional<String> tryGetIdentifierName(const ASTPtr & ast) { return tryGetIdentifierName(ast.get()); }

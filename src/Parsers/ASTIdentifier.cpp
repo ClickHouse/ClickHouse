@@ -28,11 +28,13 @@ ASTPtr ASTIdentifier::clone() const
 ASTIdentifier::ASTIdentifier(const String & short_name)
     : name(short_name), name_parts{name}, semantic(std::make_shared<IdentifierSemanticImpl>())
 {
+    assert(!name.empty());
 }
 
 ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_)
     : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
+    assert(!name_parts.empty());
 }
 
 void ASTIdentifier::setShortName(const String & new_name)
@@ -114,6 +116,13 @@ ASTTableIdentifier::ASTTableIdentifier(const String & database, const String & t
     assert(database != "_temporary_and_external_tables");
 }
 
+StorageID ASTTableIdentifier::getStorageId() const
+{
+    assert(name_parts.size() > 1);
+
+    return {name_parts.size() == 2 ? name_parts[0] : "", name_parts.back(), uuid};
+}
+
 void ASTTableIdentifier::setDatabase(const String & database)
 {
     assert(name_parts.size() > 1);
@@ -168,19 +177,6 @@ void setIdentifierSpecial(ASTPtr & ast)
     if (ast)
         if (auto * id = ast->as<ASTIdentifier>())
             id->semantic->special = true;
-}
-
-StorageID getTableIdentifier(const ASTPtr & ast)
-{
-    if (!ast)
-        throw Exception("AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
-    const auto & identifier = dynamic_cast<const ASTIdentifier &>(*ast);
-    if (identifier.name_parts.size() > 2)
-        throw Exception("Logical error: more than two components in table expression", ErrorCodes::SYNTAX_ERROR);
-
-    if (identifier.name_parts.size() == 2)
-        return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
-    return { "", identifier.name, identifier.uuid };
 }
 
 }
