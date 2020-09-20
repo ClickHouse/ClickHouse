@@ -508,7 +508,7 @@ SELECT parseDateTimeBestEffort('10 20:19')
 
 **См. также**
 
--   \[Информация о формате ISO 8601 от @xkcd\](https://xkcd.com/1179/)
+-   [Информация о формате ISO 8601 от @xkcd](https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)
@@ -676,6 +676,45 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 ┌─fromUnixTimestamp64Milli(i64, 'UTC')─┐
 │              2009-02-13 23:31:31.011 │
 └──────────────────────────────────────┘
+```
+
+## toLowCardinality {#tolowcardinality}
+
+Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
+
+Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
+
+**Синтаксис**
+
+```sql
+toLowCardinality(expr)
+```
+
+**Параметры**
+
+- `expr` — [Выражение](../syntax.md#syntax-expressions), которое в результате преобразуется в один из [поддерживаемых типов данных](../data-types/index.md#data_types).
+
+
+**Возвращаемое значение**
+
+- Результат преобразования `expr`.
+
+Тип: `LowCardinality(expr_result_type)`
+
+**Example**
+
+Запрос:
+
+```sql
+SELECT toLowCardinality('1')
+```
+
+Результат:
+
+```text
+┌─toLowCardinality('1')─┐
+│ 1                     │
+└───────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->
