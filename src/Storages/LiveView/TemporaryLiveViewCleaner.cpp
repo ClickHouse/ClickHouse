@@ -69,20 +69,29 @@ TemporaryLiveViewCleaner::~TemporaryLiveViewCleaner()
 
 void TemporaryLiveViewCleaner::addView(const std::shared_ptr<StorageLiveView> & view)
 {
-    if (!view->isTemporary())
+    if (!view->isTemporary() || background_thread_should_exit)
         return;
 
     auto current_time = std::chrono::system_clock::now();
     auto time_of_next_check = current_time + view->getTimeout();
 
     std::lock_guard lock{mutex};
+    if (background_thread_should_exit)
+        return;
+
+    /// If views.empty() the background thread isn't running or it's going to stop right now.
+    bool background_thread_is_running = !views.empty();
 
     /// Keep the vector `views` sorted by time of next check.
     StorageAndTimeOfCheck storage_and_time_of_check{view, time_of_next_check};
     views.insert(std::upper_bound(views.begin(), views.end(), storage_and_time_of_check), storage_and_time_of_check);
 
-    if (!background_thread.joinable())
+    if (!background_thread_is_running)
+    {
+        if (background_thread.joinable())
+            background_thread.join();
         background_thread = ThreadFromGlobalPool{&TemporaryLiveViewCleaner::backgroundThreadFunc, this};
+    }
 
     background_thread_wake_up.notify_one();
 }
@@ -95,7 +104,7 @@ void TemporaryLiveViewCleaner::backgroundThreadFunc()
     {
         background_thread_wake_up.wait_until(lock, views.front().time_of_check);
         if (background_thread_should_exit)
-            return;
+            break;
 
         auto current_time = std::chrono::system_clock::now();
         std::vector<StorageID> storages_to_drop;
@@ -112,18 +121,22 @@ void TemporaryLiveViewCleaner::backgroundThreadFunc()
                 continue;
             }
 
-            ++it;
-
             if (current_time < time_of_check)
                 break; /// It's not the time to check it yet.
 
+            auto storage_id = storage->getStorageID();
+            if (!storage->hasUsers() && DatabaseCatalog::instance().getDependencies(storage_id).empty())
+            {
+                /// No users and no dependencies so we can remove the storage.
+                storages_to_drop.emplace_back(storage_id);
+                it = views.erase(it);
+                continue;
+            }
+
+            /// Calculate time of the next check.
             time_of_check = current_time + storage->getTimeout();
 
-            auto storage_id = storage->getStorageID();
-            if (storage->hasUsers() || !DatabaseCatalog::instance().getDependencies(storage_id).empty())
-                continue;
-
-            storages_to_drop.emplace_back(storage_id);
+            ++it;
         }
 
         lock.unlock();

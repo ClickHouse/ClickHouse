@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include <functional>
-#include <ostream>
+#include <iosfwd>
 
 #include <common/types.h>
 #include <common/unaligned.h>
@@ -322,10 +322,4 @@ inline bool operator==(StringRef lhs, const char * rhs)
     return true;
 }
 
-inline std::ostream & operator<<(std::ostream & os, const StringRef & str)
-{
-    if (str.data)
-        os.write(str.data, str.size);
-
-    return os;
-}
+std::ostream & operator<<(std::ostream & os, const StringRef & str);

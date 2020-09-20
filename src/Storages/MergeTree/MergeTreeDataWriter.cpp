@@ -12,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
 #include <Common/typeid_cast.h>
+#include <Common/FileSyncGuard.h>
 
 #include <Parsers/queryToString.h>
 
@@ -236,7 +237,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
+    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
 
     auto new_data_part = data.createPart(
@@ -251,6 +252,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
+    std::optional<FileSyncGuard> sync_guard;
     if (new_data_part->isStoredOnDisk())
     {
         /// The name could be non-unique in case of stale files from previous runs.
@@ -262,7 +264,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
             new_data_part->volume->getDisk()->removeRecursive(full_path);
         }
 
-        new_data_part->volume->getDisk()->createDirectories(full_path);
+        const auto disk = new_data_part->volume->getDisk();
+        disk->createDirectories(full_path);
+
+        if (data.getSettings()->fsync_part_directory)
+            sync_guard.emplace(disk, full_path);
     }
 
     /// If we need to calculate some columns to sort.
@@ -311,10 +317,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+    bool sync_on_insert = data.getSettings()->fsync_after_insert;
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
-    out.writeSuffixAndFinalizePart(new_data_part);
+    out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
