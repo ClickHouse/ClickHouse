@@ -755,7 +755,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     if (replicated)
+    {
+        auto zookeeper_cluster = storage_settings->zookeeper_cluster;
         return StorageReplicatedMergeTree::create(
+            zookeeper_cluster,
             zookeeper_path,
             replica_name,
             args.attach,
@@ -766,8 +769,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            args.has_force_restore_data_flag,
-            allow_renaming);
+            args.has_force_restore_data_flag);
+    }
     else
         return StorageMergeTree::create(
             args.table_id,

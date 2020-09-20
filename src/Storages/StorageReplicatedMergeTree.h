@@ -158,6 +158,7 @@ public:
         bool is_session_expired;
         ReplicatedMergeTreeQueue::Status queue;
         UInt32 parts_to_check;
+        String zookeeper_cluster;
         String zookeeper_path;
         String replica_name;
         String replica_path;
@@ -208,7 +209,6 @@ public:
     /// Checks that fetches are not disabled with action blocker and pool for fetches
     /// is not overloaded
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
-
 private:
 
     /// Get a sequential consistent view of current parts.
@@ -242,6 +242,7 @@ private:
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     bool has_metadata_in_zookeeper = true;
 
+    String zookeeper_cluster;
     String zookeeper_path;
     String replica_name;
     String replica_path;
@@ -586,6 +587,7 @@ protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
     StorageReplicatedMergeTree(
+        const String & zookeeper_cluster_,
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,

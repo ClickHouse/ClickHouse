@@ -29,6 +29,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "is_session_expired",                   std::make_shared<DataTypeUInt8>()    },
         { "future_parts",                         std::make_shared<DataTypeUInt32>()   },
         { "parts_to_check",                       std::make_shared<DataTypeUInt32>()   },
+        { "zookeeper_cluster",                    std::make_shared<DataTypeString>()   },
         { "zookeeper_path",                       std::make_shared<DataTypeString>()   },
         { "replica_name",                         std::make_shared<DataTypeString>()   },
         { "replica_path",                         std::make_shared<DataTypeString>()   },
@@ -162,6 +163,7 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.is_session_expired);
         res_columns[col_num++]->insert(status.queue.future_parts);
         res_columns[col_num++]->insert(status.parts_to_check);
+        res_columns[col_num++]->insert(status.zookeeper_cluster);
         res_columns[col_num++]->insert(status.zookeeper_path);
         res_columns[col_num++]->insert(status.replica_name);
         res_columns[col_num++]->insert(status.replica_path);

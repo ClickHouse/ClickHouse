@@ -174,6 +174,7 @@ static std::string normalizeZooKeeperPath(std::string zookeeper_path)
 
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
+    const String & zookeeper_cluster_,
     const String & zookeeper_path_,
     const String & replica_name_,
     bool attach,
@@ -196,6 +197,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     true,                   /// require_part_metadata
                     attach,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
+    , zookeeper_cluster(zookeeper_cluster_)
     , zookeeper_path(normalizeZooKeeperPath(zookeeper_path_))
     , replica_name(replica_name_)
     , replica_path(zookeeper_path + "/replicas/" + replica_name)
@@ -227,7 +229,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     mutations_finalizing_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
 
-    if (global_context.hasZooKeeper())
+    if (global_context.hasZooKeeper(zookeeper_cluster))
     {
         /// It's possible for getZooKeeper() to timeout if  zookeeper host(s) can't
         /// be reached. In such cases Poco::Exception is thrown after a connection
@@ -244,7 +246,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// to be manually deleted before retrying the CreateQuery.
         try
         {
-            current_zookeeper = global_context.getZooKeeper();
+            current_zookeeper = global_context.getZooKeeper(zookeeper_cluster);
         }
         catch (...)
         {
@@ -4658,6 +4660,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 
     res.parts_to_check = part_check_thread.size();
 
+    res.zookeeper_cluster = zookeeper_cluster;
     res.zookeeper_path = zookeeper_path;
     res.replica_name = replica_name;
     res.replica_path = replica_path;
