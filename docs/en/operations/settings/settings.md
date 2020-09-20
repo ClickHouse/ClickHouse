@@ -1976,4 +1976,54 @@ Possible values:
 
 Default value: `120` seconds.
 
+## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
+
+Limits the width of value displayed in [Pretty](../../interfaces/formats.md#pretty) formats. If the value width exceeds the limit, the value is cut. 
+
+Possible values:
+
+-   Positive integer. 
+-   0 — The value is cut completely.
+
+Default value: `10000` symbols.
+
+**Examples**
+
+Query:
+```sql
+SET output_format_pretty_max_value_width = 10;
+SELECT range(number) FROM system.numbers LIMIT 10 FORMAT PrettyCompactNoEscapes;
+```
+Result:
+```text
+┌─range(number)─┐
+│ []            │
+│ [0]           │
+│ [0,1]         │
+│ [0,1,2]       │
+│ [0,1,2,3]     │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+└───────────────┘
+```
+
+Query with zero width:
+```sql
+SET output_format_pretty_max_value_width = 0;
+SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
+```
+Result:
+```text
+┌─range(number)─┐
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+└───────────────┘
+```
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

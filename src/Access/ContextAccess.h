@@ -63,9 +63,6 @@ public:
     UserPtr getUser() const;
     String getUserName() const;
 
-    bool isCorrectPassword(const String & password) const;
-    bool isClientHostAllowed() const;
-
     /// Returns information about current and enabled roles.
     /// The function can return nullptr.
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;

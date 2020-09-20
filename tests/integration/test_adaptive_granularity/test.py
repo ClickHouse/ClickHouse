@@ -6,45 +6,23 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'],
-                             with_zookeeper=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'],
-                             with_zookeeper=True)
+node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
 
-node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'],
-                             with_zookeeper=True, image='yandex/clickhouse-server', tag='19.6.3.18',
-                             with_installed_binary=True)
-node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'],
-                             with_zookeeper=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True, image='yandex/clickhouse-server', tag='19.6.3.18', with_installed_binary=True)
+node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml', 'configs/wide_parts_only.xml'], with_zookeeper=True)
 
-node5 = cluster.add_instance('node5', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'],
-                             with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.15',
-                             with_installed_binary=True)
-node6 = cluster.add_instance('node6', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'],
-                             with_zookeeper=True)
+node5 = cluster.add_instance('node5', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.15', with_installed_binary=True)
+node6 = cluster.add_instance('node6', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml', 'configs/wide_parts_only.xml'], with_zookeeper=True)
 
-node7 = cluster.add_instance('node7', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'],
-                             with_zookeeper=True, image='yandex/clickhouse-server', tag='19.6.3.18', stay_alive=True,
-                             with_installed_binary=True)
-node8 = cluster.add_instance('node8', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'],
-                             with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.15', stay_alive=True,
-                             with_installed_binary=True)
+node7 = cluster.add_instance('node7', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True, image='yandex/clickhouse-server', tag='19.6.3.18', stay_alive=True, with_installed_binary=True)
+node8 = cluster.add_instance('node8', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.15', stay_alive=True, with_installed_binary=True)
 
-node9 = cluster.add_instance('node9', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml',
-                                                    'configs/merge_tree_settings.xml'], with_zookeeper=True,
-                             image='yandex/clickhouse-server', tag='19.1.15', stay_alive=True,
-                             with_installed_binary=True)
-node10 = cluster.add_instance('node10', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml',
-                                                      'configs/merge_tree_settings.xml'], with_zookeeper=True,
-                              image='yandex/clickhouse-server', tag='19.6.3.18', stay_alive=True,
-                              with_installed_binary=True)
+node9 = cluster.add_instance('node9', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml', 'configs/merge_tree_settings.xml'], with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.15', stay_alive=True, with_installed_binary=True)
+node10 = cluster.add_instance('node10', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml', 'configs/merge_tree_settings.xml'], with_zookeeper=True, image='yandex/clickhouse-server', tag='19.6.3.18', stay_alive=True, with_installed_binary=True)
 
-node11 = cluster.add_instance('node11', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'],
-                              with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.15', stay_alive=True,
-                              with_installed_binary=True)
-node12 = cluster.add_instance('node12', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'],
-                              with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.15', stay_alive=True,
-                              with_installed_binary=True)
+node11 = cluster.add_instance('node11', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.15', stay_alive=True, with_installed_binary=True)
+node12 = cluster.add_instance('node12', main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True, image='yandex/clickhouse-server', tag='19.1.15', stay_alive=True, with_installed_binary=True)
 
 
 def prepare_single_pair_with_setting(first_node, second_node, group):
@@ -296,10 +274,14 @@ def test_mixed_granularity_single_node(start_dynamic_cluster, node):
         "INSERT INTO table_with_default_granularity VALUES (toDate('2018-09-01'), 1, 333), (toDate('2018-09-02'), 2, 444)")
 
     def callback(n):
-        n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml",
-                         "<yandex><merge_tree><enable_mixed_granularity_parts>1</enable_mixed_granularity_parts></merge_tree></yandex>")
-        n.replace_config("/etc/clickhouse-server/config.d/merge_tree_settings.xml",
-                         "<yandex><merge_tree><enable_mixed_granularity_parts>1</enable_mixed_granularity_parts></merge_tree></yandex>")
+        new_config = """
+<yandex><merge_tree>
+    <enable_mixed_granularity_parts>1</enable_mixed_granularity_parts>
+    <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+</merge_tree></yandex>"""
+
+        n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml", new_config)
+        n.replace_config("/etc/clickhouse-server/config.d/merge_tree_settings.xml", new_config)
 
     node.restart_with_latest_version(callback_onstop=callback)
     node.query("SYSTEM RELOAD CONFIG")
@@ -342,10 +324,14 @@ def test_version_update_two_nodes(start_dynamic_cluster):
     assert node12.query("SELECT COUNT() FROM table_with_default_granularity") == '2\n'
 
     def callback(n):
-        n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml",
-                         "<yandex><merge_tree><enable_mixed_granularity_parts>0</enable_mixed_granularity_parts></merge_tree></yandex>")
-        n.replace_config("/etc/clickhouse-server/config.d/merge_tree_settings.xml",
-                         "<yandex><merge_tree><enable_mixed_granularity_parts>0</enable_mixed_granularity_parts></merge_tree></yandex>")
+        new_config = """
+<yandex><merge_tree>
+    <enable_mixed_granularity_parts>0</enable_mixed_granularity_parts>
+    <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+</merge_tree></yandex>"""
+
+        n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml", new_config)
+        n.replace_config("/etc/clickhouse-server/config.d/merge_tree_settings.xml", new_config)
 
     node12.restart_with_latest_version(callback_onstop=callback)
 
