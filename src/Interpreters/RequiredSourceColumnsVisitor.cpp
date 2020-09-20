@@ -34,7 +34,7 @@ std::vector<String> RequiredSourceColumnsMatcher::extractNamesFromLambda(const A
         if (!identifier)
             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
-        names.push_back(identifier->name);
+        names.push_back(identifier->fullName());
     }
 
     return names;
@@ -132,10 +132,10 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
 
 void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPtr &, Data & data)
 {
-    if (node.name.empty())
+    if (node.fullName().empty())
         throw Exception("Expected not empty name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (!data.private_aliases.count(node.name))
+    if (!data.private_aliases.count(node.fullName()))
         data.addColumnIdentifier(node);
 }
 

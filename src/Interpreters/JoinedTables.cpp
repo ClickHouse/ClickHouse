@@ -48,8 +48,8 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     auto & table_expr = join->table_expression->as<ASTTableExpression &>();
     if (table_expr.database_and_table_name)
     {
-        const auto & table_id = table_expr.database_and_table_name->as<ASTIdentifier &>();
-        String expr = "(select * from " + table_id.name + ") as " + table_id.shortName();
+        const auto & table_id = table_expr.database_and_table_name->as<ASTTableIdentifier &>();
+        String expr = "(select * from " + table_id.fullName() + ") as " + table_id.shortName();
 
         // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
         //        we can't replace aliased tables.
@@ -99,7 +99,7 @@ private:
                 match == IdentifierSemantic::ColumnMatch::DbAndTable)
             {
                 if (rewritten)
-                    throw Exception("Failed to rewrite distributed table names. Ambiguous column '" + identifier.name + "'",
+                    throw Exception("Failed to rewrite distributed table names. Ambiguous column '" + identifier.fullName() + "'",
                                     ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 /// Table has an alias. So we set a new name qualified by table alias.
                 IdentifierSemantic::setColumnLongName(identifier, table);
@@ -114,10 +114,10 @@ private:
         bool rewritten = false;
         for (const auto & table : data)
         {
-            if (identifier.name == table.table)
+            if (identifier.fullName() == table.table)
             {
                 if (rewritten)
-                    throw Exception("Failed to rewrite distributed table. Ambiguous column '" + identifier.name + "'",
+                    throw Exception("Failed to rewrite distributed table. Ambiguous column '" + identifier.fullName() + "'",
                                     ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 identifier.setShortName(table.alias);
                 rewritten = true;

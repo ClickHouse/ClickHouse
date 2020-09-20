@@ -148,7 +148,7 @@ const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifie
         return identifier;
 
     UInt32 max_attempts = 100;
-    for (auto it = aliases.find(identifier->name); it != aliases.end();)
+    for (auto it = aliases.find(identifier->fullName()); it != aliases.end();)
     {
         const ASTIdentifier * parent = identifier;
         identifier = it->second->as<ASTIdentifier>();
@@ -159,9 +159,9 @@ const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifie
         if (identifier->compound())
             break; /// not an alias. Break to prevent cycle through short names: 'a as b, t1.b as a'
 
-        it = aliases.find(identifier->name);
+        it = aliases.find(identifier->fullName());
         if (!max_attempts--)
-            throw Exception("Cannot unroll aliases for '" + identifier->name + "'", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Cannot unroll aliases for '" + identifier->fullName() + "'", ErrorCodes::LOGICAL_ERROR);
     }
 
     return identifier;
@@ -186,7 +186,7 @@ size_t CollectJoinOnKeysMatcher::getTableForIdentifiers(std::vector<const ASTIde
 
         if (!membership)
         {
-            const String & name = identifier->name;
+            const String & name = identifier->fullName();
             bool in_left_table = data.left_table.hasColumn(name);
             bool in_right_table = data.right_table.hasColumn(name);
 

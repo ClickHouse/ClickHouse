@@ -104,7 +104,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
             if (data.unknownColumn(table_pos, identifier))
             {
                 String table_name = data.tables[table_pos].table.getQualifiedNamePrefix(false);
-                throw Exception("There's no column '" + identifier.name + "' in table '" + table_name + "'",
+                throw Exception("There's no column '" + identifier.fullName() + "' in table '" + table_name + "'",
                                 ErrorCodes::UNKNOWN_IDENTIFIER);
             }
 
@@ -354,7 +354,6 @@ void RestoreQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, D
     {
         if (IdentifierSemantic::getMembership(identifier))
         {
-            identifier.restoreCompoundName();
             if (data.rename)
                 data.changeTable(identifier);
         }

@@ -43,7 +43,7 @@ namespace DB
 struct ASTTableExpression : public IAST
 {
     /// One of fields is non-nullptr.
-    ASTPtr database_and_table_name;
+    ASTPtr database_and_table_name;  // TODO: ASTTableIdentifier
     ASTPtr table_function;
     ASTPtr subquery;
 
