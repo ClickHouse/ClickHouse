@@ -257,9 +257,7 @@ void AccessControlManager::addMemoryStorage(const String & storage_name_)
 
 void AccessControlManager::addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
 {
-    auto storage = std::make_shared<LDAPAccessStorage>(storage_name_);
-    storage->setConfiguration(this, config_, prefix_);
-    addStorage(storage);
+    addStorage(std::make_shared<LDAPAccessStorage>(storage_name_, this, config_, prefix_));
 }
 
 
@@ -279,8 +277,7 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
         String prefix = key + "." + key_in_user_directories;
 
         String type = key_in_user_directories;
-        const size_t bracket_pos = type.find('[');
-        if (bracket_pos != String::npos)
+        if (size_t bracket_pos = type.find('['); bracket_pos != String::npos)
             type.resize(bracket_pos);
         if ((type == "users_xml") || (type == "users_config"))
             type = UsersConfigAccessStorage::STORAGE_TYPE;
@@ -310,8 +307,6 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
         }
         else if (type == LDAPAccessStorage::STORAGE_TYPE)
         {
-            if (bracket_pos != String::npos)
-                throw Exception("Duplicate storage type '" + type + "' at " + prefix + " in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
             addLDAPStorage(name, config, prefix);
         }
         else

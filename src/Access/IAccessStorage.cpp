@@ -153,12 +153,6 @@ std::vector<UUID> IAccessStorage::find(EntityType type, const Strings & names) c
 }
 
 
-std::optional<UUID> IAccessStorage::findOrGenerate(EntityType type, const String & name) const
-{
-    return findOrGenerateImpl(type, name);
-}
-
-
 UUID IAccessStorage::getID(EntityType type, const String & name) const
 {
     auto id = findImpl(type, name);
@@ -486,12 +480,6 @@ Poco::Logger * IAccessStorage::getLogger() const
     if (!ptr)
         log.store(ptr = &Poco::Logger::get("Access(" + storage_name + ")"), std::memory_order_relaxed);
     return ptr;
-}
-
-
-std::optional<UUID> IAccessStorage::findOrGenerateImpl(EntityType type, const String & name) const
-{
-    return findImpl(type, name);
 }
 
 
