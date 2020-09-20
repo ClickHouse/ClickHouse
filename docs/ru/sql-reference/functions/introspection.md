@@ -93,7 +93,7 @@ LIMIT 1
 \G
 ```
 
-Функция [arrayMap](higher-order-functions.md#higher_order_functions-array-map) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `addressToLine`. Результат этой обработки вы видите в виде `trace_source_code_lines` колонки выходных данных.
+Функция [arrayMap](../../sql-reference/functions/array-functions.md#array-map) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `addressToLine`. Результат этой обработки вы видите в виде `trace_source_code_lines` колонки выходных данных.
 
 ``` text
 Row 1:
@@ -179,7 +179,7 @@ LIMIT 1
 \G
 ```
 
-То [arrayMap](higher-order-functions.md#higher_order_functions-array-map) функция позволяет обрабатывать каждый отдельный элемент системы. `trace` массив по типу `addressToSymbols` функция. Результат этой обработки вы видите в виде `trace_symbols` колонка выходных данных.
+То [arrayMap](../../sql-reference/functions/array-functions.md#array-map) функция позволяет обрабатывать каждый отдельный элемент системы. `trace` массив по типу `addressToSymbols` функция. Результат этой обработки вы видите в виде `trace_symbols` колонка выходных данных.
 
 ``` text
 Row 1:
@@ -276,7 +276,7 @@ LIMIT 1
 \G
 ```
 
-Функция [arrayMap](higher-order-functions.md#higher_order_functions-array-map) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `demangle`.
+Функция [arrayMap](../../sql-reference/functions/array-functions.md#array-map) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `demangle`.
 
 ``` text
 Row 1:

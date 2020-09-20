@@ -9,7 +9,8 @@ CREATE TABLE check_system_tables
   ) ENGINE = MergeTree()
     ORDER BY name1
     PARTITION BY name2
-    SAMPLE BY name1;
+    SAMPLE BY name1
+    SETTINGS min_bytes_for_wide_part = 0;
 
 SELECT name, partition_key, sorting_key, primary_key, sampling_key, storage_policy, total_rows
 FROM system.tables

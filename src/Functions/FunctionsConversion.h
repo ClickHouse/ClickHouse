@@ -1570,25 +1570,15 @@ struct ToNumberMonotonicity
             if (left.isNull() || right.isNull())
                 return {};
 
-            if (from_is_unsigned == to_is_unsigned)
-            {
-                /// all bits other than that fits, must be same.
-                if (divideByRangeOfType(left.get<UInt64>()) == divideByRangeOfType(right.get<UInt64>()))
-                    return {true};
-
+            /// Function cannot be monotonic when left and right are not on the same ranges.
+            if (divideByRangeOfType(left.get<UInt64>()) != divideByRangeOfType(right.get<UInt64>()))
                 return {};
-            }
+
+            if (to_is_unsigned)
+                return {true};
             else
-            {
-                /// When signedness is changed, it's also required for arguments to be from the same half.
-                /// And they must be in the same half after converting to the result type.
-                if (left_in_first_half == right_in_first_half
-                    && (T(left.get<Int64>()) >= 0) == (T(right.get<Int64>()) >= 0)
-                    && divideByRangeOfType(left.get<UInt64>()) == divideByRangeOfType(right.get<UInt64>()))
-                    return {true};
-
-                return {};
-            }
+                // If To is signed, it's possible that the signedness is different after conversion. So we check it explicitly.
+                return {(T(left.get<UInt64>()) >= 0) == (T(right.get<UInt64>()) >= 0)};
         }
 
         __builtin_unreachable();
@@ -2260,9 +2250,7 @@ private:
 
                 size_t nullable_pos = block.columns() - 1;
                 nullable_col = typeid_cast<const ColumnNullable *>(block.getByPosition(nullable_pos).column.get());
-                if (!nullable_col)
-                    throw Exception("Last column should be ColumnNullable", ErrorCodes::LOGICAL_ERROR);
-                if (col && nullable_col->size() != col->size())
+                if (col && nullable_col && nullable_col->size() != col->size())
                     throw Exception("ColumnNullable is not compatible with original", ErrorCodes::LOGICAL_ERROR);
             }
 

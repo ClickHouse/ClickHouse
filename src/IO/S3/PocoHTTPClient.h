@@ -37,7 +37,7 @@ public:
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const override;
 
 private:
-    void MakeRequestInternal(
+    void makeRequestInternal(
         Aws::Http::HttpRequest & request,
         std::shared_ptr<Aws::Http::Standard::StandardHttpResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,

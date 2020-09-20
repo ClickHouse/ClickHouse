@@ -35,6 +35,7 @@ void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory &)
 void registerAggregateFunctionMoving(AggregateFunctionFactory &);
 void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory &);
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory &);
+void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
