@@ -314,6 +314,7 @@ void RemoteQueryExecutor::sendScalars()
 
 void RemoteQueryExecutor::sendExternalTables()
 {
+    SelectQueryInfo query_info;
     size_t count = multiplexed_connections->size();
 
     {
@@ -332,7 +333,7 @@ void RemoteQueryExecutor::sendExternalTables()
 
                 Pipe pipe = cur->read(
                     metadata_snapshot->getColumns().getNamesOfPhysical(),
-                    metadata_snapshot, {}, context,
+                    metadata_snapshot, query_info, context,
                     read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                 auto data = std::make_unique<ExternalTableData>();

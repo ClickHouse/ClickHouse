@@ -19,7 +19,7 @@ ReadFromStorageStep::ReadFromStorageStep(
     std::shared_ptr<const EnabledQuota> quota_,
     StoragePtr storage_,
     const Names & required_columns_,
-    const SelectQueryInfo & query_info_,
+    SelectQueryInfo & query_info_,
     std::shared_ptr<Context> context_,
     QueryProcessingStage::Enum processing_stage_,
     size_t max_block_size_,

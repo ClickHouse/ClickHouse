@@ -78,8 +78,8 @@ struct SelectQueryInfo
     PrewhereInfoPtr prewhere_info;
 
     ReadInOrderOptimizerPtr order_optimizer;
-    /// We can modify it while reading from storage
-    mutable InputOrderInfoPtr input_order_info;
+    /// Can be modified while reading from storage
+    InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
