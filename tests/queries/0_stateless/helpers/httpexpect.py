@@ -66,7 +66,7 @@ def spawn(connection, request):
     return IO(connection, response, queue, reader={'thread':thread, 'kill_event':reader_kill_event})
 
 if __name__ == '__main__':
-    with http({'host':'localhost','port':8123},{'method':'GET', 'url':'?query=SELECT%201'}) as client:
+    with spawn({'host':'localhost','port':8123},{'method':'GET', 'url':'?query=SELECT%201'}) as client:
         client.logger(sys.stdout)
         client.timeout(2)
         print(client.response.status, client.response.reason)
