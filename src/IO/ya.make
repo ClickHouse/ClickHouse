@@ -28,6 +28,7 @@ SRCS(
     MemoryReadWriteBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
+    MySQLBinlogEventReadBuffer.cpp
     MySQLPacketPayloadReadBuffer.cpp
     MySQLPacketPayloadWriteBuffer.cpp
     NullWriteBuffer.cpp

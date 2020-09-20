@@ -54,8 +54,8 @@ template <size_t Bits, typename Signed>
 class integer
 {
 public:
-    using base_type = uint8_t;
-    using signed_base_type = int8_t;
+    using base_type = uint64_t;
+    using signed_base_type = int64_t;
 
     // ctors
     integer() = default;
@@ -127,7 +127,7 @@ private:
     friend class std::numeric_limits<integer<Bits, signed>>;
     friend class std::numeric_limits<integer<Bits, unsigned>>;
 
-    base_type m_arr[_impl::arr_size];
+    base_type items[_impl::item_count];
 };
 
 template <typename T>
