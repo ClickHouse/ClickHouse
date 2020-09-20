@@ -355,6 +355,7 @@ struct ContextShared
     mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
+    std::optional<MergeTreeSettings> replicated_merge_tree_settings;   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
@@ -1885,6 +1886,22 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     }
 
     return *shared->merge_tree_settings;
+}
+
+const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
+{
+    auto lock = getLock();
+
+    if (!shared->replicated_merge_tree_settings)
+    {
+        const auto & config = getConfigRef();
+        MergeTreeSettings mt_settings;
+        mt_settings.loadFromConfig("merge_tree", config);
+        mt_settings.loadFromConfig("replicated_merge_tree", config);
+        shared->replicated_merge_tree_settings.emplace(mt_settings);
+    }
+
+    return *shared->replicated_merge_tree_settings;
 }
 
 const StorageS3Settings & Context::getStorageS3Settings() const
