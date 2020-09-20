@@ -75,17 +75,17 @@ struct SelectQueryInfo
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
 
-    /// For optimize_skip_unused_shards
-    /// We can modify it in getQueryProcessingStage()
-    mutable ClusterPtr cluster;
+    /// For optimize_skip_unused_shards.
+    /// Can be modified in getQueryProcessingStage()
+    ClusterPtr cluster;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
     PrewhereInfoPtr prewhere_info;
 
     ReadInOrderOptimizerPtr order_optimizer;
-    /// We can modify it while reading from storage
-    mutable InputOrderInfoPtr input_order_info;
+    /// Can be modified while reading from storage
+    InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)

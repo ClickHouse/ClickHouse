@@ -446,7 +446,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     return res;
 }
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
     const auto & settings = context.getSettingsRef();
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -509,7 +509,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
 Pipe StorageDistributed::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
