@@ -100,5 +100,6 @@ FROM numbers(3)
 │ a*cjab+                               │
 │ aeca2A                                │
 └───────────────────────────────────────┘
+```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/random_functions/) <!--hide-->
