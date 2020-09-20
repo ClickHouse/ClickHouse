@@ -82,7 +82,8 @@ void attachSystemTablesLocal(IDatabase & system_database)
     attach<StorageSystemFunctions>(system_database, "functions");
     attach<StorageSystemEvents>(system_database, "events");
     attach<StorageSystemSettings>(system_database, "settings");
-    attach<SystemMergeTreeSettings>(system_database, "merge_tree_settings");
+    attach<SystemMergeTreeSettings<false>>(system_database, "merge_tree_settings");
+    attach<SystemMergeTreeSettings<true>>(system_database, "replicated_merge_tree_settings");
     attach<StorageSystemBuildOptions>(system_database, "build_options");
     attach<StorageSystemFormats>(system_database, "formats");
     attach<StorageSystemTableFunctions>(system_database, "table_functions");
