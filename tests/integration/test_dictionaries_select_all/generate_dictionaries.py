@@ -79,8 +79,9 @@ def generate_dictionaries(path, structure):
     '''
 
     dictionary_skeleton = \
-        dictionary_skeleton % reduce(lambda xml, (type, default): xml + attribute_skeleton % (type, type, default),
-                                     list(zip(types, implicit_defaults)), '')
+        dictionary_skeleton % reduce(
+            lambda xml, type_default: xml + attribute_skeleton % (type_default[0], type_default[0], type_default[1]),
+            list(zip(types, implicit_defaults)), '')
 
     source_clickhouse = '''
     <clickhouse>
