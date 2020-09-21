@@ -50,15 +50,15 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 }
 
 
-bool Authentication::areCredentialsValid(std::unique_ptr<Credentials> && credentials, const String & user_name, const ExternalAuthenticators & external_authenticators) const
+bool Authentication::areCredentialsValid(const Credentials & credentials, const String & user_name, const ExternalAuthenticators & external_authenticators) const
 {
-    if (!credentials || !credentials->isReady())
+    if (!credentials.isReady())
         return false;
 
-    if (credentials->getUserName() != user_name)
+    if (credentials.getUserName() != user_name)
         return false;
 
-    if (auto * gss_acceptor_context = dynamic_cast<GSSAcceptorContext *>(credentials.get()))
+    if (auto * gss_acceptor_context = dynamic_cast<const GSSAcceptorContext *>(&credentials))
     {
         switch (type)
         {
@@ -87,7 +87,7 @@ bool Authentication::areCredentialsValid(std::unique_ptr<Credentials> && credent
         }
     }
 
-    if (auto * basic_credentials = dynamic_cast<BasicCredentials *>(credentials.get()))
+    if (auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
     {
         switch (type)
         {
@@ -123,7 +123,7 @@ bool Authentication::areCredentialsValid(std::unique_ptr<Credentials> && credent
             case LDAP_SERVER:
             {
                 auto ldap_client_params = external_authenticators.getLDAPClientParamsBlueprint(ldap_server_name);
-                ldap_client_params.user = credentials->getUserName();
+                ldap_client_params.user = credentials.getUserName();
                 ldap_client_params.password = basic_credentials->getPassword();
 
                 LDAPSimpleAuthClient ldap_client(ldap_client_params);
@@ -137,6 +137,9 @@ bool Authentication::areCredentialsValid(std::unique_ptr<Credentials> && credent
                 break;
         }
     }
+
+    if (auto * always_allow_credentials = dynamic_cast<const AlwaysAllowCredentials *>(&credentials))
+        return true;
 
     throw Exception("makeAuthenticator(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }

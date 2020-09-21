@@ -4,8 +4,8 @@
 #   include "config_core.h"
 #endif
 
-#include <Core/Types.h>
 #include <Access/Credentials.h>
+#include <common/types.h>
 #include <memory>
 
 #if USE_KRB5

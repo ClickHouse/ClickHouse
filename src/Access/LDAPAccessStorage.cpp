@@ -2,6 +2,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/Role.h>
+#include <Access/Credentials.h>
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
@@ -214,12 +215,12 @@ bool LDAPAccessStorage::hasSubscriptionImpl(EntityType type) const
     return memory_storage.hasSubscription(type);
 }
 
-UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
 {
     std::scoped_lock lock(mutex);
     try
     {
-        auto id = memory_storage.find<User>(user_name);
+        auto id = memory_storage.find<User>(credentials.getUserName());
         if (id)
         {
             // We try to re-authenticate the existing user, and if not successful, we will remove it, since that would mean
@@ -227,7 +228,7 @@ UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & passw
             auto user = memory_storage.tryRead<User>(*id);
             try
             {
-                if (user && isAddressAllowedImpl(*user, address) && isPasswordCorrectImpl(*user, password, external_authenticators))
+                if (user && isAddressAllowedImpl(*user, address) && areCredentialsValidImpl(*user, credentials, external_authenticators))
                     return *id;
             }
             catch (...)
@@ -241,11 +242,11 @@ UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & passw
         {
             // User does not exist, so we create one, and will add it if authentication is successful.
             auto user = std::make_shared<User>();
-            user->setName(user_name);
+            user->setName(credentials.getUserName());
             user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
             user->authentication.setLDAPServerName(ldap_server);
 
-            if (isAddressAllowedImpl(*user, address) && isPasswordCorrectImpl(*user, password, external_authenticators))
+            if (isAddressAllowedImpl(*user, address) && areCredentialsValidImpl(*user, credentials, external_authenticators))
             {
                 for (const auto& role_name : default_role_names)
                 {
@@ -261,9 +262,9 @@ UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & passw
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger(), "Authentication failed for user '" + user_name + "' from access storage '" + access_control_manager->getStorageName() + "'");
+        tryLogCurrentException(getLogger(), "Authentication failed for user '" + credentials.getUserName() + "' from access storage '" + access_control_manager->getStorageName() + "'");
     }
-    throwCannotAuthenticate(user_name);
+    throwCannotAuthenticate(credentials.getUserName());
 }
 
 }

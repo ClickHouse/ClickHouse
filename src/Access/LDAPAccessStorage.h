@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/MemoryAccessStorage.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <ext/scope_guard.h>
 #include <mutex>
 #include <set>
@@ -49,7 +49,7 @@ private: // IAccessStorage implementations.
     virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     virtual bool hasSubscriptionImpl(const UUID & id) const override;
     virtual bool hasSubscriptionImpl(EntityType type) const override;
-    virtual UUID loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
+    virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
 
 private:
     void setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);

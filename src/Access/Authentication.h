@@ -21,7 +21,7 @@ namespace ErrorCodes
 class ExternalAuthenticators;
 class Credentials;
 
-/// Authentication type and encrypted password for checking when an user logins.
+/// Authentication type and encrypted password for checking when a user logins.
 class Authentication
 {
 public:
@@ -107,7 +107,7 @@ public:
     void setKerberosRealm(const String & realm);
 
     /// Verifies the credentials.
-    bool areCredentialsValid(std::unique_ptr<Credentials> && credentials, const String & user_name, const ExternalAuthenticators & external_authenticators) const;
+    bool areCredentialsValid(const Credentials & credentials, const String & user_name, const ExternalAuthenticators & external_authenticators) const;
 
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
     friend bool operator !=(const Authentication & lhs, const Authentication & rhs) { return !(lhs == rhs); }

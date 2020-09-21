@@ -30,6 +30,8 @@ GSSAcceptorContext::~GSSAcceptorContext()
 
 const String & GSSAcceptorContext::getRealm() const
 {
+    if (!isReady())
+        throwNotReady();
     return realm;
 }
 
@@ -48,7 +50,7 @@ std::recursive_mutex gss_global_mutex;
 struct PrincipalName
 {
     PrincipalName(String principal);
-    operator String() const;
+//  operator String() const;
 
     String name;
     std::vector<String> instances;
@@ -73,6 +75,7 @@ PrincipalName::PrincipalName(String principal)
     }
 }
 
+/*
 PrincipalName::operator String() const
 {
     String principal = name;
@@ -88,6 +91,7 @@ PrincipalName::operator String() const
 
     return principal;
 }
+*/
 
 String bufferToString(const gss_buffer_desc & buf)
 {

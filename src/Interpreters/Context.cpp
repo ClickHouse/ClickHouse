@@ -34,6 +34,7 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
+#include <Access/Credentials.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
 #include <Access/ExternalAuthenticators.h>
@@ -109,6 +110,7 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -684,36 +686,30 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address)
-{
-    auto credentials = std::make_unique<BasicCredentials>();
-    credentials->setUserName(name);
-    credentials->setPassword(password);
-    return setUser(std::move(credentials), address);
-}
-
-void Context::setUser(std::unique_ptr<Credentials> && credentials, const Poco::Net::SocketAddress & address)
+void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
-    if (!credentials)
+    if (!credentials.isReady())
         throw Exception("Authentication failed", ErrorCodes::AUTHENTICATION_FAILED);
 
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password = password.value_or("");
+    client_info.current_password.clear();
+    if (auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
+        client_info.current_password = basic_credentials->getPassword();
 #endif
 
     /// Find a user with such name and check the password.
     UUID new_user_id;
-    if (password)
-        new_user_id = getAccessControlManager().login(name, *password, address.host());
-    else
+    if (auto * always_allow_credentials = dynamic_cast<const AlwaysAllowCredentials *>(&credentials))
     {
         /// Access w/o password is done under interserver-secret (remote_servers.secret)
         /// So it is okay not to check client's host in this case (since there is trust).
-        new_user_id = getAccessControlManager().getIDOfLoggedUser(name);
+        new_user_id = getAccessControlManager().getIDOfLoggedUser(credentials.getUserName());
     }
+    else
+        new_user_id = getAccessControlManager().login(credentials, address.host());
 
     auto new_access = getAccessControlManager().getContextAccess(
         new_user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
@@ -729,12 +725,12 @@ void Context::setUser(std::unique_ptr<Credentials> && credentials, const Poco::N
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
-    setUserImpl(name, password, address);
+    setUser(BasicCredentials(name, password), address);
 }
 
 void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
 {
-    setUserImpl(name, {} /* no password */, address);
+    setUser(AlwaysAllowCredentials(name), address);
 }
 
 std::shared_ptr<const User> Context::getUser() const
