@@ -98,9 +98,9 @@ th {{
 
 tr:nth-child(odd) td {{filter: brightness(90%);}}
 
-.inconsistent-short-marking tr :nth-child(2),
-.inconsistent-short-marking tr :nth-child(3),
-.inconsistent-short-marking tr :nth-child(5),
+.unexpected-query-duration tr :nth-child(2),
+.unexpected-query-duration tr :nth-child(3),
+.unexpected-query-duration tr :nth-child(5),
 .all-query-times tr :nth-child(1),
 .all-query-times tr :nth-child(2),
 .all-query-times tr :nth-child(3),
@@ -325,13 +325,13 @@ if args.report == 'main':
     if slow_on_client_rows:
         errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries are taking noticeable time client-side (missing `FORMAT Null`?)</a>']);
 
-    unmarked_short_rows = tsvRows('report/inconsistent-short-marking.tsv')
+    unmarked_short_rows = tsvRows('report/unexpected-query-duration.tsv')
     error_tests += len(unmarked_short_rows)
-    addSimpleTable('Inconsistent Short Marking',
-        ['Problem', 'Is marked as short', 'New client time, s', 'Test', '#', 'Query'],
+    addSimpleTable('Unexpected Query Duration',
+        ['Problem', 'Marked as "short"?', 'Run time, s', 'Test', '#', 'Query'],
         unmarked_short_rows)
     if unmarked_short_rows:
-        errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries have inconsistent short marking</a>']);
+        errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries have unexpected duration</a>']);
 
     def add_partial():
         rows = tsvRows('report/partial-queries-report.tsv')
