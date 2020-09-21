@@ -14,6 +14,7 @@
 
 #include <Access/AccessFlags.h>
 
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -248,6 +249,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Read from prepared input.
         source_header = input_pipe->getHeader();
     }
+
+    ApplyWithSubqueryVisitor().visit(query_ptr);
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
@@ -618,7 +621,6 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
-    SpecialSort special_sort = context.getSettings().special_sort.value;
     for (const auto & elem : query.orderBy()->children)
     {
         String name = elem->children.front()->getColumnName();
@@ -632,10 +634,10 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
             order_descr.emplace_back(name, order_by_elem.direction,
-                order_by_elem.nulls_direction, collator, special_sort, true, fill_desc);
+                order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, special_sort);
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
     return order_descr;
