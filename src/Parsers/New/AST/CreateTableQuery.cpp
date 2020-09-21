@@ -81,11 +81,13 @@ CreateTableQuery::CreateTableQuery(
 ASTPtr CreateTableQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTCreateQuery>();
-    auto name = children[NAME]->convertToOld();
 
-    query->database = name->as<ASTTableIdentifier>()->getDatabaseName();
-    query->table = name->as<ASTTableIdentifier>()->getTableName();
-    query->uuid = name->as<ASTTableIdentifier>()->uuid;
+    {
+        auto table_id = getTableIdentifier(children[NAME]->convertToOld());
+        query->database = table_id.database_name;
+        query->table = table_id.table_name;
+        query->uuid = table_id.uuid;
+    }
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;
@@ -102,7 +104,9 @@ ASTPtr CreateTableQuery::convertToOld() const
             }
             case SchemaClause::ClauseType::TABLE:
             {
-                query->set(query->as_table, children[SCHEMA]->convertToOld());
+                auto table_id = getTableIdentifier(children[SCHEMA]->convertToOld());
+                query->as_database = table_id.database_name;
+                query->as_table = table_id.table_name;
                 break;
             }
             case SchemaClause::ClauseType::FUNCTION:

@@ -41,9 +41,9 @@ struct StorageID
         assertNotEmpty();
     }
 
-    explicit StorageID(const ASTQueryWithTableAndOutput & query);
-    explicit StorageID(const ASTIdentifier & table_identifier_node);
-    explicit StorageID(const ASTPtr & node);
+    StorageID(const ASTQueryWithTableAndOutput & query);
+    StorageID(const ASTIdentifier & table_identifier_node);
+    StorageID(const ASTPtr & node);
 
     String getDatabaseName() const;
 

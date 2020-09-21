@@ -64,7 +64,7 @@ ASTPtr InsertQuery::convertToOld() const
             query->table_function = children[FUNCTION]->convertToOld();
             break;
         case QueryType::TABLE:
-            query->table = children[IDENTIFIER]->convertToOld();
+            query->table_id = children[IDENTIFIER]->convertToOld();
             break;
     }
 
