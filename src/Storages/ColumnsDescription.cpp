@@ -426,7 +426,7 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
-ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec)
+ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
     const auto it = columns.get<1>().find(column_name);
 

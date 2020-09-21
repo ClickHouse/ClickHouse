@@ -136,7 +136,7 @@ TypeIndex baseType(TypeIndex type_idx)
     return TypeIndex::Nothing;
 }
 
-TypeIndex typeIdx(const DataTypePtr & data_type)
+TypeIndex typeIdx(const IDataType * data_type)
 {
     if (!data_type)
         return TypeIndex::Nothing;
@@ -656,7 +656,7 @@ void CompressionCodecT64::updateHash(SipHash & hash) const
 
 void registerCodecT64(CompressionCodecFactory & factory)
 {
-    auto reg_func = [&](const ASTPtr & arguments, DataTypePtr type) -> CompressionCodecPtr
+    auto reg_func = [&](const ASTPtr & arguments, const IDataType * type) -> CompressionCodecPtr
     {
         Variant variant = Variant::Byte;
 

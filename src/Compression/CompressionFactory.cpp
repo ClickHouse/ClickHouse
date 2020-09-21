@@ -57,7 +57,7 @@ void CompressionCodecFactory::validateCodec(const String & family_name, std::opt
     }
 }
 
-ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr & ast, DataTypePtr column_type, bool sanity_check) const
+ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const IDataType * column_type, bool sanity_check) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -140,16 +140,13 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
         }
-        std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
-        result->name = "CODEC";
-        result->arguments = codecs_descriptions;
-        return result;
+        return ast;
     }
 
     throw Exception("Unknown codec family: " + queryToString(ast), ErrorCodes::UNKNOWN_CODEC);
 }
 
-CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, DataTypePtr column_type, CompressionCodecPtr current_default) const
+CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default) const
 {
     if (current_default == nullptr)
         current_default = default_codec;
@@ -203,7 +200,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const uint8_t byte_code) const
 }
 
 
-CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, DataTypePtr column_type) const
+CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const
 {
     if (family_name == "Multiple")
         throw Exception("Codec Multiple cannot be specified directly", ErrorCodes::UNKNOWN_CODEC);
@@ -235,7 +232,7 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
 
 void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator)
 {
-    registerCompressionCodecWithType(family_name, byte_code, [family_name, creator](const ASTPtr & ast, DataTypePtr /* data_type */)
+    registerCompressionCodecWithType(family_name, byte_code, [family_name, creator](const ASTPtr & ast, const IDataType * /* data_type */)
     {
         return creator(ast);
     });
