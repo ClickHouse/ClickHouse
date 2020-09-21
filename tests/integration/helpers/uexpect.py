@@ -201,7 +201,7 @@ def spawn(command):
 def reader(process, out, queue, kill_event):
     while True:
         try:
-            data = os.read(out, 65536).decode()
+            data = os.read(out, 65536).decode(errors='replace')
             queue.put(data)
         except:
             if kill_event.is_set():
