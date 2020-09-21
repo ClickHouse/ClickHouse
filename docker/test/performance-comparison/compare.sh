@@ -155,13 +155,13 @@ function run_tests
     # are already set, keep those values.
     if [ "$PR_TO_TEST" -ne 0 ] \
         && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ] \
-        && [ "$(wc -l < changed-test-files.txt)" -eq 0 ]
+        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ]
     then
-        CHPC_RUNS=${CHPC_RUNS:-13}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
-    else
         CHPC_RUNS=${CHPC_RUNS:-7}
         CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-20}
+    else
+        CHPC_RUNS=${CHPC_RUNS:-13}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
     fi
     export CHPC_RUNS
     export CHPC_MAX_QUERIES
