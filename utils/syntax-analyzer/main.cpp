@@ -23,7 +23,7 @@ int main(int argc, const char **)
     std::string query(begin, end);
 
     std::cout << "New AST:" << std::endl;
-    ASTPtr old_ast = parseQuery(query);
+    ASTPtr old_ast = parseQuery(query.data(), query.data() + query.size(), 10000000, 10000);
 
     std::cout << std::endl << "Original AST:" << std::endl;
     {
