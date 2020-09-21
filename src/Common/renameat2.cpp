@@ -50,7 +50,7 @@ static bool supportsRenameat2Impl()
 
 static bool renameat2(const std::string & old_path, const std::string & new_path, int flags)
 {
-    if(!supportsRenameat2())
+    if (!supportsRenameat2())
         return false;
     if (old_path.empty() || new_path.empty())
         throw Exception("Cannot rename " + old_path + " to " + new_path + ": path is empty", ErrorCodes::LOGICAL_ERROR);
