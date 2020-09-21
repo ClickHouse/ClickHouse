@@ -81,7 +81,7 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
 
 static bool renameat2(const std::string &, const std::string &, int)
 {
-    return false
+    return false;
 }
 
 #endif
