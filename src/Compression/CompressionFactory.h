@@ -67,7 +67,6 @@ public:
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);
     /// Register codec with parameters
-
     void registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator);
 
     /// Register codec without parameters
