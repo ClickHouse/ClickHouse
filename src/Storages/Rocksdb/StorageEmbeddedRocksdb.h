@@ -30,7 +30,8 @@ struct Rocksdb
            delete rocksdb;
         }
     }
- };
+};
+
 
 class StorageEmbeddedRocksdb final : public ext::shared_ptr_helper<StorageEmbeddedRocksdb>, public IStorage
 {
