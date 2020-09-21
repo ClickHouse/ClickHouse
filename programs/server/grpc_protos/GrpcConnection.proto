@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package GRPCConnection;
+
+message User {
+   string user = 1;
+   string password = 2;
+   string quota = 3;
+}
+message QuerySettings {
+   string query = 1;
+   string query_id = 2;
+   bool data_stream = 4;
+   string database = 5;
+   string format = 6;
+   map<string, string> settings = 7;
+}
+message QueryRequest {
+   User user_info = 1;
+   QuerySettings query_info = 2;
+   string insert_data = 3;
+   uint64 interactive_delay = 4;
+}
+
+message Progress {
+   uint64 read_rows = 1;
+   uint64 read_bytes = 2;
+   uint64 total_rows_to_read = 3;
+   uint64 written_rows = 4;
+   uint64 written_bytes = 5;
+}
+
+message QueryResponse {
+   string output = 1;
+   string exception_occured = 2;
+   Progress progress = 3;
+   string totals = 4;
+   string extremes = 5;
+}
+
+service GRPC {
+   rpc Query(stream QueryRequest) returns (stream QueryResponse) {}
+} 

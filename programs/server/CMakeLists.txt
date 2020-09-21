@@ -1,6 +1,13 @@
+include (${CMAKE_CURRENT_SOURCE_DIR}/grpc_protos/grpc_protos.cmake)
+
 set(CLICKHOUSE_SERVER_SOURCES
     MetricsTransmitter.cpp
     Server.cpp
+    ${PROTO_SRCS}
+    ${PROTO_HDRS}
+    ${GRPC_SRCS}
+    ${GRPC_HDRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/GRPCHandler.cpp
 )
 
 if (OS_LINUX)
@@ -24,6 +31,8 @@ set (CLICKHOUSE_SERVER_LINK
 
     PUBLIC
         daemon
+        grpc++
+        libprotobuf
 )
 
 clickhouse_program_add(server)
