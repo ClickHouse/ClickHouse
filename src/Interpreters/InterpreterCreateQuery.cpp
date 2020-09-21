@@ -858,11 +858,9 @@ BlockIO InterpreterCreateQuery::execute()
     auto & create = query_ptr->as<ASTCreateQuery &>();
     if (!create.cluster.empty())
     {
-        /// Allows to execute ON CLUSTER queries during version upgrade
-        bool force_backward_compatibility = !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil;
         /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
         /// It will be ignored if database does not support UUIDs.
-        if (!force_backward_compatibility && !create.attach && create.uuid == UUIDHelpers::Nil)
+        if (!create.attach && create.uuid == UUIDHelpers::Nil)
             create.uuid = UUIDHelpers::generateV4();
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
     }
