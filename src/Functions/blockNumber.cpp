@@ -7,8 +7,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /** Incremental block number among calls of this function. */
 class FunctionBlockNumber : public IFunction
@@ -58,7 +56,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionBlockNumber(FunctionFactory & factory)
 {

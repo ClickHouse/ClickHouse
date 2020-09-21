@@ -6,31 +6,19 @@
 
 namespace DB::GatherUtils
 {
-
-namespace
-{
-
 struct SliceFromRightConstantOffsetUnboundedSelectArraySource
-    : public ArraySourceSelector<SliceFromRightConstantOffsetUnboundedSelectArraySource>
+    : public ArraySinkSourceSelector<SliceFromRightConstantOffsetUnboundedSelectArraySource>
 {
-    template <typename Source>
-    static void selectImpl(Source && source, size_t & offset, ColumnArray::MutablePtr & result)
+    template <typename Source, typename Sink>
+    static void selectSourceSink(Source && source, Sink && sink, size_t & offset)
     {
-        using SourceType = typename std::decay<Source>::type;
-        using Sink = typename SourceType::SinkType;
-        result = ColumnArray::create(source.createValuesColumn());
-        Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
         sliceFromRightConstantOffsetUnbounded(source, sink, offset);
     }
 };
 
-}
-
-ColumnArray::MutablePtr sliceFromRightConstantOffsetUnbounded(IArraySource & src, size_t offset)
+void sliceFromRightConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset)
 {
-    ColumnArray::MutablePtr res;
-    SliceFromRightConstantOffsetUnboundedSelectArraySource::select(src, offset, res);
-    return res;
+    SliceFromRightConstantOffsetUnboundedSelectArraySource::select(src, sink, offset);
 }
 }
 

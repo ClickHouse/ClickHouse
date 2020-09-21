@@ -302,7 +302,7 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     /// To avoid it, we remember UUIDs of detached tables and does not allow ATTACH table with such UUID until detached instance still in use.
     if (detached_tables.count(uuid))
         throw Exception("Cannot attach table with UUID " + toString(uuid) +
-              ", because it was detached but still used by some query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
+              ", because it was detached but still used by come query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 DatabaseAtomic::DetachedTables DatabaseAtomic::cleenupDetachedTables()
@@ -352,13 +352,13 @@ UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
 {
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
     if (has_force_restore_data_flag)
         Poco::File(path_to_table_symlinks).remove(true);
 
-    DatabaseOrdinary::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
+    DatabaseOrdinary::loadStoredObjects(context, has_force_restore_data_flag);
 
     if (has_force_restore_data_flag)
     {
@@ -367,8 +367,6 @@ void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore
             std::lock_guard lock{mutex};
             table_names = table_name_to_path;
         }
-
-        Poco::File(path_to_table_symlinks).createDirectories();
         for (const auto & table : table_names)
             tryCreateSymlink(table.first, table.second);
     }

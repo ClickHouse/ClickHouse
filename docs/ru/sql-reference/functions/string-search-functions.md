@@ -15,16 +15,15 @@
 **Синтаксис**
 
 ``` sql
-position(haystack, needle[, start_pos])
+position(haystack, needle)
 ```
 
-Алиас: `locate(haystack, needle[, start_pos])`.
+Алиас: `locate(haystack, needle)`.
 
 **Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -76,14 +75,13 @@ SELECT position('Привет, мир!', '!')
 **Синтаксис**
 
 ``` sql
-positionCaseInsensitive(haystack, needle[, start_pos])
+positionCaseInsensitive(haystack, needle)
 ```
 
 **Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -119,14 +117,13 @@ SELECT positionCaseInsensitive('Hello, world!', 'hello')
 **Синтаксис**
 
 ``` sql
-positionUTF8(haystack, needle[, start_pos])
+positionUTF8(haystack, needle)
 ```
 
 **Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -192,14 +189,13 @@ SELECT positionUTF8('Salut, étudiante!', '!')
 **Синтаксис**
 
 ``` sql
-positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
+positionCaseInsensitiveUTF8(haystack, needle)
 ```
 
 **Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 

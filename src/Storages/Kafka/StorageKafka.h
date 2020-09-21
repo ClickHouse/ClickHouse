@@ -38,7 +38,7 @@ public:
     void startup() override;
     void shutdown() override;
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -94,16 +94,8 @@ private:
     std::mutex mutex;
 
     // Stream thread
-    struct TaskContext
-    {
-        BackgroundSchedulePool::TaskHolder holder;
-        std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
-        {
-        }
-    };
-    std::vector<std::shared_ptr<TaskContext>> tasks;
-    bool thread_per_consumer = false;
+    BackgroundSchedulePool::TaskHolder task;
+    std::atomic<bool> stream_cancelled{false};
 
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
@@ -111,7 +103,7 @@ private:
     // Update Kafka configuration with values from CH user configuration.
 
     void updateConfiguration(cppkafka::Configuration & conf);
-    void threadFunc(size_t idx);
+    void threadFunc();
 
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;

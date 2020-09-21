@@ -13,7 +13,6 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 struct IArraySource
 {
@@ -34,7 +33,6 @@ struct IArraySource
 template <typename Derived>
 class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};
 
-#pragma GCC visibility pop
 }
 
 }

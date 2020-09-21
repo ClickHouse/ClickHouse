@@ -1,25 +1,30 @@
 #pragma once
 
-#include <algorithm>
-#include <common/types.h>
+#include <Common/PODArray.h>
+#include <Common/NaNUtils.h>
+#include <Core/Types.h>
+#include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
-#include <IO/WriteBuffer.h>
-#include <Common/NaNUtils.h>
-#include <Common/PODArray.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
 }
 
-
-template <typename Value, typename Derived>
-struct QuantileExactBase
+/** Calculates quantile by collecting all values into array
+  *  and applying n-th element (introselect) algorithm for the resulting array.
+  *
+  * It uses O(N) memory and it is very inefficient in case of high amount of identical values.
+  * But it is very CPU efficient for not large datasets.
+  */
+template <typename Value>
+struct QuantileExact
 {
     /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
     static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<Value>);
@@ -39,7 +44,10 @@ struct QuantileExactBase
         throw Exception("Method add with weight is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void merge(const QuantileExactBase & rhs) { array.insert(rhs.array.begin(), rhs.array.end()); }
+    void merge(const QuantileExact & rhs)
+    {
+        array.insert(rhs.array.begin(), rhs.array.end());
+    }
 
     void serialize(WriteBuffer & buf) const
     {
@@ -56,38 +64,16 @@ struct QuantileExactBase
         buf.read(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
 
+    /// Get the value of the `level` quantile. The level must be between 0 and 1.
     Value get(Float64 level)
-    {
-        auto derived = static_cast<Derived*>(this);
-        return derived->getImpl(level);
-    }
-
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
-    {
-        auto derived = static_cast<Derived*>(this);
-        return derived->getManyImpl(levels, indices, size, result);
-    }
-};
-
-/** Calculates quantile by collecting all values into array
-  *  and applying n-th element (introselect) algorithm for the resulting array.
-  *
-  * It uses O(N) memory and it is very inefficient in case of high amount of identical values.
-  * But it is very CPU efficient for not large datasets.
-  */
-template <typename Value>
-struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
-{
-    using QuantileExactBase<Value, QuantileExact<Value>>::array;
-
-    // Get the value of the `level` quantile. The level must be between 0 and 1.
-    Value getImpl(Float64 level)
     {
         if (!array.empty())
         {
-            size_t n = level < 1 ? level * array.size() : (array.size() - 1);
+            size_t n = level < 1
+                ? level * array.size()
+                : (array.size() - 1);
 
-            std::nth_element(array.begin(), array.begin() + n, array.end()); /// NOTE You can think of the radix-select algorithm.
+            std::nth_element(array.begin(), array.begin() + n, array.end());    /// NOTE You can think of the radix-select algorithm.
             return array[n];
         }
 
@@ -96,7 +82,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    void getManyImpl(const Float64 * levels, const size_t * indices, size_t size, Value * result)
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         if (!array.empty())
         {
@@ -105,7 +91,9 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
             {
                 auto level = levels[indices[i]];
 
-                size_t n = level < 1 ? level * array.size() : (array.size() - 1);
+                size_t n = level < 1
+                    ? level * array.size()
+                    : (array.size() - 1);
 
                 std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
 
@@ -123,7 +111,6 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
 
 /// QuantileExactExclusive is equivalent to Excel PERCENTILE.EXC, R-6, SAS-4, SciPy-(0,0)
 template <typename Value>
-/// There is no virtual-like functions. So we don't inherit from QuantileExactBase.
 struct QuantileExactExclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
@@ -140,14 +127,14 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             auto n = static_cast<size_t>(h);
 
             if (n >= array.size())
-                return static_cast<Float64>(array[array.size() - 1]);
+                return array[array.size() - 1];
             else if (n < 1)
-                return static_cast<Float64>(array[0]);
+                return array[0];
 
             std::nth_element(array.begin(), array.begin() + n - 1, array.end());
             auto nth_element = std::min_element(array.begin() + n, array.end());
 
-            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
+            return array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
@@ -168,15 +155,15 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
-                    result[indices[i]] = static_cast<Float64>(array[array.size() - 1]);
+                    result[indices[i]] = array[array.size() - 1];
                 else if (n < 1)
-                    result[indices[i]] = static_cast<Float64>(array[0]);
+                    result[indices[i]] = array[0];
                 else
                 {
                     std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
                     auto nth_element = std::min_element(array.begin() + n, array.end());
 
-                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
+                    result[indices[i]] = array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
                     prev_n = n - 1;
                 }
             }
@@ -191,7 +178,6 @@ struct QuantileExactExclusive : public QuantileExact<Value>
 
 /// QuantileExactInclusive is equivalent to Excel PERCENTILE and PERCENTILE.INC, R-7, SciPy-(1,1)
 template <typename Value>
-/// There is no virtual-like functions. So we don't inherit from QuantileExactBase.
 struct QuantileExactInclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
@@ -205,14 +191,14 @@ struct QuantileExactInclusive : public QuantileExact<Value>
             auto n = static_cast<size_t>(h);
 
             if (n >= array.size())
-                return static_cast<Float64>(array[array.size() - 1]);
+                return array[array.size() - 1];
             else if (n < 1)
-                return static_cast<Float64>(array[0]);
+                return array[0];
 
             std::nth_element(array.begin(), array.begin() + n - 1, array.end());
             auto nth_element = std::min_element(array.begin() + n, array.end());
 
-            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
+            return array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
@@ -231,15 +217,15 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
-                    result[indices[i]] = static_cast<Float64>(array[array.size() - 1]);
+                    result[indices[i]] = array[array.size() - 1];
                 else if (n < 1)
-                    result[indices[i]] = static_cast<Float64>(array[0]);
+                    result[indices[i]] = array[0];
                 else
                 {
                     std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
                     auto nth_element = std::min_element(array.begin() + n, array.end());
 
-                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
+                    result[indices[i]] = array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
                     prev_n = n - 1;
                 }
             }
@@ -248,139 +234,6 @@ struct QuantileExactInclusive : public QuantileExact<Value>
         {
             for (size_t i = 0; i < size; ++i)
                 result[i] = std::numeric_limits<Float64>::quiet_NaN();
-        }
-    }
-};
-
-// QuantileExactLow returns the low median of given data.
-// Implementation is as per "medium_low" function from python:
-// https://docs.python.org/3/library/statistics.html#statistics.median_low
-template <typename Value>
-struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value>>
-{
-    using QuantileExactBase<Value, QuantileExactLow<Value>>::array;
-
-    Value getImpl(Float64 level)
-    {
-        if (!array.empty())
-        {
-            // sort inputs in ascending order
-            std::sort(array.begin(), array.end());
-            size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-            // if level is 0.5 then compute the "low" median of the sorted array
-            // by the method of rounding.
-            if (level == 0.5)
-            {
-                auto s = array.size();
-                if (s % 2 == 1)
-                {
-                    return array[static_cast<size_t>(floor(s / 2))];
-                }
-                else
-                {
-                    return array[static_cast<size_t>((floor(s / 2)) - 1)];
-                }
-            }
-            // else quantile is the nth index of the sorted array obtained by multiplying
-            // level and size of array. Example if level = 0.1 and size of array is 10,
-            // then return array[1].
-            return array[n];
-        }
-        return std::numeric_limits<Value>::quiet_NaN();
-    }
-
-    void getManyImpl(const Float64 * levels, const size_t * indices, size_t size, Value * result)
-    {
-        if (!array.empty())
-        {
-            // sort inputs in ascending order
-            std::sort(array.begin(), array.end());
-            for (size_t i = 0; i < size; ++i)
-            {
-                auto level = levels[indices[i]];
-                size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                // if level is 0.5 then compute the "low" median of the sorted array
-                // by the method of rounding.
-                if (level == 0.5)
-                {
-                    auto s = array.size();
-                    if (s % 2 == 1)
-                    {
-                        result[indices[i]] = array[static_cast<size_t>(floor(s / 2))];
-                    }
-                    else
-                    {
-                        result[indices[i]] = array[static_cast<size_t>(floor((s / 2) - 1))];
-                    }
-                }
-                // else quantile is the nth index of the sorted array obtained by multiplying
-                // level and size of array. Example if level = 0.1 and size of array is 10.
-                result[indices[i]] = array[n];
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < size; ++i)
-                result[i] = Value();
-        }
-    }
-};
-
-// QuantileExactLow returns the high median of given data.
-// Implementation is as per "medium_high function from python:
-// https://docs.python.org/3/library/statistics.html#statistics.median_high
-template <typename Value>
-struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Value>>
-{
-    using QuantileExactBase<Value, QuantileExactHigh<Value>>::array;
-
-    Value getImpl(Float64 level)
-    {
-        if (!array.empty())
-        {
-            // sort inputs in ascending order
-            std::sort(array.begin(), array.end());
-            size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-            // if level is 0.5 then compute the "high" median of the sorted array
-            // by the method of rounding.
-            if (level == 0.5)
-            {
-                auto s = array.size();
-                return array[static_cast<size_t>(floor(s / 2))];
-            }
-            // else quantile is the nth index of the sorted array obtained by multiplying
-            // level and size of array. Example if level = 0.1 and size of array is 10.
-            return array[n];
-        }
-        return std::numeric_limits<Value>::quiet_NaN();
-    }
-
-    void getManyImpl(const Float64 * levels, const size_t * indices, size_t size, Value * result)
-    {
-        if (!array.empty())
-        {
-            // sort inputs in ascending order
-            std::sort(array.begin(), array.end());
-            for (size_t i = 0; i < size; ++i)
-            {
-                auto level = levels[indices[i]];
-                size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                // if level is 0.5 then compute the "high" median of the sorted array
-                // by the method of rounding.
-                if (level == 0.5)
-                {
-                    auto s = array.size();
-                    result[indices[i]] = array[static_cast<size_t>(floor(s / 2))];
-                }
-                // else quantile is the nth index of the sorted array obtained by multiplying
-                // level and size of array. Example if level = 0.1 and size of array is 10.
-                result[indices[i]] = array[n];
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < size; ++i)
-                result[i] = Value();
         }
     }
 };

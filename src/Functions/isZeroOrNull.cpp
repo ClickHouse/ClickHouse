@@ -9,14 +9,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
-
-namespace
-{
 
 /// Returns 1 if argument is zero or NULL.
 /// It can be used to negate filter in WHERE condition.
@@ -109,7 +107,6 @@ private:
     }
 };
 
-}
 
 void registerFunctionIsZeroOrNull(FunctionFactory & factory)
 {

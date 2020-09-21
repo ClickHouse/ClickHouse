@@ -21,9 +21,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
-namespace
-{
-
 class FunctionH3KRing : public IFunction
 {
 public:
@@ -100,7 +97,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionH3KRing(FunctionFactory & factory)
 {

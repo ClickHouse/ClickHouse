@@ -5,16 +5,12 @@
 
 namespace DB
 {
-namespace
-{
 
 struct NameUpper
 {
     static constexpr auto name = "upper";
 };
 using FunctionUpper = FunctionStringToString<LowerUpperImpl<'a', 'z'>, NameUpper>;
-
-}
 
 void registerFunctionUpper(FunctionFactory & factory)
 {

@@ -7,8 +7,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /** Incremental number of row within all blocks passed to this function. */
 class FunctionRowNumberInAllBlocks : public IFunction
@@ -71,7 +69,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionRowNumberInAllBlocks(FunctionFactory & factory)
 {

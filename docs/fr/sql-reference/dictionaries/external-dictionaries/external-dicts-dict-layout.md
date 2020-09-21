@@ -320,9 +320,10 @@ ou
 LAYOUT(DIRECT())
 ```
 
-### complex\_key\_direct {#complex-key-direct}
+### complex\_key\_cache {#complex-key-cache}
 
-Ce type de stockage est destiné à être utilisé avec des [clés](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md) composites. Similaire à `direct`
+Ce type de stockage est pour une utilisation avec composite [touches](external-dicts-dict-structure.md). Semblable à `direct`.
+
 
 ### ip\_trie {#ip-trie}
 
