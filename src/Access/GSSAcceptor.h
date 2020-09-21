@@ -24,7 +24,8 @@ class GSSAcceptorContext
     : public Credentials
 {
 public:
-    struct Params {
+    struct Params
+    {
         String mechanism = "kerberos_v5";
         String principal;
         String realm;

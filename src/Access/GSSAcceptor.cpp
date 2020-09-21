@@ -260,7 +260,7 @@ bool areMechanismsSame(const String & left_str, const gss_OID & right_oid)
     return getMechanismAsString(left_oid) == getMechanismAsString(right_oid);
 }
 
-} // namespace
+}
 
 void GSSAcceptorContext::resetHandles() noexcept
 {
