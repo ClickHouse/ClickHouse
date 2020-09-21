@@ -10,7 +10,7 @@ namespace DB
 class Credentials
 {
 public:
-    explicit Credentials();
+    explicit Credentials() = default;
     explicit Credentials(const String & user_name_);
 
     virtual ~Credentials() = default;

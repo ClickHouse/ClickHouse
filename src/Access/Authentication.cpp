@@ -59,7 +59,7 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
     if (credentials.getUserName() != user.getName())
         return false;
 
-    if (auto * gss_acceptor_context = dynamic_cast<const GSSAcceptorContext *>(&credentials))
+    if (const auto * gss_acceptor_context = dynamic_cast<const GSSAcceptorContext *>(&credentials))
     {
         switch (type)
         {
@@ -88,7 +88,7 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
         }
     }
 
-    if (auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
+    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
     {
         switch (type)
         {
@@ -139,7 +139,7 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
         }
     }
 
-    if (auto * always_allow_credentials = dynamic_cast<const AlwaysAllowCredentials *>(&credentials))
+    if (const auto * always_allow_credentials = dynamic_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
     throw Exception("makeAuthenticator(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);

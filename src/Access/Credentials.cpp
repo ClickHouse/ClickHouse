@@ -10,10 +10,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Credentials::Credentials()
-{
-}
-
 Credentials::Credentials(const String & user_name_)
     : user_name(user_name_)
 {

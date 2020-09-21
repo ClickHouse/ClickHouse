@@ -348,7 +348,8 @@ bool HTTPHandler::authenticateUser(
         if (!gss_acceptor_context)
             throw Exception("Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected", ErrorCodes::AUTHENTICATION_FAILED);
 
-        const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
+        const auto raw_spnego_response = gss_acceptor_context->processToken(base64Decode(spnego_challenge), log);
+        const auto spnego_response = base64Encode(raw_spnego_response);
 
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
