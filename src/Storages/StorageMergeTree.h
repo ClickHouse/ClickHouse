@@ -156,8 +156,13 @@ private:
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);
-    PartitionCommandsResultInfo addFingerprintPart(const ASTPtr & part_name, const String & fingerprint);
-    PartitionCommandsResultInfo removeFingerprintPart(const ASTPtr & part_name, const String & fingerprint);
+
+    void ensurePartValidForFingerprintOperations(
+        const String & part_name,
+        DataPartsLock &,
+        std::lock_guard<std::mutex> & /* currently_processing_in_background_mutex */);
+    PartitionCommandsResultInfo addFingerprintPart(const ASTPtr & part_name_ast, const String & fingerprint);
+    PartitionCommandsResultInfo removeFingerprintPart(const ASTPtr & part_name_ast, const String & fingerprint);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
     /// Update mutation entries after part mutation execution. May reset old
