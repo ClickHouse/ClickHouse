@@ -277,7 +277,7 @@ for query_index in queries_to_run:
                 # Stop processing pathologically slow queries, to avoid timing out
                 # the entire test task. This shouldn't really happen, so we don't
                 # need much handling for this case and can just exit.
-                print(f'The query no. {query_index} is taking too long to run ({c.elapsed} s)', file=sys.stderr)
+                print(f'The query no. {query_index} is taking too long to run ({elapsed} s)', file=sys.stderr)
                 exit(2)
 
         # Be careful with the counter, after this line it's the next iteration
