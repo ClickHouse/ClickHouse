@@ -132,12 +132,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         else if (!isColumnConst(*column))
         {
             int nan_direction_hint = description[0].nulls_direction;
-            auto special_sort = description[0].special_sort;
-
-            if (special_sort == SpecialSort::OPENCL_BITONIC)
-                column->getSpecialPermutation(reverse, limit, nan_direction_hint, perm, IColumn::SpecialSort::OPENCL_BITONIC);
-            else
-                column->getPermutation(reverse, limit, nan_direction_hint, perm);
+            column->getPermutation(reverse, limit, nan_direction_hint, perm);
         }
         else
             /// we don't need to do anything with const column

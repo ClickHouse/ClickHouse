@@ -103,18 +103,6 @@ if not args.long:
             print('skipped\tTest is tagged as long.')
             sys.exit(0)
 
-# Check main metric to detect infinite tests. We shouldn't have such tests anymore,
-# but we did in the past, and it is convenient to be able to process old tests.
-main_metric_element = root.find('main_metric/*')
-if main_metric_element is not None and main_metric_element.tag != 'min_time':
-    raise Exception('Only the min_time main metric is supported. This test uses \'{}\''.format(main_metric_element.tag))
-
-# Another way to detect infinite tests. They should have an appropriate main_metric
-# but sometimes they don't.
-infinite_sign = root.find('.//average_speed_not_changing_for_ms')
-if infinite_sign is not None:
-    raise Exception('Looks like the test is infinite (sign 1)')
-
 # Print report threshold for the test if it is set.
 if 'max_ignored_relative_change' in root.attrib:
     print(f'report-threshold\t{root.attrib["max_ignored_relative_change"]}')
