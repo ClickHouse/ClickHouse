@@ -124,17 +124,17 @@ void registerStorageJoin(StorageFactory & factory)
             for (const auto & setting : args.storage_def->settings->changes)
             {
                 if (setting.name == "join_use_nulls")
-                    join_use_nulls = setting.value;
+                    join_use_nulls.set(setting.value);
                 else if (setting.name == "max_rows_in_join")
-                    max_rows_in_join = setting.value;
+                    max_rows_in_join.set(setting.value);
                 else if (setting.name == "max_bytes_in_join")
-                    max_bytes_in_join = setting.value;
+                    max_bytes_in_join.set(setting.value);
                 else if (setting.name == "join_overflow_mode")
-                    join_overflow_mode = setting.value;
+                    join_overflow_mode.set(setting.value);
                 else if (setting.name == "join_any_take_last_row")
-                    join_any_take_last_row = setting.value;
+                    join_any_take_last_row.set(setting.value);
                 else if (setting.name == "any_join_distinct_right_table_keys")
-                    old_any_join = setting.value;
+                    old_any_join.set(setting.value);
                 else
                     throw Exception(
                         "Unknown setting " + setting.name + " for storage " + args.engine_name,
@@ -436,7 +436,7 @@ private:
 
 
 // TODO: multiple stream read and index read
-Pipe StorageJoin::read(
+Pipes StorageJoin::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -447,7 +447,10 @@ Pipe StorageJoin::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    return Pipe(std::make_shared<JoinSource>(*join, max_block_size, metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<JoinSource>(*join, max_block_size, metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+
+    return pipes;
 }
 
 }

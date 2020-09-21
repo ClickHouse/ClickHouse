@@ -1,5 +1,6 @@
-#include <Common/quoteString.h>
+#include "Common/quoteString.h"
 #include <Common/typeid_cast.h>
+#include <Common/PODArray.h>
 #include <Core/Row.h>
 
 #include <Functions/FunctionFactory.h>
@@ -8,6 +9,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -19,6 +21,7 @@
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <Storages/StorageSet.h>
 
@@ -142,7 +145,7 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, c
 
 static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, const Context & context)
 {
-    /// Will form a block with values from the set.
+     /// Will form a block with values from the set.
 
     Block header;
     size_t num_columns = types.size();
@@ -158,8 +161,6 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
     {
         if (num_columns == 1)
         {
-            /// One column at the left of IN.
-
             Field value = extractValueFromNode(elem, *types[0], context);
 
             if (!value.isNull() || context.getSettingsRef().transform_null_in)
@@ -167,20 +168,15 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
         }
         else if (elem->as<ASTFunction>() || elem->as<ASTLiteral>())
         {
-            /// Multiple columns at the left of IN.
-            /// The right hand side of in should be a set of tuples.
-
             Field function_result;
             const Tuple * tuple = nullptr;
 
-            /// Tuple can be represented as a function in AST.
             auto * func = elem->as<ASTFunction>();
             if (func && func->name != "tuple")
             {
                 if (!tuple_type)
                     tuple_type = std::make_shared<DataTypeTuple>(types);
 
-                /// If the function is not a tuple, treat it as a constant expression that returns tuple and extract it.
                 function_result = extractValueFromNode(elem, *tuple_type, context);
                 if (function_result.getType() != Field::Types::Tuple)
                     throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
@@ -189,12 +185,10 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
                 tuple = &function_result.get<Tuple>();
             }
 
-            /// Tuple can be represented as a literal in AST.
             auto * literal = elem->as<ASTLiteral>();
             if (literal)
             {
-                /// The literal must be tuple.
-                if (literal->value.getType() != Field::Types::Tuple)
+                 if (literal->value.getType() != Field::Types::Tuple)
                     throw Exception("Invalid type in set. Expected tuple, got "
                         + String(literal->value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
@@ -209,15 +203,13 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
 
-            /// Fill tuple values by evaluation of constant expressions.
             size_t i = 0;
             for (; i < tuple_size; ++i)
             {
-                Field value = tuple ? convertFieldToType((*tuple)[i], *types[i])
+                Field value = tuple ? (*tuple)[i]
                                     : extractValueFromNode(func->arguments->children[i], *types[i], context);
 
-                /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value,
-                ///  then the entire tuple too.
+                /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value, then the entire tuple too.
                 if (value.isNull() && !context.getSettings().transform_null_in)
                     break;
 
@@ -283,7 +275,7 @@ static Block createBlockForSet(
 /** Create a block for set from expression.
   * 'set_element_types' - types of what are on the left hand side of IN.
   * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-  *
+  * 
   *  We need special implementation for ASTFunction, because in case, when we interpret
   *  large tuple or array as function, `evaluateConstantExpression` works extremely slow.
   */
@@ -447,19 +439,6 @@ void ScopeStack::addAction(const ExpressionAction & action)
     }
 }
 
-void ScopeStack::addActionNoInput(const ExpressionAction & action)
-{
-    size_t level = 0;
-    Names required = action.getNeededColumns();
-    for (const auto & elem : required)
-        level = std::max(level, getColumnLevel(elem));
-
-    Names added;
-    stack[level].actions->add(action, added);
-
-    stack[level].new_columns.insert(added.begin(), added.end());
-}
-
 ExpressionActionsPtr ScopeStack::popLevel()
 {
     ExpressionActionsPtr res = stack.back().actions;
@@ -556,14 +535,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (!data.only_consts)
         {
             String result_name = column_name.get(ast);
-            /// Here we copy argument because arrayJoin removes source column.
-            /// It makes possible to remove source column before arrayJoin if it won't be needed anymore.
-
-            /// It could have been possible to implement arrayJoin which keeps source column,
-            /// but in this case it will always be replicated (as many arrays), which is expensive.
-            String tmp_name = data.getUniqueName("_array_join_" + arg->getColumnName());
-            data.addActionNoInput(ExpressionAction::copyColumn(arg->getColumnName(), tmp_name));
-            data.addAction(ExpressionAction::arrayJoin(tmp_name, result_name));
+            data.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
+            NameSet joined_columns;
+            joined_columns.insert(result_name);
+            data.addAction(ExpressionAction::arrayJoin(joined_columns, false, data.context));
         }
 
         return;
@@ -600,10 +575,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
+    /// Context object that we pass to function should live during query.
+    const Context & function_context = data.context.hasQueryContext()
+        ? data.context.getQueryContext()
+        : data.context;
+
     FunctionOverloadResolverPtr function_builder;
     try
     {
-        function_builder = FunctionFactory::instance().get(node.name, data.context);
+        function_builder = FunctionFactory::instance().get(node.name, function_context);
     }
     catch (DB::Exception & e)
     {
@@ -900,10 +880,38 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           *   in the subquery_for_set object, this subquery is set as source and the temporary table _data1 as the table.
           * - this function shows the expression IN_data1.
           */
-        if (subquery_for_set.source.empty() && data.no_storage_or_local)
+        if (!subquery_for_set.source && data.no_storage_or_local)
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
-            subquery_for_set.source = QueryPipeline::getPipe(interpreter->execute().pipeline);
+            subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
+                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().getInputStream(); });
+
+            /** Why is LazyBlockInputStream used?
+              *
+              * The fact is that when processing a query of the form
+              *  SELECT ... FROM remote_test WHERE column GLOBAL IN (subquery),
+              *  if the distributed remote_test table contains localhost as one of the servers,
+              *  the query will be interpreted locally again (and not sent over TCP, as in the case of a remote server).
+              *
+              * The query execution pipeline will be:
+              * CreatingSets
+              *  subquery execution, filling the temporary table with _data1 (1)
+              *  CreatingSets
+              *   reading from the table _data1, creating the set (2)
+              *   read from the table subordinate to remote_test.
+              *
+              * (The second part of the pipeline under CreateSets is a reinterpretation of the query inside StorageDistributed,
+              *  the query differs in that the database name and tables are replaced with subordinates, and the subquery is replaced with _data1.)
+              *
+              * But when creating the pipeline, when creating the source (2), it will be found that the _data1 table is empty
+              *  (because the query has not started yet), and empty source will be returned as the source.
+              * And then, when the query is executed, an empty set will be created in step (2).
+              *
+              * Therefore, we make the initialization of step (2) lazy
+              *  - so that it does not occur until step (1) is completed, on which the table will be populated.
+              *
+              * Note: this solution is not very good, you need to think better.
+              */
         }
 
         subquery_for_set.set = set;

@@ -6,8 +6,6 @@
 namespace DB
 {
 
-class ASTFunction;
-
 /// Extract constant arguments out of aggregate functions from child functions
 /// 'sum(a * 2)' -> 'sum(a) * 2'
 /// Rewrites:   sum([multiply|divide]) -> [multiply|divide](sum)

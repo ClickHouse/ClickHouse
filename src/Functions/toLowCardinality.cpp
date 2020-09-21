@@ -1,13 +1,13 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
 
 
 namespace DB
-{
-namespace
 {
 
 class FunctionToLowCardinality: public IFunction
@@ -32,7 +32,7 @@ public:
         return std::make_shared<DataTypeLowCardinality>(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         auto arg_num = arguments[0];
         const auto & arg = block.getByPosition(arg_num);
@@ -49,7 +49,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionToLowCardinality(FunctionFactory & factory)
 {

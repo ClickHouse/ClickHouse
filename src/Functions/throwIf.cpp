@@ -10,6 +10,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -18,8 +19,6 @@ namespace ErrorCodes
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
 }
 
-namespace
-{
 
 /// Throw an exception if the argument is non zero.
 class FunctionThrowIf : public IFunction
@@ -65,7 +64,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         std::optional<String> custom_message;
         if (arguments.size() == 2)
@@ -92,7 +91,7 @@ public:
     }
 
     template <typename T>
-    bool execute(Block & block, const IColumn * in_untyped, const size_t result, const std::optional<String> & message) const
+    bool execute(Block & block, const IColumn * in_untyped, const size_t result, const std::optional<String> & message)
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {
@@ -110,7 +109,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionThrowIf(FunctionFactory & factory)
 {

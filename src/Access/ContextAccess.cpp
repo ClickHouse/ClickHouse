@@ -293,7 +293,7 @@ bool ContextAccess::isCorrectPassword(const String & password) const
     std::lock_guard lock{mutex};
     if (!user)
         return false;
-    return user->authentication.isCorrectPassword(password, user_name, manager->getExternalAuthenticators());
+    return user->authentication.isCorrectPassword(password);
 }
 
 bool ContextAccess::isClientHostAllowed() const

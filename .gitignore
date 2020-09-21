@@ -79,7 +79,6 @@ configure-stamp
 *.bin
 *.mrk
 *.mrk2
-*.mrk3
 
 .dupload.conf
 

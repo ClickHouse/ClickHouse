@@ -5,6 +5,7 @@
 #include <Common/StackTrace.h>
 #include <Common/TraceCollector.h>
 #include <Common/thread_local_rng.h>
+#include <common/StringRef.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
 #include <common/errnoToString.h>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/SocketAddress.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -48,10 +48,8 @@ public:
     String current_query_id;
     Poco::Net::SocketAddress current_address;
 
-#if defined(ARCADIA_BUILD)
     /// This field is only used in foreign "Arcadia" build.
     String current_password;
-#endif
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;

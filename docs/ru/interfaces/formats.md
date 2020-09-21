@@ -7,7 +7,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | Формат                                                          | INSERT | SELECT |
 |-----------------------------------------------------------------|--------|--------|
 | [TabSeparated](#tabseparated)                                   | ✔      | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                             | ✔      | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                             | ✗      | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔      | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔      | ✔      |
 | [Template](#format-template)                                    | ✔      | ✔      |
@@ -28,8 +28,6 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [PrettySpace](#prettyspace)                                     | ✗      | ✔      |
 | [Protobuf](#protobuf)                                           | ✔      | ✔      |
 | [Parquet](#data-format-parquet)                                 | ✔      | ✔      |
-| [Arrow](#data-format-arrow)                                     | ✔      | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                        | ✔      | ✔      |
 | [ORC](#data-format-orc)                                         | ✔      | ✗      |
 | [RowBinary](#rowbinary)                                         | ✔      | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)       | ✔      | ✔      |
@@ -63,7 +61,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-22      1031592
 2014-03-23      1046491
 
-1970-01-01      8873898
+0000-00-00      8873898
 
 2014-03-17      1031592
 2014-03-23      1406958
@@ -134,7 +132,7 @@ SELECT * FROM nestedt FORMAT TSV
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Отличается от формата `TabSeparated` тем, что строки выводятся без экранирования.
-Используя этот формат, следите, чтобы в полях не было символов табуляции или разрыва строки.
+Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
 Этот формат также доступен под именем `TSVRaw`.
 
@@ -434,7 +432,7 @@ JSON совместим с JavaScript. Для этого, дополнитель
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
-ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`. Чтобы включить отображение в результате значений  `+nan`, `-nan`, `+inf`, `-inf`, установите параметр [output\_format\_json\_quote\_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) равным 1.
+ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`.
 
 Смотрите также формат [JSONEachRow](#jsoneachrow) .
 
@@ -674,7 +672,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Totals:
 ┌──EventDate─┬───────c─┐
-│ 1970-01-01 │ 8873898 │
+│ 0000-00-00 │ 8873898 │
 └────────────┴─────────┘
 
 Extremes:
@@ -942,18 +940,12 @@ message MessageType {
 }
 ```
 
-не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values).
+не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create.md#create-default-values).
 
 ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
 в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
 ## Avro {#data-format-avro}
-
-[Apache Avro](https://avro.apache.org/) — это ориентированный на строки фреймворк для сериализации данных. Разработан в рамках проекта Apache Hadoop.
-
-В ClickHouse формат Avro поддерживает чтение и запись [файлов данных Avro](https://avro.apache.org/docs/current/spec.html#Object+Container+Files).
-
-[Логические типы Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 ## AvroConfluent {#data-format-avro-confluent}
 
@@ -1004,7 +996,7 @@ SELECT * FROM topic1_stream;
 
 ## Parquet {#data-format-parquet}
 
-[Apache Parquet](https://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.
+[Apache Parquet](http://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.
 
 ### Соответствие типов данных {#sootvetstvie-tipov-dannykh}
 
@@ -1049,16 +1041,6 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 ```
 
 Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../engines/table-engines/integrations/hdfs.md).
-
-## Arrow {data-format-arrow}
-
-[Apache Arrow](https://arrow.apache.org/) поставляется с двумя встроенными поколоночнами форматами хранения. ClickHouse поддерживает операции чтения и записи для этих форматов.
-
-`Arrow` — это Apache Arrow's "file mode" формат. Он предназначен для произвольного доступа в памяти.
-
-## ArrowStream {data-format-arrow-stream}
-
-`ArrowStream` — это Apache Arrow's "stream mode" формат. Он предназначен для обработки потоков в памяти.
 
 ## ORC {#data-format-orc}
 

@@ -1,5 +1,6 @@
-import difflib
 import os
+import glob
+import difflib
 
 files = ['key_simple.tsv', 'key_complex_integers.tsv', 'key_complex_mixed.tsv']
 
@@ -10,6 +11,7 @@ types = [
     'String',
     'Date', 'DateTime'
 ]
+
 
 implicit_defaults = [
     '1', '1', '1', '',

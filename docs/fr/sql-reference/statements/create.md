@@ -78,7 +78,7 @@ Il peut y avoir d'autres clauses après le `ENGINE` la clause dans la requête. 
 La description de colonne peut spécifier une expression pour une valeur par défaut, de l'une des manières suivantes:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Exemple: `URLDomain String DEFAULT domain(URL)`.
 
-Si une expression pour la valeur par défaut n'est pas définie, les valeurs par défaut seront définies sur zéros pour les nombres, chaînes vides pour les chaînes, tableaux vides pour les tableaux et `1970-01-01` pour les dates ou zero unix timestamp pour les dates avec le temps. Les valeurs NULL ne sont pas prises en charge.
+Si une expression pour la valeur par défaut n'est pas définie, les valeurs par défaut seront définies sur zéros pour les nombres, chaînes vides pour les chaînes, tableaux vides pour les tableaux et `0000-00-00` pour les dates ou `0000-00-00 00:00:00` pour les dates avec le temps. Les valeurs NULL ne sont pas prises en charge.
 
 Si l'expression par défaut est définie, le type de colonne est facultatif. S'il n'y a pas de type explicitement défini, le type d'expression par défaut est utilisé. Exemple: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ type sera utilisé pour la ‘EventDate’ colonne.
 
@@ -466,7 +466,7 @@ Crée un [quota](../../operations/access-rights.md#quotas-management) qui peut �
 ``` sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]

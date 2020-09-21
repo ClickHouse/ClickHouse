@@ -110,7 +110,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool /*force_attach*/)
+void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -134,7 +134,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
-                create_query->database = database_name;
                 std::lock_guard lock{file_names_mutex};
                 file_names[file_name] = ast;
                 total_dictionaries += create_query->is_dictionary;
@@ -147,6 +146,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
         }
     };
 
+
     iterateMetadataFiles(context, process_metadata);
 
     size_t total_tables = file_names.size() - total_dictionaries;
@@ -157,7 +157,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
     std::atomic<size_t> tables_processed{0};
     std::atomic<size_t> dictionaries_processed{0};
 
-    ThreadPool pool;
+    ThreadPool pool(SettingMaxThreads().getAutoValue());
 
     /// Attach tables.
     for (const auto & name_with_query : file_names)
@@ -170,7 +170,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
                     context,
                     create_query,
                     *this,
-                    database_name,
+                    getDatabaseName(),
                     getMetadataPath() + name_with_query.first,
                     has_force_restore_data_flag);
 
@@ -239,7 +239,8 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
     String statement;
 
     {
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE);
+        char in_buf[METADATA_FILE_BUFFER_SIZE];
+        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
         readStringUntilEOF(statement, in);
     }
 
@@ -274,27 +275,18 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
     if (ast_create_query.storage)
     {
         ASTStorage & storage_ast = *ast_create_query.storage;
+        /// ORDER BY may change, but cannot appear, it's required construction
+        if (metadata.sorting_key.definition_ast && storage_ast.order_by)
+            storage_ast.set(storage_ast.order_by, metadata.sorting_key.definition_ast);
 
-        bool is_extended_storage_def
-            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
+        if (metadata.primary_key.definition_ast)
+            storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
 
-        if (is_extended_storage_def)
-        {
-            if (metadata.sorting_key.definition_ast)
-                storage_ast.set(storage_ast.order_by, metadata.sorting_key.definition_ast);
+        if (metadata.table_ttl.definition_ast)
+            storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
 
-            if (metadata.primary_key.definition_ast)
-                storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
-
-            if (metadata.sampling_key.definition_ast)
-                storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
-
-            if (metadata.table_ttl.definition_ast)
-                storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
-
-            if (metadata.settings_changes)
-                storage_ast.set(storage_ast.settings, metadata.settings_changes);
-        }
+        if (metadata.settings_changes)
+            storage_ast.set(storage_ast.settings, metadata.settings_changes);
     }
 
     statement = getObjectDefinitionFromCreateQuery(ast);

@@ -13,7 +13,6 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 struct IArraySink
 {
@@ -28,7 +27,6 @@ struct IArraySink
 template <typename Derived>
 class ArraySinkImpl : public Visitable<Derived, IArraySink, ArraySinkVisitor> {};
 
-#pragma GCC visibility pop
 }
 
 }

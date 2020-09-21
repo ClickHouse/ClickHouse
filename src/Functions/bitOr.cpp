@@ -8,9 +8,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
 template <typename A, typename B>
 struct BitOrImpl
 {
@@ -20,7 +17,7 @@ struct BitOrImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return bigint_cast<Result>(a) | bigint_cast<Result>(b);
+        return static_cast<Result>(a) | static_cast<Result>(b);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -36,9 +33,7 @@ struct BitOrImpl
 };
 
 struct NameBitOr { static constexpr auto name = "bitOr"; };
-using FunctionBitOr = BinaryArithmeticOverloadResolver<BitOrImpl, NameBitOr, true>;
-
-}
+using FunctionBitOr = FunctionBinaryArithmetic<BitOrImpl, NameBitOr, true>;
 
 void registerFunctionBitOr(FunctionFactory & factory)
 {

@@ -1,7 +1,5 @@
 #include "ClusterCopierApp.h"
 #include <Common/StatusFile.h>
-#include <Common/TerminalSize.h>
-#include <unistd.h>
 
 
 namespace DB
@@ -54,13 +52,7 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
 void ClusterCopierApp::handleHelp(const std::string &, const std::string &)
 {
-    uint16_t terminal_width = 0;
-    if (isatty(STDIN_FILENO))
-        terminal_width = getTerminalWidth();
-
     Poco::Util::HelpFormatter help_formatter(options());
-    if (terminal_width)
-        help_formatter.setWidth(terminal_width);
     help_formatter.setCommand(commandName());
     help_formatter.setHeader("Copies tables from one cluster to another");
     help_formatter.setUsage("--config-file <config-file> --task-path <task-path>");
@@ -114,7 +106,7 @@ void ClusterCopierApp::mainImpl()
 
     context->setConfig(loaded_config.configuration);
     context->setApplicationType(Context::ApplicationType::LOCAL);
-    context->setPath(process_path + "/");
+    context->setPath(process_path);
 
     registerFunctions();
     registerAggregateFunctions();

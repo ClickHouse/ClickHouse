@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UTF8Encoding.h>
 
@@ -19,9 +20,6 @@ namespace ErrorCodes
 }
 
 extern const UInt8 length_of_utf8_sequence[256];
-
-namespace
-{
 
 struct ToValidUTF8Impl
 {
@@ -137,8 +135,6 @@ struct NameToValidUTF8
     static constexpr auto name = "toValidUTF8";
 };
 using FunctionToValidUTF8 = FunctionStringToString<ToValidUTF8Impl, NameToValidUTF8>;
-
-}
 
 void registerFunctionToValidUTF8(FunctionFactory & factory)
 {

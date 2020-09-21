@@ -1,4 +1,5 @@
 #include <Functions/IFunctionImpl.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -9,14 +10,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
-
-namespace
-{
 
 /// Returns 1 if argument is zero or NULL.
 /// It can be used to negate filter in WHERE condition.
@@ -49,7 +48,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnPtr & input_column = block.getByPosition(arguments[0]).column;
 
@@ -94,7 +93,7 @@ public:
 
 private:
     template <typename InputData>
-    void processNotNullable(const InputData & input_data, ColumnUInt8::Container & result_data, size_t input_rows_count) const
+    void processNotNullable(const InputData & input_data, ColumnUInt8::Container & result_data, size_t input_rows_count)
     {
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = !input_data[i];
@@ -102,14 +101,13 @@ private:
 
     template <typename InputData>
     void processNullable(const InputData & input_data, const NullMap & input_null_map,
-        ColumnUInt8::Container & result_data, size_t input_rows_count) const
+        ColumnUInt8::Container & result_data, size_t input_rows_count)
     {
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = input_null_map[i] || !input_data[i];
     }
 };
 
-}
 
 void registerFunctionIsZeroOrNull(FunctionFactory & factory)
 {

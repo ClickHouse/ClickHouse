@@ -38,7 +38,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto & return_type = block.getByPosition(result).type;
 
@@ -47,6 +47,8 @@ public:
             block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
+
+        auto result_column = return_type->createColumn();
 
         const auto & array_column = block.getByPosition(arguments[0]).column;
 
@@ -59,14 +61,14 @@ public:
         else
             throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
-        ColumnArray::MutablePtr sink;
+        auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
 
         if (pop_front)
-            sink = GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, 1);
+            GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, *sink, 1);
         else
-            sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, 0, -1);
+            GatherUtils::sliceFromLeftConstantOffsetBounded(*source, *sink, 0, -1);
 
-        block.getByPosition(result).column = std::move(sink);
+        block.getByPosition(result).column = std::move(result_column);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

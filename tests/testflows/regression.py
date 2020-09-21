@@ -2,7 +2,7 @@
 import sys
 from testflows.core import *
 
-append_path(sys.path, ".")
+append_path(sys.path, "."), 
 
 from helpers.argparser import argparser
 
@@ -12,11 +12,8 @@ from helpers.argparser import argparser
 def regression(self, local, clickhouse_binary_path):
     """ClickHouse regression.
     """
-    args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path}
-
-    Feature(test=load("example.regression", "regression"))(**args)
-    Feature(test=load("ldap.regression", "regression"))(**args)
-    Feature(test=load("rbac.regression", "regression"))(**args)
+    Feature(test=load("example.regression", "regression"))(
+        local=local, clickhouse_binary_path=clickhouse_binary_path)
 
 if main():
     regression()

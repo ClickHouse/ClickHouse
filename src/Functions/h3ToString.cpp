@@ -14,10 +14,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
-
 class FunctionH3ToString : public IFunction
 {
 public:
@@ -42,7 +38,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
@@ -78,7 +74,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionH3ToString(FunctionFactory & factory)
 {

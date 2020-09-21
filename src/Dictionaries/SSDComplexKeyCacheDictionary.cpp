@@ -1,4 +1,4 @@
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include "SSDComplexKeyCacheDictionary.h"
 
@@ -1120,8 +1120,6 @@ void SSDComplexKeyCacheStorage::update(
     AbsentIdHandler && on_key_not_found,
     const DictionaryLifetime lifetime)
 {
-    assert(key_columns.size() == key_types.size());
-
     auto append_block = [&key_types, this](
         const Columns & new_keys,
         const SSDComplexKeyCachePartition::Attributes & new_attributes,
@@ -1325,7 +1323,7 @@ void SSDComplexKeyCacheStorage::collectGarbage()
 }
 
 SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
-    const StorageID & dict_id_,
+    const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
@@ -1336,7 +1334,7 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
     const size_t read_buffer_size_,
     const size_t write_buffer_size_,
     const size_t max_stored_keys_)
-    : IDictionaryBase(dict_id_)
+    : name(name_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
@@ -1366,7 +1364,7 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
         getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t) { return null_value; }); /* NOLINT */ \
     }
@@ -1396,7 +1394,7 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t row) { return def[row]; }); /* NOLINT */ \
     }
     DECLARE(UInt8)
@@ -1424,7 +1422,7 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t) { return def; }); /* NOLINT */ \
     }
     DECLARE(UInt8)
@@ -1449,12 +1447,6 @@ void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
     const Columns & key_columns, const DataTypes & key_types,
     ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
-    assert(dict_struct.key);
-    assert(key_columns.size() == key_types.size());
-    assert(key_columns.size() == dict_struct.key->size());
-
-    dict_struct.validateKeyTypes(key_types);
-
     const auto now = std::chrono::system_clock::now();
 
     TemporalComplexKeysPool not_found_pool;
@@ -1496,7 +1488,7 @@ void SSDComplexKeyCacheDictionary::getString(
     const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(null_values[index])};
 
@@ -1509,7 +1501,7 @@ void SSDComplexKeyCacheDictionary::getString(
         const ColumnString * const def, ColumnString * const out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -1522,7 +1514,7 @@ void SSDComplexKeyCacheDictionary::getString(
         ColumnString * const out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t) { return StringRef{def}; });
 }
@@ -1535,8 +1527,6 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
     ColumnString * out,
     DefaultGetter && get_default) const
 {
-    dict_struct.validateKeyTypes(key_types);
-
     const auto now = std::chrono::system_clock::now();
 
     TemporalComplexKeysPool not_found_pool;
@@ -1746,8 +1736,6 @@ void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory)
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
-        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
-
         if (dict_struct.id)
             throw Exception{"'id' is not supported for dictionary of layout 'complex_key_cache'", ErrorCodes::UNSUPPORTED_METHOD};
 
@@ -1797,7 +1785,7 @@ void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory)
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SSDComplexKeyCacheDictionary>(
-                dict_id, dict_struct, std::move(source_ptr), dict_lifetime, path,
+                name, dict_struct, std::move(source_ptr), dict_lifetime, path,
                 max_partitions_count, file_size / block_size, block_size,
                 read_buffer_size / block_size, write_buffer_size / block_size,
                 max_stored_keys);

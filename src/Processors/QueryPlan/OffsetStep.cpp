@@ -6,19 +6,13 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits()
+static ITransformingStep::DataStreamTraits getTraits()
 {
-    return ITransformingStep::Traits
+    return ITransformingStep::DataStreamTraits
     {
-        {
             .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = true,
-        },
-        {
-            .preserves_number_of_rows = false,
-        }
     };
 }
 
@@ -33,7 +27,7 @@ void OffsetStep::transformPipeline(QueryPipeline & pipeline)
     auto transform = std::make_shared<OffsetTransform>(
             pipeline.getHeader(), offset, pipeline.getNumStreams());
 
-    pipeline.addTransform(std::move(transform));
+    pipeline.addPipe({std::move(transform)});
 }
 
 void OffsetStep::describeActions(FormatSettings & settings) const

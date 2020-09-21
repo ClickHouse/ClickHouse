@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 
-#include <common/types.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -45,7 +45,7 @@ struct BlockInfo
     void read(ReadBuffer & in);
 };
 
-/// Block extension to support delayed defaults. AddingDefaultsBlockInputStream uses it to replace missing values with column defaults.
+/// Block extention to support delayed defaults. AddingDefaultsBlockInputStream uses it to replace missing values with column defaults.
 class BlockMissingValues
 {
 public:

@@ -12,8 +12,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function coalesce which takes a set of arguments and
 /// returns the value of the leftmost non-null argument. If no such value is
@@ -87,7 +85,7 @@ public:
         return res;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// coalesce(arg0, arg1, ..., argN) is essentially
         /// multiIf(isNotNull(arg0), assumeNotNull(arg0), isNotNull(arg1), assumeNotNull(arg1), ..., argN)
@@ -177,7 +175,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionCoalesce(FunctionFactory & factory)
 {
