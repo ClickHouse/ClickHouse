@@ -11,7 +11,7 @@
 #include <functional>
 #include <Poco/Event.h>
 #include <Poco/Timestamp.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>

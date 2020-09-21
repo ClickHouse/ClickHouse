@@ -28,7 +28,7 @@ def get_options(i):
     options = ""
     if 0 < i:
         options += " --order=random"
-    if i == 1:
+    if i % 2 == 1:
         options += " --atomic-db-engine"
     return options
 

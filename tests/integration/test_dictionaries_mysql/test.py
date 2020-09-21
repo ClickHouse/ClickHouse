@@ -1,17 +1,13 @@
-import pytest
-import os
-import time
-
 ## sudo -H pip install PyMySQL
 import pymysql.cursors
-
+import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
-CONFIG_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml', 'configs/remote_servers.xml']
+CONFIG_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml',
+                'configs/remote_servers.xml']
 CONFIG_FILES += ['configs/enable_dictionaries.xml']
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql = True)
+instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql=True)
 
 create_table_mysql_template = """
     CREATE TABLE IF NOT EXISTS `test`.`{}` (
@@ -25,10 +21,11 @@ create_clickhouse_dictionary_table_template = """
     CREATE TABLE IF NOT EXISTS `test`.`dict_table_{}` (`id` UInt64, `value` String) ENGINE = Dictionary({})
     """
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        #time.sleep(30)
+        # time.sleep(30)
         cluster.start()
 
         # Create a MySQL database
@@ -66,9 +63,11 @@ def test_load_mysql_dictionaries(started_cluster):
         # Check number of row
         assert query("SELECT count() FROM `test`.`dict_table_{}`".format('test' + str(n % 5))).rstrip() == '10000'
 
+
 def create_mysql_db(mysql_connection, name):
     with mysql_connection.cursor() as cursor:
         cursor.execute("CREATE DATABASE IF NOT EXISTS {} DEFAULT CHARACTER SET 'utf8'".format(name))
+
 
 def prepare_mysql_table(table_name, index):
     mysql_connection = get_mysql_conn()
@@ -78,16 +77,20 @@ def prepare_mysql_table(table_name, index):
 
     # Insert rows using CH
     query = instance.query
-    query("INSERT INTO `clickhouse_mysql`.{}(id, value) select number, concat('{} value ', toString(number)) from numbers(10000) ".format(table_name + str(index), table_name + str(index)))
+    query(
+        "INSERT INTO `clickhouse_mysql`.{}(id, value) select number, concat('{} value ', toString(number)) from numbers(10000) ".format(
+            table_name + str(index), table_name + str(index)))
     assert query("SELECT count() FROM `clickhouse_mysql`.{}".format(table_name + str(index))).rstrip() == '10000'
     mysql_connection.close()
 
-    #Create CH Dictionary tables based on MySQL tables
+    # Create CH Dictionary tables based on MySQL tables
     query(create_clickhouse_dictionary_table_template.format(table_name + str(index), 'dict' + str(index)))
+
 
 def get_mysql_conn():
     conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.10', port=3308)
     return conn
+
 
 def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:

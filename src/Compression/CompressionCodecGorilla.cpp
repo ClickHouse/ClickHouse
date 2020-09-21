@@ -242,16 +242,12 @@ UInt8 getDataBytesSize(DataTypePtr column_type)
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
+    setCodecDescription("Gorilla");
 }
 
 uint8_t CompressionCodecGorilla::getMethodByte() const
 {
     return static_cast<uint8_t>(CompressionMethodByte::Gorilla);
-}
-
-ASTPtr CompressionCodecGorilla::getCodecDesc() const
-{
-    return std::make_shared<ASTIdentifier>("Gorilla");
 }
 
 void CompressionCodecGorilla::updateHash(SipHash & hash) const

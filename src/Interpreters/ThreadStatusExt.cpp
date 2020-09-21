@@ -136,6 +136,22 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     setupState(thread_group_);
 }
 
+inline UInt64 time_in_nanoseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(timepoint.time_since_epoch()).count();
+}
+
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
 void ThreadStatus::initPerformanceCounters()
 {
     performance_counters_finalized = false;
@@ -146,9 +162,13 @@ void ThreadStatus::initPerformanceCounters()
     memory_tracker.resetCounters();
     memory_tracker.setDescription("(for thread)");
 
-    query_start_time_nanoseconds = getCurrentTimeNanoseconds();
-    query_start_time = time(nullptr);
-    query_start_time_microseconds = getCurrentTimeMicroseconds();
+    // query_start_time_{microseconds, nanoseconds} are all constructed from the same time point
+    // to ensure that they are all equal upto the precision of a second.
+    const auto now = std::chrono::system_clock::now();
+
+    query_start_time_nanoseconds = time_in_nanoseconds(now);
+    query_start_time = time_in_seconds(now);
+    query_start_time_microseconds = time_in_microseconds(now);
     ++queries_started;
 
     *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);

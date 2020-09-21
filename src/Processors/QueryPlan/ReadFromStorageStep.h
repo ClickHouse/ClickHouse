@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Core/QueryProcessingStage.h>
 #include <Storages/TableLockHolder.h>
-#include <Interpreters/SelectQueryOptions.h>
+#include <DataStreams/StreamLocalLimits.h>
 
 namespace DB
 {
@@ -16,14 +16,18 @@ struct SelectQueryInfo;
 
 struct PrewhereInfo;
 
+class EnabledQuota;
+
 /// Reads from storage.
 class ReadFromStorageStep : public IQueryPlanStep
 {
 public:
     ReadFromStorageStep(
         TableLockHolder table_lock,
-        StorageMetadataPtr & metadata_snapshot,
-        SelectQueryOptions options,
+        StorageMetadataPtr metadata_snapshot,
+        StreamLocalLimits & limits,
+        SizeLimits & leaf_limits,
+        std::shared_ptr<const EnabledQuota> quota,
         StoragePtr storage,
         const Names & required_columns,
         const SelectQueryInfo & query_info,
@@ -43,7 +47,9 @@ public:
 private:
     TableLockHolder table_lock;
     StorageMetadataPtr metadata_snapshot;
-    SelectQueryOptions options;
+    StreamLocalLimits limits;
+    SizeLimits leaf_limits;
+    std::shared_ptr<const EnabledQuota> quota;
 
     StoragePtr storage;
     const Names & required_columns;
