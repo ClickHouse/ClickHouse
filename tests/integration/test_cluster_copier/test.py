@@ -241,7 +241,7 @@ def execute_task(task, cmd_options):
 
     zk_task_path = task.zk_task_path
     zk.ensure_path(zk_task_path)
-    zk.create(zk_task_path + "/description", task.copier_task_config)
+    zk.create(zk_task_path + "/description", task.copier_task_config.encode())
 
     # Run cluster-copier processes on each node
     docker_api = docker.from_env().api

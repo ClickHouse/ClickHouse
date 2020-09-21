@@ -1,12 +1,13 @@
 import difflib
 import time
+from io import IOBase
 
 
 class TSV:
     """Helper to get pretty diffs between expected and actual tab-separated value files"""
 
     def __init__(self, contents):
-        if isinstance(contents, file):
+        if isinstance(contents, IOBase):
             raw_lines = contents.readlines()
         elif isinstance(contents, str) or isinstance(contents, str):
             raw_lines = contents.splitlines(True)

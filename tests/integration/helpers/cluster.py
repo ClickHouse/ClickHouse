@@ -413,11 +413,12 @@ class ClickHouseCluster:
         return output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
-        with open(local_path, 'r') as fdata:
+        with open(local_path, "r") as fdata:
             data = fdata.read()
-            encoded_data = base64.b64encode(data)
+            encodedBytes = base64.b64encode(data.encode("utf-8"))
+            encodedStr = str(encodedBytes, "utf-8")
             self.exec_in_container(container_id,
-                                   ["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)],
+                                   ["bash", "-c", "echo {} | base64 --decode > {}".format(encodedStr, dest_path)],
                                    user='root')
 
     def wait_mysql_to_start(self, timeout=60):
