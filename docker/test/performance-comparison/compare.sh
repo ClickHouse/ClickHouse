@@ -688,12 +688,13 @@ create view shortness
 -- Report of queries that have inconsistent 'short' markings:
 -- 1) have short duration, but are not marked as 'short'
 -- 2) the reverse -- marked 'short' but take too long.
--- The threshold for 2) is twice the threshold for 1), to avoid jitter.
+-- The threshold for 2) is significantly larger than the threshold for 1), to
+-- avoid jitter.
 create table inconsistent_short_marking_report
-    engine File(TSV, 'report/inconsistent-short-marking.tsv')
+    engine File(TSV, 'report/unexpected-query-duration.tsv')
     as select
-        multiIf(marked_short and time > 0.1, 'marked as short but is too long',
-                not marked_short and time < 0.02, 'is short but not marked as such',
+        multiIf(marked_short and time > 0.1, '"short" queries must run faster than 0.02 s',
+                not marked_short and time < 0.02, '"normal" queries must run longer than 0.1 s',
                 '') problem,
         marked_short, time,
         test, query_index, query_display_name
