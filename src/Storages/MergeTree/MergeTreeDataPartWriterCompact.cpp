@@ -3,6 +3,7 @@
 
 namespace DB
 {
+
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
@@ -30,14 +31,41 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
     for (const auto & column : columns_list)
-    {
-        auto codec = storage_columns.getCodecOrDefault(column.name, default_codec);
-        auto & stream = streams_by_codec[codec->getHash()];
-        if (!stream)
-            stream = std::make_shared<CompressedStream>(plain_hashing, codec);
+        addStreams(column.name, *column.type, storage_columns.getCodecDescOrDefault(column.name, default_codec));
+}
 
-        compressed_streams.push_back(stream);
-    }
+void MergeTreeDataPartWriterCompact::addStreams(const String & name, const IDataType & type, const ASTPtr & effective_codec_desc)
+{
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
+    {
+        String stream_name = IDataType::getFileNameForStream(name, substream_path);
+
+        /// Shared offsets for Nested type.
+        if (compressed_streams.count(stream_name))
+            return;
+
+        CompressionCodecPtr compression_codec;
+        if (IDataType::isSpecialCompressionAllowed(substream_path))
+        {
+            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
+        }
+        else
+        {
+            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+        }
+
+        if (compression_codec == nullptr)
+            compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
+        UInt64 codec_id = compression_codec->getHash();
+        auto & stream = streams_by_codec[codec_id];
+        if (!stream)
+            stream = std::make_shared<CompressedStream>(codec_id, plain_hashing, compression_codec);
+
+        compressed_streams.emplace(stream_name, stream);
+    };
+
+    IDataType::SubstreamPath stream_path;
+    type.enumerateStreams(callback, stream_path);
 }
 
 void MergeTreeDataPartWriterCompact::write(
@@ -110,18 +138,27 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
         auto name_and_type = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
-            auto & stream = compressed_streams[i];
+            std::unordered_map<UInt64, CompressedStreamPtr> used_streams;
+            auto stream_getter = [&, this](const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
+            {
+                String stream_name = IDataType::getFileNameForStream(name_and_type->name, substream_path);
+                auto & result_stream = compressed_streams[stream_name];
 
-            /// Offset should be 0, because compressed block is written for every granule.
-            assert(stream->hashing_buf.offset() == 0);
+                /// Offset should be 0, because compressed block is written for every granule.
+                if (used_streams.try_emplace(result_stream->codec_id, result_stream).second)
+                    assert(result_stream->hashing_buf.offset() == 0);
+
+                return &result_stream->hashing_buf;
+            };
 
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(UInt64(0), marks);
 
-            writeColumnSingleGranule(block.getByName(name_and_type->name), stream, current_row, rows_to_write);
+            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, current_row, rows_to_write);
 
             /// Write one compressed block per column in granule for more optimal reading.
-            stream->hashing_buf.next();
+            for (auto & [_, stream] : used_streams)
+                stream->hashing_buf.next();
         }
 
         ++from_mark;
@@ -145,13 +182,14 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 
 void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(
     const ColumnWithTypeAndName & column,
-    const CompressedStreamPtr & stream,
-    size_t from_row, size_t number_of_rows)
+    IDataType::OutputStreamGetter stream_getter,
+    size_t from_row,
+    size_t number_of_rows)
 {
     IDataType::SerializeBinaryBulkStatePtr state;
     IDataType::SerializeBinaryBulkSettings serialize_settings;
 
-    serialize_settings.getter = [&stream](IDataType::SubstreamPath) -> WriteBuffer * { return &stream->hashing_buf; };
+    serialize_settings.getter = stream_getter;
     serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
 

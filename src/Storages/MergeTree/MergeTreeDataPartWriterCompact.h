@@ -30,6 +30,8 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
+    void addStreams(const String & name, const IDataType & type, const ASTPtr & effective_codec_desc);
+
     Block header;
 
     /** Simplified SquashingTransform. The original one isn't suitable in this case
@@ -54,11 +56,14 @@ private:
 
     struct CompressedStream
     {
+        UInt64 codec_id;
         CompressedWriteBuffer compressed_buf;
         HashingWriteBuffer hashing_buf;
 
-        CompressedStream(WriteBuffer & buf, const CompressionCodecPtr & codec)
-            : compressed_buf(buf, codec), hashing_buf(compressed_buf) {}
+        CompressedStream(UInt64 codec_id_, WriteBuffer & buf, const CompressionCodecPtr & codec)
+            : codec_id(codec_id_)
+            , compressed_buf(buf, codec)
+            , hashing_buf(compressed_buf) {}
     };
 
     using CompressedStreamPtr = std::shared_ptr<CompressedStream>;
@@ -67,7 +72,7 @@ private:
     std::unordered_map<UInt64, CompressedStreamPtr> streams_by_codec;
 
     /// For better performance save pointer to stream by every column.
-    std::vector<CompressedStreamPtr> compressed_streams;
+    std::unordered_map<String, CompressedStreamPtr> compressed_streams;
 
     /// marks -> marks_file
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
@@ -76,7 +81,7 @@ private:
     /// Write single granule of one column (rows between 2 marks)
     static void writeColumnSingleGranule(
         const ColumnWithTypeAndName & column,
-        const CompressedStreamPtr & stream,
+        IDataType::OutputStreamGetter stream_getter,
         size_t from_row,
         size_t number_of_rows);
 };
