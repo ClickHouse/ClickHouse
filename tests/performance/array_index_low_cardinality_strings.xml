@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test>
     <create_query>DROP TABLE IF EXISTS perf_lc_str</create_query>
     <create_query>CREATE TABLE perf_lc_str(
         str LowCardinality(String),

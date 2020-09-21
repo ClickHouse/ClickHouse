@@ -23,7 +23,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
-#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 #include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -431,7 +430,6 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
-        TemporaryLiveViewCleaner::shutdown();
         DatabaseCatalog::shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
@@ -487,12 +485,6 @@ Context Context::createGlobal(ContextShared * shared)
     Context res;
     res.shared = shared;
     return res;
-}
-
-void Context::initGlobal()
-{
-    DatabaseCatalog::init(this);
-    TemporaryLiveViewCleaner::init(*this);
 }
 
 SharedContextHolder Context::createShared()
@@ -677,7 +669,7 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address)
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
@@ -686,7 +678,7 @@ void Context::setUserImpl(const String & name, const std::optional<String> & pas
 
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password = password.value_or("");
+    client_info.current_password = password;
 #endif
 
     auto new_user_id = getAccessControlManager().find<User>(name);
@@ -694,9 +686,7 @@ void Context::setUserImpl(const String & name, const std::optional<String> & pas
     if (new_user_id)
     {
         new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, settings, current_database, client_info);
-        /// Access w/o password is done under interserver-secret (remote_servers.secret)
-        /// So it is okay not to check client's host (since there is trust).
-        if (password && (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(*password)))
+        if (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(password))
         {
             new_user_id = {};
             new_access = nullptr;
@@ -712,16 +702,6 @@ void Context::setUserImpl(const String & name, const std::optional<String> & pas
     use_default_roles = true;
 
     setSettings(*access->getDefaultSettings());
-}
-
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
-{
-    setUserImpl(name, std::make_optional(password), address);
-}
-
-void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
-{
-    setUserImpl(name, {} /* no password */, address);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -1510,15 +1490,6 @@ void Context::resetZooKeeper() const
     shared->zookeeper.reset();
 }
 
-void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
-{
-    std::lock_guard lock(shared->zookeeper_mutex);
-    if (!shared->zookeeper || shared->zookeeper->configChanged(*config, "zookeeper"))
-    {
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
-    }
-}
-
 bool Context::hasZooKeeper() const
 {
     return getConfigRef().has("zookeeper");
@@ -2019,12 +1990,6 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
-    for (auto & [disk_name, disk] : getDisksMap())
-    {
-        LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
-        disk->shutdown();
-    }
-
     shared->shutdown();
 }
 

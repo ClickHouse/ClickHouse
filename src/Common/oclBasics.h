@@ -14,7 +14,7 @@
 #endif
 
 #include <algorithm>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/Exception.h>
 
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/extended_types.h>
+#include <common/types.h>
 
 namespace common
 {

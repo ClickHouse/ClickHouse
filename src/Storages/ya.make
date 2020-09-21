@@ -22,7 +22,6 @@ SRCS(
     IStorage.cpp
     KeyDescription.cpp
     LiveView/StorageLiveView.cpp
-    LiveView/TemporaryLiveViewCleaner.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
     MergeTree/BackgroundProcessingPool.cpp
@@ -37,7 +36,6 @@ SRCS(
     MergeTree/KeyCondition.cpp
     MergeTree/LevelMergeSelector.cpp
     MergeTree/localBackup.cpp
-    MergeTree/MergeAlgorithm.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
     MergeTree/MergeList.cpp
@@ -88,7 +86,6 @@ SRCS(
     MergeTree/MergeTreeThreadSelectBlockInputProcessor.cpp
     MergeTree/MergeTreeWhereOptimizer.cpp
     MergeTree/MergeTreeWriteAheadLog.cpp
-    MergeTree/MergeType.cpp
     MergeTree/registerStorageMergeTree.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp

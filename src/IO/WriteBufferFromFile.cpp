@@ -92,9 +92,6 @@ WriteBufferFromFile::~WriteBufferFromFile()
 /// Close file before destruction of object.
 void WriteBufferFromFile::close()
 {
-    if (fd < 0)
-        return;
-
     next();
 
     if (0 != ::close(fd))

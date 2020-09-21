@@ -4,7 +4,6 @@
 
 namespace DB::GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericArraySource;
@@ -24,18 +23,9 @@ using BasicAndNullableArraySources = typename TypeListConcat<BasicArraySources, 
 using ConstArraySources = typename TypeListMap<ConstSource, BasicAndNullableArraySources>::Type;
 using TypeListArraySources = typename TypeListConcat<BasicAndNullableArraySources, ConstArraySources>::Type;
 
-class ArraySourceVisitor : public ApplyTypeListForClass<Visitor, TypeListArraySources>::Type
-{
-protected:
-    ~ArraySourceVisitor() = default;
-};
+class ArraySourceVisitor : public ApplyTypeListForClass<Visitor, TypeListArraySources>::Type {};
 
 template <typename Derived>
-class ArraySourceVisitorImpl : public VisitorImpl<Derived, ArraySourceVisitor>
-{
-protected:
-    ~ArraySourceVisitorImpl() = default;
-};
+class ArraySourceVisitorImpl : public VisitorImpl<Derived, ArraySourceVisitor> {};
 
-#pragma GCC visibility pop
 }
