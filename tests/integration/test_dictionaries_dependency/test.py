@@ -12,7 +12,7 @@ def start_cluster():
     try:
         cluster.start()
         for node in nodes:
-            node.query("CREATE DATABASE IF NOT EXISTS test")
+            node.query("CREATE DATABASE IF NOT EXISTS test ENGINE=Ordinary")
             node.query("CREATE DATABASE IF NOT EXISTS atest")
             node.query("CREATE DATABASE IF NOT EXISTS ztest")
             node.query("CREATE TABLE test.source(x UInt64, y UInt64) ENGINE=Log")

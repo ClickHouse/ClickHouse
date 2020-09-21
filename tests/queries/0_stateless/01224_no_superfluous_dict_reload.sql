@@ -1,6 +1,6 @@
 DROP DATABASE IF EXISTS dict_db_01224;
 DROP DATABASE IF EXISTS dict_db_01224_dictionary;
-CREATE DATABASE dict_db_01224;
+CREATE DATABASE dict_db_01224 ENGINE=Ordinary;
 CREATE DATABASE dict_db_01224_dictionary Engine=Dictionary;
 
 CREATE TABLE dict_db_01224.dict_data (key UInt64, val UInt64) Engine=Memory();
