@@ -937,20 +937,22 @@ class ClickHouseInstance:
 
         url = "http://" + auth + self.ip_address + ":8123/?" + urllib.parse.urlencode(params)
 
+        if isinstance(data, str):
+            data = data.encode()
         open_result = urllib.request.urlopen(url, data)
 
         def http_code_and_message():
             return str(open_result.getcode()) + " " + http.client.responses[
-                open_result.getcode()] + ": " + open_result.read()
+                open_result.getcode()] + ": " + open_result.read().decode()
 
         if expect_fail_and_get_error:
             if open_result.getcode() == 200:
-                raise Exception("ClickHouse HTTP server is expected to fail, but succeeded: " + open_result.read())
+                raise Exception("ClickHouse HTTP server is expected to fail, but succeeded: " + open_result.read().decode())
             return http_code_and_message()
         else:
             if open_result.getcode() != 200:
                 raise Exception("ClickHouse HTTP server returned " + http_code_and_message())
-            return open_result.read()
+            return open_result.read().decode()
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_request(self, url, method='GET', params=None, data=None, headers=None):
