@@ -38,7 +38,7 @@ public:
     CompressionCodecPtr getDefaultCodec() const;
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
-    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, DataTypePtr column_type, bool sanity_check) const;
+    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const IDataType * column_type, bool sanity_check) const;
 
     /// Validate codecs AST specified by user
     void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check) const;
@@ -48,7 +48,7 @@ public:
     /// be able to work without information about type. Also AST can contain
     /// codec, which can be alias to current default codec, which can be changed
     /// in runtime.
-    CompressionCodecPtr get(const ASTPtr & ast, DataTypePtr column_type, CompressionCodecPtr current_default = nullptr) const;
+    CompressionCodecPtr get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default = nullptr) const;
 
     /// Get codec by method byte (no params available)
     CompressionCodecPtr get(const uint8_t byte_code) const;
