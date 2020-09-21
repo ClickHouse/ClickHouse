@@ -690,9 +690,6 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
 {
     auto lock = getLock();
 
-    if (!credentials.isReady())
-        throw Exception("Authentication failed", ErrorCodes::AUTHENTICATION_FAILED);
-
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
     client_info.current_password.clear();
@@ -700,17 +697,8 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
         client_info.current_password = basic_credentials->getPassword();
 #endif
 
-    /// Find a user with such name and check the password.
-    UUID new_user_id;
-    if (auto * always_allow_credentials = dynamic_cast<const AlwaysAllowCredentials *>(&credentials))
-    {
-        /// Access w/o password is done under interserver-secret (remote_servers.secret)
-        /// So it is okay not to check client's host in this case (since there is trust).
-        new_user_id = getAccessControlManager().getIDOfLoggedUser(credentials.getUserName());
-    }
-    else
-        new_user_id = getAccessControlManager().login(credentials, address.host());
-
+    /// Find a user with such name and check the credentials.
+    auto new_user_id = getAccessControlManager().login(credentials, address.host());
     auto new_access = getAccessControlManager().getContextAccess(
         new_user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
         settings, current_database, client_info);

@@ -18,8 +18,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class ExternalAuthenticators;
+struct User;
 class Credentials;
+class ExternalAuthenticators;
 
 /// Authentication type and encrypted password for checking when a user logins.
 class Authentication
@@ -107,7 +108,7 @@ public:
     void setKerberosRealm(const String & realm);
 
     /// Verifies the credentials.
-    bool areCredentialsValid(const Credentials & credentials, const String & user_name, const ExternalAuthenticators & external_authenticators) const;
+    bool areCredentialsValid(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
 
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
     friend bool operator !=(const Authentication & lhs, const Authentication & rhs) { return !(lhs == rhs); }

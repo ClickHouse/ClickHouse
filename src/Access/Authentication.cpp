@@ -1,6 +1,7 @@
 #include <Access/Authentication.h>
-#include <Access/ExternalAuthenticators.h>
+#include <Access/User.h>
 #include <Access/Credentials.h>
+#include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
 #include <Common/Exception.h>
@@ -50,12 +51,12 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 }
 
 
-bool Authentication::areCredentialsValid(const Credentials & credentials, const String & user_name, const ExternalAuthenticators & external_authenticators) const
+bool Authentication::areCredentialsValid(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const
 {
     if (!credentials.isReady())
         return false;
 
-    if (credentials.getUserName() != user_name)
+    if (credentials.getUserName() != user.getName())
         return false;
 
     if (auto * gss_acceptor_context = dynamic_cast<const GSSAcceptorContext *>(&credentials))

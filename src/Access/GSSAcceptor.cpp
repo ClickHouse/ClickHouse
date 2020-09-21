@@ -450,7 +450,6 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
         is_ready = true;
         is_failed = true;
         resetHandles();
-        throw;
     }
 
     return output_token;

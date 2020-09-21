@@ -48,7 +48,6 @@ protected:
     bool hasSubscriptionImpl(const UUID & id) const override;
     bool hasSubscriptionImpl(EntityType type) const override;
     UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
-    UUID getIDOfLoggedUserImpl(const String & user_name) const override;
 
 private:
     using Storages = std::vector<StoragePtr>;

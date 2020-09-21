@@ -446,24 +446,13 @@ bool IAccessStorage::areCredentialsValidImpl(
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators) const
 {
-    return user.authentication.areCredentialsValid(credentials, user.getName(), external_authenticators);
+    return user.authentication.areCredentialsValid(user, credentials, external_authenticators);
 }
 
 
 bool IAccessStorage::isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const
 {
     return user.allowed_client_hosts.contains(address);
-}
-
-UUID IAccessStorage::getIDOfLoggedUser(const String & user_name) const
-{
-    return getIDOfLoggedUserImpl(user_name);
-}
-
-
-UUID IAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
-{
-    return getID<User>(user_name);
 }
 
 
