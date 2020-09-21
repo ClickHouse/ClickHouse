@@ -250,18 +250,26 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         }
         else if (const auto * asterisk_pattern = child->as<ASTColumnsMatcher>())
         {
-            bool first_table = true;
-            for (const auto & table : tables_with_columns)
+            if (asterisk_pattern->column_list)
             {
-                for (const auto & column : table.columns)
+                for (const auto & ident : asterisk_pattern->column_list->children)
+                    node.children.emplace_back(ident->clone());
+            }
+            else
+            {
+                bool first_table = true;
+                for (const auto & table : tables_with_columns)
                 {
-                    if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
+                    for (const auto & column : table.columns)
                     {
-                        addIdentifier(node.children, table.table, column.name, AsteriskSemantic::getAliases(*asterisk_pattern));
+                        if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
+                        {
+                            addIdentifier(node.children, table.table, column.name, AsteriskSemantic::getAliases(*asterisk_pattern));
+                        }
                     }
-                }
 
-                first_table = false;
+                    first_table = false;
+                }
             }
             // ColumnsMatcher's transformers start to appear at child 1
             for (auto it = asterisk_pattern->children.begin() + 1; it != asterisk_pattern->children.end(); ++it)

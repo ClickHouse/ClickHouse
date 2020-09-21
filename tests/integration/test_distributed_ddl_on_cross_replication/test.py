@@ -1,4 +1,3 @@
-import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -11,6 +10,7 @@ node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'
                              macros={"shard": 2, "replica": 1, "shard_bk": 1, "replica_bk": 2})
 node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml'], with_zookeeper=True,
                              macros={"shard": 3, "replica": 1, "shard_bk": 2, "replica_bk": 2})
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -49,7 +49,8 @@ def started_cluster():
 2017-06-17	31	2
 '''
 
-        node1.query("INSERT INTO replica_1.replicated FORMAT TSV", stdin=to_insert, settings={"insert_distributed_sync" : 1})
+        node1.query("INSERT INTO replica_1.replicated FORMAT TSV", stdin=to_insert,
+                    settings={"insert_distributed_sync": 1})
         yield cluster
 
     finally:
@@ -64,7 +65,8 @@ def test_alter_ddl(started_cluster):
                 WHERE part_key='2017-06-16'")
 
     node1.query("SYSTEM SYNC REPLICA replica_2.replicated_local;", timeout=5)
-    assert_eq_with_retry(node1, "SELECT count(*) FROM replica_2.replicated where shard_id >= 3 and part_key='2017-06-16'", '3')
+    assert_eq_with_retry(node1,
+                         "SELECT count(*) FROM replica_2.replicated where shard_id >= 3 and part_key='2017-06-16'", '3')
 
     node1.query("ALTER TABLE replica_1.replicated_local  \
                 ON CLUSTER cross_3shards_2replicas DELETE WHERE shard_id >=3;")
@@ -75,4 +77,3 @@ def test_alter_ddl(started_cluster):
 
     node2.query("SYSTEM SYNC REPLICA replica_2.replicated_local;", timeout=5)
     assert_eq_with_retry(node1, "SELECT count(*) FROM replica_2.replicated", '0')
-

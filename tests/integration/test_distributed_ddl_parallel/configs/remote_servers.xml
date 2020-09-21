@@ -1,0 +1,18 @@
+<yandex>
+<remote_servers>
+    <cluster>
+        <shard>
+            <replica>
+                <host>n1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+        <shard>
+            <replica>
+                <host>n2</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </cluster>
+</remote_servers>
+</yandex>

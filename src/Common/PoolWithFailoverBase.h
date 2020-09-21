@@ -7,7 +7,6 @@
 #include <functional>
 #include <common/types.h>
 #include <ext/scope_guard.h>
-#include <Core/Types.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>

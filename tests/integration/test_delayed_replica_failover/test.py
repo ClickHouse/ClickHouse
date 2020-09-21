@@ -1,13 +1,13 @@
-import pytest
+import os
+import sys
 import time
-import os, sys
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import helpers
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-
 
 cluster = ClickHouseCluster(__file__)
 
@@ -18,6 +18,7 @@ node_1_1 = instance_with_dist_table = cluster.add_instance(
 node_1_2 = cluster.add_instance('node_1_2', with_zookeeper=True)
 node_2_1 = cluster.add_instance('node_2_1', with_zookeeper=True)
 node_2_2 = cluster.add_instance('node_2_2', with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -30,7 +31,7 @@ def started_cluster():
                 node.query('''
 CREATE TABLE replicated (d Date, x UInt32) ENGINE =
     ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{instance}', d, d, 8192)'''
-                    .format(shard=shard, instance=node.name))
+                           .format(shard=shard, instance=node.name))
 
         node_1_1.query(
             "CREATE TABLE distributed (d Date, x UInt32) ENGINE = "
@@ -51,7 +52,7 @@ def test(started_cluster):
         node_1_2.query("INSERT INTO replicated VALUES ('2017-05-08', 1)")
         node_2_2.query("INSERT INTO replicated VALUES ('2017-05-08', 2)")
 
-        time.sleep(1) # accrue replica delay
+        time.sleep(1)  # accrue replica delay
 
         assert node_1_1.query("SELECT sum(x) FROM replicated").strip() == '0'
         assert node_1_2.query("SELECT sum(x) FROM replicated").strip() == '1'
@@ -78,7 +79,7 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
         pm.drop_instance_zk_connections(node_1_2)
         pm.drop_instance_zk_connections(node_2_2)
 
-        time.sleep(4) # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
+        time.sleep(4)  # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
 
         # At this point all replicas are stale, but the query must still go to second replicas which are the least stale ones.
         assert instance_with_dist_table.query('''
