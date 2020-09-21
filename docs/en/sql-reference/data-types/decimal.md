@@ -104,4 +104,80 @@ SELECT toDecimal32(1, 8) < 100
 DB::Exception: Can't compare.
 ```
 
+## isDecimalOverflow {#is-decimal-overflow}
+
+Checks if the value in [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) column is out of its (or specified) precision.
+
+**Syntax**
+
+``` sql
+isDecimalOverflow(d, [p])
+```
+
+**Parameters** 
+
+-   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
+-   `p` — precision. This argument can be omitted. In this case, Decimal presicion of the first argument is used. Form with 2 arguments could be helpful for extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64#uint-ranges). 
+
+**Returned values**
+
+-   `1` - Decimal value has more digits then it's precision allow,
+-   `0` - Decimal value satisfies the specified precision.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(1000000000, 0)),
+       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(-1000000000, 0));
+```
+
+Result:
+
+``` text
+1	1	1	1
+```
+
+## countDigits {#count-digits}
+
+Returns number of decimal digits you need to represent the value.
+
+**Syntax**
+
+``` sql
+countDigits(x)
+```
+
+**Parameters** 
+
+-   `x` — [Int](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) or [Decimal](#decimalp-s-decimal32s-decimal64s-decimal128s) value.
+
+**Returned value**
+
+Number of digits.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64#uint-ranges).
+
+ !!! note "Note"
+    For Decimal values takes in account their scales: calculates result over underlying int type which is (value * scale). For example: countDigits(42) = 2, countDigits(42.000) = 5, countDigits(0.04200) = 4. I.e. you may check decimal overflow for Decimal64 with 'countDecimal(x) > 18'. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
+       countDigits(toDecimal64(1, 18)), countDigits(toDecimal64(-1, 18)),
+       countDigits(toDecimal128(1, 38)), countDigits(toDecimal128(-1, 38));
+```
+
+Result:
+
+``` text
+10	10	19	19	39	39
+```
+
 [Original article](https://clickhouse.tech/docs/en/data_types/decimal/) <!--hide-->
