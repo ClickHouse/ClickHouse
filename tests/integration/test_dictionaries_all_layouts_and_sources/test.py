@@ -1,11 +1,12 @@
-import pytest
+import math
 import os
 
+import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
-from helpers.external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
-from helpers.external_sources import SourceMongo, SourceMongoURI, SourceHTTP, SourceHTTPS, SourceRedis, SourceCassandra
-import math
+from helpers.external_sources import SourceMongo, SourceMongoURI, SourceHTTP, SourceHTTPS, SourceCassandra
+from helpers.external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, \
+    SourceExecutableHashed
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 dict_configs_path = os.path.join(SCRIPT_DIR, 'configs/dictionaries')
@@ -103,8 +104,6 @@ VALUES = {
     ]
 }
 
-
-
 LAYOUTS = [
     Layout("flat"),
     Layout("hashed"),
@@ -134,6 +133,7 @@ DICTIONARIES = []
 
 cluster = None
 node = None
+
 
 def get_dict(source, layout, fields, suffix_name=''):
     global dict_configs_path
@@ -173,7 +173,8 @@ def setup_module(module):
     for fname in os.listdir(dict_configs_path):
         dictionaries.append(os.path.join(dict_configs_path, fname))
 
-    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_mysql=True, with_mongo=True, with_redis=True, with_cassandra=True)
+    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_mysql=True,
+                                with_mongo=True, with_redis=True, with_cassandra=True)
 
 
 @pytest.fixture(scope="module")
@@ -195,7 +196,7 @@ def get_dictionaries(fold, total_folds, all_dicts):
     chunk_len = int(math.ceil(len(all_dicts) / float(total_folds)))
     if chunk_len * fold >= len(all_dicts):
         return []
-    return all_dicts[fold * chunk_len : (fold + 1) * chunk_len]
+    return all_dicts[fold * chunk_len: (fold + 1) * chunk_len]
 
 
 def remove_mysql_dicts():
@@ -225,8 +226,8 @@ def remove_mysql_dicts():
     TODO remove this when open ssl will be fixed or thread sanitizer will be suppressed
     """
 
-    #global DICTIONARIES
-    #DICTIONARIES = [d for d in DICTIONARIES if not d.name.startswith("MySQL")]
+    # global DICTIONARIES
+    # DICTIONARIES = [d for d in DICTIONARIES if not d.name.startswith("MySQL")]
 
 
 @pytest.mark.parametrize("fold", list(range(10)))
@@ -281,7 +282,6 @@ def test_simple_dictionaries(started_cluster, fold):
 
 @pytest.mark.parametrize("fold", list(range(10)))
 def test_complex_dictionaries(started_cluster, fold):
-
     if node.is_built_with_thread_sanitizer():
         remove_mysql_dicts()
 

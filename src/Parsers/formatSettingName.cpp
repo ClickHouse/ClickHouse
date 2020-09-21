@@ -2,6 +2,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <common/find_symbols.h>
+#include <ostream>
 
 
 namespace DB

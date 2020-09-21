@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
-import warnings
-import pymysql.cursors
-import pymongo
-import cassandra.cluster
-import redis
-import aerospike
-from tzlocal import get_localzone
 import datetime
 import os
 import uuid
+import warnings
+
+import aerospike
+import cassandra.cluster
+import pymongo
+import pymysql.cursors
+import redis
+from tzlocal import get_localzone
 
 
 class ExternalSource(object):
@@ -89,12 +90,12 @@ class SourceMySQL(ExternalSource):
                     <db>test</db>
                     <table>{tbl}</table>
                 </mysql>'''.format(
-                hostname=self.docker_hostname,
-                port=self.docker_port,
-                user=self.user,
-                password=self.password,
-                tbl=table_name,
-            )
+            hostname=self.docker_hostname,
+            port=self.docker_port,
+            user=self.user,
+            password=self.password,
+            tbl=table_name,
+        )
 
     def prepare(self, structure, table_name, cluster):
         self.create_mysql_conn()
@@ -160,7 +161,8 @@ class SourceMongo(ExternalSource):
             if field.field_type == "Date":
                 self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d")
             elif field.field_type == "DateTime":
-                self.converters[field.name] = lambda x: get_localzone().localize(datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S"))
+                self.converters[field.name] = lambda x: get_localzone().localize(
+                    datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S"))
             else:
                 self.converters[field.name] = lambda x: x
 
@@ -179,6 +181,7 @@ class SourceMongo(ExternalSource):
             to_insert.append(row_dict)
 
         result = tbl.insert_many(to_insert)
+
 
 class SourceMongoURI(SourceMongo):
     def compatible_with_layout(self, layout):
@@ -199,6 +202,7 @@ class SourceMongoURI(SourceMongo):
             password=self.password,
             tbl=table_name,
         )
+
 
 class SourceClickHouse(ExternalSource):
 
@@ -284,7 +288,8 @@ class SourceFile(ExternalSource):
                 sorted_row.append(str(row.data[name]))
 
             str_data = '\t'.join(sorted_row)
-            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)], user="root")
+            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)],
+                                        user="root")
 
     def compatible_with_layout(self, layout):
         return 'cache' not in layout.name and 'direct' not in layout.name
@@ -324,7 +329,8 @@ class _SourceExecutableBase(ExternalSource):
                 sorted_row.append(str(row.data[name]))
 
             str_data = '\t'.join(sorted_row)
-            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)], user='root')
+            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)],
+                                        user='root')
 
 
 class SourceExecutableCache(_SourceExecutableBase):
@@ -344,12 +350,14 @@ class SourceExecutableHashed(_SourceExecutableBase):
     def compatible_with_layout(self, layout):
         return 'cache' in layout.name
 
-class SourceHTTPBase(ExternalSource):
 
+class SourceHTTPBase(ExternalSource):
     PORT_COUNTER = 5555
+
     def get_source_str(self, table_name):
         self.http_port = SourceHTTPBase.PORT_COUNTER
-        url = "{schema}://{host}:{port}/".format(schema=self._get_schema(), host=self.docker_hostname, port=self.http_port)
+        url = "{schema}://{host}:{port}/".format(schema=self._get_schema(), host=self.docker_hostname,
+                                                 port=self.http_port)
         SourceHTTPBase.PORT_COUNTER += 1
         return '''
             <http>
@@ -395,7 +403,8 @@ class SourceHTTPBase(ExternalSource):
                 sorted_row.append(str(row.data[name]))
 
             str_data = '\t'.join(sorted_row)
-            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)], user='root')
+            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)],
+                                        user='root')
 
 
 class SourceHTTP(SourceHTTPBase):
@@ -406,6 +415,7 @@ class SourceHTTP(SourceHTTPBase):
 class SourceHTTPS(SourceHTTPBase):
     def _get_schema(self):
         return "https"
+
 
 class SourceCassandra(ExternalSource):
     TYPE_MAPPING = {
@@ -426,7 +436,8 @@ class SourceCassandra(ExternalSource):
     }
 
     def __init__(self, name, internal_hostname, internal_port, docker_hostname, docker_port, user, password):
-        ExternalSource.__init__(self, name, internal_hostname, internal_port, docker_hostname, docker_port, user, password)
+        ExternalSource.__init__(self, name, internal_hostname, internal_port, docker_hostname, docker_port, user,
+                                password)
         self.structure = dict()
 
     def get_source_str(self, table_name):
@@ -448,13 +459,14 @@ class SourceCassandra(ExternalSource):
     def prepare(self, structure, table_name, cluster):
         self.client = cassandra.cluster.Cluster([self.internal_hostname], port=self.internal_port)
         self.session = self.client.connect()
-        self.session.execute("create keyspace if not exists test with replication = {'class': 'SimpleStrategy', 'replication_factor' : 1};")
+        self.session.execute(
+            "create keyspace if not exists test with replication = {'class': 'SimpleStrategy', 'replication_factor' : 1};")
         self.session.execute('drop table if exists test."{}"'.format(table_name))
         self.structure[table_name] = structure
         columns = ['"' + col.name + '" ' + self.TYPE_MAPPING[col.field_type] for col in structure.get_all_fields()]
         keys = ['"' + col.name + '"' for col in structure.keys]
         query = 'create table test."{name}" ({columns}, primary key ({pk}));'.format(
-                name=table_name, columns=', '.join(columns),  pk=', '.join(keys))
+            name=table_name, columns=', '.join(columns), pk=', '.join(keys))
         self.session.execute(query)
         self.prepared = True
 
@@ -470,14 +482,16 @@ class SourceCassandra(ExternalSource):
         names_and_types = [(field.name, field.field_type) for field in self.structure[table_name].get_all_fields()]
         columns = ['"' + col[0] + '"' for col in names_and_types]
         insert = 'insert into test."{table}" ({columns}) values ({args})'.format(
-                table=table_name, columns=','.join(columns), args=','.join(['%s']*len(columns)))
+            table=table_name, columns=','.join(columns), args=','.join(['%s'] * len(columns)))
         for row in data:
             values = [self.get_value_to_insert(row.get_value_by_name(col[0]), col[1]) for col in names_and_types]
             self.session.execute(insert, values)
 
+
 class SourceRedis(ExternalSource):
     def __init__(
-            self, name, internal_hostname, internal_port, docker_hostname, docker_port, user, password, db_index, storage_type
+            self, name, internal_hostname, internal_port, docker_hostname, docker_port, user, password, db_index,
+            storage_type
     ):
         super(SourceRedis, self).__init__(
             name, internal_hostname, internal_port, docker_hostname, docker_port, user, password
@@ -503,7 +517,8 @@ class SourceRedis(ExternalSource):
         )
 
     def prepare(self, structure, table_name, cluster):
-        self.client = redis.StrictRedis(host=self.internal_hostname, port=self.internal_port, db=self.db_index, password=self.password or None)
+        self.client = redis.StrictRedis(host=self.internal_hostname, port=self.internal_port, db=self.db_index,
+                                        password=self.password or None)
         self.prepared = True
         self.ordered_names = structure.get_ordered_names()
 
@@ -521,11 +536,12 @@ class SourceRedis(ExternalSource):
     def compatible_with_layout(self, layout):
         return layout.is_simple and self.storage_type == "simple" or layout.is_complex and self.storage_type == "hash_map"
 
+
 class SourceAerospike(ExternalSource):
     def __init__(self, name, internal_hostname, internal_port,
                  docker_hostname, docker_port, user, password):
         ExternalSource.__init__(self, name, internal_hostname, internal_port,
-                 docker_hostname, docker_port, user, password)
+                                docker_hostname, docker_port, user, password)
         self.namespace = "test"
         self.set = "test_set"
 
@@ -543,7 +559,7 @@ class SourceAerospike(ExternalSource):
 
     def prepare(self, structure, table_name, cluster):
         config = {
-            'hosts': [ (self.internal_hostname, self.internal_port) ]
+            'hosts': [(self.internal_hostname, self.internal_port)]
         }
         self.client = aerospike.client(config).connect()
         self.prepared = True
@@ -580,7 +596,7 @@ class SourceAerospike(ExternalSource):
                 self.client.put(key, {"bin_value": value[1]}, policy={"key": aerospike.POLICY_KEY_SEND})
                 assert self.client.exists(key)
         else:
-            assert("VALUES SIZE != 2")
+            assert ("VALUES SIZE != 2")
 
         # print(values)
 

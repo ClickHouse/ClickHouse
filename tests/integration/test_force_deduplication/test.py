@@ -2,13 +2,13 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
-
-from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance('node', with_zookeeper=True)
+
 
 @pytest.fixture(scope='module')
 def start_cluster():
@@ -18,6 +18,7 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 def get_counts():
     src = int(node.query("SELECT count() FROM test"))
@@ -69,7 +70,7 @@ def test_basic(start_cluster):
     )
     src, a, b, c = get_counts()
     assert src == 11
-    assert a == old_a + 10    # first insert could be succesfull with disabled dedup
+    assert a == old_a + 10  # first insert could be succesfull with disabled dedup
     assert b == 11
     assert c == old_c + 10
 
@@ -81,7 +82,7 @@ def test_basic(start_cluster):
             INSERT INTO test SELECT number FROM numbers(100,10);
             '''
         )
-        
+
     node.query(
         '''
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
@@ -94,5 +95,3 @@ def test_basic(start_cluster):
     assert a == old_a + 20
     assert b == 21
     assert c == old_c + 20
-
-
