@@ -258,11 +258,13 @@ public:
     /// Sets the current user, checks the password and that the specified host is allowed.
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
-    /// Sets the current user, *do not checks the password* but check that the specified host is allowed.
+
+    /// Sets the current user, *do not checks the password and that the specified host is allowed*.
     /// Must be called before getClientInfo.
     ///
     /// (Used only internally in cluster, if the secret matches)
     void setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address);
+
     void setQuotaKey(String quota_key_);
 
     UserPtr getUser() const;
@@ -543,6 +545,7 @@ public:
     std::shared_ptr<PartLog> getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;
+    const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const StorageS3Settings & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
