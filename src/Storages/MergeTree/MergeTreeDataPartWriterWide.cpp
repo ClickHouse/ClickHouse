@@ -52,7 +52,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         }
         else
         {
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, false);
+            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
         }
 
         if (compression_codec == nullptr)
