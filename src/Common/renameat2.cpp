@@ -79,10 +79,9 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
 #define RENAME_NOREPLACE -1
 #define RENAME_EXCHANGE -1
 
-[[noreturn]]
-static void renameat2(const std::string &, const std::string &, int)
+static bool renameat2(const std::string &, const std::string &, int)
 {
-    throw Exception("Compiled without renameat2() support", ErrorCodes::UNSUPPORTED_METHOD);
+    return false
 }
 
 #endif
