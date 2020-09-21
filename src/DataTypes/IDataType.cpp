@@ -130,7 +130,7 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
 }
 
 
-bool IDataType::isNonGenericCompressionAllowedForStream(const SubstreamPath & path)
+bool IDataType::isSpecialCompressionAllowed(const SubstreamPath & path)
 {
     for (const Substream & elem : path)
     {

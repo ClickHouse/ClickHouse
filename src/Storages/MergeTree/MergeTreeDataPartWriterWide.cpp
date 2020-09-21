@@ -45,7 +45,22 @@ void MergeTreeDataPartWriterWide::addStreams(
         if (column_streams.count(stream_name))
             return;
 
-        auto compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
+        CompressionCodecPtr compression_codec;
+        if (IDataType::isSpecialCompressionAllowed(substream_path))
+        {
+            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
+        }
+        else
+        {
+            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, false);
+        }
+
+        if (compression_codec == nullptr)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "No generic compression provided for column {} with type {}",
+                backQuote(name),
+                type.getName());
 
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,

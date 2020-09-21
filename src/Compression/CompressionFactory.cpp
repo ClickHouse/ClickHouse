@@ -99,7 +99,25 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
             }
             else
             {
-                result_codec = getImpl(codec_family_name, codec_arguments, column_type);
+                if (column_type)
+                {
+                    IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
+                    {
+                        if (IDataType::isSpecialCompressionAllowed(substream_path))
+                            result_codec = getImpl(codec_family_name, codec_arguments, &substream_type);
+                    };
+
+                    IDataType::SubstreamPath stream_path;
+                    column_type->enumerateStreams(callback, stream_path);
+
+                    if (!result_codec)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find any substream with data type for type {}. It's a bug", column_type->getName());
+                }
+                else
+                {
+                    result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
+                }
+
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
 
@@ -140,13 +158,16 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
         }
-        return ast;
+        std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
+        result->name = "CODEC";
+        result->arguments = codecs_descriptions;
+        return result;
     }
 
     throw Exception("Unknown codec family: " + queryToString(ast), ErrorCodes::UNKNOWN_CODEC);
 }
 
-CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default) const
+CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default, bool only_generic) const
 {
     if (current_default == nullptr)
         current_default = default_codec;
@@ -172,10 +193,16 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IData
             else
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
+            CompressionCodecPtr codec;
             if (codec_family_name == DEFAULT_CODEC_NAME)
-                codecs.emplace_back(current_default);
+                codec = current_default;
             else
-                codecs.emplace_back(getImpl(codec_family_name, codec_arguments, column_type));
+                codec = getImpl(codec_family_name, codec_arguments, column_type);
+
+            if (only_generic && !codec->isGenericCompression())
+                continue;
+
+            codecs.emplace_back(codec);
         }
 
         CompressionCodecPtr res;
@@ -184,6 +211,8 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IData
             return codecs.back();
         else if (codecs.size() > 1)
             return std::make_shared<CompressionCodecMultiple>(codecs);
+        else
+            return nullptr;
     }
 
     throw Exception("Unexpected AST structure for compression codec: " + queryToString(ast), ErrorCodes::UNEXPECTED_AST_STRUCTURE);

@@ -94,6 +94,4 @@ private:
     ASTPtr full_codec_desc;
 };
 
-CompressionCodecPtr tryGetGeneralCompressionCodecs(const CompressionCodecPtr & codec);
-
 }
