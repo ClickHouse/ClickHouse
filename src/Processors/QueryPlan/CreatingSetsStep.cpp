@@ -95,7 +95,7 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines)
         delayed_pipeline = std::move(*pipelines.front());
 
     QueryPipelineProcessorsCollector collector(*main_pipeline, this);
-    main_pipeline->addDelayingPipeline(std::move(delayed_pipeline));
+    main_pipeline->addPipelineBefore(std::move(delayed_pipeline));
     auto added_processors = collector.detachProcessors();
     processors.insert(processors.end(), added_processors.begin(), added_processors.end());
 

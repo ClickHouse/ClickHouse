@@ -282,7 +282,7 @@ void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryF
     pipe.addTransform(std::move(transform), totals_port, nullptr);
 }
 
-void QueryPipeline::addDelayingPipeline(QueryPipeline pipeline)
+void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
 {
     checkInitializedAndNotCompleted();
     assertBlocksHaveEqualStructure(getHeader(), pipeline.getHeader(), "QueryPipeline");
