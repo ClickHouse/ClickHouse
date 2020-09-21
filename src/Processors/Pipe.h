@@ -97,6 +97,7 @@ public:
 
     /// Specify quotas and limits for every ISourceWithProgress.
     void setLimits(const StreamLocalLimits & limits);
+    void setLeafLimits(const SizeLimits & leaf_limits);
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
 
     /// Do not allow to change the table while the processors of pipe are alive.
