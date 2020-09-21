@@ -23,28 +23,28 @@ SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
 ``` text
 Row 1:
 ──────
-event_date:                                                 2020-02-18
-event_time:                                                 2020-02-18 07:15:33
-milliseconds:                                               554
-ProfileEvent_Query:                                         0
-ProfileEvent_SelectQuery:                                   0
-ProfileEvent_InsertQuery:                                   0
-ProfileEvent_FileOpen:                                      0
-ProfileEvent_Seek:                                          0
-ProfileEvent_ReadBufferFromFileDescriptorRead:              1
-ProfileEvent_ReadBufferFromFileDescriptorReadFailed:        0
-ProfileEvent_ReadBufferFromFileDescriptorReadBytes:         0
-ProfileEvent_WriteBufferFromFileDescriptorWrite:            1
-ProfileEvent_WriteBufferFromFileDescriptorWriteFailed:      0
-ProfileEvent_WriteBufferFromFileDescriptorWriteBytes:       56
+event_date:                                                      2020-09-05
+event_time:                                                      2020-09-05 16:22:33
+event_time_microseconds:                                         2020-09-05 16:22:33.196807
+milliseconds:                                                    196
+ProfileEvent_Query:                                              0
+ProfileEvent_SelectQuery:                                        0
+ProfileEvent_InsertQuery:                                        0
+ProfileEvent_FailedQuery:                                        0
+ProfileEvent_FailedSelectQuery:                                  0
 ...
-CurrentMetric_Query:                                        0
-CurrentMetric_Merge:                                        0
-CurrentMetric_PartMutation:                                 0
-CurrentMetric_ReplicatedFetch:                              0
-CurrentMetric_ReplicatedSend:                               0
-CurrentMetric_ReplicatedChecks:                             0
 ...
+CurrentMetric_Revision:                                          54439
+CurrentMetric_VersionInteger:                                    20009001
+CurrentMetric_RWLockWaitingReaders:                              0
+CurrentMetric_RWLockWaitingWriters:                              0
+CurrentMetric_RWLockActiveReaders:                               0
+CurrentMetric_RWLockActiveWriters:                               0
+CurrentMetric_GlobalThread:                                      74
+CurrentMetric_GlobalThreadActive:                                26
+CurrentMetric_LocalThread:                                       0
+CurrentMetric_LocalThreadActive:                                 0
+CurrentMetric_DistributedFilesToInsert:                          0
 ```
 
 **See also**

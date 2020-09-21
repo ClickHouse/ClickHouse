@@ -5,6 +5,8 @@ PEERDIR(
     clickhouse/src/Common
 )
 
+CFLAGS(-g0)
+
 SRCS(
     ASTAlterQuery.cpp
     ASTAsterisk.cpp
@@ -59,6 +61,7 @@ SRCS(
     ASTTTLElement.cpp
     ASTUserNameWithHost.cpp
     ASTWithAlias.cpp
+    ASTWithElement.cpp
     CommonParsers.cpp
     ExpressionElementParsers.cpp
     ExpressionListParsers.cpp
@@ -131,6 +134,7 @@ SRCS(
     ParserUseQuery.cpp
     ParserUserNameWithHost.cpp
     ParserWatchQuery.cpp
+    ParserWithElement.cpp
     parseUserName.cpp
     queryToString.cpp
     QueryWithOutputSettingsPushDownVisitor.cpp

@@ -9,6 +9,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -71,9 +72,6 @@ struct FixedStringUnaryOperationImpl
 template <typename FunctionName>
 struct FunctionUnaryArithmeticMonotonicity;
 
-template <typename> struct AbsImpl;
-template <typename> struct NegateImpl;
-
 /// Used to indicate undefined operation
 struct InvalidType;
 
@@ -81,7 +79,7 @@ struct InvalidType;
 template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
-    static constexpr bool allow_decimal = std::is_same_v<Op<Int8>, NegateImpl<Int8>> || std::is_same_v<Op<Int8>, AbsImpl<Int8>>;
+    static constexpr bool allow_decimal = IsUnaryOperation<Op>::negate || IsUnaryOperation<Op>::abs;
     static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
 
     template <typename F>

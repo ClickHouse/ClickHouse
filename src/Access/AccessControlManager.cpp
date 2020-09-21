@@ -24,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -183,6 +182,15 @@ void AccessControlManager::addUsersConfigStorage(
     const String & preprocessed_dir_,
     const zkutil::GetZooKeeper & get_zookeeper_function_)
 {
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
+        {
+            if (users_config_storage->isPathEqual(users_config_path_))
+                return;
+        }
+    }
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
     new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
@@ -212,26 +220,43 @@ void AccessControlManager::startPeriodicReloadingUsersConfigs()
 
 void AccessControlManager::addDiskStorage(const String & directory_, bool readonly_)
 {
-    addStorage(std::make_shared<DiskAccessStorage>(directory_, readonly_));
+    addDiskStorage(DiskAccessStorage::STORAGE_TYPE, directory_, readonly_);
 }
 
 void AccessControlManager::addDiskStorage(const String & storage_name_, const String & directory_, bool readonly_)
 {
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto disk_storage = typeid_cast<std::shared_ptr<DiskAccessStorage>>(storage))
+        {
+            if (disk_storage->isPathEqual(directory_))
+            {
+                if (readonly_)
+                    disk_storage->setReadOnly(readonly_);
+                return;
+            }
+        }
+    }
     addStorage(std::make_shared<DiskAccessStorage>(storage_name_, directory_, readonly_));
 }
 
 
 void AccessControlManager::addMemoryStorage(const String & storage_name_)
 {
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto memory_storage = typeid_cast<std::shared_ptr<MemoryAccessStorage>>(storage))
+            return;
+    }
     addStorage(std::make_shared<MemoryAccessStorage>(storage_name_));
 }
 
 
 void AccessControlManager::addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
 {
-    auto storage = std::make_shared<LDAPAccessStorage>(storage_name_);
-    storage->setConfiguration(this, config_, prefix_);
-    addStorage(storage);
+    addStorage(std::make_shared<LDAPAccessStorage>(storage_name_, this, config_, prefix_));
 }
 
 
@@ -251,8 +276,7 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
         String prefix = key + "." + key_in_user_directories;
 
         String type = key_in_user_directories;
-        const size_t bracket_pos = type.find('[');
-        if (bracket_pos != String::npos)
+        if (size_t bracket_pos = type.find('['); bracket_pos != String::npos)
             type.resize(bracket_pos);
         if ((type == "users_xml") || (type == "users_config"))
             type = UsersConfigAccessStorage::STORAGE_TYPE;
@@ -282,8 +306,6 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
         }
         else if (type == LDAPAccessStorage::STORAGE_TYPE)
         {
-            if (bracket_pos != String::npos)
-                throw Exception("Duplicate storage type '" + type + "' at " + prefix + " in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
             addLDAPStorage(name, config, prefix);
         }
         else
@@ -329,6 +351,11 @@ void AccessControlManager::addStoragesFromMainConfig(
         addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);
 }
 
+
+UUID AccessControlManager::login(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const
+{
+    return MultipleAccessStorage::login(user_name, password, address, *external_authenticators);
+}
 
 void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {

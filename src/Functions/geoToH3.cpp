@@ -17,6 +17,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
+
 /// Implements the function geoToH3 which takes 3 arguments (latitude, longitude and h3 resolution)
 /// and returns h3 index of this point
 class FunctionGeoToH3 : public IFunction
@@ -83,6 +86,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionGeoToH3(FunctionFactory & factory)
 {

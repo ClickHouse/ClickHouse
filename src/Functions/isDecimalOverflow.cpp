@@ -11,13 +11,15 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
+
+namespace
+{
 
 /// Returns 1 if and Decimal value has more digits then it's Precision allow, 0 otherwise.
 /// Precision could be set as second argument or omitted. If ommited function uses Decimal presicion of the first argument.
@@ -142,6 +144,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionIsDecimalOverflow(FunctionFactory & factory)
 {

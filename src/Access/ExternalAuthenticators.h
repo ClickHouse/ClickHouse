@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
+#include <common/types.h>
 
 #include <map>
 #include <mutex>

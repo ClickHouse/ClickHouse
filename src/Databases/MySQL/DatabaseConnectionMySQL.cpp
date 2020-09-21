@@ -10,6 +10,7 @@
 #    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/convertMySQLDataType.h>
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h>
+#    include <Databases/MySQL/FetchTablesColumnsList.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/Operators.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -43,31 +44,14 @@ constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
 static const std::chrono::seconds lock_acquire_timeout{10};
 
-static String toQueryStringWithQuote(const std::vector<String> & quote_list)
-{
-    WriteBufferFromOwnString quote_list_query;
-    quote_list_query << "(";
-
-    for (size_t index = 0; index < quote_list.size(); ++index)
-    {
-        if (index)
-            quote_list_query << ",";
-
-        quote_list_query << quote << quote_list[index];
-    }
-
-    quote_list_query << ")";
-    return quote_list_query.str();
-}
-
-DatabaseConnectionMySQL::DatabaseConnectionMySQL(
-    const Context & global_context_, const String & database_name_, const String & metadata_path_,
+DatabaseConnectionMySQL::DatabaseConnectionMySQL(const Context & context, const String & database_name_, const String & metadata_path_,
     const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, mysqlxx::Pool && pool)
     : IDatabase(database_name_)
-    , global_context(global_context_.getGlobalContext())
+    , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
+    , mysql_datatypes_support_level(context.getQueryContext().getSettingsRef().mysql_datatypes_support_level)
     , mysql_pool(std::move(pool))
 {
     empty(); /// test database is works fine.
@@ -78,7 +62,7 @@ bool DatabaseConnectionMySQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache();
+    fetchTablesIntoLocalCache(global_context);
 
     if (local_tables_cache.empty())
         return true;
@@ -90,12 +74,12 @@ bool DatabaseConnectionMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache();
+    fetchTablesIntoLocalCache(context);
 
     for (const auto & [table_name, modify_time_and_storage] : local_tables_cache)
         if (!remove_or_detach_tables.count(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
@@ -109,11 +93,11 @@ bool DatabaseConnectionMySQL::isTableExist(const String & name, const Context & 
     return bool(tryGetTable(name, context));
 }
 
-StoragePtr DatabaseConnectionMySQL::tryGetTable(const String & mysql_table_name, const Context &) const
+StoragePtr DatabaseConnectionMySQL::tryGetTable(const String & mysql_table_name, const Context & context) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache();
+    fetchTablesIntoLocalCache(context);
 
     if (!remove_or_detach_tables.count(mysql_table_name) && local_tables_cache.find(mysql_table_name) != local_tables_cache.end())
         return local_tables_cache[mysql_table_name].second;
@@ -157,11 +141,11 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
     return create_table_query;
 }
 
-ASTPtr DatabaseConnectionMySQL::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
+ASTPtr DatabaseConnectionMySQL::getCreateTableQueryImpl(const String & table_name, const Context & context, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache();
+    fetchTablesIntoLocalCache(context);
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
     {
@@ -178,7 +162,7 @@ time_t DatabaseConnectionMySQL::getObjectMetadataModificationTime(const String &
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache();
+    fetchTablesIntoLocalCache(global_context);
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
         throw Exception("MySQL table " + database_name_in_mysql + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -194,12 +178,12 @@ ASTPtr DatabaseConnectionMySQL::getCreateDatabaseQuery() const
     return create_query;
 }
 
-void DatabaseConnectionMySQL::fetchTablesIntoLocalCache() const
+void DatabaseConnectionMySQL::fetchTablesIntoLocalCache(const Context & context) const
 {
     const auto & tables_with_modification_time = fetchTablesWithModificationTime();
 
     destroyLocalCacheExtraTables(tables_with_modification_time);
-    fetchLatestTablesStructureIntoCache(tables_with_modification_time);
+    fetchLatestTablesStructureIntoCache(tables_with_modification_time, context);
 }
 
 void DatabaseConnectionMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const
@@ -216,7 +200,7 @@ void DatabaseConnectionMySQL::destroyLocalCacheExtraTables(const std::map<String
     }
 }
 
-void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> &tables_modification_time) const
+void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> &tables_modification_time, const Context & context) const
 {
     std::vector<String> wait_update_tables_name;
     for (const auto & table_modification_time : tables_modification_time)
@@ -228,7 +212,7 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(const std::map
             wait_update_tables_name.emplace_back(table_modification_time.first);
     }
 
-    std::map<String, NamesAndTypesList> tables_and_columns = fetchTablesColumnsList(wait_update_tables_name);
+    std::map<String, NamesAndTypesList> tables_and_columns = fetchTablesColumnsList(wait_update_tables_name, context);
 
     for (const auto & table_and_columns : tables_and_columns)
     {
@@ -280,53 +264,16 @@ std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTim
     return tables_with_modification_time;
 }
 
-std::map<String, NamesAndTypesList> DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name) const
+std::map<String, NamesAndTypesList> DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, const Context & context) const
 {
-    std::map<String, NamesAndTypesList> tables_and_columns;
+    const auto & settings = context.getSettingsRef();
 
-    if (tables_name.empty())
-        return tables_and_columns;
-
-    Block tables_columns_sample_block
-    {
-        { std::make_shared<DataTypeString>(),   "table_name" },
-        { std::make_shared<DataTypeString>(),   "column_name" },
-        { std::make_shared<DataTypeString>(),   "column_type" },
-        { std::make_shared<DataTypeUInt8>(),    "is_nullable" },
-        { std::make_shared<DataTypeUInt8>(),    "is_unsigned" },
-        { std::make_shared<DataTypeUInt64>(),   "length" },
-    };
-
-    WriteBufferFromOwnString query;
-    query << "SELECT "
-             " TABLE_NAME AS table_name,"
-             " COLUMN_NAME AS column_name,"
-             " DATA_TYPE AS column_type,"
-             " IS_NULLABLE = 'YES' AS is_nullable,"
-             " COLUMN_TYPE LIKE '%unsigned' AS is_unsigned,"
-             " CHARACTER_MAXIMUM_LENGTH AS length"
-             " FROM INFORMATION_SCHEMA.COLUMNS"
-             " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql
-          << " AND TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
-
-    const auto & external_table_functions_use_nulls = global_context.getSettings().external_table_functions_use_nulls;
-    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
-    while (Block block = result.read())
-    {
-        size_t rows = block.rows();
-        for (size_t i = 0; i < rows; ++i)
-        {
-            String table_name = (*block.getByPosition(0).column)[i].safeGet<String>();
-            tables_and_columns[table_name].emplace_back((*block.getByPosition(1).column)[i].safeGet<String>(),
-                                                        convertMySQLDataType(
-                                                            (*block.getByPosition(2).column)[i].safeGet<String>(),
-                                                            (*block.getByPosition(3).column)[i].safeGet<UInt64>() &&
-                                                            external_table_functions_use_nulls,
-                                                            (*block.getByPosition(4).column)[i].safeGet<UInt64>(),
-                                                            (*block.getByPosition(5).column)[i].safeGet<UInt64>()));
-        }
-    }
-    return tables_and_columns;
+    return DB::fetchTablesColumnsList(
+            mysql_pool,
+            database_name_in_mysql,
+            tables_name,
+            settings.external_table_functions_use_nulls,
+            mysql_datatypes_support_level);
 }
 
 void DatabaseConnectionMySQL::shutdown()

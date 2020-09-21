@@ -18,7 +18,7 @@ ifeq ($(CCACHE_PREFIX),distcc)
     THREADS_COUNT=$(shell distcc -j)
 endif
 ifeq ($(THREADS_COUNT),)
-    THREADS_COUNT=$(shell echo $$(( $$(nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 8) / 2 )) )
+    THREADS_COUNT=$(shell nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4)
 endif
 DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
 

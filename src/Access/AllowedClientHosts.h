@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Poco/Net/IPAddress.h>
 #include <memory>
 #include <vector>
@@ -11,6 +11,9 @@
 
 namespace DB
 {
+
+using Strings = std::vector<String>;
+
 /// Represents lists of hosts an user is allowed to connect to server from.
 class AllowedClientHosts
 {

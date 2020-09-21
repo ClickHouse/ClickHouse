@@ -21,6 +21,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
 }
 
+namespace
+{
 
 /** formatRow(<format>, x, y, ...) is a function that allows you to use RowOutputFormat over
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
@@ -111,6 +113,8 @@ public:
 private:
     const Context & context;
 };
+
+}
 
 void registerFunctionFormatRow(FunctionFactory & factory)
 {

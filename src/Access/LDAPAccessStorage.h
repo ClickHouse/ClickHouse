@@ -28,18 +28,15 @@ class LDAPAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "ldap";
 
-    explicit LDAPAccessStorage(const String & storage_name_ = STORAGE_TYPE);
+    explicit LDAPAccessStorage(const String & storage_name_, AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
     virtual ~LDAPAccessStorage() override = default;
-
-    void setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix = "");
 
 public: // IAccessStorage implementations.
     virtual const char * getStorageType() const override;
-    virtual bool isStorageReadOnly() const override;
+    virtual String getStorageParamsJSON() const override;
 
 private: // IAccessStorage implementations.
     virtual std::optional<UUID> findImpl(EntityType type, const String & name) const override;
-    virtual std::optional<UUID> findOrGenerateImpl(EntityType type, const String & name) const override;
     virtual std::vector<UUID> findAllImpl(EntityType type) const override;
     virtual bool existsImpl(const UUID & id) const override;
     virtual AccessEntityPtr readImpl(const UUID & id) const override;
@@ -52,9 +49,10 @@ private: // IAccessStorage implementations.
     virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     virtual bool hasSubscriptionImpl(const UUID & id) const override;
     virtual bool hasSubscriptionImpl(EntityType type) const override;
+    virtual UUID loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
 
 private:
-    bool isConfiguredNoLock() const;
+    void setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 
     mutable std::recursive_mutex mutex;

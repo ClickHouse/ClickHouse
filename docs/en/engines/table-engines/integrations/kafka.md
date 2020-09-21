@@ -32,7 +32,8 @@ SETTINGS
     [kafka_num_consumers = N,]
     [kafka_max_block_size = 0,]
     [kafka_skip_broken_messages = N,]
-    [kafka_commit_every_batch = 0]
+    [kafka_commit_every_batch = 0,]
+    [kafka_thread_per_consumer = 0]
 ```
 
 Required parameters:
@@ -50,6 +51,7 @@ Optional parameters:
 -   `kafka_max_block_size` - The maximum batch size (in messages) for poll (default: `max_block_size`).
 -   `kafka_skip_broken_messages` – Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data).
 -   `kafka_commit_every_batch` - Commit every consumed and handled batch instead of a single commit after writing a whole block (default: `0`).
+-   `kafka_thread_per_consumer` - Provide independent thread for each consumer (default: `0`). When enabled, every consumer flush the data independently, in parallel (otherwise - rows from several consumers squashed to form one block).
 
 Examples:
 

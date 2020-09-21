@@ -104,23 +104,6 @@ std::optional<UUID> MultipleAccessStorage::findImpl(EntityType type, const Strin
 }
 
 
-std::optional<UUID> MultipleAccessStorage::findOrGenerateImpl(EntityType type, const String & name) const
-{
-    auto storages = getStoragesInternal();
-    for (const auto & storage : *storages)
-    {
-        auto id = storage->findOrGenerate(type, name);
-        if (id)
-        {
-            std::lock_guard lock{mutex};
-            ids_cache.set(*id, storage);
-            return id;
-        }
-    }
-    return {};
-}
-
-
 std::vector<UUID> MultipleAccessStorage::findAllImpl(EntityType type) const
 {
     std::vector<UUID> all_ids;
@@ -407,6 +390,60 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 
     lock.unlock();
     added_subscriptions->clear();
+}
+
+
+UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        try
+        {
+            auto id = storage->login(user_name, password, address, external_authenticators);
+            std::lock_guard lock{mutex};
+            ids_cache.set(id, storage);
+            return id;
+        }
+        catch (...)
+        {
+            if (!storage->find(EntityType::USER, user_name))
+            {
+                /// The authentication failed because there no users with such name in the `storage`
+                /// thus we can try to search in other nested storages.
+                continue;
+            }
+            throw;
+        }
+    }
+    throwCannotAuthenticate(user_name);
+}
+
+
+UUID MultipleAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        try
+        {
+            auto id = storage->getIDOfLoggedUser(user_name);
+            std::lock_guard lock{mutex};
+            ids_cache.set(id, storage);
+            return id;
+        }
+        catch (...)
+        {
+            if (!storage->find(EntityType::USER, user_name))
+            {
+                /// The authentication failed because there no users with such name in the `storage`
+                /// thus we can try to search in other nested storages.
+                continue;
+            }
+            throw;
+        }
+    }
+    throwNotFound(EntityType::USER, user_name);
 }
 
 }

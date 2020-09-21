@@ -15,7 +15,7 @@ toc_title: "\u5E94\u7528CatBoost\u6A21\u578B"
 
 1.  [创建表](#create-table).
 2.  [将数据插入到表中](#insert-data-to-table).
-3.  [碌莽禄into拢Integrate010-68520682\<url\>](#integrate-catboost-into-clickhouse) （可选步骤）。
+3.  [将CatBoost集成到ClickHouse中](#integrate-catboost-into-clickhouse) （可选步骤）。
 4.  [从SQL运行模型推理](#run-model-inference).
 
 有关训练CatBoost模型的详细信息，请参阅 [培训和应用模型](https://catboost.ai/docs/features/training.html#training).
@@ -119,12 +119,12 @@ FROM amazon_train
 +-------+
 ```
 
-## 3. 碌莽禄into拢Integrate010-68520682\<url\> {#integrate-catboost-into-clickhouse}
+## 3. 将CatBoost集成到ClickHouse中 {#integrate-catboost-into-clickhouse}
 
 !!! note "注"
     **可选步骤。** Docker映像包含运行CatBoost和ClickHouse所需的所有内容。
 
-碌莽禄to拢integrate010-68520682\<url\>:
+CatBoost集成到ClickHouse步骤:
 
 **1.** 构建评估库。
 

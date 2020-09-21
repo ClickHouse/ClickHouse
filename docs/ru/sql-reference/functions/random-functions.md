@@ -55,4 +55,50 @@ FROM numbers(3)
 └────────────┴────────────┴──────────────┴────────────────┴─────────────────┴──────────────────────┘
 ```
 
+# Случайные функции для работы со строками {#random-functions-for-working-with-strings}
+
+## randomString {#random-string}
+
+## randomFixedString {#random-fixed-string}
+
+## randomPrintableASCII {#random-printable-ascii}
+
+## randomStringUTF8 {#random-string-utf8}
+
+## fuzzBits {#fuzzbits}
+
+**Синтаксис**
+
+``` sql
+fuzzBits([s], [prob])
+```
+Инвертирует каждый бит `s` с вероятностью `prob`.
+
+**Параметры**
+
+- `s` — `String` or `FixedString`
+- `prob` — constant `Float32/64`
+
+**Возвращаемое значение**
+
+Измененная случайным образом строка с тем же типом, что и `s`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT fuzzBits(materialize('abacaba'), 0.1)
+FROM numbers(3)
+```
+
+Результат:
+
+``` text
+┌─fuzzBits(materialize('abacaba'), 0.1)─┐
+│ abaaaja                               │
+│ a*cjab+                               │
+│ aeca2A                                │
+└───────────────────────────────────────┘
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/random_functions/) <!--hide-->

@@ -1756,4 +1756,71 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 -   [Секции и настройки запроса CREATE TABLE](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) (настройка `merge_with_ttl_timeout`)
 -   [Table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
 
+## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
+
+Ограничивает длину значения, выводимого в формате [Pretty](../../interfaces/formats.md#pretty). Если значение длиннее указанного количества символов, оно обрезается. 
+
+Возможные значения:
+
+-   Положительное целое число. 
+-   0 — значение обрезается полностью.
+
+Значение по умолчанию: `10000` символов.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SET output_format_pretty_max_value_width = 10;
+SELECT range(number) FROM system.numbers LIMIT 10 FORMAT PrettyCompactNoEscapes;
+```
+Результат:
+
+```text
+┌─range(number)─┐
+│ []            │
+│ [0]           │
+│ [0,1]         │
+│ [0,1,2]       │
+│ [0,1,2,3]     │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+└───────────────┘
+```
+
+Запрос, где длина выводимого значения ограничена 0 символов:
+
+```sql
+SET output_format_pretty_max_value_width = 0;
+SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
+```
+Результат:
+
+```text
+┌─range(number)─┐
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+└───────────────┘
+```
+
+## lock_acquire_timeout {#lock_acquire_timeout}
+
+Устанавливает, сколько секунд сервер ожидает возможности выполнить блокировку таблицы.
+
+Таймаут устанавливается для защиты от взаимоблокировки при выполнении операций чтения или записи. Если время ожидания истекло, а блокировку выполнить не удалось, сервер возвращает исключение с кодом `DEADLOCK_AVOIDED` и сообщением "Locking attempt timed out! Possible deadlock avoided. Client should retry." ("Время ожидания блокировки истекло! Возможная взаимоблокировка предотвращена. Повторите запрос.").
+
+Возможные значения:
+
+-   Положительное целое число (в секундах).
+-   0 — таймаут не устанавливается.
+
+Значение по умолчанию: `120` секунд.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

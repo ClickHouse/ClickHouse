@@ -4,16 +4,26 @@
 #if USE_MYSQL
 
 #include <mysqlxx/Pool.h>
-#include <Databases/DatabasesCommon.h>
-#include <memory>
-#include <Parsers/ASTCreateQuery.h>
-#include <Common/ThreadPool.h>
 
+#include <Core/MultiEnum.h>
+#include <Common/ThreadPool.h>
+#include <Databases/DatabasesCommon.h>
+#include <Parsers/ASTCreateQuery.h>
+
+#include <atomic>
+#include <condition_variable>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <unordered_set>
+#include <vector>
 
 namespace DB
 {
 
 class Context;
+
+enum class MySQLDataTypesSupport;
 
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.
@@ -25,7 +35,7 @@ public:
     ~DatabaseConnectionMySQL() override;
 
     DatabaseConnectionMySQL(
-        const Context & global_context, const String & database_name, const String & metadata_path,
+        const Context & context, const String & database_name, const String & metadata_path,
         const ASTStorage * database_engine_define, const String & database_name_in_mysql, mysqlxx::Pool && pool);
 
     String getEngineName() const override { return "MySQL"; }
@@ -66,6 +76,9 @@ private:
     String metadata_path;
     ASTPtr database_engine_define;
     String database_name_in_mysql;
+    // Cache setting for later from query context upon creation,
+    // so column types depend on the settings set at query-level.
+    MultiEnum<MySQLDataTypesSupport> mysql_datatypes_support_level;
 
     std::atomic<bool> quit{false};
     std::condition_variable cond;
@@ -81,15 +94,15 @@ private:
 
     void cleanOutdatedTables();
 
-    void fetchTablesIntoLocalCache() const;
+    void fetchTablesIntoLocalCache(const Context & context) const;
 
     std::map<String, UInt64> fetchTablesWithModificationTime() const;
 
-    std::map<String, NamesAndTypesList> fetchTablesColumnsList(const std::vector<String> & tables_name) const;
+    std::map<String, NamesAndTypesList> fetchTablesColumnsList(const std::vector<String> & tables_name, const Context & context) const;
 
     void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const;
 
-    void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time) const;
+    void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, const Context & context) const;
 
     ThreadFromGlobalPool thread;
 };

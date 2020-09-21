@@ -13,6 +13,7 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
+#pragma GCC visibility push(hidden)
 
 struct IValueSource
 {
@@ -29,6 +30,7 @@ struct IValueSource
 template <typename Derived>
 class ValueSourceImpl : public Visitable<Derived, IValueSource, ValueSourceVisitor> {};
 
+#pragma GCC visibility pop
 }
 
 }

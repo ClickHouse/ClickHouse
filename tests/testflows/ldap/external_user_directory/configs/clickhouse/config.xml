@@ -117,9 +117,6 @@
     <!-- Directory with user provided files that are accessible by 'file' table function. -->
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 
-    <!-- Path to folder where users and roles created by SQL commands are stored. -->
-    <access_control_path>/var/lib/clickhouse/access/</access_control_path>
-
     <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
     <user_directories>
         <users_xml>
@@ -131,9 +128,6 @@
             <path>/var/lib/clickhouse/access/</path>
         </local_directory>
     </user_directories>
-
-    <!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
-    <users_config>users.xml</users_config>
 
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>

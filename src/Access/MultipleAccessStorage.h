@@ -35,7 +35,6 @@ public:
 
 protected:
     std::optional<UUID> findImpl(EntityType type, const String & name) const override;
-    std::optional<UUID> findOrGenerateImpl(EntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(EntityType type) const override;
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
@@ -48,6 +47,8 @@ protected:
     ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
     bool hasSubscriptionImpl(EntityType type) const override;
+    UUID loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
+    UUID getIDOfLoggedUserImpl(const String & user_name) const override;
 
 private:
     using Storages = std::vector<StoragePtr>;

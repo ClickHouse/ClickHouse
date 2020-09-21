@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct ExtractImpl
 {
@@ -60,6 +62,8 @@ struct NameExtract
 };
 
 using FunctionExtract = FunctionsStringSearchToString<ExtractImpl, NameExtract>;
+
+}
 
 void registerFunctionExtract(FunctionFactory & factory)
 {

@@ -450,7 +450,8 @@ private:
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
-        int32_t log_version);
+        int32_t log_version,
+        MergeType merge_type);
 
     CreateMergeEntryResult createLogEntryToMutatePart(
         const IMergeTreeDataPart & part,

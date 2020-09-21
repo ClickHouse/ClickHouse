@@ -12,7 +12,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -20,6 +19,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
+namespace
+{
 
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
@@ -140,6 +141,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
 }
 
+}
 
 void registerFunctionHasColumnInTable(FunctionFactory & factory)
 {

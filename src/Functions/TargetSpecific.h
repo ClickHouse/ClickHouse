@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 
 /* This file contains macros and helpers for writing platform-dependent code.
  *

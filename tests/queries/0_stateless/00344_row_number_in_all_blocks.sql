@@ -1,5 +1,5 @@
 SET max_block_size = 1000;
-SELECT 
+SELECT
     groupUniqArray(blockSize()),
     uniqExact(rowNumberInAllBlocks()),
     min(rowNumberInAllBlocks()),

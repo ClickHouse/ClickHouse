@@ -287,23 +287,6 @@ void ContextAccess::calculateAccessRights() const
     }
 }
 
-bool ContextAccess::areCredentialsValid(std::unique_ptr<Credentials> && credentials) const
-{
-    std::lock_guard lock{mutex};
-    if (!user)
-        return false;
-    return user->authentication.areCredentialsValid(std::move(credentials), user_name, manager->getExternalAuthenticators());
-}
-
-bool ContextAccess::isClientHostAllowed() const
-{
-    std::lock_guard lock{mutex};
-    if (!user)
-        return false;
-    return user->allowed_client_hosts.contains(params.address);
-}
-
-
 UserPtr ContextAccess::getUser() const
 {
     std::lock_guard lock{mutex};

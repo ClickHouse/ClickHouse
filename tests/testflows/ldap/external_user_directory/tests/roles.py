@@ -166,7 +166,7 @@ def remove_role(self, server, timeout=20):
                             settings=[("user", users[0]["username"]), ("password", users[0]["password"])])
 
                     with And("I remove one of the roles"):
-                        node.query(f"DROP ROLE IF EXISTS {roles[1]}")
+                        node.query(f"DROP ROLE {roles[1]}")
 
                     with And(f"I try to login using cached LDAP user"):
                         node.query(f"SELECT 1",
@@ -212,7 +212,7 @@ def remove_privilege_by_removing_role(self, server, timeout=20):
                                 settings=[("user", users[0]["username"]), ("password", users[0]["password"])])
 
                         with And("I remove the role that grants the privilege"):
-                            node.query(f"DROP ROLE IF EXISTS {roles[0]}")
+                            node.query(f"DROP ROLE {roles[0]}")
 
                         with And(f"I try to relogin and expect that cached LDAP user can login "
                                 "but does not have privilege that was provided by the removed role"):
@@ -254,7 +254,7 @@ def readd_privilege_by_readding_role(self, server, timeout=20):
                                 settings=[("user", users[0]["username"]), ("password", users[0]["password"])])
 
                         with And("I remove the role that grants the privilege"):
-                            node.query(f"DROP ROLE IF EXISTS {roles[0]}")
+                            node.query(f"DROP ROLE {roles[0]}")
 
                         message = "DB::Exception: {user}: Not enough privileges."
                         exitcode = 241
@@ -274,7 +274,7 @@ def readd_privilege_by_readding_role(self, server, timeout=20):
                                 exitcode=exitcode, message=message.format(user=users[1]["username"]))
 
                         with When("I re-add the role"):
-                            node.query(f"CREATE ROLE IF NOT EXISTS {roles[0]}")
+                            node.query(f"CREATE ROLE {roles[0]}")
 
                         with And(f"I grant select privilege to the re-added role"):
                             node.query(f"GRANT SELECT ON {table_name} TO {roles[0]}")
