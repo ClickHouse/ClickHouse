@@ -129,7 +129,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
             return ''.join(random.choice(alphabet) for _ in range(length))
         database = 'test_{suffix}'.format(suffix=random_str())
 
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, text=True)
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args)))
 
         os.environ["CLICKHOUSE_DATABASE"] = database
@@ -157,7 +157,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         sleep(0.01)
 
     if not args.database:
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, text=True)
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         clickhouse_proc_create.communicate(("DROP DATABASE " + database))
 
     total_time = (datetime.now() - start_time).total_seconds()
@@ -300,7 +300,7 @@ def run_tests_array(all_tests_with_params):
                 else:
 
                     if args.testname:
-                        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, text=True)
+                        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
                         clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)))
 
                     reference_file = os.path.join(suite_dir, name) + '.reference'
@@ -369,7 +369,7 @@ def run_tests_array(all_tests_with_params):
                             result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout=PIPE)
 
                             if result_is_different:
-                                diff = Popen(['diff', '-U', str(args.unified), reference_file, stdout_file], stdout=PIPE, text=True).communicate()[0]
+                                diff = Popen(['diff', '-U', str(args.unified), reference_file, stdout_file], stdout=PIPE, universal_newlines=True).communicate()[0]
                                 failures += 1
                                 print(MSG_FAIL, end='')
                                 print_test_time(total_time)
@@ -573,10 +573,10 @@ def main(args):
             args.shard = False
 
     if args.database and args.database != "test":
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, text=True)
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args)))
 
-    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, text=True)
+    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
     clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args)))
 
     def is_test_from_dir(suite_dir, case):
