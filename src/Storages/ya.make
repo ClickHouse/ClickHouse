@@ -105,6 +105,7 @@ SRCS(
     MutationCommands.cpp
     PartitionCommands.cpp
     ReadInOrderOptimizer.cpp
+    Rocksdb/StorageEmbeddedRocksdb.cpp
     SelectQueryDescription.cpp
     SetSettings.cpp
     StorageBuffer.cpp
