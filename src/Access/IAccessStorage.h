@@ -11,9 +11,13 @@
 
 
 namespace Poco { class Logger; }
+namespace Poco::Net { class IPAddress; }
 
 namespace DB
 {
+struct User;
+class ExternalAuthenticators;
+
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
 /// The implementations of this class MUST be thread-safe.
 class IAccessStorage
@@ -138,6 +142,14 @@ public:
     bool hasSubscription(EntityType type) const;
     bool hasSubscription(const UUID & id) const;
 
+    /// Finds an user, check its password and returns the ID of the user.
+    /// Throws an exception if no such user or password is incorrect.
+    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
+
+    /// Returns the ID of an user who has logged in (maybe on another node).
+    /// The function assumes that the password has been already checked somehow, so we can skip checking it now.
+    UUID getIDOfLoggedUser(const String & user_name) const;
+
 protected:
     virtual std::optional<UUID> findImpl(EntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(EntityType type) const = 0;
@@ -152,6 +164,10 @@ protected:
     virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const = 0;
     virtual bool hasSubscriptionImpl(const UUID & id) const = 0;
     virtual bool hasSubscriptionImpl(EntityType type) const = 0;
+    virtual UUID loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
+    virtual bool isPasswordCorrectImpl(const User & user, const String & password, const ExternalAuthenticators & external_authenticators) const;
+    virtual bool isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const;
+    virtual UUID getIDOfLoggedUserImpl(const String & user_name) const;
 
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
@@ -166,6 +182,7 @@ protected:
     [[noreturn]] void throwReadonlyCannotInsert(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotUpdate(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotRemove(EntityType type, const String & name) const;
+    [[noreturn]] static void throwCannotAuthenticate(const String & user_name);
 
     using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;
     using Notifications = std::vector<Notification>;
