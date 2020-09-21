@@ -602,7 +602,6 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     {
         JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
         materializeBlockInplace(block);
-        JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft());
 
         sortBlock(block, left_sort_description);
 
