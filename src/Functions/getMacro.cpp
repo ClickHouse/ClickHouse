@@ -10,14 +10,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
-
-namespace
-{
 
 /** Get the value of macro from configuration file.
   * For example, it may be used as a sophisticated replacement for the function 'hostName' if servers have complicated hostnames
@@ -77,7 +75,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionGetMacro(FunctionFactory & factory)
 {

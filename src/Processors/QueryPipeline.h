@@ -23,9 +23,6 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 
 class QueryPlan;
 
-struct SubqueryForSet;
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
-
 class QueryPipeline
 {
 public:
@@ -56,7 +53,7 @@ public:
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
     void addExtremesTransform();
     /// Adds transform which creates sets. It will be executed before reading any data from input ports.
-    void addCreatingSetsTransform(SubqueriesForSets subqueries_for_sets, const SizeLimits & network_transfer_limits, const Context & context);
+    void addCreatingSetsTransform(ProcessorPtr transform);
     /// Resize pipeline to single output and add IOutputFormat. Pipeline will be completed after this transformation.
     void setOutputFormat(ProcessorPtr output);
     /// Get current OutputFormat.

@@ -196,57 +196,24 @@ void QueryPipeline::addExtremesTransform()
     pipe.addTransform(std::move(transform), nullptr, port);
 }
 
-void QueryPipeline::addCreatingSetsTransform(SubqueriesForSets subqueries_for_sets, const SizeLimits & network_transfer_limits, const Context & context)
+void QueryPipeline::addCreatingSetsTransform(ProcessorPtr transform)
 {
     checkInitializedAndNotCompleted();
 
-    Pipes sources;
-
-    for (auto & subquery : subqueries_for_sets)
-    {
-        if (!subquery.second.source.empty())
-        {
-            auto & source = sources.emplace_back(std::move(subquery.second.source));
-            if (source.numOutputPorts() > 1)
-                source.addTransform(std::make_shared<ResizeProcessor>(source.getHeader(), source.numOutputPorts(), 1));
-
-            source.dropExtremes();
-
-            auto creating_sets = std::make_shared<CreatingSetsTransform>(
-                    source.getHeader(),
-                    getHeader(),
-                    std::move(subquery.second),
-                    network_transfer_limits,
-                    context);
-
-            InputPort * totals = nullptr;
-            if (source.getTotalsPort())
-                totals = creating_sets->addTotalsPort();
-
-            source.addTransform(std::move(creating_sets), totals, nullptr);
-        }
-    }
-
-    if (sources.empty())
-        return;
-
-    auto * collected_processors = pipe.collected_processors;
-
-    /// We unite all sources together.
-    /// Set collected_processors to attach all newly-added processors to current query plan step.
-    auto source = Pipe::unitePipes(std::move(sources), collected_processors);
-    if (source.numOutputPorts() > 1)
-        source.addTransform(std::make_shared<ResizeProcessor>(source.getHeader(), source.numOutputPorts(), 1));
-    source.collected_processors = nullptr;
+    if (!typeid_cast<const CreatingSetsTransform *>(transform.get()))
+        throw Exception("CreatingSetsTransform expected for QueryPipeline::addExtremesTransform.",
+                        ErrorCodes::LOGICAL_ERROR);
 
     resize(1);
 
-    Pipes pipes;
-    pipes.emplace_back(std::move(source));
-    pipes.emplace_back(std::move(pipe));
-    pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
-
-    pipe.addTransform(std::make_shared<ConcatProcessor>(getHeader(), 2));
+    /// Order is important for concat. Connect manually.
+    pipe.transform([&](OutputPortRawPtrs ports) -> Processors
+    {
+        auto concat = std::make_shared<ConcatProcessor>(getHeader(), 2);
+        connect(transform->getOutputs().front(), concat->getInputs().front());
+        connect(*ports.back(), concat->getInputs().back());
+        return { std::move(concat), std::move(transform) };
+    });
 }
 
 void QueryPipeline::setOutputFormat(ProcessorPtr output)
@@ -321,6 +288,9 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source->setProgressCallback(callback);
+
+        if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
+            source->setProgressCallback(callback);
     }
 }
 
@@ -331,6 +301,9 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
     for (auto & processor : pipe.processors)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source->setProcessListElement(elem);
+
+        if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
             source->setProcessListElement(elem);
     }
 }

@@ -456,8 +456,8 @@ public:
     }
 
     bool readInt128(Int128 &) override { cannotConvertType("Int128"); }
-    bool readInt256(Int256 &) override { cannotConvertType("Int256"); }
-    bool readUInt256(UInt256 &) override { cannotConvertType("UInt256"); }
+    bool readbInt256(bInt256 &) override { cannotConvertType("Int256"); }
+    bool readbUInt256(bUInt256 &) override { cannotConvertType("UInt256"); }
 
     bool readFloat32(Float32 &) override
     {

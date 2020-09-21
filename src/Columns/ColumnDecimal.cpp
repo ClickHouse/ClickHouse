@@ -61,7 +61,7 @@ StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, cha
     else
     {
         char * pos = arena.allocContinue(BigInt<T>::size, begin);
-        return BigInt<Int256>::serialize(data[n], pos);
+        return BigInt<bInt256>::serialize(data[n], pos);
     }
 }
 
@@ -75,8 +75,8 @@ const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
     }
     else
     {
-        data.push_back(BigInt<Int256>::deserialize(pos));
-        return pos + BigInt<Int256>::size;
+        data.push_back(BigInt<bInt256>::deserialize(pos));
+        return pos + BigInt<bInt256>::size;
     }
 }
 
@@ -273,7 +273,7 @@ void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
     }
     else
     {
-        data.push_back(BigInt<Int256>::deserialize(src));
+        data.push_back(BigInt<bInt256>::deserialize(src));
     }
 }
 

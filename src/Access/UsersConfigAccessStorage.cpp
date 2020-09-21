@@ -10,9 +10,6 @@
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
-#include <Poco/JSON/JSON.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <common/logger_useful.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -485,27 +482,10 @@ UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_,
 UsersConfigAccessStorage::~UsersConfigAccessStorage() = default;
 
 
-String UsersConfigAccessStorage::getStorageParamsJSON() const
-{
-    std::lock_guard lock{load_mutex};
-    Poco::JSON::Object json;
-    if (!path.empty())
-        json.set("path", path);
-    std::ostringstream oss;
-    Poco::JSON::Stringifier::stringify(json, oss);
-    return oss.str();
-}
-
-
-String UsersConfigAccessStorage::getPath() const
+String UsersConfigAccessStorage::getStoragePath() const
 {
     std::lock_guard lock{load_mutex};
     return path;
-}
-
-bool UsersConfigAccessStorage::isPathEqual(const String & path_) const
-{
-    return getPath() == path_;
 }
 
 

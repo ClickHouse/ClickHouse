@@ -205,7 +205,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-benchmark",
             "clickhouse-copier",
             "clickhouse-obfuscator",
-            "clickhouse-git-import",
             "clickhouse-compressor",
             "clickhouse-format",
             "clickhouse-extract-from-config"

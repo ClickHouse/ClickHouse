@@ -598,13 +598,13 @@ template class ColumnVector<UInt16>;
 template class ColumnVector<UInt32>;
 template class ColumnVector<UInt64>;
 template class ColumnVector<UInt128>;
-template class ColumnVector<UInt256>;
+template class ColumnVector<bUInt256>;
 template class ColumnVector<Int8>;
 template class ColumnVector<Int16>;
 template class ColumnVector<Int32>;
 template class ColumnVector<Int64>;
 template class ColumnVector<Int128>;
-template class ColumnVector<Int256>;
+template class ColumnVector<bInt256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
 }

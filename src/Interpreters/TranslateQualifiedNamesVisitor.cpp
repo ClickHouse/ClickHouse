@@ -18,7 +18,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnsMatcher.h>
-#include <Parsers/ASTColumnsTransformers.h>
 
 
 namespace DB
@@ -136,8 +135,8 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
 
 void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk &, const ASTPtr & ast, Data & data)
 {
-    if (ast->children.empty())
-        throw Exception("Logical error: qualified asterisk must have children", ErrorCodes::LOGICAL_ERROR);
+    if (ast->children.size() != 1)
+        throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
 
     auto & ident = ast->children[0];
 
@@ -243,38 +242,21 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 
                 first_table = false;
             }
-            for (const auto & transformer : asterisk->children)
-            {
-                IASTColumnsTransformer::transform(transformer, node.children);
-            }
         }
         else if (const auto * asterisk_pattern = child->as<ASTColumnsMatcher>())
         {
-            if (asterisk_pattern->column_list)
+            bool first_table = true;
+            for (const auto & table : tables_with_columns)
             {
-                for (const auto & ident : asterisk_pattern->column_list->children)
-                    node.children.emplace_back(ident->clone());
-            }
-            else
-            {
-                bool first_table = true;
-                for (const auto & table : tables_with_columns)
+                for (const auto & column : table.columns)
                 {
-                    for (const auto & column : table.columns)
+                    if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
                     {
-                        if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
-                        {
-                            addIdentifier(node.children, table.table, column.name, AsteriskSemantic::getAliases(*asterisk_pattern));
-                        }
+                        addIdentifier(node.children, table.table, column.name, AsteriskSemantic::getAliases(*asterisk_pattern));
                     }
-
-                    first_table = false;
                 }
-            }
-            // ColumnsMatcher's transformers start to appear at child 1
-            for (auto it = asterisk_pattern->children.begin() + 1; it != asterisk_pattern->children.end(); ++it)
-            {
-                IASTColumnsTransformer::transform(*it, node.children);
+
+                first_table = false;
             }
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
@@ -291,11 +273,6 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     }
                     break;
                 }
-            }
-            // QualifiedAsterisk's transformers start to appear at child 1
-            for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
-            {
-                IASTColumnsTransformer::transform(*it, node.children);
             }
         }
         else

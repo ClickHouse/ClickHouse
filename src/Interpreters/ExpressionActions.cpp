@@ -11,7 +11,6 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 #include <optional>
 #include <Columns/ColumnSet.h>
@@ -154,6 +153,14 @@ ExpressionAction ExpressionAction::arrayJoin(std::string source_name, std::strin
     return a;
 }
 
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<TableJoin> table_join, JoinPtr join)
+{
+    ExpressionAction a;
+    a.type = JOIN;
+    a.table_join = table_join;
+    a.join = join;
+    return a;
+}
 
 void ExpressionAction::prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding)
 {
@@ -253,6 +260,12 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             break;
         }
 
+        case JOIN:
+        {
+            table_join->addJoinedColumnsAndCorrectNullability(sample_block);
+            break;
+        }
+
         case PROJECT:
         {
             Block new_block;
@@ -323,6 +336,19 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
     }
 }
 
+void ExpressionAction::execute(Block & block, ExtraBlockPtr & not_processed) const
+{
+    switch (type)
+    {
+        case JOIN:
+            join->joinBlock(block, not_processed);
+            break;
+
+        default:
+            throw Exception("Unexpected expression call", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
 void ExpressionAction::execute(Block & block, bool dry_run) const
 {
     size_t input_rows_count = block.rows();
@@ -375,6 +401,9 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
             break;
         }
+
+        case JOIN:
+            throw Exception("Unexpected JOIN expression call", ErrorCodes::LOGICAL_ERROR);
 
         case PROJECT:
         {
@@ -434,6 +463,14 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
     }
 }
 
+void ExpressionAction::executeOnTotals(Block & block) const
+{
+    if (type != JOIN)
+        execute(block, false);
+    else
+        join->joinTotals(block);
+}
+
 
 std::string ExpressionAction::toString() const
 {
@@ -471,6 +508,17 @@ std::string ExpressionAction::toString() const
 
         case ARRAY_JOIN:
             ss << "ARRAY JOIN " << source_name << " -> " << result_name;
+            break;
+
+        case JOIN:
+            ss << "JOIN ";
+            for (NamesAndTypesList::const_iterator it = table_join->columnsAddedByJoin().begin();
+                 it != table_join->columnsAddedByJoin().end(); ++it)
+            {
+                if (it != table_join->columnsAddedByJoin().begin())
+                    ss << ", ";
+                ss << it->name;
+            }
             break;
 
         case PROJECT: [[fallthrough]];
@@ -612,15 +660,53 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
     }
 }
 
-bool ExpressionActions::hasArrayJoin() const
+void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed) const
+{
+    if (actions.size() != 1)
+        throw Exception("Continuation over multiple expressions is not supported", ErrorCodes::LOGICAL_ERROR);
+
+    actions[0].execute(block, not_processed);
+    checkLimits(block);
+}
+
+bool ExpressionActions::hasJoinOrArrayJoin() const
 {
     for (const auto & action : actions)
-        if (action.type == ExpressionAction::ARRAY_JOIN)
+        if (action.type == ExpressionAction::JOIN || action.type == ExpressionAction::ARRAY_JOIN)
             return true;
 
     return false;
 }
 
+bool ExpressionActions::hasTotalsInJoin() const
+{
+    for (const auto & action : actions)
+        if (action.table_join && action.join->hasTotals())
+            return true;
+    return false;
+}
+
+void ExpressionActions::executeOnTotals(Block & block) const
+{
+    /// If there is `totals` in the subquery for JOIN, but we do not have totals, then take the block with the default values instead of `totals`.
+    if (!block)
+    {
+        if (hasTotalsInJoin())
+        {
+            for (const auto & name_and_type : input_columns)
+            {
+                auto column = name_and_type.type->createColumn();
+                column->insertDefault();
+                block.insert(ColumnWithTypeAndName(std::move(column), name_and_type.type, name_and_type.name));
+            }
+        }
+        else
+            return; /// There's nothing to JOIN.
+    }
+
+    for (const auto & action : actions)
+        action.executeOnTotals(block);
+}
 
 std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
@@ -1104,6 +1190,28 @@ ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSe
     return split_actions;
 }
 
+JoinPtr ExpressionActions::getTableJoinAlgo() const
+{
+    for (const auto & action : actions)
+        if (action.join)
+            return action.join;
+    return {};
+}
+
+
+bool ExpressionActions::resultIsAlwaysEmpty() const
+{
+    /// Check that has join which returns empty result.
+
+    for (const auto & action : actions)
+    {
+        if (action.type == action.JOIN && action.join && action.join->alwaysReturnsEmptySet())
+            return true;
+    }
+
+    return false;
+}
+
 
 bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) const
 {
@@ -1184,6 +1292,10 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
         case ARRAY_JOIN:
             hash.update(action.result_name);
             hash.update(action.source_name);
+            break;
+        case JOIN:
+            for (const auto & col : action.table_join->columnsAddedByJoin())
+                hash.update(col.name);
             break;
         case PROJECT:
             for (const auto & pair_of_strs : action.projection)
@@ -1310,8 +1422,8 @@ std::string ExpressionActionsChain::dumpChain() const
     return ss.str();
 }
 
-ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_)
-    : Step({})
+ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_, Names required_output_)
+    : Step(std::move(required_output_))
     , array_join(std::move(array_join_))
     , result_columns(std::move(required_columns_))
 {
@@ -1344,52 +1456,6 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const Names & required_outp
     {
         if (array_join->columns.count(column.name) != 0 || names.count(column.name) != 0)
             new_required_columns.emplace_back(column);
-    }
-
-    std::swap(required_columns, new_required_columns);
-    std::swap(result_columns, new_result_columns);
-}
-
-ExpressionActionsChain::JoinStep::JoinStep(
-    std::shared_ptr<TableJoin> analyzed_join_,
-    JoinPtr join_,
-    ColumnsWithTypeAndName required_columns_)
-    : Step({})
-    , analyzed_join(std::move(analyzed_join_))
-    , join(std::move(join_))
-    , result_columns(std::move(required_columns_))
-{
-    for (const auto & column : result_columns)
-        required_columns.emplace_back(column.name, column.type);
-
-    analyzed_join->addJoinedColumnsAndCorrectNullability(result_columns);
-}
-
-void ExpressionActionsChain::JoinStep::finalize(const Names & required_output_)
-{
-    /// We need to update required and result columns by removing unused ones.
-    NamesAndTypesList new_required_columns;
-    ColumnsWithTypeAndName new_result_columns;
-
-    /// That's an input columns we need.
-    NameSet required_names(required_output_.begin(), required_output_.end());
-    for (const auto & name : analyzed_join->keyNamesLeft())
-        required_names.emplace(name);
-
-    for (const auto & column : required_columns)
-    {
-        if (required_names.count(column.name) != 0)
-            new_required_columns.emplace_back(column);
-    }
-
-    /// Result will also contain joined columns.
-    for (const auto & column : analyzed_join->columnsAddedByJoin())
-        required_names.emplace(column.name);
-
-    for (const auto & column : result_columns)
-    {
-        if (required_names.count(column.name) != 0)
-            new_result_columns.emplace_back(column);
     }
 
     std::swap(required_columns, new_required_columns);

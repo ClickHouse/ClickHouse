@@ -171,18 +171,12 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     else
     {
         if constexpr (is_big_int_v<FromFieldType>)
-            return convertDecimals<DataTypeDecimal<Decimal256>, ToDataType>(static_cast<Int256>(value), 0, scale);
+            return convertDecimals<DataTypeDecimal<Decimal256>, ToDataType>(static_cast<bInt256>(value), 0, scale);
         else if constexpr (std::is_same_v<FromFieldType, UInt64>)
             return convertDecimals<DataTypeDecimal<Decimal128>, ToDataType>(value, 0, scale);
         else
             return convertDecimals<DataTypeDecimal<Decimal64>, ToDataType>(value, 0, scale);
     }
-}
-
-template <typename T>
-inline DataTypePtr createDecimalMaxPrecision(UInt64 scale)
-{
-    return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::maxPrecision<T>(), scale);
 }
 
 }

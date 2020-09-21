@@ -9,8 +9,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function isNotNull which returns true if a value
 /// is not null, false otherwise.
@@ -61,8 +59,6 @@ public:
         }
     }
 };
-
-}
 
 void registerFunctionIsNotNull(FunctionFactory & factory)
 {
