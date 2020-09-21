@@ -136,6 +136,7 @@ ln -s /usr/share/clickhouse-test/config/graphite.xml /etc/clickhouse-server/conf
 ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/
+ln -s /usr/share/clickhouse-test/config/database_atomic_configd.xml /etc/clickhouse-server/config.d/
 ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
 
 # Keep original query_masking_rules.xml

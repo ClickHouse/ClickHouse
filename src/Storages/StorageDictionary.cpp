@@ -100,6 +100,9 @@ StorageDictionary::StorageDictionary(
     Location location_)
     : IStorage(table_id_)
     , dictionary_name(dictionary_name_)
+    , resolved_dictionary_name(location_ == Location::SameDatabaseAndNameAsDictionary
+                               ? dictionary_name
+                               : DatabaseCatalog::instance().resolveDictionaryName(dictionary_name))
     , location(location_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -132,7 +135,7 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dictionary_name);
+    auto dictionary = context.getExternalDictionariesLoader().getDictionary(resolved_dictionary_name);
     auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
     /// TODO: update dictionary interface for processors.
     return Pipe(std::make_shared<SourceFromInputStream>(stream));
@@ -152,7 +155,8 @@ void registerStorageDictionary(StorageFactory & factory)
 
         if (!args.attach)
         {
-            const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(dictionary_name);
+            auto resolved = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
+            const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(resolved);
             const DictionaryStructure & dictionary_structure = dictionary->getStructure();
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }
