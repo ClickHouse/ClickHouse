@@ -1,0 +1,10 @@
+-- resume merges --
+all_1_1_0_4		1
+all_2_2_0_4	my-unique-fp1	1
+all_3_3_0_4		1
+-- detach / attach --
+all_1_1_0_4		1
+all_2_2_0_4	my-unique-fp1	1
+all_3_3_0_4		1
+-- remove fingerprint --
+all_1_3_1_5		1

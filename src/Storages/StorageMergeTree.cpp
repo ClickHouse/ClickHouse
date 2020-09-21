@@ -1456,6 +1456,11 @@ PartitionCommandsResultInfo StorageMergeTree::addFingerprintPart(const ASTPtr & 
         if (part_it == data_parts_by_info.end() || (*part_it)->state != IMergeTreeDataPart::State::Committed)
             throw Exception("Could not find part by name: " + part_name, ErrorCodes::PARTITION_DOESNT_EXIST);
 
+        if (!(*part_it)->isStoredOnDisk())
+        {
+            throw Exception("Part " + part_name + " type ("+ (*part_it)->getTypeName() +") does not support fingerprints.", ErrorCodes::NOT_IMPLEMENTED);
+        }
+
         LOG_INFO(log, "Starting mutation to add fingerprint " + fingerprint + " for part " + part_name);
 
         {
@@ -1517,6 +1522,16 @@ PartitionCommandsResultInfo StorageMergeTree::removeFingerprintPart(const ASTPtr
         auto part_it = data_parts_by_info.find(part_info);
         if (part_it == data_parts_by_info.end() || (*part_it)->state != IMergeTreeDataPart::State::Committed)
             throw Exception("Could not find part by name: " + part_name, ErrorCodes::PARTITION_DOESNT_EXIST);
+
+        if (!(*part_it)->isStoredOnDisk())
+        {
+            throw Exception("Part " + part_name + " type ("+ (*part_it)->getTypeName() +") does not support fingerprints.", ErrorCodes::NOT_IMPLEMENTED);
+        }
+
+//        This gets complicated as we need to inspect mutation queue as there is a possibility that ADD_FINGERPRINT mutation is enqueed already.
+//        /// Bail out if fingerprint doesn't exist.
+//        if ((*part_it)->fingerprint.empty())
+//            return results;
 
         LOG_INFO(log, "Starting mutation to remove fingerprint " + fingerprint + " for part " + part_name);
 

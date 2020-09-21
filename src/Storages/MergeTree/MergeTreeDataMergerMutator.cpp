@@ -1412,7 +1412,8 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         NameSet mutated_columns;
         for (const auto & command : commands)
         {
-            if (command.type == MutationCommand::Type::ADD_FINGERPRINT_PART)
+            if (command.type == MutationCommand::Type::ADD_FINGERPRINT_PART
+                || command.type == MutationCommand::Type::REMOVE_FINGERPRINT_PART)
             {
                 for_metadata.push_back(command);
             }

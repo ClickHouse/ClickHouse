@@ -2,7 +2,8 @@ DROP TABLE IF EXISTS mt;
 
 -- force wide part, non-polymorphic
 CREATE TABLE mt (v UInt8) ENGINE = MergeTree() order by tuple()
-    SETTINGS index_granularity_bytes = 1024;
+    SETTINGS min_bytes_for_compact_part = 0, min_rows_for_compact_part = 0,
+        min_bytes_for_wide_part = '10M', min_rows_for_wide_part = 10;
 
 -- can't stop merges as they stop mutations as well :/
 -- SYSTEM STOP MERGES;
