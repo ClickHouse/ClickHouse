@@ -646,6 +646,9 @@
 
         <!-- Settings from this profile will be used to execute DDL queries -->
         <!-- <profile>default</profile> -->
+
+        <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
+        <!-- <pool_size>1</pool_size> -->
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->

@@ -521,6 +521,22 @@ For more information, see the MergeTreeSettings.h header file.
 </merge_tree>
 ```
 
+## replicated\_merge\_tree {#server_configuration_parameters-replicated_merge_tree}
+
+Fine tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+This setting has higher priority.
+
+For more information, see the MergeTreeSettings.h header file.
+
+**Example**
+
+``` xml
+<replicated_merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</replicated_merge_tree>
+```
+
 ## openSSL {#server_configuration_parameters-openssl}
 
 SSL client/server configuration.
