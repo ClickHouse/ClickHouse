@@ -26,7 +26,7 @@ class CompressionCodecFactory final : private boost::noncopyable
 {
 protected:
     using Creator = std::function<CompressionCodecPtr(const ASTPtr & parameters)>;
-    using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, DataTypePtr column_type)>;
+    using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, const IDataType * column_type)>;
     using SimpleCreator = std::function<CompressionCodecPtr()>;
     using CompressionCodecsDictionary = std::unordered_map<String, CreatorWithType>;
     using CompressionCodecsCodeDictionary = std::unordered_map<uint8_t, CreatorWithType>;
@@ -39,6 +39,10 @@ public:
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
     ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const IDataType * column_type, bool sanity_check) const;
+    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check) const
+    {
+        return validateCodecAndGetPreprocessedAST(ast, column_type.get(), sanity_check);
+    }
 
     /// Validate codecs AST specified by user
     void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check) const;
@@ -49,6 +53,10 @@ public:
     /// codec, which can be alias to current default codec, which can be changed
     /// in runtime.
     CompressionCodecPtr get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default = nullptr) const;
+    CompressionCodecPtr get(const ASTPtr & ast, const DataTypePtr & column_type, CompressionCodecPtr current_default = nullptr) const
+    {
+        return get(ast, column_type.get(), current_default);
+    }
 
     /// Get codec by method byte (no params available)
     CompressionCodecPtr get(const uint8_t byte_code) const;
@@ -65,7 +73,7 @@ public:
     void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator);
 
 protected:
-    CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, DataTypePtr column_type) const;
+    CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;
 
 private:
     CompressionCodecsDictionary family_name_with_codec;

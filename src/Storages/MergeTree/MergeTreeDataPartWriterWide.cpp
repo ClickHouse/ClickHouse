@@ -29,14 +29,13 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
 {
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & it : columns_list)
-        addStreams(it.name, *it.type, columns.getCodecOrDefaultDesc(it.name, default_codec), default_codec, settings.estimated_size);
+        addStreams(it.name, *it.type, columns.getCodecDescOrDefault(it.name, default_codec), settings.estimated_size);
 }
 
 void MergeTreeDataPartWriterWide::addStreams(
     const String & name,
     const IDataType & type,
     const ASTPtr & effective_codec_desc,
-    const CompressionCodecPtr & default_codec,
     size_t estimated_size)
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
@@ -53,7 +52,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             data_part->volume->getDisk(),
             part_path + stream_name, DATA_FILE_EXTENSION,
             part_path + stream_name, marks_file_extension,
-            effective_codec,
+            compression_codec,
             settings.max_compress_block_size,
             estimated_size,
             settings.aio_threshold);

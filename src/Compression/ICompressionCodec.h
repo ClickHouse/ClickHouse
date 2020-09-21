@@ -17,7 +17,6 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = std::vector<CompressionCodecPtr>;
 
 class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
