@@ -30,7 +30,7 @@ class TSV:
             return self != TSV(other)
         return self.lines != other.lines
 
-    def diff(self, other, n1=None, n2=None):
+    def diff(self, other, n1='', n2=''):
         if not isinstance(other, TSV):
             return self.diff(TSV(other), n1=n1, n2=n2)
         return list(line.rstrip() for line in difflib.unified_diff(self.lines, other.lines, fromfile=n1, tofile=n2))[2:]
