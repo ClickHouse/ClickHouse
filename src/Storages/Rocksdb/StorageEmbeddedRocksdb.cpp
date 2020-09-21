@@ -9,7 +9,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeString.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 
@@ -85,7 +84,7 @@ static bool extractKeyImpl(const IAST & elem, Strings & res)
 }
 
 
-/** Retrieve from the query a condition of the form `key = 'key'` or `key in ('xxx_') or `key like 'xxx%'`, from conjunctions in the WHERE clause.
+/** Retrieve from the query a condition of the form `key = 'key'` or `key in ('xxx_'), from conjunctions in the WHERE clause.
   */
 static std::pair<Strings, bool> extractKey(const ASTPtr & query)
 {
