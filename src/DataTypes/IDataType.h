@@ -99,8 +99,6 @@ public:
         /// Index of tuple element, starting at 1.
         String tuple_element_name;
 
-        bool is_specialized_codecs_allowed = true;
-
         Substream(Type type_) : type(type_) {}
     };
 
@@ -444,6 +442,7 @@ public:
 
     static String getFileNameForStream(const String & column_name, const SubstreamPath & path);
 
+    static bool isNonGenericCompressionAllowedForStream(const SubstreamPath & path);
 private:
     friend class DataTypeFactory;
     /// Customize this DataType

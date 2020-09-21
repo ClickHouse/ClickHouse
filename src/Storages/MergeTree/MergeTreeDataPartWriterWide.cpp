@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Interpreters/Context.h>
+#include <Compression/CompressionFactory.h>
 
 namespace DB
 {
@@ -28,21 +29,24 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
 {
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & it : columns_list)
-        addStreams(it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec), settings.estimated_size);
+        addStreams(it.name, *it.type, columns.getCodecOrDefaultDesc(it.name, default_codec), default_codec, settings.estimated_size);
 }
 
 void MergeTreeDataPartWriterWide::addStreams(
     const String & name,
     const IDataType & type,
-    const CompressionCodecPtr & effective_codec,
+    const ASTPtr & effective_codec_desc,
+    const CompressionCodecPtr & default_codec,
     size_t estimated_size)
 {
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
     {
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
         /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
             return;
+
+        auto compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
 
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
