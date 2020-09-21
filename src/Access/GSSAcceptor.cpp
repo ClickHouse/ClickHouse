@@ -49,7 +49,7 @@ std::recursive_mutex gss_global_mutex;
 
 struct PrincipalName
 {
-    PrincipalName(String principal);
+    explicit PrincipalName(String principal);
 //  operator String() const;
 
     String name;

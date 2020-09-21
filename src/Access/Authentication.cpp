@@ -139,7 +139,7 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
         }
     }
 
-    if (const auto * always_allow_credentials = dynamic_cast<const AlwaysAllowCredentials *>(&credentials))
+    if ([[maybe_unused]] const auto * always_allow_credentials = dynamic_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
     throw Exception("makeAuthenticator(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
