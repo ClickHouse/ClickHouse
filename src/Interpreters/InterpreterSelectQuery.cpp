@@ -25,7 +25,7 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
@@ -906,8 +906,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 join_step->setStepDescription("JOIN");
                 query_plan.addStep(std::move(join_step));
 
-                if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
+                if (expressions.join_has_delayed_stream)
                 {
+                    auto stream = std::make_shared<LazyNonJoinedBlockInputStream>(*join, join_result_sample, settings.max_block_size);
                     auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
                     auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
                             query_plan.getCurrentDataStream(), std::move(source));
