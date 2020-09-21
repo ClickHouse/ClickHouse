@@ -127,7 +127,7 @@ private:
     friend class std::numeric_limits<integer<Bits, signed>>;
     friend class std::numeric_limits<integer<Bits, unsigned>>;
 
-    base_type items[_impl::item_count];
+    base_type items[_impl::item_count]{};
 };
 
 template <typename T>
