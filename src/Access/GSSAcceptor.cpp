@@ -195,7 +195,7 @@ std::pair<String, String> extractNameAndRealm(const gss_name_t & name)
         &name_buf
     );
 
-    const PrincipalName principal = bufferToString(name_buf);
+    const PrincipalName principal(bufferToString(name_buf));
     return { principal.name, principal.realm };
 }
 
