@@ -442,7 +442,7 @@ public:
 
     static String getFileNameForStream(const String & column_name, const SubstreamPath & path);
 
-    static bool isNonGenericCompressionAllowedForStream(const SubstreamPath & path);
+    static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 private:
     friend class DataTypeFactory;
     /// Customize this DataType

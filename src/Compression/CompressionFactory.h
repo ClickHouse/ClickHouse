@@ -52,10 +52,10 @@ public:
     /// be able to work without information about type. Also AST can contain
     /// codec, which can be alias to current default codec, which can be changed
     /// in runtime.
-    CompressionCodecPtr get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default = nullptr) const;
-    CompressionCodecPtr get(const ASTPtr & ast, const DataTypePtr & column_type, CompressionCodecPtr current_default = nullptr) const
+    CompressionCodecPtr get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const;
+    CompressionCodecPtr get(const ASTPtr & ast, const DataTypePtr & column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const
     {
-        return get(ast, column_type.get(), current_default);
+        return get(ast, column_type.get(), current_default, only_generic);
     }
 
     /// Get codec by method byte (no params available)
@@ -67,6 +67,7 @@ public:
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);
     /// Register codec with parameters
+
     void registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator);
 
     /// Register codec without parameters

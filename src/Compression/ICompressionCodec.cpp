@@ -129,15 +129,4 @@ uint8_t ICompressionCodec::readMethod(const char * source)
     return static_cast<uint8_t>(source[0]);
 }
 
-
-CompressionCodecPtr tryGetGeneralCompressionCodecs(const CompressionCodecPtr & codec)
-{
-    if (codec->getMethodByte() == static_cast<uint8_t>(CompressionMethodByte::Multiple))
-        return CompressionCodecMultiple::filterNonGeneralCompressionCodecs(dynamic_cast<const CompressionCodecMultiple *>(codec.get()));
-    else if (!codec->isGenericCompression())
-        return nullptr;
-    else
-        return codec;
-}
-
 }
