@@ -835,7 +835,8 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
         catch (...)
         {
             throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
-                "Dictionary update failed: {}",
+                "Update failed for dictionary '{}': {}",
+                getDictionaryID().getNameForLogs(),
                 getCurrentExceptionMessage(true /*with stack trace*/,
                     true /*check embedded stack trace*/));
         }
