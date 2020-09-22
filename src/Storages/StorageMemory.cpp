@@ -216,22 +216,22 @@ static inline void columnUpdate(Block & old_block, const Block & new_block)
 
 void StorageMemory::mutate(const MutationCommands & commands, const Context & context)
 {
-    auto metadata_snapshot_ = getInMemoryMetadataPtr();
-    auto storage_id_ = getStorageID();
-    auto storage_ptr_ = DatabaseCatalog::instance().getTable(storage_id_, context);
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr_, metadata_snapshot_, commands, context, true);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
     auto in = interpreter->execute();
 
     in->readPrefix();
     BlocksList out;
     Block block;
-    while (block = in->read())
+    while ((block = in->read()))
     {
         out.push_back(block);
     }
     in->readSuffix();
 
-	std::lock_guard lock(mutex);
+    std::lock_guard lock(mutex);
 
     // all column affected
     if (interpreter->isAffectingAllColumns())
