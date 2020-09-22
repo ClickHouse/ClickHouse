@@ -81,7 +81,7 @@ if (NOT EXTERNAL_JEMALLOC_LIBRARY_FOUND OR NOT EXTERNAL_JEMALLOC_LIBRARY_WORKS)
         # avoid spurious latencies and additional work associated with
         # MADV_DONTNEED. See
         # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
-        set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:10000")
+        set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:10000")
     else()
         set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:10000")
     endif()
