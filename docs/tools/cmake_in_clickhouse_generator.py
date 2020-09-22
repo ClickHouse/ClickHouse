@@ -97,9 +97,9 @@ def process_folder(root_path:str, name: str) -> None:
                 process_file(root_path, os.path.join(root, f))
 
 def generate_cmake_flags_files(root_path: str) -> None:
-    output_file_name: str = root_path + "docs/en/development/cmake-in-clickhouse.md"
-    header_file_name: str = root_path + "docs/_includes/cmake_in_clickhouse_header.md"
-    footer_file_name: str = root_path + "docs/_includes/cmake_in_clickhouse_footer.md"
+    output_file_name: str = os.path.join(root_path, "docs/en/development/cmake-in-clickhouse.md")
+    header_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_header.md")
+    footer_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_footer.md")
 
     process_file(root_path, "CMakeLists.txt")
     process_file(root_path, "programs/CMakeLists.txt")
