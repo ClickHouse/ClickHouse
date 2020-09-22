@@ -1,6 +1,7 @@
 import difflib
 import time
 
+
 class TSV:
     """Helper to get pretty diffs between expected and actual tab-separated value files"""
 
@@ -40,17 +41,22 @@ class TSV:
     def toMat(contents):
         return [line.split("\t") for line in contents.split("\n") if line.strip()]
 
-def assert_eq_with_retry(instance, query, expectation, retry_count=20, sleep_time=0.5, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
+
+def assert_eq_with_retry(instance, query, expectation, retry_count=20, sleep_time=0.5, stdin=None, timeout=None,
+                         settings=None, user=None, ignore_error=False):
     expectation_tsv = TSV(expectation)
     for i in xrange(retry_count):
         try:
-            if TSV(instance.query(query, user=user, stdin=stdin, timeout=timeout, settings=settings, ignore_error=ignore_error)) == expectation_tsv:
+            if TSV(instance.query(query, user=user, stdin=stdin, timeout=timeout, settings=settings,
+                                  ignore_error=ignore_error)) == expectation_tsv:
                 break
             time.sleep(sleep_time)
         except Exception as ex:
             print "assert_eq_with_retry retry {} exception {}".format(i + 1, ex)
             time.sleep(sleep_time)
     else:
-        val = TSV(instance.query(query, user=user, stdin=stdin, timeout=timeout, settings=settings, ignore_error=ignore_error))
+        val = TSV(instance.query(query, user=user, stdin=stdin, timeout=timeout, settings=settings,
+                                 ignore_error=ignore_error))
         if expectation_tsv != val:
-            raise AssertionError("'{}' != '{}'\n{}".format(expectation_tsv, val, '\n'.join(expectation_tsv.diff(val, n1="expectation", n2="query"))))
+            raise AssertionError("'{}' != '{}'\n{}".format(expectation_tsv, val, '\n'.join(
+                expectation_tsv.diff(val, n1="expectation", n2="query"))))

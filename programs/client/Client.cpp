@@ -701,6 +701,8 @@ private:
             connection_parameters.default_database,
             connection_parameters.user,
             connection_parameters.password,
+            "", /* cluster */
+            "", /* cluster_secret */
             "client",
             connection_parameters.compression,
             connection_parameters.security);
@@ -958,7 +960,31 @@ private:
 
             // Try to parse the query.
             const char * this_query_end = this_query_begin;
-            parsed_query = parseQuery(this_query_end, all_queries_end, true);
+            try
+            {
+                parsed_query = parseQuery(this_query_end, all_queries_end, true);
+            }
+            catch (Exception & e)
+            {
+                if (!test_mode)
+                    throw;
+
+                /// Try find test hint for syntax error
+                const char * end_of_line = find_first_symbols<'\n'>(this_query_begin,all_queries_end);
+                TestHint hint(true, String(this_query_end, end_of_line - this_query_end));
+                if (hint.serverError()) /// Syntax errors are considered as client errors
+                    throw;
+                if (hint.clientError() != e.code())
+                {
+                    if (hint.clientError())
+                        e.addMessage("\nExpected clinet error: " + std::to_string(hint.clientError()));
+                    throw;
+                }
+
+                /// It's expected syntax error, skip the line
+                this_query_begin = end_of_line;
+                continue;
+            }
 
             if (!parsed_query)
             {
@@ -1141,6 +1167,9 @@ private:
                             dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
                         fuzz_base->dumpTree(std::cerr);
+
+                        fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
+
                         assert(false);
                     }
 
@@ -1478,7 +1507,18 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample, columns_description);
+            try
+            {
+                sendDataFrom(data_in, sample, columns_description);
+            }
+            catch (Exception & e)
+            {
+                /// The following query will use data from input
+                //      "INSERT INTO data FORMAT TSV\n " < data.csv
+                //  And may be pretty hard to debug, so add information about data source to make it easier.
+                e.addMessage("data for INSERT was parsed from query");
+                throw;
+            }
             // Remember where the data ended. We use this info later to determine
             // where the next query begins.
             parsed_insert_query->end = data_in.buffer().begin() + data_in.count();
@@ -1486,7 +1526,15 @@ private:
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample, columns_description);
+            try
+            {
+                sendDataFrom(std_in, sample, columns_description);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("data for INSERT was parsed from stdin");
+                throw;
+            }
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
