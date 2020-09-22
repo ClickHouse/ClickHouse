@@ -3880,17 +3880,7 @@ void StorageReplicatedMergeTree::alter(
             /// N.B.: None of mutation commands possible here can have scope "partition":
             ///   See AlterCommand::tryConvertToMutationCommand(): MODIFY_COLUMN, DROP_COLUMN, DROP_INDEX, RENAME_COLUMN
             for (const auto & lock : lock_holder->getLocks())
-            {
-                /// Add block numbers for affected partitions only.
-                for (const auto & command : mutation_entry.commands)
-                {
-                    if (!command.partition || getPartitionIDFromQuery(command.partition, query_context) == lock.partition_id)
-                    {
-                        mutation_entry.block_numbers[lock.partition_id] = lock.number;
-                        break;
-                    }
-                }
-            }
+                mutation_entry.block_numbers[lock.partition_id] = lock.number;
 
             mutation_entry.create_time = time(nullptr);
 
