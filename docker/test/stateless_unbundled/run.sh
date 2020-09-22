@@ -44,7 +44,7 @@ if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; th
     ln -s /usr/share/clickhouse-test/config/polymorphic_parts.xml /etc/clickhouse-server/config.d/
 fi
 if [[ -n "$USE_DATABASE_ATOMIC" ]] && [[ "$USE_DATABASE_ATOMIC" -eq 1 ]]; then #FIXME USE_DATABASE_ORDINARY
-    ln -s /usr/share/clickhouse-test/config/database_ordinary_configd.xml /etc/clickhouse-server/config.d/
+    ln -s /usr/share/clickhouse-test/config/database_ordinary_usersd.xml /etc/clickhouse-server/config.d/
 fi
 
 ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
