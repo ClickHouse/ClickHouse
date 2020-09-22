@@ -83,7 +83,7 @@ SUBMODULES_TO_UPDATE=(contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco
 
 git submodule update --init --recursive "${SUBMODULES_TO_UPDATE[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/submodule_log.txt
 
-export CMAKE_LIBS_CONFIG="-DENABLE_LIBRARIES=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_THINLTO=0 -DUSE_UNWIND=1"
+CMAKE_LIBS_CONFIG=(-DENABLE_LIBRARIES=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_THINLTO=0 -DUSE_UNWIND=1)
 
 export CCACHE_DIR=/ccache
 export CCACHE_BASEDIR=/ClickHouse
@@ -96,7 +96,7 @@ ccache --zero-stats ||:
 
 mkdir build
 cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_C_COMPILER=clang-10 "$CMAKE_LIBS_CONFIG" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/cmake_log.txt
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_C_COMPILER=clang-10 "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/cmake_log.txt
 ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/build_log.txt
 ninja install | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/install_log.txt
 
