@@ -694,9 +694,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 {
     initializeExecution(num_threads);
 
-    using ThreadsData = std::vector<ThreadFromGlobalPool>;
-    ThreadsData threads;
-    threads.reserve(num_threads);
+    ThreadPool threads(num_threads);
 
     bool finished_flag = false;
 
@@ -704,10 +702,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         if (!finished_flag)
         {
             finish();
-
-            for (auto & thread : threads)
-                if (thread.joinable())
-                    thread.join();
+            threads.wait();
         }
     );
 
@@ -717,7 +712,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
         for (size_t i = 0; i < num_threads; ++i)
         {
-            threads.emplace_back([this, thread_group, thread_num = i, num_threads]
+            threads.scheduleOrThrowOnError([this, thread_group, thread_num = i, num_threads]
             {
                 /// ThreadStatus thread_status;
 
@@ -744,9 +739,14 @@ void PipelineExecutor::executeImpl(size_t num_threads)
             });
         }
 
-        for (auto & thread : threads)
-            if (thread.joinable())
-                thread.join();
+        /// Because ThreadPool::wait() waits until scheduled_jobs will be zero,
+        /// and this guarantee that the job was reseted, otherwise
+        /// some variables that job is referencing may be already destroyed,
+        /// while job hasn't been destoyed yet (example that pops up --
+        /// PipelineExecutor -> ThreadGroupStatusPtr -> MemoryTracker ->
+        /// ~MemoryTracker -> log, while log had been destroyed already)
+        /// (see 01505_pipeline_executor_UAF)
+        threads.wait();
     }
     else
         executeSingleThread(0, num_threads);
