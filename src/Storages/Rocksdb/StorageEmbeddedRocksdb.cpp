@@ -132,16 +132,6 @@ public:
 
             wb_value.restart();
         }
-
-        rocksdb::Iterator* it = storage.rocksdb_ptr->rocksdb->NewIterator(rocksdb::ReadOptions());
-        for (it->SeekToFirst(); it->Valid(); it->Next())
-        {
-            LOG_DEBUG(&Poco::Logger::get("StorageEmbeddedRocksdb"), "Iterator `{}` returns `{}`, {}",
-                it->key().ToString(), it->value().ToString(), it->key().size());
-        }
-        // Check for any errors found during the scan
-        assert(it->status().ok());
-        delete it;
     }
 
 private:
