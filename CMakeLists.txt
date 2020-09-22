@@ -80,6 +80,11 @@ endif ()
 
 include (cmake/find/ccache.cmake)
 
+option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling" OFF)
+if (ENABLE_CHECK_HEAVY_BUILDS)
+    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --rss=10000000 --cpu=600)
+endif ()
+
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
     set (CMAKE_BUILD_TYPE "RelWithDebInfo")
     message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = ${CMAKE_BUILD_TYPE}")
@@ -404,7 +409,6 @@ include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
 include (cmake/find/termcap.cmake) # for external static llvm
-include (cmake/find/opencl.cmake)
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
@@ -449,13 +453,6 @@ endif ()
 include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
-
-if (USE_OPENCL)
-    if (OS_DARWIN)
-        set(OPENCL_LINKER_FLAGS "-framework OpenCL")
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENCL_LINKER_FLAGS}")
-    endif ()
-endif ()
 
 include (cmake/print_flags.cmake)
 
