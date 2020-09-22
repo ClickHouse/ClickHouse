@@ -515,7 +515,7 @@ def test_in_memory_alters(start_cluster):
 
 
 def test_polymorphic_parts_index(start_cluster):
-    node1.query('CREATE DATABASE test_index ENGINE=Ordinary')
+    node1.query('CREATE DATABASE test_index ENGINE=Ordinary')   # Different paths with Atomic
     node1.query('''
         CREATE TABLE test_index.index_compact(a UInt32, s String)
         ENGINE = MergeTree ORDER BY a
