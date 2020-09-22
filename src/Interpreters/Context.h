@@ -349,9 +349,6 @@ public:
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
-    void addViewSource(const StoragePtr & storage);
-    StoragePtr getViewSource();
-
     String getCurrentDatabase() const;
     String getCurrentQueryId() const;
 

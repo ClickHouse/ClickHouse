@@ -170,17 +170,6 @@ StoragePtr JoinedTables::getLeftTableStorage()
         table_id = StorageID("system", "one");
     }
 
-    if (auto view_source = context.getViewSource())
-    {
-        const auto & storage_values = static_cast<const StorageValues &>(*view_source);
-        auto tmp_table_id = storage_values.getStorageID();
-        if (tmp_table_id.database_name == table_id.database_name && tmp_table_id.table_name == table_id.table_name)
-        {
-            /// Read from view source.
-            return context.getViewSource();
-        }
-    }
-
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
     return DatabaseCatalog::instance().getTable(table_id, context);
 }

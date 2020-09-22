@@ -322,12 +322,9 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.
-
-            Context local_context = *select_context;
-            local_context.addViewSource(
-                StorageValues::create(
-                    storage->getStorageID(), metadata_snapshot->getColumns(), block, storage->getVirtuals()));
-            select.emplace(view.query, local_context, SelectQueryOptions());
+            auto storage_values
+                = StorageValues::create(storage->getStorageID(), metadata_snapshot->getColumns(), block, storage->getVirtuals());
+            select.emplace(view.query, *select_context, storage_values, storage_values->getInMemoryMetadataPtr(), SelectQueryOptions());
             in = std::make_shared<MaterializingBlockInputStream>(select->execute().getInputStream());
 
             /// Squashing is needed here because the materialized view query can generate a lot of blocks
