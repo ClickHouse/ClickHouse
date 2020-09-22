@@ -132,12 +132,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         else if (!isColumnConst(*column))
         {
             int nan_direction_hint = description[0].nulls_direction;
-            auto special_sort = description[0].special_sort;
-
-            if (special_sort == SpecialSort::OPENCL_BITONIC)
-                column->getSpecialPermutation(reverse, limit, nan_direction_hint, perm, IColumn::SpecialSort::OPENCL_BITONIC);
-            else
-                column->getPermutation(reverse, limit, nan_direction_hint, perm);
+            column->getPermutation(reverse, limit, nan_direction_hint, perm);
         }
         else
             /// we don't need to do anything with const column
@@ -211,13 +206,11 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             for (const auto & column : columns_with_sort_desc)
             {
                 while (!ranges.empty() && limit && limit <= ranges.back().first)
-                {
                     ranges.pop_back();
-                }
+
                 if (ranges.empty())
-                {
                     break;
-                }
+
                 column.column->updatePermutation(
                     column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
             }
@@ -225,9 +218,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 
         size_t columns = block.columns();
         for (size_t i = 0; i < columns; ++i)
-        {
             block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
-        }
     }
 }
 

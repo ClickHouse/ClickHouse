@@ -1504,7 +1504,18 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample, columns_description);
+            try
+            {
+                sendDataFrom(data_in, sample, columns_description);
+            }
+            catch (Exception & e)
+            {
+                /// The following query will use data from input
+                //      "INSERT INTO data FORMAT TSV\n " < data.csv
+                //  And may be pretty hard to debug, so add information about data source to make it easier.
+                e.addMessage("data for INSERT was parsed from query");
+                throw;
+            }
             // Remember where the data ended. We use this info later to determine
             // where the next query begins.
             parsed_insert_query->end = data_in.buffer().begin() + data_in.count();
@@ -1512,7 +1523,15 @@ private:
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample, columns_description);
+            try
+            {
+                sendDataFrom(std_in, sample, columns_description);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("data for INSERT was parsed from stdin");
+                throw;
+            }
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);

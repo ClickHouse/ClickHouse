@@ -63,7 +63,7 @@ function configure
     # Make copies of the original db for both servers. Use hardlinks instead
     # of copying to save space. Before that, remove preprocessed configs and
     # system tables, because sharing them between servers with hardlinks may
-    # lead to weird effects.
+    # lead to weird effects. 
     rm -r left/db ||:
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
@@ -121,7 +121,7 @@ function run_tests
     then
         # Use the explicitly set path to directory with test files.
         test_prefix="$CHPC_TEST_PATH"
-    elif [ "$PR_TO_TEST" = "0" ]
+    elif [ "$PR_TO_TEST" == "0" ]
     then
         # When testing commits from master, use the older test files. This
         # allows the tests to pass even when we add new functions and tests for
@@ -155,6 +155,20 @@ function run_tests
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
+    # For PRs, test only a subset of queries, and run them less times.
+    # If the corresponding environment variables are already set, keep
+    # those values.
+    if [ "$PR_TO_TEST" == "0" ]
+    then
+        CHPC_RUNS=${CHPC_RUNS:-13}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
+    else
+        CHPC_RUNS=${CHPC_RUNS:-7}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-20}
+    fi
+    export CHPC_RUNS
+    export CHPC_MAX_QUERIES
+
     # Determine which concurrent benchmarks to run. For now, the only test
     # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
     # are also going to run it as a normal test.
@@ -184,11 +198,13 @@ function run_tests
         echo test "$test_name"
 
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
-        # the grep is to filter out set -x output and keep only time output
+        # The grep is to filter out set -x output and keep only time output.
+        # The '2>&1 >/dev/null' redirects stderr to stdout, and discards stdout.
         { \
             time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 \
+                --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
                 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
-        } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" \
+        } 2>&1 >/dev/null | tee >(grep -v ^+ >> "wall-clock-times.tsv") \
             || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
     done
 
@@ -197,33 +213,9 @@ function run_tests
     wait
 }
 
-# Run some queries concurrently and report the resulting TPS. This additional
-# (relatively) short test helps detect concurrency-related effects, because the
-# main performance comparison testing is done query-by-query.
-function run_benchmark
-{
-    rm -rf benchmark ||:
-    mkdir benchmark ||:
-
-    # The list is built by run_tests.
-    while IFS= read -r file
-    do
-        name=$(basename "$file" ".xml")
-
-        "$script_dir/perf.py" --print-queries "$file" > "benchmark/$name-queries.txt"
-        "$script_dir/perf.py" --print-settings "$file" > "benchmark/$name-settings.txt"
-
-        readarray -t settings < "benchmark/$name-settings.txt"
-        command=(clickhouse-benchmark --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --continue_on_errors "${settings[@]}")
-
-        "${command[@]}" --port 9001 --json "benchmark/$name-left.json" < "benchmark/$name-queries.txt"
-        "${command[@]}" --port 9002 --json "benchmark/$name-right.json" < "benchmark/$name-queries.txt"
-    done < benchmarks-to-run.txt
-}
-
 function get_profiles_watchdog
 {
-    sleep 6000
+    sleep 600
 
     echo "The trace collection did not finish in time." >> profile-errors.log
 
@@ -490,8 +482,6 @@ build_log_column_definitions
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
-short_query_threshold="0.02"
-
 clickhouse-local --query "
 create view query_display_names as select * from
     file('analyze/query-display-names.tsv', TSV,
@@ -524,18 +514,11 @@ create view query_metric_stats as
 -- Main statistics for queries -- query time as reported in query log.
 create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
-        -- Comparison mode doesn't make sense for queries that complete
-        -- immediately (on the same order of time as noise). If query duration is
-        -- less that some threshold, we just skip it. If there is a significant
-        -- regression in such query, the time will exceed the threshold, and we
-        -- well process it normally and detect the regression.
-        right < $short_query_threshold as short,
-
-        not short and abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
-        not short and abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
+        abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
+        abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
         
-        not short and not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
-        not short and not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
+        not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
+        not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
         
         left, right, diff, stat_threshold,
         if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
@@ -640,9 +623,9 @@ create table wall_clock_time_per_test engine Memory as select *
 
 create table test_time engine Memory as
     select test, sum(client) total_client_time,
-        maxIf(client, not short) query_max,
-        minIf(client, not short) query_min,
-        count(*) queries, sum(short) short_queries
+        max(client) query_max,
+        min(client) query_min,
+        count(*) queries
     from total_client_time_per_query full join queries using (test, query_index)
     group by test;
 
@@ -650,7 +633,6 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv') as
     select wall_clock_time_per_test.test, real,
         toDecimal64(total_client_time, 3),
         queries,
-        short_queries,
         toDecimal64(query_max, 3),
         toDecimal64(real / queries, 3) avg_real_per_query,
         toDecimal64(query_min, 3)
@@ -685,32 +667,48 @@ create table queries_for_flamegraph engine File(TSVWithNamesAndTypes,
     select test, query_index from queries where unstable_show or changed_show
     ;
 
--- List of queries that have 'short' duration, but are not marked as 'short' by
--- the test author (we report them).
-create table unmarked_short_queries_report
-    engine File(TSV, 'report/unmarked-short-queries.tsv')
-    as select time, test, query_index, query_display_name
+
+create view shortness
+    as select 
+        (test, query_index) in
+            (select * from file('analyze/marked-short-queries.tsv', TSV,
+            'test text, query_index int'))
+            as marked_short,
+        time, test, query_index, query_display_name
     from (
-            select right time, test, query_index from queries where short
+            select right time, test, query_index from queries
             union all
             select time_median, test, query_index from partial_query_times
-                where time_median < $short_query_threshold
         ) times
         left join query_display_names
             on times.test = query_display_names.test
                 and times.query_index = query_display_names.query_index
-    where (test, query_index) not in
-        (select * from file('analyze/marked-short-queries.tsv', TSV,
-            'test text, query_index int'))
-    order by test, query_index
     ;
+
+-- Report of queries that have inconsistent 'short' markings:
+-- 1) have short duration, but are not marked as 'short'
+-- 2) the reverse -- marked 'short' but take too long.
+-- The threshold for 2) is significantly larger than the threshold for 1), to
+-- avoid jitter.
+create table inconsistent_short_marking_report
+    engine File(TSV, 'report/unexpected-query-duration.tsv')
+    as select
+        multiIf(marked_short and time > 0.1, '"short" queries must run faster than 0.02 s',
+                not marked_short and time < 0.02, '"normal" queries must run longer than 0.1 s',
+                '') problem,
+        marked_short, time,
+        test, query_index, query_display_name
+    from shortness
+    where problem != ''
+    ;
+
 
 --------------------------------------------------------------------------------
 -- various compatibility data formats follow, not related to the main report
 
 -- keep the table in old format so that we can analyze new and old data together
 create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
-    as select short, changed_fail, unstable_fail, left, right, diff,
+    as select 0 short, changed_fail, unstable_fail, left, right, diff,
         stat_threshold, test, query_display_name query
     from queries
     ;
@@ -1007,9 +1005,6 @@ case "$stage" in
 "run_tests")
     # Ignore the errors to collect the log and build at least some report, anyway
     time run_tests ||:
-    ;&
-"run_benchmark")
-    time run_benchmark 2> >(tee -a run-errors.tsv 1>&2) ||:
     ;&
 "get_profiles")
     # Check for huge pages.
