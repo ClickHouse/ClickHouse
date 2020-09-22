@@ -66,11 +66,6 @@ function download
     ) &
 
     wait
-
-    # FIXME temporary hack to compare with clang build
-    rm "right/clickhouse"
-    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/clickhouse_build_check/clang-10_relwithdebuginfo_none_bundled_unsplitted_disable_False_binary/clickhouse" -O right/clickhouse
-    chmod +x right/clickhouse
 }
 
 download
