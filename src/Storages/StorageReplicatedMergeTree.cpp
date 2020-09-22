@@ -3817,18 +3817,10 @@ void StorageReplicatedMergeTree::alter(
             lock_holder.emplace(
                 zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
 
+            /// N.B.: None of mutation commands possible here can have scope "partition":
+            ///   See AlterCommand::tryConvertToMutationCommand(): MODIFY_COLUMN, DROP_COLUMN, DROP_INDEX, RENAME_COLUMN
             for (const auto & lock : lock_holder->getLocks())
-            {
-                /// Add block numbers for affected partitions only.
-                for (const auto & command : mutation_entry.commands)
-                {
-                    if (!command.partition || getPartitionIDFromQuery(command.partition, query_context) == lock.partition_id)
-                    {
-                        mutation_entry.block_numbers[lock.partition_id] = lock.number;
-                        break;
-                    }
-                }
-            }
+                mutation_entry.block_numbers[lock.partition_id] = lock.number;
 
             mutation_entry.create_time = time(nullptr);
 
@@ -4808,35 +4800,59 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
     entry.source_replica = replica_name;
     entry.commands = commands;
 
+    /// TODO: Currently partition-scoped mutations are implemented only for single partition
+    String scoped_mutation_partition_id;
+    for (const auto & command : entry.commands)
+    {
+        if (command.partition)
+        {
+            const auto partition_id = getPartitionIDFromQuery(command.partition, query_context);
+            if (scoped_mutation_partition_id.empty())
+            {
+                scoped_mutation_partition_id = partition_id;
+                continue;
+            }
+            if (scoped_mutation_partition_id == partition_id)
+                continue;
+        }
+
+        scoped_mutation_partition_id = {};
+        break;
+    }
+
     String mutations_path = zookeeper_path + "/mutations";
 
     /// Update the mutations_path node when creating the mutation and check its version to ensure that
     /// nodes for mutations are created in the same order as the corresponding block numbers.
     /// Should work well if the number of concurrent mutation requests is small.
+
+    auto zookeeper = getZooKeeper();
+
     while (true)
     {
-        auto zookeeper = getZooKeeper();
-
         Coordination::Stat mutations_stat;
         zookeeper->get(mutations_path, &mutations_stat);
 
-        EphemeralLocksInAllPartitions block_number_locks(
-            zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
-
-        for (const auto & lock : block_number_locks.getLocks())
+        if (scoped_mutation_partition_id.empty())
         {
-            /// Add block numbers for affected partitions only.
-            for (const auto & command : entry.commands)
-            {
-                if (!command.partition || getPartitionIDFromQuery(command.partition, query_context) == lock.partition_id)
-                {
-                    entry.block_numbers[lock.partition_id] = lock.number;
-                    break;
-                }
-            }
+            EphemeralLocksInAllPartitions block_number_locks(
+                zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
+
+            for (const auto & lock : block_number_locks.getLocks())
+                entry.block_numbers[lock.partition_id] = lock.number;
+        }
+        else
+        {
+            const auto block_number = allocateBlockNumber(scoped_mutation_partition_id, zookeeper);
+            if (block_number)
+                entry.block_numbers[scoped_mutation_partition_id] = block_number->getNumber();
         }
 
         entry.create_time = time(nullptr);
+
+        /// The following version check guarantees the linearizability property for any pair of mutations:
+        /// mutation with higher sequence number is guaranteed to have higher block numbers in every partition
+        /// (and thus will be applied strictly according to sequence numbers of mutations)
 
         Coordination::Requests requests;
         requests.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
