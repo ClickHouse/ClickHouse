@@ -27,7 +27,7 @@ class HDFSApi(object):
         if response_data.status_code != 200:
             response_data.raise_for_status()
 
-        return response_data.content
+        return response_data.text
 
     # Requests can't put file
     def _curl_to_put(self, filename, path, params):
@@ -39,7 +39,7 @@ class HDFSApi(object):
         return output
 
     def write_data(self, path, content):
-        named_file = NamedTemporaryFile()
+        named_file = NamedTemporaryFile(mode='w+')
         fpath = named_file.name
         named_file.write(content)
         named_file.flush()
