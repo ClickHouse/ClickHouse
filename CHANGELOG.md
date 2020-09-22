@@ -4,10 +4,9 @@
 
 #### New Feature
 
-* Added util for database generation by query. [#14442](https://github.com/ClickHouse/ClickHouse/pull/14442) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)) [#10973](https://github.com/ClickHouse/ClickHouse/issues/10973) ([ZeDRoman](https://github.com/ZeDRoman)).
-* Added an aggregate function RankCorrelationSpearman which simply computes a rank correlation coefficient. [#11769](https://github.com/ClickHouse/ClickHouse/pull/11769) ([antikvist](https://github.com/antikvist)) [#14411](https://github.com/ClickHouse/ClickHouse/pull/14411) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
-* Added column transformers, which can be applied to selected columns. For example, you can write `select * apply(length) apply(max) from wide_string_table` to find out the maxium length of all string columns. [#14233](https://github.com/ClickHouse/ClickHouse/pull/14233) ([Amos Bird](https://github.com/amosbird)).
-* Added table function `view` which turns an subquery into a table object. This helps passing queries around. For instance, it can be used in remote/cluster table functions. [#12567](https://github.com/ClickHouse/ClickHouse/pull/12567) ([Amos Bird](https://github.com/amosbird)).
+* Added column transformers `EXCEPT`, `REPLACE`, `APPLY`, which can be applied to the list of selected columns (after `*` or `COLUMNS(...)`). For example, you can write `SELECT * EXCEPT(URL) REPLACE(number + 1 AS number)`. Another example: `select * apply(length) apply(max) from wide_string_table` to find out the maxium length of all string columns. [#14233](https://github.com/ClickHouse/ClickHouse/pull/14233) ([Amos Bird](https://github.com/amosbird)).
+* Added an aggregate function `rankCorr` which computes a rank correlation coefficient. [#11769](https://github.com/ClickHouse/ClickHouse/pull/11769) ([antikvist](https://github.com/antikvist)) [#14411](https://github.com/ClickHouse/ClickHouse/pull/14411) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Added table function `view` which turns a subquery into a table object. This helps passing queries around. For instance, it can be used in remote/cluster table functions. [#12567](https://github.com/ClickHouse/ClickHouse/pull/12567) ([Amos Bird](https://github.com/amosbird)).
 
 #### Bug Fix
 
@@ -37,6 +36,10 @@
 * Disallows `CODEC` on `ALIAS` column type. Fixes [#13911](https://github.com/ClickHouse/ClickHouse/issues/13911). [#14263](https://github.com/ClickHouse/ClickHouse/pull/14263) ([Bharat Nallan](https://github.com/bharatnc)).
 * Fix GRANT ALL statement when executed on a non-global level. [#13987](https://github.com/ClickHouse/ClickHouse/pull/13987) ([Vitaly Baranov](https://github.com/vitlibar)).
 * Fix arrayJoin() capturing in lambda (LOGICAL_ERROR). [#13792](https://github.com/ClickHouse/ClickHouse/pull/13792) ([Azat Khuzhin](https://github.com/azat)).
+
+#### Experimental Feature
+
+* Added a tool for random database generation by given SELECT query. [#14442](https://github.com/ClickHouse/ClickHouse/pull/14442) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)) [#10973](https://github.com/ClickHouse/ClickHouse/issues/10973) ([ZeDRoman](https://github.com/ZeDRoman)).
 
 #### Improvement
 
