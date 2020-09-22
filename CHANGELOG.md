@@ -47,21 +47,21 @@
 * Disallow empty time_zone argument in `toStartOf*` type of functions. [#14509](https://github.com/ClickHouse/ClickHouse/pull/14509) ([Bharat Nallan](https://github.com/bharatnc)).
 * MySQL handler returns `OK` for queries like `SET @@var = value`. Such statement is ignored. It is needed because some MySQL drivers send `SET @@` query for setup after handshake https://github.com/ClickHouse/ClickHouse/issues/9336#issuecomment-686222422 . [#14469](https://github.com/ClickHouse/ClickHouse/pull/14469) ([BohuTANG](https://github.com/BohuTANG)).
 * Now TTLs will be applied during merge if they were not previously materialized. [#14438](https://github.com/ClickHouse/ClickHouse/pull/14438) ([alesapin](https://github.com/alesapin)).
-* Creating sets for multiple `JOIN` and `IN` in parallel. It may slightly improve performance for queries with several different `IN subquery` expressions. [#14412](https://github.com/ClickHouse/ClickHouse/pull/14412) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
-* Now obfuscator supports UUID type as proposed in [#13163](https://github.com/ClickHouse/ClickHouse/issues/13163). [#14409](https://github.com/ClickHouse/ClickHouse/pull/14409) ([dimarub2000](https://github.com/dimarub2000)).
-* Added new setting system_events_show_zero_values as proposed in [#11384](https://github.com/ClickHouse/ClickHouse/issues/11384). [#14404](https://github.com/ClickHouse/ClickHouse/pull/14404) ([dimarub2000](https://github.com/dimarub2000)).
-* Implicitly convert primary key to not null in MaterializeMySQL (Same as MySQL). Fixes [#14114](https://github.com/ClickHouse/ClickHouse/issues/14114). [#14397](https://github.com/ClickHouse/ClickHouse/pull/14397) ([Winter Zhang](https://github.com/zhang2014)).
-* Replace wide integers from boost multiprecision with implementation from https://github.com/cerevra/int. [#14229](https://github.com/ClickHouse/ClickHouse/pull/14229) ([Artem Zuikov](https://github.com/4ertus2)).
-* Add default compression codec for parts in `system.part_log` with name `default_compression_codec`. [#14116](https://github.com/ClickHouse/ClickHouse/pull/14116) ([alesapin](https://github.com/alesapin)).
-* Improve the Kafka engine performance by providing independent thread for each consumer. Separate thread pool for streaming engines (like Kafka). [#13939](https://github.com/ClickHouse/ClickHouse/pull/13939) ([fastio](https://github.com/fastio)).
-* Add precision argument for DateTime type. [#13761](https://github.com/ClickHouse/ClickHouse/pull/13761) ([Winter Zhang](https://github.com/zhang2014)).
-* Added requirepass authorization for Redis external dictionary. [#13688](https://github.com/ClickHouse/ClickHouse/pull/13688) ([Ivan Torgashov](https://github.com/it1804)).
-* Improvements in StorageRabbitMQ: Added connection and channels failure handling, proper commits, insert failures handling, better exchanges, queue durability and queue resume opportunity, new queue settings. Fixed tests. [#12761](https://github.com/ClickHouse/ClickHouse/pull/12761) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Now `clickhouse-obfuscator` supports UUID type as proposed in [#13163](https://github.com/ClickHouse/ClickHouse/issues/13163). [#14409](https://github.com/ClickHouse/ClickHouse/pull/14409) ([dimarub2000](https://github.com/dimarub2000)).
+* Added new setting `system_events_show_zero_values` as proposed in [#11384](https://github.com/ClickHouse/ClickHouse/issues/11384). [#14404](https://github.com/ClickHouse/ClickHouse/pull/14404) ([dimarub2000](https://github.com/dimarub2000)).
+* Implicitly convert primary key to not null in `MaterializeMySQL` (Same as `MySQL`). Fixes [#14114](https://github.com/ClickHouse/ClickHouse/issues/14114). [#14397](https://github.com/ClickHouse/ClickHouse/pull/14397) ([Winter Zhang](https://github.com/zhang2014)).
+* Replace wide integers (256 bit) from boost multiprecision with implementation from https://github.com/cerevra/int. 256bit integers are experimental. [#14229](https://github.com/ClickHouse/ClickHouse/pull/14229) ([Artem Zuikov](https://github.com/4ertus2)).
+* Add default compression codec for parts in `system.part_log` with the name `default_compression_codec`. [#14116](https://github.com/ClickHouse/ClickHouse/pull/14116) ([alesapin](https://github.com/alesapin)).
+* Add precision argument for `DateTime` type. It allows to use `DateTime` name instead of `DateTime64`. [#13761](https://github.com/ClickHouse/ClickHouse/pull/13761) ([Winter Zhang](https://github.com/zhang2014)).
+* Added requirepass authorization for `Redis` external dictionary. [#13688](https://github.com/ClickHouse/ClickHouse/pull/13688) ([Ivan Torgashov](https://github.com/it1804)).
+* Improvements in `RabbitMQ` engine: added connection and channels failure handling, proper commits, insert failures handling, better exchanges, queue durability and queue resume opportunity, new queue settings. Fixed tests. [#12761](https://github.com/ClickHouse/ClickHouse/pull/12761) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Support custom codecs in compact parts. [#12183](https://github.com/ClickHouse/ClickHouse/pull/12183) ([Anton Popov](https://github.com/CurtizJ)).
 
 #### Performance Improvement
 
 * Optimize queries with LIMIT/LIMIT BY/ORDER BY for distributed with GROUP BY sharding_key (under optimize_skip_unused_shards and optimize_distributed_group_by_sharding_key). [#10373](https://github.com/ClickHouse/ClickHouse/pull/10373) ([Azat Khuzhin](https://github.com/azat)).
+* Creating sets for multiple `JOIN` and `IN` in parallel. It may slightly improve performance for queries with several different `IN subquery` expressions. [#14412](https://github.com/ClickHouse/ClickHouse/pull/14412) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Improve Kafka engine performance by providing independent thread for each consumer. Separate thread pool for streaming engines (like Kafka). [#13939](https://github.com/ClickHouse/ClickHouse/pull/13939) ([fastio](https://github.com/fastio)).
 
 #### Build/Testing/Packaging Improvement
 
