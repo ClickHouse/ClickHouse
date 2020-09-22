@@ -5,6 +5,9 @@
 namespace DB::GatherUtils
 {
 
+namespace
+{
+
 struct ArrayHasSubstrSelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSubstrSelectArraySourcePair>
 {
     template <typename FirstSource, typename SecondSource>
@@ -14,6 +17,7 @@ struct ArrayHasSubstrSelectArraySourcePair : public ArraySourcePairSelector<Arra
     }
 };
 
+}
 
 void sliceHasSubstr(IArraySource & first, IArraySource & second, ColumnUInt8 & result)
 {

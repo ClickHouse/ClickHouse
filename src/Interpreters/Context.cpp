@@ -677,7 +677,7 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
+void Context::setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
@@ -686,7 +686,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password = password;
+    client_info.current_password = password.value_or("");
 #endif
 
     auto new_user_id = getAccessControlManager().find<User>(name);
@@ -694,7 +694,9 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (new_user_id)
     {
         new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, settings, current_database, client_info);
-        if (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(password))
+        /// Access w/o password is done under interserver-secret (remote_servers.secret)
+        /// So it is okay not to check client's host (since there is trust).
+        if (password && (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(*password)))
         {
             new_user_id = {};
             new_access = nullptr;
@@ -710,6 +712,16 @@ void Context::setUser(const String & name, const String & password, const Poco::
     use_default_roles = true;
 
     setSettings(*access->getDefaultSettings());
+}
+
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
+{
+    setUserImpl(name, std::make_optional(password), address);
+}
+
+void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
+{
+    setUserImpl(name, {} /* no password */, address);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -1521,6 +1533,15 @@ void Context::resetZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper.reset();
+}
+
+void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->zookeeper || shared->zookeeper->configChanged(*config, "zookeeper"))
+    {
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
+    }
 }
 
 bool Context::hasZooKeeper() const
