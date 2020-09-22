@@ -19,7 +19,7 @@ def test_file_path_escaping(started_cluster):
     node.query('CREATE DATABASE IF NOT EXISTS test ENGINE = Ordinary')
     node.query('''
         CREATE TABLE test.`T.a_b,l-e!` (`~Id` UInt32)
-        ENGINE = MergeTree() PARTITION BY `~Id` ORDER BY `~Id`;
+        ENGINE = MergeTree() PARTITION BY `~Id` ORDER BY `~Id` SETTINGS min_bytes_for_wide_part = 0;
         ''')
     node.query('''INSERT INTO test.`T.a_b,l-e!` VALUES (1);''')
     node.query('''ALTER TABLE test.`T.a_b,l-e!` FREEZE;''')

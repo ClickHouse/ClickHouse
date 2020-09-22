@@ -53,6 +53,9 @@ class QueryPlan;
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
+struct StreamLocalLimits;
+class EnabledQuota;
+
 struct ColumnSize
 {
     size_t marks = 0;
@@ -288,6 +291,7 @@ public:
         TableLockHolder table_lock,
         StorageMetadataPtr metadata_snapshot,
         StreamLocalLimits & limits,
+        SizeLimits & leaf_limits,
         std::shared_ptr<const EnabledQuota> quota,
         const Names & column_names,
         const SelectQueryInfo & query_info,

@@ -965,7 +965,7 @@ void TCPHandler::receiveQuery()
         /// i.e. when the INSERT is done with the global context (w/o user).
         if (!client_info.initial_user.empty())
         {
-            query_context->setUserWithoutCheckingPassword(client_info.initial_user, socket().peerAddress());
+            query_context->setUserWithoutCheckingPassword(client_info.initial_user, client_info.initial_address);
             LOG_DEBUG(log, "User (initial): {}", query_context->getUserName());
         }
         /// No need to update connection_context, since it does not requires user (it will not be used for query execution)
