@@ -9,6 +9,7 @@
 #    include <cstdlib>
 #    include <random>
 #    include <Columns/ColumnTuple.h>
+#    include <Columns/ColumnDecimal.h>
 #    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
@@ -453,6 +454,14 @@ static void writeFieldsToColumn(
             write_data_to_column(casted_float32_column, Float64(), Float32());
         else if (ColumnFloat64 * casted_float64_column = typeid_cast<ColumnFloat64 *>(&column_to))
             write_data_to_column(casted_float64_column, Float64(), Float64());
+        else if (ColumnDecimal<Decimal32> * casted_decimal_32_column = typeid_cast<ColumnDecimal<Decimal32> *>(&column_to))
+            write_data_to_column(casted_decimal_32_column, Decimal32(), Decimal32());
+        else if (ColumnDecimal<Decimal64> * casted_decimal_64_column = typeid_cast<ColumnDecimal<Decimal64> *>(&column_to))
+            write_data_to_column(casted_decimal_64_column, Decimal64(), Decimal64());
+        else if (ColumnDecimal<Decimal128> * casted_decimal_128_column = typeid_cast<ColumnDecimal<Decimal128> *>(&column_to))
+            write_data_to_column(casted_decimal_128_column, Decimal128(), Decimal128());
+        else if (ColumnDecimal<Decimal256> * casted_decimal_256_column = typeid_cast<ColumnDecimal<Decimal256> *>(&column_to))
+            write_data_to_column(casted_decimal_256_column, Decimal256(), Decimal256());
         else if (ColumnInt32 * casted_int32_column = typeid_cast<ColumnInt32 *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)

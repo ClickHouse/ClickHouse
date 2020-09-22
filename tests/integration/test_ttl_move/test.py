@@ -1102,3 +1102,48 @@ limitations under the License."""
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
+
+
+@pytest.mark.parametrize("name,dest_type,engine", [
+    ("mt_test_disabled_ttl_move_on_insert_work", "DISK", "MergeTree()"),
+    ("mt_test_disabled_ttl_move_on_insert_work", "VOLUME", "MergeTree()"),
+    ("replicated_mt_test_disabled_ttl_move_on_insert_work", "DISK", "ReplicatedMergeTree('/clickhouse/replicated_test_disabled_ttl_move_on_insert_work', '1')"),
+    ("replicated_mt_test_disabled_ttl_move_on_insert_work", "VOLUME", "ReplicatedMergeTree('/clickhouse/replicated_test_disabled_ttl_move_on_insert_work', '1')"),
+])
+def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 TO {dest_type} 'external'
+            SETTINGS storage_policy='jbod_without_instant_ttl_move'
+        """.format(name=name, dest_type=dest_type, engine=engine))
+
+        node1.query("SYSTEM STOP MOVES {}".format(name))
+
+        data = []  # 10MB in total
+        for i in range(10):
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(
+                time.time() - 1)))  # 1MB row
+
+        node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"jbod1"}
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
+
+        node1.query("SYSTEM START MOVES {}".format(name))
+        time.sleep(3)
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"external"}
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
+
+    finally:
+        try:
+            node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        except:
+            pass
