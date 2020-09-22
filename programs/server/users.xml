@@ -52,7 +52,7 @@
                   place 'kerberos' element instead of 'password' (and similar) elements.
                  The name part of the canonical principal name of the initiator must match the user name for authentication to succeed.
                  You can also place 'realm' element inside 'kerberos' element to further restrict authentication to only those requests
-                  whose initiator's realm matches the specified realm. 
+                  whose initiator's realm matches it. 
                  Example: <kerberos />
                  Example: <kerberos><realm>EXAMPLE.COM</realm></kerberos>
 
