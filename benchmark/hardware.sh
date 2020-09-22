@@ -11,6 +11,9 @@ DATASET="${TABLE}_v1.tar.xz"
 QUERIES_FILE="queries.sql"
 TRIES=3
 
+AMD64_BIN_URL="https://clickhouse-builds.s3.yandex.net/0/e29c4c3cc47ab2a6c4516486c1b77d57e7d42643/clickhouse_build_check/gcc-10_relwithdebuginfo_none_bundled_unsplitted_disable_False_binary/clickhouse"
+AARCH64_BIN_URL="https://clickhouse-builds.s3.yandex.net/0/e29c4c3cc47ab2a6c4516486c1b77d57e7d42643/clickhouse_special_build_check/clang-10-aarch64_relwithdebuginfo_none_bundled_unsplitted_disable_False_binary/clickhouse"
+
 FASTER_DOWNLOAD=wget
 if command -v axel >/dev/null; then
     FASTER_DOWNLOAD=axel
@@ -30,9 +33,9 @@ pushd clickhouse-benchmark-$SCALE
 if [[ ! -f clickhouse ]]; then
     CPU=$(uname -m)
     if [[ ($CPU == x86_64) || ($CPU == amd64) ]]; then
-        $FASTER_DOWNLOAD "https://clickhouse-builds.s3.yandex.net/0/e29c4c3cc47ab2a6c4516486c1b77d57e7d42643/clickhouse_build_check/gcc-10_relwithdebuginfo_none_bundled_unsplitted_disable_False_binary/clickhouse"
+        $FASTER_DOWNLOAD "$AMD64_BIN_URL"
     elif [[ $CPU == aarch64 ]]; then
-        $FASTER_DOWNLOAD "https://clickhouse-builds.s3.yandex.net/0/e29c4c3cc47ab2a6c4516486c1b77d57e7d42643/clickhouse_special_build_check/clang-10-aarch64_relwithdebuginfo_none_bundled_unsplitted_disable_False_binary/clickhouse"
+        $FASTER_DOWNLOAD "$AARCH64_BIN_URL"
     else
         echo "Unsupported CPU type: $CPU"
         exit 1
