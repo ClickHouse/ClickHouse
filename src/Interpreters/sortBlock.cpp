@@ -211,13 +211,11 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             for (const auto & column : columns_with_sort_desc)
             {
                 while (!ranges.empty() && limit && limit <= ranges.back().first)
-                {
                     ranges.pop_back();
-                }
+
                 if (ranges.empty())
-                {
                     break;
-                }
+
                 column.column->updatePermutation(
                     column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
             }
@@ -225,9 +223,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 
         size_t columns = block.columns();
         for (size_t i = 0; i < columns; ++i)
-        {
             block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
-        }
     }
 }
 

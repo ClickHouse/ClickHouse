@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ActionLock.h>
 #include <Interpreters/StorageID.h>

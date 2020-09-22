@@ -180,12 +180,13 @@ def build(args):
     if not args.skip_website:
         website.build_website(args)
 
-    test.test_templates(args.website_dir)
+    if not args.skip_test_templates:
+        test.test_templates(args.website_dir)
 
-    build_docs(args)
-
-    from github import build_releases
-    build_releases(args, build_docs)
+    if not args.skip_docs:
+        build_docs(args)
+        from github import build_releases
+        build_releases(args, build_docs)
 
     if not args.skip_blog:
         blog.build_blog(args)
@@ -220,6 +221,8 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-website', action='store_true')
     arg_parser.add_argument('--skip-blog', action='store_true')
     arg_parser.add_argument('--skip-git-log', action='store_true')
+    arg_parser.add_argument('--skip-docs', action='store_true')
+    arg_parser.add_argument('--skip-test-templates', action='store_true')
     arg_parser.add_argument('--test-only', action='store_true')
     arg_parser.add_argument('--minify', action='store_true')
     arg_parser.add_argument('--htmlproofer', action='store_true')

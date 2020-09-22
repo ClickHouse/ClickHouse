@@ -30,7 +30,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Механизм прозрачных huge pages нужно отключить. Он мешает работе аллокаторов памяти, что приводит к значительной деградации производительности.
 
 ``` bash
-$ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
 С помощью `perf top` можно наблюдать за временем, проведенном в ядре операционной системы для управления памятью.

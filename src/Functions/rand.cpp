@@ -3,9 +3,13 @@
 
 namespace DB
 {
+namespace
+{
 
 struct NameRand { static constexpr auto name = "rand"; };
 using FunctionRand = FunctionRandom<UInt32, NameRand>;
+
+}
 
 void registerFunctionRand(FunctionFactory & factory)
 {

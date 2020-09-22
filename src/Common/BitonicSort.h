@@ -12,7 +12,7 @@
 #endif
 
 #include <ext/bit_cast.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <Common/PODArray.h>
 #include <Columns/ColumnsCommon.h>

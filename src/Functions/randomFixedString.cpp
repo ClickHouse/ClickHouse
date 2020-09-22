@@ -21,6 +21,8 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
 }
 
+namespace
+{
 
 /* Generate random fixed string with fully random bytes (including zero). */
 template <typename RandImpl>
@@ -102,6 +104,8 @@ public:
 private:
     ImplementationSelector<IFunction> selector;
 };
+
+}
 
 void registerFunctionRandomFixedString(FunctionFactory & factory)
 {

@@ -17,13 +17,15 @@ static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+namespace
+{
 
 class FunctionH3ToChildren : public IFunction
 {
@@ -101,6 +103,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionH3ToChildren(FunctionFactory & factory)
 {

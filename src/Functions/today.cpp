@@ -10,6 +10,8 @@
 
 namespace DB
 {
+namespace
+{
 
 class ExecutableFunctionToday : public IExecutableFunctionImpl
 {
@@ -78,6 +80,8 @@ public:
         return std::make_unique<FunctionBaseToday>(DateLUT::instance().toDayNum(time(nullptr)));
     }
 };
+
+}
 
 void registerFunctionToday(FunctionFactory & factory)
 {

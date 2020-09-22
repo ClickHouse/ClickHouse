@@ -1,7 +1,9 @@
-import pytest
 import os
+
+import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import TSV
+
 from generate_dictionaries import generate_structure, generate_dictionaries, DictionaryTestTable
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -19,12 +21,12 @@ def setup_module(module):
     structure = generate_structure()
     dictionary_files = generate_dictionaries(os.path.join(SCRIPT_DIR, 'configs/dictionaries'), structure)
 
-    cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-    instance = cluster.add_instance('instance', main_configs=dictionary_files)
+    cluster = ClickHouseCluster(__file__)
+    instance = cluster.add_instance('instance', main_configs=dictionary_files + ['configs/enable_dictionaries.xml'])
     test_table = DictionaryTestTable(os.path.join(SCRIPT_DIR, 'configs/dictionaries/source.tsv'))
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()

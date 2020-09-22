@@ -97,6 +97,9 @@ private:
         /// Currently processing node.
         ExecutingGraph::Node * node = nullptr;
 
+        /// Exception from executing thread itself.
+        std::exception_ptr exception;
+
 #ifndef NDEBUG
         /// Time for different processing stages.
         UInt64 total_time_ns = 0;

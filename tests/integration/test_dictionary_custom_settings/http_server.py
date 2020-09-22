@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 import argparse
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+import csv
 import socket
 import ssl
-import csv
+from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 
 
 # Decorator used to see if authentication works for external dictionary who use a HTTP source.
@@ -15,6 +15,7 @@ def check_auth(fn):
             req.send_response(401)
         else:
             fn(req)
+
     return wrapper
 
 
@@ -37,7 +38,7 @@ def start_server(server_address, data_path, schema, cert_path, address_family):
             self.send_header('Content-type', 'text/csv')
             self.end_headers()
 
-        def __send_data(self, only_ids = None):
+        def __send_data(self, only_ids=None):
             with open(data_path, 'r') as fl:
                 reader = csv.reader(fl, delimiter='\t')
                 for row in reader:

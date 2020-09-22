@@ -110,7 +110,7 @@ void ASTColumnsReplaceTransformer::replaceChildren(ASTPtr & node, const ASTPtr &
         if (const auto * id = child->as<ASTIdentifier>())
         {
             if (id->shortName() == name)
-                child = replacement;
+                child = replacement->clone();
         }
         else
             replaceChildren(child, replacement, name);

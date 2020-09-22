@@ -1,9 +1,11 @@
-#-*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import StringIO
 import gzip
-import requests
 import subprocess
 from tempfile import NamedTemporaryFile
+
+import requests
+
 
 class HDFSApi(object):
     def __init__(self, user):
@@ -13,11 +15,15 @@ class HDFSApi(object):
         self.user = user
 
     def read_data(self, path):
-        response = requests.get("http://{host}:{port}/webhdfs/v1{path}?op=OPEN".format(host=self.host, port=self.http_proxy_port, path=path), allow_redirects=False)
+        response = requests.get(
+            "http://{host}:{port}/webhdfs/v1{path}?op=OPEN".format(host=self.host, port=self.http_proxy_port,
+                                                                   path=path), allow_redirects=False)
         if response.status_code != 307:
             response.raise_for_status()
         additional_params = '&'.join(response.headers['Location'].split('&')[1:2])
-        response_data = requests.get("http://{host}:{port}/webhdfs/v1{path}?op=OPEN&{params}".format(host=self.host, port=self.http_data_port, path=path, params=additional_params))
+        response_data = requests.get(
+            "http://{host}:{port}/webhdfs/v1{path}?op=OPEN&{params}".format(host=self.host, port=self.http_data_port,
+                                                                            path=path, params=additional_params))
         if response_data.status_code != 200:
             response_data.raise_for_status()
 
@@ -25,7 +31,9 @@ class HDFSApi(object):
 
     # Requests can't put file
     def _curl_to_put(self, filename, path, params):
-        url = "http://{host}:{port}/webhdfs/v1{path}?op=CREATE&{params}".format(host=self.host, port=self.http_data_port, path=path, params=params)
+        url = "http://{host}:{port}/webhdfs/v1{path}?op=CREATE&{params}".format(host=self.host,
+                                                                                port=self.http_data_port, path=path,
+                                                                                params=params)
         cmd = "curl -s -i -X PUT -T {fname} '{url}'".format(fname=filename, url=url)
         output = subprocess.check_output(cmd, shell=True)
         return output
@@ -36,13 +44,15 @@ class HDFSApi(object):
         named_file.write(content)
         named_file.flush()
         response = requests.put(
-            "http://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(host=self.host, port=self.http_proxy_port, path=path, user=self.user),
+            "http://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(host=self.host, port=self.http_proxy_port,
+                                                                     path=path, user=self.user),
             allow_redirects=False
         )
         if response.status_code != 307:
             response.raise_for_status()
 
-        additional_params = '&'.join(response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
+        additional_params = '&'.join(
+            response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
         output = self._curl_to_put(fpath, path, additional_params)
         if "201 Created" not in output:
             raise Exception("Can't create file on hdfs:\n {}".format(output))

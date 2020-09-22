@@ -3,7 +3,7 @@
 #include <cstring>
 #include <cmath>
 #include <string>
-#include <Core/Types.h>
+#include <common/types.h>
 
 #define UNICODE_BAR_CHAR_SIZE (strlen("█"))
 

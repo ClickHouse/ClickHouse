@@ -114,6 +114,10 @@ struct StorageInMemoryMetadata
     TTLDescriptions getMoveTTLs() const;
     bool hasAnyMoveTTL() const;
 
+    // Just wrapper for table TTLs, return info about recompression ttl
+    TTLDescriptions getRecompressionTTLs() const;
+    bool hasAnyRecompressionTTL() const;
+
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
     ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;

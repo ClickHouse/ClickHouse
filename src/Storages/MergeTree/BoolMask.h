@@ -6,25 +6,25 @@ struct BoolMask
     bool can_be_true = false;
     bool can_be_false = false;
 
-    BoolMask() {}
-    BoolMask(bool can_be_true_, bool can_be_false_) : can_be_true(can_be_true_), can_be_false(can_be_false_) {}
+//    BoolMask() noexcept {}
+//    BoolMask(bool can_be_true_, bool can_be_false_) noexcept : can_be_true(can_be_true_), can_be_false(can_be_false_) {}
 
-    BoolMask operator &(const BoolMask & m)
+    BoolMask operator &(const BoolMask & m) const noexcept
     {
-        return BoolMask(can_be_true && m.can_be_true, can_be_false || m.can_be_false);
+        return {can_be_true && m.can_be_true, can_be_false || m.can_be_false};
     }
-    BoolMask operator |(const BoolMask & m)
+    BoolMask operator |(const BoolMask & m) const noexcept
     {
-        return BoolMask(can_be_true || m.can_be_true, can_be_false && m.can_be_false);
+        return {can_be_true || m.can_be_true, can_be_false && m.can_be_false};
     }
-    BoolMask operator !()
+    BoolMask operator !() const noexcept
     {
-        return BoolMask(can_be_false, can_be_true);
+        return {can_be_false, can_be_true};
     }
 
     /// If mask is (true, true), then it can no longer change under operation |.
     /// We use this condition to early-exit KeyConditions::check{InRange,After} methods.
-    bool isComplete() const
+    bool isComplete() const noexcept
     {
         return can_be_false && can_be_true;
     }

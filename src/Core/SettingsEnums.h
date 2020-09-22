@@ -126,4 +126,15 @@ enum class DefaultDatabaseEngine
 };
 
 DECLARE_SETTING_ENUM(DefaultDatabaseEngine)
+
+
+enum class MySQLDataTypesSupport
+{
+    DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
+    DATETIME64, // convert MySQL's DATETIME and TIMESTAMP and ClickHouse DateTime64 if precision is > 0 or range is greater that for DateTime.
+    // ENUM
+};
+
+DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
+
 }

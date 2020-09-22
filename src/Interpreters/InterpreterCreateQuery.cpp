@@ -673,6 +673,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
     }
+    /// TODO maybe assert table structure if create.attach_short_syntax is false?
 
     if (!create.temporary && create.database.empty())
         create.database = current_database;

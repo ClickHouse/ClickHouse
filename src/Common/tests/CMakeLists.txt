@@ -84,3 +84,6 @@ target_link_libraries (procfs_metrics_provider_perf PRIVATE clickhouse_common_io
 
 add_executable (average average.cpp)
 target_link_libraries (average PRIVATE clickhouse_common_io)
+
+add_executable (shell_command_inout shell_command_inout.cpp)
+target_link_libraries (shell_command_inout PRIVATE clickhouse_common_io)

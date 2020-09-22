@@ -46,7 +46,6 @@ namespace
             ptr_out[i] = ptr_in[i] ^ mask;
         }
     }
-}
 
 
 class FunctionFuzzBits : public IFunction
@@ -142,6 +141,8 @@ public:
         }
     }
 };
+
+}
 
 void registerFunctionFuzzBits(FunctionFactory & factory)
 {
