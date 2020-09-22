@@ -41,6 +41,8 @@ SELECT * FROM columns_with_multiple_streams ORDER BY field0;
 
 DROP TABLE IF EXISTS columns_with_multiple_streams;
 
+DROP TABLE IF EXISTS columns_with_multiple_streams_compact;
+
 CREATE TABLE columns_with_multiple_streams_compact (
   field0 Nullable(Int64) CODEC(Delta(2), LZ4),
   field1 Nullable(Int64) CODEC(Delta, LZ4),
