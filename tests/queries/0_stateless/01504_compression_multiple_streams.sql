@@ -82,3 +82,35 @@ SELECT * FROM columns_with_multiple_streams_compact ORDER BY field0;
 
 DROP TABLE IF EXISTS columns_with_multiple_streams_compact;
 
+DROP TABLE IF EXISTS columns_with_multiple_streams_bad_case;
+
+-- validation still works, non-sense codecs checked
+CREATE TABLE columns_with_multiple_streams_bad_case (
+  field0 Nullable(String) CODEC(Delta, LZ4)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); --{serverError 36}
+
+CREATE TABLE columns_with_multiple_streams_bad_case (
+  field0 Tuple(Array(UInt64), String) CODEC(T64, LZ4)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); --{serverError 431}
+
+SET allow_suspicious_codecs = 1;
+
+CREATE TABLE columns_with_multiple_streams_bad_case (
+  field0 Nullable(UInt64) CODEC(Delta)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO columns_with_multiple_streams_bad_case VALUES(1), (2);
+
+INSERT INTO columns_with_multiple_streams_bad_case VALUES(3);
+
+OPTIMIZE TABLE columns_with_multiple_streams_bad_case FINAL;
+
+SELECT * FROM columns_with_multiple_streams_bad_case ORDER BY field0;
+
+DROP TABLE IF EXISTS columns_with_multiple_streams_bad_case;
