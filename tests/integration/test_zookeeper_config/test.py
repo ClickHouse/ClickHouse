@@ -147,7 +147,7 @@ def test_secure_connection():
 
     cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_with_ssl.xml')
 
-    docker_compose = NamedTemporaryFile(delete=False)
+    docker_compose = NamedTemporaryFile(mode='w+', delete=False)
 
     docker_compose.write(
         "version: '2.3'\nservices:\n" +
