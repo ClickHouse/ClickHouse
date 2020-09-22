@@ -15,6 +15,7 @@ import sys
 import time
 import traceback
 import xml.etree.ElementTree as et
+from scipy import stats
 
 def tsv_escape(s):
     return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
@@ -211,7 +212,8 @@ for query_index in queries_to_run:
     for conn_index, c in enumerate(all_connections):
         try:
             prewarm_id = f'{query_prefix}.prewarm0'
-            res = c.execute(q, query_id = prewarm_id)
+            # Will also detect too long queries during warmup stage
+            res = c.execute(q, query_id = prewarm_id, settings = {'max_execution_time': 10})
             print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
         except KeyboardInterrupt:
             raise
@@ -220,7 +222,6 @@ for query_index in queries_to_run:
             # might lead to further errors or unexpected behavior.
             query_error_on_connection[conn_index] = traceback.format_exc();
             continue
-
 
     # Report all errors that ocurred during prewarm and decide what to do next.
     # If prewarm fails for the query on all servers -- skip the query and
@@ -246,7 +247,14 @@ for query_index in queries_to_run:
     # sending excessive data.
     start_seconds = time.perf_counter()
     server_seconds = 0
+    profile_seconds = 0
     run = 0
+
+    # Arrays of run times for each connection.
+    all_server_times = []
+    for conn_index, c in enumerate(this_query_connections):
+        all_server_times.append([])
+
     while True:
         run_id = f'{query_prefix}.run{run}'
 
@@ -259,14 +267,17 @@ for query_index in queries_to_run:
                 e.message = run_id + ': ' + e.message
                 raise
 
-            server_seconds += c.last_query.elapsed
-            print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
+            elapsed = c.last_query.elapsed
+            all_server_times[conn_index].append(elapsed)
 
-            if c.last_query.elapsed > 10:
+            server_seconds += elapsed
+            print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}')
+
+            if elapsed > 10:
                 # Stop processing pathologically slow queries, to avoid timing out
                 # the entire test task. This shouldn't really happen, so we don't
                 # need much handling for this case and can just exit.
-                print(f'The query no. {query_index} is taking too long to run ({c.last_query.elapsed} s)', file=sys.stderr)
+                print(f'The query no. {query_index} is taking too long to run ({elapsed} s)', file=sys.stderr)
                 exit(2)
 
         # Be careful with the counter, after this line it's the next iteration
@@ -296,6 +307,35 @@ for query_index in queries_to_run:
 
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
+
+    #print(all_server_times)
+    #print(stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue)
+
+    # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
+    # We have to do it after normal runs because otherwise it will affect test statistics too much
+    if len(all_server_times) == 2 and stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue < 0.1:
+        run = 0
+        while True:
+            run_id = f'{query_prefix}.profile{run}'
+
+            for conn_index, c in enumerate(this_query_connections):
+                try:
+                    res = c.execute(q, query_id = run_id, settings = {'query_profiler_real_time_period_ns': 10000000})
+                    print(f'profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
+                except Exception as e:
+                    # Add query id to the exception to make debugging easier.
+                    e.args = (run_id, *e.args)
+                    e.message = run_id + ': ' + e.message
+                    raise
+
+                elapsed = c.last_query.elapsed
+                profile_seconds += elapsed
+
+            run += 1
+            # Don't spend too much time for profile runs
+            if run > args.runs or profile_seconds > 10:
+                break
+            # And don't bother with short queries
 
 # Run drop queries
 drop_queries = substitute_parameters(drop_query_templates)
