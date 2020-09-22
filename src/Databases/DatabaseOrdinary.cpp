@@ -159,11 +159,37 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
 
     ThreadPool pool;
 
+    // Load join tables first
+    for (const auto & name_with_query : file_names)
+    {
+        const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
+        if (create_query.storage && create_query.storage->engine->name == "Join")
+        {
+            LOG_INFO(log, "Loading {} JOIN.", name_with_query.first);
+            pool.scheduleOrThrowOnError([&]()
+            {
+                tryAttachTable(
+                    context,
+                    create_query,
+                    *this,
+                    database_name,
+                    getMetadataPath() + name_with_query.first,
+                    has_force_restore_data_flag);
+
+                /// Messages, so that it's not boring to wait for the server to load for a long time.
+                logAboutProgress(log, ++tables_processed, total_tables, watch);
+            });
+        }
+    }
+
+    pool.wait();
+    startupTables(pool);
+
     /// Attach tables.
     for (const auto & name_with_query : file_names)
     {
         const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
-        if (!create_query.is_dictionary)
+        if (!create_query.is_dictionary && (create_query.storage && create_query.storage->engine->name != "Join"))
             pool.scheduleOrThrowOnError([&]()
             {
                 tryAttachTable(
