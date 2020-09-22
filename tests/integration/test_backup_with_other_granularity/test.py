@@ -142,7 +142,7 @@ def test_backup_from_old_version_config(started_cluster):
 
 
 def test_backup_and_alter(started_cluster):
-    node4.query("CREATE DATABASE test ENGINE=Ordinary")
+    node4.query("CREATE DATABASE test ENGINE=Ordinary") # Different path in shadow/ with Atomic
 
     node4.query("CREATE TABLE test.backup_table(A Int64, B String, C Date) Engine = MergeTree order by tuple()")
 

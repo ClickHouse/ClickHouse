@@ -28,7 +28,8 @@ public:
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
     static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
-    const String & dictionaryName() const { return resolved_dictionary_name; }
+    const String & dictionaryName() const { return dictionary_name; }
+    String resolvedDictionaryName() const;
 
     /// Specifies where the table is located relative to the dictionary.
     enum class Location
@@ -50,7 +51,6 @@ public:
 
 private:
     const String dictionary_name;
-    const String resolved_dictionary_name;
     const Location location;
 
 protected:
