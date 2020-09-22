@@ -80,6 +80,7 @@ private:
     bool is_safe_mode = false;
     double copy_fault_probability = 0.0;
     double move_fault_probability = 0.0;
+    bool use_ddl_on_cluster = false;
     bool is_help = false;
 
     bool experimental_use_sample_offset{false};

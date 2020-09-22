@@ -29,6 +29,9 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
     if (config().has("experimental-use-sample-offset"))
         experimental_use_sample_offset = config().getBool("experimental-use-sample-offset");
 
+    if (config().has("use-ddl-on-cluster"))
+        use_ddl_on_cluster = config().getBool("use-ddl-on-cluster");    
+
     // process_id is '<hostname>#<start_timestamp>_<pid>'
     time_t timestamp = Poco::Timestamp().epochTime();
     auto curr_pid = Poco::Process::id();
@@ -92,6 +95,8 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("base-dir").binding("base-dir"));
     options.addOption(Poco::Util::Option("experimental-use-sample-offset", "", "Use SAMPLE OFFSET query instead of cityHash64(PRIMARY KEY) % n == k")
                           .argument("experimental-use-sample-offset").binding("experimental-use-sample-offset"));
+    options.addOption(Poco::Util::Option("use-ddl-on-cluster", "", "Use ddl on cluster instead of quering all nodes.")
+                          .argument("use-ddl-on-cluster").binding("use-ddl-on-cluster"));
 
     using Me = std::decay_t<decltype(*this)>;
     options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
@@ -134,6 +139,7 @@ void ClusterCopierApp::mainImpl()
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);
+    copier->setUseDDLOnCluster(use_ddl_on_cluster);
 
     copier->setExperimentalUseSampleOffset(experimental_use_sample_offset);
 

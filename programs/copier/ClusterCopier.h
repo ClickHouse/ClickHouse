@@ -65,6 +65,11 @@ public:
         experimental_use_sample_offset = value;
     }
 
+    void setUseDDLOnCluster(bool value)
+    {
+        use_ddl_on_cluster = value;
+    }
+
 protected:
 
     String getWorkersPath() const
@@ -220,6 +225,7 @@ private:
     double move_fault_probability = 0.0;
 
     bool experimental_use_sample_offset{false};
+    bool use_ddl_on_cluster{false};
 
     Context & context;
     Poco::Logger * log;

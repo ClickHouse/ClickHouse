@@ -1482,8 +1482,16 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         String query = queryToString(create_query_push_ast);
 
         LOG_DEBUG(log, "Create destination tables. Query: {}", query);
-        UInt64 shards = simpleDDLOnCluster(task_table.cluster_push, query, task_cluster->settings_push);
-        LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}", getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
+
+        if (use_ddl_on_cluster) 
+        {
+            simpleDDLOnCluster(task_table.cluster_push, query, task_cluster->settings_push);
+        }
+        else 
+        {
+            UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
+            LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}", getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
+        }
     }
     catch (...)
     {
@@ -1532,29 +1540,29 @@ void ClusterCopier::dropLocalTableIfExists(const DatabaseAndTableName & table_na
 }
 
 
-void ClusterCopier::dropHelpingTables(const TaskTable & /*task_table*/)
+void ClusterCopier::dropHelpingTables(const TaskTable & task_table)
 {
     LOG_DEBUG(log, "Removing helping tables");
-    // for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
-    // {
-    //     DatabaseAndTableName original_table = task_table.table_push;
-    //     DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
+    for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
+    {
+        DatabaseAndTableName original_table = task_table.table_push;
+        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
 
-    //     String query = "DROP TABLE IF EXISTS " + getQuotedTable(helping_table);
+        String query = "DROP TABLE IF EXISTS " + getQuotedTable(helping_table);
 
-    //     const ClusterPtr & cluster_push = task_table.cluster_push;
-    //     Settings settings_push = task_cluster->settings_push;
+        const ClusterPtr & cluster_push = task_table.cluster_push;
+        Settings settings_push = task_cluster->settings_push;
 
-    //     LOG_DEBUG(log, "Execute distributed DROP TABLE: {}", query);
-    //     /// We have to drop partition_piece on each replica
-    //     UInt64 num_nodes = executeQueryOnCluster(
-    //             cluster_push, query,
-    //             settings_push,
-    //             PoolMode::GET_MANY,
-    //             ClusterExecutionMode::ON_EACH_NODE);
+        LOG_DEBUG(log, "Execute distributed DROP TABLE: {}", query);
+        /// We have to drop partition_piece on each replica
+        UInt64 num_nodes = executeQueryOnCluster(
+                cluster_push, query,
+                settings_push,
+                PoolMode::GET_MANY,
+                ClusterExecutionMode::ON_EACH_NODE);
 
-    //     LOG_DEBUG(log, "DROP TABLE query was successfully executed on {} nodes.", toString(num_nodes));
-    // }
+        LOG_DEBUG(log, "DROP TABLE query was successfully executed on {} nodes.", toString(num_nodes));
+    }
 }
 
 
