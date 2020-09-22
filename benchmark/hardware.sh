@@ -54,7 +54,7 @@ echo "Waiting for clickhouse-server to start"
 
 for i in {1..30}; do
     sleep 1
-    ./clickhouse client --query "SELECT 'The dataset size is: ', count() FROM $TABLE" && break
+    ./clickhouse client --query "SELECT 'The dataset size is: ', count() FROM $TABLE" 2>/dev/null && break || echo '.'
     if [[ $i == 30 ]]; then exit 1; fi
 done
 
@@ -78,8 +78,9 @@ done
 
 echo
 echo "Benchmark complete. System info:"
+echo
 
-echo '----version and build id--------'
+echo '----Version and build id--------'
 ./clickhouse local --query "SELECT version(), buildId()"
 echo '----CPU-------------------------'
 lscpu
