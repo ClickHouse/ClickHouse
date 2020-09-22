@@ -65,7 +65,7 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
     entities[name] = path, formatted_entity
 
 def process_file(root_path: str, input_name: str) -> None:
-    with open(root_path + input_name, 'r') as cmake_file:
+    with open(os.path.join(root_path, input_name), 'r') as cmake_file:
         contents: str = cmake_file.read()
 
         def get_line_and_comment(target: str) -> Tuple[int, str]:
@@ -94,7 +94,7 @@ def process_folder(root_path:str, name: str) -> None:
     for root, _, files in os.walk(name):
         for f in files:
             if f == "CMakeLists.txt" or ".cmake" in f:
-                process_file(root_path, root + "/" + f)
+                process_file(root_path, os.path.join(root, f))
 
 def generate_cmake_flags_files(root_path: str) -> None:
     output_file_name: str = root_path + "docs/en/development/cmake-in-clickhouse.md"
