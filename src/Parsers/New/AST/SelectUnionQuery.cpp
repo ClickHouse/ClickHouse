@@ -65,10 +65,14 @@ WhereClause::WhereClause(PtrTo<ColumnExpr> expr_) : expr(expr_)
 
 // GROUP BY Clause
 
-GroupByClause::GroupByClause(PtrTo<ColumnExprList> expr_list, bool with_totals_) : exprs(expr_list), with_totals(with_totals_)
+GroupByClause::GroupByClause(PtrTo<ColumnExprList> expr_list, bool with_totals_) : with_totals(with_totals_)
 {
-    /// FIXME: remove this.
-    (void)with_totals;
+    children.push_back(expr_list);
+}
+
+ASTPtr GroupByClause::convertToOld() const
+{
+    return children[EXPRS]->convertToOld();
 }
 
 // HAVING Clause
@@ -183,7 +187,11 @@ ASTPtr SelectStmt::convertToOld() const
     // TODO: ARRAY JOIN
     if (children[PREWHERE]) old_select->setExpression(ASTSelectQuery::Expression::PREWHERE, children[PREWHERE]->convertToOld());
     if (children[WHERE]) old_select->setExpression(ASTSelectQuery::Expression::WHERE, children[WHERE]->convertToOld());
-    if (children[GROUP_BY]) old_select->setExpression(ASTSelectQuery::Expression::GROUP_BY, children[GROUP_BY]->convertToOld());
+    if (children[GROUP_BY])
+    {
+        old_select->setExpression(ASTSelectQuery::Expression::GROUP_BY, children[GROUP_BY]->convertToOld());
+        old_select->group_by_with_totals = children[GROUP_BY]->as<GroupByClause>()->withTotals();
+    }
     if (children[HAVING]) old_select->setExpression(ASTSelectQuery::Expression::HAVING, children[HAVING]->convertToOld());
     if (children[ORDER_BY]) old_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, children[ORDER_BY]->convertToOld());
     // TODO: LIMIT BY

@@ -18,6 +18,8 @@ class TableColumnPropertyExpr : public INode
 
         TableColumnPropertyExpr(PropertyType type, PtrTo<ColumnExpr> expr);
 
+        auto getType() const { return property_type; }
+
     private:
         PropertyType property_type;
 };
@@ -25,6 +27,13 @@ class TableColumnPropertyExpr : public INode
 class TableElementExpr : public INode
 {
     public:
+        enum class ExprType
+        {
+            COLUMN,
+            INDEX,
+            CONSTRAINT,
+        };
+
         static PtrTo<TableElementExpr> createColumn(
             PtrTo<Identifier> name,
             PtrTo<ColumnTypeExpr> type,
@@ -32,21 +41,19 @@ class TableElementExpr : public INode
             PtrTo<StringLiteral> comment,
             PtrTo<ColumnExpr> ttl);
 
+        auto getType() const { return expr_type; }
+
+        ASTPtr convertToOld() const override;
+
     private:
-        enum class ExprType
-        {
-            COLUMN,
-            INDEX,
-            CONSTRAINT,
-        };
         enum ChildIndex: UInt8
         {
             // COLUMN
-            NAME = 0,
-            TYPE,
-            PROPERTY,
-            COMMENT,
-            TTL,
+            NAME = 0,  // Identifier
+            TYPE,      // ColumnExprType (optional)
+            PROPERTY,  // TableColumnPropertyExpr
+            COMMENT,   // StringLiteral
+            TTL,       // ColumnExpr
         };
 
         const ExprType expr_type;

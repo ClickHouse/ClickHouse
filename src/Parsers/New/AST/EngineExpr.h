@@ -44,16 +44,18 @@ class EngineClause : public INode
         void setTTLClause(PtrTo<TTLClause> clause);
         void setSettingsClause(PtrTo<SettingsClause> clause);
 
+        ASTPtr convertToOld() const override;
+
     private:
         enum ChildIndex : UInt8
         {
-            ENGINE = 0,
-            ORDER_BY,
-            PARTITION_BY,
-            PRIMARY_KEY,
-            SAMPLE_BY,
-            TTL,
-            SETTINGS,
+            ENGINE = 0,    // EngineExpr
+            ORDER_BY,      // OrderByClause (optional)
+            PARTITION_BY,  // PartitionByClause (optional)
+            PRIMARY_KEY,   // PrimaryKeyClause (optional)
+            SAMPLE_BY,     // SampleByClause (optional)
+            TTL,           // TTLClause (optional)
+            SETTINGS,      // SettingsClause (optional)
 
             MAX_INDEX,
         };
@@ -65,6 +67,15 @@ class EngineExpr : public INode
 {
     public:
         EngineExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> args);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            NAME = 0,  // Identifier
+            ARGS,      // ColumnExprList (optional)
+        };
 };
 
 class TTLExpr : public INode

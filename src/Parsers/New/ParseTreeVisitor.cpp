@@ -36,6 +36,8 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitQueryStmt(ClickHouseParser::QueryStmtContext *ctx)
 {
+    if (ctx->insertStmt()) return std::static_pointer_cast<Query>(visit(ctx->insertStmt()).as<PtrTo<InsertQuery>>());
+
     auto query = visit(ctx->query()).as<PtrTo<Query>>();
 
     if (ctx->OUTFILE()) query->setOutFile(Literal::createString(ctx->STRING_LITERAL()));
@@ -59,7 +61,6 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     TRY_POINTER_CAST(DescribeQuery)
     TRY_POINTER_CAST(DropQuery)
     TRY_POINTER_CAST(ExistsQuery)
-    TRY_POINTER_CAST(InsertQuery)
     TRY_POINTER_CAST(OptimizeQuery)
     TRY_POINTER_CAST(RenameQuery)
     TRY_POINTER_CAST(SelectUnionQuery)
@@ -88,7 +89,7 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
     if (ctx->databaseIdentifier())
     {
         auto database = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("database"));
-        auto args = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(database), Literal::createString("db")});
+        auto args = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(database), Literal::createString(visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>()->getName())});
         and_args->append(ColumnExpr::createFunction(std::make_shared<Identifier>("equals"), nullptr, args));
     }
 

@@ -38,13 +38,13 @@ public:
     VOLUME = 130, WEEK = 131, WHEN = 132, WHERE = 133, WITH = 134, YEAR = 135, 
     JSON_FALSE = 136, JSON_TRUE = 137, IDENTIFIER = 138, FLOATING_LITERAL = 139, 
     HEXADECIMAL_LITERAL = 140, INTEGER_LITERAL = 141, STRING_LITERAL = 142, 
-    DATA_STRING_LITERAL = 143, ARROW = 144, ASTERISK = 145, BACKQUOTE = 146, 
-    BACKSLASH = 147, COLON = 148, COMMA = 149, CONCAT = 150, DASH = 151, 
-    DOT = 152, EQ_DOUBLE = 153, EQ_SINGLE = 154, GE = 155, GT = 156, LBRACE = 157, 
-    LBRACKET = 158, LE = 159, LPAREN = 160, LT = 161, NOT_EQ = 162, PERCENT = 163, 
-    PLUS = 164, QUERY = 165, QUOTE_DOUBLE = 166, QUOTE_SINGLE = 167, RBRACE = 168, 
-    RBRACKET = 169, RPAREN = 170, SEMICOLON = 171, SLASH = 172, UNDERSCORE = 173, 
-    SINGLE_LINE_COMMENT = 174, MULTI_LINE_COMMENT = 175, WHITESPACE = 176
+    ARROW = 143, ASTERISK = 144, BACKQUOTE = 145, BACKSLASH = 146, COLON = 147, 
+    COMMA = 148, CONCAT = 149, DASH = 150, DOT = 151, EQ_DOUBLE = 152, EQ_SINGLE = 153, 
+    GE = 154, GT = 155, LBRACE = 156, LBRACKET = 157, LE = 158, LPAREN = 159, 
+    LT = 160, NOT_EQ = 161, PERCENT = 162, PLUS = 163, QUERY = 164, QUOTE_DOUBLE = 165, 
+    QUOTE_SINGLE = 166, RBRACE = 167, RBRACKET = 168, RPAREN = 169, SEMICOLON = 170, 
+    SLASH = 171, UNDERSCORE = 172, MULTI_LINE_COMMENT = 173, SINGLE_LINE_COMMENT = 174, 
+    WHITESPACE = 175
   };
 
   enum {
@@ -55,25 +55,24 @@ public:
     RuleTtlClause = 14, RuleEngineExpr = 15, RuleTableElementExpr = 16, 
     RuleTableColumnDfnt = 17, RuleTableColumnPropertyExpr = 18, RuleTtlExpr = 19, 
     RuleDescribeStmt = 20, RuleDropStmt = 21, RuleExistsStmt = 22, RuleInsertStmt = 23, 
-    RuleColumnsClause = 24, RuleDataClause = 25, RuleDataExpr = 26, RuleValuesExpr = 27, 
-    RuleValueTupleExpr = 28, RuleJsonExpr = 29, RuleJsonValueExpr = 30, 
-    RuleOptimizeStmt = 31, RulePartitionClause = 32, RuleRenameStmt = 33, 
-    RuleSelectUnionStmt = 34, RuleSelectStmtWithParens = 35, RuleSelectStmt = 36, 
-    RuleWithClause = 37, RuleFromClause = 38, RuleSampleClause = 39, RuleArrayJoinClause = 40, 
-    RulePrewhereClause = 41, RuleWhereClause = 42, RuleGroupByClause = 43, 
-    RuleHavingClause = 44, RuleOrderByClause = 45, RuleLimitByClause = 46, 
-    RuleLimitClause = 47, RuleSettingsClause = 48, RuleJoinExpr = 49, RuleJoinOp = 50, 
-    RuleJoinOpCross = 51, RuleJoinConstraintClause = 52, RuleLimitExpr = 53, 
-    RuleOrderExprList = 54, RuleOrderExpr = 55, RuleRatioExpr = 56, RuleSettingExprList = 57, 
-    RuleSettingExpr = 58, RuleSetStmt = 59, RuleShowStmt = 60, RuleSystemStmt = 61, 
-    RuleTruncateStmt = 62, RuleUseStmt = 63, RuleColumnTypeExpr = 64, RuleColumnExprList = 65, 
-    RuleColumnsExpr = 66, RuleColumnExpr = 67, RuleColumnArgList = 68, RuleColumnArgExpr = 69, 
-    RuleColumnLambdaExpr = 70, RuleColumnIdentifier = 71, RuleNestedIdentifier = 72, 
-    RuleTableExpr = 73, RuleTableFunctionExpr = 74, RuleTableIdentifier = 75, 
-    RuleTableArgList = 76, RuleTableArgExpr = 77, RuleDatabaseIdentifier = 78, 
-    RuleFloatingLiteral = 79, RuleNumberLiteral = 80, RuleLiteral = 81, 
-    RuleDataLiteral = 82, RuleKeyword = 83, RuleIdentifier = 84, RuleIdentifierOrNull = 85, 
-    RuleUnaryOp = 86, RuleBinaryOp = 87, RuleEnumValue = 88
+    RuleColumnsClause = 24, RuleDataClause = 25, RuleOptimizeStmt = 26, 
+    RulePartitionClause = 27, RuleRenameStmt = 28, RuleSelectUnionStmt = 29, 
+    RuleSelectStmtWithParens = 30, RuleSelectStmt = 31, RuleWithClause = 32, 
+    RuleFromClause = 33, RuleSampleClause = 34, RuleArrayJoinClause = 35, 
+    RulePrewhereClause = 36, RuleWhereClause = 37, RuleGroupByClause = 38, 
+    RuleHavingClause = 39, RuleOrderByClause = 40, RuleLimitByClause = 41, 
+    RuleLimitClause = 42, RuleSettingsClause = 43, RuleJoinExpr = 44, RuleJoinOp = 45, 
+    RuleJoinOpCross = 46, RuleJoinConstraintClause = 47, RuleLimitExpr = 48, 
+    RuleOrderExprList = 49, RuleOrderExpr = 50, RuleRatioExpr = 51, RuleSettingExprList = 52, 
+    RuleSettingExpr = 53, RuleSetStmt = 54, RuleShowStmt = 55, RuleSystemStmt = 56, 
+    RuleTruncateStmt = 57, RuleUseStmt = 58, RuleColumnTypeExpr = 59, RuleColumnExprList = 60, 
+    RuleColumnsExpr = 61, RuleColumnExpr = 62, RuleColumnArgList = 63, RuleColumnArgExpr = 64, 
+    RuleColumnLambdaExpr = 65, RuleColumnIdentifier = 66, RuleNestedIdentifier = 67, 
+    RuleTableExpr = 68, RuleTableFunctionExpr = 69, RuleTableIdentifier = 70, 
+    RuleTableArgList = 71, RuleTableArgExpr = 72, RuleDatabaseIdentifier = 73, 
+    RuleFloatingLiteral = 74, RuleNumberLiteral = 75, RuleLiteral = 76, 
+    RuleKeyword = 77, RuleIdentifier = 78, RuleIdentifierOrNull = 79, RuleUnaryOp = 80, 
+    RuleBinaryOp = 81, RuleEnumValue = 82
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -112,11 +111,6 @@ public:
   class InsertStmtContext;
   class ColumnsClauseContext;
   class DataClauseContext;
-  class DataExprContext;
-  class ValuesExprContext;
-  class ValueTupleExprContext;
-  class JsonExprContext;
-  class JsonValueExprContext;
   class OptimizeStmtContext;
   class PartitionClauseContext;
   class RenameStmtContext;
@@ -168,7 +162,6 @@ public:
   class FloatingLiteralContext;
   class NumberLiteralContext;
   class LiteralContext;
-  class DataLiteralContext;
   class KeywordContext;
   class IdentifierContext;
   class IdentifierOrNullContext;
@@ -186,6 +179,8 @@ public:
     antlr4::tree::TerminalNode *STRING_LITERAL();
     antlr4::tree::TerminalNode *FORMAT();
     IdentifierOrNullContext *identifierOrNull();
+    antlr4::tree::TerminalNode *SEMICOLON();
+    InsertStmtContext *insertStmt();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
@@ -204,7 +199,6 @@ public:
     DescribeStmtContext *describeStmt();
     DropStmtContext *dropStmt();
     ExistsStmtContext *existsStmt();
-    InsertStmtContext *insertStmt();
     OptimizeStmtContext *optimizeStmt();
     RenameStmtContext *renameStmt();
     SelectUnionStmtContext *selectUnionStmt();
@@ -874,7 +868,6 @@ public:
     DataClauseValuesContext(DataClauseContext *ctx);
 
     antlr4::tree::TerminalNode *VALUES();
-    ValuesExprContext *valuesExpr();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -884,7 +877,6 @@ public:
 
     antlr4::tree::TerminalNode *FORMAT();
     IdentifierContext *identifier();
-    DataExprContext *dataExpr();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -897,148 +889,6 @@ public:
   };
 
   DataClauseContext* dataClause();
-
-  class  DataExprContext : public antlr4::ParserRuleContext {
-  public:
-    DataExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-   
-    DataExprContext() = default;
-    void copyFrom(DataExprContext *context);
-    using antlr4::ParserRuleContext::copyFrom;
-
-    virtual size_t getRuleIndex() const override;
-
-   
-  };
-
-  class  DataExprTSVContext : public DataExprContext {
-  public:
-    DataExprTSVContext(DataExprContext *ctx);
-
-    std::vector<DataLiteralContext *> dataLiteral();
-    DataLiteralContext* dataLiteral(size_t i);
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  DataExprJSONContext : public DataExprContext {
-  public:
-    DataExprJSONContext(DataExprContext *ctx);
-
-    std::vector<JsonExprContext *> jsonExpr();
-    JsonExprContext* jsonExpr(size_t i);
-    std::vector<antlr4::tree::TerminalNode *> COMMA();
-    antlr4::tree::TerminalNode* COMMA(size_t i);
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  DataExprValuesContext : public DataExprContext {
-  public:
-    DataExprValuesContext(DataExprContext *ctx);
-
-    ValuesExprContext *valuesExpr();
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  DataExprCSVContext : public DataExprContext {
-  public:
-    DataExprCSVContext(DataExprContext *ctx);
-
-    std::vector<DataLiteralContext *> dataLiteral();
-    DataLiteralContext* dataLiteral(size_t i);
-    std::vector<antlr4::tree::TerminalNode *> COMMA();
-    antlr4::tree::TerminalNode* COMMA(size_t i);
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  DataExprContext* dataExpr();
-
-  class  ValuesExprContext : public antlr4::ParserRuleContext {
-  public:
-    ValuesExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    std::vector<ValueTupleExprContext *> valueTupleExpr();
-    ValueTupleExprContext* valueTupleExpr(size_t i);
-    std::vector<antlr4::tree::TerminalNode *> COMMA();
-    antlr4::tree::TerminalNode* COMMA(size_t i);
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  ValuesExprContext* valuesExpr();
-
-  class  ValueTupleExprContext : public antlr4::ParserRuleContext {
-  public:
-    ValueTupleExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *LPAREN();
-    ColumnExprListContext *columnExprList();
-    antlr4::tree::TerminalNode *RPAREN();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  ValueTupleExprContext* valueTupleExpr();
-
-  class  JsonExprContext : public antlr4::ParserRuleContext {
-  public:
-    JsonExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-   
-    JsonExprContext() = default;
-    void copyFrom(JsonExprContext *context);
-    using antlr4::ParserRuleContext::copyFrom;
-
-    virtual size_t getRuleIndex() const override;
-
-   
-  };
-
-  class  JsonExprLiteralContext : public JsonExprContext {
-  public:
-    JsonExprLiteralContext(JsonExprContext *ctx);
-
-    DataLiteralContext *dataLiteral();
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  JsonExprBooleanContext : public JsonExprContext {
-  public:
-    JsonExprBooleanContext(JsonExprContext *ctx);
-
-    antlr4::tree::TerminalNode *JSON_TRUE();
-    antlr4::tree::TerminalNode *JSON_FALSE();
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  JsonExprObjectContext : public JsonExprContext {
-  public:
-    JsonExprObjectContext(JsonExprContext *ctx);
-
-    antlr4::tree::TerminalNode *LBRACE();
-    std::vector<JsonValueExprContext *> jsonValueExpr();
-    JsonValueExprContext* jsonValueExpr(size_t i);
-    antlr4::tree::TerminalNode *RBRACE();
-    std::vector<antlr4::tree::TerminalNode *> COMMA();
-    antlr4::tree::TerminalNode* COMMA(size_t i);
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  JsonExprContext* jsonExpr();
-
-  class  JsonValueExprContext : public antlr4::ParserRuleContext {
-  public:
-    JsonValueExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *DATA_STRING_LITERAL();
-    antlr4::tree::TerminalNode *COLON();
-    JsonExprContext *jsonExpr();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  JsonValueExprContext* jsonValueExpr();
 
   class  OptimizeStmtContext : public antlr4::ParserRuleContext {
   public:
@@ -2303,19 +2153,6 @@ public:
 
   LiteralContext* literal();
 
-  class  DataLiteralContext : public antlr4::ParserRuleContext {
-  public:
-    DataLiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    NumberLiteralContext *numberLiteral();
-    antlr4::tree::TerminalNode *DATA_STRING_LITERAL();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  DataLiteralContext* dataLiteral();
-
   class  KeywordContext : public antlr4::ParserRuleContext {
   public:
     KeywordContext(antlr4::ParserRuleContext *parent, size_t invokingState);
@@ -2371,7 +2208,6 @@ public:
     antlr4::tree::TerminalNode *FULL();
     antlr4::tree::TerminalNode *FUNCTION();
     antlr4::tree::TerminalNode *GLOBAL();
-    antlr4::tree::TerminalNode *GROUP();
     antlr4::tree::TerminalNode *HAVING();
     antlr4::tree::TerminalNode *HOUR();
     antlr4::tree::TerminalNode *ID();
@@ -2457,7 +2293,6 @@ public:
     IdentifierContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *IDENTIFIER();
-    antlr4::tree::TerminalNode *DATA_STRING_LITERAL();
     antlr4::tree::TerminalNode *INTERVAL_TYPE();
     KeywordContext *keyword();
 

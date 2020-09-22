@@ -9,7 +9,7 @@ import sys
 
 
 def run_client(bin_prefix, port, query, reference, replace_map={}):
-    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode'],
+    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode', '--use_antlr_parser=1'],
                               text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = client.communicate(query)
     assert client.returncode is not None, "Client should exit after processing all queries"
@@ -32,7 +32,7 @@ def random_str(length=10):
     return ''.join(random.choice(alphabet) for _ in range(length))
 
 
-@pytest.mark.timeout(timeout=10, method='signal')
+@pytest.mark.timeout(timeout=30, method='signal')
 def test_query(bin_prefix, sql_query, standalone_server):
     tcp_port = standalone_server.tcp_port
 

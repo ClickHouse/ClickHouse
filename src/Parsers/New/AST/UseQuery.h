@@ -12,6 +12,12 @@ class UseQuery : public Query
         explicit UseQuery(PtrTo<DatabaseIdentifier> identifier);
 
         ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            DATABASE = 0,
+        };
 };
 
 }

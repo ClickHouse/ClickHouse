@@ -1,10 +1,12 @@
 #include <Parsers/New/AST/TableElementExpr.h>
 
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/ColumnTypeExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -31,7 +33,70 @@ PtrTo<TableElementExpr> TableElementExpr::createColumn(
 TableElementExpr::TableElementExpr(ExprType type, PtrList exprs) : expr_type(type)
 {
     children = exprs;
-    (void)expr_type; // TODO
+}
+
+ASTPtr TableElementExpr::convertToOld() const
+{
+    switch(expr_type)
+    {
+        case ExprType::COLUMN:
+        {
+            auto expr = std::make_shared<ASTColumnDeclaration>();
+
+            expr->name = children[NAME]->as<Identifier>()->getName(); // FIXME: do we have correct nested identifier here already?
+            if (has(TYPE))
+            {
+                expr->type = children[TYPE]->convertToOld();
+                expr->children.push_back(expr->type);
+            }
+            if (has(PROPERTY))
+            {
+                switch(children[PROPERTY]->as<TableColumnPropertyExpr>()->getType())
+                {
+                    case TableColumnPropertyExpr::PropertyType::ALIAS:
+                        expr->default_specifier = "ALIAS";
+                        break;
+                    case TableColumnPropertyExpr::PropertyType::DEFAULT:
+                        expr->default_specifier = "DEFAULT";
+                        break;
+                    case TableColumnPropertyExpr::PropertyType::MATERIALIZED:
+                        expr->default_specifier = "MATERIALIZED";
+                        break;
+                }
+                expr->default_expression = children[PROPERTY]->convertToOld();
+                expr->children.push_back(expr->default_expression);
+            }
+            if (has(COMMENT))
+            {
+                expr->comment = children[COMMENT]->convertToOld();
+                expr->children.push_back(expr->comment);
+            }
+            // TODO: CODEC
+            if (has(TTL))
+            {
+                expr->ttl = children[TTL]->convertToOld();
+                expr->children.push_back(expr->ttl);
+            }
+
+            return expr;
+        }
+        case ExprType::CONSTRAINT:
+        {
+            auto expr = std::make_shared<ASTConstraintDeclaration>();
+
+            // TODO
+
+            return expr;
+        }
+        case ExprType::INDEX:
+        {
+            auto expr = std::make_shared<ASTIndexDeclaration>();
+
+            // TODO
+
+            return expr;
+        }
+    }
 }
 
 }

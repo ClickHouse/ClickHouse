@@ -25,9 +25,9 @@ class Literal : public INode
 
         static PtrTo<Literal> createNull(antlr4::tree::TerminalNode * literal);
         static PtrTo<NumberLiteral> createNumber(antlr4::tree::TerminalNode * literal, bool negative = false);
-        static PtrTo<NumberLiteral> createNumber(String&& literal); // checks first symbol for '-' character
+        static PtrTo<NumberLiteral> createNumber(const String& literal); // checks first symbol for '-' character
         static PtrTo<StringLiteral> createString(antlr4::tree::TerminalNode * literal);
-        static PtrTo<StringLiteral> createString(String&& literal); // without quotes
+        static PtrTo<StringLiteral> createString(const String& literal); // without quotes
 
         ASTPtr convertToOld() const override;
 
@@ -36,7 +36,7 @@ class Literal : public INode
     protected:
         const String token; // STRING is stored without quotes
 
-        Literal(LiteralType type, String&& token);
+        Literal(LiteralType type, const String & token);
 
         template <typename T>
         std::optional<T> asNumber(bool minus) const
@@ -62,7 +62,7 @@ class NumberLiteral : public Literal
 {
     public:
         explicit NumberLiteral(antlr4::tree::TerminalNode * literal);
-        explicit NumberLiteral(String&& literal);
+        explicit NumberLiteral(const String & literal);
 
         void makeNegative() { minus = true; }
 
@@ -79,7 +79,7 @@ class StringLiteral : public Literal
             : Literal(LiteralType::STRING, literal->getSymbol()->getText().substr(1, literal->getSymbol()->getText().size() - 2))
         {
         }
-        explicit StringLiteral(String&& literal) : Literal(LiteralType::STRING, std::move(literal)) {}
+        explicit StringLiteral(const String & literal) : Literal(LiteralType::STRING, literal) {}
 
         template <typename T>
         T as() const

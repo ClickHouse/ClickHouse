@@ -1,10 +1,11 @@
 #include <Parsers/New/AST/EngineExpr.h>
 
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -68,10 +69,38 @@ void EngineClause::setSettingsClause(PtrTo<SettingsClause> clause)
     children[SETTINGS] = clause;
 }
 
+ASTPtr EngineClause::convertToOld() const
+{
+    auto storage = std::make_shared<ASTStorage>();
+
+    storage->set(storage->engine, children[ENGINE]->convertToOld());
+    if (has(PARTITION_BY)) storage->set(storage->partition_by, children[PARTITION_BY]->convertToOld());
+    if (has(PRIMARY_KEY)) storage->set(storage->primary_key, children[PRIMARY_KEY]->convertToOld());
+    if (has(ORDER_BY)) storage->set(storage->order_by, children[ORDER_BY]->convertToOld());
+    if (has(SAMPLE_BY)) storage->set(storage->sample_by, children[SAMPLE_BY]->convertToOld());
+    if (has(TTL)) storage->set(storage->ttl_table, children[TTL]->convertToOld());
+
+    return storage;
+}
+
 EngineExpr::EngineExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> args)
 {
     children.push_back(identifier);
-    if (args) children.insert(children.end(), args->begin(), args->end());
+    children.push_back(args);
+}
+
+ASTPtr EngineExpr::convertToOld() const
+{
+    auto expr = std::make_shared<ASTFunction>();
+
+    expr->name = children[NAME]->as<Identifier>()->getName();
+    if (has(ARGS))
+    {
+        expr->arguments = children[ARGS]->convertToOld();
+        expr->children.push_back(expr->arguments);
+    }
+
+    return expr;
 }
 
 TTLExpr::TTLExpr(PtrTo<ColumnExpr> expr, TTLType type, PtrTo<StringLiteral> literal) : ttl_type(type)

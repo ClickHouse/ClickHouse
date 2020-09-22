@@ -43,7 +43,31 @@ ASTPtr SchemaClause::convertToOld() const
         case ClauseType::DESCRIPTION:
         {
             auto columns = std::make_shared<ASTColumns>();
-           // TODO
+
+            auto column_list = std::make_shared<ASTExpressionList>();
+            auto constraint_list = std::make_shared<ASTExpressionList>();
+            auto index_list = std::make_shared<ASTExpressionList>();
+
+            for (const auto & element : children.front()->as<TableElementList &>())
+            {
+                switch(element->as<TableElementExpr>()->getType())
+                {
+                    case TableElementExpr::ExprType::COLUMN:
+                        column_list->children.push_back(element->convertToOld());
+                        break;
+                    case TableElementExpr::ExprType::CONSTRAINT:
+                        constraint_list->children.push_back(element->convertToOld());
+                        break;
+                    case TableElementExpr::ExprType::INDEX:
+                        constraint_list->children.push_back(element->convertToOld());
+                        break;
+                }
+            }
+
+            if (!column_list->children.empty()) columns->set(columns->columns, column_list);
+            if (!constraint_list->children.empty()) columns->set(columns->constraints, constraint_list);
+            if (!index_list->children.empty()) columns->set(columns->indices, index_list);
+
             return columns;
         }
         case ClauseType::FUNCTION:

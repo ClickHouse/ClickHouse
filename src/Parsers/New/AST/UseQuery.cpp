@@ -17,7 +17,7 @@ ASTPtr UseQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTUseQuery>();
 
-    // TODO
+    query->database = children[DATABASE]->as<DatabaseIdentifier>()->getName();
 
     return query;
 }

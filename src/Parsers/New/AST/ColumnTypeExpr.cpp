@@ -1,8 +1,8 @@
 #include <Parsers/New/AST/ColumnTypeExpr.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
-
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -57,7 +57,20 @@ PtrTo<ColumnTypeExpr> ColumnTypeExpr::createNested(PtrTo<Identifier> identifier,
 ColumnTypeExpr::ColumnTypeExpr(ExprType type, PtrList exprs) : expr_type(type)
 {
     children = exprs;
-    (void)expr_type; // TODO
+}
+
+ASTPtr ColumnTypeExpr::convertToOld() const
+{
+    auto func = std::make_shared<ASTFunction>();
+
+    func->name = children[NAME]->as<Identifier>()->getName();
+    if (expr_type != ExprType::SIMPLE)
+    {
+        func->arguments = children[LIST]->convertToOld();
+        func->children.push_back(func->arguments);
+    }
+
+    return func;
 }
 
 }

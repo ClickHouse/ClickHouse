@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
-#include <Parsers/New/AST/DataExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/TableExpr.h>
@@ -25,9 +24,9 @@ PtrTo<DataClause> DataClause::createSelect(PtrTo<SelectUnionQuery> query)
 }
 
 // static
-PtrTo<DataClause> DataClause::createValues(PtrTo<ColumnExprList> list)
+PtrTo<DataClause> DataClause::createValues()
 {
-    return PtrTo<DataClause>(new DataClause(ClauseType::VALUES, {list->begin(), list->end()}));
+    return PtrTo<DataClause>(new DataClause(ClauseType::VALUES, {}));
 }
 
 DataClause::DataClause(ClauseType type, PtrList exprs) : clause_type(type)
@@ -99,7 +98,7 @@ antlrcpp::Any ParseTreeVisitor::visitDataClauseSelect(ClickHouseParser::DataClau
 
 antlrcpp::Any ParseTreeVisitor::visitDataClauseValues(ClickHouseParser::DataClauseValuesContext *ctx)
 {
-    return DataClause::createValues(visit(ctx->valuesExpr()));
+    return DataClause::createValues();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx)
@@ -110,23 +109,6 @@ antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtCont
     if (ctx->FUNCTION()) return InsertQuery::createFunction(visit(ctx->tableFunctionExpr()), columns, data);
     if (ctx->tableIdentifier()) return InsertQuery::createTable(visit(ctx->tableIdentifier()), columns, data);
     __builtin_unreachable();
-}
-
-antlrcpp::Any ParseTreeVisitor::visitValuesExpr(ClickHouseParser::ValuesExprContext *ctx)
-{
-    auto list = std::make_shared<ColumnExprList>();
-    for (auto * expr : ctx->valueTupleExpr()) list->append(visit(expr));
-    return list;
-}
-
-antlrcpp::Any ParseTreeVisitor::visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *ctx)
-{
-    // TODO: copy-paste from |visitColumnExprTuple()|,
-    //       should be removed once proper INSERT VALUES parsers are implemented.
-
-    auto name = std::make_shared<Identifier>("tuple");
-    auto args = visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>();
-    return ColumnExpr::createFunction(name, nullptr, args);
 }
 
 }

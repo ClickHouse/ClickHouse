@@ -50,10 +50,10 @@ class CreateTableQuery : public DDLQuery
     private:
         enum ChildIndex : UInt8
         {
-            NAME = 0,
-            SCHEMA,
-            ENGINE,
-            SUBQUERY,
+            NAME = 0,  // TableIdentifier
+            SCHEMA,    // SchemaClause
+            ENGINE,    // EngineClause
+            SUBQUERY,  // SelectUnionQuery
         };
 
         const bool attach, temporary, if_not_exists;

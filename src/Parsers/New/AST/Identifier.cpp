@@ -10,6 +10,7 @@ namespace DB::AST
 
 Identifier::Identifier(const String & name_) : name(name_)
 {
+    // TODO: strip quotes.
 }
 
 Identifier::Identifier(const String & name_, const String & nested_name) : name(name_ + "." + nested_name)
@@ -90,7 +91,6 @@ antlrcpp::Any ParseTreeVisitor::visitColumnIdentifier(ClickHouseParser::ColumnId
 antlrcpp::Any ParseTreeVisitor::visitIdentifier(ClickHouseParser::IdentifierContext *ctx)
 {
     if (ctx->IDENTIFIER()) return std::make_shared<Identifier>(ctx->IDENTIFIER()->getText());
-    if (ctx->DATA_STRING_LITERAL()) return std::make_shared<Identifier>(ctx->DATA_STRING_LITERAL()->getText());
     if (ctx->INTERVAL_TYPE()) return std::make_shared<Identifier>(ctx->INTERVAL_TYPE()->getText());
     if (ctx->keyword()) return std::make_shared<Identifier>(ctx->keyword()->getText());
     __builtin_unreachable();

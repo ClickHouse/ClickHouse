@@ -24,7 +24,7 @@ PtrTo<NumberLiteral> Literal::createNumber(antlr4::tree::TerminalNode * literal,
 }
 
 // static
-PtrTo<NumberLiteral> Literal::createNumber(String&& literal)
+PtrTo<NumberLiteral> Literal::createNumber(const String & literal)
 {
     bool has_minus = literal[0] == '-';
     auto number = std::make_shared<NumberLiteral>(has_minus ? literal.substr(1) : literal);
@@ -39,12 +39,12 @@ PtrTo<StringLiteral> Literal::createString(antlr4::tree::TerminalNode * literal)
 }
 
 // static
-PtrTo<StringLiteral> Literal::createString(String&& literal)
+PtrTo<StringLiteral> Literal::createString(const String & literal)
 {
-    return std::make_shared<StringLiteral>(std::move(literal));
+    return std::make_shared<StringLiteral>(literal);
 }
 
-Literal::Literal(LiteralType type_, String&& token_) : token(token_), type(type_)
+Literal::Literal(LiteralType type_, const String & token_) : token(token_), type(type_)
 {
 }
 
@@ -60,8 +60,8 @@ ASTPtr Literal::convertToOld() const
             {
                 const auto * number = static_cast<const NumberLiteral*>(this);
 
-                if (auto value = number->as<Int64>()) return Field(*value);
                 if (auto value = number->as<UInt64>()) return Field(*value);
+                if (auto value = number->as<Int64>()) return Field(*value);
                 if (auto value = number->as<Float64>()) return Field(*value);
 
                 return Field();
@@ -78,7 +78,7 @@ NumberLiteral::NumberLiteral(antlr4::tree::TerminalNode * literal) : Literal(Lit
 {
 }
 
-NumberLiteral::NumberLiteral(String && literal) : Literal(LiteralType::NUMBER, std::move(literal))
+NumberLiteral::NumberLiteral(const String & literal) : Literal(LiteralType::NUMBER, literal)
 {
 }
 
@@ -88,13 +88,6 @@ namespace DB
 {
 
 using namespace AST;
-
-antlrcpp::Any ParseTreeVisitor::visitDataLiteral(ClickHouseParser::DataLiteralContext * ctx)
-{
-    if (ctx->DATA_STRING_LITERAL()) return static_pointer_cast<Literal>(Literal::createString(ctx->DATA_STRING_LITERAL()));
-    if (ctx->numberLiteral()) return static_pointer_cast<Literal>(visit(ctx->numberLiteral()).as<PtrTo<NumberLiteral>>());
-    __builtin_unreachable();
-}
 
 antlrcpp::Any ParseTreeVisitor::visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext * ctx)
 {

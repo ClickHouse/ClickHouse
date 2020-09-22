@@ -80,8 +80,16 @@ class GroupByClause : public INode
     public:
         GroupByClause(PtrTo<ColumnExprList> expr_list, bool with_totals_);
 
+        bool withTotals() const { return with_totals; }
+
+        ASTPtr convertToOld() const override;
+
     private:
-        PtrTo<ColumnExprList> exprs;
+        enum ChildIndex : UInt8
+        {
+            EXPRS = 0,  // ColumnExprList
+        };
+
         bool with_totals;
 };
 

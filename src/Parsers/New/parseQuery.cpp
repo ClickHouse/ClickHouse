@@ -17,6 +17,26 @@ namespace DB
 using namespace antlr4;
 using namespace AST;
 
+// For testing only
+PtrTo<Query> parseQuery(const String & query)
+{
+    ANTLRInputStream input(query);
+    ClickHouseLexer lexer(&input);
+    CommonTokenStream tokens(&lexer);
+    ClickHouseParser parser(&tokens);
+    LexerErrorListener lexer_error_listener;
+    ParserErrorListener parser_error_listener;
+
+    lexer.removeErrorListeners();
+    parser.removeErrorListeners();
+    lexer.addErrorListener(&lexer_error_listener);
+    parser.addErrorListener(&parser_error_listener);
+
+    ParseTreeVisitor visitor;
+
+    return visitor.visit(parser.queryStmt());
+}
+
 ASTPtr parseQuery(const char * begin, const char * end, size_t, size_t)
 {
     // TODO: do not ignore |max_parser_depth|.

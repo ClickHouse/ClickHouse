@@ -30,7 +30,9 @@ class ColumnTypeExpr : public INode
         static PtrTo<ColumnTypeExpr> createComplex(PtrTo<Identifier> identifier, PtrTo<ColumnTypeExprList> list);
         static PtrTo<ColumnTypeExpr> createEnum(PtrTo<Identifier> identifier, PtrTo<EnumValueList> list);
         static PtrTo<ColumnTypeExpr> createParam(PtrTo<Identifier> identifier, PtrTo<ColumnParamList> list);
-        static PtrTo<ColumnTypeExpr> createNested(PtrTo<Identifier> identifier, NestedParamList list);
+        static PtrTo<ColumnTypeExpr> createNested(PtrTo<Identifier> identifier, NestedParamList params);
+
+        ASTPtr convertToOld() const override;
 
     private:
         enum class ExprType
@@ -40,6 +42,11 @@ class ColumnTypeExpr : public INode
             ENUM,
             PARAM,
             NESTED,
+        };
+        enum ChildIndex : UInt8
+        {
+            NAME = 0,  // Identifier
+            LIST,      // depends on |expr_type|
         };
 
         ExprType expr_type;

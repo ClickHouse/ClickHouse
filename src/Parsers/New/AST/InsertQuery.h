@@ -11,7 +11,7 @@ class DataClause : public INode
     public:
         static PtrTo<DataClause> createFormat(PtrTo<Identifier> identifier);
         static PtrTo<DataClause> createSelect(PtrTo<SelectUnionQuery> query);
-        static PtrTo<DataClause> createValues(PtrTo<ColumnExprList> list);
+        static PtrTo<DataClause> createValues();
 
     private:
         enum class ClauseType
