@@ -701,11 +701,11 @@ auto s = std::string{"Hello"};
 
 Ama diğer şeyler eşit olmak, çapraz platform veya taşınabilir kod tercih edilir.
 
-**2.** Dil: C++17.
+**2.** Dil: C++20.
 
-**3.** Derleyici: `gcc`. Şu anda (Aralık 2017), kod sürüm 7.2 kullanılarak derlenmiştir. (Ayrıca kullanılarak derlenebilir `clang 4`.)
+**3.** Derleyici: `gcc`. Şu anda (Ağustos 2020), kod sürüm 9.3 kullanılarak derlenmiştir. (Ayrıca kullanılarak derlenebilir `clang 8`.)
 
-Standart kütüphane kullanılır (`libstdc++` veya `libc++`).
+Standart kütüphane kullanılır (`libc++`).
 
 **4.**OS: Linux UB .untu, daha eski değil.
 
@@ -749,7 +749,7 @@ Eğer kod inunuz `master` şube henüz imara değil, önce inşa onu hariç `pus
 
 ## Kitaplık {#libraries}
 
-**1.** C++14 standart Kütüphanesi kullanılır (deneysel uzantılara izin verilir) ve `boost` ve `Poco` çerçeveler.
+**1.** C++20 standart Kütüphanesi kullanılır (deneysel uzantılara izin verilir) ve `boost` ve `Poco` çerçeveler.
 
 **2.** Gerekirse, OS paketinde bulunan iyi bilinen kütüphaneleri kullanabilirsiniz.
 

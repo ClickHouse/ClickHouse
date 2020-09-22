@@ -532,7 +532,7 @@ Sütun:
 -   `query` (String) – The query text. For `INSERT`, eklemek için veri içermez.
 -   `query_id` (String) – Query ID, if defined.
 
-## sistem.text\_log {#system-tables-text-log}
+## sistem.text\_log {#system_tables-text_log}
 
 Günlük girişleri içerir. Bu tabloya giden günlük seviyesi ile sınırlı olabilir `text_log.level` sunucu ayarı.
 

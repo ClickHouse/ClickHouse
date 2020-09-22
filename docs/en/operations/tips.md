@@ -35,7 +35,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
 
 ``` bash
-$ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
 Use `perf top` to watch the time spent in the kernel for memory management.

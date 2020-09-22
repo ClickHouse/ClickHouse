@@ -225,6 +225,10 @@ public:
 
         void rollback();
 
+        /// Immediately remove parts from table's data_parts set and change part
+        /// state to temporary. Useful for new parts which not present in table.
+        void rollbackPartsToTemporaryState();
+
         size_t size() const { return precommitted_parts.size(); }
         bool isEmpty() const { return precommitted_parts.empty(); }
 
@@ -422,11 +426,12 @@ public:
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
-    /// If increment != nullptr, part index is determing using increment. Otherwise part index remains unchanged.
+    /// If increment != nullptr, part index is determining using increment. Otherwise part index remains unchanged.
     /// If out_transaction != nullptr, adds the part in the PreCommitted state (the part will be added to the
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
-    void renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
+    /// Returns true if part was added. Returns false if part is covered by bigger part.
+    bool renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
@@ -435,9 +440,15 @@ public:
         MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
     /// Low-level version of previous one, doesn't lock mutex
-    void renameTempPartAndReplace(
+    bool renameTempPartAndReplace(
             MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
             DataPartsVector * out_covered_parts = nullptr);
+
+
+    /// Remove parts from working set immediately (without wait for background
+    /// process). Transfer part state to temporary. Have very limited usage only
+    /// for new parts which don't already present in table.
+    void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
 
     /// Removes parts from the working set parts.
     /// Parts in add must already be in data_parts with PreCommitted, Committed, or Outdated states.
@@ -534,9 +545,6 @@ public:
         return DB::extractKeyExpressionList(node);
     }
 
-    /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
-
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
@@ -627,13 +635,15 @@ public:
         UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move,
-        size_t min_volume_index = 0) const;
+        size_t min_volume_index = 0,
+        bool is_insert = false) const;
 
     ReservationPtr tryReserveSpacePreferringTTLRules(
         UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move,
-        size_t min_volume_index = 0) const;
+        size_t min_volume_index = 0,
+        bool is_insert = false) const;
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
@@ -641,13 +651,18 @@ public:
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
-    /// Returns destination disk or volume for the TTL rule according to current
-    /// storage policy
-    SpacePtr getDestinationForTTL(const TTLDescription & ttl) const;
+    /// Returns destination disk or volume for the TTL rule according to current storage policy
+    /// 'is_insert' - is TTL move performed on new data part insert.
+    SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl, bool is_insert = false) const;
 
     /// Checks if given part already belongs destination disk or volume for the
     /// TTL rule.
     bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
+
+    /// Get count of total merges with TTL in MergeList (system.merges) for all
+    /// tables (not only current table).
+    /// Method is cheap and doesn't require any locks.
+    size_t getTotalMergesWithTTLInMergeList() const;
 
     using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
     WriteAheadLogPtr getWriteAheadLog();
@@ -670,7 +685,9 @@ public:
     ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
     ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
 
-    std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
+    /// Get compression codec for part according to TTL rules and <compression>
+    /// section from config.xml.
+    CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
@@ -850,7 +867,7 @@ protected:
         const MergeListEntry * merge_entry);
 
     /// If part is assigned to merge or mutation (possibly replicated)
-    /// Should be overriden by childs, because they can have different
+    /// Should be overridden by children, because they can have different
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 

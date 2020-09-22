@@ -66,7 +66,11 @@ do
 
     # Filter out PRs by bots.
     user_login=$(jq -r .user.login "$file")
-    if echo "$user_login" | grep "\[bot\]$" > /dev/null
+    
+    filter_bot=$(echo "$user_login" | grep -q "\[bot\]$" && echo "Skip." || echo "Ok." ||:)
+    filter_robot=$(echo "$user_login" | grep -q "robot-clickhouse" && echo "Skip." || echo "Ok." ||:)
+
+    if [ "Skip." == "$filter_robot" ] || [ "Skip." == "$filter_bot" ]
     then
         continue
     fi

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cassert>
 #include <type_traits>
 #include <common/defines.h>
 
@@ -11,6 +12,7 @@
   */
 inline unsigned int bitScanReverse(unsigned int x)
 {
+    assert(x != 0);
     return sizeof(unsigned int) * 8 - 1 - __builtin_clz(x);
 }
 

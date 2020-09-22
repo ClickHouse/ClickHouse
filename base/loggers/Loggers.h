@@ -21,7 +21,7 @@ public:
 
     std::optional<size_t> getLayer() const
     {
-        return layer; /// layer setted in inheritor class BaseDaemonApplication.
+        return layer; /// layer set in inheritor class BaseDaemonApplication.
     }
 
     void setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority);

@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 
 namespace DB
@@ -22,6 +23,10 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
+
+    void updateTreeHashImpl(SipHash & hash_state) const override;
+
+    ASTSelectWithUnionQuery * tryGetQueryArgument() const;
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

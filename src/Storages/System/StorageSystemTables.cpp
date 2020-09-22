@@ -30,8 +30,8 @@ namespace ErrorCodes
 }
 
 
-StorageSystemTables::StorageSystemTables(const std::string & name_)
-    : IStorage({"system", name_})
+StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
@@ -344,6 +344,12 @@ protected:
                 {
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
 
+                    if (ast && !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
+                    {
+                        auto & create = ast->as<ASTCreateQuery &>();
+                        create.uuid = UUIDHelpers::Nil;
+                    }
+
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
 
@@ -479,7 +485,7 @@ private:
 };
 
 
-Pipes StorageSystemTables::read(
+Pipe StorageSystemTables::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -509,11 +515,8 @@ Pipes StorageSystemTables::read(
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info.query, context);
 
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<TablesBlockSource>(
+    return Pipe(std::make_shared<TablesBlockSource>(
         std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));
-
-    return pipes;
 }
 
 }

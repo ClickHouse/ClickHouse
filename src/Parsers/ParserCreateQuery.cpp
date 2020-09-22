@@ -427,7 +427,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
         {
-            if (!table_function_p.parse(pos, as_table_function, expected))
+            /// ENGINE can not be specified for table functions.
+            if (storage || !table_function_p.parse(pos, as_table_function, expected))
             {
                 /// AS [db.]table
                 if (!name_p.parse(pos, as_table, expected))

@@ -1,4 +1,4 @@
-# system.query\_thread\_log {#system_tables-query_thread_log}
+# system.query_thread_log {#system_tables-query_thread_log}
 
 Contains information about threads which execute queries, for example, thread name, thread start time, duration of query processing.
 
@@ -16,6 +16,7 @@ Columns:
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the thread has finished execution of the query.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query.
 -   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
+-   `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
 -   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution.
 -   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
 -   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read bytes.
@@ -111,3 +112,5 @@ ProfileEvents.Values: [1,97,81,5,81]
 **See Also**
 
 -   [system.query\_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_thread_log) <!--hide-->

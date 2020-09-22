@@ -4,6 +4,7 @@
 #include <common/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -22,6 +23,7 @@ namespace ErrorCodes
 CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
     : delta_bytes_size(delta_bytes_size_)
 {
+    setCodecDescription("Delta", {std::make_shared<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
 }
 
 uint8_t CompressionCodecDelta::getMethodByte() const
@@ -29,9 +31,9 @@ uint8_t CompressionCodecDelta::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Delta);
 }
 
-String CompressionCodecDelta::getCodecDesc() const
+void CompressionCodecDelta::updateHash(SipHash & hash) const
 {
-    return fmt::format("Delta({})", size_t(delta_bytes_size));
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 namespace
@@ -148,11 +150,6 @@ UInt8 getDeltaBytesSize(DataTypePtr column_type)
             column_type->getName());
 }
 
-}
-
-void CompressionCodecDelta::useInfoAboutType(const DataTypePtr & data_type)
-{
-    delta_bytes_size = getDeltaBytesSize(data_type);
 }
 
 void registerCodecDelta(CompressionCodecFactory & factory)

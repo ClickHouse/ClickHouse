@@ -58,7 +58,7 @@ BlockIO InterpreterAlterQuery::execute()
     LiveViewCommands live_view_commands;
     for (ASTAlterCommand * command_ast : alter.command_list->commands)
     {
-        if (auto alter_command = AlterCommand::parse(command_ast, !context.getSettingsRef().allow_suspicious_codecs))
+        if (auto alter_command = AlterCommand::parse(command_ast))
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {
@@ -87,9 +87,9 @@ BlockIO InterpreterAlterQuery::execute()
     if (!partition_commands.empty())
     {
         table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, context.getSettingsRef());
-        auto partition_commands_pipes = table->alterPartition(query_ptr, metadata_snapshot, partition_commands, context);
-        if (!partition_commands_pipes.empty())
-            res.pipeline.init(std::move(partition_commands_pipes));
+        auto partition_commands_pipe = table->alterPartition(query_ptr, metadata_snapshot, partition_commands, context);
+        if (!partition_commands_pipe.empty())
+            res.pipeline.init(std::move(partition_commands_pipe));
     }
 
     if (!live_view_commands.empty())
@@ -101,7 +101,7 @@ BlockIO InterpreterAlterQuery::execute()
             switch (command.type)
             {
                 case LiveViewCommand::REFRESH:
-                    live_view->refresh(context);
+                    live_view->refresh();
                     break;
             }
         }
@@ -184,6 +184,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
             break;
         }
+        case ASTAlterCommand::MODIFY_SAMPLE_BY:
+        {
+            required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
+            break;
+        }
         case ASTAlterCommand::ADD_INDEX:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_INDEX, database, table);
@@ -213,6 +218,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::MODIFY_TTL:
+        {
+            required_access.emplace_back(AccessType::ALTER_TTL, database, table);
+            break;
+        }
+        case ASTAlterCommand::REMOVE_TTL:
         {
             required_access.emplace_back(AccessType::ALTER_TTL, database, table);
             break;

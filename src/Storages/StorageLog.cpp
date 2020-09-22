@@ -27,6 +27,8 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 
+#include <cassert>
+
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"
@@ -318,6 +320,7 @@ void LogBlockOutputStream::writeSuffix()
 
     /// Finish write.
     marks_stream->next();
+    marks_stream->finalize();
 
     for (auto & name_stream : streams)
         name_stream.second.finalize();
@@ -547,17 +550,20 @@ void StorageLog::loadMarks()
 
 void StorageLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    assert(table_path != new_path_to_table_data);
+    {
+        std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    disk->moveDirectory(table_path, new_path_to_table_data);
+        disk->moveDirectory(table_path, new_path_to_table_data);
 
-    table_path = new_path_to_table_data;
-    file_checker.setPath(table_path + "sizes.json");
+        table_path = new_path_to_table_data;
+        file_checker.setPath(table_path + "sizes.json");
 
-    for (auto & file : files)
-        file.second.data_file_path = table_path + fileName(file.second.data_file_path);
+        for (auto & file : files)
+            file.second.data_file_path = table_path + fileName(file.second.data_file_path);
 
-    marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
+        marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
+    }
     renameInMemory(new_table_id);
 }
 
@@ -604,7 +610,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
     return it->second.marks;
 }
 
-Pipes StorageLog::read(
+Pipe StorageLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -647,7 +653,7 @@ Pipes StorageLog::read(
             max_read_buffer_size));
     }
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)

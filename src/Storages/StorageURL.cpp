@@ -13,7 +13,6 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -178,7 +177,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 }
 
 
-Pipes IStorageURLBase::read(
+Pipe IStorageURLBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -192,8 +191,7 @@ Pipes IStorageURLBase::read(
     for (const auto & [param, value] : params)
         request_uri.addQueryParameter(param, value);
 
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<StorageURLSource>(
+    return Pipe(std::make_shared<StorageURLSource>(
         request_uri,
         getReadMethod(),
         getReadPOSTDataCallback(
@@ -207,8 +205,6 @@ Pipes IStorageURLBase::read(
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(request_uri.getPath(), compression_method)));
-
-    return pipes;
 }
 
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)

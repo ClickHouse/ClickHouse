@@ -508,9 +508,213 @@ SELECT parseDateTimeBestEffort('10 20:19')
 
 **См. также**
 
--   \[Информация о формате ISO 8601 от @xkcd\](https://xkcd.com/1179/)
+-   [Информация о формате ISO 8601 от @xkcd](https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)
+
+## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
+
+Эта функция похожа на [‘parseDateTimeBestEffort’](#parsedatetimebesteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности.
+
+**Синтаксис**
+
+``` sql
+parseDateTimeBestEffortUS(time_string [, time_zone]);
+```
+
+**Параметры**
+
+-   `time_string` — строка, содержащая дату и время для преобразования. [String](../../sql-reference/data-types/string.md).
+-   `time_zone` — часовой пояс. Функция анализирует `time_string` в соответствии с часовым поясом. [String](../../sql-reference/data-types/string.md).
+
+**Поддерживаемые нестандартные форматы**
+
+-   Строка, содержащая 9-10 цифр [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
+-   Строка, содержащая дату и время: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
+-   Строка с датой, но без времени: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` etc.
+-   Строка, содержащая день и время: `DD`, `DD hh`, `DD hh:mm`. В этом случае `YYYY-MM` заменяется на `2000-01`.
+-   Строка, содержащая дату и время, а также информацию о часовом поясе: `YYYY-MM-DD hh:mm:ss ±h:mm` и т.д. Например, `2020-12-12 17:36:00 -5:00`.
+
+**Возвращаемое значение**
+
+-   `time_string` преобразован в тип данных `DateTime`.
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09/12/2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Ответ:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
+Запрос:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09-12-2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Ответ:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
+Запрос:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09.12.2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Ответ:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
+## toUnixTimestamp64Milli
+## toUnixTimestamp64Micro
+## toUnixTimestamp64Nano
+
+Преобразует значение `DateTime64` в значение `Int64` с фиксированной точностью менее одной секунды. 
+Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. Обратите внимание, что возвращаемое значение - это временная метка в UTC, а не в часовом поясе `DateTime64`.
+
+**Синтаксис**
+
+``` sql
+toUnixTimestamp64Milli(value)
+```
+
+**Параметры**
+
+-   `value` — значение `DateTime64` с любой точностью.
+
+**Возвращаемое значение**
+
+-   Значение `value`, преобразованное в тип данных `Int64`.
+
+**Примеры**
+
+Запрос:
+
+``` sql
+WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
+SELECT toUnixTimestamp64Milli(dt64)
+```
+
+Ответ:
+
+``` text
+┌─toUnixTimestamp64Milli(dt64)─┐
+│                1568650812345 │
+└──────────────────────────────┘
+```
+
+Запрос: 
+
+``` sql
+WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
+SELECT toUnixTimestamp64Nano(dt64)
+```
+
+Ответ:
+
+``` text
+┌─toUnixTimestamp64Nano(dt64)─┐
+│         1568650812345678000 │
+└─────────────────────────────┘
+```
+
+## fromUnixTimestamp64Milli
+## fromUnixTimestamp64Micro
+## fromUnixTimestamp64Nano
+
+Преобразует значение `Int64` в значение `DateTime64` с фиксированной точностью менее одной секунды и дополнительным часовым поясом. Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. Обратите внимание, что входное значение обрабатывается как метка времени UTC, а не метка времени в заданном (или неявном) часовом поясе.
+
+**Синтаксис**
+
+``` sql
+fromUnixTimestamp64Milli(value [, ti])
+```
+
+**Параметры**
+
+-   `value` — значение типы `Int64` с любой точностью.
+-   `timezone` — (не обязательный параметр) часовой пояс в формате `String` для возвращаемого результата.
+
+**Возвращаемое значение**
+
+-   Значение `value`, преобразованное в тип данных `DateTime64`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+WITH CAST(1234567891011, 'Int64') AS i64
+SELECT fromUnixTimestamp64Milli(i64, 'UTC')
+```
+
+Ответ:
+
+``` text
+┌─fromUnixTimestamp64Milli(i64, 'UTC')─┐
+│              2009-02-13 23:31:31.011 │
+└──────────────────────────────────────┘
+```
+
+## toLowCardinality {#tolowcardinality}
+
+Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
+
+Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
+
+**Синтаксис**
+
+```sql
+toLowCardinality(expr)
+```
+
+**Параметры**
+
+- `expr` — [Выражение](../syntax.md#syntax-expressions), которое в результате преобразуется в один из [поддерживаемых типов данных](../data-types/index.md#data_types).
+
+
+**Возвращаемое значение**
+
+- Результат преобразования `expr`.
+
+Тип: `LowCardinality(expr_result_type)`
+
+**Example**
+
+Запрос:
+
+```sql
+SELECT toLowCardinality('1')
+```
+
+Результат:
+
+```text
+┌─toLowCardinality('1')─┐
+│ 1                     │
+└───────────────────────┘
+```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->

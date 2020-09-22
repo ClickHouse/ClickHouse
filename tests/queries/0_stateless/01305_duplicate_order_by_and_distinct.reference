@@ -31,7 +31,7 @@ ORDER BY number ASC
 SELECT number
 FROM 
 (
-    SELECT DISTINCT number
+    SELECT number
     FROM 
     (
         SELECT DISTINCT number % 2 AS number

@@ -30,7 +30,7 @@ QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines)
         return pipeline;
     }
 
-    pipeline->unitePipelines(std::move(pipelines), output_stream->header ,max_threads);
+    *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header ,max_threads);
 
     processors = collector.detachProcessors();
     return pipeline;

@@ -36,7 +36,8 @@ public:
     /// flat, cache, hashed, etc.
     String layout_type;
     /// parameters (size_in_cells, ...)
-    std::vector<KeyValue> parameters;
+    /// ASTExpressionList -> ASTPair -> (ASTLiteral key, ASTLiteral value).
+    ASTExpressionList * parameters;
     /// has brackets after layout type
     bool has_brackets = true;
 

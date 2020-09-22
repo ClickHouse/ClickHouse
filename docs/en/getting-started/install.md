@@ -166,7 +166,7 @@ For more information, see the section [“Command-line client”](../interfaces/
 
 Example:
 
-``` bash
+```
 $ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.

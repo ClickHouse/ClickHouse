@@ -134,6 +134,7 @@ Block TTLBlockInputStream::readImpl()
     removeValuesWithExpiredColumnTTL(block);
 
     updateMovesTTL(block);
+    updateRecompressionTTL(block);
 
     return block;
 }
@@ -369,13 +370,12 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         block.erase(column);
 }
 
-void TTLBlockInputStream::updateMovesTTL(Block & block)
+void TTLBlockInputStream::updateTTLWithDescriptions(Block & block, const TTLDescriptions & descriptions, TTLInfoMap & ttl_info_map)
 {
     std::vector<String> columns_to_remove;
-    for (const auto & ttl_entry : metadata_snapshot->getMoveTTLs())
+    for (const auto & ttl_entry : descriptions)
     {
-        auto & new_ttl_info = new_ttl_infos.moves_ttl[ttl_entry.result_column];
-
+        auto & new_ttl_info = ttl_info_map[ttl_entry.result_column];
         if (!block.has(ttl_entry.result_column))
         {
             columns_to_remove.push_back(ttl_entry.result_column);
@@ -393,6 +393,16 @@ void TTLBlockInputStream::updateMovesTTL(Block & block)
 
     for (const String & column : columns_to_remove)
         block.erase(column);
+}
+
+void TTLBlockInputStream::updateMovesTTL(Block & block)
+{
+    updateTTLWithDescriptions(block, metadata_snapshot->getMoveTTLs(), new_ttl_infos.moves_ttl);
+}
+
+void TTLBlockInputStream::updateRecompressionTTL(Block & block)
+{
+    updateTTLWithDescriptions(block, metadata_snapshot->getRecompressionTTLs(), new_ttl_infos.recompression_ttl);
 }
 
 UInt32 TTLBlockInputStream::getTimestampByIndex(const IColumn * column, size_t ind)

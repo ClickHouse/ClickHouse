@@ -512,7 +512,7 @@ class Query:
             if request.status_code == 200:
                 result = request.json()
                 if 'errors' in result:
-                    raise Exception('Errors occured: {}\nOriginal query: {}'.format(result["errors"], query))
+                    raise Exception('Errors occurred: {}\nOriginal query: {}'.format(result["errors"], query))
 
                 if not is_mutation:
                     import inspect

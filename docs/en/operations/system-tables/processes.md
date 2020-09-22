@@ -13,3 +13,5 @@ Columns:
 -   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max\_memory\_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage) setting.
 -   `query` (String) – The query text. For `INSERT`, it doesn’t include the data to insert.
 -   `query_id` (String) – Query ID, if defined.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/processes) <!--hide-->

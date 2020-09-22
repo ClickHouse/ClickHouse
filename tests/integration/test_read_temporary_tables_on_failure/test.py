@@ -1,12 +1,11 @@
 import pytest
-import time
-
-from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryTimeoutExceedException, QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance('node')
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -16,6 +15,7 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 def test_different_versions(start_cluster):
     with pytest.raises(QueryTimeoutExceedException):

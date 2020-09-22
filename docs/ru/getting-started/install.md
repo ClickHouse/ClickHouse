@@ -7,7 +7,7 @@ ClickHouse может работать на любой операционной 
 Предварительно собранные пакеты компилируются для x86\_64 и используют набор инструкций SSE 4.2, поэтому, если не указано иное, его поддержка в используемом процессоре, становится дополнительным требованием к системе. Вот команда, чтобы проверить, поддерживает ли текущий процессор SSE 4.2:
 
 ``` bash
-$ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
+grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
 Чтобы запустить ClickHouse на процессорах, которые не поддерживают SSE 4.2, либо имеют архитектуру AArch64 или PowerPC64LE, необходимо самостоятельно [собрать ClickHouse из исходного кода](#from-sources) с соответствующими настройками конфигурации.
@@ -84,7 +84,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 ### Из исполняемых файлов для нестандартных окружений {#from-binaries-non-linux}
 
-Для других операционных систем и арихитектуры AArch64, сборки ClickHouse предоставляются в виде кросс-компилированного бинарника с последнего коммита ветки master (с задержкой в несколько часов).
+Для других операционных систем и архитектуры AArch64, сборки ClickHouse предоставляются в виде кросс-компилированного бинарника с последнего коммита ветки master (с задержкой в несколько часов).
 
 - [macOS](https://builds.clickhouse.tech/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos/clickhouse' && chmod a+x ./clickhouse`
 - [AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
@@ -115,7 +115,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 Для запуска сервера в качестве демона, выполните:
 
 ``` bash
-$ sudo service clickhouse-server start
+sudo service clickhouse-server start
 ```
 
 Смотрите логи в директории `/var/log/clickhouse-server/`.
@@ -125,7 +125,7 @@ $ sudo service clickhouse-server start
 Также можно запустить сервер вручную из консоли:
 
 ``` bash
-$ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
+clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
 При этом, лог будет выводиться в консоль, что удобно для разработки.
@@ -134,7 +134,7 @@ $ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 После запуска сервера, соединиться с ним можно с помощью клиента командной строки:
 
 ``` bash
-$ clickhouse-client
+clickhouse-client
 ```
 
 По умолчанию он соединяется с localhost:9000, от имени пользователя `default` без пароля. Также клиент может быть использован для соединения с удалённым сервером с помощью аргумента `--host`.

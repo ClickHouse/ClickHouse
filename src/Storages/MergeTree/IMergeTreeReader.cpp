@@ -170,7 +170,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                             "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
 
         /// Convert columns list to block.
-        /// TODO: rewrite with columns interface. It wll be possible after changes in ExpressionActions.
+        /// TODO: rewrite with columns interface. It will be possible after changes in ExpressionActions.
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {

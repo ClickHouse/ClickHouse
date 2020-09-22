@@ -43,11 +43,34 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
 
-std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast, bool sanity_check_compression_codecs)
+AlterCommand::RemoveProperty removePropertyFromString(const String & property)
+{
+    if (property.empty())
+        return AlterCommand::RemoveProperty::NO_PROPERTY;
+    else if (property == "DEFAULT")
+        return AlterCommand::RemoveProperty::DEFAULT;
+    else if (property == "MATERIALIZED")
+        return AlterCommand::RemoveProperty::MATERIALIZED;
+    else if (property == "ALIAS")
+        return AlterCommand::RemoveProperty::ALIAS;
+    else if (property == "COMMENT")
+        return AlterCommand::RemoveProperty::COMMENT;
+    else if (property == "CODEC")
+        return AlterCommand::RemoveProperty::CODEC;
+    else if (property == "TTL")
+        return AlterCommand::RemoveProperty::TTL;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
+}
+
+}
+
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
-    const CompressionCodecFactory & compression_codec_factory = CompressionCodecFactory::instance();
 
     if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -75,8 +98,11 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
-
+        {
+            if (ast_col_decl.default_specifier == "ALIAS")
+                throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
+            command.codec = ast_col_decl.codec;
+        }
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
 
@@ -109,8 +135,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = AlterCommand::MODIFY_COLUMN;
 
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
-
         command.column_name = ast_col_decl.name;
+        command.to_remove = removePropertyFromString(command_ast->remove_property);
+
         if (ast_col_decl.type)
         {
             command.data_type = data_type_factory.get(ast_col_decl.type);
@@ -132,7 +159,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.ttl = ast_col_decl.ttl;
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
+            command.codec = ast_col_decl.codec;
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -159,6 +186,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_ORDER_BY;
         command.order_by = command_ast->order_by;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_SAMPLE_BY)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_SAMPLE_BY;
+        command.sample_by = command_ast->sample_by;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
@@ -227,6 +262,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ttl = command_ast->ttl;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::REMOVE_TTL)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::REMOVE_TTL;
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::MODIFY_SETTING)
     {
         AlterCommand command;
@@ -271,7 +313,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         if (comment)
             column.comment = *comment;
 
-        column.codec = codec;
+        if (codec)
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false);
+
         column.ttl = ttl;
 
         metadata.columns.add(column, after_column, first);
@@ -289,33 +333,45 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     {
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
-            if (codec)
+            if (to_remove == RemoveProperty::DEFAULT
+                || to_remove == RemoveProperty::MATERIALIZED
+                || to_remove == RemoveProperty::ALIAS)
             {
-                /// User doesn't specify data type, it means that datatype doesn't change
-                /// let's use info about old type
-                if (data_type == nullptr)
-                    codec->useInfoAboutType(column.type);
-                else /// use info about new DataType
-                    codec->useInfoAboutType(data_type);
-
-                column.codec = codec;
+                column.default_desc = ColumnDefault{};
             }
-
-            if (comment)
-                column.comment = *comment;
-
-            if (ttl)
-                column.ttl = ttl;
-
-            if (data_type)
-                column.type = data_type;
-
-            /// User specified default expression or changed
-            /// datatype. We have to replace default.
-            if (default_expression || data_type)
+            else if (to_remove == RemoveProperty::CODEC)
             {
-                column.default_desc.kind = default_kind;
-                column.default_desc.expression = default_expression;
+                column.codec.reset();
+            }
+            else if (to_remove == RemoveProperty::COMMENT)
+            {
+                column.comment = String{};
+            }
+            else if (to_remove == RemoveProperty::TTL)
+            {
+                column.ttl.reset();
+            }
+            else
+            {
+                if (codec)
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false);
+
+                if (comment)
+                    column.comment = *comment;
+
+                if (ttl)
+                    column.ttl = ttl;
+
+                if (data_type)
+                    column.type = data_type;
+
+                /// User specified default expression or changed
+                /// datatype. We have to replace default.
+                if (default_expression || data_type)
+                {
+                    column.default_desc.kind = default_kind;
+                    column.default_desc.expression = default_expression;
+                }
             }
         });
 
@@ -334,6 +390,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
 
         /// Recalculate key with new order_by expression.
         sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
+    }
+    else if (type == MODIFY_SAMPLE_BY)
+    {
+        metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, context);
     }
     else if (type == COMMENT_COLUMN)
     {
@@ -442,6 +502,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     else if (type == MODIFY_TTL)
     {
         metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key);
+    }
+    else if (type == REMOVE_TTL)
+    {
+        metadata.table_ttl = TTLTableDescription{};
     }
     else if (type == MODIFY_QUERY)
     {
@@ -577,6 +641,10 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (ignore)
         return false;
 
+    /// We remove properties on metadata level
+    if (isRemovingProperty() || type == REMOVE_TTL)
+        return false;
+
     if (type == DROP_COLUMN || type == DROP_INDEX || type == RENAME_COLUMN)
         return true;
 
@@ -627,6 +695,11 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     }
 
     return ttl_changed;
+}
+
+bool AlterCommand::isRemovingProperty() const
+{
+    return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const
@@ -699,6 +772,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY COLUMN";
     case AlterCommand::Type::MODIFY_ORDER_BY:
         return "MODIFY ORDER BY";
+    case AlterCommand::Type::MODIFY_SAMPLE_BY:
+        return "MODIFY SAMPLE BY";
     case AlterCommand::Type::MODIFY_TTL:
         return "MODIFY TTL";
     case AlterCommand::Type::MODIFY_SETTING:
@@ -707,6 +782,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY QUERY";
     case AlterCommand::Type::RENAME_COLUMN:
         return "RENAME COLUMN";
+    case AlterCommand::Type::REMOVE_TTL:
+        return "REMOVE TTL";
     }
     __builtin_unreachable();
 }
@@ -736,6 +813,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
         metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, context);
+
+    // /// And in sample key expression
+    if (metadata_copy.sampling_key.definition_ast != nullptr)
+        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, context);
 
     /// Changes in columns may lead to changes in secondary indices
     for (auto & index : metadata_copy.secondary_indices)
@@ -770,14 +851,15 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
             if (!has_column && command.if_exists)
                 command.ignore = true;
 
-            if (has_column && command.data_type)
+            if (has_column)
             {
                 auto column_from_table = columns.get(command.column_name);
-                if (!command.default_expression && column_from_table.default_desc.expression)
+                if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
                 {
                     command.default_kind = column_from_table.default_desc.kind;
                     command.default_expression = column_from_table.default_desc.expression;
                 }
+
             }
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
@@ -822,6 +904,9 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
                                 ErrorCodes::BAD_ARGUMENTS};
 
+            if (command.codec)
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
@@ -838,6 +923,74 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             if (renamed_columns.count(column_name))
                 throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
                                 ErrorCodes::NOT_IMPLEMENTED};
+
+            if (command.codec)
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+            auto column_default = all_columns.getDefault(column_name);
+            if (column_default)
+            {
+                if (command.to_remove == AlterCommand::RemoveProperty::DEFAULT && column_default->kind != ColumnDefaultKind::Default)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot remove DEFAULT from column {}, because column default type is {}. Use REMOVE {} to delete it",
+                            backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                }
+                if (command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED && column_default->kind != ColumnDefaultKind::Materialized)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot remove MATERIALIZED from column {}, because column default type is {}. Use REMOVE {} to delete it",
+                        backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                }
+                if (command.to_remove == AlterCommand::RemoveProperty::ALIAS && column_default->kind != ColumnDefaultKind::Alias)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot remove ALIAS from column {}, because column default type is {}. Use REMOVE {} to delete it",
+                        backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                }
+            }
+
+            if (command.isRemovingProperty())
+            {
+                if (!column_default && command.to_remove == AlterCommand::RemoveProperty::DEFAULT)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have DEFAULT, cannot remove it",
+                        backQuote(column_name));
+
+                if (!column_default && command.to_remove == AlterCommand::RemoveProperty::ALIAS)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have ALIAS, cannot remove it",
+                        backQuote(column_name));
+
+                if (!column_default && command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have MATERIALIZED, cannot remove it",
+                        backQuote(column_name));
+
+                auto column_from_table = all_columns.get(column_name);
+                if (command.to_remove == AlterCommand::RemoveProperty::TTL && column_from_table.ttl == nullptr)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have TTL, cannot remove it",
+                        backQuote(column_name));
+                if (command.to_remove == AlterCommand::RemoveProperty::CODEC && column_from_table.codec == nullptr)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have TTL, cannot remove it",
+                        backQuote(column_name));
+                if (command.to_remove == AlterCommand::RemoveProperty::COMMENT && column_from_table.comment.empty())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have COMMENT, cannot remove it",
+                        backQuote(column_name));
+
+            }
+
             modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -945,6 +1098,10 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             {
                 throw Exception{"Cannot rename column from nested struct to normal column and vice versa", ErrorCodes::BAD_ARGUMENTS};
             }
+        }
+        else if (command.type == AlterCommand::REMOVE_TTL && !metadata.hasAnyTableTTL())
+        {
+            throw Exception{"Table doesn't have any table TTL expression, cannot remove", ErrorCodes::BAD_ARGUMENTS};
         }
 
         /// Collect default expressions for MODIFY and ADD comands

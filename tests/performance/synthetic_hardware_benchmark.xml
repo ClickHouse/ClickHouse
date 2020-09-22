@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test>
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
     </settings>
@@ -51,7 +51,7 @@
 <query>SELECT number % 10 AS k, count(), sum(number), avg(number) FROM numbers_mt(1600000000) GROUP BY k FORMAT Null</query>
 <query>SELECT number % 256 AS k, count(), sum(number), avg(number) FROM numbers(100000000) GROUP BY k FORMAT Null</query>
 <query>SELECT number % 256 AS k, count(), sum(number), avg(number) FROM numbers_mt(1600000000) GROUP BY k FORMAT Null</query>
-<query>SELECT number % 256 AS k, count(), sum(number), avg(number), min(number), max(number), uniq(number), any(number), argMin(number, number), argMax(number, number) FROM numbers_mt(160000000) GROUP BY k FORMAT Null</query>
+<query>SELECT number % 256 AS k, count(), sum(number), avg(number), min(number), max(number), uniq(number), any(number), argMin(number, number), argMax(number, number) FROM numbers_mt(16000000) GROUP BY k FORMAT Null</query>
 
 <!-- 29.2. Lookup-таблица, помещающаяся в L2-кэш. -->
 <query>SELECT number % 1000 AS k, count() FROM numbers(    100000000) GROUP BY k FORMAT Null</query>

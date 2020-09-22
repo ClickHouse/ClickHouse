@@ -235,14 +235,10 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 Инициализация очереди репликации на основе данных ZooKeeper, происходит так же как при attach table. На короткое время таблица станет недоступной для любых операций.
 
 ``` sql
-SYSTEM RESTART QUEUES [db.]replicated_merge_tree_family_table_name
+SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 Реинициализация состояния Zookeeper сессий для всех `ReplicatedMergeTree` таблиц, сравнивает текущее состояние с тем что хранится в Zookeeper как источник правды и добавляет задачи Zookeeper очередь если необходимо
-
-``` sql
-SYSTEM RESTART QUEUES [db.]replicated_merge_tree_family_table_name
-```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/system/) <!--hide-->

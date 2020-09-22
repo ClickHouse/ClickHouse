@@ -17,7 +17,7 @@
   * This is very unusual function made as a special order for Yandex.Metrica.
   *
   * arrayEnumerateUniqRanked(['hello', 'world', 'hello']) = [1, 1, 2]
-  * - it returns similar structured array containing number of occurence of the corresponding value.
+  * - it returns similar structured array containing number of occurrence of the corresponding value.
   *
   * arrayEnumerateUniqRanked([['hello', 'world'], ['hello'], ['hello']], 1) = [1, 1, 2]
   * - look at the depth 1 by default. Elements are ['hello', 'world'], ['hello'], ['hello'].

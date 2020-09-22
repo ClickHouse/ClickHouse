@@ -9,9 +9,10 @@ CFLAGS(
 PEERDIR(
     clickhouse/base/daemon
     clickhouse/base/loggers
-    clickhouse/programs/client/readpassphrase
     clickhouse/src
 )
+
+CFLAGS(-g0)
 
 SRCS(
     main.cpp

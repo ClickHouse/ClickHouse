@@ -15,7 +15,7 @@ toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
 
         Это способ создания временной таблицы, которая доступна только в текущем запросе.
 
--   Запросе [CREATE TABLE AS \<table\_function()\>](../statements/create.md#create-table-query).
+-   Запросе [CREATE TABLE AS \<table\_function()\>](../statements/create/index.md#create-table-query).
 
         Это один из методов создания таблицы.
 

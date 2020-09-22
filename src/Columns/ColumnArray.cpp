@@ -31,7 +31,16 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+/** Obtaining array as Field can be slow for large arrays and consume vast amount of memory.
+  * Just don't allow to do it.
+  * You can increase the limit if the following query:
+  *  SELECT range(10000000)
+  * will take less than 500ms on your machine.
+  */
+static constexpr size_t max_array_size_as_field = 1000000;
 
 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
@@ -42,11 +51,12 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
 
-    size_t size = offsets_concrete->size();
-    if (size != 0 && nested_column)
+    if (!offsets_concrete->empty() && nested_column)
     {
+        Offset last_offset = offsets_concrete->getData().back();
+
         /// This will also prevent possible overflow in offset.
-        if (nested_column->size() != offsets_concrete->getData()[size - 1])
+        if (nested_column->size() != last_offset)
             throw Exception("offsets_column has data inconsistent with nested_column", ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -116,6 +126,11 @@ Field ColumnArray::operator[](size_t n) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
+
+    if (size > max_array_size_as_field)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
+            size, max_array_size_as_field);
+
     Array res(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -129,6 +144,11 @@ void ColumnArray::get(size_t n, Field & res) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
+
+    if (size > max_array_size_as_field)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
+            size, max_array_size_as_field);
+
     res = Array(size);
     Array & res_arr = DB::get<Array &>(res);
 
@@ -761,18 +781,21 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
 
 void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
 {
+    if (equal_range.empty())
+        return;
+
     if (limit >= size() || limit >= equal_range.back().second)
         limit = 0;
 
-    size_t n = equal_range.size();
+    size_t number_of_ranges = equal_range.size();
 
     if (limit)
-        --n;
+        --number_of_ranges;
 
     EqualRanges new_ranges;
-    for (size_t i = 0; i < n; ++i)
+    for (size_t i = 0; i < number_of_ranges; ++i)
     {
-        const auto& [first, last] = equal_range[i];
+        const auto & [first, last] = equal_range[i];
 
         if (reverse)
             std::sort(res.begin() + first, res.begin() + last, Less<false>(*this, nan_direction_hint));
@@ -797,7 +820,13 @@ void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_directio
 
     if (limit)
     {
-        const auto& [first, last] = equal_range.back();
+        const auto & [first, last] = equal_range.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
         if (reverse)
             std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, Less<false>(*this, nan_direction_hint));
         else

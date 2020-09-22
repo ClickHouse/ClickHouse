@@ -15,7 +15,7 @@ RUN apt-get --allow-unauthenticated update -y \
         gpg-agent \
         git
 
-RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | sudo apt-key add -
+RUN wget -nv -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | sudo apt-key add -
 RUN sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
 RUN sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
 

@@ -33,7 +33,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         /// Even if lag is small, output detailed information about the lag.
         bool verbose = params.get("verbose", "") == "1";
 
-        const MergeTreeSettings & settings = context.getMergeTreeSettings();
+        const MergeTreeSettings & settings = context.getReplicatedMergeTreeSettings();
 
         bool ok = true;
         std::stringstream message;
@@ -75,15 +75,18 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         const auto & config = context.getConfigRef();
         setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
 
-        if (ok && !verbose)
+        if (!ok)
+        {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+            verbose = true;
+        }
+
+        if (verbose)
+            response.send() << message.rdbuf();
+        else
         {
             const char * data = "Ok.\n";
             response.sendBuffer(data, strlen(data));
-        }
-        else
-        {
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
-            response.send() << message.rdbuf();
         }
     }
     catch (...)

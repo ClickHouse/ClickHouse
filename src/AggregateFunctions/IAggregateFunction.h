@@ -5,7 +5,7 @@
 #include <vector>
 #include <type_traits>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Block.h>
 #include <Common/Exception.h>
@@ -33,6 +33,7 @@ using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+struct AggregateFunctionProperties;
 
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
@@ -78,7 +79,7 @@ public:
     /// Get `sizeof` of structure with data.
     virtual size_t sizeOfData() const = 0;
 
-    /// How the data structure should be aligned. NOTE: Currently not used (structures with aggregation state are put without alignment).
+    /// How the data structure should be aligned.
     virtual size_t alignOfData() const = 0;
 
     /** Adds a value into aggregation data on which place points to.
@@ -186,7 +187,8 @@ public:
      *  arguments and params are for nested_function.
      */
     virtual AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
+        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/,
+        const Array & /*params*/, const AggregateFunctionProperties & /*properties*/) const
     {
         return nullptr;
     }
@@ -222,24 +224,6 @@ public:
             static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
     }
 
-    void addBatchLookupTable8(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        std::function<void(AggregateDataPtr &)> init,
-        const UInt8 * key,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        for (size_t i = 0; i < batch_size; ++i)
-        {
-            AggregateDataPtr & place = places[key[i]];
-            if (unlikely(!place))
-                init(place);
-            static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
-        }
-    }
-
     void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
         for (size_t i = 0; i < batch_size; ++i)
@@ -272,6 +256,45 @@ public:
             for (size_t j = current_offset; j < next_offset; ++j)
                 static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
+        }
+    }
+
+    void addBatchLookupTable8(
+        size_t batch_size,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        static constexpr size_t UNROLL_COUNT = 8;
+
+        size_t i = 0;
+
+        size_t batch_size_unrolled = batch_size / UNROLL_COUNT * UNROLL_COUNT;
+        for (; i < batch_size_unrolled; i += UNROLL_COUNT)
+        {
+            AggregateDataPtr places[UNROLL_COUNT];
+            for (size_t j = 0; j < UNROLL_COUNT; ++j)
+            {
+                AggregateDataPtr & place = map[key[i + j]];
+                if (unlikely(!place))
+                    init(place);
+
+                places[j] = place;
+            }
+
+            for (size_t j = 0; j < UNROLL_COUNT; ++j)
+                static_cast<const Derived *>(this)->add(places[j] + place_offset, columns, i + j, arena);
+        }
+
+        for (; i < batch_size; ++i)
+        {
+            AggregateDataPtr & place = map[key[i]];
+            if (unlikely(!place))
+                init(place);
+            static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
         }
     }
 };
@@ -311,10 +334,85 @@ public:
         return sizeof(Data);
     }
 
-    /// NOTE: Currently not used (structures with aggregation state are put without alignment).
     size_t alignOfData() const override
     {
         return alignof(Data);
+    }
+
+    void addBatchLookupTable8(
+        size_t batch_size,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const Derived & func = *static_cast<const Derived *>(this);
+
+        /// If the function is complex or too large, use more generic algorithm.
+
+        if (func.allocatesMemoryInArena() || sizeof(Data) > 16 || func.sizeOfData() != sizeof(Data))
+        {
+            IAggregateFunctionHelper<Derived>::addBatchLookupTable8(batch_size, map, place_offset, init, key, columns, arena);
+            return;
+        }
+
+        /// Will use UNROLL_COUNT number of lookup tables.
+
+        static constexpr size_t UNROLL_COUNT = 4;
+
+        std::unique_ptr<Data[]> places{new Data[256 * UNROLL_COUNT]};
+        bool has_data[256 * UNROLL_COUNT]{}; /// Separate flags array to avoid heavy initialization.
+
+        size_t i = 0;
+
+        /// Aggregate data into different lookup tables.
+
+        size_t batch_size_unrolled = batch_size / UNROLL_COUNT * UNROLL_COUNT;
+        for (; i < batch_size_unrolled; i += UNROLL_COUNT)
+        {
+            for (size_t j = 0; j < UNROLL_COUNT; ++j)
+            {
+                size_t idx = j * 256 + key[i + j];
+                if (unlikely(!has_data[idx]))
+                {
+                    new (&places[idx]) Data;
+                    has_data[idx] = true;
+                }
+                func.add(reinterpret_cast<char *>(&places[idx]), columns, i + j, nullptr);
+            }
+        }
+
+        /// Merge data from every lookup table to the final destination.
+
+        for (size_t k = 0; k < 256; ++k)
+        {
+            for (size_t j = 0; j < UNROLL_COUNT; ++j)
+            {
+                size_t idx = j * 256 + k;
+                if (has_data[idx])
+                {
+                    AggregateDataPtr & place = map[k];
+                    if (unlikely(!place))
+                        init(place);
+
+                    func.merge(place + place_offset, reinterpret_cast<const char *>(&places[idx]), nullptr);
+                }
+            }
+        }
+
+        /// Process tails and add directly to the final destination.
+
+        for (; i < batch_size; ++i)
+        {
+            size_t k = key[i];
+            AggregateDataPtr & place = map[k];
+            if (unlikely(!place))
+                init(place);
+
+            func.add(place + place_offset, columns, i, nullptr);
+        }
     }
 };
 

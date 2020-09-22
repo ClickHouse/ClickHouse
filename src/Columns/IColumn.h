@@ -228,7 +228,7 @@ public:
     using Filter = PaddedPODArray<UInt8>;
     virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
-    /// Permutes elements using specified permutation. Is used in sortings.
+    /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
     using Permutation = PaddedPODArray<size_t>;
     virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
@@ -239,7 +239,7 @@ public:
 
     /** Compares (*this)[n] and rhs[m]. Column rhs should have the same type.
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
-      * Is used in sortings.
+      * Is used in sorting.
       *
       * If one of element's value is NaN or NULLs, then:
       * - if nan_direction_hint == -1, NaN and NULLs are considered as least than everything other;
@@ -266,17 +266,6 @@ public:
       * nan_direction_hint - see above.
       */
     virtual void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const = 0;
-
-    enum class SpecialSort
-    {
-        NONE = 0,
-        OPENCL_BITONIC,
-    };
-
-    virtual void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, SpecialSort) const
-    {
-        getPermutation(reverse, limit, nan_direction_hint, res);
-    }
 
     /*in updatePermutation we pass the current permutation and the intervals at which it should be sorted
      * Then for each interval separately (except for the last one, if there is a limit)
@@ -402,7 +391,6 @@ public:
     virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
-    /// Implies isFixedAndContiguous.
     virtual bool isNumeric() const { return false; }
 
     /// If the only value column can contain is NULL.

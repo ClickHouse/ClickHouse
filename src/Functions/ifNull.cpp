@@ -10,6 +10,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Implements the function ifNull which takes 2 arguments and returns
 /// the value of the 1st argument if it is not null. Otherwise it returns
@@ -92,6 +94,7 @@ private:
     const Context & context;
 };
 
+}
 
 void registerFunctionIfNull(FunctionFactory & factory)
 {

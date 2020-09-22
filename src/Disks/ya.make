@@ -5,8 +5,12 @@ PEERDIR(
     clickhouse/src/Common
 )
 
+CFLAGS(-g0)
+
 SRCS(
     createVolume.cpp
+    DiskCacheWrapper.cpp
+    DiskDecorator.cpp
     DiskFactory.cpp
     DiskLocal.cpp
     DiskMemory.cpp

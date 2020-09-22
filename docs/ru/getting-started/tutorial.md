@@ -99,7 +99,7 @@ As in most databases management systems, ClickHouse logically groups tables into
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-Syntax for creating tables is way more complicated compared to databases (see [reference](../sql-reference/statements/create.md). In general `CREATE TABLE` statement has to specify three key things:
+Syntax for creating tables is way more complicated compared to databases (see [reference](../sql-reference/statements/create/table.md). In general `CREATE TABLE` statement has to specify three key things:
 
 1.  Name of table to create.
 2.  Table schema, i.e. list of columns and their [data types](../sql-reference/data-types/index.md).

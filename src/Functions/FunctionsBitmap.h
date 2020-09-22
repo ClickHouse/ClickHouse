@@ -33,10 +33,10 @@ namespace ErrorCodes
   * Convert bitmap to integer array:
   * bitmapToArray:    bitmap -> integer[]
   *
-  * Retrun the smallest value in the set:
+  * Return the smallest value in the set:
   * bitmapMin:    bitmap -> integer
   *
-  * Retrun the greatest value in the set:
+  * Return the greatest value in the set:
   * bitmapMax:    bitmap -> integer
   *
   * Return subset in specified range (not include the range_end):
@@ -60,7 +60,7 @@ namespace ErrorCodes
   * Two bitmap andnot calculation:
   * bitmapAndnot:    bitmap,bitmap -> bitmap
   *
-  * Retrun bitmap cardinality:
+  * Return bitmap cardinality:
   * bitmapCardinality:    bitmap -> integer
   *
   * Two bitmap and calculation, return cardinality:

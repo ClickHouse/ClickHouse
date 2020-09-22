@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -15,7 +15,6 @@ namespace DB
 class ASTAlterCommand;
 
 class Pipe;
-using Pipes = std::vector<Pipe>;
 
 struct PartitionCommand
 {
@@ -104,6 +103,6 @@ using PartitionCommandsResultInfo = std::vector<PartitionCommandResultInfo>;
 /// used to print info to the user. Tries to create narrowest table for given
 /// results. For example, if all commands were FREEZE commands, than
 /// old_part_name column will be absent.
-Pipes convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result);
+Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result);
 
 }

@@ -65,6 +65,7 @@ void registerFunctionSubtractYears(FunctionFactory &);
 void registerFunctionDateDiff(FunctionFactory &);
 void registerFunctionToTimeZone(FunctionFactory &);
 void registerFunctionFormatDateTime(FunctionFactory &);
+void registerFunctionDateTrunc(FunctionFactory &);
 
 void registerFunctionsDateTime(FunctionFactory & factory)
 {
@@ -130,6 +131,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionDateDiff(factory);
     registerFunctionToTimeZone(factory);
     registerFunctionFormatDateTime(factory);
+    registerFunctionDateTrunc(factory);
 }
 
 }

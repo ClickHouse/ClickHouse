@@ -77,6 +77,9 @@ ReadBufferFromFile::~ReadBufferFromFile()
 
 void ReadBufferFromFile::close()
 {
+    if (fd < 0)
+        return;
+
     if (0 != ::close(fd))
         throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 

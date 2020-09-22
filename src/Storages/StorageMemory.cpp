@@ -22,18 +22,29 @@ namespace ErrorCodes
 class MemorySource : public SourceWithProgress
 {
 public:
+    /// We use range [first, last] which includes right border.
+    /// Blocks are stored in std::list which may be appended in another thread.
+    /// We don't use synchronisation here, because elements in range [first, last] won't be modified.
     MemorySource(
         Names column_names_,
-        BlocksList::iterator begin_,
-        BlocksList::iterator end_,
+        BlocksList::iterator first_,
+        size_t num_blocks_,
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot)
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
         , column_names(std::move(column_names_))
-        , begin(begin_)
-        , end(end_)
-        , it(begin)
+        , current_it(first_)
+        , num_blocks(num_blocks_)
     {
+    }
+
+    /// If called, will initialize the number of blocks at first read.
+    /// It allows to read data which was inserted into memory table AFTER Storage::read was called.
+    /// This hack is needed for global subqueries.
+    void delayInitialization(BlocksList * data_, std::mutex * mutex_)
+    {
+        data = data_;
+        mutex = mutex_;
     }
 
     String getName() const override { return "Memory"; }
@@ -41,13 +52,24 @@ public:
 protected:
     Chunk generate() override
     {
-        if (it == end)
+        if (data)
+        {
+            std::lock_guard guard(*mutex);
+            current_it = data->begin();
+            num_blocks = data->size();
+            is_finished = num_blocks == 0;
+
+            data = nullptr;
+            mutex = nullptr;
+        }
+
+        if (is_finished)
         {
             return {};
         }
         else
         {
-            Block src = *it;
+            const Block & src = *current_it;
             Columns columns;
             columns.reserve(column_names.size());
 
@@ -55,15 +77,25 @@ protected:
             for (const auto & name : column_names)
                 columns.emplace_back(src.getByName(name).column);
 
-            ++it;
+            ++current_block_idx;
+
+            if (current_block_idx == num_blocks)
+                is_finished = true;
+            else
+                ++current_it;
+
             return Chunk(std::move(columns), src.rows());
         }
     }
 private:
     Names column_names;
-    BlocksList::iterator begin;
-    BlocksList::iterator end;
-    BlocksList::iterator it;
+    BlocksList::iterator current_it;
+    size_t current_block_idx = 0;
+    size_t num_blocks;
+    bool is_finished = false;
+
+    BlocksList * data = nullptr;
+    std::mutex * mutex = nullptr;
 };
 
 
@@ -101,7 +133,7 @@ StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription col
 }
 
 
-Pipes StorageMemory::read(
+Pipe StorageMemory::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -114,6 +146,21 @@ Pipes StorageMemory::read(
 
     std::lock_guard lock(mutex);
 
+    if (delay_read_for_global_subqueries)
+    {
+        /// Note: for global subquery we use single source.
+        /// Mainly, the reason is that at this point table is empty,
+        /// and we don't know the number of blocks are going to be inserted into it.
+        ///
+        /// It may seem to be not optimal, but actually data from such table is used to fill
+        /// set for IN or hash table for JOIN, which can't be done concurrently.
+        /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
+
+        auto source = std::make_shared<MemorySource>(column_names, data.begin(), data.size(), *this, metadata_snapshot);
+        source->delayInitialization(&data, &mutex);
+        return Pipe(std::move(source));
+    }
+
     size_t size = data.size();
 
     if (num_streams > size)
@@ -121,18 +168,26 @@ Pipes StorageMemory::read(
 
     Pipes pipes;
 
+    BlocksList::iterator it = data.begin();
+
+    size_t offset = 0;
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        BlocksList::iterator begin = data.begin();
-        BlocksList::iterator end = data.begin();
+        size_t next_offset = (stream + 1) * size / num_streams;
+        size_t num_blocks = next_offset - offset;
 
-        std::advance(begin, stream * size / num_streams);
-        std::advance(end, (stream + 1) * size / num_streams);
+        assert(num_blocks > 0);
 
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, begin, end, *this, metadata_snapshot));
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, it, num_blocks, *this, metadata_snapshot));
+
+        while (offset < next_offset)
+        {
+            ++it;
+            ++offset;
+        }
     }
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

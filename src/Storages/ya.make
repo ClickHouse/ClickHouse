@@ -7,6 +7,8 @@ PEERDIR(
     contrib/libs/poco/MongoDB
 )
 
+CFLAGS(-g0)
+
 SRCS(
     AlterCommands.cpp
     ColumnDefault.cpp
@@ -20,6 +22,7 @@ SRCS(
     IStorage.cpp
     KeyDescription.cpp
     LiveView/StorageLiveView.cpp
+    LiveView/TemporaryLiveViewCleaner.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
     MergeTree/BackgroundProcessingPool.cpp
@@ -34,6 +37,7 @@ SRCS(
     MergeTree/KeyCondition.cpp
     MergeTree/LevelMergeSelector.cpp
     MergeTree/localBackup.cpp
+    MergeTree/MergeAlgorithm.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
     MergeTree/MergeList.cpp
@@ -84,6 +88,7 @@ SRCS(
     MergeTree/MergeTreeThreadSelectBlockInputProcessor.cpp
     MergeTree/MergeTreeWhereOptimizer.cpp
     MergeTree/MergeTreeWriteAheadLog.cpp
+    MergeTree/MergeType.cpp
     MergeTree/registerStorageMergeTree.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
@@ -115,6 +120,7 @@ SRCS(
     StorageLog.cpp
     StorageLogSettings.cpp
     StorageMaterializedView.cpp
+    StorageMaterializeMySQL.cpp
     StorageMemory.cpp
     StorageMerge.cpp
     StorageMergeTree.cpp
@@ -181,6 +187,7 @@ SRCS(
     System/StorageSystemTableEngines.cpp
     System/StorageSystemTableFunctions.cpp
     System/StorageSystemTables.cpp
+    System/StorageSystemUserDirectories.cpp
     System/StorageSystemUsers.cpp
     System/StorageSystemZeros.cpp
     System/StorageSystemZooKeeper.cpp

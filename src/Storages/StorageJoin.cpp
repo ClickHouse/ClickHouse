@@ -436,7 +436,7 @@ private:
 
 
 // TODO: multiple stream read and index read
-Pipes StorageJoin::read(
+Pipe StorageJoin::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -447,10 +447,7 @@ Pipes StorageJoin::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<JoinSource>(*join, max_block_size, metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
-
-    return pipes;
+    return Pipe(std::make_shared<JoinSource>(*join, max_block_size, metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
 }
 
 }

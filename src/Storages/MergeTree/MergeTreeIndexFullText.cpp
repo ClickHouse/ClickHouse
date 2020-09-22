@@ -642,7 +642,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 
     while (*pos < len)
     {
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calcualted mask
+#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
         // NOTE: we assume that `data` string is padded from the right with 15 bytes.
         const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + *pos));
         const size_t haystack_length = 16;
@@ -663,7 +663,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
         const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
         const auto zero  =             _mm_set1_epi8(0);
 
-        // every bit represents if `haystack` character `c` statisfies condition:
+        // every bit represents if `haystack` character `c` satisfies condition:
         // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
         // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
         const int result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(

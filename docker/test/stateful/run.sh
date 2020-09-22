@@ -29,17 +29,26 @@ if [[ -n "$USE_DATABASE_ATOMIC" ]] && [[ "$USE_DATABASE_ATOMIC" -eq 1 ]]; then
     ln -s /usr/share/clickhouse-test/config/database_atomic_usersd.xml /etc/clickhouse-server/users.d/
 fi
 
-echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment
-echo "TSAN_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
-echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment
-echo "ASAN_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
-echo "UBSAN_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
-echo "LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
+function start()
+{
+    counter=0
+    until clickhouse-client --query "SELECT 1"
+    do
+        if [ "$counter" -gt 120 ]
+        then
+            echo "Cannot start clickhouse-server"
+            cat /var/log/clickhouse-server/stdout.log
+            tail -n1000 /var/log/clickhouse-server/stderr.log
+            tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
+            break
+        fi
+        timeout 120 service clickhouse-server start
+        sleep 0.5
+        counter=$(($counter + 1))
+    done
+}
 
-service zookeeper start
-sleep 5
-service clickhouse-server start
-sleep 5
+start
 /s3downloader --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"

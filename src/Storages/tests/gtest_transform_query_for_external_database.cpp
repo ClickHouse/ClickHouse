@@ -9,8 +9,8 @@
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/StorageMemory.h>
-#include <Functions/registerFunctions.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register_functions.h>
 
 
 using namespace DB;
@@ -42,7 +42,7 @@ private:
     explicit State()
         : context(getContext().context)
     {
-        registerFunctions();
+        tryRegisterFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
         database->attachTable("table", StorageMemory::create(StorageID("test", "table"), ColumnsDescription{columns}, ConstraintsDescription{}));
         DatabaseCatalog::instance().attachDatabase("test", database);

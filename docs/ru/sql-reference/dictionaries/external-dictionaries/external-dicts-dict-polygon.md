@@ -34,7 +34,7 @@
 </dictionary>
 ```
 
-Соответствущий [DDL-запрос](../../../sql-reference/statements/create.md#create-dictionary-query):
+Соответствущий [DDL-запрос](../../../sql-reference/statements/create/dictionary.md#create-dictionary-query):
 ``` sql
 CREATE DICTIONARY polygon_dict_name (
     key Array(Array(Array(Array(Float64)))),

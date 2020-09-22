@@ -212,6 +212,8 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(ASTPtr ast)
     }
 
     auto * impl = assert_cast<ASTExpressionList *>(ast.get());
+
+    // Remove element
     if (fuzz_rand() % 50 == 0 && impl->children.size() > 1)
     {
         // Don't remove last element -- this leads to questionable
@@ -219,6 +221,8 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(ASTPtr ast)
         impl->children.erase(impl->children.begin()
                              + fuzz_rand() % impl->children.size());
     }
+
+    // Add element
     if (fuzz_rand() % 50 == 0)
     {
         auto pos = impl->children.empty()
@@ -234,6 +238,9 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(ASTPtr ast)
             fprintf(stderr, "no random col!\n");
         }
     }
+
+    // We don't have to recurse here to fuzz the children, this is handled by
+    // the generic recursion into IAST.children.
 }
 
 void QueryFuzzer::fuzz(ASTs & asts)
@@ -289,20 +296,18 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * literal = typeid_cast<ASTLiteral *>(ast.get()))
     {
-        // Only change the queries sometimes.
-        int r = fuzz_rand() % 10;
-        if (r == 0)
+        // There is a caveat with fuzzing the children: many ASTs also keep the
+        // links to particular children in own fields. This means that replacing
+        // the child with another object might lead to error. Many of these fields
+        // are ASTPtr -- this is redundant ownership, but hides the error if the
+        // child field is replaced. Others can be ASTLiteral * or the like, which
+        // leads to segfault if the pointed-to AST is replaced.
+        // Replacing children is safe in case of ASTExpressionList. In a more
+        // general case, we can change the value of ASTLiteral, which is what we
+        // do here.
+        if (fuzz_rand() % 11 == 0)
         {
             literal->value = fuzzField(literal->value);
-        }
-        else if (r == 1)
-        {
-            /* replace with a random function? */
-        }
-        else if (r == 2)
-        {
-            /* replace with something column-like */
-            replaceWithColumnLike(ast);
         }
     }
     else

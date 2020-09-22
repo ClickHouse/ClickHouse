@@ -31,7 +31,7 @@ static Block getBlockWithSize(const std::vector<std::string> & columns, size_t r
 }
 
 
-static Pipes getInputStreams(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
+static Pipe getInputStreams(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
 {
     Pipes pipes;
     for (auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
@@ -42,12 +42,12 @@ static Pipes getInputStreams(const std::vector<std::string> & column_names, cons
             blocks.push_back(getBlockWithSize(column_names, block_size_in_bytes, stride, start));
         pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<BlocksListBlockInputStream>(std::move(blocks))));
     }
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 
 }
 
 
-static Pipes getInputStreamsEqualStride(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
+static Pipe getInputStreamsEqualStride(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
 {
     Pipes pipes;
     size_t i = 0;
@@ -60,7 +60,7 @@ static Pipes getInputStreamsEqualStride(const std::vector<std::string> & column_
         pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<BlocksListBlockInputStream>(std::move(blocks))));
         i++;
     }
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 
 }
 
@@ -79,15 +79,17 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
 {
     std::vector<std::string> key_columns{"K1", "K2", "K3"};
     auto sort_description = getSortDescription(key_columns);
-    auto pipes = getInputStreams(key_columns, {{5, 1, 1}, {10, 1, 2}, {21, 1, 3}});
+    auto pipe = getInputStreams(key_columns, {{5, 1, 1}, {10, 1, 2}, {21, 1, 3}});
 
-    EXPECT_EQ(pipes.size(), 3);
+    EXPECT_EQ(pipe.numOutputPorts(), 3);
 
-    auto transform = std::make_shared<MergingSortedTransform>(pipes.front().getHeader(), pipes.size(), sort_description,
+    auto transform = std::make_shared<MergingSortedTransform>(pipe.getHeader(), pipe.numOutputPorts(), sort_description,
             DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
 
+    pipe.addTransform(std::move(transform));
+
     QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(pipes), std::move(transform)));
+    pipeline.init(std::move(pipe));
     pipeline.setMaxThreads(1);
     auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
@@ -122,15 +124,17 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
 {
     std::vector<std::string> key_columns{"K1", "K2", "K3"};
     auto sort_description = getSortDescription(key_columns);
-    auto pipes = getInputStreamsEqualStride(key_columns, {{1000, 1, 3}, {1500, 1, 3}, {1400, 1, 3}});
+    auto pipe = getInputStreamsEqualStride(key_columns, {{1000, 1, 3}, {1500, 1, 3}, {1400, 1, 3}});
 
-    EXPECT_EQ(pipes.size(), 3);
+    EXPECT_EQ(pipe.numOutputPorts(), 3);
 
-    auto transform = std::make_shared<MergingSortedTransform>(pipes.front().getHeader(), pipes.size(), sort_description,
+    auto transform = std::make_shared<MergingSortedTransform>(pipe.getHeader(), pipe.numOutputPorts(), sort_description,
             DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
 
+    pipe.addTransform(std::move(transform));
+
     QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(pipes), std::move(transform)));
+    pipeline.init(std::move(pipe));
     pipeline.setMaxThreads(1);
     auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 

@@ -33,7 +33,7 @@ void OffsetStep::transformPipeline(QueryPipeline & pipeline)
     auto transform = std::make_shared<OffsetTransform>(
             pipeline.getHeader(), offset, pipeline.getNumStreams());
 
-    pipeline.addPipe({std::move(transform)});
+    pipeline.addTransform(std::move(transform));
 }
 
 void OffsetStep::describeActions(FormatSettings & settings) const

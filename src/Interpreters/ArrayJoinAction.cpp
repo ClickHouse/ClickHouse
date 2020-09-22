@@ -48,7 +48,7 @@ void ArrayJoinAction::prepare(Block & sample_block)
     }
 }
 
-void ArrayJoinAction::execute(Block & block, bool dry_run)
+void ArrayJoinAction::execute(Block & block)
 {
     if (columns.empty())
         throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
@@ -105,7 +105,7 @@ void ArrayJoinAction::execute(Block & block, bool dry_run)
 
             Block tmp_block{src_col, {{}, src_col.type, {}}};
 
-            function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size(), dry_run);
+            function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size());
             non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
         }
 
@@ -136,33 +136,6 @@ void ArrayJoinAction::execute(Block & block, bool dry_run)
         else
         {
             current.column = current.column->replicate(any_array->getOffsets());
-        }
-    }
-}
-
-void ArrayJoinAction::finalize(NameSet & needed_columns, NameSet & unmodified_columns, NameSet & final_columns)
-{
-    /// Do not ARRAY JOIN columns that are not used anymore.
-    /// Usually, such columns are not used until ARRAY JOIN, and therefore are ejected further in this function.
-    /// We will not remove all the columns so as not to lose the number of rows.
-    for (auto it = columns.begin(); it != columns.end();)
-    {
-        bool need = needed_columns.count(*it);
-        if (!need && columns.size() > 1)
-        {
-            columns.erase(it++);
-        }
-        else
-        {
-            needed_columns.insert(*it);
-            unmodified_columns.erase(*it);
-
-            /// If no ARRAY JOIN results are used, forcibly leave an arbitrary column at the output,
-            ///  so you do not lose the number of rows.
-            if (!need)
-                final_columns.insert(*it);
-
-            ++it;
         }
     }
 }
