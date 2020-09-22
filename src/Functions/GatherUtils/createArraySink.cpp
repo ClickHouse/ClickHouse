@@ -7,6 +7,9 @@ namespace DB::GatherUtils
 {
 /// Creates IArraySink from ColumnArray
 
+namespace
+{
+
 template <typename... Types>
 struct ArraySinkCreator;
 
@@ -47,6 +50,8 @@ struct ArraySinkCreator<>
         return std::make_unique<GenericArraySink>(values, offsets, column_size);
     }
 };
+
+}
 
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size)
 {

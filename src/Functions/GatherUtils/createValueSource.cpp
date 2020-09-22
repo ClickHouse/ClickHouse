@@ -7,6 +7,9 @@ namespace DB::GatherUtils
 {
 /// Creates IValueSource from Column
 
+namespace
+{
+
 template <typename... Types>
 struct ValueSourceCreator;
 
@@ -50,6 +53,8 @@ struct ValueSourceCreator<>
         return std::make_unique<GenericValueSource>(col);
     }
 };
+
+}
 
 std::unique_ptr<IValueSource> createValueSource(const IColumn & col, bool is_const, size_t total_rows)
 {

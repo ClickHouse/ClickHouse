@@ -5,6 +5,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
+#include <Common/OpenSSLHelpers.h>
 #include <IO/Progress.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -50,6 +51,7 @@ namespace ErrorCodes
     extern const int POCO_EXCEPTION;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -292,6 +294,12 @@ void TCPHandler::runImpl()
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
 
+            /// If there is UNEXPECTED_PACKET_FROM_CLIENT emulate network_error
+            /// to break the loop, but do not throw to send the exception to
+            /// the client.
+            if (e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT)
+                network_error = true;
+
             /// If a timeout occurred, try to inform client about it and close the session
             if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
                 network_error = true;
@@ -350,6 +358,8 @@ void TCPHandler::runImpl()
                     tryLogCurrentException(log, "Can't send logs to client");
                 }
 
+                const auto & e = *exception;
+                LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
@@ -715,7 +725,7 @@ void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
     UInt64 packet_type = 0;
-    String user = "default";
+    String user;
     String password;
 
     readVarUInt(packet_type, *in);
@@ -746,14 +756,25 @@ void TCPHandler::receiveHello()
     readStringBinary(user, *in);
     readStringBinary(password, *in);
 
+    if (user.empty())
+        throw NetException("Unexpected packet from client (no user in Hello package)", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+
     LOG_DEBUG(log, "Connected {} version {}.{}.{}, revision: {}{}{}.",
         client_name,
         client_version_major, client_version_minor, client_version_patch,
         client_tcp_protocol_version,
         (!default_database.empty() ? ", database: " + default_database : ""),
-        (!user.empty() ? ", user: " + user : ""));
+        (!user.empty() ? ", user: " + user : "")
+    );
 
-    connection_context.setUser(user, password, socket().peerAddress());
+    if (user != USER_INTERSERVER_MARKER)
+    {
+        connection_context.setUser(user, password, socket().peerAddress());
+    }
+    else
+    {
+        receiveClusterNameAndSalt();
+    }
 }
 
 
@@ -835,6 +856,30 @@ bool TCPHandler::receivePacket()
     }
 }
 
+void TCPHandler::receiveClusterNameAndSalt()
+{
+    readStringBinary(cluster, *in);
+    readStringBinary(salt, *in, 32);
+
+    try
+    {
+        if (salt.empty())
+            throw NetException("Empty salt is not allowed", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+
+        cluster_secret = query_context->getCluster(cluster)->getSecret();
+    }
+    catch (const Exception & e)
+    {
+        try
+        {
+            /// We try to send error information to the client.
+            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
+        }
+        catch (...) {}
+
+        throw;
+    }
+}
 
 void TCPHandler::receiveQuery()
 {
@@ -870,20 +915,71 @@ void TCPHandler::receiveQuery()
         client_info.initial_query_id = client_info.current_query_id;
         client_info.initial_address = client_info.current_address;
     }
+
+    /// Per query settings are also passed via TCP.
+    /// We need to check them before applying due to they can violate the settings constraints.
+    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                      : SettingsWriteFormat::BINARY;
+    Settings passed_settings;
+    passed_settings.read(*in, settings_format);
+
+    /// Interserver secret.
+    std::string received_hash;
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
+    {
+        readStringBinary(received_hash, *in, 32);
+    }
+
+    readVarUInt(stage, *in);
+    state.stage = QueryProcessingStage::Enum(stage);
+
+    readVarUInt(compression, *in);
+    state.compression = static_cast<Protocol::Compression>(compression);
+
+    readStringBinary(state.query, *in);
+
+    /// It is OK to check only when query != INITIAL_QUERY,
+    /// since only in that case the actions will be done.
+    if (!cluster.empty() && client_info.query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+#if USE_SSL
+        std::string data(salt);
+        data += cluster_secret;
+        data += state.query;
+        data += state.query_id;
+        data += client_info.initial_user;
+
+        if (received_hash.size() != 32)
+            throw NetException("Unexpected hash received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+
+        std::string calculated_hash = encodeSHA256(data);
+
+        if (calculated_hash != received_hash)
+            throw NetException("Hash mismatch", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        /// TODO: change error code?
+
+        /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
+        /// i.e. when the INSERT is done with the global context (w/o user).
+        if (!client_info.initial_user.empty())
+        {
+            query_context->setUserWithoutCheckingPassword(client_info.initial_user, socket().peerAddress());
+            LOG_DEBUG(log, "User (initial): {}", query_context->getUserName());
+        }
+        /// No need to update connection_context, since it does not requires user (it will not be used for query execution)
+#else
+        throw Exception(
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
+            ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+    }
     else
     {
         query_context->setInitialRowPolicy();
     }
 
-    /// Per query settings are also passed via TCP.
-    /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format =
-        (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
-            ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-            : SettingsWriteFormat::BINARY;
-
-    Settings passed_settings;
-    passed_settings.read(*in, settings_format);
+    ///
+    /// Settings
+    ///
     auto settings_changes = passed_settings.changes();
     if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
@@ -914,14 +1010,6 @@ void TCPHandler::receiveQuery()
     /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
     const Settings & settings = query_context->getSettingsRef();
     state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), settings.receive_timeout, settings.send_timeout);
-
-    readVarUInt(stage, *in);
-    state.stage = QueryProcessingStage::Enum(stage);
-
-    readVarUInt(compression, *in);
-    state.compression = static_cast<Protocol::Compression>(compression);
-
-    readStringBinary(state.query, *in);
 }
 
 void TCPHandler::receiveUnexpectedQuery()
@@ -939,6 +1027,11 @@ void TCPHandler::receiveUnexpectedQuery()
     auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                       : SettingsWriteFormat::BINARY;
     skip_settings.read(*in, settings_format);
+
+    std::string skip_hash;
+    bool interserver_secret = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET;
+    if (interserver_secret)
+        readStringBinary(skip_hash, *in, 32);
 
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);
