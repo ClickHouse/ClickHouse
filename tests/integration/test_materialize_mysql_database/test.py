@@ -94,10 +94,13 @@ def started_mysql_8_0():
 
 def test_materialize_database_dml_with_mysql_5_7(started_cluster, started_mysql_5_7):
     materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_5_7, "mysql1")
 
 
 def test_materialize_database_dml_with_mysql_8_0(started_cluster, started_mysql_8_0):
     materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
 
 
 def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_5_7):

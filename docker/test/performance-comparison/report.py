@@ -98,6 +98,9 @@ th {{
 
 tr:nth-child(odd) td {{filter: brightness(90%);}}
 
+.unexpected-query-duration tr :nth-child(2),
+.unexpected-query-duration tr :nth-child(3),
+.unexpected-query-duration tr :nth-child(5),
 .all-query-times tr :nth-child(1),
 .all-query-times tr :nth-child(2),
 .all-query-times tr :nth-child(3),
@@ -126,7 +129,6 @@ tr:nth-child(odd) td {{filter: brightness(90%);}}
 .test-times tr :nth-child(5),
 .test-times tr :nth-child(6),
 .test-times tr :nth-child(7),
-.test-times tr :nth-child(8),
 .concurrent-benchmarks tr :nth-child(2),
 .concurrent-benchmarks tr :nth-child(3),
 .concurrent-benchmarks tr :nth-child(4),
@@ -205,9 +207,11 @@ def tableStart(title):
     global table_anchor
     table_anchor = cls
     anchor = currentTableAnchor()
+    help_anchor = '-'.join(title.lower().split(' '));
     return f"""
         <h2 id="{anchor}">
             <a class="cancela" href="#{anchor}">{title}</a>
+            <a class="cancela" href="https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#{help_anchor}"><sup style="color: #888">?</sup></a>
         </h2>
         <table class="{cls}">
     """
@@ -250,7 +254,7 @@ def addSimpleTable(caption, columns, rows, pos=None):
 def add_tested_commits():
     global report_errors
     try:
-        addSimpleTable('Tested commits', ['Old', 'New'],
+        addSimpleTable('Tested Commits', ['Old', 'New'],
             [['<pre>{}</pre>'.format(x) for x in
                 [open('left-commit.txt').read(),
                  open('right-commit.txt').read()]]])
@@ -276,7 +280,7 @@ def add_report_errors():
     if not report_errors:
         return
 
-    text = tableStart('Errors while building the report')
+    text = tableStart('Errors while Building the Report')
     text += tableHeader(['Error'])
     for x in report_errors:
         text += tableRow([x])
@@ -290,7 +294,7 @@ def add_errors_explained():
         return
 
     text = '<a name="fail1"/>'
-    text += tableStart('Error summary')
+    text += tableStart('Error Summary')
     text += tableHeader(['Description'])
     for row in errors_explained:
         text += tableRow(row)
@@ -308,26 +312,26 @@ if args.report == 'main':
 
     run_error_rows = tsvRows('run-errors.tsv')
     error_tests += len(run_error_rows)
-    addSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
+    addSimpleTable('Run Errors', ['Test', 'Error'], run_error_rows)
     if run_error_rows:
         errors_explained.append([f'<a href="#{currentTableAnchor()}">There were some errors while running the tests</a>']);
 
 
     slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
     error_tests += len(slow_on_client_rows)
-    addSimpleTable('Slow on client',
+    addSimpleTable('Slow on Client',
                      ['Client time,&nbsp;s', 'Server time,&nbsp;s', 'Ratio', 'Test', 'Query'],
                      slow_on_client_rows)
     if slow_on_client_rows:
         errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries are taking noticeable time client-side (missing `FORMAT Null`?)</a>']);
 
-    unmarked_short_rows = tsvRows('report/unmarked-short-queries.tsv')
+    unmarked_short_rows = tsvRows('report/unexpected-query-duration.tsv')
     error_tests += len(unmarked_short_rows)
-    addSimpleTable('Short queries not marked as short',
-        ['New client time, s', 'Test', '#', 'Query'],
+    addSimpleTable('Unexpected Query Duration',
+        ['Problem', 'Marked as "short"?', 'Run time, s', 'Test', '#', 'Query'],
         unmarked_short_rows)
     if unmarked_short_rows:
-        errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries have short duration but are not explicitly marked as "short"</a>']);
+        errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries have unexpected duration</a>']);
 
     def add_partial():
         rows = tsvRows('report/partial-queries-report.tsv')
@@ -335,7 +339,7 @@ if args.report == 'main':
             return
 
         global unstable_partial_queries, slow_average_tests, tables
-        text = tableStart('Partial queries')
+        text = tableStart('Partial Queries')
         columns = ['Median time, s', 'Relative time variance', 'Test', '#', 'Query']
         text += tableHeader(columns)
         attrs = ['' for c in columns]
@@ -366,7 +370,7 @@ if args.report == 'main':
 
         global faster_queries, slower_queries, tables
 
-        text = tableStart('Changes in performance')
+        text = tableStart('Changes in Performance')
         columns = [
             'Old,&nbsp;s',                                          # 0
             'New,&nbsp;s',                                          # 1
@@ -423,7 +427,7 @@ if args.report == 'main':
             'Query' #7
         ]
 
-        text = tableStart('Unstable queries')
+        text = tableStart('Unstable Queries')
         text += tableHeader(columns)
 
         attrs = ['' for c in columns]
@@ -444,9 +448,9 @@ if args.report == 'main':
     add_unstable_queries()
 
     skipped_tests_rows = tsvRows('analyze/skipped-tests.tsv')
-    addSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
+    addSimpleTable('Skipped Tests', ['Test', 'Reason'], skipped_tests_rows)
 
-    addSimpleTable('Test performance changes',
+    addSimpleTable('Test Performance Changes',
         ['Test', 'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)', 'Queries', 'Total not OK', 'Changed perf', 'Unstable'],
         tsvRows('report/test-perf-changes.tsv'))
 
@@ -461,13 +465,12 @@ if args.report == 'main':
             'Wall clock time,&nbsp;s',                            #1
             'Total client time,&nbsp;s',                          #2
             'Total queries',                                 #3
-            'Ignored short queries',                         #4
-            'Longest query<br>(sum for all runs),&nbsp;s',        #5
-            'Avg wall clock time<br>(sum for all runs),&nbsp;s',  #6
-            'Shortest query<br>(sum for all runs),&nbsp;s',       #7
+            'Longest query<br>(sum for all runs),&nbsp;s',        #4
+            'Avg wall clock time<br>(sum for all runs),&nbsp;s',  #5
+            'Shortest query<br>(sum for all runs),&nbsp;s',       #6
             ]
 
-        text = tableStart('Test times')
+        text = tableStart('Test Times')
         text += tableHeader(columns)
 
         nominal_runs = 7  # FIXME pass this as an argument
@@ -476,20 +479,20 @@ if args.report == 'main':
         attrs = ['' for c in columns]
         for r in rows:
             anchor = f'{currentTableAnchor()}.{r[0]}'
-            if float(r[6]) > allowed_average_run_time * total_runs:
+            if float(r[5]) > allowed_average_run_time * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
-                attrs[6] = f'style="background: {color_bad}"'
+                attrs[5] = f'style="background: {color_bad}"'
                 errors_explained.append([f'<a href="#{anchor}">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up'])
             else:
-                attrs[6] = ''
+                attrs[5] = ''
 
-            if float(r[5]) > allowed_single_run_time * total_runs:
+            if float(r[4]) > allowed_single_run_time * total_runs:
                 slow_average_tests += 1
-                attrs[5] = f'style="background: {color_bad}"'
+                attrs[4] = f'style="background: {color_bad}"'
                 errors_explained.append([f'<a href="./all-queries.html#all-query-times.{r[0]}.0">Some query of the test \'{r[0]}\' is too slow to run. See the all queries report'])
             else:
-                attrs[5] = ''
+                attrs[4] = ''
 
             text += tableRow(r, attrs, anchor)
 
@@ -498,74 +501,7 @@ if args.report == 'main':
 
     add_test_times()
 
-    def add_benchmark_results():
-        if not os.path.isfile('benchmark/website-left.json'):
-            return
-
-        json_reports = [json.load(open(f'benchmark/website-{x}.json')) for x in ['left', 'right']]
-        stats = [next(iter(x.values()))["statistics"] for x in json_reports]
-        qps = [x["QPS"] for x in stats]
-        queries = [x["num_queries"] for x in stats]
-        errors = [x["num_errors"] for x in stats]
-        relative_diff = (qps[1] - qps[0]) / max(0.01, qps[0]);
-        times_diff = max(qps) / max(0.01, min(qps))
-
-        all_rows = []
-        header = ['Benchmark', 'Metric', 'Old', 'New', 'Relative difference', 'Times difference'];
-
-        attrs = ['' for x in header]
-        row = ['website', 'queries', f'{queries[0]:d}', f'{queries[1]:d}', '--', '--']
-        attrs[0] = 'rowspan=2'
-        all_rows.append([row, attrs])
-
-        attrs = ['' for x in header]
-        row = [None, 'queries/s', f'{qps[0]:.3f}', f'{qps[1]:.3f}', f'{relative_diff:.3f}', f'x{times_diff:.3f}']
-        if abs(relative_diff) > 0.1:
-            # More queries per second is better.
-            if relative_diff > 0.:
-                attrs[4] = f'style="background: {color_good}"'
-            else:
-                attrs[4] = f'style="background: {color_bad}"'
-        else:
-            attrs[4] = ''
-        all_rows.append([row, attrs]);
-
-        if max(errors):
-            all_rows[0][1][0] = "rowspan=3"
-            row = [''] * (len(header))
-            attrs = ['' for x in header]
-
-            attrs[0] = None
-            row[1] = 'errors'
-            row[2] = f'{errors[0]:d}'
-            row[3] = f'{errors[1]:d}'
-            row[4] = '--'
-            row[5] = '--'
-            if errors[0]:
-                attrs[2] += f' style="background: {color_bad}" '
-            if errors[1]:
-                attrs[3] += f' style="background: {color_bad}" '
-
-            all_rows.append([row, attrs])
-
-        text = tableStart('Concurrent benchmarks')
-        text += tableHeader(header)
-        for row, attrs in all_rows:
-            text += tableRow(row, attrs)
-        text += tableEnd()
-
-        global tables
-        tables.append(text)
-
-    try:
-        add_benchmark_results()
-    except:
-        report_errors.append(
-            traceback.format_exception_only(
-                *sys.exc_info()[:2])[-1])
-        pass
-
-    addSimpleTable('Metric changes',
+    addSimpleTable('Metric Changes',
         ['Metric', 'Old median value', 'New median value',
             'Relative difference', 'Times difference'],
         tsvRows('metrics/changes.tsv'))
@@ -656,7 +592,7 @@ elif args.report == 'all-queries':
             'Query',                                  #9
             ]
 
-        text = tableStart('All query times')
+        text = tableStart('All Query Times')
         text += tableHeader(columns)
 
         attrs = ['' for c in columns]
