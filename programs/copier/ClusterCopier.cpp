@@ -701,7 +701,7 @@ ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast
 /// Replaces ENGINE and table name in a create query
 std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast,
                                                           const DatabaseAndTableName & new_table,
-                                                          const ASTPtr & new_storage_ast)
+                                                          const ASTPtr & new_storage_ast, const String & cluster = "")
 {
     const auto & create = create_query_ast->as<ASTCreateQuery &>();
     auto res = std::make_shared<ASTCreateQuery>(create);
@@ -711,6 +711,7 @@ std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_
 
     res->database = new_table.first;
     res->table = new_table.second;
+    res->cluster = cluster;
 
     res->children.clear();
     res->set(res->columns_list, create.columns_list->clone());
@@ -1476,12 +1477,12 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     try
     {
         auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query,
-                                                               task_table.table_push, task_table.engine_push_ast);
+                                                               task_table.table_push, task_table.engine_push_ast, task_table.cluster_push_name);
         create_query_push_ast->as<ASTCreateQuery &>().if_not_exists = true;
         String query = queryToString(create_query_push_ast);
 
         LOG_DEBUG(log, "Create destination tables. Query: {}", query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
+        UInt64 shards = simpleDDLOnCluster(task_table.cluster_push, query, task_cluster->settings_push);
         LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}", getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
     }
     catch (...)
@@ -1531,29 +1532,29 @@ void ClusterCopier::dropLocalTableIfExists(const DatabaseAndTableName & table_na
 }
 
 
-void ClusterCopier::dropHelpingTables(const TaskTable & task_table)
+void ClusterCopier::dropHelpingTables(const TaskTable & /*task_table*/)
 {
     LOG_DEBUG(log, "Removing helping tables");
-    for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
-    {
-        DatabaseAndTableName original_table = task_table.table_push;
-        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
+    // for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
+    // {
+    //     DatabaseAndTableName original_table = task_table.table_push;
+    //     DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
 
-        String query = "DROP TABLE IF EXISTS " + getQuotedTable(helping_table);
+    //     String query = "DROP TABLE IF EXISTS " + getQuotedTable(helping_table);
 
-        const ClusterPtr & cluster_push = task_table.cluster_push;
-        Settings settings_push = task_cluster->settings_push;
+    //     const ClusterPtr & cluster_push = task_table.cluster_push;
+    //     Settings settings_push = task_cluster->settings_push;
 
-        LOG_DEBUG(log, "Execute distributed DROP TABLE: {}", query);
-        /// We have to drop partition_piece on each replica
-        UInt64 num_nodes = executeQueryOnCluster(
-                cluster_push, query,
-                settings_push,
-                PoolMode::GET_MANY,
-                ClusterExecutionMode::ON_EACH_NODE);
+    //     LOG_DEBUG(log, "Execute distributed DROP TABLE: {}", query);
+    //     /// We have to drop partition_piece on each replica
+    //     UInt64 num_nodes = executeQueryOnCluster(
+    //             cluster_push, query,
+    //             settings_push,
+    //             PoolMode::GET_MANY,
+    //             ClusterExecutionMode::ON_EACH_NODE);
 
-        LOG_DEBUG(log, "DROP TABLE query was successfully executed on {} nodes.", toString(num_nodes));
-    }
+    //     LOG_DEBUG(log, "DROP TABLE query was successfully executed on {} nodes.", toString(num_nodes));
+    // }
 }
 
 
@@ -1728,7 +1729,7 @@ bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
     LOG_DEBUG(log, "Checking shard {} for partition {} existence, executing query: {}", task_shard.getDescription(), partition_quoted_name, query);
 
     ParserQuery parser_query(query.data() + query.size());
-const auto & settings = context.getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
 
     Context local_context = context;
@@ -1801,7 +1802,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
     if (execution_mode == ClusterExecutionMode::ON_EACH_NODE)
         max_successful_executions_per_shard = 0;
 
-    std::atomic<size_t> origin_replicas_number;
+    std::atomic<size_t> origin_replicas_number{0};
 
     /// We need to execute query on one replica at least
     auto do_for_shard = [&] (UInt64 shard_index, Settings shard_settings)
@@ -1891,5 +1892,37 @@ UInt64 ClusterCopier::executeQueryOnCluster(
 
     return successful_nodes;
 }
+
+UInt64 ClusterCopier::simpleDDLOnCluster(
+        const ClusterPtr & cluster, 
+        const String & query, 
+        const Settings & current_settings) const 
+{
+    /// We will execute DDL query on first shard. 
+
+    const Cluster::ShardInfo & shard = cluster->getShardsInfo().at(0);
+
+    ParserQuery p_query(query.data() + query.size());
+    ASTPtr query_ast = parseQuery(p_query, query, current_settings.max_query_size, current_settings.max_parser_depth);
+
+    if (shard.hasRemoteConnections())
+    {
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
+        auto connections = shard.pool->getMany(timeouts, &current_settings, PoolMode::GET_ALL);
+
+        if (connections.empty())
+            return 0;
+
+        auto connection = connections.at(0);
+
+        /// CREATE TABLE and DROP PARTITION queries return empty block
+        RemoteBlockInputStream stream{*connection, query, Block{}, context, &current_settings};
+        NullBlockOutputStream output{Block{}};
+        copyData(stream, output);
+    }
+
+    return 1;
+}
+
 
 }

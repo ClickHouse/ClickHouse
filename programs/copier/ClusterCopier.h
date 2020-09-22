@@ -191,6 +191,11 @@ protected:
             ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD,
             UInt64 max_successful_executions_per_shard = 0) const;
 
+    UInt64 simpleDDLOnCluster(
+            const ClusterPtr & cluster, 
+            const String & query, 
+            const Settings & current_settings) const;
+
 private:
     String task_zookeeper_path;
     String task_description_path;
