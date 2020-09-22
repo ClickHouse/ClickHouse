@@ -24,36 +24,31 @@ struct ArrayConcat : public ArraySourceSelector<ArrayConcat>
     using Sources = std::vector<std::unique_ptr<IArraySource>>;
 
     template <typename Source>
-    static void selectImpl(Source && source, const Sources & sources, ColumnArray::MutablePtr & result)
+    static void selectSource(bool /*is_const*/, bool is_nullable, Source & source, const Sources & sources, ColumnArray::MutablePtr & result)
     {
         using SourceType = typename std::decay<Source>::type;
         using Sink = typename SourceType::SinkType;
-        result = ColumnArray::create(source.createValuesColumn());
-        Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
 
-        concat<SourceType, Sink>(sources, std::move(sink));
-    }
+        if (is_nullable)
+        {
+            using NullableSource = NullableArraySource<SourceType>;
+            using NullableSink = typename NullableSource::SinkType;
 
-    template <typename Source>
-    static void selectImpl(ConstSource<Source> && source, const Sources & sources, ColumnArray::MutablePtr & result)
-    {
-        using SourceType = typename std::decay<Source>::type;
-        using Sink = typename SourceType::SinkType;
-        result = ColumnArray::create(source.createValuesColumn());
-        Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
+            auto & nullable_source = static_cast<NullableSource &>(source);
 
-        concat<SourceType, Sink>(sources, std::move(sink));
-    }
 
-    template <typename Source>
-    static void selectImpl(ConstSource<Source> & source, const Sources & sources, ColumnArray::MutablePtr & result)
-    {
-        using SourceType = typename std::decay<Source>::type;
-        using Sink = typename SourceType::SinkType;
-        result = ColumnArray::create(source.createValuesColumn());
-        Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
+            result = ColumnArray::create(nullable_source.createValuesColumn());
+            NullableSink sink(result->getData(), result->getOffsets(), source.getColumnSize());
 
-        concat<SourceType, Sink>(sources, std::move(sink));
+            concat<NullableSource, NullableSink>(sources, std::move(sink));
+        }
+        else
+        {
+            result = ColumnArray::create(source.createValuesColumn());
+            Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
+
+            concat<SourceType, Sink>(sources, std::move(sink));
+        }
     }
 };
 
