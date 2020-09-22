@@ -4,6 +4,7 @@ option(USE_INTERNAL_ROCKSDB_LIBRARY "Set to FALSE to use system ROCKSDB library 
 if(ENABLE_ROCKSDB)
     if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
         message (WARNING "submodule contrib is missing. to fix try run: \n git submodule update --init --recursive")
+        set (USE_INTERNAL_ROCKSDB_LIBRARY 0)
         set (MISSING_ROCKSDB 1)
     endif ()
 
