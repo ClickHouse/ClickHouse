@@ -6,6 +6,7 @@
 #include <IO/ReadBuffer.h>
 #include <Parsers/queryToString.h>
 #include <Compression/CompressionCodecMultiple.h>
+#include <Compression/CompressionCodecNone.h>
 #include <IO/WriteHelpers.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -67,6 +68,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
         bool has_none = false;
         std::optional<size_t> generic_compression_codec_pos;
 
+        bool can_substitute_codec_arguments = true;
         for (size_t i = 0; i < func->arguments->children.size(); ++i)
         {
             const auto & inner_codec_ast = func->arguments->children[i];
@@ -101,10 +103,19 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
             {
                 if (column_type)
                 {
+                    CompressionCodecPtr prev_codec;
                     IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
                     {
                         if (IDataType::isSpecialCompressionAllowed(substream_path))
+                        {
                             result_codec = getImpl(codec_family_name, codec_arguments, &substream_type);
+
+                            /// Case for column Tuple, which compressed with codec which depends on data type, like Delta.
+                            /// We cannot substitute parameters for such codecs.
+                            if (prev_codec && prev_codec->getHash() != result_codec->getHash())
+                                can_substitute_codec_arguments = false;
+                            prev_codec = result_codec;
+                        }
                     };
 
                     IDataType::SubstreamPath stream_path;
@@ -158,10 +169,24 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
         }
-        std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
-        result->name = "CODEC";
-        result->arguments = codecs_descriptions;
-        return result;
+        /// For columns with nested types like Tuple(UInt32, UInt64) we
+        /// obviously cannot substitute parameters for codecs which depend on
+        /// data type, because for the first column Delta(4) is suitable and
+        /// Delta(8) for the second. So we should leave codec description as is
+        /// and deduce them in get method for each subtype separately. For all
+        /// other types it's better to substitute parameters, for better
+        /// readability and backward compatibility.
+        if (can_substitute_codec_arguments)
+        {
+            std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
+            result->name = "CODEC";
+            result->arguments = codecs_descriptions;
+            return result;
+        }
+        else
+        {
+            return ast;
+        }
     }
 
     throw Exception("Unknown codec family: " + queryToString(ast), ErrorCodes::UNKNOWN_CODEC);
@@ -212,7 +237,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IData
         else if (codecs.size() > 1)
             return std::make_shared<CompressionCodecMultiple>(codecs);
         else
-            return nullptr;
+            return std::make_shared<CompressionCodecNone>();
     }
 
     throw Exception("Unexpected AST structure for compression codec: " + queryToString(ast), ErrorCodes::UNEXPECTED_AST_STRUCTURE);

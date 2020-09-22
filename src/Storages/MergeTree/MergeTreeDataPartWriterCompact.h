@@ -54,6 +54,7 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> plain_file;
     HashingWriteBuffer plain_hashing;
 
+    /// Compressed stream which allows to write with codec.
     struct CompressedStream
     {
         CompressedWriteBuffer compressed_buf;
@@ -66,10 +67,11 @@ private:
 
     using CompressedStreamPtr = std::shared_ptr<CompressedStream>;
 
-    /// Create compressed stream for every different codec.
+    /// Create compressed stream for every different codec. All streams write to
+    /// a single file on disk.
     std::unordered_map<UInt64, CompressedStreamPtr> streams_by_codec;
 
-    /// For better performance save pointer to stream by every column.
+    /// Stream for each column's substreams path (look at addStreams).
     std::unordered_map<String, CompressedStreamPtr> compressed_streams;
 
     /// marks -> marks_file
