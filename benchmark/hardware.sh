@@ -11,6 +11,14 @@ TRIES=3
 FASTER_DOWNLOAD=wget
 if command -v axel >/dev/null; then
     FASTER_DOWNLOAD=axel
+else
+    echo "It's recommended to install 'axel' for faster downloads."
+fi
+
+if command -v pixz >/dev/null; then
+    TAR_PARAMS='-Ipixz'
+else
+    echo "It's recommended to install 'pixz' for faster decompression of the dataset."
 fi
 
 if [[ ! -f clickhouse ]]; then
@@ -36,7 +44,7 @@ if [[ ! -d data ]]; then
         $FASTER_DOWNLOAD "https://clickhouse-datasets.s3.yandex.net/hits/partitions/$DATASET"
     fi
     
-    tar --strip-components=1 --directory=. -x -v -f $DATASET
+    tar $TAR_PARAMS --strip-components=1 --directory=. -x -v -f $DATASET
 fi
 
 echo "Starting clickhouse-server"
