@@ -233,6 +233,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
                 job();
+                job = {};
             }
             catch (...)
             {
