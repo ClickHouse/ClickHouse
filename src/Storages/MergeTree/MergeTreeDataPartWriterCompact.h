@@ -56,13 +56,11 @@ private:
 
     struct CompressedStream
     {
-        UInt64 codec_id;
         CompressedWriteBuffer compressed_buf;
         HashingWriteBuffer hashing_buf;
 
-        CompressedStream(UInt64 codec_id_, WriteBuffer & buf, const CompressionCodecPtr & codec)
-            : codec_id(codec_id_)
-            , compressed_buf(buf, codec)
+        CompressedStream(WriteBuffer & buf, const CompressionCodecPtr & codec)
+            : compressed_buf(buf, codec)
             , hashing_buf(compressed_buf) {}
     };
 

@@ -59,7 +59,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const String & name, const IData
         UInt64 codec_id = compression_codec->getHash();
         auto & stream = streams_by_codec[codec_id];
         if (!stream)
-            stream = std::make_shared<CompressedStream>(codec_id, plain_hashing, compression_codec);
+            stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
 
         compressed_streams.emplace(stream_name, stream);
     };
@@ -138,27 +138,32 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
         auto name_and_type = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
-            std::unordered_map<UInt64, CompressedStreamPtr> used_streams;
+            CompressedStreamPtr prev_stream;
             auto stream_getter = [&, this](const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
             {
                 String stream_name = IDataType::getFileNameForStream(name_and_type->name, substream_path);
-                auto & result_stream = compressed_streams[stream_name];
 
-                /// Offset should be 0, because compressed block is written for every granule.
-                if (used_streams.try_emplace(result_stream->codec_id, result_stream).second)
+                auto & result_stream = compressed_streams[stream_name];
+                /// Write one compressed block per column in granule for more optimal reading.
+                if (prev_stream && prev_stream != result_stream)
+                {
+                    /// Offset should be 0, because compressed block is written for every granule.
                     assert(result_stream->hashing_buf.offset() == 0);
+                    prev_stream->hashing_buf.next();
+                }
+
+
+                prev_stream = result_stream;
 
                 return &result_stream->hashing_buf;
             };
+
 
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(UInt64(0), marks);
 
             writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, current_row, rows_to_write);
-
-            /// Write one compressed block per column in granule for more optimal reading.
-            for (auto & [_, stream] : used_streams)
-                stream->hashing_buf.next();
+            prev_stream->hashing_buf.next();
         }
 
         ++from_mark;
