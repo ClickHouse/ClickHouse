@@ -148,7 +148,7 @@ private:
 
 
     // Loop through the entire events_list, update the event timestamp value
-    // The level path must be 1---2---3---...---check_events_size, find the max event level that statisfied the path in the sliding window.
+    // The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     // If found, returns the max event level, else return 0.
     // The Algorithm complexity is O(n).
     UInt8 getEventLevel(Data & data) const
@@ -160,7 +160,7 @@ private:
 
         data.sort();
 
-        /// events_timestamp stores the timestamp that latest i-th level event happen withing time window after previous level event.
+        /// events_timestamp stores the timestamp that latest i-th level event happen within time window after previous level event.
         /// timestamp defaults to -1, which unsigned timestamp value never meet
         /// there may be some bugs when UInt64 type timstamp overflows Int64, but it works on most cases.
         std::vector<Int64> events_timestamp(events_size, -1);
@@ -241,7 +241,8 @@ public:
     }
 
     AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params) const override
+        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
+        const AggregateFunctionProperties & /*properties*/) const override
     {
         return std::make_shared<AggregateFunctionNullVariadic<false, false, false>>(nested_function, arguments, params);
     }

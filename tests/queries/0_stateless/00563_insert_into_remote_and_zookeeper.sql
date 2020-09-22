@@ -1,6 +1,6 @@
 -- Check that settings are correctly passed through Distributed table
 DROP TABLE IF EXISTS simple;
-CREATE TABLE simple (d Int8) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/test/simple', '1') ORDER BY d;
+CREATE TABLE simple (d Int8) ENGINE = ReplicatedMergeTree('/clickhouse/test_00563/tables/simple', '1') ORDER BY d;
 
 -- TODO: replace '127.0.0.2' -> '127.0.0.1' after a fix
 INSERT INTO TABLE FUNCTION remote('127.0.0.2', currentDatabase(), 'simple') VALUES (1);

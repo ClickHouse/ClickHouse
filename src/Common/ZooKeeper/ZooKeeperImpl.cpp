@@ -110,7 +110,7 @@ int32_t err                          \x00\x00\x00\x00
 Client sends requests. For example, create persistent node '/hello' with value 'world'.
 
 int32_t request_length \x00\x00\x00\x3a
-int32_t xid            \x5a\xad\x72\x3f      Arbitary number. Used for identification of requests/responses.
+int32_t xid            \x5a\xad\x72\x3f      Arbitrary number. Used for identification of requests/responses.
                                          libzookeeper uses unix timestamp for first xid and then autoincrement to that value.
 int32_t op_num         \x00\x00\x00\x01      ZOO_CREATE_OP 1
 int32_t path_length    \x00\x00\x00\x06
@@ -424,7 +424,7 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
 
 struct ZooKeeperResponse : virtual Response
 {
-    virtual ~ZooKeeperResponse() = default;
+    virtual ~ZooKeeperResponse() override = default;
     virtual void readImpl(ReadBuffer &) = 0;
 };
 

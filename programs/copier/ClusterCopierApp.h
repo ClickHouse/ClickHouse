@@ -13,7 +13,7 @@
  * Implementation details:
  *
  * cluster-copier workers pull each partition of each shard of the source cluster and push it to the destination cluster through
- * Distributed table (to preform data resharding). So, worker job is a partition of a source shard.
+ * Distributed table (to perform data resharding). So, worker job is a partition of a source shard.
  * A job has three states: Active, Finished and Abandoned. Abandoned means that worker died and did not finish the job.
  *
  * If an error occurred during the copying (a worker failed or a worker did not finish the INSERT), then the whole partition (on

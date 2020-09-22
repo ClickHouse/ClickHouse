@@ -31,7 +31,7 @@ enum class ExtractAllGroupsResultKind
 
 /** Match all groups of given input string with given re, return array of arrays of matches.
  *
- * Depending on `Impl::Kind`, result is either grouped by grop id (Horizontal) or in order of appearance (Vertical):
+ * Depending on `Impl::Kind`, result is either grouped by group id (Horizontal) or in order of appearance (Vertical):
  *
  *  SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
  * =>
@@ -129,7 +129,9 @@ public:
                     for (size_t group = 1; group <= groups_count; ++group)
                         data_col->insertData(matched_groups[group].data(), matched_groups[group].size());
 
-                    pos = matched_groups[0].data() + matched_groups[0].size();
+                    /// If match is empty - it's technically Ok but we have to shift one character nevertheless
+                    /// to avoid infinite loop.
+                    pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
 
                     current_nested_offset += groups_count;
                     nested_offsets_data.push_back(current_nested_offset);
@@ -167,7 +169,7 @@ public:
                     for (size_t group = 1; group <= groups_count; ++group)
                         all_matches.push_back(matched_groups[group]);
 
-                    pos = matched_groups[0].data() + matched_groups[0].size();
+                    pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
 
                     ++matches_per_row;
                 }

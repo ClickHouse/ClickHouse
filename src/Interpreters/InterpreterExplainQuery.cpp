@@ -269,10 +269,14 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         if (settings.graph)
         {
+            /// Pipe holds QueryPlan, should not go out-of-scope
+            auto pipe = QueryPipeline::getPipe(std::move(*pipeline));
+            const auto & processors = pipe.getProcessors();
+
             if (settings.compact)
-                printPipelineCompact(pipeline->getProcessors(), buffer, settings.query_pipeline_options.header);
+                printPipelineCompact(processors, buffer, settings.query_pipeline_options.header);
             else
-                printPipeline(pipeline->getProcessors(), buffer);
+                printPipeline(processors, buffer);
         }
         else
         {

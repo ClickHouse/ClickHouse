@@ -14,10 +14,10 @@ services:
       - "636"
     healthcheck:
       test: ldapsearch -x -H ldap://localhost:$${LDAP_PORT:-389} -b "dc=company,dc=com" -D "cn=admin,dc=company,dc=com" -w admin
-      interval: 3s
+      interval: 10s
       timeout: 10s
-      retries: 5
-      start_period: 30s
+      retries: 3
+      start_period: 300s
     security_opt:
       - label:disable
 
@@ -31,10 +31,10 @@ services:
       - "8080:80"      
     healthcheck:
       test: echo 1
-      interval: 3s
-      timeout: 2s
-      retries: 5
-      start_period: 2s
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
     security_opt:
       - label:disable
 

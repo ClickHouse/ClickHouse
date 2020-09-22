@@ -46,6 +46,7 @@ toc_title: Client Libraries
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
 -   C\#
+    -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)

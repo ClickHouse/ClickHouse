@@ -29,7 +29,7 @@ struct FixedHashTableCell
     void setZero() { full = false; }
     static constexpr bool need_zero_value_storage = false;
 
-    /// This Cell is only stored inside an iterator. It's used to accomodate the fact
+    /// This Cell is only stored inside an iterator. It's used to accommodate the fact
     ///  that the iterator based API always provide a reference to a continuous memory
     ///  containing the Key. As a result, we have to instantiate a real Key field.
     /// All methods that return a mutable reference to the Key field are named with
@@ -92,7 +92,7 @@ struct FixedHashTableCalculatedSize
   *  than a HashTable in that keys are not stored in the Cell buf, but inferred
   *  inside each iterator. There are a bunch of to make it faster than using
   *  HashTable: a) It doesn't have a conflict chain; b) There is no key
-  *  comparision; c) The number of cycles for checking cell empty is halved; d)
+  *  comparison; c) The number of cycles for checking cell empty is halved; d)
   *  Memory layout is tighter, especially the Clearable variants.
   *
   * NOTE: For Set variants this should always be better. For Map variants

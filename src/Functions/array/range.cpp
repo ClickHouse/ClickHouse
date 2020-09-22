@@ -102,7 +102,8 @@ private:
     }
 
     template <typename T>
-    bool executeConstStartStep(Block & block, const IColumn * end_arg, const T start, const T step, const size_t input_rows_count, const size_t result) const
+    bool executeConstStartStep(
+        Block & block, const IColumn * end_arg, const T start, const T step, const size_t input_rows_count, const size_t result) const
     {
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
         if (!end_column)
@@ -145,7 +146,13 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step)
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step)
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
@@ -155,7 +162,8 @@ private:
     }
 
     template <typename T>
-    bool executeConstStep(Block & block, const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count, const size_t result) const
+    bool executeConstStep(
+        Block & block, const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count, const size_t result) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_arg);
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
@@ -200,7 +208,13 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start_data[row_idx], ed = end_data[row_idx]; st < ed; st += step)
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step)
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
@@ -210,7 +224,8 @@ private:
     }
 
     template <typename T>
-    bool executeConstStart(Block & block, const IColumn * end_arg, const IColumn * step_arg, const T start, const size_t input_rows_count, const size_t result) const
+    bool executeConstStart(
+        Block & block, const IColumn * end_arg, const IColumn * step_arg, const T start, const size_t input_rows_count, const size_t result) const
     {
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
         auto step_column = checkAndGetColumn<ColumnVector<T>>(step_arg);
@@ -255,7 +270,13 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step_data[row_idx])
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step_data[row_idx])
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
@@ -265,7 +286,9 @@ private:
     }
 
     template <typename T>
-    bool executeGeneric(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count, const size_t result) const
+    bool executeGeneric(
+        Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col,
+        const size_t input_rows_count, const size_t result) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_col);
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_col);
@@ -313,7 +336,13 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start_data[row_idx], ed = end_start[row_idx]; st < ed; st += step_data[row_idx])
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step_data[row_idx])
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }

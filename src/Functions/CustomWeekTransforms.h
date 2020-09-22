@@ -2,7 +2,7 @@
 #include <regex>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>

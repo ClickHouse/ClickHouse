@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Repository from database, which stores dictionary definitions on disk.
-/// Tracks update time and existance of .sql files through IDatabase.
+/// Tracks update time and existence of .sql files through IDatabase.
 class ExternalLoaderDatabaseConfigRepository : public IExternalLoaderConfigRepository
 {
 public:

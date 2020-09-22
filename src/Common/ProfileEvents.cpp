@@ -11,6 +11,9 @@
     M(FailedQuery, "Number of failed queries.") \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.") \
+    M(QueryTimeMicroseconds, "Total time of all queries.") \
+    M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.") \
+    M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.") \
     M(FileOpen, "Number of files opened.") \
     M(Seek, "Number of times the 'lseek' function was called.") \
     M(ReadBufferFromFileDescriptorRead, "Number of reads (read/pread) from a file descriptor. Does not include sockets.") \
@@ -230,6 +233,7 @@
     M(S3WriteRequestsErrors, "Number of non-throttling errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
+    M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
 
 
 namespace ProfileEvents

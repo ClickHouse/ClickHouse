@@ -15,6 +15,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/**
+ * How data is stored (in a nutshell):
+ * we have a dictionary @e reverse_index in ColumnUnique that holds pairs (DataType, UIntXX) and a column
+ * with UIntXX holding actual data indices.
+ * To obtain the value's index, call #getOrFindIndex.
+ * To operate on the data (so called indices column), call #getIndexes.
+ *
+ * @note The indices column always contains the default value (empty StringRef) with the first index.
+ */
 class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>
 {
     friend class COWHelper<IColumn, ColumnLowCardinality>;
@@ -161,7 +170,12 @@ public:
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
-    bool isNullable() const override { return isColumnNullable(*dictionary.getColumnUniquePtr()); }
+
+    /**
+     * Checks if the dictionary column is Nullable(T).
+     * So LC(Nullable(T)) would return true, LC(U) -- false.
+     */
+    bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }

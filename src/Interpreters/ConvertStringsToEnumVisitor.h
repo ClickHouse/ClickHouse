@@ -162,7 +162,7 @@ struct ConvertStringsToEnumMatcher
             return;
 
         /// We are not sure we could change the type of function result
-        /// cause it is present in other fucntion as argument
+        /// cause it is present in other function as argument
         if (data.used_functions.count(function_node.tryGetAlias()))
             return;
 

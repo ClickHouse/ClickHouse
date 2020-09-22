@@ -175,7 +175,7 @@ Código principal de ClickHouse (que se encuentra en `dbms` directorio) se const
 
 Clang tiene advertencias aún más útiles: puedes buscarlas con `-Weverything` y elige algo para la compilación predeterminada.
 
-Para las compilaciones de producción, se usa gcc (todavía genera un código ligeramente más eficiente que clang). Para el desarrollo, el clang suele ser más conveniente de usar. Puede construir en su propia máquina con el modo de depuración (para ahorrar batería de su computadora portátil), pero tenga en cuenta que el compilador puede generar más advertencias con `-O3` debido a un mejor flujo de control y análisis entre procedimientos. Al construir con clang, `libc++` se utiliza en lugar de `libstdc++` y al construir con el modo de depuración, la versión de depuración de `libc++` se utiliza que permite detectar más errores en tiempo de ejecución.
+Para las compilaciones de producción, se usa gcc (todavía genera un código ligeramente más eficiente que clang). Para el desarrollo, el clang suele ser más conveniente de usar. Puede construir en su propia máquina con el modo de depuración (para ahorrar batería de su computadora portátil), pero tenga en cuenta que el compilador puede generar más advertencias con `-O3` debido a un mejor flujo de control y análisis entre procedimientos. Al construir con clang con el modo de depuración, la versión de depuración de `libc++` se utiliza que permite detectar más errores en tiempo de ejecución.
 
 ## Desinfectantes {#sanitizers}
 

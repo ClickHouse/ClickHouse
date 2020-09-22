@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 
 /* This file contains macros and helpers for writing platform-dependent code.
  *
@@ -10,12 +10,12 @@
  * checking platform in runtime (see isArchSupported() below).
  *
  * If compiler is not gcc/clang or target isn't x86_64 or ENABLE_MULTITARGET_CODE
- * was set to OFF in cmake, all code inside these macroses will be removed and
+ * was set to OFF in cmake, all code inside these macros will be removed and
  * USE_MUTLITARGE_CODE will be set to 0. Use #if USE_MUTLITARGE_CODE whenever you
  * use anything from this namespaces.
  *
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code
- * into the namespace TargetSpecific::Default but dosn't specify any additional
+ * into the namespace TargetSpecific::Default but doesn't specify any additional
  * copile options. Functions and classes inside this macros are available regardless
  * of USE_MUTLITARGE_CODE.
  *

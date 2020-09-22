@@ -4,7 +4,7 @@
 
 #include <Core/Row.h>
 #include <Core/Block.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -194,7 +194,7 @@ public:
      * Possible state transitions:
      * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
      * Precommitted -> Outdated:    we could not to add a part to active set and doing a rollback (for example it is duplicated part)
-     * Precommitted -> Commited:    we successfully committed a part to active dataset
+     * Precommitted -> Committed:    we successfully committed a part to active dataset
      * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
      * Outdated -> Deleting:        a cleaner selected this part for deletion
      * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
@@ -288,6 +288,8 @@ public:
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
+    CompressionCodecPtr default_codec;
+
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -330,7 +332,25 @@ public:
 
     String getRelativePathForPrefix(const String & prefix) const;
 
+
+    /// Return set of metadat file names without checksums. For example,
+    /// columns.txt or checksums.txt itself.
+    NameSet getFileNamesWithoutChecksums() const;
+
+    /// File with compression codec name which was used to compress part columns
+    /// by default. Some columns may have their own compression codecs, but
+    /// default will be stored in this file.
+    static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
+
+    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
+
+    /// Checks that all TTLs (table min/max, column ttls, so on) for part
+    /// calculated. Part without calculated TTL may exist if TTL was added after
+    /// part creation (using alter query with materialize_ttl setting).
+    bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
+
 protected:
+
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
 
@@ -363,7 +383,7 @@ private:
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
-    /// If checksums.txt exists, reads files' checksums (and sizes) from it
+    /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
 
     /// Loads marks index granularity into memory
@@ -380,6 +400,15 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
+
+    /// Load default compression codec from file default_compression_codec.txt
+    /// if it not exists tries to deduce codec from compressed column without
+    /// any specifial compression.
+    void loadDefaultCompressionCodec();
+
+    /// Found column without specific compression and return codec
+    /// for this column with default parameters.
+    CompressionCodecPtr detectDefaultCompressionCodec() const;
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;

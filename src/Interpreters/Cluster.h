@@ -20,12 +20,17 @@ namespace ErrorCodes
 class Cluster
 {
 public:
-    Cluster(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name);
+    Cluster(const Poco::Util::AbstractConfiguration & config,
+            const Settings & settings,
+            const String & config_prefix_,
+            const String & cluster_name);
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.
     /// 'clickhouse_port' - port that this server instance listen for queries.
     /// This parameter is needed only to check that some address is local (points to ourself).
+    ///
+    /// Used for remote() function.
     Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
             const String & username, const String & password,
             UInt16 clickhouse_port, bool treat_local_as_remote,
@@ -62,6 +67,11 @@ public:
         UInt16 port;
         String user;
         String password;
+
+        /// For inter-server authorization
+        String cluster;
+        String cluster_secret;
+
         UInt32 shard_index{}; /// shard serial number in configuration file, starting from 1.
         UInt32 replica_index{}; /// replica serial number in this shard, starting from 1; zero means no replicas.
 
@@ -80,6 +90,8 @@ public:
         Address(
             const Poco::Util::AbstractConfiguration & config,
             const String & config_prefix,
+            const String & cluster_,
+            const String & cluster_secret_,
             UInt32 shard_index_ = 0,
             UInt32 replica_index_ = 0);
         Address(
@@ -170,6 +182,8 @@ public:
     /// The number of all shards.
     size_t getShardCount() const { return shards_info.size(); }
 
+    const String & getSecret() const { return secret; }
+
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 
@@ -197,6 +211,9 @@ private:
     struct ReplicasAsShardsTag {};
     Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings);
 
+    /// Inter-server secret
+    String secret;
+
     String hash_of_addresses;
     /// Description of the cluster shards.
     ShardsInfo shards_info;
@@ -219,7 +236,7 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class Clusters
 {
 public:
-    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name = "remote_servers");
+    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix = "remote_servers");
 
     Clusters(const Clusters &) = delete;
     Clusters & operator=(const Clusters &) = delete;
@@ -227,7 +244,7 @@ public:
     ClusterPtr getCluster(const std::string & cluster_name) const;
     void setCluster(const String & cluster_name, const ClusterPtr & cluster);
 
-    void updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name);
+    void updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix);
 
 public:
     using Impl = std::map<String, ClusterPtr>;
@@ -238,7 +255,5 @@ protected:
     Impl impl;
     mutable std::mutex mutex;
 };
-
-using ClustersPtr = std::shared_ptr<Clusters>;
 
 }

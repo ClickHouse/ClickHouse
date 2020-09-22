@@ -124,7 +124,7 @@ struct SumMapVariants
 };
 
 // This template gives an aggregate function template that is narrowed
-// to accept either tuple argumen or normal argumens.
+// to accept either tuple argumen or normal arguments.
 template <bool tuple_argument>
 struct MinMapDispatchOnTupleArgument
 {
@@ -133,7 +133,7 @@ struct MinMapDispatchOnTupleArgument
 };
 
 // This template gives an aggregate function template that is narrowed
-// to accept either tuple argumen or normal argumens.
+// to accept either tuple argumen or normal arguments.
 template <bool tuple_argument>
 struct MaxMapDispatchOnTupleArgument
 {

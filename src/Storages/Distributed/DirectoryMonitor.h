@@ -57,10 +57,10 @@ public:
 private:
     void run();
 
-    std::map<UInt64, std::string> getFiles(CurrentMetrics::Increment & metric_pending_files);
-    bool processFiles(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files);
-    void processFile(const std::string & file_path, CurrentMetrics::Increment & metric_pending_files);
-    void processFilesWithBatching(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files);
+    std::map<UInt64, std::string> getFiles();
+    bool processFiles(const std::map<UInt64, std::string> & files);
+    void processFile(const std::string & file_path);
+    void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
     static bool isFileBrokenErrorCode(int code);
     void markAsBroken(const std::string & file_path) const;
@@ -97,6 +97,8 @@ private:
 
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder task_handle;
+
+    CurrentMetrics::Increment metric_pending_files;
 
     /// Read insert query and insert settings for backward compatible.
     static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log);

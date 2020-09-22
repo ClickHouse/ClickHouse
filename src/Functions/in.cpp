@@ -12,11 +12,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
 }
+
+namespace
+{
 
 /** in(x, set) - function for evaluating the IN
   * notIn(x, set) - and NOT IN.
@@ -128,7 +130,7 @@ public:
 };
 
 template<bool ignore_set>
-static void registerFunctionsInImpl(FunctionFactory & factory)
+void registerFunctionsInImpl(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIn<false, false, true, ignore_set>>();
     factory.registerFunction<FunctionIn<false, true, true, ignore_set>>();
@@ -138,6 +140,8 @@ static void registerFunctionsInImpl(FunctionFactory & factory)
     factory.registerFunction<FunctionIn<false, true, false, ignore_set>>();
     factory.registerFunction<FunctionIn<true, false, false, ignore_set>>();
     factory.registerFunction<FunctionIn<true, true, false, ignore_set>>();
+}
+
 }
 
 void registerFunctionsIn(FunctionFactory & factory)

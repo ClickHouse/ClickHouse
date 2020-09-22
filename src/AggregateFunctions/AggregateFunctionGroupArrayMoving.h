@@ -117,7 +117,7 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto value = static_cast<const ColumnSource &>(*columns[0]).getData()[row_num];
-        this->data(place).add(value, arena);
+        this->data(place).add(static_cast<ResultT>(value), arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override

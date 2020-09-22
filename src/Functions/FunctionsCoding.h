@@ -1424,7 +1424,7 @@ public:
     template <typename T>
     bool tryExecute(const IColumn * column, ColumnPtr & out_column) const
     {
-        using UnsignedT = std::make_unsigned_t<T>;
+        using UnsignedT = make_unsigned_t<T>;
 
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column))
         {

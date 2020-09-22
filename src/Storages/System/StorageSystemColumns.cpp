@@ -23,8 +23,8 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-StorageSystemColumns::StorageSystemColumns(const std::string & name_)
-    : IStorage({"system", name_})
+StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
@@ -214,7 +214,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (column.codec)
-                        res_columns[res_index++]->insert("CODEC(" + column.codec->getCodecDesc() + ")");
+                        res_columns[res_index++]->insert(queryToString(column.codec));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -240,7 +240,7 @@ private:
 };
 
 
-Pipes StorageSystemColumns::read(
+Pipe StorageSystemColumns::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -294,7 +294,7 @@ Pipes StorageSystemColumns::read(
         if (!block_to_filter.rows())
         {
             pipes.emplace_back(std::make_shared<NullSource>(header));
-            return pipes;
+            return Pipe::unitePipes(std::move(pipes));
         }
 
         ColumnPtr & database_column = block_to_filter.getByName("database").column;
@@ -333,7 +333,7 @@ Pipes StorageSystemColumns::read(
     if (!block_to_filter.rows())
     {
         pipes.emplace_back(std::make_shared<NullSource>(header));
-        return pipes;
+        return Pipe::unitePipes(std::move(pipes));
     }
 
     ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
@@ -344,7 +344,7 @@ Pipes StorageSystemColumns::read(
             std::move(filtered_database_column), std::move(filtered_table_column),
             std::move(storages), context));
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 }

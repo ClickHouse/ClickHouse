@@ -57,6 +57,7 @@ ln -s /usr/share/clickhouse-test/config/access_management.xml /etc/clickhouse-se
 ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/
+ln -s /usr/share/clickhouse-test/config/executable_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/

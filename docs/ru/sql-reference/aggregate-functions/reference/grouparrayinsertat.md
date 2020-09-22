@@ -21,7 +21,7 @@ groupArrayInsertAt(default_x, size)(x, pos);
 
 - `x` — Значение, которое будет вставлено. [Выражение](../../syntax.md#syntax-expressions), возвращающее значение одного из [поддерживаемых типов данных](../../../sql-reference/data-types/index.md#data_types).
 - `pos` — Позиция, в которую вставляется заданный элемент `x`. Нумерация индексов в массиве начинается с нуля. [UInt32](../../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64).
-- `default_x` — Значение по умолчанию для подстановки на пустые позиции. Опциональный параметр. [Выражение](../../syntax.md#syntax-expressions), возвращающее значение с типом параметра `x`. Если `default_x` не определен, используются [значения по умолчанию](../../../sql-reference/statements/create.md#create-default-values).
+- `default_x` — Значение по умолчанию для подстановки на пустые позиции. Опциональный параметр. [Выражение](../../syntax.md#syntax-expressions), возвращающее значение с типом параметра `x`. Если `default_x` не определен, используются [значения по умолчанию](../../../sql-reference/statements/create/table.md#create-default-values).
 - `size`— Длина результирующего массива. Опциональный параметр. При использовании этого параметра должно быть указано значение по умолчанию `default_x`. [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Возвращаемое значение**

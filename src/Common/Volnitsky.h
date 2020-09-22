@@ -4,7 +4,7 @@
 #include <vector>
 #include <stdint.h>
 #include <string.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Poco/Unicode.h>
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -344,7 +344,7 @@ public:
 
         auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) { return this->putNGramBase(ngram, offset); };
         /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
-        /// And also adding from the end guarantees that we will find first occurence because we will lookup bigger offsets first.
+        /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
         for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
             VolnitskyTraits::putNGram<CaseSensitive, ASCII>(this->needle + i, i + 1, this->needle, callback);
     }
@@ -534,11 +534,11 @@ public:
     {
         const size_t fallback_size = fallback_needles.size();
 
-        size_t ans = std::numeric_limits<size_t>::max();
+        size_t answer = std::numeric_limits<size_t>::max();
 
         for (size_t i = 0; i < fallback_size; ++i)
             if (fallback_searchers[fallback_needles[i]].search(haystack, haystack_end) != haystack_end)
-                ans = std::min(ans, fallback_needles[i]);
+                answer = std::min(answer, fallback_needles[i]);
 
         /// check if we have one non empty volnitsky searcher
         if (step != std::numeric_limits<size_t>::max())
@@ -554,17 +554,17 @@ public:
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
                         if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
-                            ans = std::min(ans, ind);
+                            answer = std::min(answer, ind);
                     }
                 }
             }
         }
 
         /*
-        * if nothing was found, ans + 1 will be equal to zero and we can
+        * if nothing was found, answer + 1 will be equal to zero and we can
         * assign it into the result because we need to return the position starting with one
         */
-        return ans + 1;
+        return answer + 1;
     }
 
     template <typename CountCharsCallback>
@@ -572,11 +572,11 @@ public:
     {
         const size_t fallback_size = fallback_needles.size();
 
-        UInt64 ans = std::numeric_limits<UInt64>::max();
+        UInt64 answer = std::numeric_limits<UInt64>::max();
 
         for (size_t i = 0; i < fallback_size; ++i)
             if (auto pos = fallback_searchers[fallback_needles[i]].search(haystack, haystack_end); pos != haystack_end)
-                ans = std::min<UInt64>(ans, pos - haystack);
+                answer = std::min<UInt64>(answer, pos - haystack);
 
         /// check if we have one non empty volnitsky searcher
         if (step != std::numeric_limits<size_t>::max())
@@ -592,25 +592,25 @@ public:
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
                         if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
-                            ans = std::min<UInt64>(ans, res - haystack);
+                            answer = std::min<UInt64>(answer, res - haystack);
                     }
                 }
             }
         }
-        if (ans == std::numeric_limits<UInt64>::max())
+        if (answer == std::numeric_limits<UInt64>::max())
             return 0;
-        return count_chars(haystack, haystack + ans);
+        return count_chars(haystack, haystack + answer);
     }
 
     template <typename CountCharsCallback, typename AnsType>
-    inline void searchOneAll(const UInt8 * haystack, const UInt8 * haystack_end, AnsType * ans, const CountCharsCallback & count_chars) const
+    inline void searchOneAll(const UInt8 * haystack, const UInt8 * haystack_end, AnsType * answer, const CountCharsCallback & count_chars) const
     {
         const size_t fallback_size = fallback_needles.size();
         for (size_t i = 0; i < fallback_size; ++i)
         {
             const UInt8 * ptr = fallback_searchers[fallback_needles[i]].search(haystack, haystack_end);
             if (ptr != haystack_end)
-                ans[fallback_needles[i]] = count_chars(haystack, ptr);
+                answer[fallback_needles[i]] = count_chars(haystack, ptr);
         }
 
         /// check if we have one non empty volnitsky searcher
@@ -626,8 +626,10 @@ public:
                     {
                         const auto * res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (ans[ind] == 0 && res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
-                            ans[ind] = count_chars(haystack, res);
+                        if (answer[ind] == 0
+                            && res + needles[ind].size <= haystack_end
+                            && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                            answer[ind] = count_chars(haystack, res);
                     }
                 }
             }

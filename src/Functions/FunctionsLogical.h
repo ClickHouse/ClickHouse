@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunctionImpl.h>
@@ -161,6 +161,8 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
+        assert(!types.empty() && !values.empty());
+
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (!Impl::isSaturable())
         {

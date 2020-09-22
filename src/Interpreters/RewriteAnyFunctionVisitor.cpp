@@ -14,12 +14,27 @@ namespace DB
 namespace
 {
 
-bool extractIdentifiers(const ASTFunction & func, std::vector<ASTPtr *> & identifiers)
+bool extractIdentifiers(const ASTFunction & func, std::unordered_set<ASTPtr *> & identifiers)
 {
     for (auto & arg : func.arguments->children)
     {
         if (const auto * arg_func = arg->as<ASTFunction>())
         {
+            /// arrayJoin() is special and should not be optimized (think about
+            /// it as a an aggregate function), otherwise wrong result will be
+            /// produced:
+            ///     SELECT *, any(arrayJoin([[], []])) FROM numbers(1) GROUP BY number
+            ///     ┌─number─┬─arrayJoin(array(array(), array()))─┐
+            ///     │      0 │ []                                 │
+            ///     │      0 │ []                                 │
+            ///     └────────┴────────────────────────────────────┘
+            /// While should be:
+            ///     ┌─number─┬─any(arrayJoin(array(array(), array())))─┐
+            ///     │      0 │ []                                      │
+            ///     └────────┴─────────────────────────────────────────┘
+            if (arg_func->name == "arrayJoin")
+                return false;
+
             if (arg_func->name == "lambda")
                 return false;
 
@@ -30,7 +45,7 @@ bool extractIdentifiers(const ASTFunction & func, std::vector<ASTPtr *> & identi
                 return false;
         }
         else if (arg->as<ASTIdentifier>())
-            identifiers.emplace_back(&arg);
+            identifiers.emplace(&arg);
     }
 
     return true;
@@ -67,7 +82,7 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
         return;
     }
 
-    std::vector<ASTPtr *> identifiers;
+    std::unordered_set<ASTPtr *> identifiers; /// implicit remove duplicates
     if (!extractIdentifiers(func, identifiers))
         return;
 

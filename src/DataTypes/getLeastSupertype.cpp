@@ -299,7 +299,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
 
             if (num_supported != type_ids.size())
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless convertion to Decimal",
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless conversion to Decimal",
                                 ErrorCodes::NO_COMMON_TYPE);
 
             UInt32 max_scale = 0;

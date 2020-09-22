@@ -171,6 +171,7 @@ void MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
         if (it2 != entries_by_name.end())
             throwNameCollisionCannotRename(old_entity->getType(), old_entity->getName(), new_entity->getName());
 
+        entries_by_name.erase(old_entity->getName());
         entries_by_name[new_entity->getName()] = &entry;
     }
 

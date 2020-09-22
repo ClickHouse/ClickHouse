@@ -7,12 +7,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
 
 /// Returns number of fields in Enum data type of passed value.
 class FunctionGetSizeOfEnumType : public IFunction
@@ -64,6 +65,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionGetSizeOfEnumType(FunctionFactory & factory)
 {

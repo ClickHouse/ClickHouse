@@ -1,4 +1,4 @@
-# system.query\_log {#system_tables-query_log}
+# system.query_log {#system_tables-query_log}
 
 Contains information about executed queries, for example, start time, duration of processing, error messages.
 
@@ -34,6 +34,7 @@ Columns:
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Query starting date.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query starting time.
 -   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
+-   `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
 -   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.
 -   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it’s `read_rows` value, and the server-initiator of the query summarize all received and local values. The cache volumes doesn’t affect this value.
 -   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it’s `read_bytes` value, and the server-initiator of the query summarize all received and local values. The cache volumes doesn’t affect this value.
@@ -136,3 +137,6 @@ Settings.Values:      ['0','random','1','10000000000']
 **See Also**
 
 -   [system.query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_log) <!--hide-->
+

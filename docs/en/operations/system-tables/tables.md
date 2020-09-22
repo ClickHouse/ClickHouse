@@ -51,3 +51,5 @@ This table contains the following columns (the column type is shown in brackets)
 -   `lifetime_bytes` (Nullable(UInt64)) - Total number of bytes INSERTed since server start (only for `Buffer` tables).
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/tables) <!--hide-->

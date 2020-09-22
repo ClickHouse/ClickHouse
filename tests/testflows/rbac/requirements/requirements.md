@@ -1985,9 +1985,9 @@ a period of time over for which the quota SHALL apply using the
 `FOR INTERVAL` clause in the `CREATE QUOTA` statement.
 
 This statement SHALL also support a number and a time period which will be one
-of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:
+of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:
 
-`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some real number
+`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some real number
 to define the interval.
 
 
@@ -1999,9 +1999,9 @@ a period of time over for which the quota SHALL apply using the
 `FOR RANDOMIZED INTERVAL` clause in the `CREATE QUOTA` statement.
 
 This statement SHALL also support a number and a time period which will be one
-of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:
+of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:
 
-`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some
+`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some
 real number to define the interval.
 
 ##### RQ.SRS-006.RBAC.Quota.Create.Queries
@@ -2107,7 +2107,7 @@ version: 1.0
 ```sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
@@ -2146,9 +2146,9 @@ a period of time over for which the quota SHALL apply using the
 `FOR INTERVAL` clause in the `ALTER QUOTA` statement.
 
 This statement SHALL also support a number and a time period which will be one
-of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:
+of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:
 
-`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some real number
+`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some real number
 to define the interval.
 
 ##### RQ.SRS-006.RBAC.Quota.Alter.Interval.Randomized
@@ -2159,9 +2159,9 @@ a period of time over for which the quota SHALL apply using the
 `FOR RANDOMIZED INTERVAL` clause in the `ALTER QUOTA` statement.
 
 This statement SHALL also support a number and a time period which will be one
-of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:
+of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:
 
-`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some
+`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some
 real number to define the interval.
 
 ##### RQ.SRS-006.RBAC.Quota.Alter.Queries

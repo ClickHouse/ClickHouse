@@ -53,6 +53,8 @@ public:
 
     void resetTable(const String & database_name, const String & table_name);
 
+    void updateTreeHashImpl(SipHash & hash_state) const override;
+
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;

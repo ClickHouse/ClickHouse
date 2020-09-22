@@ -186,8 +186,13 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->select, select->clone());
     if (tables)
         res->set(res->tables, tables->clone());
+
     if (dictionary)
+    {
+        assert(is_dictionary);
+        res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
         res->set(res->dictionary, dictionary->clone());
+    }
 
     cloneOutputOptions(*res);
 
@@ -260,11 +265,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         formatOnCluster(settings);
     }
 
-    if (as_table_function)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
-        as_table_function->formatImpl(settings, state, frame);
-    }
     if (to_table_id)
     {
         settings.ostr
@@ -278,6 +278,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr
             << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
+    }
+
+    if (as_table_function)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
+        as_table_function->formatImpl(settings, state, frame);
     }
 
     frame.expression_list_always_start_on_new_line = true;

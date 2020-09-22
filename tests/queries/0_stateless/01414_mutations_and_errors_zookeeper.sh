@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT --query "
         key UInt64,
         value String
     )
-    ENGINE = ReplicatedMergeTree('/clickhouse/tables/mutation_table', '1')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01414/mutation_table', '1')
     ORDER BY tuple()
     PARTITION BY date
 "
@@ -29,7 +29,7 @@ query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
 while [ "$query_result" != "1" ]
 do
     query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
-    sleep 0.5
+    sleep 0.1
 done
 
 $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE table='replicated_mutation_table' and database='$CLICKHOUSE_DATABASE' and mutation_id='0000000000'" &> /dev/null
@@ -42,9 +42,10 @@ done
 
 wait
 
+
 $CLICKHOUSE_CLIENT --query "ALTER TABLE replicated_mutation_table MODIFY COLUMN value UInt64 SETTINGS replication_alter_partitions_sync = 2" 2>&1 | grep -o "Cannot parse string 'Hello' as UInt64" | head -n 1 &
 
-check_query="SELECT count() FROM system.mutations WHERE table='replicated_mutation_table' and database='$CLICKHOUSE_DATABASE' and mutation_id='0000000001'"
+check_query="SELECT type = 'UInt64' FROM system.columns WHERE table='replicated_mutation_table' and database='$CLICKHOUSE_DATABASE' and name='value'"
 
 query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
 
@@ -55,6 +56,9 @@ do
 done
 
 wait
+
+
+check_query="SELECT count() FROM system.mutations WHERE table='replicated_mutation_table' and database='$CLICKHOUSE_DATABASE' and mutation_id='0000000001'"
 
 $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE table='replicated_mutation_table' and database='$CLICKHOUSE_DATABASE' AND mutation_id='0000000001'" &> /dev/null
 

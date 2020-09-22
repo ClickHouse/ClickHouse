@@ -21,6 +21,8 @@ PEERDIR(
 
 INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
 
+CFLAGS(-g0)
+
 SRCS(
     ActionLock.cpp
     AlignedBuffer.cpp
@@ -48,6 +50,7 @@ SRCS(
     formatIPv6.cpp
     formatReadable.cpp
     getExecutablePath.cpp
+    getMappedArea.cpp
     getMultipleKeysFromConfig.cpp
     getNumberOfPhysicalCPUCores.cpp
     hasLinuxCapability.cpp
@@ -72,6 +75,7 @@ SRCS(
     QueryProfiler.cpp
     quoteString.cpp
     randomSeed.cpp
+    remapExecutable.cpp
     RemoteHostFilter.cpp
     renameat2.cpp
     RWLock.cpp
@@ -95,13 +99,12 @@ SRCS(
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
     TraceCollector.cpp
+    UnicodeBar.cpp
     UTF8Helpers.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
-    ZooKeeper/Lock.cpp
     ZooKeeper/TestKeeper.cpp
     ZooKeeper/ZooKeeper.cpp
-    ZooKeeper/ZooKeeperHolder.cpp
     ZooKeeper/ZooKeeperImpl.cpp
     ZooKeeper/ZooKeeperNodeCache.cpp
 

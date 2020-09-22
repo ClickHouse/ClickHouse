@@ -67,7 +67,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
                     error << "Invalid address alignment.";
                     break;
                 case BUS_ADRERR:
-                    error << "Non-existant physical address.";
+                    error << "Non-existent physical address.";
                     break;
                 case BUS_OBJERR:
                     error << "Object specific hardware error.";

@@ -57,9 +57,6 @@ services:
       LDAP_TLS_ENFORCE: "false"
       LDAP_TLS_VERIFY_CLIENT: "never"
       LDAP_TLS_CIPHER_SUITE: "SECURE256:+SECURE128:-VERS-TLS-ALL:+VERS-TLS1.2:-RSA:-DHE-DSS:-CAMELLIA-128-CBC:-CAMELLIA-256-CBC"
-    healthcheck:
-      # May need some time to generate DH parameters...
-      start_period: 300s
     volumes:
       - "${CLICKHOUSE_TESTS_DIR}/configs/ldap4/config:/container/service/slapd/assets/config/bootstrap/ldif/custom"
       - "${CLICKHOUSE_TESTS_DIR}/configs/ldap4/certs:/container/service/slapd/assets/certs/"

@@ -1,8 +1,10 @@
+# Инструкция для разработчиков
+
 Сборка ClickHouse поддерживается на Linux, FreeBSD, Mac OS X.
 
 # Если вы используете Windows {#esli-vy-ispolzuete-windows}
 
-Если вы используете Windows, вам потребуется создать виртуальную машину с Ubuntu. Для работы с виртуальной машиной, установите VirtualBox. Скачать Ubuntu можно на сайте: https://www.ubuntu.com/\#download Создайте виртуальную машину из полученного образа. Выделите для неё не менее 4 GB оперативной памяти. Для запуска терминала в Ubuntu, найдите в меню программу со словом terminal (gnome-terminal, konsole или что-то в этом роде) или нажмите Ctrl+Alt+T.
+Если вы используете Windows, вам потребуется создать виртуальную машину с Ubuntu. Для работы с виртуальной машиной, установите VirtualBox. Скачать Ubuntu можно на сайте: https://www.ubuntu.com/#download Создайте виртуальную машину из полученного образа. Выделите для неё не менее 4 GB оперативной памяти. Для запуска терминала в Ubuntu, найдите в меню программу со словом terminal (gnome-terminal, konsole или что-то в этом роде) или нажмите Ctrl+Alt+T.
 
 # Если вы используете 32-битную систему {#esli-vy-ispolzuete-32-bitnuiu-sistemu}
 
@@ -23,7 +25,7 @@ ClickHouse не работает и не собирается на 32-битны
     sudo apt update
     sudo apt install git
 
-Краткое руководство по использованию Git: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf
+Краткое руководство по использованию Git: https://education.github.com/git-cheat-sheet-education.pdf
 
 Подробное руководство по использованию Git: https://git-scm.com/book/ru/v2
 
@@ -207,7 +209,7 @@ Mac OS X:
 
 В этом случае, ClickHouse будет использовать конфигурационные файлы, расположенные в текущей директории. Вы можете запустить `clickhouse server` из любой директории, передав ему путь к конфигурационному файлу в аргументе командной строки `--config-file`.
 
-Для подключения к ClickHouse с помощью clickhouse-client, в соседнем терминале, зайдите в директорию `ClickHouse/build/programs/` и выполните `clickhouse client`.
+Для подключения к ClickHouse с помощью clickhouse-client, в соседнем терминале, зайдите в директорию `ClickHouse/build/programs/` и выполните `./clickhouse client`.
 
 Если вы получили сообщение `Connection refused` на Mac OS X или FreeBSD, то укажите для клиента 127.0.0.1 в качестве имени хоста:
 
@@ -244,7 +246,7 @@ Mac OS X:
 
 Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
-Список задач: https://github.com/ClickHouse/ClickHouse/contribute
+Список задач: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # Тестовые данные {#testovye-dannye}
 

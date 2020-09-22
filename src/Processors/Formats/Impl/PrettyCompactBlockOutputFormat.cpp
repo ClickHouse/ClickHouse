@@ -1,7 +1,6 @@
 #include <Common/PODArray.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-///#include <DataStreams/SquashingBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/PrettyCompactBlockOutputFormat.h>
 
@@ -46,6 +45,23 @@ GridSymbols ascii_grid_symbols {
     "|"
 };
 
+}
+
+PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_)
+    : PrettyBlockOutputFormat(out_, header, format_settings_)
+    , mono_block(mono_block_)
+{
+}
+
+void PrettyCompactBlockOutputFormat::writeSuffixIfNot()
+{
+    if (mono_chunk)
+    {
+        writeChunk(mono_chunk, PortKind::Main);
+        mono_chunk.clear();
+    }
+
+    PrettyBlockOutputFormat::writeSuffixIfNot();
 }
 
 void PrettyCompactBlockOutputFormat::writeHeader(
@@ -159,6 +175,39 @@ void PrettyCompactBlockOutputFormat::write(const Chunk & chunk, PortKind port_ki
         total_rows += chunk.getNumRows();
         return;
     }
+    if (mono_block)
+    {
+        if (port_kind == PortKind::Main)
+        {
+            if (!mono_chunk)
+            {
+                mono_chunk = chunk.clone();
+                return;
+            }
+
+            MutableColumns mutation = mono_chunk.mutateColumns();
+            for (size_t position = 0; position < mutation.size(); ++position)
+            {
+                auto column = chunk.getColumns()[position];
+                mutation[position]->insertRangeFrom(*column, 0, column->size());
+            }
+            size_t rows = mutation[0]->size();
+            mono_chunk.setColumns(std::move(mutation), rows);
+            return;
+        }
+        else
+        {
+            /// Should be written from writeSuffixIfNot()
+            assert(!mono_chunk);
+        }
+    }
+
+    writeChunk(chunk, port_kind);
+}
+
+void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
+{
+    UInt64 max_rows = format_settings.pretty.max_rows;
 
     size_t num_rows = chunk.getNumRows();
     const auto & header = getPort(port_kind).getHeader();
@@ -182,14 +231,17 @@ void PrettyCompactBlockOutputFormat::write(const Chunk & chunk, PortKind port_ki
 
 void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("PrettyCompact", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        FormatFactory::WriteCallback,
-        const FormatSettings & format_settings)
+    for (const auto & [name, mono_block] : {std::make_pair("PrettyCompact", false), std::make_pair("PrettyCompactMonoBlock", true)})
     {
-        return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, format_settings);
-    });
+        factory.registerOutputFormatProcessor(name, [mono_block = mono_block](
+            WriteBuffer & buf,
+            const Block & sample,
+            FormatFactory::WriteCallback,
+            const FormatSettings & format_settings)
+        {
+            return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, format_settings, mono_block);
+        });
+    }
 
     factory.registerOutputFormatProcessor("PrettyCompactNoEscapes", [](
         WriteBuffer & buf,
@@ -199,20 +251,8 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
     {
         FormatSettings changed_settings = format_settings;
         changed_settings.pretty.color = false;
-        return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, changed_settings);
+        return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, changed_settings, false /* mono_block */);
     });
-
-/// TODO
-//    factory.registerOutputFormat("PrettyCompactMonoBlock", [](
-//        WriteBuffer & buf,
-//        const Block & sample,
-//        const FormatSettings & format_settings)
-//    {
-//        BlockOutputStreamPtr impl = std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, format_settings);
-//        auto res = std::make_shared<SquashingBlockOutputStream>(impl, impl->getHeader(), format_settings.pretty.max_rows, 0);
-//        res->disableFlush();
-//        return res;
-//    });
 }
 
 }

@@ -1,10 +1,9 @@
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
-#include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include "DiskS3.h"
+#include "Disks/DiskCacheWrapper.h"
 #include "Disks/DiskFactory.h"
 #include "ProxyConfiguration.h"
 #include "ProxyListConfiguration.h"
@@ -128,9 +127,10 @@ void registerDiskS3(DiskFactory & factory)
             cfg,
             uri.is_virtual_hosted_style,
             config.getString(config_prefix + ".access_key_id", ""),
-            config.getString(config_prefix + ".secret_access_key", ""));
+            config.getString(config_prefix + ".secret_access_key", ""),
+            context.getRemoteHostFilter());
 
-        String metadata_path = context.getPath() + "disks/" + name + "/";
+        String metadata_path = config.getString(config_prefix + ".metadata_path", context.getPath() + "disks/" + name + "/");
 
         auto s3disk = std::make_shared<DiskS3>(
             name,
@@ -144,9 +144,32 @@ void registerDiskS3(DiskFactory & factory)
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
 
         /// This code is used only to check access to the corresponding disk.
-        checkWriteAccess(*s3disk);
-        checkReadAccess(name, *s3disk);
-        checkRemoveAccess(*s3disk);
+        if (!config.getBool(config_prefix + ".skip_access_check", false))
+        {
+            checkWriteAccess(*s3disk);
+            checkReadAccess(name, *s3disk);
+            checkRemoveAccess(*s3disk);
+        }
+
+        bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
+
+        if (cache_enabled)
+        {
+            String cache_path = config.getString(config_prefix + ".cache_path", context.getPath() + "disks/" + name + "/cache/");
+
+            if (metadata_path == cache_path)
+                throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
+
+            auto cache_disk = std::make_shared<DiskLocal>("s3-cache", cache_path, 0);
+            auto cache_file_predicate = [] (const String & path)
+            {
+                return path.ends_with("idx") // index files.
+                       || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") // mark files.
+                       || path.ends_with("txt") || path.ends_with("dat");
+            };
+
+            return std::make_shared<DiskCacheWrapper>(s3disk, cache_disk, cache_file_predicate);
+        }
 
         return s3disk;
     };

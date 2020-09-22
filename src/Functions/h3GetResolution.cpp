@@ -14,6 +14,10 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
+
 class FunctionH3GetResolution : public IFunction
 {
 public:
@@ -58,6 +62,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionH3GetResolution(FunctionFactory & factory)
 {

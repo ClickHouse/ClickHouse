@@ -46,7 +46,7 @@ void setExtras()
     sentry_set_extra("version_patch", sentry_value_new_int32(VERSION_PATCH));
 }
 
-void sentry_logger(sentry_level_t level, const char * message, va_list args)
+void sentry_logger(sentry_level_e level, const char * message, va_list args, void *)
 {
     auto * logger = &Poco::Logger::get("SentryWriter");
     size_t size = 1024;
@@ -107,7 +107,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 
         sentry_options_t * options = sentry_options_new();  /// will be freed by sentry_init or sentry_shutdown
         sentry_options_set_release(options, VERSION_STRING_SHORT);
-        sentry_options_set_logger(options, &sentry_logger);
+        sentry_options_set_logger(options, &sentry_logger, nullptr);
         if (debug)
         {
             sentry_options_set_debug(options, 1);

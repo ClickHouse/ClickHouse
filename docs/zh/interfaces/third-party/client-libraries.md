@@ -39,6 +39,7 @@
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
 -   C\#
+    -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [克莱克豪斯Ado](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
     -   [克莱克豪斯客户](https://github.com/DarkWanderer/ClickHouse.Client)

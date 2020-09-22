@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/BitHelpers.h>
 #include <Poco/UTF8Encoding.h>
 
@@ -42,7 +42,7 @@ inline void syncForward(const UInt8 * & s, const UInt8 * const end)
 /// returns UTF-8 code point sequence length judging by it's first octet
 inline size_t seqLength(const UInt8 first_octet)
 {
-    if (first_octet < 0x80u)
+    if (first_octet < 0x80 || first_octet >= 0xF8)  /// The specs of UTF-8.
         return 1;
 
     const size_t bits = 8;

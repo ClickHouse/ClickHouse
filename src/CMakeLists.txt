@@ -67,6 +67,7 @@ set(dbms_sources)
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io IO)
+add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
 if(USE_RDKAFKA)
@@ -117,6 +118,10 @@ endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
+if (SPLIT_SHARED_LIBRARIES)
+    target_compile_definitions(clickhouse_common_io PRIVATE SPLIT_SHARED_LIBRARIES)
+endif ()
+
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
@@ -140,12 +145,15 @@ endmacro()
 
 add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_core Core)
+add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_datastreams DataStreams)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_databases Databases)
+add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
+add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
@@ -259,6 +267,8 @@ target_link_libraries(clickhouse_common_io
             roaring
 )
 
+
+
 if (USE_RDKAFKA)
     dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
     if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -268,6 +278,14 @@ endif()
 
 if (USE_AMQPCPP)
     dbms_target_link_libraries(PUBLIC amqp-cpp)
+endif()
+
+if (USE_CYRUS_SASL)
+    dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})
+endif()
+
+if (USE_KRB5)
+    dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
 if(RE2_INCLUDE_DIR)
@@ -318,6 +336,9 @@ if (USE_PARQUET)
     dbms_target_link_libraries(PRIVATE ${PARQUET_LIBRARY})
     if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
         dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
+        if (USE_STATIC_LIBRARIES)
+            dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
+        endif()
     endif ()
 endif ()
 
@@ -357,11 +378,6 @@ if (USE_BROTLI)
     target_link_libraries (clickhouse_common_io PRIVATE ${BROTLI_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
 endif()
-
-if (USE_OPENCL)
-    target_link_libraries (clickhouse_common_io PRIVATE ${OpenCL_LIBRARIES})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${OpenCL_INCLUDE_DIRS})
-endif ()
 
 if (USE_CASSANDRA)
     dbms_target_link_libraries(PUBLIC ${CASSANDRA_LIBRARY})

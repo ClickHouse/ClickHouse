@@ -304,7 +304,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             /// into a fixed 16- or 32-byte blob.
             if (std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes <= 16)
                 return AggregatedDataVariants::Type::nullable_keys128;
-            if (std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes <= 32)
+            if (std::tuple_size<KeysNullMap<DummyUInt256>>::value + keys_bytes <= 32)
                 return AggregatedDataVariants::Type::nullable_keys256;
         }
 
@@ -362,7 +362,17 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::key64;
         if (size_of_field == 16)
             return AggregatedDataVariants::Type::keys128;
-        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16.", ErrorCodes::LOGICAL_ERROR);
+        if (size_of_field == 32)
+            return AggregatedDataVariants::Type::keys256;
+        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
+    {
+        if (has_low_cardinality)
+            return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
+        else
+            return AggregatedDataVariants::Type::key_fixed_string;
     }
 
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
@@ -395,14 +405,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::low_cardinality_key_string;
         else
             return AggregatedDataVariants::Type::key_string;
-    }
-
-    if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
-    {
-        if (has_low_cardinality)
-            return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
-        else
-            return AggregatedDataVariants::Type::key_fixed_string;
     }
 
     return AggregatedDataVariants::Type::serialized;
@@ -449,7 +451,6 @@ void NO_INLINE Aggregator::executeImpl(
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
     if (!no_more_keys)
-        //executeImplCase<false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
         executeImplBatch(method, state, aggregates_pool, rows, aggregate_instructions);
     else
         executeImplCase<true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
@@ -534,22 +535,36 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// Optimization for special case when aggregating by 8bit key.
     if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
     {
+        /// We use another method if there are aggregate functions with -Array combinator.
+        bool has_arrays = false;
         for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
         {
-            inst->batch_that->addBatchLookupTable8(
-                rows,
-                reinterpret_cast<AggregateDataPtr *>(method.data.data()),
-                inst->state_offset,
-                [&](AggregateDataPtr & aggregate_data)
-                {
-                    aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                    createAggregateStates(aggregate_data);
-                },
-                state.getKeyData(),
-                inst->batch_arguments,
-                aggregates_pool);
+            if (inst->offsets)
+            {
+                has_arrays = true;
+                break;
+            }
         }
-        return;
+
+        if (!has_arrays)
+        {
+            for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+            {
+                inst->batch_that->addBatchLookupTable8(
+                    rows,
+                    reinterpret_cast<AggregateDataPtr *>(method.data.data()),
+                    inst->state_offset,
+                    [&](AggregateDataPtr & aggregate_data)
+                    {
+                        aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                        createAggregateStates(aggregate_data);
+                    },
+                    state.getKeyData(),
+                    inst->batch_arguments,
+                    aggregates_pool);
+            }
+            return;
+        }
     }
 
     /// Generic case.
@@ -629,7 +644,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
 
 
 void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns & aggregate_columns, Columns & materialized_columns,
-                                              AggregateFunctionInstructions & aggregate_functions_instructions, NestedColumnsHolder & nested_columns_holder)
+    AggregateFunctionInstructions & aggregate_functions_instructions, NestedColumnsHolder & nested_columns_holder)
 {
     for (size_t i = 0; i < params.aggregates_size; ++i)
         aggregate_columns[i].resize(params.aggregates[i].arguments.size());

@@ -1,6 +1,11 @@
+---
+toc_priority: 53
+toc_title: AggregateFunction
+---
+
 # AggregateFunction {#data-type-aggregatefunction}
 
-Промежуточное состояние агрегатной функции. Чтобы его получить, используются агрегатные функции с суффиксом `-State`. Чтобы в дальнейшем получить агрегированные данные необходимо использовать те же агрегатные функции с суффиксом `-Merge`.
+Агрегатные функции могут обладать определяемым реализацией промежуточным состоянием, которое может быть сериализовано в тип данных, соответствующий AggregateFunction(…), и быть записано в таблицу обычно посредством [материализованного представления] (../../sql-reference/statements/create.md#create-view). Чтобы получить промежуточное состояние, обычно используются агрегатные функции с суффиксом `-State`. Чтобы в дальнейшем получить агрегированные данные необходимо использовать те же агрегатные функции с суффиксом `-Merge`.
 
 `AggregateFunction(name, types\_of\_arguments…)` — параметрический тип данных.
 
@@ -23,7 +28,7 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-[uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq), anyIf ([any](../../sql-reference/aggregate-functions/reference/any.md#agg_function-any)+[If](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-if)) и [quantiles](../../sql-reference/aggregate-functions/reference/quantiles.md) — агрегатные функции, поддержанные в ClickHouse.
+[uniq](../../sql-reference/data-types/aggregatefunction.md#agg_function-uniq), anyIf ([any](../../sql-reference/data-types/aggregatefunction.md#agg_function-any)+[If](../../sql-reference/data-types/aggregatefunction.md#agg-functions-combinator-if)) и [quantiles](../../sql-reference/data-types/aggregatefunction.md) — агрегатные функции, поддержанные в ClickHouse.
 
 ## Особенности использования {#osobennosti-ispolzovaniia}
 

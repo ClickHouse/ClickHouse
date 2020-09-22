@@ -654,7 +654,7 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-The size of blocks to form for insertion into a table.
+The size of blocks (in a count of rows) to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
 For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
 But when using clickhouse-client, the client parses the data itself, and the ‘max\_insert\_block\_size’ setting on the server doesn’t affect the size of the inserted blocks.
@@ -940,6 +940,8 @@ This algorithm chooses the first replica in the set or a random replica if the f
 
 The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, the load is evenly distributed among replicas that are still available.
 
+It's possible to explicitly define what the first replica is by using the setting `load_balancing_first_offset`. This gives more control to rebalance query workloads among replicas.
+
 ### Round Robin {#load_balancing-round_robin}
 
 ``` sql
@@ -997,6 +999,105 @@ The results of the compilation are saved in the build directory in the form of .
 ## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
+
+## output\_format\_json\_quote\_denormals {#settings-output_format_json_quote_denormals}
+
+Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](../../interfaces/formats.md#json) output format.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
+**Example**
+
+Consider the following table `account_orders`:
+
+```text
+┌─id─┬─name───┬─duration─┬─period─┬─area─┐
+│  1 │ Andrew │       20 │      0 │  400 │
+│  2 │ John   │       40 │      0 │    0 │
+│  3 │ Bob    │       15 │      0 │ -100 │
+└────┴────────┴──────────┴────────┴──────┘
+```
+
+When `output_format_json_quote_denormals = 0`, the query returns `null` values in output:
+
+```sql
+SELECT area/period FROM account_orders FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.003648093,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+When `output_format_json_quote_denormals = 1`, the query returns:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": "inf"
+                },
+                {
+                        "divide(area, period)": "-nan"
+                },
+                {
+                        "divide(area, period)": "-inf"
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000070241,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
 
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
@@ -1191,6 +1292,47 @@ Possible values:
 
 Default value: 0.
 
+## distributed\_group\_by\_no\_merge {#distributed-group-by-no-merge}
+
+Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
+
+Possible values:
+
+-   0 — Disabled (final query processing is done on the initiator node).
+-   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data).
+-   2 - Same as 1 but apply `ORDER BY` and `LIMIT` on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+
+**Example**
+
+```sql
+SELECT *
+FROM remote('127.0.0.{2,3}', system.one)
+GROUP BY dummy
+LIMIT 1
+SETTINGS distributed_group_by_no_merge = 1
+FORMAT PrettyCompactMonoBlock
+
+┌─dummy─┐
+│     0 │
+│     0 │
+└───────┘
+```
+
+```sql
+SELECT *
+FROM remote('127.0.0.{2,3}', system.one)
+GROUP BY dummy
+LIMIT 1
+SETTINGS distributed_group_by_no_merge = 2
+FORMAT PrettyCompactMonoBlock
+
+┌─dummy─┐
+│     0 │
+└───────┘
+```
+
+Default value: 0
+
 ## optimize\_skip\_unused\_shards {#optimize-skip-unused-shards}
 
 Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
@@ -1237,6 +1379,40 @@ Possible values:
 -   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
 
 Default value: 0
+
+## optimize\_distributed\_group\_by\_sharding\_key {#optimize-distributed-group-by-sharding-key}
+
+Optimize `GROUP BY sharding_key` queries, by avoiding costly aggregation on the initiator server (which will reduce memory usage for the query on the initiator server).
+
+The following types of queries are supported (and all combinations of them):
+
+- `SELECT DISTINCT [..., ]sharding_key[, ...] FROM dist`
+- `SELECT ... FROM dist GROUP BY sharding_key[, ...]`
+- `SELECT ... FROM dist GROUP BY sharding_key[, ...] ORDER BY x`
+- `SELECT ... FROM dist GROUP BY sharding_key[, ...] LIMIT 1`
+- `SELECT ... FROM dist GROUP BY sharding_key[, ...] LIMIT 1 BY x`
+
+The following types of queries are not supported (support for some of them may be added later):
+
+- `SELECT ... GROUP BY sharding_key[, ...] WITH TOTALS`
+- `SELECT ... GROUP BY sharding_key[, ...] WITH ROLLUP`
+- `SELECT ... GROUP BY sharding_key[, ...] WITH CUBE`
+- `SELECT ... GROUP BY sharding_key[, ...] SETTINGS extremes=1`
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0
+
+See also:
+
+-   [distributed\_group\_by\_no\_merge](#distributed-group-by-no-merge)
+-   [optimize\_skip\_unused\_shards](#optimize-skip-unused-shards)
+
+!!! note "Note"
+    Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
@@ -1447,6 +1623,17 @@ Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-regist
 
 Default value: `Empty`.
 
+## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
+
+Enables using fields that are not specified in [Avro](../../interfaces/formats.md#data-format-avro) or [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format schema. When a field is not found in the schema, ClickHouse uses the default value instead of throwing an exception.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
 ## background\_pool\_size {#background_pool_size}
 
 Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from `default` profile at ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
@@ -1461,15 +1648,15 @@ Default value: 16.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
-Enables parallel distributed `INSERT ... SELECT` query. 
+Enables parallel distributed `INSERT ... SELECT` query.
 
 If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
-
 
 Possible values:
 
 -   0 — Disabled.
--   1 — Enabled.
+-   1 — `SELECT` will be executed on each shard from underlying table of the distributed engine.
+-   2 — `SELECT` and `INSERT` will be executed on each shard from/to underlying table of the distributed engine.
 
 Default value: 0.
 
@@ -1630,7 +1817,7 @@ Default value: 8192.
 
 Turns on or turns off using of single dictionary for the data part.
 
-By default, ClickHouse server monitors the size of dictionaries and if a dictionary overflows then the server starts to write the next one. To prohibit creating several dictionaries set `low_cardinality_use_single_dictionary_for_part = 1`.
+By default, the ClickHouse server monitors the size of dictionaries and if a dictionary overflows then the server starts to write the next one. To prohibit creating several dictionaries set `low_cardinality_use_single_dictionary_for_part = 1`.
 
 Possible values:
 
@@ -1722,6 +1909,20 @@ SELECT * FROM a;
 | 1 |
 +---+
 ```
+## optimize_read_in_order {#optimize_read_in_order}
+
+Enables [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for reading data from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+
+Possible values:
+
+-   0 — `ORDER BY` optimization is disabled. 
+-   1 — `ORDER BY` optimization is enabled. 
+
+Default value: `1`.
+
+**See Also**
+
+-   [ORDER BY Clause](../../sql-reference/statements/select/order-by.md#optimize_read_in_order)
 
 ## mutations_sync {#mutations_sync}
 
@@ -1739,5 +1940,90 @@ Default value: `0`.
 
 -   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
+
+## ttl_only_drop_parts {#ttl_only_drop_parts}
+
+Enables or disables complete dropping of data parts where all rows are expired in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. 
+
+When `ttl_only_drop_parts` is disabled (by default), the ClickHouse server only deletes expired rows according to their TTL. 
+
+When `ttl_only_drop_parts` is enabled, the ClickHouse server drops a whole part when all rows in it are expired. 
+
+Dropping whole parts instead of partial cleaning TTL-d rows allows to have shorter `merge_with_ttl_timeout` times and lower impact on system performance.
+
+Possible values:
+
+-   0 — Complete dropping of data parts is disabled.
+-   1 — Complete dropping of data parts is enabled.
+
+Default value: `0`.
+
+**See Also** 
+
+-   [CREATE TABLE query clauses and settings](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) (`merge_with_ttl_timeout` setting)
+-   [Table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
+
+## lock_acquire_timeout {#lock_acquire_timeout}
+
+Defines how many seconds locking request waits before failing. 
+
+Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When timeout expires and locking request fails, the ClickHouse server throws an exeption "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
+
+Possible values:
+
+-   Positive integer (in seconds).
+-   0 — No locking timeout.
+
+Default value: `120` seconds.
+
+## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
+
+Limits the width of value displayed in [Pretty](../../interfaces/formats.md#pretty) formats. If the value width exceeds the limit, the value is cut. 
+
+Possible values:
+
+-   Positive integer. 
+-   0 — The value is cut completely.
+
+Default value: `10000` symbols.
+
+**Examples**
+
+Query:
+```sql
+SET output_format_pretty_max_value_width = 10;
+SELECT range(number) FROM system.numbers LIMIT 10 FORMAT PrettyCompactNoEscapes;
+```
+Result:
+```text
+┌─range(number)─┐
+│ []            │
+│ [0]           │
+│ [0,1]         │
+│ [0,1,2]       │
+│ [0,1,2,3]     │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+└───────────────┘
+```
+
+Query with zero width:
+```sql
+SET output_format_pretty_max_value_width = 0;
+SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
+```
+Result:
+```text
+┌─range(number)─┐
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+└───────────────┘
+```
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

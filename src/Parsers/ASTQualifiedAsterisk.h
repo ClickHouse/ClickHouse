@@ -11,6 +11,7 @@ struct AsteriskSemanticImpl;
 
 /** Something like t.*
   * It will have qualifier as its child ASTIdentifier.
+  * Optional transformers can be attached to further manipulate these expanded columns.
   */
 class ASTQualifiedAsterisk : public IAST
 {

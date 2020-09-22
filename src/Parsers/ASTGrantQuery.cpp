@@ -144,4 +144,12 @@ void ASTGrantQuery::replaceCurrentUserTagWithName(const String & current_user_na
     if (to_roles)
         to_roles->replaceCurrentUserTagWithName(current_user_name);
 }
+
+
+void ASTGrantQuery::removeNonGrantableFlags()
+{
+    if (kind == Kind::GRANT)
+        access_rights_elements.removeNonGrantableFlags();
+}
+
 }

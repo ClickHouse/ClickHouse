@@ -352,7 +352,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
             if (parts_queue.empty())
             {
-                LOG_ERROR(log, "Someone erased cheking part from parts_queue. This is a bug.");
+                LOG_ERROR(log, "Someone erased checking part from parts_queue. This is a bug.");
             }
             else
             {

@@ -138,12 +138,18 @@ StorageKafka::StorageKafka(
     , semaphore(0, num_consumers)
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
+    , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-    task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
-    task->deactivate();
+    auto task_count = thread_per_consumer ? num_consumers : 1;
+    for (size_t i = 0; i < task_count; ++i)
+    {
+        auto task = global_context.getSchedulePool().createTask(log->name(), [this, i]{ threadFunc(i); });
+        task->deactivate();
+        tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
+    }
 }
 
 SettingsChanges StorageKafka::createSettingsAdjustments()
@@ -197,7 +203,7 @@ String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 }
 
 
-Pipes StorageKafka::read(
+Pipe StorageKafka::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /* query_info */,
@@ -226,7 +232,7 @@ Pipes StorageKafka::read(
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
@@ -257,17 +263,23 @@ void StorageKafka::startup()
     }
 
     // Start the reader thread
-    task->activateAndSchedule();
+    for (auto & task : tasks)
+    {
+        task->holder->activateAndSchedule();
+    }
 }
 
 
 void StorageKafka::shutdown()
 {
-    // Interrupt streaming thread
-    stream_cancelled = true;
+    for (auto & task : tasks)
+    {
+        // Interrupt streaming thread
+        task->stream_cancelled = true;
 
-    LOG_TRACE(log, "Waiting for cleanup");
-    task->deactivate();
+        LOG_TRACE(log, "Waiting for cleanup");
+        task->holder->deactivate();
+    }
 
     LOG_TRACE(log, "Closing consumers");
     for (size_t i = 0; i < num_created_consumers; ++i)
@@ -368,7 +380,12 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, stream_cancelled, topics);
+    if (thread_per_consumer)
+    {
+        auto& stream_cancelled = tasks[consumer_number]->stream_cancelled;
+        return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, stream_cancelled, topics);
+    }
+    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, tasks.back()->stream_cancelled, topics);
 }
 
 size_t StorageKafka::getMaxBlockSize() const
@@ -464,8 +481,10 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
     return true;
 }
 
-void StorageKafka::threadFunc()
+void StorageKafka::threadFunc(size_t idx)
 {
+    assert(idx < tasks.size());
+    auto task = tasks[idx];
     try
     {
         auto table_id = getStorageID();
@@ -476,7 +495,7 @@ void StorageKafka::threadFunc()
             auto start_time = std::chrono::steady_clock::now();
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!stream_cancelled && num_created_consumers > 0)
+            while (!task->stream_cancelled && num_created_consumers > 0)
             {
                 if (!checkDependencies(table_id))
                     break;
@@ -507,8 +526,8 @@ void StorageKafka::threadFunc()
     }
 
     // Wait for attached views
-    if (!stream_cancelled)
-        task->scheduleAfter(RESCHEDULE_MS);
+    if (!task->stream_cancelled)
+        task->holder->scheduleAfter(RESCHEDULE_MS);
 }
 
 
@@ -537,15 +556,16 @@ bool StorageKafka::streamToViews()
 
     // Create a stream for each consumer and join them in a union stream
     BlockInputStreams streams;
-    streams.reserve(num_created_consumers);
 
-    for (size_t i = 0; i < num_created_consumers; ++i)
+    auto stream_count = thread_per_consumer ? 1 : num_created_consumers;
+    streams.reserve(stream_count);
+    for (size_t i = 0; i < stream_count; ++i)
     {
         auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.out->getHeader().getNames(), log, block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
-        IBlockInputStream::LocalLimits limits;
+        StreamLocalLimits limits;
 
         limits.speed_limits.max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
                                                  ? kafka_settings->kafka_flush_interval_ms

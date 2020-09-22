@@ -17,7 +17,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -26,6 +25,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
 
 /** transform(x, from_array, to_array[, default]) - convert x according to an explicitly passed match.
   */
@@ -845,6 +846,8 @@ private:
         cache.initialized = true;
     }
 };
+
+}
 
 void registerFunctionTransform(FunctionFactory & factory)
 {

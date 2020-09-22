@@ -60,7 +60,7 @@ Constructions with `{}` are similar to the [remote table function](../../sql-ref
 -   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
 -   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
 
-1.  Query the amount of rows in these files:
+2.  Query the amount of rows in these files:
 
 <!-- -->
 
@@ -69,7 +69,7 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
 ```
 
-1.  Query the amount of rows in all files of these two directories:
+3.  Query the amount of rows in all files of these two directories:
 
 <!-- -->
 

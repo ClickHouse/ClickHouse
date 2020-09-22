@@ -3,6 +3,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/ISource.h>
+#include <Processors/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 
 
@@ -507,7 +508,7 @@ Processors AggregatingTransform::expandPipeline()
 
 void AggregatingTransform::consume(Chunk chunk)
 {
-    UInt64 num_rows = chunk.getNumRows();
+    const UInt64 num_rows = chunk.getNumRows();
 
     if (num_rows == 0 && params->params.empty_result_for_aggregation_by_empty_set)
         return;
@@ -518,7 +519,7 @@ void AggregatingTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
-    src_rows += chunk.getNumRows();
+    src_rows += num_rows;
     src_bytes += chunk.bytes();
 
     if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
@@ -585,23 +586,24 @@ void AggregatingTransform::initGenerate()
             }
         }
 
-        auto header = params->aggregator.getHeader(false);
-
         const auto & files = params->aggregator.getTemporaryFiles();
-        BlockInputStreams input_streams;
-        for (const auto & file : files.files)
-            processors.emplace_back(std::make_unique<SourceFromNativeStream>(header, file->path()));
+        Pipe pipe;
+
+        {
+            auto header = params->aggregator.getHeader(false);
+            Pipes pipes;
+
+            for (const auto & file : files.files)
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(header, file->path())));
+
+            pipe = Pipe::unitePipes(std::move(pipes));
+        }
 
         LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), ReadableSize(files.sum_size_compressed), ReadableSize(files.sum_size_uncompressed));
 
-        auto pipe = createMergingAggregatedMemoryEfficientPipe(
-                header, params, files.files.size(), temporary_data_merge_threads);
+        addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
 
-        auto input = pipe.front()->getInputs().begin();
-        for (auto & processor : processors)
-            connect(processor->getOutputs().front(), *(input++));
-
-        processors.insert(processors.end(), pipe.begin(), pipe.end());
+        processors = Pipe::detachProcessors(std::move(pipe));
     }
 }
 

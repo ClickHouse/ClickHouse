@@ -532,7 +532,7 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `query` (String) – The query text. For `INSERT`,挿入するデータは含まれません。
 -   `query_id` (String) – Query ID, if defined.
 
-## システムtext\_log {#system-tables-text-log}
+## システムtext\_log {#system_tables-text_log}
 
 を含むログイン作品の応募がありました。 ログレベルがこのテーブルで限定 `text_log.level` サーバー設定。
 

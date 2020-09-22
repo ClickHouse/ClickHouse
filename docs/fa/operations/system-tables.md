@@ -532,7 +532,7 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `query` (String) – The query text. For `INSERT` این شامل داده ها برای وارد کردن نیست.
 -   `query_id` (String) – Query ID, if defined.
 
-## سیستم.\_خروج {#system-tables-text-log}
+## سیستم.\_خروج {#system_tables-text_log}
 
 شامل ورودی ورود به سیستم. سطح ورود به سیستم که می رود به این جدول را می توان با محدود `text_log.level` تنظیم سرور.
 

@@ -72,6 +72,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 class InputStreamReadBufferAdapter : public avro::InputStream
@@ -647,7 +648,7 @@ private:
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
                 auto schema = json_body->getValue<std::string>("schema");
-                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Succesfully fetched schema id = {}\n{}", id, schema);
+                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
                 return avro::compileJsonSchemaFromString(schema);
             }
             catch (const Exception &)
@@ -697,8 +698,21 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
     uint8_t magic;
     uint32_t schema_id;
 
-    readBinaryBigEndian(magic, in);
-    readBinaryBigEndian(schema_id, in);
+    try
+    {
+        readBinaryBigEndian(magic, in);
+        readBinaryBigEndian(schema_id, in);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
+        {
+            /* empty or incomplete message without Avro Confluent magic number or schema id */
+            throw Exception("Missing AvroConfluent magic byte or schema identifier.", ErrorCodes::INCORRECT_DATA);
+        }
+        else
+            throw;
+    }
 
     if (magic != 0x00)
     {

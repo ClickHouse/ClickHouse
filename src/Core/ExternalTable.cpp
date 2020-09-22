@@ -11,6 +11,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/ConcatProcessor.h>
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
 #include <common/find_symbols.h>
@@ -170,10 +171,13 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     BlockOutputStreamPtr output = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), context);
 
     /// Write data
-    auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
-    connect(data->pipe->getPort(), sink->getPort());
+    if (data->pipe->numOutputPorts() > 1)
+        data->pipe->addTransform(std::make_shared<ConcatProcessor>(data->pipe->getHeader(), data->pipe->numOutputPorts()));
 
-    auto processors = std::move(*data->pipe).detachProcessors();
+    auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
+    connect(*data->pipe->getOutputPort(0), sink->getPort());
+
+    auto processors = Pipe::detachProcessors(std::move(*data->pipe));
     processors.push_back(std::move(sink));
 
     auto executor = std::make_shared<PipelineExecutor>(processors);

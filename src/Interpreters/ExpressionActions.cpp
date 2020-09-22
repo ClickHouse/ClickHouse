@@ -1,19 +1,20 @@
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 #include <optional>
 #include <Columns/ColumnSet.h>
-#include <Functions/FunctionHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -37,6 +38,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TOO_MANY_TEMPORARY_COLUMNS;
     extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
+    extern const int TYPE_MISMATCH;
 }
 
 /// Read comment near usage
@@ -46,9 +48,6 @@ static constexpr auto DUMMY_COLUMN_NAME = "_dummy";
 Names ExpressionAction::getNeededColumns() const
 {
     Names res = argument_names;
-
-    if (array_join)
-        res.insert(res.end(), array_join->columns.begin(), array_join->columns.end());
 
     if (table_join)
         res.insert(res.end(), table_join->keyNamesLeft().begin(), table_join->keyNamesLeft().end());
@@ -143,22 +142,18 @@ ExpressionAction ExpressionAction::addAliases(const NamesWithAliases & aliased_c
     return a;
 }
 
-ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context)
+ExpressionAction ExpressionAction::arrayJoin(std::string source_name, std::string result_name)
 {
+    if (source_name == result_name)
+        throw Exception("ARRAY JOIN action should have different source and result names", ErrorCodes::LOGICAL_ERROR);
+
     ExpressionAction a;
     a.type = ARRAY_JOIN;
-    a.array_join = std::make_shared<ArrayJoinAction>(array_joined_columns, array_join_is_left, context);
+    a.source_name = std::move(source_name);
+    a.result_name = std::move(result_name);
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<TableJoin> table_join, JoinPtr join)
-{
-    ExpressionAction a;
-    a.type = JOIN;
-    a.table_join = table_join;
-    a.join = join;
-    return a;
-}
 
 void ExpressionAction::prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding)
 {
@@ -243,13 +238,18 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
         case ARRAY_JOIN:
         {
-            array_join->prepare(sample_block);
-            break;
-        }
+            ColumnWithTypeAndName current = sample_block.getByName(source_name);
+            sample_block.erase(source_name);
 
-        case JOIN:
-        {
-            table_join->addJoinedColumnsAndCorrectNullability(sample_block);
+            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
+            if (!array_type)
+                throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
+
+            current.name = result_name;
+            current.type = array_type->getNestedType();
+            current.column = nullptr; /// Result is never const
+            sample_block.insert(std::move(current));
+
             break;
         }
 
@@ -323,19 +323,6 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
     }
 }
 
-void ExpressionAction::execute(Block & block, ExtraBlockPtr & not_processed) const
-{
-    switch (type)
-    {
-        case JOIN:
-            join->joinBlock(block, not_processed);
-            break;
-
-        default:
-            throw Exception("Unexpected expression call", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
 void ExpressionAction::execute(Block & block, bool dry_run) const
 {
     size_t input_rows_count = block.rows();
@@ -369,12 +356,25 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case ARRAY_JOIN:
         {
-            array_join->execute(block, dry_run);
+            auto source = block.getByName(source_name);
+            block.erase(source_name);
+            source.column = source.column->convertToFullColumnIfConst();
+
+            const ColumnArray * array = typeid_cast<const ColumnArray *>(source.column.get());
+            if (!array)
+                throw Exception("ARRAY JOIN of not array: " + source_name, ErrorCodes::TYPE_MISMATCH);
+
+            for (auto & column : block)
+                column.column = column.column->replicate(array->getOffsets());
+
+            source.column = array->getDataPtr();
+            source.type = assert_cast<const DataTypeArray &>(*source.type).getNestedType();
+            source.name = result_name;
+
+            block.insert(std::move(source));
+
             break;
         }
-
-        case JOIN:
-            throw Exception("Unexpected JOIN expression call", ErrorCodes::LOGICAL_ERROR);
 
         case PROJECT:
         {
@@ -434,14 +434,6 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
     }
 }
 
-void ExpressionAction::executeOnTotals(Block & block) const
-{
-    if (type != JOIN)
-        execute(block, false);
-    else
-        join->joinTotals(block);
-}
-
 
 std::string ExpressionAction::toString() const
 {
@@ -478,24 +470,7 @@ std::string ExpressionAction::toString() const
             break;
 
         case ARRAY_JOIN:
-            ss << (array_join->is_left ? "LEFT " : "") << "ARRAY JOIN ";
-            for (NameSet::const_iterator it = array_join->columns.begin(); it != array_join->columns.end(); ++it)
-            {
-                if (it != array_join->columns.begin())
-                    ss << ", ";
-                ss << *it;
-            }
-            break;
-
-        case JOIN:
-            ss << "JOIN ";
-            for (NamesAndTypesList::const_iterator it = table_join->columnsAddedByJoin().begin();
-                 it != table_join->columnsAddedByJoin().end(); ++it)
-            {
-                if (it != table_join->columnsAddedByJoin().begin())
-                    ss << ", ";
-                ss << it->name;
-            }
+            ss << "ARRAY JOIN " << source_name << " -> " << result_name;
             break;
 
         case PROJECT: [[fallthrough]];
@@ -597,9 +572,6 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
     if (!action.result_name.empty())
         new_names.push_back(action.result_name);
 
-    if (action.array_join)
-        new_names.insert(new_names.end(), action.array_join->columns.begin(), action.array_join->columns.end());
-
     /// Compiled functions are custom functions and they don't need building
     if (action.type == ExpressionAction::APPLY_FUNCTION && !action.is_function_compiled)
     {
@@ -631,107 +603,32 @@ void ExpressionActions::prependProjectInput()
     actions.insert(actions.begin(), ExpressionAction::project(getRequiredColumns()));
 }
 
-void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const Block & sample_block_before)
-{
-    if (action.type != ExpressionAction::ARRAY_JOIN)
-        throw Exception("ARRAY_JOIN action expected", ErrorCodes::LOGICAL_ERROR);
-
-    NameSet array_join_set(action.array_join->columns.begin(), action.array_join->columns.end());
-    for (auto & it : input_columns)
-    {
-        if (array_join_set.count(it.name))
-        {
-            array_join_set.erase(it.name);
-            it.type = std::make_shared<DataTypeArray>(it.type);
-        }
-    }
-    for (const std::string & name : array_join_set)
-    {
-        input_columns.emplace_back(name, sample_block_before.getByName(name).type);
-        actions.insert(actions.begin(), ExpressionAction::removeColumn(name));
-    }
-
-    actions.insert(actions.begin(), action);
-    optimizeArrayJoin();
-}
-
-
-bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, ExpressionAction & out_action)
-{
-    if (actions.empty() || actions.back().type != ExpressionAction::ARRAY_JOIN)
-        return false;
-    NameSet required_set(required_columns.begin(), required_columns.end());
-    for (const std::string & name : actions.back().array_join->columns)
-    {
-        if (required_set.count(name))
-            return false;
-    }
-    for (const std::string & name : actions.back().array_join->columns)
-    {
-        DataTypePtr & type = sample_block.getByName(name).type;
-        type = std::make_shared<DataTypeArray>(type);
-    }
-    out_action = actions.back();
-    actions.pop_back();
-    return true;
-}
-
 void ExpressionActions::execute(Block & block, bool dry_run) const
 {
     for (const auto & action : actions)
     {
-        action.execute(block, dry_run);
-        checkLimits(block);
-    }
-}
-
-void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed) const
-{
-    if (actions.size() != 1)
-        throw Exception("Continuation over multiple expressions is not supported", ErrorCodes::LOGICAL_ERROR);
-
-    actions[0].execute(block, not_processed);
-    checkLimits(block);
-}
-
-bool ExpressionActions::hasJoinOrArrayJoin() const
-{
-    for (const auto & action : actions)
-        if (action.type == ExpressionAction::JOIN || action.type == ExpressionAction::ARRAY_JOIN)
-            return true;
-
-    return false;
-}
-
-bool ExpressionActions::hasTotalsInJoin() const
-{
-    for (const auto & action : actions)
-        if (action.table_join && action.join->hasTotals())
-            return true;
-    return false;
-}
-
-void ExpressionActions::executeOnTotals(Block & block) const
-{
-    /// If there is `totals` in the subquery for JOIN, but we do not have totals, then take the block with the default values instead of `totals`.
-    if (!block)
-    {
-        if (hasTotalsInJoin())
+        try
         {
-            for (const auto & name_and_type : input_columns)
-            {
-                auto column = name_and_type.type->createColumn();
-                column->insertDefault();
-                block.insert(ColumnWithTypeAndName(std::move(column), name_and_type.type, name_and_type.name));
-            }
+            action.execute(block, dry_run);
+            checkLimits(block);
         }
-        else
-            return; /// There's nothing to JOIN.
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while executing '{}'", action.toString()));
+            throw;
+        }
     }
-
-    for (const auto & action : actions)
-        action.executeOnTotals(block);
 }
+
+bool ExpressionActions::hasArrayJoin() const
+{
+    for (const auto & action : actions)
+        if (action.type == ExpressionAction::ARRAY_JOIN)
+            return true;
+
+    return false;
+}
+
 
 std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
@@ -809,7 +706,18 @@ void ExpressionActions::finalize(const Names & output_columns)
         }
         else if (action.type == ExpressionAction::ARRAY_JOIN)
         {
-            action.array_join->finalize(needed_columns, unmodified_columns, final_columns);
+            /// We need source anyway, in order to calculate number of rows correctly.
+            needed_columns.insert(action.source_name);
+            unmodified_columns.erase(action.result_name);
+            needed_columns.erase(action.result_name);
+
+            /// Note: technically, if result of arrayJoin is not needed,
+            /// we may remove all the columns and loose the number of rows here.
+            /// However, I cannot imagine how it is possible.
+            /// For "big" ARRAY JOIN it could have happened in query like
+            ///    SELECT count() FROM table ARRAY JOIN x
+            /// Now, "big" ARRAY JOIN is moved to separate pipeline step,
+            /// and arrayJoin(x) is an expression which result can't be lost.
         }
         else
         {
@@ -946,7 +854,7 @@ void ExpressionActions::finalize(const Names & output_columns)
         auto process = [&] (const String & name)
         {
             auto refcount = --columns_refcount[name];
-            if (refcount <= 0)
+            if (refcount <= 0 && action.type != ExpressionAction::ARRAY_JOIN)
             {
                 new_actions.push_back(ExpressionAction::removeColumn(name));
                 if (sample_block.has(name))
@@ -1046,8 +954,6 @@ void ExpressionActions::optimizeArrayJoin()
 
             if (!actions[i].result_name.empty())
                 array_joined_columns.insert(actions[i].result_name);
-            if (actions[i].array_join)
-                array_joined_columns.insert(actions[i].array_join->columns.begin(), actions[i].array_join->columns.end());
 
             array_join_dependencies.insert(needed.begin(), needed.end());
         }
@@ -1077,27 +983,133 @@ void ExpressionActions::optimizeArrayJoin()
     }
 }
 
-
-JoinPtr ExpressionActions::getTableJoinAlgo() const
+ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns)
 {
-    for (const auto & action : actions)
-        if (action.join)
-            return action.join;
-    return {};
-}
+    /// Create new actions.
+    /// Copy from this because we don't have context.
+    /// TODO: remove context from constructor?
+    auto split_actions = std::make_shared<ExpressionActions>(*this);
+    split_actions->actions.clear();
+    split_actions->sample_block.clear();
+    split_actions->input_columns.clear();
 
+    /// Expected chain:
+    /// Expression (this) -> ArrayJoin (array_joined_columns) -> Expression (split_actions)
 
-bool ExpressionActions::resultIsAlwaysEmpty() const
-{
-    /// Check that has join which returns empty result.
+    /// We are going to move as many actions as we can from this to split_actions.
+    /// We can move all inputs which are not depend on array_joined_columns
+    /// (with some exceptions to PROJECT and REMOVE_COLUMN
 
-    for (const auto & action : actions)
+    /// Use the same inputs for split_actions, except array_joined_columns.
+    for (const auto & input_column : input_columns)
     {
-        if (action.type == action.JOIN && action.join && action.join->alwaysReturnsEmptySet())
-            return true;
+        if (array_joined_columns.count(input_column.name) == 0)
+        {
+            split_actions->input_columns.emplace_back(input_column);
+            split_actions->sample_block.insert(ColumnWithTypeAndName(nullptr, input_column.type, input_column.name));
+        }
     }
 
-    return false;
+    /// Do not split action if input depends only on array joined columns.
+    if (split_actions->input_columns.empty())
+        return nullptr;
+
+    /// Actions which depend on ARRAY JOIN result.
+    NameSet array_join_dependent_columns = array_joined_columns;
+    /// Arguments of actions which depend on ARRAY JOIN result.
+    /// This columns can't be deleted in split_actions.
+    NameSet array_join_dependent_columns_arguments;
+
+    /// We create new_actions list for `this`. Current actions are moved to new_actions nor added to split_actions.
+    Actions new_actions;
+    for (const auto & action : actions)
+    {
+        /// Exception for PROJECT.
+        /// It removes columns, so it will remove split_actions output which may be needed for actions from `this`.
+        /// So, we replace it ADD_ALIASES.
+        /// Usually, PROJECT is added to begin of actions in order to remove unused output of prev actions.
+        /// We skip it now, but will prependProjectInput at the end.
+        if (action.type == ExpressionAction::PROJECT)
+        {
+            /// Each alias has separate dependencies, so we split this action into two parts.
+            NamesWithAliases split_aliases;
+            NamesWithAliases depend_aliases;
+            for (const auto & pair : action.projection)
+            {
+                /// Skip if is not alias.
+                if (pair.second.empty())
+                    continue;
+
+                if (array_join_dependent_columns.count(pair.first))
+                {
+                    array_join_dependent_columns.insert(pair.second);
+                    depend_aliases.emplace_back(std::move(pair));
+                }
+                else
+                    split_aliases.emplace_back(std::move(pair));
+            }
+
+            if (!split_aliases.empty())
+                split_actions->add(ExpressionAction::addAliases(split_aliases));
+
+            if (!depend_aliases.empty())
+                new_actions.emplace_back(ExpressionAction::addAliases(depend_aliases));
+
+            continue;
+        }
+
+        bool depends_on_array_join = false;
+        for (auto & column : action.getNeededColumns())
+            if (array_join_dependent_columns.count(column) != 0)
+                depends_on_array_join = true;
+
+        if (depends_on_array_join)
+        {
+            /// Add result of this action to array_join_dependent_columns too.
+            if (!action.result_name.empty())
+                array_join_dependent_columns.insert(action.result_name);
+
+            /// Add arguments of this action to array_join_dependent_columns_arguments.
+            auto needed = action.getNeededColumns();
+            array_join_dependent_columns_arguments.insert(needed.begin(), needed.end());
+
+            new_actions.emplace_back(action);
+        }
+        else if (action.type == ExpressionAction::REMOVE_COLUMN)
+        {
+            /// Exception for REMOVE_COLUMN.
+            /// We cannot move it to split_actions if any argument from `this` needed that column.
+            if (array_join_dependent_columns_arguments.count(action.source_name))
+                new_actions.emplace_back(action);
+            else
+                split_actions->add(action);
+        }
+        else
+            split_actions->add(action);
+    }
+
+    /// Return empty actions if nothing was separated. Keep `this` unchanged.
+    if (split_actions->getActions().empty())
+        return nullptr;
+
+    std::swap(actions, new_actions);
+
+    /// Collect inputs from ARRAY JOIN.
+    NamesAndTypesList inputs_from_array_join;
+    for (auto & column : input_columns)
+        if (array_joined_columns.count(column.name))
+            inputs_from_array_join.emplace_back(std::move(column));
+
+    /// Fix inputs for `this`.
+    /// It is output of split_actions + inputs from ARRAY JOIN.
+    input_columns = split_actions->getSampleBlock().getNamesAndTypesList();
+    input_columns.insert(input_columns.end(), inputs_from_array_join.begin(), inputs_from_array_join.end());
+
+    /// Remove not needed columns.
+    if (!actions.empty())
+        prependProjectInput();
+
+    return split_actions;
 }
 
 
@@ -1178,13 +1190,8 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
                 hash.update(arg_name);
             break;
         case ARRAY_JOIN:
-            hash.update(action.array_join->is_left);
-            for (const auto & col : action.array_join->columns)
-                hash.update(col);
-            break;
-        case JOIN:
-            for (const auto & col : action.table_join->columnsAddedByJoin())
-                hash.update(col.name);
+            hash.update(action.result_name);
+            hash.update(action.source_name);
             break;
         case PROJECT:
             for (const auto & pair_of_strs : action.projection)
@@ -1236,15 +1243,9 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
             return false;
     }
 
-    bool same_array_join = !array_join && !other.array_join;
-    if (array_join && other.array_join)
-        same_array_join = (array_join->columns == other.array_join->columns) &&
-            (array_join->is_left == other.array_join->is_left);
-
     return source_name == other.source_name
         && result_name == other.result_name
         && argument_names == other.argument_names
-        && same_array_join
         && TableJoin::sameJoin(table_join.get(), other.table_join.get())
         && projection == other.projection
         && is_function_compiled == other.is_function_compiled;
@@ -1255,8 +1256,8 @@ void ExpressionActionsChain::addStep()
     if (steps.empty())
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
-    ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumnsWithTypeAndName();
-    steps.push_back(Step(std::make_shared<ExpressionActions>(columns, context)));
+    ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ExpressionActions>(columns, context)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1264,16 +1265,16 @@ void ExpressionActionsChain::finalize()
     /// Finalize all steps. Right to left to define unnecessary input columns.
     for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
     {
-        Names required_output = steps[i].required_output;
+        Names required_output = steps[i]->required_output;
         std::unordered_map<String, size_t> required_output_indexes;
         for (size_t j = 0; j < required_output.size(); ++j)
             required_output_indexes[required_output[j]] = j;
-        auto & can_remove_required_output = steps[i].can_remove_required_output;
+        auto & can_remove_required_output = steps[i]->can_remove_required_output;
 
         if (i + 1 < static_cast<int>(steps.size()))
         {
-            const NameSet & additional_input = steps[i + 1].additional_input;
-            for (const auto & it : steps[i + 1].actions->getRequiredColumnsWithTypes())
+            const NameSet & additional_input = steps[i + 1]->additional_input;
+            for (const auto & it : steps[i + 1]->getRequiredColumns())
             {
                 if (additional_input.count(it.name) == 0)
                 {
@@ -1285,27 +1286,19 @@ void ExpressionActionsChain::finalize()
                 }
             }
         }
-        steps[i].actions->finalize(required_output);
-    }
-
-    /// When possible, move the ARRAY JOIN from earlier steps to later steps.
-    for (size_t i = 1; i < steps.size(); ++i)
-    {
-        ExpressionAction action;
-        if (steps[i - 1].actions->popUnusedArrayJoin(steps[i - 1].required_output, action))
-            steps[i].actions->prependArrayJoin(action, steps[i - 1].actions->getSampleBlock());
+        steps[i]->finalize(required_output);
     }
 
     /// Adding the ejection of unnecessary columns to the beginning of each step.
     for (size_t i = 1; i < steps.size(); ++i)
     {
-        size_t columns_from_previous = steps[i - 1].actions->getSampleBlock().columns();
+        size_t columns_from_previous = steps[i - 1]->getResultColumns().size();
 
         /// If unnecessary columns are formed at the output of the previous step, we'll add them to the beginning of this step.
         /// Except when we drop all the columns and lose the number of rows in the block.
-        if (!steps[i].actions->getRequiredColumnsWithTypes().empty()
-            && columns_from_previous > steps[i].actions->getRequiredColumnsWithTypes().size())
-            steps[i].actions->prependProjectInput();
+        if (!steps[i]->getResultColumns().empty()
+            && columns_from_previous > steps[i]->getRequiredColumns().size())
+            steps[i]->prependProjectInput();
     }
 }
 
@@ -1317,12 +1310,108 @@ std::string ExpressionActionsChain::dumpChain() const
     {
         ss << "step " << i << "\n";
         ss << "required output:\n";
-        for (const std::string & name : steps[i].required_output)
+        for (const std::string & name : steps[i]->required_output)
             ss << name << "\n";
-        ss << "\n" << steps[i].actions->dumpActions() << "\n";
+        ss << "\n" << steps[i]->dump() << "\n";
     }
 
     return ss.str();
+}
+
+ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_)
+    : Step({})
+    , array_join(std::move(array_join_))
+    , result_columns(std::move(required_columns_))
+{
+    for (auto & column : result_columns)
+    {
+        required_columns.emplace_back(NameAndTypePair(column.name, column.type));
+
+        if (array_join->columns.count(column.name) > 0)
+        {
+            const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
+            column.type = array->getNestedType();
+            /// Arrays are materialized
+            column.column = nullptr;
+        }
+    }
+}
+
+void ExpressionActionsChain::ArrayJoinStep::finalize(const Names & required_output_)
+{
+    NamesAndTypesList new_required_columns;
+    ColumnsWithTypeAndName new_result_columns;
+
+    NameSet names(required_output_.begin(), required_output_.end());
+    for (const auto & column : result_columns)
+    {
+        if (array_join->columns.count(column.name) != 0 || names.count(column.name) != 0)
+            new_result_columns.emplace_back(column);
+    }
+    for (const auto & column : required_columns)
+    {
+        if (array_join->columns.count(column.name) != 0 || names.count(column.name) != 0)
+            new_required_columns.emplace_back(column);
+    }
+
+    std::swap(required_columns, new_required_columns);
+    std::swap(result_columns, new_result_columns);
+}
+
+ExpressionActionsChain::JoinStep::JoinStep(
+    std::shared_ptr<TableJoin> analyzed_join_,
+    JoinPtr join_,
+    ColumnsWithTypeAndName required_columns_)
+    : Step({})
+    , analyzed_join(std::move(analyzed_join_))
+    , join(std::move(join_))
+    , result_columns(std::move(required_columns_))
+{
+    for (const auto & column : result_columns)
+        required_columns.emplace_back(column.name, column.type);
+
+    analyzed_join->addJoinedColumnsAndCorrectNullability(result_columns);
+}
+
+void ExpressionActionsChain::JoinStep::finalize(const Names & required_output_)
+{
+    /// We need to update required and result columns by removing unused ones.
+    NamesAndTypesList new_required_columns;
+    ColumnsWithTypeAndName new_result_columns;
+
+    /// That's an input columns we need.
+    NameSet required_names(required_output_.begin(), required_output_.end());
+    for (const auto & name : analyzed_join->keyNamesLeft())
+        required_names.emplace(name);
+
+    for (const auto & column : required_columns)
+    {
+        if (required_names.count(column.name) != 0)
+            new_required_columns.emplace_back(column);
+    }
+
+    /// Result will also contain joined columns.
+    for (const auto & column : analyzed_join->columnsAddedByJoin())
+        required_names.emplace(column.name);
+
+    for (const auto & column : result_columns)
+    {
+        if (required_names.count(column.name) != 0)
+            new_result_columns.emplace_back(column);
+    }
+
+    std::swap(required_columns, new_required_columns);
+    std::swap(result_columns, new_result_columns);
+}
+
+ExpressionActionsPtr & ExpressionActionsChain::Step::actions()
+{
+    return typeid_cast<ExpressionActionsStep *>(this)->actions;
+}
+
+const ExpressionActionsPtr & ExpressionActionsChain::Step::actions() const
+{
+    return typeid_cast<const ExpressionActionsStep *>(this)->actions;
 }
 
 }
