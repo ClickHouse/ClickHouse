@@ -75,7 +75,7 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, const 
         else
             return {};
     }
-    return it->second;
+    return it->second->clone();
 }
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
