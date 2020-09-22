@@ -159,14 +159,14 @@ String extractStatusMessages(OM_uint32 major_status_code, OM_uint32 minor_status
     String messages;
 
     if (!gss_messages.empty())
-        messages += "GSS messages: " + gss_messages;
+        messages += "Majors: " + gss_messages;
 
     if (!mech_messages.empty())
     {
         if (!messages.empty())
             messages += "; ";
 
-        messages += "Mechanism messages: " + mech_messages;
+        messages += "Minors: " + mech_messages;
     }
 
     return messages;
@@ -189,43 +189,18 @@ std::pair<String, String> extractNameAndRealm(const gss_name_t & name)
     });
 
     OM_uint32 minor_status = 0;
-    [[maybe_unused]] OM_uint32 major_status = gss_export_name(
+    [[maybe_unused]] OM_uint32 major_status = gss_display_name(
         &minor_status,
         name,
-        &name_buf
+        &name_buf,
+        nullptr
     );
 
     const PrincipalName principal(bufferToString(name_buf));
     return { principal.name, principal.realm };
 }
 
-String getMechanismAsString(const gss_OID & mech_type)
-{
-    std::scoped_lock lock(gss_global_mutex);
-
-    gss_buffer_desc mechanism_buf;
-    mechanism_buf.length = 0;
-    mechanism_buf.value = nullptr;
-
-    SCOPE_EXIT({
-        OM_uint32 minor_status = 0;
-        [[maybe_unused]] OM_uint32 major_status = gss_release_buffer(
-            &minor_status,
-            &mechanism_buf
-        );
-    });
-
-    OM_uint32 minor_status = 0;
-    [[maybe_unused]] OM_uint32 major_status = gss_oid_to_str(
-        &minor_status,
-        mech_type,
-        &mechanism_buf
-    );
-
-    return bufferToString(mechanism_buf);
-}
-
-bool areMechanismsSame(const String & left_str, const gss_OID & right_oid)
+bool equalMechanisms(const String & left_str, const gss_OID & right_oid)
 {
     std::scoped_lock lock(gss_global_mutex);
 
@@ -257,7 +232,7 @@ bool areMechanismsSame(const String & left_str, const gss_OID & right_oid)
     if (GSS_ERROR(major_status))
         return false;
 
-    return getMechanismAsString(left_oid) == getMechanismAsString(right_oid);
+    return gss_oid_equal(left_oid, right_oid);
 }
 
 }
@@ -298,11 +273,9 @@ void GSSAcceptorContext::initHandles()
         if (!params.realm.empty())
             throw Exception("Realm and principal name cannot be specified simultaneously", ErrorCodes::BAD_ARGUMENTS);
 
-        const String acceptor_name_str = params.principal + "@" + params.realm;
-
         gss_buffer_desc acceptor_name_buf;
-        acceptor_name_buf.length = acceptor_name_str.size();
-        acceptor_name_buf.value = const_cast<char *>(acceptor_name_str.c_str());
+        acceptor_name_buf.length = params.principal.size();
+        acceptor_name_buf.value = const_cast<char *>(params.principal.c_str());
 
         gss_name_t acceptor_name = GSS_C_NO_NAME;
 
@@ -414,28 +387,38 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
             nullptr
         );
 
-        if (!GSS_ERROR(major_status) && (major_status & GSS_S_CONTINUE_NEEDED))
+        if (major_status == GSS_S_COMPLETE)
+        {
+            if (!params.mechanism.empty() && !equalMechanisms(params.mechanism, mech_type))
+                throw Exception("gss_accept_sec_context() succeded, but: the authentication mechanism is not what was expected", ErrorCodes::KERBEROS_ERROR);
+
+            if (flags & GSS_C_ANON_FLAG)
+                throw Exception("gss_accept_sec_context() succeded, but: the initiator does not wish to be authenticated", ErrorCodes::KERBEROS_ERROR);
+
+            std::tie(user_name, realm) = extractNameAndRealm(initiator_name);
+
+            if (user_name.empty())
+                throw Exception("gss_accept_sec_context() succeded, but: the initiator name cannot be extracted", ErrorCodes::KERBEROS_ERROR);
+
+            if (realm.empty())
+                throw Exception("gss_accept_sec_context() succeded, but: the initiator realm cannot be extracted", ErrorCodes::KERBEROS_ERROR);
+
+            if (!params.realm.empty() && params.realm != realm)
+                throw Exception("gss_accept_sec_context() succeded, but: the initiator realm is not what was expected (expected: " + params.realm + ", actual: " + realm + ")", ErrorCodes::KERBEROS_ERROR);
+
+            output_token = bufferToString(output_token_buf);
+
+            is_ready = true;
+            is_failed = false;
+
+            resetHandles();
+        }
+        else if (!GSS_ERROR(major_status) && (major_status & GSS_S_CONTINUE_NEEDED))
         {
             output_token = bufferToString(output_token_buf);
 
             is_ready = false;
             is_failed = false;
-        }
-        else if (!GSS_ERROR(major_status) && (major_status & GSS_S_COMPLETE))
-        {
-            output_token = bufferToString(output_token_buf);
-            std::tie(user_name, realm) = extractNameAndRealm(initiator_name);
-
-            is_ready = true;
-            is_failed = (
-                (flags & GSS_C_ANON_FLAG) ||
-                !(flags & GSS_C_PROT_READY_FLAG) ||
-                user_name.empty() ||
-                realm.empty() ||
-                (!params.realm.empty() && params.realm != realm) ||
-                (!params.mechanism.empty() && areMechanismsSame(params.mechanism, mech_type))
-            );
-            resetHandles();
         }
         else
         {
@@ -449,6 +432,7 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
 
         is_ready = true;
         is_failed = true;
+
         resetHandles();
     }
 

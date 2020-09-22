@@ -72,8 +72,6 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
 
             case KERBEROS_REALM:
             {
-                auto params = external_authenticators.getKerberosParams();
-
                 if (gss_acceptor_context->isFailed())
                     return false;
 

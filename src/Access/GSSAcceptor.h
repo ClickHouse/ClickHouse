@@ -10,6 +10,7 @@
 
 #if USE_KRB5
 #   include <gssapi/gssapi.h>
+#   include <gssapi/gssapi_ext.h>
 #   define MAYBE_NORETURN
 #else
 #   define MAYBE_NORETURN [[noreturn]]
@@ -26,7 +27,7 @@ class GSSAcceptorContext
 public:
     struct Params
     {
-        String mechanism = "kerberos_v5";
+        String mechanism = "1.2.840.113554.1.2.2"; // OID: krb5
         String principal;
         String realm;
     };
