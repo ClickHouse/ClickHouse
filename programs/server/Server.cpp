@@ -32,6 +32,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
@@ -43,7 +44,6 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
-#include <Interpreters/SystemLog.cpp>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -89,6 +89,23 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
 }
+
+
+int mainEntryClickHouseServer(int argc, char ** argv)
+{
+    DB::Server app;
+    try
+    {
+        return app.run(argc, argv);
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
+    }
+}
+
 
 namespace
 {
@@ -280,6 +297,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
+    // Initialize global thread pool. Do it before we fetch configs from zookeeper
+    // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
+    // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
+    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
+
     bool has_zookeeper = config().has("zookeeper");
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
@@ -317,11 +339,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))
             {
-                LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
-                if (0 != mlockall(MCL_CURRENT))
-                    LOG_WARNING(log, "Failed mlockall: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
+                /// Get the memory area with (current) code segment.
+                /// It's better to lock only the code segment instead of calling "mlockall",
+                /// because otherwise debug info will be also locked in memory, and it can be huge.
+                auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
+
+                LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
+                if (0 != mlock(addr, len))
+                    LOG_WARNING(log, "Failed mlock: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
                 else
-                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed");
+                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
             }
             else
             {
@@ -413,9 +440,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     LOG_DEBUG(log, "Initializing DateLUT.");
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
-
-    /// Initialize global thread pool
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
     /// Storage with temporary data for processing of heavy queries.
     {
@@ -607,6 +631,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Check sanity of MergeTreeSettings on server startup
     global_context->getMergeTreeSettings().sanityCheck(settings);
+    global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
     /// Limit on total memory usage
     size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);
@@ -719,7 +744,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// DDL worker should be started after all tables were loaded
         String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-        global_context->setDDLWorker(std::make_unique<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
+        int pool_size = config().getInt("distributed_ddl.pool_size", 1);
+        if (pool_size < 1)
+            throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
 
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
@@ -1134,22 +1162,4 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     return Application::EXIT_OK;
 }
-}
-
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
-
-int mainEntryClickHouseServer(int argc, char ** argv)
-{
-    DB::Server app;
-    try
-    {
-        return app.run(argc, argv);
-    }
-    catch (...)
-    {
-        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
-        auto code = DB::getCurrentExceptionCode();
-        return code ? code : 1;
-    }
 }
