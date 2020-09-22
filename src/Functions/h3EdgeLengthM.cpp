@@ -12,12 +12,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
+
+namespace
+{
 
 // Average metric edge length of H3 hexagon. The edge length `e` for given resolution `res` can
 // be used for converting metric search radius `radius` to hexagon search ring size `k` that is
@@ -71,6 +73,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionH3EdgeLengthM(FunctionFactory & factory)
 {

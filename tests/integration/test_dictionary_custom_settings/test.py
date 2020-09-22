@@ -1,6 +1,6 @@
 import os
-import pytest
 
+import pytest
 from helpers.cluster import ClickHouseCluster
 
 ENABLE_DICT_CONFIG = ['configs/enable_dictionaries.xml']
@@ -13,7 +13,8 @@ DICTIONARY_FILES = [
 ]
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('node', main_configs=ENABLE_DICT_CONFIG+DICTIONARY_FILES)
+instance = cluster.add_instance('node', main_configs=ENABLE_DICT_CONFIG + DICTIONARY_FILES)
+
 
 def prepare():
     node = instance
@@ -39,8 +40,11 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_work(start_cluster):
     query = instance.query
+
+    instance.query("SYSTEM RELOAD DICTIONARIES")
 
     assert query("SELECT dictGetString('test_file', 'first', toUInt64(1))") == "\\\'a\n"
     assert query("SELECT dictGetString('test_file', 'second', toUInt64(1))") == "\"b\n"

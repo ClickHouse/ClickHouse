@@ -24,6 +24,7 @@ ln -s /usr/share/clickhouse-test/config/access_management.xml /etc/clickhouse-se
 ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/
+ln -s /usr/share/clickhouse-test/config/executable_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/
@@ -46,13 +47,6 @@ if [[ -n "$USE_DATABASE_ATOMIC" ]] && [[ "$USE_DATABASE_ATOMIC" -eq 1 ]]; then
 fi
 
 ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
-
-echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment
-echo "TSAN_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
-echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment
-echo "ASAN_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
-echo "UBSAN_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
-echo "LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
 
 service zookeeper start
 sleep 5

@@ -18,7 +18,7 @@ public:
     void write(const Block & block, const IColumn::Permutation * permutation,
         const Block & primary_key_block, const Block & skip_indexes_block) override;
 
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) override;
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
 
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block) override;
 

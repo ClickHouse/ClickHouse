@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <common/DateLUTImpl.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>

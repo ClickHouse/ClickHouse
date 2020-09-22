@@ -23,7 +23,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -35,7 +34,7 @@ namespace ErrorCodes
 
 namespace
 {
-// in private namespace to avoid GCC 9 error: "explicit specialization in non-namespace scope"
+
 template <typename DataType> struct ActionValueTypeMap {};
 template <> struct ActionValueTypeMap<DataTypeInt8>       { using ActionValueType = UInt32; };
 template <> struct ActionValueTypeMap<DataTypeUInt8>      { using ActionValueType = UInt32; };
@@ -50,7 +49,7 @@ template <> struct ActionValueTypeMap<DataTypeDateTime>   { using ActionValueTyp
 // TODO(vnemkov): once there is support for Int64 in LUT, make that Int64.
 // TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
 template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
-}
+
 
 /** formatDateTime(time, 'pattern')
   * Performs formatting of time, according to provided pattern.
@@ -713,6 +712,8 @@ struct NameFromUnixTime
 
 using FunctionFormatDateTime = FunctionFormatDateTimeImpl<NameFormatDateTime, false>;
 using FunctionFROM_UNIXTIME = FunctionFormatDateTimeImpl<NameFromUnixTime, true>;
+
+}
 
 void registerFunctionFormatDateTime(FunctionFactory & factory)
 {

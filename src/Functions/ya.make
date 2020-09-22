@@ -10,7 +10,6 @@ ADDINCL(
     contrib/libs/farmhash
     contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
-    contrib/libs/icu/common
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
@@ -33,6 +32,8 @@ PEERDIR(
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
+CFLAGS(-g0)
+
 SRCS(
     abs.cpp
     acos.cpp
@@ -98,6 +99,7 @@ SRCS(
     array/indexOf.cpp
     array/length.cpp
     array/mapOp.cpp
+    array/mapPopulateSeries.cpp
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
@@ -188,7 +190,9 @@ SRCS(
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
     GatherUtils/createValueSource.cpp
-    GatherUtils/has.cpp
+    GatherUtils/has_all.cpp
+    GatherUtils/has_any.cpp
+    GatherUtils/has_substr.cpp
     GatherUtils/push.cpp
     GatherUtils/resizeConstantSize.cpp
     GatherUtils/resizeDynamicSize.cpp

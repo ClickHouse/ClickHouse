@@ -17,383 +17,215 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
 }
-
-namespace ExchangeType
-{
-    /// Note that default here means default by implementation and not by rabbitmq settings
-    static const String DEFAULT = "default";
-    static const String FANOUT = "fanout";
-    static const String DIRECT = "direct";
-    static const String TOPIC = "topic";
-    static const String HASH = "consistent_hash";
-    static const String HEADERS = "headers";
-}
-
-static const auto QUEUE_SIZE = 50000; /// Equals capacity of a single rabbitmq queue
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
+        ChannelPtr setup_channel_,
         HandlerPtr event_handler_,
         const String & exchange_name_,
-        const Names & routing_keys_,
-        size_t channel_id_,
+        size_t channel_id_base_,
+        const String & channel_base_,
+        const String & queue_base_,
         Poco::Logger * log_,
         char row_delimiter_,
-        bool bind_by_id_,
+        bool hash_exchange_,
         size_t num_queues_,
-        const String & exchange_type_,
-        const String & local_exchange_,
+        const String & deadletter_exchange_,
+        uint32_t queue_size_,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
         , consumer_channel(std::move(consumer_channel_))
+        , setup_channel(setup_channel_)
         , event_handler(event_handler_)
         , exchange_name(exchange_name_)
-        , routing_keys(routing_keys_)
-        , channel_id(channel_id_)
-        , bind_by_id(bind_by_id_)
+        , channel_base(channel_base_)
+        , channel_id_base(channel_id_base_)
+        , queue_base(queue_base_)
+        , hash_exchange(hash_exchange_)
         , num_queues(num_queues_)
-        , exchange_type(exchange_type_)
-        , local_exchange(local_exchange_)
-        , local_default_exchange(local_exchange + "_" + ExchangeType::DIRECT)
-        , local_hash_exchange(local_exchange + "_" + ExchangeType::HASH)
+        , deadletter_exchange(deadletter_exchange_)
         , log(log_)
         , row_delimiter(row_delimiter_)
+        , queue_size(queue_size_)
         , stopped(stopped_)
-        , messages(QUEUE_SIZE * num_queues)
+        , received(queue_size * num_queues)
 {
-    exchange_type_set = exchange_type != ExchangeType::DEFAULT;
-
-    /* One queue per consumer can handle up to 50000 messages. More queues per consumer can be added.
-     * By default there is one queue per consumer.
-     */
     for (size_t queue_id = 0; queue_id < num_queues; ++queue_id)
-    {
-        /// Queue bingings must be declared before any publishing => it must be done here and not in readPrefix()
-        initQueueBindings(queue_id);
-    }
+        bindQueue(queue_id);
+
+    setupChannel();
 }
 
 
 ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 {
-    consumer_channel->close();
-
-    messages.clear();
     BufferBase::set(nullptr, 0, 0);
 }
 
 
-void ReadBufferFromRabbitMQConsumer::initExchange()
+void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
 {
-    /* This direct-exchange is used for default implementation and for INSERT query (so it is always declared). If exchange_type
-     * is not set, then there are only two exchanges - external, defined by the client, and local, unique for each table (default).
-     * This strict division to external and local exchanges is needed to avoid too much complexity with defining exchange_name
-     * for INSERT query producer and, in general, it is better to distinguish them into separate ones.
-     */
-    consumer_channel->declareExchange(local_default_exchange, AMQP::direct).onError([&](const char * message)
+    std::atomic<bool> binding_created = false;
+
+    auto success_callback = [&](const std::string &  queue_name, int msgcount, int /* consumercount */)
     {
-        local_exchange_declared = false;
-        LOG_ERROR(log, "Failed to declare local direct-exchange. Reason: {}", message);
-    });
+        queues.emplace_back(queue_name);
+        LOG_DEBUG(log, "Queue {} is declared", queue_name);
 
-    if (!exchange_type_set)
-    {
-        consumer_channel->declareExchange(exchange_name, AMQP::fanout).onError([&](const char * message)
-        {
-            local_exchange_declared = false;
-            LOG_ERROR(log, "Failed to declare default fanout-exchange. Reason: {}", message);
-        });
+        if (msgcount)
+            LOG_INFO(log, "Queue {} is non-empty. Non-consumed messaged will also be delivered", queue_name);
 
-        /// With fanout exchange the binding key is ignored - a parameter might be arbitrary. All distribution lies on local_exchange.
-        consumer_channel->bindExchange(exchange_name, local_default_exchange, routing_keys[0]).onError([&](const char * message)
-        {
-            local_exchange_declared = false;
-            LOG_ERROR(log, "Failed to bind local direct-exchange to fanout-exchange. Reason: {}", message);
-        });
-
-        return;
-    }
-
-    AMQP::ExchangeType type;
-    if      (exchange_type == ExchangeType::FANOUT)         type = AMQP::ExchangeType::fanout;
-    else if (exchange_type == ExchangeType::DIRECT)         type = AMQP::ExchangeType::direct;
-    else if (exchange_type == ExchangeType::TOPIC)          type = AMQP::ExchangeType::topic;
-    else if (exchange_type == ExchangeType::HASH)           type = AMQP::ExchangeType::consistent_hash;
-    else if (exchange_type == ExchangeType::HEADERS)        type = AMQP::ExchangeType::headers;
-    else throw Exception("Invalid exchange type", ErrorCodes::BAD_ARGUMENTS);
-
-    /* Declare client's exchange of the specified type and bind it to hash-exchange (if it is not already hash-exchange), which
-     * will evenly distribute messages between all consumers. (This enables better scaling as without hash-exchange - the only
-     * option to avoid getting the same messages more than once - is having only one consumer with one queue)
-     */
-    consumer_channel->declareExchange(exchange_name, type).onError([&](const char * message)
-    {
-        local_exchange_declared = false;
-        LOG_ERROR(log, "Failed to declare client's {} exchange. Reason: {}", exchange_type, message);
-    });
-
-    /// No need for declaring hash-exchange if there is only one consumer with one queue or exchange type is already hash
-    if (!bind_by_id)
-        return;
-
-    hash_exchange = true;
-
-    if (exchange_type == ExchangeType::HASH)
-        return;
-
-    /* By default hash exchange distributes messages based on a hash value of a routing key, which must be a string integer. But
-     * in current case we use hash exchange for binding to another exchange of some other type, which needs its own routing keys
-     * of other types: headers, patterns and string-keys. This means that hash property must be changed.
-     */
-    {
-        AMQP::Table binding_arguments;
-        binding_arguments["hash-property"] = "message_id";
-
-        /// Declare exchange for sharding.
-        consumer_channel->declareExchange(local_hash_exchange, AMQP::consistent_hash, binding_arguments)
+       /* Here we bind either to sharding exchange (consistent-hash) or to bridge exchange (fanout). All bindings to routing keys are
+        * done between client's exchange and local bridge exchange. Binding key must be a string integer in case of hash exchange, for
+        * fanout exchange it can be arbitrary
+        */
+        setup_channel->bindQueue(exchange_name, queue_name, std::to_string(channel_id_base))
+        .onSuccess([&] { binding_created = true; })
         .onError([&](const char * message)
         {
-            local_exchange_declared = false;
-            LOG_ERROR(log, "Failed to declare {} exchange: {}", exchange_type, message);
+            throw Exception(
+                ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING,
+                "Failed to create queue binding with queue {} for exchange {}. Reason: {}", std::string(message),
+                queue_name, exchange_name);
         });
-    }
+    };
 
-    /// Then bind client's exchange to sharding exchange (by keys, specified by the client):
-
-    if (exchange_type == ExchangeType::HEADERS)
+    auto error_callback([&](const char * message)
     {
-        AMQP::Table binding_arguments;
-        std::vector<String> matching;
+        /* This error is most likely a result of an attempt to declare queue with different settings if it was declared before. So for a
+         * given queue name either deadletter_exchange parameter changed or queue_size changed, i.e. table was declared with different
+         * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
+         * declared queues via any of the various cli tools.
+         */
+        throw Exception("Failed to declare queue. Probably queue settings are conflicting: max_block_size, deadletter_exchange. Attempt \
+                specifying differently those settings or use a different queue_base or manually delete previously declared queues,      \
+                which  were declared with the same names. ERROR reason: "
+                + std::string(message), ErrorCodes::BAD_ARGUMENTS);
+    });
 
-        for (const auto & header : routing_keys)
-        {
-            boost::split(matching, header, [](char c){ return c == '='; });
-            binding_arguments[matching[0]] = matching[1];
-            matching.clear();
-        }
+    AMQP::Table queue_settings;
 
-        /// Routing key can be arbitrary here.
-        consumer_channel->bindExchange(exchange_name, local_hash_exchange, routing_keys[0], binding_arguments)
-        .onError([&](const char * message)
-        {
-            local_exchange_declared = false;
-            LOG_ERROR(log, "Failed to bind local hash exchange to client's exchange. Reason: {}", message);
-        });
-    }
-    else
+    queue_settings["x-max-length"] = queue_size;
+    queue_settings["x-overflow"] = "reject-publish";
+
+    if (!deadletter_exchange.empty())
+        queue_settings["x-dead-letter-exchange"] = deadletter_exchange;
+
+    /* The first option not just simplifies queue_name, but also implements the possibility to be able to resume reading from one
+     * specific queue when its name is specified in queue_base setting
+     */
+    const String queue_name = !hash_exchange ? queue_base : std::to_string(channel_id_base) + "_" + std::to_string(queue_id) + "_" + queue_base;
+    setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
+
+    while (!binding_created)
     {
-        for (const auto & routing_key : routing_keys)
-        {
-            consumer_channel->bindExchange(exchange_name, local_hash_exchange, routing_key).onError([&](const char * message)
-            {
-                local_exchange_declared = false;
-                LOG_ERROR(log, "Failed to bind local hash exchange to client's exchange. Reason: {}", message);
-            });
-        }
+        iterateEventLoop();
     }
 }
 
 
-void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
+void ReadBufferFromRabbitMQConsumer::subscribe()
 {
-    /// These variables might be updated later from a separate thread in onError callbacks.
-    if (!local_exchange_declared || (exchange_type_set && !local_hash_exchange_declared))
+    for (const auto & queue_name : queues)
     {
-        initExchange();
-        local_exchange_declared = true;
-        local_hash_exchange_declared = true;
-    }
-
-    bool default_bindings_created = false, default_bindings_error = false;
-    bool bindings_created = false, bindings_error = false;
-
-    consumer_channel->declareQueue(AMQP::exclusive)
-    .onSuccess([&](const std::string &  queue_name_, int /* msgcount */, int /* consumercount */)
-    {
-        queues.emplace_back(queue_name_);
-        subscribed_queue[queue_name_] = false;
-
-        String binding_key = routing_keys[0];
-
-        /* Every consumer has at least one unique queue. Bind the queues to exchange based on the consumer_channel_id
-         * in case there is one queue per consumer and bind by queue_id in case there is more than 1 queue per consumer.
-         * (queue_id is based on channel_id)
-         */
-        if (bind_by_id || hash_exchange)
+        consumer_channel->consume(queue_name)
+        .onSuccess([&](const std::string & /* consumer_tag */)
         {
-            if (queues.size() == 1)
-            {
-                binding_key = std::to_string(channel_id);
-            }
-            else
-            {
-                binding_key = std::to_string(channel_id + queue_id);
-            }
-        }
+            LOG_TRACE(log, "Consumer on channel {} is subscribed to queue {}", channel_id, queue_name);
 
-        /// Bind queue to exchange that is used for INSERT query and also for default implementation.
-        consumer_channel->bindQueue(local_default_exchange, queue_name_, binding_key)
-        .onSuccess([&]
+            if (++subscribed == queues.size())
+                wait_subscription.store(false);
+        })
+        .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
-            default_bindings_created = true;
+            if (message.bodySize())
+            {
+                String message_received = std::string(message.body(), message.body() + message.bodySize());
+                if (row_delimiter != '\0')
+                    message_received += row_delimiter;
+
+                if (message.hasMessageID())
+                    received.push({message_received, message.messageID(), redelivered, AckTracker(delivery_tag, channel_id)});
+                else
+                    received.push({message_received, "", redelivered, AckTracker(delivery_tag, channel_id)});
+            }
         })
         .onError([&](const char * message)
         {
-            default_bindings_error = true;
-            LOG_ERROR(log, "Failed to bind to key {}. Reason: {}", binding_key, message);
+            /* End up here either if channel ends up in an error state (then there will be resubscription) or consume call error, which
+             * arises from queue settings mismatch or queue level error, which should not happen as noone else is supposed to touch them
+             */
+            LOG_ERROR(log, "Consumer failed on channel {}. Reason: {}", channel_id, message);
+            wait_subscription.store(false);
         });
+    }
+}
 
-        /* Subscription can probably be moved back to readPrefix(), but not sure whether it is better in regard to speed, because
-         * if moved there, it must(!) be wrapped inside a channel->onSuccess callback or any other, otherwise
-         * consumer might fail to subscribe and no resubscription will help.
-         */
-        subscribe(queues.back());
 
-        LOG_DEBUG(log, "Queue " + queue_name_ + " is declared");
+bool ReadBufferFromRabbitMQConsumer::ackMessages()
+{
+    AckTracker record_info = last_inserted_record_info;
 
-        if (exchange_type_set)
-        {
-            if (hash_exchange)
-            {
-                /* If exchange_type == hash, then bind directly to this client's exchange (because there is no need for a distributor
-                 * exchange as it is already hash-exchange), otherwise hash-exchange is a local distributor exchange.
-                 */
-                String current_hash_exchange = exchange_type == ExchangeType::HASH ? exchange_name : local_hash_exchange;
-
-                /// If hash-exchange is used for messages distribution, then the binding key is ignored - can be arbitrary.
-                consumer_channel->bindQueue(current_hash_exchange, queue_name_, binding_key)
-                .onSuccess([&]
-                {
-                    bindings_created = true;
-                })
-                .onError([&](const char * message)
-                {
-                    bindings_error = true;
-                    LOG_ERROR(log, "Failed to create queue binding to key {}. Reason: {}", binding_key, message);
-                });
-            }
-            else if (exchange_type == ExchangeType::HEADERS)
-            {
-                AMQP::Table binding_arguments;
-                std::vector<String> matching;
-
-                /// It is not parsed for the second time - if it was parsed above, then it would never end up here.
-                for (const auto & header : routing_keys)
-                {
-                    boost::split(matching, header, [](char c){ return c == '='; });
-                    binding_arguments[matching[0]] = matching[1];
-                    matching.clear();
-                }
-
-                consumer_channel->bindQueue(exchange_name, queue_name_, routing_keys[0], binding_arguments)
-                .onSuccess([&]
-                {
-                    bindings_created = true;
-                })
-                .onError([&](const char * message)
-                {
-                    bindings_error = true;
-                    LOG_ERROR(log, "Failed to bind queue to key. Reason: {}", message);
-                });
-            }
-            else
-            {
-                /// Means there is only one queue with one consumer - no even distribution needed - no hash-exchange.
-                for (const auto & routing_key : routing_keys)
-                {
-                    /// Binding directly to exchange, specified by the client.
-                    consumer_channel->bindQueue(exchange_name, queue_name_, routing_key)
-                    .onSuccess([&]
-                    {
-                        bindings_created = true;
-                    })
-                    .onError([&](const char * message)
-                    {
-                        bindings_error = true;
-                        LOG_ERROR(log, "Failed to bind queue to key. Reason: {}", message);
-                    });
-                }
-            }
-        }
-    })
-    .onError([&](const char * message)
-    {
-        default_bindings_error = true;
-        LOG_ERROR(log, "Failed to declare queue on the channel. Reason: {}", message);
-    });
-
-    /* Run event loop (which updates local variables in a separate thread) until bindings are created or failed to be created.
-     * It is important at this moment to make sure that queue bindings are created before any publishing can happen because
-     * otherwise messages will be routed nowhere.
+    /* Do not send ack to server if message's channel is not the same as current running channel because delivery tags are scoped per
+     * channel, so if channel fails, all previous delivery tags become invalid
      */
-    while ((!default_bindings_created && !default_bindings_error) || (exchange_type_set && !bindings_created && !bindings_error))
+    if (record_info.channel_id == channel_id && record_info.delivery_tag && record_info.delivery_tag > prev_tag)
     {
-        iterateEventLoop();
-    }
-}
-
-
-void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
-{
-    if (subscribed_queue[queue_name])
-        return;
-
-    consumer_channel->consume(queue_name, AMQP::noack)
-    .onSuccess([&](const std::string & /* consumer */)
-    {
-        subscribed_queue[queue_name] = true;
-        consumer_error = false;
-        ++count_subscribed;
-
-        LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id, queue_name);
-    })
-    .onReceived([&](const AMQP::Message & message, uint64_t /* deliveryTag */, bool /* redelivered */)
-    {
-        size_t message_size = message.bodySize();
-        if (message_size && message.body() != nullptr)
+        /// Commit all received messages with delivery tags from last commited to last inserted
+        if (!consumer_channel->ack(record_info.delivery_tag, AMQP::multiple))
         {
-            String message_received = std::string(message.body(), message.body() + message_size);
-            if (row_delimiter != '\0')
-            {
-                message_received += row_delimiter;
-            }
-
-            messages.push(message_received);
+            LOG_ERROR(log, "Failed to commit messages with delivery tags from last commited to {} on channel {}",
+                     record_info.delivery_tag, channel_id);
+            return false;
         }
-    })
-    .onError([&](const char * message)
-    {
-        consumer_error = true;
-        LOG_ERROR(log, "Consumer {} failed. Reason: {}", channel_id, message);
-    });
+
+        prev_tag = record_info.delivery_tag;
+        LOG_TRACE(log, "Consumer commited messages with deliveryTags up to {} on channel {}", record_info.delivery_tag, channel_id);
+    }
+
+    return true;
 }
 
 
-void ReadBufferFromRabbitMQConsumer::checkSubscription()
+void ReadBufferFromRabbitMQConsumer::updateAckTracker(AckTracker record_info)
 {
-    if (count_subscribed == num_queues)
+    if (record_info.delivery_tag && channel_error.load())
         return;
 
-    wait_subscribed = num_queues;
+    if (!record_info.delivery_tag)
+        prev_tag = 0;
 
-    /// These variables are updated in a separate thread.
-    while (count_subscribed != wait_subscribed && !consumer_error)
+    last_inserted_record_info = record_info;
+}
+
+
+void ReadBufferFromRabbitMQConsumer::setupChannel()
+{
+    wait_subscription.store(true);
+
+    consumer_channel->onReady([&]()
     {
-        iterateEventLoop();
-    }
+        /* First number indicates current consumer buffer; second number indicates serial number of created channel for current buffer,
+         * i.e. if channel fails - another one is created and its serial number is incremented; channel_base is to guarantee that
+         * channel_id is unique for each table
+         */
+        channel_id = std::to_string(channel_id_base) + "_" + std::to_string(channel_id_counter++) + "_" + channel_base;
+        LOG_TRACE(log, "Channel {} is created", channel_id);
 
-    LOG_TRACE(log, "Consumer {} is subscribed to {} queues", channel_id, count_subscribed);
+        subscribed = 0;
+        subscribe();
+        channel_error.store(false);
+    });
 
-    /// Updated in callbacks which are run by the loop.
-    if (count_subscribed == num_queues)
-        return;
-
-    /// A case that should never normally happen.
-    for (auto & queue : queues)
+    consumer_channel->onError([&](const char * message)
     {
-        subscribe(queue);
-    }
+        LOG_ERROR(log, "Channel {} error: {}", channel_id, message);
+
+        channel_error.store(true);
+        wait_subscription.store(false);
+    });
 }
 
 
@@ -408,10 +240,10 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     if (stopped || !allowed)
         return false;
 
-    if (messages.tryPop(current))
+    if (received.tryPop(current))
     {
-        auto * new_position = const_cast<char *>(current.data());
-        BufferBase::set(new_position, current.size(), 0);
+        auto * new_position = const_cast<char *>(current.message.data());
+        BufferBase::set(new_position, current.message.size(), 0);
         allowed = false;
 
         return true;

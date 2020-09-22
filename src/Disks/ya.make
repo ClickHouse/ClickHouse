@@ -5,6 +5,8 @@ PEERDIR(
     clickhouse/src/Common
 )
 
+CFLAGS(-g0)
+
 SRCS(
     createVolume.cpp
     DiskCacheWrapper.cpp

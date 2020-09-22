@@ -9,12 +9,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
+
+namespace
+{
 
 /// Get the value of a setting.
 class FunctionGetSetting : public IFunction
@@ -58,6 +60,7 @@ private:
     const Context & context;
 };
 
+}
 
 void registerFunctionGetSetting(FunctionFactory & factory)
 {

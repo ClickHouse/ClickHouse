@@ -169,4 +169,65 @@ SHOW CREATE QUOTA [name | CURRENT]
 SHOW CREATE [SETTINGS] PROFILE name
 ```
 
+
+## SHOW USERS {#show-users-statement}
+
+Выводит список [пользовательских аккаунтов](../../operations/access-rights.md#user-account-management). Для просмотра параметров пользовательских аккаунтов, см. системную таблицу [system.users](../../operations/system-tables/users.md#system_tables-users).
+
+### Синтаксис {#show-users-syntax}
+
+``` sql
+SHOW USERS
+```
+ 
+## SHOW ROLES {#show-roles-statement}
+
+Выводит список [ролей](../../operations/access-rights.md#role-management). Для просмотра параметров ролей, см. системные таблицы [system.roles](../../operations/system-tables/roles.md#system_tables-roles) и [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
+
+### Синтаксис {#show-roles-syntax}
+
+``` sql
+SHOW [CURRENT|ENABLED] ROLES
+```
+
+## SHOW PROFILES {#show-profiles-statement}
+
+Выводит список [профилей настроек](../../operations/access-rights.md#settings-profiles-management). Для просмотра других параметров профилей настроек, см. системную таблицу [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
+
+### Синтаксис {#show-profiles-syntax}
+
+``` sql
+SHOW [SETTINGS] PROFILES
+```
+
+## SHOW POLICIES {#show-policies-statement}
+
+Выводит список [политик доступа к строкам](../../operations/access-rights.md#row-policy-management) для указанной таблицы. Для просмотра других параметров, см. системную таблицу [system.row_policies](../../operations/system-tables/row_policies.md#system_tables-row_policies).
+
+### Синтаксис {#show-policies-syntax}
+
+``` sql
+SHOW [ROW] POLICIES [ON [db.]table]
+```
+
+## SHOW QUOTAS {#show-quotas-statement}
+
+Выводит список [квот](../../operations/access-rights.md#quotas-management). Для просмотра параметров квот, см. системную таблицу [system.quotas](../../operations/system-tables/quotas.md#system_tables-quotas).
+
+### Синтаксис {#show-quotas-syntax}
+
+``` sql
+SHOW QUOTAS
+```  
+    
+## SHOW QUOTA {#show-quota-statement}
+
+Выводит потребление [квоты](../../operations/quotas.md) для всех пользователей или только для текущего пользователя. Для просмотра других параметров, см. системные таблицы [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) и [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
+
+### Синтаксис {#show-quota-syntax}
+
+``` sql
+SHOW [CURRENT] QUOTA
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/show/) <!--hide-->

@@ -16,6 +16,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
+
 /// Returns number of decimal digits you need to represent the value.
 /// For Decimal values takes in account their scales: calculates result over underlying int type which is (value * scale).
 /// countDigits(42) = 2, countDigits(42.000) = 5, countDigits(0.04200) = 4.
@@ -136,6 +139,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionCountDigits(FunctionFactory & factory)
 {

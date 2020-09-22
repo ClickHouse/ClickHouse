@@ -4,7 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
-#include <Core/Types.h>
+#include <common/types.h>
 
 
 namespace DB

@@ -4,6 +4,7 @@
 
 #if USE_MYSQL
 #    include <Core/Defines.h>
+#    include <Databases/MySQL/FetchTablesColumnsList.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/convertMySQLDataType.h>
@@ -20,6 +21,8 @@
 #    include <Common/parseAddress.h>
 #    include <Common/quoteString.h>
 #    include "registerTableFunctions.h"
+
+#    include <Databases/MySQL/DatabaseConnectionMySQL.h> // for fetchTablesColumnsList
 
 #    include <mysqlxx/Pool.h>
 
@@ -74,47 +77,11 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     auto parsed_host_port = parseAddress(host_port, 3306);
 
     mysqlxx::Pool pool(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
+    const auto & settings = context.getSettingsRef();
+    const auto tables_and_columns = fetchTablesColumnsList(pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
 
-    /// Determine table definition by running a query to INFORMATION_SCHEMA.
-
-    Block sample_block
-    {
-        { std::make_shared<DataTypeString>(), "name" },
-        { std::make_shared<DataTypeString>(), "type" },
-        { std::make_shared<DataTypeUInt8>(), "is_nullable" },
-        { std::make_shared<DataTypeUInt8>(), "is_unsigned" },
-        { std::make_shared<DataTypeUInt64>(), "length" },
-    };
-
-    WriteBufferFromOwnString query;
-    query << "SELECT"
-            " COLUMN_NAME AS name,"
-            " DATA_TYPE AS type,"
-            " IS_NULLABLE = 'YES' AS is_nullable,"
-            " COLUMN_TYPE LIKE '%unsigned' AS is_unsigned,"
-            " CHARACTER_MAXIMUM_LENGTH AS length"
-        " FROM INFORMATION_SCHEMA.COLUMNS"
-        " WHERE TABLE_SCHEMA = " << quote << remote_database_name
-        << " AND TABLE_NAME = " << quote << remote_table_name
-        << " ORDER BY ORDINAL_POSITION";
-
-    NamesAndTypesList columns;
-    MySQLBlockInputStream result(pool.get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
-    while (Block block = result.read())
-    {
-        size_t rows = block.rows();
-        for (size_t i = 0; i < rows; ++i)
-            columns.emplace_back(
-                (*block.getByPosition(0).column)[i].safeGet<String>(),
-                convertMySQLDataType(
-                    (*block.getByPosition(1).column)[i].safeGet<String>(),
-                    (*block.getByPosition(2).column)[i].safeGet<UInt64>() && context.getSettings().external_table_functions_use_nulls,
-                    (*block.getByPosition(3).column)[i].safeGet<UInt64>(),
-                    (*block.getByPosition(4).column)[i].safeGet<UInt64>()));
-
-    }
-
-    if (columns.empty())
+    const auto columns = tables_and_columns.find(remote_table_name);
+    if (columns == tables_and_columns.end())
         throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     auto res = StorageMySQL::create(
@@ -124,7 +91,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         remote_table_name,
         replace_query,
         on_duplicate_clause,
-        ColumnsDescription{columns},
+        ColumnsDescription{columns->second},
         ConstraintsDescription{},
         context);
 

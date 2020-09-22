@@ -2,14 +2,13 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
-
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1',
-            main_configs=['configs/logs_config.xml'])
+                             main_configs=['configs/logs_config.xml'])
 
 node2 = cluster.add_instance('node2',
-            main_configs=['configs/logs_config.xml'])
+                             main_configs=['configs/logs_config.xml'])
 
 
 @pytest.fixture(scope="module")
@@ -38,7 +37,6 @@ def test_alter_codec_pk(started_cluster):
 
         with pytest.raises(QueryRuntimeException):
             node1.query("ALTER TABLE {name} MODIFY COLUMN id UInt32 CODEC(Delta, LZ4)".format(name=name))
-
 
         node1.query("ALTER TABLE {name} MODIFY COLUMN id UInt64 DEFAULT 3 CODEC(Delta, LZ4)".format(name=name))
 

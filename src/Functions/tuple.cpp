@@ -7,12 +7,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
 
 /** tuple(x, y, ...) is a function that allows you to group several columns
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
@@ -74,6 +75,8 @@ public:
         block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
     }
 };
+
+}
 
 void registerFunctionTuple(FunctionFactory & factory)
 {

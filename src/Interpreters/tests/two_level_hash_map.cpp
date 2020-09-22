@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <AggregateFunctions/UniquesHashSet.h>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
