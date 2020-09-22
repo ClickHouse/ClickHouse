@@ -134,6 +134,10 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
         auto name_and_type = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
+            /// Tricky part, because we share compressed streams between different columns substreams.
+            /// Compressed streams write data to the single file, but with different compression codecs.
+            /// So we flush each stream (using next()) before using new one, because otherwise we will override
+            /// data in result file.
             CompressedStreamPtr prev_stream;
             auto stream_getter = [&, this](const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
             {
