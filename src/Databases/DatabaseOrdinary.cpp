@@ -165,7 +165,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
         const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
         if (create_query.storage && create_query.storage->engine->name == "Join")
         {
-            LOG_INFO(log, "Loading {} JOIN.", name_with_query.first);
             pool.scheduleOrThrowOnError([&]()
             {
                 tryAttachTable(
