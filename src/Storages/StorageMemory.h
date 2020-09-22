@@ -43,6 +43,8 @@ public:
 
     void drop() override;
 
+    void mutate(const MutationCommands & commands, const Context & context) override;
+
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
     std::optional<UInt64> totalRows() const override;
