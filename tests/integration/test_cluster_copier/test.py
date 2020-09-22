@@ -250,7 +250,8 @@ def execute_task(task, cmd_options):
     cmd = ['/usr/bin/clickhouse', 'copier',
            '--config', '/etc/clickhouse-server/config-copier.xml',
            '--task-path', zk_task_path,
-           '--base-dir', '/var/log/clickhouse-server/copier']
+           '--base-dir', '/var/log/clickhouse-server/copier', 
+           '--use-ddl-on-cluster', '1']
     cmd += cmd_options
 
     copiers = random.sample(cluster.instances.keys(), 3)
