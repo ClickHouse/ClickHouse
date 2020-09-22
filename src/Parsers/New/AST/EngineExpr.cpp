@@ -17,6 +17,11 @@ PartitionByClause::PartitionByClause(PtrTo<ColumnExpr> expr)
     children.push_back(expr);
 }
 
+ASTPtr PartitionByClause::convertToOld() const
+{
+    return children[EXPR]->convertToOld();
+}
+
 PrimaryKeyClause::PrimaryKeyClause(PtrTo<ColumnExpr> expr)
 {
     children.push_back(expr);

@@ -83,8 +83,14 @@ HavingClause::HavingClause(PtrTo<ColumnExpr> expr_) : expr(expr_)
 
 // ORDER BY Clause
 
-OrderByClause::OrderByClause(PtrTo<OrderExprList> expr_list) : exprs(expr_list)
+OrderByClause::OrderByClause(PtrTo<OrderExprList> expr_list)
 {
+    children.push_back(expr_list);
+}
+
+ASTPtr OrderByClause::convertToOld() const
+{
+    return children[EXPRS]->convertToOld();
 }
 
 // LIMIT By Clause

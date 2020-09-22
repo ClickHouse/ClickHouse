@@ -12,6 +12,14 @@ class PartitionByClause : public INode
 {
     public:
         explicit PartitionByClause(PtrTo<ColumnExpr> expr);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            EXPR = 0,  // ColumnExpr
+        };
 };
 
 class PrimaryKeyClause : public INode

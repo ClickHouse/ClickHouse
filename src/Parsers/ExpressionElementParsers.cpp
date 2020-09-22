@@ -1613,12 +1613,21 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
     }
 
-    node = std::make_shared<ASTOrderByElement>(
-            direction, nulls_direction, nulls_direction_was_explicitly_specified, locale_node,
-            has_with_fill, fill_from, fill_to, fill_step);
-    node->children.push_back(expr_elem);
+    auto elem = std::make_shared<ASTOrderByElement>();
+
+    elem->direction = direction;
+    elem->nulls_direction = nulls_direction;
+    elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
+    elem->collation = locale_node;
+    elem->with_fill = has_with_fill;
+    elem->fill_from = fill_from;
+    elem->fill_to = fill_to;
+    elem->fill_step = fill_step;
+    elem->children.push_back(expr_elem);
     if (locale_node)
-        node->children.push_back(locale_node);
+        elem->children.push_back(locale_node);
+
+    node = elem;
 
     return true;
 }

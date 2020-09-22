@@ -15,12 +15,18 @@ class OrderExpr : public INode
             NULLS_LAST,
         };
 
-        OrderExpr(PtrTo<ColumnExpr> expr_, NullsOrder nulls_, PtrTo<StringLiteral> collate_, bool ascending = true);
+        OrderExpr(PtrTo<ColumnExpr> expr, NullsOrder nulls_, PtrTo<StringLiteral> collate, bool ascending = true);
+
+        ASTPtr convertToOld() const override;
 
     private:
-        PtrTo<ColumnExpr> expr;
+        enum ChildIndex : UInt8
+        {
+            EXPR = 0,  // ColumnExpr
+            COLLATE,   // StringLiteral (optional)
+        };
+
         NullsOrder nulls;
-        PtrTo<StringLiteral> collate;
         bool asc;
 };
 

@@ -107,8 +107,13 @@ class OrderByClause : public INode
     public:
         explicit OrderByClause(PtrTo<OrderExprList> expr_list);
 
+        ASTPtr convertToOld() const override;
+
     private:
-        PtrTo<OrderExprList> exprs;
+        enum ChildIndex : UInt8
+        {
+            EXPRS = 0,  // OrderExprList
+        };
 };
 
 class LimitByClause : public INode

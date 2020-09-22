@@ -1,5 +1,7 @@
 #include <Parsers/New/AST/OrderExpr.h>
 
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
@@ -7,12 +9,29 @@
 namespace DB::AST
 {
 
-OrderExpr::OrderExpr(PtrTo<ColumnExpr> expr_, NullsOrder nulls_, PtrTo<StringLiteral> collate_, bool ascending)
-    : expr(expr_), nulls(nulls_), collate(collate_), asc(ascending)
+OrderExpr::OrderExpr(PtrTo<ColumnExpr> expr, NullsOrder nulls_, PtrTo<StringLiteral> collate, bool ascending)
+    : nulls(nulls_), asc(ascending)
 {
-    /// FIXME: remove this.
-    (void)nulls;
-    (void)asc;
+    children.push_back(expr);
+    children.push_back(collate);
+}
+
+ASTPtr OrderExpr::convertToOld() const
+{
+    auto expr = std::make_shared<ASTOrderByElement>();
+
+    expr->children.push_back(children[EXPR]->convertToOld());
+    expr->direction = asc ? 1 : -1;
+    expr->nulls_direction = (nulls == NULLS_LAST) ? 1 : -1;
+    expr->nulls_direction_was_explicitly_specified = (nulls != NATURAL);
+    if (has(COLLATE))
+    {
+        expr->collation = children[COLLATE]->convertToOld();
+        expr->children.push_back(expr->collation);
+    }
+    // TODO: WITH FILL?
+
+    return expr;
 }
 
 }

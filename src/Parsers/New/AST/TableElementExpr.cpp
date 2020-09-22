@@ -16,7 +16,11 @@ namespace DB::AST
 TableColumnPropertyExpr::TableColumnPropertyExpr(PropertyType type, PtrTo<ColumnExpr> expr) : property_type(type)
 {
     children.push_back(expr);
-    (void)property_type; // TODO
+}
+
+ASTPtr TableColumnPropertyExpr::convertToOld() const
+{
+    return children[EXPR]->convertToOld();
 }
 
 // static
