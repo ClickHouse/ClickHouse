@@ -27,7 +27,7 @@ ln -s /usr/share/clickhouse-test/config/database_atomic_configd.xml /etc/clickho
 ln -s /usr/share/clickhouse-test/config/database_atomic_usersd.xml /etc/clickhouse-server/users.d/
 
 if [[ -n "$USE_DATABASE_ATOMIC" ]] && [[ "$USE_DATABASE_ATOMIC" -eq 1 ]]; then  #FIXME USE_DATABASE_ORDINARY
-    ln -s /usr/share/clickhouse-test/config/database_ordinary_configd.xml /etc/clickhouse-server/config.d/
+    ln -s /usr/share/clickhouse-test/config/database_ordinary_usersd.xml /etc/clickhouse-server/config.d/
 fi
 
 function start()
