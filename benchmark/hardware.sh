@@ -1,9 +1,12 @@
 #!/bin/bash -e
 
-mkdir -p clickhouse-benchmark
-pushd clickhouse-benchmark
+if [[ -n $1 ]]; then
+    SCALE=$1
+else
+    SCALE=100
+fi
 
-TABLE="hits_100m_obfuscated"
+TABLE="hits_${SCALE}m_obfuscated"
 DATASET="${TABLE}_v1.tar.xz"
 QUERIES_FILE="queries.sql"
 TRIES=3
@@ -20,6 +23,9 @@ if command -v pixz >/dev/null; then
 else
     echo "It's recommended to install 'pixz' for faster decompression of the dataset."
 fi
+
+mkdir -p clickhouse-benchmark-$SCALE
+pushd clickhouse-benchmark-$SCALE
 
 if [[ ! -f clickhouse ]]; then
     CPU=$(uname -m)
