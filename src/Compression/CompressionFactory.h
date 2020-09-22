@@ -39,6 +39,8 @@ public:
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
     ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const IDataType * column_type, bool sanity_check) const;
+
+    /// Just wrapper for previous method.
     ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check) const
     {
         return validateCodecAndGetPreprocessedAST(ast, column_type.get(), sanity_check);
@@ -51,8 +53,14 @@ public:
     /// information about type to improve inner settings, but every codec should
     /// be able to work without information about type. Also AST can contain
     /// codec, which can be alias to current default codec, which can be changed
-    /// in runtime.
+    /// in runtime. If only_generic is true than method will filter all
+    /// isGenericCompression() == false codecs from result. If nothing found
+    /// will return nullptr. It's useful for auxiliary parts of complex columns
+    /// like Nullable, Array and so on. If all codecs are non generic and
+    /// only_generic = true, than codec NONE will be returned.
     CompressionCodecPtr get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const;
+
+    /// Just wrapper for previous method.
     CompressionCodecPtr get(const ASTPtr & ast, const DataTypePtr & column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const
     {
         return get(ast, column_type.get(), current_default, only_generic);

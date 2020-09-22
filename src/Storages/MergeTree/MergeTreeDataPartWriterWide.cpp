@@ -46,17 +46,11 @@ void MergeTreeDataPartWriterWide::addStreams(
             return;
 
         CompressionCodecPtr compression_codec;
+        /// If we can use special codec than just get it
         if (IDataType::isSpecialCompressionAllowed(substream_path))
-        {
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
-        }
-        else
-        {
+        else /// otherwise return only generic codecs and don't use info about data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
-        }
-
-        if (compression_codec == nullptr)
-            compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,

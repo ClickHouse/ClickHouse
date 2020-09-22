@@ -104,7 +104,8 @@ public:
 
     using SubstreamPath = std::vector<Substream>;
 
-    using StreamCallback = std::function<void(const SubstreamPath &, const IDataType & substream_type)>;
+    using StreamCallback = std::function<void(const SubstreamPath &, const IDataType &)>;
+
     virtual void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
     {
         callback(path, *this);
@@ -442,6 +443,9 @@ public:
 
     static String getFileNameForStream(const String & column_name, const SubstreamPath & path);
 
+    /// Substream path supports special compression methods like codec Delta.
+    /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
+    /// generic compression codecs like LZ4.
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 private:
     friend class DataTypeFactory;

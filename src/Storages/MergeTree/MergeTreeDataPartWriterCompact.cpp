@@ -45,17 +45,13 @@ void MergeTreeDataPartWriterCompact::addStreams(const String & name, const IData
             return;
 
         CompressionCodecPtr compression_codec;
-        if (IDataType::isSpecialCompressionAllowed(substream_path))
-        {
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
-        }
-        else
-        {
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
-        }
 
-        if (compression_codec == nullptr)
-            compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
+        /// If we can use special codec than just get it
+        if (IDataType::isSpecialCompressionAllowed(substream_path))
+            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
+        else /// otherwise return only generic codecs and don't use info about data_type
+            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+
         UInt64 codec_id = compression_codec->getHash();
         auto & stream = streams_by_codec[codec_id];
         if (!stream)
