@@ -431,7 +431,7 @@
         },
         "Integration tests (release)": {
             "required_build_properties": {
-                "compiler": "clang-11",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",

@@ -3,10 +3,6 @@
 
 #include "throwError.h"
 
-#ifndef CHAR_BIT
-#define CHAR_BIT 8
-#endif
-
 namespace wide
 {
 
@@ -74,7 +70,7 @@ public:
         {
             using T = wide::integer<Bits, signed>;
             T res{};
-            res.m_arr[T::_impl::big(0)] = std::numeric_limits<typename wide::integer<Bits, Signed>::signed_base_type>::min();
+            res.items[T::_impl::big(0)] = std::numeric_limits<typename wide::integer<Bits, Signed>::signed_base_type>::min();
             return res;
         }
         return 0;
@@ -84,12 +80,12 @@ public:
     {
         using T = wide::integer<Bits, Signed>;
         T res{};
-        res.m_arr[T::_impl::big(0)] = is_same<Signed, signed>::value
+        res.items[T::_impl::big(0)] = is_same<Signed, signed>::value
             ? std::numeric_limits<typename wide::integer<Bits, Signed>::signed_base_type>::max()
             : std::numeric_limits<typename wide::integer<Bits, Signed>::base_type>::max();
-        for (int i = 1; i < wide::integer<Bits, Signed>::_impl::arr_size; ++i)
+        for (unsigned i = 1; i < wide::integer<Bits, Signed>::_impl::item_count; ++i)
         {
-            res.m_arr[T::_impl::big(i)] = std::numeric_limits<typename wide::integer<Bits, Signed>::base_type>::max();
+            res.items[T::_impl::big(i)] = std::numeric_limits<typename wide::integer<Bits, Signed>::base_type>::max();
         }
         return res;
     }
@@ -147,26 +143,43 @@ namespace wide
 template <size_t Bits, typename Signed>
 struct integer<Bits, Signed>::_impl
 {
-    static_assert(Bits % CHAR_BIT == 0, "=)");
-
-    // utils
-    static const int base_bits = sizeof(base_type) * CHAR_BIT;
-    static const int arr_size = Bits / base_bits;
     static constexpr size_t _Bits = Bits;
-    static constexpr bool _is_wide_integer = true;
+    static constexpr const unsigned byte_count = Bits / 8;
+    static constexpr const unsigned item_count = byte_count / sizeof(base_type);
+    static constexpr const unsigned base_bits = sizeof(base_type) * 8;
 
-    // The original implementation is big-endian. We need little one.
+    static_assert(Bits % base_bits == 0);
+
+    /// Simple iteration in both directions
     static constexpr unsigned little(unsigned idx) { return idx; }
-    static constexpr unsigned big(unsigned idx) { return arr_size - 1 - idx; }
+    static constexpr unsigned big(unsigned idx) { return item_count - 1 - idx; }
     static constexpr unsigned any(unsigned idx) { return idx; }
+
+    template <class T>
+    constexpr static bool is_negative(const T & n) noexcept
+    {
+        if constexpr (std::is_signed_v<T>)
+            return n < 0;
+        else
+            return false;
+    }
 
     template <size_t B, class T>
     constexpr static bool is_negative(const integer<B, T> & n) noexcept
     {
         if constexpr (std::is_same_v<T, signed>)
-            return static_cast<signed_base_type>(n.m_arr[big(0)]) < 0;
+            return static_cast<signed_base_type>(n.items[big(0)]) < 0;
         else
             return false;
+    }
+
+    template <typename T>
+    constexpr static auto make_positive(const T & n) noexcept
+    {
+        if constexpr (std::is_signed_v<T>)
+            return n < 0 ? -n : n;
+        else
+            return n;
     }
 
     template <size_t B, class S>
@@ -189,21 +202,24 @@ struct integer<Bits, Signed>::_impl
     template <typename Integral>
     constexpr static void wide_integer_from_bultin(integer<Bits, Signed> & self, Integral rhs) noexcept
     {
-        auto r = _impl::to_Integral(rhs);
+        self.items[0] = _impl::to_Integral(rhs);
+        if constexpr (std::is_same_v<Integral, __int128>)
+            self.items[1] = rhs >> base_bits;
 
-        int r_idx = 0;
-        for (; static_cast<size_t>(r_idx) < sizeof(Integral) && r_idx < arr_size; ++r_idx)
+        constexpr const unsigned start = (sizeof(Integral) == 16) ? 2 : 1;
+
+        if constexpr (std::is_signed_v<Integral>)
         {
-            base_type & curr = self.m_arr[little(r_idx)];
-            base_type curr_rhs = (r >> (r_idx * CHAR_BIT)) & std::numeric_limits<base_type>::max();
-            curr = curr_rhs;
+            if (rhs < 0)
+            {
+                for (unsigned i = start; i < item_count; ++i)
+                    self.items[i] = -1;
+                return;
+            }
         }
 
-        for (; r_idx < arr_size; ++r_idx)
-        {
-            base_type & curr = self.m_arr[little(r_idx)];
-            curr = r < 0 ? std::numeric_limits<base_type>::max() : 0;
-        }
+        for (unsigned i = start; i < item_count; ++i)
+            self.items[i] = 0;
     }
 
     constexpr static void wide_integer_from_bultin(integer<Bits, Signed> & self, double rhs) noexcept
@@ -234,170 +250,142 @@ struct integer<Bits, Signed>::_impl
     constexpr static void
     wide_integer_from_wide_integer(integer<Bits, Signed> & self, const integer<Bits2, Signed2> & rhs) noexcept
     {
-        //        int Bits_to_copy = std::min(arr_size, rhs.arr_size);
-        auto rhs_arr_size = integer<Bits2, Signed2>::_impl::arr_size;
-        int base_elems_to_copy = _impl::arr_size < rhs_arr_size ? _impl::arr_size : rhs_arr_size;
-        for (int i = 0; i < base_elems_to_copy; ++i)
+        constexpr const unsigned min_bits = (Bits < Bits2) ? Bits : Bits2;
+        constexpr const unsigned to_copy = min_bits / base_bits;
+
+        for (unsigned i = 0; i < to_copy; ++i)
+            self.items[i] = rhs.items[i];
+
+        if constexpr (Bits > Bits2)
         {
-            self.m_arr[little(i)] = rhs.m_arr[little(i)];
-        }
-        for (int i = 0; i < arr_size - base_elems_to_copy; ++i)
-        {
-            self.m_arr[big(i)] = is_negative(rhs) ? std::numeric_limits<base_type>::max() : 0;
+            if constexpr (std::is_signed_v<Signed2>)
+            {
+                if (rhs < 0)
+                {
+                    for (unsigned i = to_copy; i < item_count; ++i)
+                        self.items[i] = -1;
+                    return;
+                }
+            }
+
+            for (unsigned i = to_copy; i < item_count; ++i)
+                self.items[i] = 0;
         }
     }
 
     template <typename T>
     constexpr static bool should_keep_size()
     {
-        return sizeof(T) * CHAR_BIT <= Bits;
+        return sizeof(T) <= byte_count;
     }
 
-    constexpr static integer<Bits, unsigned> shift_left(const integer<Bits, unsigned> & rhs, int n) noexcept
+    constexpr static integer<Bits, Signed> shift_left(const integer<Bits, Signed> & rhs, unsigned n) noexcept
     {
-        if (static_cast<size_t>(n) >= base_bits * arr_size)
-            return 0;
-        if (n <= 0)
-            return rhs;
+        integer<Bits, Signed> lhs;
+        unsigned items_shift = n / base_bits;
 
-        integer<Bits, Signed> lhs = rhs;
-        int bit_shift = n % base_bits;
-        unsigned n_bytes = n / base_bits;
-        if (bit_shift)
+        if (unsigned bit_shift = n % base_bits)
         {
-            lhs.m_arr[big(0)] <<= bit_shift;
-            for (int i = 1; i < arr_size; ++i)
+            unsigned overflow_shift = base_bits - bit_shift;
+
+            lhs.items[big(0)] = rhs.items[big(items_shift)] << bit_shift;
+            for (unsigned i = 1; i < item_count - items_shift; ++i)
             {
-                lhs.m_arr[big(i - 1)] |= lhs.m_arr[big(i)] >> (base_bits - bit_shift);
-                lhs.m_arr[big(i)] <<= bit_shift;
+                lhs.items[big(i - 1)] |= rhs.items[big(items_shift + i)] >> overflow_shift;
+                lhs.items[big(i)] = rhs.items[big(items_shift + i)] << bit_shift;
             }
         }
-        if (n_bytes)
-        {
-            for (unsigned i = 0; i < arr_size - n_bytes; ++i)
-            {
-                lhs.m_arr[big(i)] = lhs.m_arr[big(i + n_bytes)];
-            }
-            for (unsigned i = arr_size - n_bytes; i < arr_size; ++i)
-                lhs.m_arr[big(i)] = 0;
-        }
-        return lhs;
-    }
-
-    constexpr static integer<Bits, signed> shift_left(const integer<Bits, signed> & rhs, int n) noexcept
-    {
-        return integer<Bits, signed>(shift_left(integer<Bits, unsigned>(rhs), n));
-    }
-
-    constexpr static integer<Bits, unsigned> shift_right(const integer<Bits, unsigned> & rhs, int n) noexcept
-    {
-        if (static_cast<size_t>(n) >= base_bits * arr_size)
-            return 0;
-        if (n <= 0)
-            return rhs;
-
-        integer<Bits, Signed> lhs = rhs;
-        int bit_shift = n % base_bits;
-        unsigned n_bytes = n / base_bits;
-        if (bit_shift)
-        {
-            lhs.m_arr[little(0)] >>= bit_shift;
-            for (int i = 1; i < arr_size; ++i)
-            {
-                lhs.m_arr[little(i - 1)] |= lhs.m_arr[little(i)] << (base_bits - bit_shift);
-                lhs.m_arr[little(i)] >>= bit_shift;
-            }
-        }
-        if (n_bytes)
-        {
-            for (unsigned i = 0; i < arr_size - n_bytes; ++i)
-            {
-                lhs.m_arr[little(i)] = lhs.m_arr[little(i + n_bytes)];
-            }
-            for (unsigned i = arr_size - n_bytes; i < arr_size; ++i)
-                lhs.m_arr[little(i)] = 0;
-        }
-        return lhs;
-    }
-
-    constexpr static integer<Bits, signed> shift_right(const integer<Bits, signed> & rhs, int n) noexcept
-    {
-        if (static_cast<size_t>(n) >= base_bits * arr_size)
-            return 0;
-        if (n <= 0)
-            return rhs;
-
-        bool is_neg = is_negative(rhs);
-        if (!is_neg)
-            return shift_right(integer<Bits, unsigned>(rhs), n);
-
-        integer<Bits, Signed> lhs = rhs;
-        int bit_shift = n % base_bits;
-        unsigned n_bytes = n / base_bits;
-        if (bit_shift)
-        {
-            lhs = shift_right(integer<Bits, unsigned>(lhs), bit_shift);
-            lhs.m_arr[big(0)] |= std::numeric_limits<base_type>::max() << (base_bits - bit_shift);
-        }
-        if (n_bytes)
-        {
-            for (unsigned i = 0; i < arr_size - n_bytes; ++i)
-            {
-                lhs.m_arr[little(i)] = lhs.m_arr[little(i + n_bytes)];
-            }
-            for (unsigned i = arr_size - n_bytes; i < arr_size; ++i)
-            {
-                lhs.m_arr[little(i)] = std::numeric_limits<base_type>::max();
-            }
-        }
-        return lhs;
-    }
-
-    template <typename T>
-    constexpr static integer<Bits, Signed>
-    operator_plus_T(const integer<Bits, Signed> & lhs, T rhs) noexcept(std::is_same_v<Signed, unsigned>)
-    {
-        if (rhs < 0)
-            return _operator_minus_T(lhs, -rhs);
         else
-            return _operator_plus_T(lhs, rhs);
+        {
+            for (unsigned i = 0; i < item_count - items_shift; ++i)
+                lhs.items[big(i)] = rhs.items[big(items_shift + i)];
+        }
+
+        for (unsigned i = 0; i < items_shift; ++i)
+            lhs.items[little(i)] = 0;
+        return lhs;
+    }
+
+    constexpr static integer<Bits, Signed> shift_right(const integer<Bits, Signed> & rhs, unsigned n) noexcept
+    {
+        integer<Bits, Signed> lhs;
+        unsigned items_shift = n / base_bits;
+        unsigned bit_shift = n % base_bits;
+
+        if (bit_shift)
+        {
+            unsigned overflow_shift = base_bits - bit_shift;
+
+            lhs.items[little(0)] = rhs.items[little(items_shift)] >> bit_shift;
+            for (unsigned i = 1; i < item_count - items_shift; ++i)
+            {
+                lhs.items[little(i - 1)] |= rhs.items[little(items_shift + i)] << overflow_shift;
+                lhs.items[little(i)] = rhs.items[little(items_shift + i)] >> bit_shift;
+            }
+        }
+        else
+        {
+            for (unsigned i = 0; i < item_count - items_shift; ++i)
+                lhs.items[little(i)] = rhs.items[little(items_shift + i)];
+        }
+
+        if (is_negative(rhs))
+        {
+            if (bit_shift)
+                lhs.items[big(items_shift)] |= std::numeric_limits<base_type>::max() << (base_bits - bit_shift);
+
+            for (unsigned i = item_count - items_shift; i < items_shift; ++i)
+                lhs.items[little(i)] = std::numeric_limits<base_type>::max();
+        }
+        else
+        {
+            for (unsigned i = item_count - items_shift; i < items_shift; ++i)
+                lhs.items[little(i)] = 0;
+        }
+
+        return lhs;
     }
 
 private:
     template <typename T>
-    constexpr static integer<Bits, Signed>
-    _operator_minus_T(const integer<Bits, Signed> & lhs, T rhs) noexcept(std::is_same_v<Signed, unsigned>)
+    constexpr static base_type get_item(const T & x, unsigned number)
     {
-        integer<Bits, Signed> res = lhs;
+        if constexpr (IsWideInteger<T>::value)
+        {
+            if (number < T::_impl::item_count)
+                return x.items[number];
+            return 0;
+        }
+        else
+        {
+            if (number * sizeof(base_type) < sizeof(T))
+                return x >> (number * base_bits); // & std::numeric_limits<base_type>::max()
+            return 0;
+        }
+    }
+
+    template <typename T>
+    constexpr static integer<Bits, Signed>
+    op_minus(const integer<Bits, Signed> & lhs, T rhs)
+    {
+        integer<Bits, Signed> res;
 
         bool is_underflow = false;
-        int r_idx = 0;
-        for (; static_cast<size_t>(r_idx) < sizeof(T) && r_idx < arr_size; ++r_idx)
+        for (unsigned i = 0; i < item_count; ++i)
         {
-            base_type & res_i = res.m_arr[little(r_idx)];
-            base_type curr_rhs = (rhs >> (r_idx * CHAR_BIT)) & std::numeric_limits<base_type>::max();
+            base_type lhs_item = lhs.items[little(i)];
+            base_type rhs_item = get_item(rhs, i);
 
             if (is_underflow)
             {
-                --res_i;
-                is_underflow = res_i == std::numeric_limits<base_type>::max();
+                is_underflow = (lhs_item == 0);
+                --lhs_item;
             }
 
-            if (res_i < curr_rhs)
+            if (lhs_item < rhs_item)
                 is_underflow = true;
-            res_i -= curr_rhs;
-        }
 
-        if (is_underflow && r_idx < arr_size)
-        {
-            --res.m_arr[little(r_idx)];
-            for (int i = arr_size - 1 - r_idx - 1; i >= 0; --i)
-            {
-                if (res.m_arr[big(i + 1)] == std::numeric_limits<base_type>::max())
-                    --res.m_arr[big(i)];
-                else
-                    break;
-            }
+            res.items[little(i)] = lhs_item - rhs_item;
         }
 
         return res;
@@ -405,37 +393,69 @@ private:
 
     template <typename T>
     constexpr static integer<Bits, Signed>
-    _operator_plus_T(const integer<Bits, Signed> & lhs, T rhs) noexcept(std::is_same_v<Signed, unsigned>)
+    op_plus(const integer<Bits, Signed> & lhs, T rhs)
     {
-        integer<Bits, Signed> res = lhs;
+        integer<Bits, Signed> res;
 
         bool is_overflow = false;
-        int r_idx = 0;
-        for (; static_cast<size_t>(r_idx) < sizeof(T) && r_idx < arr_size; ++r_idx)
+        for (unsigned i = 0; i < item_count; ++i)
         {
-            base_type & res_i = res.m_arr[little(r_idx)];
-            base_type curr_rhs = (rhs >> (r_idx * CHAR_BIT)) & std::numeric_limits<base_type>::max();
+            base_type lhs_item = lhs.items[little(i)];
+            base_type rhs_item = get_item(rhs, i);
 
             if (is_overflow)
             {
-                ++res_i;
-                is_overflow = res_i == 0;
+                ++lhs_item;
+                is_overflow = (lhs_item == 0);
             }
 
-            res_i += curr_rhs;
-            if (res_i < curr_rhs)
+            base_type & res_item = res.items[little(i)];
+            res_item = lhs_item + rhs_item;
+
+            if (res_item < rhs_item)
                 is_overflow = true;
         }
 
-        if (is_overflow && r_idx < arr_size)
+        return res;
+    }
+
+    template <typename T>
+    constexpr static auto op_multiply(const integer<Bits, Signed> & lhs, const T & rhs)
+    {
+        integer<Bits, Signed> res{};
+#if 1
+        integer<Bits, Signed> lhs2 = op_plus(lhs, shift_left(lhs, 1));
+        integer<Bits, Signed> lhs3 = op_plus(lhs2, shift_left(lhs, 2));
+#endif
+        for (unsigned i = 0; i < item_count; ++i)
         {
-            ++res.m_arr[little(r_idx)];
-            for (int i = arr_size - 1 - r_idx - 1; i >= 0; --i)
+            base_type rhs_item = get_item(rhs, i);
+            unsigned pos = i * base_bits;
+
+            while (rhs_item)
             {
-                if (res.m_arr[big(i + 1)] == 0)
-                    ++res.m_arr[big(i)];
-                else
-                    break;
+#if 1 /// optimization
+                if ((rhs_item & 0x7) == 0x7)
+                {
+                    res = op_plus(res, shift_left(lhs3, pos));
+                    rhs_item >>= 3;
+                    pos += 3;
+                    continue;
+                }
+
+                if ((rhs_item & 0x3) == 0x3)
+                {
+                    res = op_plus(res, shift_left(lhs2, pos));
+                    rhs_item >>= 2;
+                    pos += 2;
+                    continue;
+                }
+#endif
+                if (rhs_item & 1)
+                    res = op_plus(res, shift_left(lhs, pos));
+
+                rhs_item >>= 1;
+                ++pos;
             }
         }
 
@@ -445,17 +465,17 @@ private:
 public:
     constexpr static integer<Bits, Signed> operator_unary_tilda(const integer<Bits, Signed> & lhs) noexcept
     {
-        integer<Bits, Signed> res{};
+        integer<Bits, Signed> res;
 
-        for (int i = 0; i < arr_size; ++i)
-            res.m_arr[any(i)] = ~lhs.m_arr[any(i)];
+        for (unsigned i = 0; i < item_count; ++i)
+            res.items[any(i)] = ~lhs.items[any(i)];
         return res;
     }
 
     constexpr static integer<Bits, Signed>
     operator_unary_minus(const integer<Bits, Signed> & lhs) noexcept(std::is_same_v<Signed, unsigned>)
     {
-        return operator_plus_T(operator_unary_tilda(lhs), 1);
+        return op_plus(operator_unary_tilda(lhs), 1);
     }
 
     template <typename T>
@@ -463,15 +483,14 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> t = rhs;
-            if (is_negative(t))
-                return _operator_minus_wide_integer(lhs, operator_unary_minus(t));
+            if (is_negative(rhs))
+                return op_minus(lhs, -rhs);
             else
-                return _operator_plus_wide_integer(lhs, t);
+                return op_plus(lhs, rhs);
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::_impl::operator_plus(
                 integer<T::_impl::_Bits, Signed>(lhs), rhs);
         }
@@ -482,100 +501,44 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> t = rhs;
-            if (is_negative(t))
-                return _operator_plus_wide_integer(lhs, operator_unary_minus(t));
+            if (is_negative(rhs))
+                return op_plus(lhs, -rhs);
             else
-                return _operator_minus_wide_integer(lhs, t);
+                return op_minus(lhs, rhs);
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::_impl::operator_minus(
                 integer<T::_impl::_Bits, Signed>(lhs), rhs);
         }
     }
 
-private:
-    constexpr static integer<Bits, Signed> _operator_minus_wide_integer(
-        const integer<Bits, Signed> & lhs, const integer<Bits, Signed> & rhs) noexcept(std::is_same_v<Signed, unsigned>)
-    {
-        integer<Bits, Signed> res = lhs;
-
-        bool is_underflow = false;
-        for (int idx = 0; idx < arr_size; ++idx)
-        {
-            base_type & res_i = res.m_arr[little(idx)];
-            const base_type rhs_i = rhs.m_arr[little(idx)];
-
-            if (is_underflow)
-            {
-                --res_i;
-                is_underflow = res_i == std::numeric_limits<base_type>::max();
-            }
-
-            if (res_i < rhs_i)
-                is_underflow = true;
-
-            res_i -= rhs_i;
-        }
-
-        return res;
-    }
-
-    constexpr static integer<Bits, Signed> _operator_plus_wide_integer(
-        const integer<Bits, Signed> & lhs, const integer<Bits, Signed> & rhs) noexcept(std::is_same_v<Signed, unsigned>)
-    {
-        integer<Bits, Signed> res = lhs;
-
-        bool is_overflow = false;
-        for (int idx = 0; idx < arr_size; ++idx)
-        {
-            base_type & res_i = res.m_arr[little(idx)];
-            const base_type rhs_i = rhs.m_arr[little(idx)];
-
-            if (is_overflow)
-            {
-                ++res_i;
-                is_overflow = res_i == 0;
-            }
-
-            res_i += rhs_i;
-
-            if (res_i < rhs_i)
-                is_overflow = true;
-        }
-
-        return res;
-    }
-
-public:
     template <typename T>
     constexpr static auto operator_star(const integer<Bits, Signed> & lhs, const T & rhs)
     {
         if constexpr (should_keep_size<T>())
         {
-            const integer<Bits, unsigned> a = make_positive(lhs);
-            integer<Bits, unsigned> t = make_positive(integer<Bits, Signed>(rhs));
+            integer<Bits, Signed> res;
 
-            integer<Bits, Signed> res = 0;
-
-            for (size_t i = 0; i < arr_size * base_bits; ++i)
+            if constexpr (std::is_signed_v<Signed>)
             {
-                if (t.m_arr[little(0)] & 1)
-                    res = operator_plus(res, shift_left(a, i));
-
-                t = shift_right(t, 1);
+                res = op_multiply((is_negative(lhs) ? make_positive(lhs) : lhs),
+                                  (is_negative(rhs) ? make_positive(rhs) : rhs));
+            }
+            else
+            {
+                res = op_multiply(lhs, (is_negative(rhs) ? make_positive(rhs) : rhs));
             }
 
-            if (std::is_same_v<Signed, signed> && is_negative(integer<Bits, Signed>(rhs)) != is_negative(lhs))
+            if (std::is_same_v<Signed, signed> && is_negative(lhs) != is_negative(rhs))
                 res = operator_unary_minus(res);
 
             return res;
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return std::common_type_t<integer<Bits, Signed>, T>::_impl::operator_star(T(lhs), rhs);
         }
     }
@@ -585,25 +548,22 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            // static_assert(Signed == std::is_signed<T>::value,
-            //               "warning: operator_more: comparison of integers of different signs");
+            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
+                return is_negative(rhs);
 
-            integer<Bits, Signed> t = rhs;
-
-            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(t)))
-                return is_negative(t);
-
-            for (int i = 0; i < arr_size; ++i)
+            for (unsigned i = 0; i < item_count; ++i)
             {
-                if (lhs.m_arr[big(i)] != t.m_arr[big(i)])
-                    return lhs.m_arr[big(i)] > t.m_arr[big(i)];
+                base_type rhs_item = get_item(rhs, big(i));
+
+                if (lhs.items[big(i)] != rhs_item)
+                    return lhs.items[big(i)] > rhs_item;
             }
 
             return false;
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return std::common_type_t<integer<Bits, Signed>, T>::_impl::operator_more(T(lhs), rhs);
         }
     }
@@ -613,23 +573,22 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            // static_assert(Signed == std::is_signed<T>::value,
-            //               "warning: operator_less: comparison of integers of different signs");
-
-            integer<Bits, Signed> t = rhs;
-
-            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(t)))
+            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(lhs);
 
-            for (int i = 0; i < arr_size; ++i)
-                if (lhs.m_arr[big(i)] != t.m_arr[big(i)])
-                    return lhs.m_arr[big(i)] < t.m_arr[big(i)];
+            for (unsigned i = 0; i < item_count; ++i)
+            {
+                base_type rhs_item = get_item(rhs, big(i));
+
+                if (lhs.items[big(i)] != rhs_item)
+                    return lhs.items[big(i)] < rhs_item;
+            }
 
             return false;
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return std::common_type_t<integer<Bits, Signed>, T>::_impl::operator_less(T(lhs), rhs);
         }
     }
@@ -639,17 +598,19 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> t = rhs;
+            for (unsigned i = 0; i < item_count; ++i)
+            {
+                base_type rhs_item = get_item(rhs, any(i));
 
-            for (int i = 0; i < arr_size; ++i)
-                if (lhs.m_arr[any(i)] != t.m_arr[any(i)])
+                if (lhs.items[any(i)] != rhs_item)
                     return false;
+            }
 
             return true;
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return std::common_type_t<integer<Bits, Signed>, T>::_impl::operator_eq(T(lhs), rhs);
         }
     }
@@ -659,16 +620,15 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> t = rhs;
-            integer<Bits, Signed> res = lhs;
+            integer<Bits, Signed> res;
 
-            for (int i = 0; i < arr_size; ++i)
-                res.m_arr[any(i)] |= t.m_arr[any(i)];
+            for (unsigned i = 0; i < item_count; ++i)
+                res.items[little(i)] = lhs.items[little(i)] | get_item(rhs, i);
             return res;
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return std::common_type_t<integer<Bits, Signed>, T>::_impl::operator_pipe(T(lhs), rhs);
         }
     }
@@ -678,43 +638,48 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> t = rhs;
-            integer<Bits, Signed> res = lhs;
+            integer<Bits, Signed> res;
 
-            for (int i = 0; i < arr_size; ++i)
-                res.m_arr[any(i)] &= t.m_arr[any(i)];
+            for (unsigned i = 0; i < item_count; ++i)
+                res.items[little(i)] = lhs.items[little(i)] & get_item(rhs, i);
             return res;
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return std::common_type_t<integer<Bits, Signed>, T>::_impl::operator_amp(T(lhs), rhs);
         }
     }
 
 private:
     template <typename T>
-    constexpr static void divide(const T & lhserator, const T & denominator, T & quotient, T & remainder)
+    constexpr static bool is_zero(const T & x)
     {
         bool is_zero = true;
-        for (auto c : denominator.m_arr)
+        for (auto item : x.items)
         {
-            if (c != 0)
+            if (item != 0)
             {
                 is_zero = false;
                 break;
             }
         }
+        return is_zero;
+    }
 
-        if (is_zero)
+    /// returns quotient as result and remainder in numerator.
+    template <typename T>
+    constexpr static T divide(T & numerator, T && denominator)
+    {
+        if (is_zero(denominator))
             throwError("divide by zero");
 
-        T n = lhserator;
-        T d = denominator;
+        T & n = numerator;
+        T & d = denominator;
         T x = 1;
-        T answer = 0;
+        T quotient = 0;
 
-        while (!operator_more(d, n) && operator_eq(operator_amp(shift_right(d, base_bits * arr_size - 1), 1), 0))
+        while (!operator_more(d, n) && operator_eq(operator_amp(shift_right(d, base_bits * item_count - 1), 1), 0))
         {
             x = shift_left(x, 1);
             d = shift_left(d, 1);
@@ -725,15 +690,14 @@ private:
             if (!operator_more(d, n))
             {
                 n = operator_minus(n, d);
-                answer = operator_pipe(answer, x);
+                quotient = operator_pipe(quotient, x);
             }
 
             x = shift_right(x, 1);
             d = shift_right(d, 1);
         }
 
-        quotient = answer;
-        remainder = n;
+        return quotient;
     }
 
 public:
@@ -742,18 +706,16 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> o = rhs;
-            integer<Bits, Signed> quotient{}, remainder{};
-            divide(make_positive(lhs), make_positive(o), quotient, remainder);
+            integer<Bits, Signed> numerator = make_positive(lhs);
+            integer<Bits, Signed> quotient = divide(numerator, make_positive(integer<Bits, Signed>(rhs)));
 
-            if (std::is_same_v<Signed, signed> && is_negative(o) != is_negative(lhs))
+            if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
                 quotient = operator_unary_minus(quotient);
-
             return quotient;
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::operator_slash(T(lhs), rhs);
         }
     }
@@ -763,18 +725,16 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> o = rhs;
-            integer<Bits, Signed> quotient{}, remainder{};
-            divide(make_positive(lhs), make_positive(o), quotient, remainder);
+            integer<Bits, Signed> remainder = make_positive(lhs);
+            divide(remainder, make_positive(integer<Bits, Signed>(rhs)));
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs))
                 remainder = operator_unary_minus(remainder);
-
             return remainder;
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::operator_percent(T(lhs), rhs);
         }
     }
@@ -788,13 +748,13 @@ public:
             integer<Bits, Signed> t(rhs);
             integer<Bits, Signed> res = lhs;
 
-            for (int i = 0; i < arr_size; ++i)
-                res.m_arr[any(i)] ^= t.m_arr[any(i)];
+            for (unsigned i = 0; i < item_count; ++i)
+                res.items[any(i)] ^= t.items[any(i)];
             return res;
         }
         else
         {
-            static_assert(T::_impl::_is_wide_integer, "");
+            static_assert(IsWideInteger<T>::value);
             return T::operator_circumflex(T(lhs), rhs);
         }
     }
@@ -815,20 +775,20 @@ public:
             {
                 if (*c >= '0' && *c <= '9')
                 {
-                    res = operator_star(res, 16U);
-                    res = operator_plus_T(res, *c - '0');
+                    res = op_multiply(res, 16U);
+                    res = op_plus(res, *c - '0');
                     ++c;
                 }
                 else if (*c >= 'a' && *c <= 'f')
                 {
-                    res = operator_star(res, 16U);
-                    res = operator_plus_T(res, *c - 'a' + 10U);
+                    res = op_multiply(res, 16U);
+                    res = op_plus(res, *c - 'a' + 10U);
                     ++c;
                 }
                 else if (*c >= 'A' && *c <= 'F')
                 { // tolower must be used, but it is not constexpr
-                    res = operator_star(res, 16U);
-                    res = operator_plus_T(res, *c - 'A' + 10U);
+                    res = op_multiply(res, 16U);
+                    res = op_plus(res, *c - 'A' + 10U);
                     ++c;
                 }
                 else
@@ -842,8 +802,8 @@ public:
                 if (*c < '0' || *c > '9')
                     throwError("invalid char from");
 
-                res = operator_star(res, 10U);
-                res = operator_plus_T(res, *c - '0');
+                res = op_multiply(res, 10U);
+                res = op_plus(res, *c - '0');
                 ++c;
             }
         }
@@ -860,7 +820,7 @@ public:
 template <size_t Bits, typename Signed>
 template <typename T>
 constexpr integer<Bits, Signed>::integer(T rhs) noexcept
-    : m_arr{}
+    : items{}
 {
     if constexpr (IsWideInteger<T>::value)
         _impl::wide_integer_from_wide_integer(*this, rhs);
@@ -871,7 +831,7 @@ constexpr integer<Bits, Signed>::integer(T rhs) noexcept
 template <size_t Bits, typename Signed>
 template <typename T>
 constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
-    : m_arr{}
+    : items{}
 {
     if (il.size() == 1)
     {
@@ -967,14 +927,25 @@ constexpr integer<Bits, Signed> & integer<Bits, Signed>::operator^=(const T & rh
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> & integer<Bits, Signed>::operator<<=(int n) noexcept
 {
-    *this = _impl::shift_left(*this, n);
+    if (static_cast<size_t>(n) >= Bits)
+        *this = 0;
+    else if (n > 0)
+        *this = _impl::shift_left(*this, n);
     return *this;
 }
 
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> & integer<Bits, Signed>::operator>>=(int n) noexcept
 {
-    *this = _impl::shift_right(*this, n);
+    if (static_cast<size_t>(n) >= Bits)
+    {
+        if (is_negative(*this))
+            *this = -1;
+        else
+            *this = 0;
+    }
+    else if (n > 0)
+        *this = _impl::shift_right(*this, n);
     return *this;
 }
 
@@ -1018,13 +989,16 @@ template <size_t Bits, typename Signed>
 template <class T, class>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
-    static_assert(std::numeric_limits<T>::is_integer, "");
-    T res = 0;
-    for (size_t r_idx = 0; r_idx < _impl::arr_size && r_idx < sizeof(T); ++r_idx)
+    if constexpr (std::is_same_v<T, __int128>)
     {
-        res |= (T(m_arr[_impl::little(r_idx)]) << (_impl::base_bits * r_idx));
+        static_assert(Bits >= 128);
+        return (__int128(items[1]) << 64) | items[0];
     }
-    return res;
+    else
+    {
+        static_assert(std::numeric_limits<T>::is_integer);
+        return items[0];
+    }
 }
 
 template <size_t Bits, typename Signed>
@@ -1038,12 +1012,12 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
         tmp = -tmp;
 
     long double res = 0;
-    for (size_t idx = 0; idx < _impl::arr_size; ++idx)
+    for (unsigned i = 0; i < _impl::item_count; ++i)
     {
         long double t = res;
         res *= std::numeric_limits<base_type>::max();
         res += t;
-        res += tmp.m_arr[_impl::big(idx)];
+        res += tmp.items[_impl::big(i)];
     }
 
     if (_impl::is_negative(*this))
@@ -1187,11 +1161,19 @@ std::common_type_t<Integral, Integral2> constexpr operator^(const Integral & lhs
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> operator<<(const integer<Bits, Signed> & lhs, int n) noexcept
 {
+    if (static_cast<size_t>(n) >= Bits)
+        return 0;
+    if (n <= 0)
+        return lhs;
     return integer<Bits, Signed>::_impl::shift_left(lhs, n);
 }
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> operator>>(const integer<Bits, Signed> & lhs, int n) noexcept
 {
+    if (static_cast<size_t>(n) >= Bits)
+        return 0;
+    if (n <= 0)
+        return lhs;
     return integer<Bits, Signed>::_impl::shift_right(lhs, n);
 }
 
@@ -1277,7 +1259,7 @@ struct hash<wide::integer<Bits, Signed>>
     {
         static_assert(Bits % (sizeof(size_t) * 8) == 0);
 
-        const auto * ptr = reinterpret_cast<const size_t *>(lhs.m_arr);
+        const auto * ptr = reinterpret_cast<const size_t *>(lhs.items);
         unsigned count = Bits / (sizeof(size_t) * 8);
 
         size_t res = 0;

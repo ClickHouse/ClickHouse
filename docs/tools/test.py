@@ -92,7 +92,7 @@ def test_single_page(input_path, lang):
             logging.warning('Found %d duplicate anchor points' % duplicate_anchor_points)
 
         if links_to_nowhere:
-            if lang == 'en':  # TODO: check all languages again
+            if lang == 'en' or lang == 'ru':  # TODO: check all languages again
                 logging.error(f'Found {links_to_nowhere} links to nowhere in {lang}')
                 sys.exit(1)
             else:

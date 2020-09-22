@@ -32,7 +32,8 @@ def cluster():
 
 FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
-FILES_OVERHEAD_PER_PART = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
+FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
+FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
 
 
 def random_string(length):
@@ -46,7 +47,7 @@ def generate_values(date_str, count, sign=1):
     return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
 
 
-def create_table(cluster):
+def create_table(cluster, additional_settings=None):
     create_table_statement = """
         CREATE TABLE s3_test (
             dt Date,
@@ -58,6 +59,9 @@ def create_table(cluster):
         ORDER BY (dt, id)
         SETTINGS storage_policy='s3'
         """
+    if additional_settings:
+        create_table_statement += ","
+        create_table_statement += additional_settings
 
     for node in cluster.instances.values():
         node.query(create_table_statement)
@@ -74,9 +78,15 @@ def drop_table(cluster):
     for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
 
-
-def test_insert_select_replicated(cluster):
-    create_table(cluster)
+@pytest.mark.parametrize(
+    "min_rows_for_wide_part,files_per_part",
+    [
+        (0, FILES_OVERHEAD_PER_PART_WIDE),
+        (8192, FILES_OVERHEAD_PER_PART_COMPACT)
+    ]
+)
+def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_part):
+    create_table(cluster, additional_settings="min_rows_for_wide_part={}".format(min_rows_for_wide_part))
 
     all_values = ""
     for node_idx in range(1, 4):
@@ -93,5 +103,4 @@ def test_insert_select_replicated(cluster):
                           settings={"select_sequential_consistency": 1}) == all_values
 
     minio = cluster.minio_client
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 3 * (
-            FILES_OVERHEAD + FILES_OVERHEAD_PER_PART * 3)
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 3 * (FILES_OVERHEAD + files_per_part * 3)
