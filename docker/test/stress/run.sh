@@ -43,8 +43,6 @@ ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/u
 ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
 
-echo "TSAN_OPTIONS='halt_on_error=1 history_size=7 ignore_noninstrumented_modules=1 verbosity=1'" >> /etc/environment
-echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment
 echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
 
 start
