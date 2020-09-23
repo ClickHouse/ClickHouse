@@ -39,13 +39,15 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
     if name in entities:
         return
 
+    # cannot escape the { in macro option description -> invalid AMP html
+    # Skipping "USE_INTERNAL_${LIB_NAME_UC}_LIBRARY"
+    if "LIB_NAME_UC" in name:
+        return
+
     if len(default) == 0:
         formatted_default: str = "`OFF`"
     elif default[0] == "$":
-        formatted_default: str = default[2:-1]
-        formatted_default: str = default_anchor_str.format(
-            name=formatted_default,
-            anchor=make_anchor(formatted_default))
+        formatted_default: str = "`{}`".format(default[2:-1])
     else:
         formatted_default: str = "`" + default + "`"
 
@@ -88,18 +90,18 @@ def process_file(root_path: str, input_name: str) -> None:
 
         if matches:
             for entity in matches:
-                build_entity(input_name, entity, get_line_and_comment(entity[0]))
+                build_entity(os.path.join(root_path[6:], input_name), entity, get_line_and_comment(entity[0]))
 
 def process_folder(root_path:str, name: str) -> None:
-    for root, _, files in os.walk(name):
+    for root, _, files in os.walk(os.path.join(root_path, name)):
         for f in files:
             if f == "CMakeLists.txt" or ".cmake" in f:
-                process_file(root_path, os.path.join(root, f))
+                process_file(root, f)
 
 def generate_cmake_flags_files(root_path: str) -> None:
-    output_file_name: str = root_path + "docs/en/development/cmake-in-clickhouse.md"
-    header_file_name: str = root_path + "docs/_includes/cmake_in_clickhouse_header.md"
-    footer_file_name: str = root_path + "docs/_includes/cmake_in_clickhouse_footer.md"
+    output_file_name: str = os.path.join(root_path, "docs/en/development/cmake-in-clickhouse.md")
+    header_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_header.md")
+    footer_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_footer.md")
 
     process_file(root_path, "CMakeLists.txt")
     process_file(root_path, "programs/CMakeLists.txt")
@@ -122,11 +124,11 @@ def generate_cmake_flags_files(root_path: str) -> None:
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 
-        f.write("### External libraries\nNote that ClickHouse uses forks of these libraries, see https://github.com/ClickHouse-Extras.\n" +
+        f.write("\n### External libraries\nNote that ClickHouse uses forks of these libraries, see https://github.com/ClickHouse-Extras.\n" +
             table_header)
 
         for k in sorted_keys:
-            if k.startswith("ENABLE_") and entities[k][0].startswith("cmake"):
+            if k.startswith("ENABLE_") and ".cmake" in entities[k][0]:
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 
