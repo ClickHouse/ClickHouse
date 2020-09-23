@@ -447,7 +447,9 @@ private:
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
-        if (!buffer.data)
+        /// During alter we flash all buffers to storage, but buffer structure
+        /// may change and we update it from the new incoming block
+        if (buffer.data.rows() == 0)
         {
             buffer.data = sorted_block.cloneEmpty();
         }
@@ -829,7 +831,9 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     checkAlterIsPossible(params, context.getSettingsRef());
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    /// So that no blocks of the old structure remain.
+    /// Flush all buffers to storages, so that no non-empty blocks of the old
+    /// structure remain. Structure of empty blocks will be updated during first
+    /// insert.
     optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
