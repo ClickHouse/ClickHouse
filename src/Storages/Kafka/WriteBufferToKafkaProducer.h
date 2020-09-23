@@ -25,6 +25,8 @@ public:
         const Block & header);
     ~WriteBufferToKafkaProducer() override;
 
+    bool producesIsolatedRows() override { return true; }
+
     void countRow(const Columns & columns, size_t row);
     void flush();
 

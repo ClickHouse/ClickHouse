@@ -37,7 +37,7 @@ using ConstAggregateDataPtr = const char *;
 class ProtobufWriter : private boost::noncopyable
 {
 public:
-    ProtobufWriter(WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names);
+    ProtobufWriter(WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names, const bool single_message_mode_);
     ~ProtobufWriter();
 
     /// Should be called at the beginning of writing a message.
@@ -89,7 +89,7 @@ private:
     class SimpleWriter
     {
     public:
-        SimpleWriter(WriteBuffer & out_);
+        SimpleWriter(WriteBuffer & out_, const bool single_message_mode_);
         ~SimpleWriter();
 
         void startMessage();
@@ -138,6 +138,10 @@ private:
         size_t current_piece_start;
         size_t num_bytes_skipped;
         std::vector<NestedInfo> nested_infos;
+        const bool produce_length_delimiters;
+        const bool allow_several_messages;
+        bool row_was_send;
+
     };
 
     class IConverter

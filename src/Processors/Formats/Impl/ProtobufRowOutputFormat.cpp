@@ -21,10 +21,11 @@ ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     WriteBuffer & out_,
     const Block & header,
     FormatFactory::WriteCallback callback,
-    const FormatSchemaInfo & format_schema)
+    const FormatSchemaInfo & format_schema,
+    const bool single_message_mode_)
     : IRowOutputFormat(header, out_, callback)
     , data_types(header.getDataTypes())
-    , writer(out, ProtobufSchemas::instance().getMessageTypeForFormatSchema(format_schema), header.getNames())
+    , writer(out, ProtobufSchemas::instance().getMessageTypeForFormatSchema(format_schema), header.getNames(), single_message_mode_)
 {
     value_indices.resize(header.columns());
 }
@@ -43,17 +44,22 @@ void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
 
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor(
-        "Protobuf",
-        [](WriteBuffer & buf,
-           const Block & header,
-           FormatFactory::WriteCallback callback,
-           const FormatSettings & settings)
-        {
-            return std::make_shared<ProtobufRowOutputFormat>(buf, header, std::move(callback),
-                FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
-                                 settings.schema.is_server, settings.schema.format_schema_path));
-        });
+    for (bool single_message_mode : {false, true})
+    {
+
+        factory.registerOutputFormatProcessor(
+            single_message_mode ? "ProtobufSingle" : "Protobuf",
+            [single_message_mode](WriteBuffer & buf,
+               const Block & header,
+               FormatFactory::WriteCallback callback,
+               const FormatSettings & settings)
+            {
+                return std::make_shared<ProtobufRowOutputFormat>(buf, header, std::move(callback),
+                    FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
+                                     settings.schema.is_server, settings.schema.format_schema_path),
+                                     single_message_mode);
+            });
+    }
 }
 
 }
