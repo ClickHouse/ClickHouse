@@ -35,7 +35,7 @@ class HDFSApi(object):
                                                                                 port=self.http_data_port, path=path,
                                                                                 params=params)
         cmd = "curl -s -i -X PUT -T {fname} '{url}'".format(fname=filename, url=url)
-        output = subprocess.check_output(cmd, shell=True)
+        output = subprocess.check_output(cmd, shell=True, universal_newlines=True)
         return output
 
     def write_data(self, path, content):
