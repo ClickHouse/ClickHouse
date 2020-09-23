@@ -182,6 +182,8 @@ public:
 
     virtual antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *context) = 0;
 
+    virtual antlrcpp::Any visitShowDatabasesStmt(ClickHouseParser::ShowDatabasesStmtContext *context) = 0;
+
     virtual antlrcpp::Any visitSystemStmt(ClickHouseParser::SystemStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitTruncateStmt(ClickHouseParser::TruncateStmtContext *context) = 0;

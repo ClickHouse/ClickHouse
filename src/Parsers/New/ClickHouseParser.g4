@@ -208,6 +208,7 @@ showStmt
     : SHOW CREATE DATABASE databaseIdentifier                                                                     # showCreateDatabaseStmt
     | SHOW CREATE TEMPORARY? TABLE? tableIdentifier                                                               # showCreateTableStmt
     | SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE STRING_LITERAL | whereClause)? limitClause?  # showTablesStmt
+    | SHOW DATABASES                                                                                              # showDatabasesStmt
     ;
 
 // SYSTEM statements
@@ -313,9 +314,9 @@ literal
     ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER, FOR, GROUP
     : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
-    | CHECK | CLEAR | CLUSTER | COLLATE | COLUMN | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE
-    | DESC | DESCENDING | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FETCHES | FINAL | FIRST
-    | FORMAT | FULL | FUNCTION | GLOBAL | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE
+    | CHECK | CLEAR | CLUSTER | COLLATE | COLUMN | COMMENT | CREATE | CROSS | DATABASE | DATABASES | DAY | DEDUPLICATE | DEFAULT | DELAY
+    | DELETE | DESC | DESCENDING | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FETCHES | FINAL
+    | FIRST | FORMAT | FULL | FUNCTION | GLOBAL | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE
     | JSON_TRUE | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS
     | OFFSET | ON | OPTIMIZE | OR | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLACE | REPLICA | RIGHT
     | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES

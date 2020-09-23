@@ -116,7 +116,8 @@ public:
 
 
 
-    // Alias to SelectUnionQuery
+    // aliases to SelectUnionQuery
+    antlrcpp::Any visitShowDatabasesStmt(ClickHouseParser::ShowDatabasesStmtContext * ctx) override;
     antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext * ctx) override;
 
 

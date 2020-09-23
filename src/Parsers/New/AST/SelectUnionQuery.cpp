@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/JoinExpr.h>
 #include <Parsers/New/AST/LimitExpr.h>
 #include <Parsers/New/ParseTreeVisitor.h>
@@ -59,8 +60,14 @@ PrewhereClause::PrewhereClause(PtrTo<ColumnExpr> expr_) : expr(expr_)
 
 // WHERE Clause
 
-WhereClause::WhereClause(PtrTo<ColumnExpr> expr_) : expr(expr_)
+WhereClause::WhereClause(PtrTo<ColumnExpr> expr)
 {
+    children.push_back(expr);
+}
+
+ASTPtr WhereClause::convertToOld() const
+{
+    return children[EXPR]->convertToOld();
 }
 
 // GROUP BY Clause

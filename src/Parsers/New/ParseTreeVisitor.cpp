@@ -76,6 +76,21 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     __builtin_unreachable();
 }
 
+antlrcpp::Any ParseTreeVisitor::visitShowDatabasesStmt(ClickHouseParser::ShowDatabasesStmtContext * ctx)
+{
+    auto database_name = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("name"));
+    auto expr_list = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(database_name)});
+    auto select_stmt = std::make_shared<SelectStmt>(expr_list);
+
+    auto system = std::make_shared<DatabaseIdentifier>(std::make_shared<Identifier>("system"));
+    auto databases = std::make_shared<TableIdentifier>(system, std::make_shared<Identifier>("databases"));
+    auto system_tables = JoinExpr::createTableExpr(TableExpr::createIdentifier(databases));
+
+    select_stmt->setFromClause(std::make_shared<FromClause>(system_tables, false));
+
+    return PtrTo<SelectUnionQuery>(new SelectUnionQuery({select_stmt}));
+}
+
 antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *ctx)
 {
     // TODO: don't forget to convert TEMPORARY into 'is_temporary=1' condition.

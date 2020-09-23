@@ -69,10 +69,15 @@ class PrewhereClause : public INode
 class WhereClause : public INode
 {
     public:
-        explicit WhereClause(PtrTo<ColumnExpr> expr_);
+        explicit WhereClause(PtrTo<ColumnExpr> expr);
+
+        ASTPtr convertToOld() const override;
 
     private:
-        PtrTo<ColumnExpr> expr;
+        enum ChildIndex : UInt8
+        {
+            EXPR = 0,  // ColumnExpr
+        };
 };
 
 class GroupByClause : public INode
