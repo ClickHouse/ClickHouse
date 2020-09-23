@@ -470,12 +470,13 @@ if args.report == 'main':
             'Shortest query<br>(sum for all runs),&nbsp;s',       #6
             # 'Runs'                                              #7
             ]
+        attrs = ['' for c in columns]
+        attrs[7] = None
 
         text = tableStart('Test Times')
         text += tableHeader(columns)
 
         allowed_average_run_time = 3.75 # 60 seconds per test at 7 runs
-        attrs = ['' for c in columns]
         for r in rows:
             anchor = f'{currentTableAnchor()}.{r[0]}'
             total_runs = (int(r[7]) + 1) * 2  # one prewarm run, two servers
