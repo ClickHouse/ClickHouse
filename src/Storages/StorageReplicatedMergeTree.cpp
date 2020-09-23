@@ -3319,13 +3319,14 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     requests.emplace_back(zkutil::makeSetRequest(replica_path + "/columns", entry.columns_str, -1));
     requests.emplace_back(zkutil::makeSetRequest(replica_path + "/metadata", entry.metadata_str, -1));
 
-    zookeeper->multi(requests);
 
     {
         /// TODO (relax this lock and remove this action locks)
         auto merges_block = getActionLock(ActionLocks::PartsMerge);
         auto fetchers_block = getActionLock(ActionLocks::PartsFetch);
         auto table_lock = lockExclusively(RWLockImpl::NO_QUERY);
+
+        zookeeper->multi(requests);
 
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
