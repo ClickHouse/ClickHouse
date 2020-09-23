@@ -1904,17 +1904,42 @@ bool MergeTreeData::renameTempPartAndReplace(
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
     ///
     /// If out_transaction is null, we commit the part to the active set immediately, else add it to the transaction.
-    part->name = part_name;
-    part->info = part_info;
-    part->is_temp = false;
-    part->state = DataPartState::PreCommitted;
-    part->renameTo(part_name, true);
-
-    auto part_it = data_parts_indexes.insert(part).first;
-
-    if (out_transaction)
+    /// Avoid to commit the empty parts to the storage.
+    auto has_rows = part->rows_count > 0;
+    if (has_rows)
     {
-        out_transaction->precommitted_parts.insert(part);
+        part->name = part_name;
+        part->info = part_info;
+        part->is_temp = false;
+        part->state = DataPartState::PreCommitted;
+        part->renameTo(part_name, true);
+
+        auto part_it = data_parts_indexes.insert(part).first;
+
+        if (out_transaction)
+        {
+            out_transaction->precommitted_parts.insert(part);
+        }
+        else
+        {
+            auto current_time = time(nullptr);
+            for (const DataPartPtr & covered_part : covered_parts)
+            {
+                covered_part->remove_time.store(current_time, std::memory_order_relaxed);
+                modifyPartState(covered_part, DataPartState::Outdated);
+                removePartContributionToColumnSizes(covered_part);
+            }
+
+            modifyPartState(part_it, DataPartState::Committed);
+            addPartContributionToColumnSizes(part);
+        }
+
+        auto part_in_memory = asInMemoryPart(part);
+        if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
+        {
+            auto wal = getWriteAheadLog();
+            wal->addPart(part_in_memory->block, part_in_memory->name);
+        }
     }
     else
     {
@@ -1925,16 +1950,6 @@ bool MergeTreeData::renameTempPartAndReplace(
             modifyPartState(covered_part, DataPartState::Outdated);
             removePartContributionToColumnSizes(covered_part);
         }
-
-        modifyPartState(part_it, DataPartState::Committed);
-        addPartContributionToColumnSizes(part);
-    }
-
-    auto part_in_memory = asInMemoryPart(part);
-    if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
-    {
-        auto wal = getWriteAheadLog();
-        wal->addPart(part_in_memory->block, part_in_memory->name);
     }
 
     if (out_covered_parts)
