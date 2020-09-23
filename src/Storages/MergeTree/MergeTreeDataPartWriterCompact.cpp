@@ -152,7 +152,6 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
                     prev_stream->hashing_buf.next();
                 }
 
-
                 prev_stream = result_stream;
 
                 return &result_stream->hashing_buf;
@@ -163,6 +162,10 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
             writeIntBinary(UInt64(0), marks);
 
             writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, current_row, rows_to_write);
+
+            if (prev_stream == nullptr)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found any streams for column {} serialization. It's a bug", name_and_type->name);
+
             prev_stream->hashing_buf.next();
         }
 
