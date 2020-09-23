@@ -15,6 +15,7 @@ import sys
 import time
 import traceback
 import xml.etree.ElementTree as et
+from threading import Thread
 from scipy import stats
 
 def tsv_escape(s):
@@ -157,8 +158,11 @@ for t in tables:
             print(f'skipped\t{tsv_escape(skipped_message)}')
             sys.exit(0)
 
-# Run create queries
-create_query_templates = [q.text for q in root.findall('create_query')]
+# Run create and fill queries. We will run them simultaneously for both servers,
+# to save time.
+# The weird search is to keep the relative order of elements, which matters, and
+# etree doesn't support the appropriate xpath query.
+create_query_templates = [q.text for q in root.findall('./*') if q.tag in ('create_query', 'fill_query')]
 create_queries = substitute_parameters(create_query_templates)
 
 # Disallow temporary tables, because the clickhouse_driver reconnects on errors,
@@ -170,18 +174,19 @@ for q in create_queries:
             file = sys.stderr)
         sys.exit(1)
 
-for conn_index, c in enumerate(all_connections):
-    for q in create_queries:
-        c.execute(q)
-        print(f'create\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
+def do_create(connection, index, queries):
+    for q in queries:
+        connection.execute(q)
+        print(f'create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}')
 
-# Run fill queries
-fill_query_templates = [q.text for q in root.findall('fill_query')]
-fill_queries = substitute_parameters(fill_query_templates)
-for conn_index, c in enumerate(all_connections):
-    for q in fill_queries:
-        c.execute(q)
-        print(f'fill\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
+threads = [Thread(target = do_create, args = (connection, index, create_queries))
+                for index, connection in enumerate(all_connections)]
+
+for t in threads:
+    t.start()
+
+for t in threads:
+    t.join()
 
 # Run the queries in randomized order, but preserve their indexes as specified
 # in the test XML. To avoid using too much time, limit the number of queries
