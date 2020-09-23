@@ -62,7 +62,7 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(logger_name);
     columns[i++]->insert(message);
 
-    columns[i++]->insert(ClickHouseRevision::get());
+    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     columns[i++]->insert(source_file);
     columns[i++]->insert(source_line);
