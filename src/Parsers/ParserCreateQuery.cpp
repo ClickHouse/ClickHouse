@@ -241,6 +241,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_settings("SETTINGS");
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
+    ParserOrderByExpressionList order_list_p;
     ParserExpression expression_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserTTLExpressionList parser_ttl_list;
@@ -281,7 +282,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!order_by && s_order_by.ignore(pos, expected))
         {
-            if (expression_p.parse(pos, order_by, expected))
+            if (order_list_p.parse(pos, order_by, expected))
                 continue;
             else
                 return false;
