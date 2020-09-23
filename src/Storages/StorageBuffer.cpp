@@ -447,9 +447,7 @@ private:
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
-        /// During alter we flash all buffers to storage, but buffer structure
-        /// may change and we update it from the new incoming block
-        if (buffer.data.rows() == 0)
+        if (!buffer.data)
         {
             buffer.data = sorted_block.cloneEmpty();
         }
@@ -549,7 +547,7 @@ bool StorageBuffer::optimize(
     if (deduplicate)
         throw Exception("DEDUPLICATE cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
-    flushAllBuffers(false);
+    flushAllBuffers(false, true);
     return true;
 }
 
@@ -597,14 +595,14 @@ bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_p
 }
 
 
-void StorageBuffer::flushAllBuffers(const bool check_thresholds)
+void StorageBuffer::flushAllBuffers(bool check_thresholds, bool reset_blocks_structure)
 {
     for (auto & buf : buffers)
-        flushBuffer(buf, check_thresholds);
+        flushBuffer(buf, check_thresholds, false, reset_blocks_structure);
 }
 
 
-void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked)
+void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked, bool reset_block_structure)
 {
     Block block_to_write;
     time_t current_time = time(nullptr);
@@ -657,6 +655,8 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     try
     {
         writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, global_context));
+        if (reset_block_structure)
+            buffer.data.clear();
     }
     catch (...)
     {
