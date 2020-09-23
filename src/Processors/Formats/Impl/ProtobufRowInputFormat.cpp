@@ -11,10 +11,10 @@
 namespace DB
 {
 
-ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_)
+ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_, const bool single_message_mode_)
     : IRowInputFormat(header_, in_, params_)
     , data_types(header_.getDataTypes())
-    , reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info_), header_.getNames())
+    , reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info_), header_.getNames(), single_message_mode_)
 {
 }
 
@@ -67,16 +67,20 @@ void ProtobufRowInputFormat::syncAfterError()
 
 void registerInputFormatProcessorProtobuf(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("Protobuf", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        IRowInputFormat::Params params,
-        const FormatSettings & settings)
+    for (bool single_message_mode : {false, true})
     {
-        return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
-            FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
-                             settings.schema.is_server, settings.schema.format_schema_path));
-    });
+        factory.registerInputFormatProcessor(single_message_mode ? "ProtobufSingle" : "Protobuf", [single_message_mode](
+            ReadBuffer & buf,
+            const Block & sample,
+            IRowInputFormat::Params params,
+            const FormatSettings & settings)
+        {
+            return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
+                FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
+                                settings.schema.is_server, settings.schema.format_schema_path),
+                single_message_mode);
+        });
+    }
 }
 
 }

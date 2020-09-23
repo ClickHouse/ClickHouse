@@ -103,6 +103,17 @@ def kafka_produce_protobuf_messages(topic, start_index, num_messages):
     producer.flush()
     print(("Produced {} messages for topic {}".format(num_messages, topic)))
 
+def kafka_produce_protobuf_messages_no_delimeters(topic, start_index, num_messages):
+    data = ''
+    producer = KafkaProducer(bootstrap_servers="localhost:9092")
+    for i in range(start_index, start_index + num_messages):
+        msg = kafka_pb2.KeyValuePair()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        producer.send(topic=topic, value=serialized_msg)
+    producer.flush()
+    print("Produced {} messages for topic {}".format(num_messages, topic))
 
 def avro_confluent_message(schema_registry_client, value):
     # type: (CachedSchemaRegistryClient, dict) -> str
@@ -970,6 +981,30 @@ def test_kafka_protobuf(kafka_cluster):
 
     kafka_check_result(result, True)
 
+
+@pytest.mark.timeout(180)
+def test_kafka_protobuf_no_delimiter(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'pb_no_delimiter',
+                     kafka_group_name = 'pb_no_delimiter',
+                     kafka_format = 'ProtobufSingle',
+                     kafka_schema = 'kafka.proto:KeyValuePair';
+        ''')
+
+    kafka_produce_protobuf_messages_no_delimeters('pb_no_delimiter', 0, 20)
+    kafka_produce_protobuf_messages_no_delimeters('pb_no_delimiter', 20, 1)
+    kafka_produce_protobuf_messages_no_delimeters('pb_no_delimiter', 21, 29)
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
+        if kafka_check_result(result):
+            break
+
+    kafka_check_result(result, True)
 
 @pytest.mark.timeout(180)
 def test_kafka_materialized_view(kafka_cluster):
