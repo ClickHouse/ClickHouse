@@ -55,7 +55,7 @@ public:
     /// codec, which can be alias to current default codec, which can be changed
     /// in runtime. If only_generic is true than method will filter all
     /// isGenericCompression() == false codecs from result. If nothing found
-    /// will return nullptr. It's useful for auxiliary parts of complex columns
+    /// will return codec NONE. It's useful for auxiliary parts of complex columns
     /// like Nullable, Array and so on. If all codecs are non generic and
     /// only_generic = true, than codec NONE will be returned.
     CompressionCodecPtr get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const;
