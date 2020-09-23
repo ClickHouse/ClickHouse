@@ -7,6 +7,10 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+# https://github.com/jemalloc/jemalloc/wiki/Getting-Started
+export MALLOC_CONF="percpu_arena:disabled"
+echo "$MALLOC_CONF" > /etc/malloc.conf ||:
+
 function wait_for_server # port, pid
 {
     for _ in {1..60}
