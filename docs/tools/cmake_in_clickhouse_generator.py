@@ -40,7 +40,8 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
         return
 
     # cannot escape the { in macro option description -> invalid AMP html
-    if name == "USE_INTERNAL_${LIB_NAME_UC}_LIBRARY ":
+    # Skipping "USE_INTERNAL_${LIB_NAME_UC}_LIBRARY"
+    if "LIB_NAME_UC" in name:
         return
 
     if len(default) == 0:
