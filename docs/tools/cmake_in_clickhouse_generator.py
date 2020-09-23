@@ -132,14 +132,14 @@ def generate_cmake_flags_files(root_path: str) -> None:
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 
-        f.write("### External libraries system/bundled mode\n" + table_header)
+        f.write("\n### External libraries system/bundled mode\n" + table_header)
 
         for k in sorted_keys:
             if k.startswith("USE_INTERNAL_"):
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 
-        f.write("### Other flags\n" + table_header)
+        f.write("\n### Other flags\n" + table_header)
 
         for k in sorted(set(sorted_keys).difference(set(ignored_keys))):
             f.write(entities[k][1] + "\n")
