@@ -38,11 +38,11 @@ def started_cluster():
 
 
 def get_random_string(length):
-    symbols = bytes(string.ascii_uppercase + string.digits)
+    symbols = bytes(string.ascii_uppercase.encode() + string.digits.encode())
     result_list = bytearray([0]) * length
     for i in range(length):
         result_list[i] = random.choice(symbols)
-    return str(result_list)
+    return result_list.decode()
 
 
 def get_used_disks_for_table(node, table_name, partition=None):
