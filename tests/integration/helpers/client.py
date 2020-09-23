@@ -70,8 +70,8 @@ class CommandRequest:
         stdin_file = tempfile.TemporaryFile(mode='w+')
         stdin_file.write(stdin)
         stdin_file.seek(0)
-        self.stdout_file = tempfile.TemporaryFile(mode='w+')
-        self.stderr_file = tempfile.TemporaryFile(mode='w+')
+        self.stdout_file = tempfile.TemporaryFile()
+        self.stderr_file = tempfile.TemporaryFile()
         self.ignore_error = ignore_error
 
         # print " ".join(command)
@@ -98,8 +98,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read()
-        stderr = self.stderr_file.read()
+        stdout = self.stdout_file.read().decode()
+        stderr = self.stderr_file.read().decode()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
@@ -115,8 +115,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read()
-        stderr = self.stderr_file.read()
+        stdout = self.stdout_file.read().decode()
+        stderr = self.stderr_file.read().decode()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
@@ -131,8 +131,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read()
-        stderr = self.stderr_file.read()
+        stdout = self.stdout_file.read().decode()
+        stderr = self.stderr_file.read().decode()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
