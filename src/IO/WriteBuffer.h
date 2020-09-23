@@ -60,6 +60,11 @@ public:
       */
     virtual ~WriteBuffer() {}
 
+    /**
+     * some buffers (kafka / rabbit) split the rows internally, so we can push there formats without
+     * framing / delimiters (like ProtobufSingle)
+     */
+    virtual bool producesIsolatedRows() { return false; }
 
     inline void nextIfAtEnd()
     {

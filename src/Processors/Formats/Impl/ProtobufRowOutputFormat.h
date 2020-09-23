@@ -38,7 +38,8 @@ public:
         WriteBuffer & out_,
         const Block & header,
         FormatFactory::WriteCallback callback,
-        const FormatSchemaInfo & format_schema);
+        const FormatSchemaInfo & format_schema,
+        const bool single_message_mode_);
 
     String getName() const override { return "ProtobufRowOutputFormat"; }
 

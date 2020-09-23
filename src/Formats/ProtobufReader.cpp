@@ -58,7 +58,7 @@ ProtobufReader::SimpleReader::SimpleReader(ReadBuffer & in_, const bool single_m
 {
 }
 
-[[noreturn]] void ProtobufReader::SimpleReader::throwUnknownFormat()
+[[noreturn]] void ProtobufReader::SimpleReader::throwUnknownFormat() const
 {
     throw Exception(std::string("Protobuf messages are corrupted or don't match the provided schema.") + (single_message_mode ? "" : " Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint."), ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
 }

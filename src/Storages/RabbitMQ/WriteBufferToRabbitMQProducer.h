@@ -34,6 +34,7 @@ public:
     );
 
     ~WriteBufferToRabbitMQProducer() override;
+    bool producesIsolatedRows() override { return true; }
 
     void countRow();
     void activateWriting() { writing_task->activateAndSchedule(); }

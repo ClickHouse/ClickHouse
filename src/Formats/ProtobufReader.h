@@ -126,7 +126,7 @@ private:
         UInt64 continueReadingVarint(UInt64 first_byte);
         void ignoreVarint();
         void ignoreGroup();
-        [[noreturn]] void throwUnknownFormat();
+        [[noreturn]] void throwUnknownFormat() const;
 
         ReadBuffer & in;
         Int64 cursor;
