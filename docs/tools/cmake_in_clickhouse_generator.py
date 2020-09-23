@@ -39,6 +39,10 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
     if name in entities:
         return
 
+    # cannot escape the { in macro option description -> invalid AMP html
+    if name == "USE_INTERNAL_${LIB_NAME_UC}_LIBRARY ":
+        return
+
     if len(default) == 0:
         formatted_default: str = "`OFF`"
     elif default[0] == "$":
@@ -85,7 +89,7 @@ def process_file(root_path: str, input_name: str) -> None:
 
         if matches:
             for entity in matches:
-                build_entity(input_name, entity, get_line_and_comment(entity[0]))
+                build_entity(os.path.join(root_path, input_name), entity, get_line_and_comment(entity[0]))
 
 def process_folder(root_path:str, name: str) -> None:
     for root, _, files in os.walk(os.path.join(root_path, name)):
