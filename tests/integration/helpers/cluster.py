@@ -392,7 +392,6 @@ class ClickHouseCluster:
         exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
         output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
-        output = output.decode('utf8')
         exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
         if exit_code:
             container_info = self.docker_client.api.inspect_container(container_id)
