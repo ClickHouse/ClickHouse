@@ -12,9 +12,11 @@ namespace DB::AST
 {
 
 // static
-PtrTo<DataClause> DataClause::createFormat(PtrTo<Identifier> identifier)
+PtrTo<DataClause> DataClause::createFormat(PtrTo<Identifier> identifier, size_t data_offset)
 {
-    return PtrTo<DataClause>(new DataClause(ClauseType::FORMAT, {identifier}));
+    PtrTo<DataClause> clause(new DataClause(ClauseType::FORMAT, {identifier}));
+    clause->offset = data_offset;
+    return clause;
 }
 
 // static
@@ -24,16 +26,16 @@ PtrTo<DataClause> DataClause::createSelect(PtrTo<SelectUnionQuery> query)
 }
 
 // static
-PtrTo<DataClause> DataClause::createValues()
+PtrTo<DataClause> DataClause::createValues(size_t data_offset)
 {
-    return PtrTo<DataClause>(new DataClause(ClauseType::VALUES, {}));
+    PtrTo<DataClause> clause(new DataClause(ClauseType::VALUES, {}));
+    clause->offset = data_offset;
+    return clause;
 }
 
 DataClause::DataClause(ClauseType type, PtrList exprs) : clause_type(type)
 {
     children = exprs;
-
-    (void) clause_type; // TODO
 }
 
 // static
@@ -88,7 +90,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnsClause(ClickHouseParser::ColumnsClau
 
 antlrcpp::Any ParseTreeVisitor::visitDataClauseFormat(ClickHouseParser::DataClauseFormatContext *ctx)
 {
-    return DataClause::createFormat(visit(ctx->identifier()));
+    return DataClause::createFormat(visit(ctx->identifier()), ctx->getStop()->getStopIndex() + 1);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitDataClauseSelect(ClickHouseParser::DataClauseSelectContext *ctx)
@@ -98,16 +100,15 @@ antlrcpp::Any ParseTreeVisitor::visitDataClauseSelect(ClickHouseParser::DataClau
 
 antlrcpp::Any ParseTreeVisitor::visitDataClauseValues(ClickHouseParser::DataClauseValuesContext *ctx)
 {
-    return DataClause::createValues();
+    return DataClause::createValues(ctx->getStop()->getStopIndex() + 1);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx)
 {
-    auto data = ctx->dataClause() ? visit(ctx->dataClause()).as<PtrTo<DataClause>>() : nullptr;
     auto columns = ctx->columnsClause() ? visit(ctx->columnsClause()).as<PtrTo<ColumnNameList>>() : nullptr;
 
-    if (ctx->FUNCTION()) return InsertQuery::createFunction(visit(ctx->tableFunctionExpr()), columns, data);
-    if (ctx->tableIdentifier()) return InsertQuery::createTable(visit(ctx->tableIdentifier()), columns, data);
+    if (ctx->FUNCTION()) return InsertQuery::createFunction(visit(ctx->tableFunctionExpr()), columns, visit(ctx->dataClause()));
+    if (ctx->tableIdentifier()) return InsertQuery::createTable(visit(ctx->tableIdentifier()), columns, visit(ctx->dataClause()));
     __builtin_unreachable();
 }
 

@@ -1,13 +1,14 @@
 #include <Parsers/New/parseQuery.h>
 
-#include <Parsers/New/AST/Query.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/New/AST/InsertQuery.h>
+#include <Parsers/New/CharInputStream.h>
 #include <Parsers/New/ClickHouseLexer.h>
 #include <Parsers/New/ClickHouseParser.h>
 #include <Parsers/New/LexerErrorListener.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 #include <Parsers/New/ParserErrorListener.h>
 
-#include <ANTLRInputStream.h>
 #include <CommonTokenStream.h>
 
 
@@ -41,9 +42,7 @@ ASTPtr parseQuery(const char * begin, const char * end, size_t, size_t)
 {
     // TODO: do not ignore |max_parser_depth|.
 
-    String query(begin, end); // FIXME: implement zero-copy ANTLRInputStream which checks for |max_query_size| internally.
-
-    ANTLRInputStream input(query);
+    CharInputStream input(begin, end);
     ClickHouseLexer lexer(&input);
     CommonTokenStream tokens(&lexer);
     ClickHouseParser parser(&tokens);
@@ -58,10 +57,28 @@ ASTPtr parseQuery(const char * begin, const char * end, size_t, size_t)
     ParseTreeVisitor visitor;
 
     PtrTo<Query> new_ast = visitor.visit(parser.queryStmt());
+    auto old_ast = new_ast->convertToOld();
 
-    // new_ast->dump();
+    if (const auto * insert = new_ast->as<InsertQuery>())
+    {
+        auto * old_insert = old_ast->as<ASTInsertQuery>();
 
-    return new_ast->convertToOld();
+        old_insert->end = end;
+        if (insert->hasData())
+        {
+            old_insert->data = begin + insert->getDataOffset();
+
+            // Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
+            auto & data = old_insert->data;
+            while (data < end && (*data == ' ' || *data == '\t' || *data == '\f')) ++data;
+            if (data < end && *data == '\r') ++data;
+            if (data < end && *data == '\n') ++data;
+        }
+
+        old_insert->data = (old_insert->data != end) ? old_insert->data : nullptr;
+    }
+
+    return old_ast;
 }
 
 }

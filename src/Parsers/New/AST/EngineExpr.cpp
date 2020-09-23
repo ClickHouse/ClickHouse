@@ -81,7 +81,25 @@ ASTPtr EngineClause::convertToOld() const
     storage->set(storage->engine, children[ENGINE]->convertToOld());
     if (has(PARTITION_BY)) storage->set(storage->partition_by, children[PARTITION_BY]->convertToOld());
     if (has(PRIMARY_KEY)) storage->set(storage->primary_key, children[PRIMARY_KEY]->convertToOld());
-    if (has(ORDER_BY)) storage->set(storage->order_by, children[ORDER_BY]->convertToOld());
+    if (has(ORDER_BY))
+    {
+        auto tuple = std::make_shared<ASTFunction>();
+        tuple->name = "tuple";
+        tuple->arguments = std::make_shared<ASTExpressionList>();
+        tuple->children.push_back(tuple->arguments);
+
+        auto expr_list = children[ORDER_BY]->convertToOld();
+        for (const auto & child : expr_list->children)
+            tuple->arguments->children.push_back(child->children.back());
+
+        // special case for ORDER BY tuple()
+        if (tuple->arguments->children.size() == 1)
+            if (const auto * func = tuple->arguments->children.back()->as<ASTFunction>())
+                if ((!func->arguments || func->arguments->children.empty()) && func->name == "tuple")
+                    tuple->arguments->children.clear();
+
+        storage->set(storage->order_by, tuple);
+    }
     if (has(SAMPLE_BY)) storage->set(storage->sample_by, children[SAMPLE_BY]->convertToOld());
     if (has(TTL)) storage->set(storage->ttl_table, children[TTL]->convertToOld());
 

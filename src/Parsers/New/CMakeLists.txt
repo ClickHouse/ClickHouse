@@ -32,6 +32,7 @@ set (SRCS
     AST/TableExpr.cpp
     AST/TruncateQuery.cpp
     AST/UseQuery.cpp
+    CharInputStream.cpp
     ClickHouseLexer.cpp
     ClickHouseParser.cpp
     ClickHouseParserVisitor.cpp
