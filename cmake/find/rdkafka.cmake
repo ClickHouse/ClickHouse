@@ -14,10 +14,10 @@ if (NOT ENABLE_RDKAFKA)
     return()
 endif()
 
-if (NOT ARCH_ARM AND USE_LIBGSASL)
+if (NOT ARCH_ARM)
     option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
 elseif(USE_INTERNAL_RDKAFKA_LIBRARY)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal librdkafka with ARCH_ARM=${ARCH_ARM} AND USE_LIBGSASL=${USE_LIBGSASL}")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal librdkafka with ARCH_ARM=${ARCH_ARM}")
 endif ()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/cppkafka/CMakeLists.txt")
