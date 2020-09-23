@@ -46,7 +46,7 @@ def setup_module(module):
     for fname in os.listdir(DICT_CONFIG_PATH):
         dictionaries.append(os.path.join(DICT_CONFIG_PATH, fname))
     
-    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_cassandra=True)
+    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries)
 
     
 def teardown_module(module):

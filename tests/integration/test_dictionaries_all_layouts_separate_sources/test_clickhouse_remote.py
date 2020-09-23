@@ -48,7 +48,7 @@ def setup_module(module):
 
     cluster.add_instance('clickhouse1', main_configs=main_configs)
     
-    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_cassandra=True)
+    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries)
 
     
 def teardown_module(module):
