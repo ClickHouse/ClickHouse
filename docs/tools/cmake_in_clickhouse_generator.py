@@ -90,7 +90,7 @@ def process_file(root_path: str, input_name: str) -> None:
 
         if matches:
             for entity in matches:
-                build_entity(os.path.join(root_path, input_name), entity, get_line_and_comment(entity[0]))
+                build_entity(os.path.join(root_path[6:], input_name), entity, get_line_and_comment(entity[0]))
 
 def process_folder(root_path:str, name: str) -> None:
     for root, _, files in os.walk(os.path.join(root_path, name)):
