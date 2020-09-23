@@ -36,6 +36,14 @@ if [[ ! -f clickhouse ]]; then
         $FASTER_DOWNLOAD "$AMD64_BIN_URL"
     elif [[ $CPU == aarch64 ]]; then
         $FASTER_DOWNLOAD "$AARCH64_BIN_URL"
+
+        # Download configs. ARM version has no embedded configs.
+        wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.xml
+        wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/users.xml
+        mkdir config.d
+        wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/path.xml -O config.d/path.xml
+        wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/access_control.xml -O config.d/access_control.xml
+        wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
     else
         echo "Unsupported CPU type: $CPU"
         exit 1
@@ -85,7 +93,7 @@ cat "$QUERIES_FILE" | sed "s/{table}/${TABLE}/g" | while read query; do
 
     echo -n "["
     for i in $(seq 1 $TRIES); do
-        RES=$(./clickhouse client --max_memory_usage 100000000000 --time --format=Null --query="$query" 2>&1)
+        RES=$(./clickhouse client --max_memory_usage 100000000000 --time --format=Null --query="$query" 2>&1 ||:)
         [[ "$?" == "0" ]] && echo -n "${RES}" || echo -n "null"
         [[ "$i" != $TRIES ]] && echo -n ", "
     done

@@ -89,5 +89,6 @@
     "release-build": [
     ],
     "database-atomic": [
+        "00604_show_create_database"
     ]
 }
