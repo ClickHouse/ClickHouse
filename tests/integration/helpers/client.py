@@ -67,11 +67,11 @@ class QueryRuntimeException(Exception):
 class CommandRequest:
     def __init__(self, command, stdin=None, timeout=None, ignore_error=False):
         # Write data to tmp file to avoid PIPEs and execution blocking
-        stdin_file = tempfile.TemporaryFile()
-        stdin_file.write(str.encode(stdin))
+        stdin_file = tempfile.TemporaryFile(mode='w+')
+        stdin_file.write(stdin)
         stdin_file.seek(0)
-        self.stdout_file = tempfile.TemporaryFile()
-        self.stderr_file = tempfile.TemporaryFile()
+        self.stdout_file = tempfile.TemporaryFile(mode='w+')
+        self.stderr_file = tempfile.TemporaryFile(mode='w+')
         self.ignore_error = ignore_error
 
         # print " ".join(command)
@@ -98,8 +98,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode("utf-8")
-        stderr = self.stderr_file.read().decode("utf-8")
+        stdout = self.stdout_file.read()
+        stderr = self.stderr_file.read()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
@@ -115,8 +115,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode("utf-8")
-        stderr = self.stderr_file.read().decode("utf-8")
+        stdout = self.stdout_file.read()
+        stderr = self.stderr_file.read()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
@@ -131,8 +131,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode("utf-8")
-        stderr = self.stderr_file.read().decode("utf-8")
+        stdout = self.stdout_file.read()
+        stderr = self.stderr_file.read()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
