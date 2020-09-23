@@ -12,7 +12,7 @@ import socket
 import subprocess
 import time
 import traceback
-import urllib.request, urllib.parse, urllib.error
+import urllib.parse
 
 import cassandra.cluster
 import docker
@@ -934,25 +934,25 @@ class ClickHouseInstance:
             auth = "{}:{}@".format(user, password)
         elif user:
             auth = "{}@".format(user)
-
         url = "http://" + auth + self.ip_address + ":8123/?" + urllib.parse.urlencode(params)
 
-        if isinstance(data, str):
-            data = data.encode()
-        open_result = urllib.request.urlopen(url, data)
+        if data:
+            r = requests.post(url, data)
+        else:
+            r = requests.get(url)
 
         def http_code_and_message():
-            return str(open_result.getcode()) + " " + http.client.responses[
-                open_result.getcode()] + ": " + open_result.read().decode()
+            code = r.status_code
+            return str(code) + " " + http.client.responses[code] + ": " + r.text
 
         if expect_fail_and_get_error:
-            if open_result.getcode() == 200:
-                raise Exception("ClickHouse HTTP server is expected to fail, but succeeded: " + open_result.read().decode())
+            if r.ok:
+                raise Exception("ClickHouse HTTP server is expected to fail, but succeeded: " + r.text)
             return http_code_and_message()
         else:
-            if open_result.getcode() != 200:
+            if not r.ok:
                 raise Exception("ClickHouse HTTP server returned " + http_code_and_message())
-            return open_result.read().decode()
+            return r.text
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_request(self, url, method='GET', params=None, data=None, headers=None):
