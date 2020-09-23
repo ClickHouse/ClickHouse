@@ -46,7 +46,7 @@ def setup_module(module):
     for fname in os.listdir(DICT_CONFIG_PATH):
         dictionaries.append(os.path.join(DICT_CONFIG_PATH, fname))
 
-    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_mongo=True)
+    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries)
 
     
 def teardown_module(module):
@@ -69,11 +69,11 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-@pytest.mark.parametrize("layout_name", list(set(LAYOUTS_SIMPLE).difference(set("cache, direct"))) )
+@pytest.mark.parametrize("layout_name", set(LAYOUTS_SIMPLE).difference({'cache', 'direct'}) )
 def test_simple(started_cluster, layout_name):
     simple_tester.execute(layout_name, node)
 
-@pytest.mark.parametrize("layout_name", list(set(LAYOUTS_SIMPLE).difference(set("complex_key_cache, complex_key_direct"))))
+@pytest.mark.parametrize("layout_name", list(set(LAYOUTS_COMPLEX).difference({'complex_key_cache', 'complex_key_direct'})))
 def test_complex(started_cluster, layout_name):
     complex_tester.execute(layout_name, node)
     
