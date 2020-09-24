@@ -136,6 +136,8 @@ class LimitClause : public INode
     public:
         explicit LimitClause(PtrTo<LimitExpr> expr);
 
+        ASTPtr convertToOld() const override;
+
     private:
         enum ChildIndex : UInt8
         {

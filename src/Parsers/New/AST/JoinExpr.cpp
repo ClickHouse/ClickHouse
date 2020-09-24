@@ -17,8 +17,12 @@ namespace DB::AST
 
 JoinConstraintClause::JoinConstraintClause(ConstraintType type_, PtrTo<ColumnExprList> list) : type(type_)
 {
-    children.assign(list->begin(), list->end());
-    (void)type; // TODO: remove this.
+    children.push_back(list);
+}
+
+ASTPtr JoinConstraintClause::convertToOld() const
+{
+    return children.back()->convertToOld();
 }
 
 // static
@@ -166,7 +170,21 @@ ASTPtr JoinExpr::convertToOld() const
                 break;
         }
 
-        // TODO: convert USING or ON expressions.
+        if (has(CONSTRAINT))
+        {
+            const auto * constraint = children[CONSTRAINT]->as<JoinConstraintClause>();
+            switch(constraint->getType())
+            {
+                case JoinConstraintClause::ConstraintType::ON:
+                    element->on_expression = constraint->convertToOld();
+                    element->children.push_back(element->on_expression);
+                    break;
+                case JoinConstraintClause::ConstraintType::USING:
+                    element->using_expression_list = constraint->convertToOld();
+                    element->children.push_back(element->using_expression_list);
+                    break;
+            }
+        }
 
         list->children.back()->children.emplace_back(element);
         list->children.back()->as<ASTTablesInSelectQueryElement>()->table_join = element;

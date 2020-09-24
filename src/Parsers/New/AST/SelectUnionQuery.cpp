@@ -112,6 +112,11 @@ LimitClause::LimitClause(PtrTo<LimitExpr> expr)
     children.push_back(expr);
 }
 
+ASTPtr LimitClause::convertToOld() const
+{
+    return children[EXPR]->convertToOld();
+}
+
 // SETTINGS Clause
 
 SettingsClause::SettingsClause(PtrTo<SettingExprList> expr_list) : exprs(expr_list)
@@ -193,22 +198,28 @@ ASTPtr SelectStmt::convertToOld() const
 
     old_select->setExpression(ASTSelectQuery::Expression::SELECT, children[COLUMNS]->convertToOld());
 
-    if (children[WITH]) old_select->setExpression(ASTSelectQuery::Expression::WITH, children[WITH]->convertToOld());
-    if (children[FROM]) old_select->setExpression(ASTSelectQuery::Expression::TABLES, children[FROM]->convertToOld());
+    if (has(WITH)) old_select->setExpression(ASTSelectQuery::Expression::WITH, children[WITH]->convertToOld());
+    if (has(FROM)) old_select->setExpression(ASTSelectQuery::Expression::TABLES, children[FROM]->convertToOld());
     // TODO: SAMPLE
     // TODO: ARRAY JOIN
-    if (children[PREWHERE]) old_select->setExpression(ASTSelectQuery::Expression::PREWHERE, children[PREWHERE]->convertToOld());
-    if (children[WHERE]) old_select->setExpression(ASTSelectQuery::Expression::WHERE, children[WHERE]->convertToOld());
-    if (children[GROUP_BY])
+    if (has(PREWHERE)) old_select->setExpression(ASTSelectQuery::Expression::PREWHERE, children[PREWHERE]->convertToOld());
+    if (has(WHERE)) old_select->setExpression(ASTSelectQuery::Expression::WHERE, children[WHERE]->convertToOld());
+    if (has(GROUP_BY))
     {
         old_select->setExpression(ASTSelectQuery::Expression::GROUP_BY, children[GROUP_BY]->convertToOld());
         old_select->group_by_with_totals = children[GROUP_BY]->as<GroupByClause>()->withTotals();
     }
-    if (children[HAVING]) old_select->setExpression(ASTSelectQuery::Expression::HAVING, children[HAVING]->convertToOld());
-    if (children[ORDER_BY]) old_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, children[ORDER_BY]->convertToOld());
+    if (has(HAVING)) old_select->setExpression(ASTSelectQuery::Expression::HAVING, children[HAVING]->convertToOld());
+    if (has(ORDER_BY)) old_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, children[ORDER_BY]->convertToOld());
     // TODO: LIMIT BY
-    // TODO: LIMIT
-    if (children[SETTINGS]) old_select->setExpression(ASTSelectQuery::Expression::SETTINGS, children[SETTINGS]->convertToOld());
+    if (has(LIMIT))
+    {
+        auto old_list = children[LIMIT]->convertToOld();
+        old_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(old_list->children[0]));
+        if (old_list->children.size() > 1)
+            old_select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(old_list->children[1]));
+    }
+    if (has(SETTINGS)) old_select->setExpression(ASTSelectQuery::Expression::SETTINGS, children[SETTINGS]->convertToOld());
 
     return old_select;
 }

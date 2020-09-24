@@ -17,6 +17,10 @@ class JoinConstraintClause : public INode
 
         JoinConstraintClause(ConstraintType type, PtrTo<ColumnExprList> list);
 
+        auto getType() const { return type; }
+
+        ASTPtr convertToOld() const override;
+
     private:
         const ConstraintType type;
 };
