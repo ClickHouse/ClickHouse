@@ -27,7 +27,7 @@ public:
         WriteBuffer & out;
         const Block & header;
         InternalFormatterCreator internal_formatter_creator;
-        const size_t max_thread_for_parallel_formatting;
+        const size_t max_threads_for_parallel_formatting;
     };
 
     explicit ParallelFormattingOutputFormat(Params params)
