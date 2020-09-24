@@ -483,7 +483,7 @@ if args.report == 'main':
         text = tableStart('Test Times')
         text += tableHeader(columns, attrs)
 
-        allowed_average_run_time = 3.75 # 60 seconds per test at 7 runs
+        allowed_average_run_time = 1.6 # 30 seconds per test at 7 runs
         for r in rows:
             anchor = f'{currentTableAnchor()}.{r[0]}'
             total_runs = (int(r[7]) + 1) * 2  # one prewarm run, two servers
