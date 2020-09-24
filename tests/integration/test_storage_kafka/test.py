@@ -89,7 +89,7 @@ def kafka_consume(topic):
     for toppar, messages in list(consumer.poll(5000).items()):
         if toppar.topic == topic:
             for message in messages:
-                yield message.value
+                yield message.value.decode()
     consumer.unsubscribe()
     consumer.close()
 
@@ -1245,7 +1245,7 @@ def test_kafka_insert(kafka_cluster):
 
     messages = []
     while True:
-        messages.extend(kafka_consume('insert1').decode())
+        messages.extend(kafka_consume('insert1'))
         if len(messages) == 50:
             break
 
