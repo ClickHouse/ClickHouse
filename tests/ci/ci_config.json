@@ -12,7 +12,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "performance",
@@ -72,7 +72,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -102,7 +102,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
