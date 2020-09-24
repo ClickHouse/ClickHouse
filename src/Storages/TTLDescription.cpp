@@ -10,6 +10,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/Context.h>
 
+#include <Parsers/queryToString.h>
+
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -196,59 +198,20 @@ TTLDescription TTLDescription::getTTLFromAST(
                         ErrorCodes::BAD_TTL_EXPRESSION);
             }
 
-            for (const auto & [name, value] : ttl_element->group_by_aggregations)
-            {
-                if (primary_key_columns_set.count(name))
-                    throw Exception(
-                        "Can not set custom aggregation for column in primary key in TTL Expression",
-                        ErrorCodes::BAD_TTL_EXPRESSION);
-
+            for (const auto & [name, _] : ttl_element->group_by_aggregations)
                 aggregation_columns_set.insert(name);
-            }
 
             if (aggregation_columns_set.size() != ttl_element->group_by_aggregations.size())
                 throw Exception(
                     "Multiple aggregations set for one column in TTL Expression",
                     ErrorCodes::BAD_TTL_EXPRESSION);
 
-
             result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
-
             auto aggregations = ttl_element->group_by_aggregations;
 
-            for (size_t i = 0; i < pk_columns.size(); ++i)
+            for (const auto & column : columns.getOrdinary())
             {
-                ASTPtr value = primary_key.expression_list_ast->children[i]->clone();
-
-                if (i >= ttl_element->group_by_key.size())
-                {
-                    ASTPtr value_max = makeASTFunction("max", value->clone());
-                    aggregations.emplace_back(value->getColumnName(), std::move(value_max));
-                }
-
-                if (value->as<ASTFunction>())
-                {
-                    auto syntax_result = TreeRewriter(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
-                    auto expr_actions = ExpressionAnalyzer(value, syntax_result, context).getActions(false);
-                    for (const auto & column : expr_actions->getRequiredColumns())
-                    {
-                        if (i < ttl_element->group_by_key.size())
-                        {
-                            ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column));
-                            aggregations.emplace_back(column, std::move(expr));
-                        }
-                        else
-                        {
-                            ASTPtr expr = makeASTFunction("argMax", std::make_shared<ASTIdentifier>(column), value->clone());
-                            aggregations.emplace_back(column, std::move(expr));
-                        }
-                    }
-                }
-            }
-
-            for (const auto & column : columns.getAllPhysical())
-            {
-                if (!primary_key_columns_set.count(column.name) && !aggregation_columns_set.count(column.name))
+                if (!aggregation_columns_set.count(column.name))
                 {
                     ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
                     aggregations.emplace_back(column.name, std::move(expr));
@@ -280,8 +243,6 @@ TTLDescription TTLDescription::getTTLFromAST(
     }
 
     checkTTLExpression(result.expression, result.result_column);
-
-
     return result;
 }
 
