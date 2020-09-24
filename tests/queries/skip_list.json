@@ -97,6 +97,7 @@
         "00604_show_create_database",
         /// UUID must be specified in ATTACH TABLE
         "01190_full_attach_syntax",
+        "01249_bad_arguments_for_bloom_filter",
         /// Assumes blocking DROP
         "01320_create_sync_race_condition",
         /// Internal distionary name is different
