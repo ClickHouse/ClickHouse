@@ -66,7 +66,7 @@ RUN apt-get --allow-unauthenticated update -y \
             unixodbc \
             unixodbc-dev \
             wget \
-            zlib1g-dev \
+            zlib1g-dev
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
