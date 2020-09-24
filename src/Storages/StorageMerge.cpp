@@ -41,19 +41,20 @@ namespace
 {
 
 /// Rewrite original query removing joined tables from it
-void removeJoin(const ASTSelectQuery & select)
+bool removeJoin(const ASTSelectQuery & select)
 {
     const auto & tables = select.tables();
     if (!tables || tables->children.size() < 2)
-        return;
+        return false;
 
     const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
     if (!joined_table.table_join)
-        return;
+        return false;
 
     /// The most simple temporary solution: leave only the first table in query.
     /// TODO: we also need to remove joined columns and related functions (taking in account aliases if any).
     tables->children.resize(1);
+    return true;
 }
 
 }
@@ -265,7 +266,12 @@ Pipe StorageMerge::createSources(
     modified_query_info.query = query_info.query->clone();
 
     /// Original query could contain JOIN but we need only the first joined table and its columns.
-    removeJoin(*modified_query_info.query->as<ASTSelectQuery>());
+    auto & modified_select = *modified_query_info.query->as<ASTSelectQuery>();
+    if (removeJoin(modified_select))
+    {
+        /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
+        modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+    }
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
 
