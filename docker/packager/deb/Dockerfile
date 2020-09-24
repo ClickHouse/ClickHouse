@@ -1,7 +1,7 @@
 # docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -49,15 +49,6 @@ RUN apt-get update \
         lld-11 \
         llvm-11 \
         llvm-11-dev \
-        clang-${LLVM_VERSION} \
-        clang-tidy-${LLVM_VERSION} \
-        lld-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION}-dev \
-        llvm-9-dev \
-        lld-9 \
-        clang-9 \
-        clang-tidy-9 \
         ninja-build \
         perl \
         pkg-config \
@@ -84,7 +75,7 @@ RUN apt-get update \
 RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
 # This symlink required by gcc to find lld compiler
-RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
+RUN ln -s /usr/bin/lld-11 /usr/bin/ld.lld
 
 COPY build.sh /
 
