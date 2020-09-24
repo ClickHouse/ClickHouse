@@ -12,6 +12,12 @@ class SetQuery : public Query
         explicit SetQuery(PtrTo<SettingExprList> list);
 
         ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            EXPRS = 0,  // SettingExprList
+        };
 };
 
 }

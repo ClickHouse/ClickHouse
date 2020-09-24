@@ -23,7 +23,15 @@ class DataClause : public INode
         auto getType() const { return clause_type; }
         auto getOffset() const { return offset; }
 
+        ASTPtr convertToOld() const override;
+
     private:
+        enum ChildIndex : UInt8
+        {
+            FORMAT = 0,    // Identifier
+            SUBQUERY = 0,  // SelectUnionQuery
+        };
+
         ClauseType clause_type;
         size_t offset = 0;
 

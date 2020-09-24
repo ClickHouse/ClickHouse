@@ -64,6 +64,20 @@ void ColumnIdentifier::makeCompound() const
     }
 }
 
+ASTPtr ColumnIdentifier::convertToOld() const
+{
+    std::vector<String> parts;
+
+    if (table)
+    {
+        if (table->getDatabase()) parts.push_back(table->getDatabase()->getName());
+        parts.push_back(table->getName());
+    }
+    parts.push_back(getName());
+
+    return std::make_shared<ASTIdentifier>(std::move(parts));
+}
+
 }
 
 namespace DB

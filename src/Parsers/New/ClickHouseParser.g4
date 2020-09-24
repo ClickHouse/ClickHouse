@@ -283,7 +283,7 @@ nestedIdentifier: identifier (DOT identifier)?;
 
 tableExpr
     : tableIdentifier                # TableExprIdentifier
-    | tableFunctionExpr                  # TableExprFunction
+    | tableFunctionExpr              # TableExprFunction
     | LPAREN selectUnionStmt RPAREN  # TableExprSubquery
     | tableExpr AS? identifier       # TableExprAlias
     ;
@@ -334,6 +334,8 @@ binaryOp
     | PLUS
     | DASH
     | PERCENT
+    | AND
+    | OR
     | EQ_DOUBLE
     | EQ_SINGLE
     | NOT_EQ
@@ -341,8 +343,6 @@ binaryOp
     | GE
     | LT
     | GT
-    | AND
-    | OR
     | NOT? LIKE
     | GLOBAL? NOT? IN
     ;

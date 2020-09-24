@@ -11658,6 +11658,14 @@ tree::TerminalNode* ClickHouseParser::BinaryOpContext::PERCENT() {
   return getToken(ClickHouseParser::PERCENT, 0);
 }
 
+tree::TerminalNode* ClickHouseParser::BinaryOpContext::AND() {
+  return getToken(ClickHouseParser::AND, 0);
+}
+
+tree::TerminalNode* ClickHouseParser::BinaryOpContext::OR() {
+  return getToken(ClickHouseParser::OR, 0);
+}
+
 tree::TerminalNode* ClickHouseParser::BinaryOpContext::EQ_DOUBLE() {
   return getToken(ClickHouseParser::EQ_DOUBLE, 0);
 }
@@ -11684,14 +11692,6 @@ tree::TerminalNode* ClickHouseParser::BinaryOpContext::LT() {
 
 tree::TerminalNode* ClickHouseParser::BinaryOpContext::GT() {
   return getToken(ClickHouseParser::GT, 0);
-}
-
-tree::TerminalNode* ClickHouseParser::BinaryOpContext::AND() {
-  return getToken(ClickHouseParser::AND, 0);
-}
-
-tree::TerminalNode* ClickHouseParser::BinaryOpContext::OR() {
-  return getToken(ClickHouseParser::OR, 0);
 }
 
 tree::TerminalNode* ClickHouseParser::BinaryOpContext::LIKE() {
@@ -11779,63 +11779,63 @@ ClickHouseParser::BinaryOpContext* ClickHouseParser::binaryOp() {
     case 7: {
       enterOuterAlt(_localctx, 7);
       setState(1228);
-      match(ClickHouseParser::EQ_DOUBLE);
+      match(ClickHouseParser::AND);
       break;
     }
 
     case 8: {
       enterOuterAlt(_localctx, 8);
       setState(1229);
-      match(ClickHouseParser::EQ_SINGLE);
+      match(ClickHouseParser::OR);
       break;
     }
 
     case 9: {
       enterOuterAlt(_localctx, 9);
       setState(1230);
-      match(ClickHouseParser::NOT_EQ);
+      match(ClickHouseParser::EQ_DOUBLE);
       break;
     }
 
     case 10: {
       enterOuterAlt(_localctx, 10);
       setState(1231);
-      match(ClickHouseParser::LE);
+      match(ClickHouseParser::EQ_SINGLE);
       break;
     }
 
     case 11: {
       enterOuterAlt(_localctx, 11);
       setState(1232);
-      match(ClickHouseParser::GE);
+      match(ClickHouseParser::NOT_EQ);
       break;
     }
 
     case 12: {
       enterOuterAlt(_localctx, 12);
       setState(1233);
-      match(ClickHouseParser::LT);
+      match(ClickHouseParser::LE);
       break;
     }
 
     case 13: {
       enterOuterAlt(_localctx, 13);
       setState(1234);
-      match(ClickHouseParser::GT);
+      match(ClickHouseParser::GE);
       break;
     }
 
     case 14: {
       enterOuterAlt(_localctx, 14);
       setState(1235);
-      match(ClickHouseParser::AND);
+      match(ClickHouseParser::LT);
       break;
     }
 
     case 15: {
       enterOuterAlt(_localctx, 15);
       setState(1236);
-      match(ClickHouseParser::OR);
+      match(ClickHouseParser::GT);
       break;
     }
 
@@ -13001,11 +13001,11 @@ ClickHouseParser::Initializer::Initializer() {
     0x4c7, 0xa3, 0x3, 0x2, 0x2, 0x2, 0x4c8, 0x4e3, 0x7, 0x98, 0x2, 0x2, 
     0x4c9, 0x4e3, 0x7, 0x93, 0x2, 0x2, 0x4ca, 0x4e3, 0x7, 0xae, 0x2, 0x2, 
     0x4cb, 0x4e3, 0x7, 0xa6, 0x2, 0x2, 0x4cc, 0x4e3, 0x7, 0x99, 0x2, 0x2, 
-    0x4cd, 0x4e3, 0x7, 0xa5, 0x2, 0x2, 0x4ce, 0x4e3, 0x7, 0x9b, 0x2, 0x2, 
-    0x4cf, 0x4e3, 0x7, 0x9c, 0x2, 0x2, 0x4d0, 0x4e3, 0x7, 0xa4, 0x2, 0x2, 
-    0x4d1, 0x4e3, 0x7, 0xa1, 0x2, 0x2, 0x4d2, 0x4e3, 0x7, 0x9d, 0x2, 0x2, 
-    0x4d3, 0x4e3, 0x7, 0xa3, 0x2, 0x2, 0x4d4, 0x4e3, 0x7, 0x9e, 0x2, 0x2, 
-    0x4d5, 0x4e3, 0x7, 0xa, 0x2, 0x2, 0x4d6, 0x4e3, 0x7, 0x5c, 0x2, 0x2, 
+    0x4cd, 0x4e3, 0x7, 0xa5, 0x2, 0x2, 0x4ce, 0x4e3, 0x7, 0xa, 0x2, 0x2, 
+    0x4cf, 0x4e3, 0x7, 0x5c, 0x2, 0x2, 0x4d0, 0x4e3, 0x7, 0x9b, 0x2, 0x2, 
+    0x4d1, 0x4e3, 0x7, 0x9c, 0x2, 0x2, 0x4d2, 0x4e3, 0x7, 0xa4, 0x2, 0x2, 
+    0x4d3, 0x4e3, 0x7, 0xa1, 0x2, 0x2, 0x4d4, 0x4e3, 0x7, 0x9d, 0x2, 0x2, 
+    0x4d5, 0x4e3, 0x7, 0xa3, 0x2, 0x2, 0x4d6, 0x4e3, 0x7, 0x9e, 0x2, 0x2, 
     0x4d7, 0x4d9, 0x7, 0x56, 0x2, 0x2, 0x4d8, 0x4d7, 0x3, 0x2, 0x2, 0x2, 
     0x4d8, 0x4d9, 0x3, 0x2, 0x2, 0x2, 0x4d9, 0x4da, 0x3, 0x2, 0x2, 0x2, 
     0x4da, 0x4e3, 0x7, 0x4c, 0x2, 0x2, 0x4db, 0x4dd, 0x7, 0x3a, 0x2, 0x2, 

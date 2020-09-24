@@ -1,5 +1,7 @@
 #include <Parsers/New/AST/OptimizeQuery.h>
 
+#include <Interpreters/StorageID.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
@@ -14,15 +16,29 @@ OptimizeQuery::OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionE
     : final(final_), deduplicate(deduplicate_)
 {
     children.push_back(identifier);
-    if (list) children.insert(children.end(), list->begin(), list->end());
-    (void)final, (void)deduplicate; // TODO
+    children.push_back(list);
 }
 
 ASTPtr OptimizeQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTOptimizeQuery>();
 
-    // TODO
+    {
+        auto table_id = getTableIdentifier(children[TABLE]->convertToOld());
+        query->database = table_id.database_name;
+        query->table = table_id.table_name;
+        query->uuid = table_id.uuid;
+    }
+
+    if (has(PARTITION))
+    {
+        query->partition = children[PARTITION]->convertToOld();
+        query->children.push_back(query->partition);
+    }
+
+    query->final = final;
+    query->deduplicate = deduplicate;
+
 
     return query;
 }

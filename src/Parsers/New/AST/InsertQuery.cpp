@@ -38,6 +38,12 @@ DataClause::DataClause(ClauseType type, PtrList exprs) : clause_type(type)
     children = exprs;
 }
 
+ASTPtr DataClause::convertToOld() const
+{
+    if (clause_type != ClauseType::SELECT) return {};
+    return children[SUBQUERY]->convertToOld();
+}
+
 // static
 PtrTo<InsertQuery> InsertQuery::createTable(PtrTo<TableIdentifier> identifier, PtrTo<ColumnNameList> list, PtrTo<DataClause> clause)
 {
@@ -70,6 +76,11 @@ ASTPtr InsertQuery::convertToOld() const
     }
 
     if (has(COLUMNS)) query->columns = children[COLUMNS]->convertToOld();
+    if (children[DATA]->as<DataClause>()->getType() == DataClause::ClauseType::SELECT)
+    {
+        query->select = children[DATA]->convertToOld();
+        query->children.push_back(query->select);
+    }
 
     return query;
 }

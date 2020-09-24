@@ -102,6 +102,7 @@ ASTPtr EngineClause::convertToOld() const
     }
     if (has(SAMPLE_BY)) storage->set(storage->sample_by, children[SAMPLE_BY]->convertToOld());
     if (has(TTL)) storage->set(storage->ttl_table, children[TTL]->convertToOld());
+    if (has(SETTINGS)) storage->set(storage->settings, children[SETTINGS]->convertToOld());
 
     return storage;
 }

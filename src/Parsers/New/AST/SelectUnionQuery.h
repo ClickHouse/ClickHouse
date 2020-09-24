@@ -155,8 +155,13 @@ class SettingsClause : public INode
     public:
         explicit SettingsClause(PtrTo<SettingExprList> expr_list);
 
+        ASTPtr convertToOld() const override;
+
     private:
-        PtrTo<SettingExprList> exprs;
+        enum ChildIndex : UInt8
+        {
+            EXPRS = 0,  // SettingExprList
+        };
 };
 
 // Statement

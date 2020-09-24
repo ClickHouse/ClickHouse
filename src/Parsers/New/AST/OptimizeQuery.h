@@ -16,7 +16,8 @@ class OptimizeQuery : public DDLQuery
     private:
         enum ChildIndex : UInt8
         {
-            TABLE = 0,
+            TABLE = 0,  // TableIdentifier
+            PARTITION,  // PartitionExprList
         };
 
         const bool final, deduplicate;

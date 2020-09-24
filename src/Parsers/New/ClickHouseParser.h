@@ -2343,6 +2343,8 @@ public:
     antlr4::tree::TerminalNode *PLUS();
     antlr4::tree::TerminalNode *DASH();
     antlr4::tree::TerminalNode *PERCENT();
+    antlr4::tree::TerminalNode *AND();
+    antlr4::tree::TerminalNode *OR();
     antlr4::tree::TerminalNode *EQ_DOUBLE();
     antlr4::tree::TerminalNode *EQ_SINGLE();
     antlr4::tree::TerminalNode *NOT_EQ();
@@ -2350,8 +2352,6 @@ public:
     antlr4::tree::TerminalNode *GE();
     antlr4::tree::TerminalNode *LT();
     antlr4::tree::TerminalNode *GT();
-    antlr4::tree::TerminalNode *AND();
-    antlr4::tree::TerminalNode *OR();
     antlr4::tree::TerminalNode *LIKE();
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *IN();

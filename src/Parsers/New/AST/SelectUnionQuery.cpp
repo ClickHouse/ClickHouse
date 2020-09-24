@@ -1,12 +1,15 @@
 #include <Parsers/New/AST/SelectUnionQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/JoinExpr.h>
 #include <Parsers/New/AST/LimitExpr.h>
+#include <Parsers/New/AST/SettingExpr.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
 namespace DB::AST
@@ -125,8 +128,22 @@ ASTPtr LimitClause::convertToOld() const
 
 // SETTINGS Clause
 
-SettingsClause::SettingsClause(PtrTo<SettingExprList> expr_list) : exprs(expr_list)
+SettingsClause::SettingsClause(PtrTo<SettingExprList> expr_list)
 {
+    children.push_back(expr_list);
+}
+
+ASTPtr SettingsClause::convertToOld() const
+{
+    auto expr = std::make_shared<ASTSetQuery>();
+
+    for (const auto & child : children[EXPRS]->as<SettingExprList &>())
+    {
+        const auto * setting = child->as<SettingExpr>();
+        expr->changes.emplace_back(setting->getName()->getName(), setting->getValue()->convertToOld()->as<ASTLiteral>()->value);
+    }
+
+    return expr;
 }
 
 // SELECT Statement

@@ -56,6 +56,8 @@ class ColumnIdentifier : public Identifier
 
         String getQualifiedName() const override { return (table ? table->getQualifiedName() + "." : String()) + getName(); }
 
+        ASTPtr convertToOld() const override;
+
     private:
         mutable PtrTo<TableIdentifier> table;
 };
