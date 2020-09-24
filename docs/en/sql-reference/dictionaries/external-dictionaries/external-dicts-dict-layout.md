@@ -91,6 +91,8 @@ LAYOUT(FLAT())
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 
+The hash table will be preallocated (this will make dictionary load faster), if the is approx number of total rows is known, this is supported only if the source is `clickhouse` without any `<where>` (since in case of `<where>` you can filter out too much rows and the dictionary will allocate too much memory, that will not be used eventually).
+
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 Configuration example:
@@ -110,6 +112,8 @@ LAYOUT(HASHED())
 ### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
+
+It will be also preallocated so as `hashed`, note that it is even more significant for `sparse_hashed`.
 
 Configuration example:
 
