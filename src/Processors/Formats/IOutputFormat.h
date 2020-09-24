@@ -39,6 +39,8 @@ protected:
 
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
 
+    friend class ParallelFormattingOutputFormat;
+
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}

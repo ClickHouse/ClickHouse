@@ -149,7 +149,7 @@ InputFormatPtr FormatFactory::getInput(
 
     if (!getCreators(name).input_processor_creator)
     {
-        throw Exception("Format " + name + " is not suitable for input (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT;;
+        throw Exception("Format " + name + " is not suitable for input (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
     }
 
     const Settings & settings = context.getSettingsRef();
