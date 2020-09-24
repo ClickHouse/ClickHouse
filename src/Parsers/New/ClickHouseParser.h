@@ -2211,7 +2211,6 @@ public:
     antlr4::tree::TerminalNode *FETCHES();
     antlr4::tree::TerminalNode *FINAL();
     antlr4::tree::TerminalNode *FIRST();
-    antlr4::tree::TerminalNode *FORMAT();
     antlr4::tree::TerminalNode *FULL();
     antlr4::tree::TerminalNode *FUNCTION();
     antlr4::tree::TerminalNode *GLOBAL();
@@ -2261,7 +2260,6 @@ public:
     antlr4::tree::TerminalNode *SECOND();
     antlr4::tree::TerminalNode *SEMI();
     antlr4::tree::TerminalNode *SET();
-    antlr4::tree::TerminalNode *SETTINGS();
     antlr4::tree::TerminalNode *SHOW();
     antlr4::tree::TerminalNode *START();
     antlr4::tree::TerminalNode *STOP();

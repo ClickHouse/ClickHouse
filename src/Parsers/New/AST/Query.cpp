@@ -19,8 +19,16 @@ void Query::setFormat(PtrTo<Identifier> id)
 
 void Query::convertToOldPartially(const std::shared_ptr<ASTQueryWithOutput> & query) const
 {
-    if (out_file) query->out_file = out_file->convertToOld();
-    if (format) query->format = format->convertToOld();
+    if (out_file)
+    {
+        query->out_file = out_file->convertToOld();
+        query->children.push_back(query->out_file);
+    }
+    if (format)
+    {
+        query->format = format->convertToOld();
+        query->children.push_back(query->format);
+    }
 }
 
 }

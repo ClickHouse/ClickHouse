@@ -2419,7 +2419,6 @@ ClickHouseParser::EngineExprContext* ClickHouseParser::engineExpr() {
         | (1ULL << ClickHouseParser::FETCHES)
         | (1ULL << ClickHouseParser::FINAL)
         | (1ULL << ClickHouseParser::FIRST)
-        | (1ULL << ClickHouseParser::FORMAT)
         | (1ULL << ClickHouseParser::FULL)
         | (1ULL << ClickHouseParser::FUNCTION)
         | (1ULL << ClickHouseParser::GLOBAL)
@@ -2470,7 +2469,6 @@ ClickHouseParser::EngineExprContext* ClickHouseParser::engineExpr() {
         | (1ULL << (ClickHouseParser::SECOND - 64))
         | (1ULL << (ClickHouseParser::SEMI - 64))
         | (1ULL << (ClickHouseParser::SET - 64))
-        | (1ULL << (ClickHouseParser::SETTINGS - 64))
         | (1ULL << (ClickHouseParser::SHOW - 64))
         | (1ULL << (ClickHouseParser::START - 64))
         | (1ULL << (ClickHouseParser::STOP - 64))
@@ -7239,7 +7237,6 @@ ClickHouseParser::ColumnsExprContext* ClickHouseParser::columnsExpr() {
         | (1ULL << ClickHouseParser::FETCHES)
         | (1ULL << ClickHouseParser::FINAL)
         | (1ULL << ClickHouseParser::FIRST)
-        | (1ULL << ClickHouseParser::FORMAT)
         | (1ULL << ClickHouseParser::FULL)
         | (1ULL << ClickHouseParser::FUNCTION)
         | (1ULL << ClickHouseParser::GLOBAL)
@@ -7287,7 +7284,6 @@ ClickHouseParser::ColumnsExprContext* ClickHouseParser::columnsExpr() {
         | (1ULL << (ClickHouseParser::SECOND - 64))
         | (1ULL << (ClickHouseParser::SEMI - 64))
         | (1ULL << (ClickHouseParser::SET - 64))
-        | (1ULL << (ClickHouseParser::SETTINGS - 64))
         | (1ULL << (ClickHouseParser::SHOW - 64))
         | (1ULL << (ClickHouseParser::START - 64))
         | (1ULL << (ClickHouseParser::STOP - 64))
@@ -8210,7 +8206,6 @@ ClickHouseParser::ColumnExprContext* ClickHouseParser::columnExpr(int precedence
           | (1ULL << ClickHouseParser::FETCHES)
           | (1ULL << ClickHouseParser::FINAL)
           | (1ULL << ClickHouseParser::FIRST)
-          | (1ULL << ClickHouseParser::FORMAT)
           | (1ULL << ClickHouseParser::FULL)
           | (1ULL << ClickHouseParser::FUNCTION)
           | (1ULL << ClickHouseParser::GLOBAL)
@@ -8261,7 +8256,6 @@ ClickHouseParser::ColumnExprContext* ClickHouseParser::columnExpr(int precedence
           | (1ULL << (ClickHouseParser::SECOND - 64))
           | (1ULL << (ClickHouseParser::SEMI - 64))
           | (1ULL << (ClickHouseParser::SET - 64))
-          | (1ULL << (ClickHouseParser::SETTINGS - 64))
           | (1ULL << (ClickHouseParser::SHOW - 64))
           | (1ULL << (ClickHouseParser::START - 64))
           | (1ULL << (ClickHouseParser::STOP - 64))
@@ -8363,7 +8357,6 @@ ClickHouseParser::ColumnExprContext* ClickHouseParser::columnExpr(int precedence
         | (1ULL << ClickHouseParser::FETCHES)
         | (1ULL << ClickHouseParser::FINAL)
         | (1ULL << ClickHouseParser::FIRST)
-        | (1ULL << ClickHouseParser::FORMAT)
         | (1ULL << ClickHouseParser::FULL)
         | (1ULL << ClickHouseParser::FUNCTION)
         | (1ULL << ClickHouseParser::GLOBAL)
@@ -8414,7 +8407,6 @@ ClickHouseParser::ColumnExprContext* ClickHouseParser::columnExpr(int precedence
         | (1ULL << (ClickHouseParser::SECOND - 64))
         | (1ULL << (ClickHouseParser::SEMI - 64))
         | (1ULL << (ClickHouseParser::SET - 64))
-        | (1ULL << (ClickHouseParser::SETTINGS - 64))
         | (1ULL << (ClickHouseParser::SHOW - 64))
         | (1ULL << (ClickHouseParser::START - 64))
         | (1ULL << (ClickHouseParser::STOP - 64))
@@ -8528,7 +8520,6 @@ ClickHouseParser::ColumnExprContext* ClickHouseParser::columnExpr(int precedence
         | (1ULL << ClickHouseParser::FETCHES)
         | (1ULL << ClickHouseParser::FINAL)
         | (1ULL << ClickHouseParser::FIRST)
-        | (1ULL << ClickHouseParser::FORMAT)
         | (1ULL << ClickHouseParser::FULL)
         | (1ULL << ClickHouseParser::FUNCTION)
         | (1ULL << ClickHouseParser::GLOBAL)
@@ -8576,7 +8567,6 @@ ClickHouseParser::ColumnExprContext* ClickHouseParser::columnExpr(int precedence
         | (1ULL << (ClickHouseParser::SECOND - 64))
         | (1ULL << (ClickHouseParser::SEMI - 64))
         | (1ULL << (ClickHouseParser::SET - 64))
-        | (1ULL << (ClickHouseParser::SETTINGS - 64))
         | (1ULL << (ClickHouseParser::SHOW - 64))
         | (1ULL << (ClickHouseParser::START - 64))
         | (1ULL << (ClickHouseParser::STOP - 64))
@@ -8712,7 +8702,6 @@ ClickHouseParser::ColumnExprContext* ClickHouseParser::columnExpr(int precedence
         | (1ULL << ClickHouseParser::FETCHES)
         | (1ULL << ClickHouseParser::FINAL)
         | (1ULL << ClickHouseParser::FIRST)
-        | (1ULL << ClickHouseParser::FORMAT)
         | (1ULL << ClickHouseParser::FULL)
         | (1ULL << ClickHouseParser::FUNCTION)
         | (1ULL << ClickHouseParser::GLOBAL)
@@ -8763,7 +8752,6 @@ ClickHouseParser::ColumnExprContext* ClickHouseParser::columnExpr(int precedence
         | (1ULL << (ClickHouseParser::SECOND - 64))
         | (1ULL << (ClickHouseParser::SEMI - 64))
         | (1ULL << (ClickHouseParser::SET - 64))
-        | (1ULL << (ClickHouseParser::SETTINGS - 64))
         | (1ULL << (ClickHouseParser::SHOW - 64))
         | (1ULL << (ClickHouseParser::START - 64))
         | (1ULL << (ClickHouseParser::STOP - 64))
@@ -9253,7 +9241,6 @@ ClickHouseParser::ColumnLambdaExprContext* ClickHouseParser::columnLambdaExpr() 
       case ClickHouseParser::FETCHES:
       case ClickHouseParser::FINAL:
       case ClickHouseParser::FIRST:
-      case ClickHouseParser::FORMAT:
       case ClickHouseParser::FULL:
       case ClickHouseParser::FUNCTION:
       case ClickHouseParser::GLOBAL:
@@ -9301,7 +9288,6 @@ ClickHouseParser::ColumnLambdaExprContext* ClickHouseParser::columnLambdaExpr() 
       case ClickHouseParser::SECOND:
       case ClickHouseParser::SEMI:
       case ClickHouseParser::SET:
-      case ClickHouseParser::SETTINGS:
       case ClickHouseParser::SHOW:
       case ClickHouseParser::START:
       case ClickHouseParser::STOP:
@@ -9782,7 +9768,6 @@ ClickHouseParser::TableFunctionExprContext* ClickHouseParser::tableFunctionExpr(
       | (1ULL << ClickHouseParser::FETCHES)
       | (1ULL << ClickHouseParser::FINAL)
       | (1ULL << ClickHouseParser::FIRST)
-      | (1ULL << ClickHouseParser::FORMAT)
       | (1ULL << ClickHouseParser::FULL)
       | (1ULL << ClickHouseParser::FUNCTION)
       | (1ULL << ClickHouseParser::GLOBAL)
@@ -9833,7 +9818,6 @@ ClickHouseParser::TableFunctionExprContext* ClickHouseParser::tableFunctionExpr(
       | (1ULL << (ClickHouseParser::SECOND - 64))
       | (1ULL << (ClickHouseParser::SEMI - 64))
       | (1ULL << (ClickHouseParser::SET - 64))
-      | (1ULL << (ClickHouseParser::SETTINGS - 64))
       | (1ULL << (ClickHouseParser::SHOW - 64))
       | (1ULL << (ClickHouseParser::START - 64))
       | (1ULL << (ClickHouseParser::STOP - 64))
@@ -10104,7 +10088,6 @@ ClickHouseParser::TableArgExprContext* ClickHouseParser::tableArgExpr() {
       case ClickHouseParser::FETCHES:
       case ClickHouseParser::FINAL:
       case ClickHouseParser::FIRST:
-      case ClickHouseParser::FORMAT:
       case ClickHouseParser::FULL:
       case ClickHouseParser::FUNCTION:
       case ClickHouseParser::GLOBAL:
@@ -10152,7 +10135,6 @@ ClickHouseParser::TableArgExprContext* ClickHouseParser::tableArgExpr() {
       case ClickHouseParser::SECOND:
       case ClickHouseParser::SEMI:
       case ClickHouseParser::SET:
-      case ClickHouseParser::SETTINGS:
       case ClickHouseParser::SHOW:
       case ClickHouseParser::START:
       case ClickHouseParser::STOP:
@@ -10747,10 +10729,6 @@ tree::TerminalNode* ClickHouseParser::KeywordContext::FIRST() {
   return getToken(ClickHouseParser::FIRST, 0);
 }
 
-tree::TerminalNode* ClickHouseParser::KeywordContext::FORMAT() {
-  return getToken(ClickHouseParser::FORMAT, 0);
-}
-
 tree::TerminalNode* ClickHouseParser::KeywordContext::FULL() {
   return getToken(ClickHouseParser::FULL, 0);
 }
@@ -10947,10 +10925,6 @@ tree::TerminalNode* ClickHouseParser::KeywordContext::SET() {
   return getToken(ClickHouseParser::SET, 0);
 }
 
-tree::TerminalNode* ClickHouseParser::KeywordContext::SETTINGS() {
-  return getToken(ClickHouseParser::SETTINGS, 0);
-}
-
 tree::TerminalNode* ClickHouseParser::KeywordContext::SHOW() {
   return getToken(ClickHouseParser::SHOW, 0);
 }
@@ -11125,7 +11099,6 @@ ClickHouseParser::KeywordContext* ClickHouseParser::keyword() {
       | (1ULL << ClickHouseParser::FETCHES)
       | (1ULL << ClickHouseParser::FINAL)
       | (1ULL << ClickHouseParser::FIRST)
-      | (1ULL << ClickHouseParser::FORMAT)
       | (1ULL << ClickHouseParser::FULL)
       | (1ULL << ClickHouseParser::FUNCTION)
       | (1ULL << ClickHouseParser::GLOBAL)
@@ -11173,7 +11146,6 @@ ClickHouseParser::KeywordContext* ClickHouseParser::keyword() {
       | (1ULL << (ClickHouseParser::SECOND - 64))
       | (1ULL << (ClickHouseParser::SEMI - 64))
       | (1ULL << (ClickHouseParser::SET - 64))
-      | (1ULL << (ClickHouseParser::SETTINGS - 64))
       | (1ULL << (ClickHouseParser::SHOW - 64))
       | (1ULL << (ClickHouseParser::START - 64))
       | (1ULL << (ClickHouseParser::STOP - 64))
@@ -11319,7 +11291,6 @@ ClickHouseParser::IdentifierContext* ClickHouseParser::identifier() {
       case ClickHouseParser::FETCHES:
       case ClickHouseParser::FINAL:
       case ClickHouseParser::FIRST:
-      case ClickHouseParser::FORMAT:
       case ClickHouseParser::FULL:
       case ClickHouseParser::FUNCTION:
       case ClickHouseParser::GLOBAL:
@@ -11367,7 +11338,6 @@ ClickHouseParser::IdentifierContext* ClickHouseParser::identifier() {
       case ClickHouseParser::SECOND:
       case ClickHouseParser::SEMI:
       case ClickHouseParser::SET:
-      case ClickHouseParser::SETTINGS:
       case ClickHouseParser::SHOW:
       case ClickHouseParser::START:
       case ClickHouseParser::STOP:
@@ -11499,7 +11469,6 @@ ClickHouseParser::IdentifierOrNullContext* ClickHouseParser::identifierOrNull() 
       case ClickHouseParser::FETCHES:
       case ClickHouseParser::FINAL:
       case ClickHouseParser::FIRST:
-      case ClickHouseParser::FORMAT:
       case ClickHouseParser::FULL:
       case ClickHouseParser::FUNCTION:
       case ClickHouseParser::GLOBAL:
@@ -11547,7 +11516,6 @@ ClickHouseParser::IdentifierOrNullContext* ClickHouseParser::identifierOrNull() 
       case ClickHouseParser::SECOND:
       case ClickHouseParser::SEMI:
       case ClickHouseParser::SET:
-      case ClickHouseParser::SETTINGS:
       case ClickHouseParser::SHOW:
       case ClickHouseParser::START:
       case ClickHouseParser::STOP:
@@ -12356,8 +12324,8 @@ ClickHouseParser::Initializer::Initializer() {
     0x49, 0x49, 0x4, 0x2, 0x37, 0x37, 0x40, 0x40, 0x3, 0x2, 0x70, 0x71, 
     0x4, 0x2, 0x32, 0x32, 0x50, 0x50, 0x5, 0x2, 0x13, 0x13, 0x4a, 0x4a, 
     0x7c, 0x7c, 0x4, 0x2, 0x99, 0x99, 0xa6, 0xa6, 0x10, 0x2, 0x5, 0xe, 0x10, 
-    0x25, 0x28, 0x34, 0x36, 0x36, 0x38, 0x3a, 0x3c, 0x40, 0x42, 0x53, 0x55, 
-    0x56, 0x58, 0x5c, 0x5e, 0x60, 0x62, 0x6a, 0x6c, 0x81, 0x83, 0x87, 0x89, 
+    0x25, 0x28, 0x34, 0x38, 0x3a, 0x3c, 0x40, 0x42, 0x53, 0x55, 0x56, 0x58, 
+    0x5c, 0x5e, 0x60, 0x62, 0x6a, 0x6c, 0x6d, 0x6f, 0x81, 0x83, 0x87, 0x89, 
     0x8c, 0x4, 0x2, 0x56, 0x56, 0x99, 0x99, 0x2, 0x589, 0x2, 0xb6, 0x3, 
     0x2, 0x2, 0x2, 0x4, 0xc7, 0x3, 0x2, 0x2, 0x2, 0x6, 0xc9, 0x3, 0x2, 0x2, 
     0x2, 0x8, 0x117, 0x3, 0x2, 0x2, 0x2, 0xa, 0x119, 0x3, 0x2, 0x2, 0x2, 

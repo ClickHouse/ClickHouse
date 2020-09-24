@@ -241,13 +241,15 @@ void SelectUnionQuery::appendSelect(PtrTo<SelectUnionQuery> query)
 
 ASTPtr SelectUnionQuery::convertToOld() const
 {
-    auto old_select_union = std::make_shared<ASTSelectWithUnionQuery>();
-    old_select_union->list_of_selects = std::make_shared<ASTExpressionList>();
-    old_select_union->children.push_back(old_select_union->list_of_selects);
+    auto query = std::make_shared<ASTSelectWithUnionQuery>();
 
-    for (const auto & select : children) old_select_union->list_of_selects->children.push_back(select->convertToOld());
+    query->list_of_selects = std::make_shared<ASTExpressionList>();
+    query->children.push_back(query->list_of_selects);
+    for (const auto & select : children) query->list_of_selects->children.push_back(select->convertToOld());
 
-    return old_select_union;
+    convertToOldPartially(query);
+
+    return query;
 }
 
 }
