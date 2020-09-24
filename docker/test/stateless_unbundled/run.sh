@@ -48,8 +48,6 @@ fi
 
 ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
 
-service zookeeper start
-sleep 5
 service clickhouse-server start && sleep 5
 
 if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then

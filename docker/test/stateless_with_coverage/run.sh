@@ -72,9 +72,6 @@ ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-clien
 ln -s --backup=simple --suffix=_original.xml \
     /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
 
-service zookeeper start
-sleep 5
-
 start_clickhouse
 
 sleep 10
