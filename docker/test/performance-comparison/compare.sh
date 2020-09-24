@@ -8,8 +8,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # https://github.com/jemalloc/jemalloc/wiki/Getting-Started
-export MALLOC_CONF="percpu_arena:disabled"
-ln -s "percpu_arena:disabled" /etc/malloc.conf
+export MALLOC_CONF="confirm_conf:true"
 
 function wait_for_server # port, pid
 {
@@ -83,18 +82,16 @@ function restart
 
     set -m # Spawn servers in their own process groups
 
-    numactl --cpunodebind=0 --localalloc \
-        left/clickhouse-server --config-file=left/config/config.xml \
-            -- --path left/db --user_files_path left/db/user_files \
-            &>> left-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml \
+        -- --path left/db --user_files_path left/db/user_files \
+        &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
 
-    numactl --cpunodebind=0 --localalloc \
-        right/clickhouse-server --config-file=right/config/config.xml \
-            -- --path right/db --user_files_path right/db/user_files \
-            &>> right-server-log.log &
+    right/clickhouse-server --config-file=right/config/config.xml \
+        -- --path right/db --user_files_path right/db/user_files \
+        &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
