@@ -977,6 +977,10 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
 
                     auto it = map_ids.find(id);
 
+                    /// We have some extra keys from source. Won't add them to cache.
+                    if (it == map_ids.end())
+                        continue;
+
                     auto & all_attributes = it->second;
                     all_attributes.found = true;
                     all_attributes.values.assign(attributes.size(), {});
