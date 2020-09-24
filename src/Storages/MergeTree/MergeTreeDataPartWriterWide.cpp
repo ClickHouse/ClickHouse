@@ -204,9 +204,16 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
     {
         WrittenOffsetColumns & offset_columns = writing_thread_pool ? offset_columns_per_column[i] : offset_columns_per_column.back();
-
         const ColumnWithTypeAndName & column = block.getByName(it->name);
+
         prepareWriteColumn(column.name, *column.type, offset_columns);
+    }
+
+    it = columns_list.begin();
+    for (size_t i = 0; i < columns_list.size(); ++i, ++it)
+    {
+        WrittenOffsetColumns & offset_columns = writing_thread_pool ? offset_columns_per_column[i] : offset_columns_per_column.back();
+        const ColumnWithTypeAndName & column = block.getByName(it->name);
 
         auto write_column_job = [&, it]
         {
