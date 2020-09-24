@@ -33,7 +33,7 @@ def test_replicated_engine_parse_metadata_on_attach():
     # and successfully accepted by the server.
     #
     # This metadata was obtain from the server without #11325
-    zk.set('/ch/tables/default/data/replicas/node/metadata', """
+    zk.set('/ch/tables/default/data/replicas/node/metadata', b"""
 metadata format version: 1
 date column: 
 sampling expression: 
