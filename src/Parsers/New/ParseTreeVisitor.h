@@ -34,6 +34,13 @@ public:
     // CheckQuery
     antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext * ctx) override;
 
+    // ColumnTypeExpr
+    antlrcpp::Any visitColumnTypeExprSimple(ClickHouseParser::ColumnTypeExprSimpleContext * ctx) override;
+    antlrcpp::Any visitColumnTypeExprParam(ClickHouseParser::ColumnTypeExprParamContext * ctx) override;
+    antlrcpp::Any visitColumnTypeExprEnum(ClickHouseParser::ColumnTypeExprEnumContext * ctx) override;
+    antlrcpp::Any visitColumnTypeExprComplex(ClickHouseParser::ColumnTypeExprComplexContext * ctx) override;
+    antlrcpp::Any visitColumnTypeExprNested(ClickHouseParser::ColumnTypeExprNestedContext * ctx) override;
+
     // CreateDatabaseQuery
     antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext * ctx) override;
 
@@ -203,11 +210,6 @@ public:
     antlrcpp::Any visitColumnsExprAsterisk(ClickHouseParser::ColumnsExprAsteriskContext *ctx) override;
     antlrcpp::Any visitColumnsExprColumn(ClickHouseParser::ColumnsExprColumnContext *ctx) override;
     antlrcpp::Any visitColumnsExprSubquery(ClickHouseParser::ColumnsExprSubqueryContext *ctx) override;
-    antlrcpp::Any visitColumnTypeExprSimple(ClickHouseParser::ColumnTypeExprSimpleContext *ctx) override;
-    antlrcpp::Any visitColumnTypeExprParam(ClickHouseParser::ColumnTypeExprParamContext *ctx) override;
-    antlrcpp::Any visitColumnTypeExprEnum(ClickHouseParser::ColumnTypeExprEnumContext *ctx) override;
-    antlrcpp::Any visitColumnTypeExprComplex(ClickHouseParser::ColumnTypeExprComplexContext *ctx) override;
-    antlrcpp::Any visitColumnTypeExprNested(ClickHouseParser::ColumnTypeExprNestedContext *ctx) override;
     antlrcpp::Any visitNestedIdentifier(ClickHouseParser::NestedIdentifierContext *ctx) override;
 
     // Database expressions

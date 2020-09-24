@@ -24,13 +24,12 @@ class EnumValue : public INode
 class ColumnTypeExpr : public INode
 {
     public:
-        using NestedParamList = std::list<std::pair<PtrTo<Identifier>, PtrTo<ColumnTypeExpr>>>;
-
         static PtrTo<ColumnTypeExpr> createSimple(PtrTo<Identifier> identifier);
+        static PtrTo<ColumnTypeExpr> createNamed(PtrTo<Identifier> identifier, PtrTo<ColumnTypeExpr> type);
         static PtrTo<ColumnTypeExpr> createComplex(PtrTo<Identifier> identifier, PtrTo<ColumnTypeExprList> list);
         static PtrTo<ColumnTypeExpr> createEnum(PtrTo<Identifier> identifier, PtrTo<EnumValueList> list);
         static PtrTo<ColumnTypeExpr> createParam(PtrTo<Identifier> identifier, PtrTo<ColumnParamList> list);
-        static PtrTo<ColumnTypeExpr> createNested(PtrTo<Identifier> identifier, NestedParamList params);
+        static PtrTo<ColumnTypeExpr> createNested(PtrTo<Identifier> identifier, PtrTo<ColumnTypeExprList> list);
 
         ASTPtr convertToOld() const override;
 
@@ -38,6 +37,7 @@ class ColumnTypeExpr : public INode
         enum class ExprType
         {
             SIMPLE,
+            NAMED,
             COMPLEX,
             ENUM,
             PARAM,
@@ -46,7 +46,8 @@ class ColumnTypeExpr : public INode
         enum ChildIndex : UInt8
         {
             NAME = 0,  // Identifier
-            LIST,      // depends on |expr_type|
+            TYPE = 1,  // ColumnTypeExpr
+            LIST = 1,  // depends on |expr_type|
         };
 
         ExprType expr_type;

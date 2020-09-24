@@ -1,6 +1,7 @@
 #include <Parsers/New/AST/ColumnTypeExpr.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/ParseTreeVisitor.h>
@@ -22,6 +23,12 @@ PtrTo<ColumnTypeExpr> ColumnTypeExpr::createSimple(PtrTo<Identifier> identifier)
 }
 
 // static
+PtrTo<ColumnTypeExpr> ColumnTypeExpr::createNamed(PtrTo<Identifier> identifier, PtrTo<ColumnTypeExpr> type)
+{
+    return PtrTo<ColumnTypeExpr>(new ColumnTypeExpr(ExprType::NAMED, {identifier, type}));
+}
+
+// static
 PtrTo<ColumnTypeExpr> ColumnTypeExpr::createComplex(PtrTo<Identifier> identifier, PtrTo<ColumnTypeExprList> list)
 {
     return PtrTo<ColumnTypeExpr>(new ColumnTypeExpr(ExprType::COMPLEX, {identifier, list}));
@@ -40,18 +47,10 @@ PtrTo<ColumnTypeExpr> ColumnTypeExpr::createParam(PtrTo<Identifier> identifier, 
 }
 
 // static
-PtrTo<ColumnTypeExpr> ColumnTypeExpr::createNested(PtrTo<Identifier> identifier, NestedParamList params)
+PtrTo<ColumnTypeExpr> ColumnTypeExpr::createNested(PtrTo<Identifier> identifier, PtrTo<ColumnTypeExprList> list)
 {
-    PtrList list;
-
-    list.push_back(identifier);
-    for (const auto & param : params)
-    {
-        list.push_back(param.first);
-        list.push_back(param.second);
-    }
-
-    return PtrTo<ColumnTypeExpr>(new ColumnTypeExpr(ExprType::NESTED, list));
+    // TODO: assert that |list| must contain only expressions of NAMED type
+    return PtrTo<ColumnTypeExpr>(new ColumnTypeExpr(ExprType::NESTED, {identifier, list}));
 }
 
 ColumnTypeExpr::ColumnTypeExpr(ExprType type, PtrList exprs) : expr_type(type)
@@ -61,6 +60,17 @@ ColumnTypeExpr::ColumnTypeExpr(ExprType type, PtrList exprs) : expr_type(type)
 
 ASTPtr ColumnTypeExpr::convertToOld() const
 {
+    if (expr_type == ExprType::NAMED)
+    {
+        auto pair = std::make_shared<ASTNameTypePair>();
+
+        pair->name = children[NAME]->as<Identifier>()->getName();
+        pair->type = children[TYPE]->convertToOld();
+        pair->children.push_back(pair->type);
+
+        return pair;
+    }
+
     auto func = std::make_shared<ASTFunction>();
 
     func->name = children[NAME]->as<Identifier>()->getName();
@@ -106,10 +116,10 @@ antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprComplex(ClickHouseParser::Col
 
 antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprNested(ClickHouseParser::ColumnTypeExprNestedContext *ctx)
 {
-    ColumnTypeExpr::NestedParamList list;
+    auto list = std::make_shared<ColumnTypeExprList>();
 
     for (size_t i = 0; i < ctx->columnTypeExpr().size(); ++i)
-        list.emplace_back(visit(ctx->identifier(i + 1)), visit(ctx->columnTypeExpr(i)));
+        list->append(ColumnTypeExpr::createNamed(visit(ctx->identifier(i + 1)), visit(ctx->columnTypeExpr(i))));
 
     return ColumnTypeExpr::createNested(visit(ctx->identifier(0)), list);
 }

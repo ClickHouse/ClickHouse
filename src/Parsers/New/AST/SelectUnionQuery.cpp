@@ -23,8 +23,7 @@ WithClause::WithClause(PtrTo<ColumnExprList> expr_list) : exprs(expr_list)
 FromClause::FromClause(PtrTo<JoinExpr> expr, bool final_) : final(final_)
 {
     children.push_back(expr);
-    /// FIXME: remove this.
-    (void)final;
+    (void) final; // TODO
 }
 
 ASTPtr FromClause::convertToOld() const

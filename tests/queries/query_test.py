@@ -9,8 +9,7 @@ import sys
 
 
 def run_client(bin_prefix, port, query, reference, replace_map={}):
-    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode',
-                               '--use_antlr_parser=1', '--send_logs_level=trace'],
+    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode', '--use_antlr_parser=1'],
                               text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = client.communicate(query)
     assert client.returncode is not None, "Client should exit after processing all queries"

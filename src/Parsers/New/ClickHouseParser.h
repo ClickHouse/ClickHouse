@@ -2176,7 +2176,6 @@ public:
     antlr4::tree::TerminalNode *ANY();
     antlr4::tree::TerminalNode *ARRAY();
     antlr4::tree::TerminalNode *AS();
-    antlr4::tree::TerminalNode *ASCENDING();
     antlr4::tree::TerminalNode *ASOF();
     antlr4::tree::TerminalNode *ATTACH();
     antlr4::tree::TerminalNode *BETWEEN();
@@ -2199,8 +2198,6 @@ public:
     antlr4::tree::TerminalNode *DEFAULT();
     antlr4::tree::TerminalNode *DELAY();
     antlr4::tree::TerminalNode *DELETE();
-    antlr4::tree::TerminalNode *DESC();
-    antlr4::tree::TerminalNode *DESCENDING();
     antlr4::tree::TerminalNode *DESCRIBE();
     antlr4::tree::TerminalNode *DETACH();
     antlr4::tree::TerminalNode *DISK();
