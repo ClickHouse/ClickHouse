@@ -532,7 +532,7 @@ bool StorageBuffer::optimize(
     if (deduplicate)
         throw Exception("DEDUPLICATE cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
-    flushAllBuffers(false);
+    flushAllBuffers(false, true);
     return true;
 }
 
@@ -580,14 +580,14 @@ bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_p
 }
 
 
-void StorageBuffer::flushAllBuffers(const bool check_thresholds)
+void StorageBuffer::flushAllBuffers(bool check_thresholds, bool reset_blocks_structure)
 {
     for (auto & buf : buffers)
-        flushBuffer(buf, check_thresholds);
+        flushBuffer(buf, check_thresholds, false, reset_blocks_structure);
 }
 
 
-void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked)
+void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked, bool reset_block_structure)
 {
     Block block_to_write;
     time_t current_time = time(nullptr);
@@ -640,6 +640,8 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     try
     {
         writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, global_context));
+        if (reset_block_structure)
+            buffer.data.clear();
     }
     catch (...)
     {
@@ -814,7 +816,9 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     checkAlterIsPossible(params, context.getSettingsRef());
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    /// So that no blocks of the old structure remain.
+    /// Flush all buffers to storages, so that no non-empty blocks of the old
+    /// structure remain. Structure of empty blocks will be updated during first
+    /// insert.
     optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
