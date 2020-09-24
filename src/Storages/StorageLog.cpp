@@ -39,7 +39,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TIMEOUT_EXCEEDED;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
@@ -51,6 +50,7 @@ namespace ErrorCodes
 class LogSource final : public SourceWithProgress
 {
 public:
+
     static Block getHeader(const NamesAndTypesList & columns)
     {
         Block res;
@@ -116,16 +116,13 @@ private:
 class LogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit LogBlockOutputStream(
-        StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_, std::unique_lock<std::shared_timed_mutex> && lock_)
+    explicit LogBlockOutputStream(StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-        , lock(std::move(lock_))
+        , lock(storage.rwlock)
         , marks_stream(
             storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
     {
-        if (!lock)
-            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
     }
 
     ~LogBlockOutputStream() override
@@ -152,7 +149,7 @@ public:
 private:
     StorageLog & storage;
     StorageMetadataPtr metadata_snapshot;
-    std::unique_lock<std::shared_timed_mutex> lock;
+    std::unique_lock<std::shared_mutex> lock;
     bool done = false;
 
     struct Stream
@@ -510,11 +507,9 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
 }
 
 
-void StorageLog::loadMarks(std::chrono::seconds lock_timeout)
+void StorageLog::loadMarks()
 {
-    std::unique_lock lock(rwlock, lock_timeout);
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     if (loaded_marks)
         return;
@@ -557,6 +552,8 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
 {
     assert(table_path != new_path_to_table_data);
     {
+        std::unique_lock<std::shared_mutex> lock(rwlock);
+
         disk->moveDirectory(table_path, new_path_to_table_data);
 
         table_path = new_path_to_table_data;
@@ -572,6 +569,8 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
 
 void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
 {
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+
     files.clear();
     file_count = 0;
     loaded_marks = false;
@@ -611,17 +610,6 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
     return it->second.marks;
 }
 
-
-static std::chrono::seconds getLockTimeout(const Context & context)
-{
-    const Settings & settings = context.getSettingsRef();
-    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
-    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
-        lock_timeout = settings.max_execution_time.totalSeconds();
-    return std::chrono::seconds{lock_timeout};
-}
-
-
 Pipe StorageLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -632,15 +620,11 @@ Pipe StorageLog::read(
     unsigned num_streams)
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
-
-    auto lock_timeout = getLockTimeout(context);
-    loadMarks(lock_timeout);
+    loadMarks();
 
     NamesAndTypesList all_columns = Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names));
 
-    std::shared_lock lock(rwlock, lock_timeout);
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+    std::shared_lock<std::shared_mutex> lock(rwlock);
 
     Pipes pipes;
 
@@ -669,28 +653,18 @@ Pipe StorageLog::read(
             max_read_buffer_size));
     }
 
-    /// No need to hold lock while reading because we read fixed range of data that does not change while appending more data.
     return Pipe::unitePipes(std::move(pipes));
 }
 
-BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
+BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    auto lock_timeout = getLockTimeout(context);
-    loadMarks(lock_timeout);
-
-    std::unique_lock lock(rwlock, lock_timeout);
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
-    return std::make_shared<LogBlockOutputStream>(*this, metadata_snapshot, std::move(lock));
+    loadMarks();
+    return std::make_shared<LogBlockOutputStream>(*this, metadata_snapshot);
 }
 
-CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & context)
+CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /* context */)
 {
-    std::shared_lock lock(rwlock, getLockTimeout(context));
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
+    std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
 }
 
