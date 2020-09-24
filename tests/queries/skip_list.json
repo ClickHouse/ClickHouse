@@ -102,5 +102,57 @@
         /// Internal distionary name is different
         "01225_show_create_table_from_dictionary",
         "01224_no_superfluous_dict_reload"
+    ],
+    "sequential":
+    [
+        /// Pessimistic list of tests which work badly in parallel.
+        /// Probably they need better investigation.
+        "01098_temporary_and_external_tables",
+        "01083_expressions_in_engine_arguments",
+        "00834_cancel_http_readonly_queries_on_client_close",
+        "parallel_alter",
+        "00417_kill_query",
+        "01193_metadata_loading",
+        "01294_lazy_database_concurrent",
+        "01031_mutations_interpreter_and_context",
+        "01305_replica_create_drop_zookeeper",
+        "01092_memory_profiler",
+        "01281_unsucceeded_insert_select_queries_counter",
+        "00110_external_sort",
+        "00682_empty_parts_merge",
+        "00701_rollup",
+        "00109_shard_totals_after_having",
+        "ddl_dictionaries",
+        "01251_dict_is_in_infinite_loop",
+        "01259_dictionary_custom_settings_ddl",
+        "01268_dictionary_direct_layout",
+        "00652_replicated_mutations_zookeeper",
+        "01238_http_memory_tracking", /// max_memory_usage_for_user can interfere another queries running concurrently
+        "01281_group_by_limit_memory_tracking", /// max_memory_usage_for_user can interfere another queries running concurrently
+        "01460_DistributedFilesToInsert",
+        "live_view",
+        "limit_memory",
+        "memory_limit",
+        "memory_leak",
+        /// Bad tests for parallel run found by fasttest
+        "00693_max_block_size_system_tables_columns",
+        "01414_mutations_and_errors_zookeeper",
+        "01013_sync_replica_timeout_zookeeper",
+        "01045_zookeeper_system_mutations_with_parts_names",
+        "00834_kill_mutation_replicated_zookeeper",
+        "01415_sticking_mutations",
+        "00933_test_fix_extra_seek_on_compressed_cache",
+        "00754_alter_modify_column_partitions",
+        "01471_calculate_ttl_during_merge",
+        "01378_alter_rename_with_ttl_zookeeper",
+        "01070_mutations_with_dependencies",
+        "01070_modify_ttl",
+        "01070_materialize_ttl",
+        "00976_ttl_with_old_parts",
+        "00933_alter_ttl",
+        "01277_alter_rename_column_constraint_zookeeper",
+        "00062_replicated_merge_tree_alter_zookeeper",
+        "01388_clear_all_columns",
+        "00699_materialized_view_mutations"
     ]
 }
