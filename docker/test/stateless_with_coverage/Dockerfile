@@ -11,8 +11,6 @@ RUN apt-get update -y \
             tzdata \
             fakeroot \
             debhelper \
-            zookeeper \
-            zookeeperd \
             expect \
             python \
             python-lxml \
