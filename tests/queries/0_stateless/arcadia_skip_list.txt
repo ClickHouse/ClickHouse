@@ -145,3 +145,4 @@
 01461_query_start_time_microseconds
 01455_shard_leaf_max_rows_bytes_to_read
 01505_distributed_local_type_conversion_enum
+01505_log_distributed_deadlock
