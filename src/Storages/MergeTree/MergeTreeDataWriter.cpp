@@ -84,19 +84,14 @@ void updateTTL(
     const TTLDescription & ttl_entry,
     IMergeTreeDataPart::TTLInfos & ttl_infos,
     DB::MergeTreeDataPartTTLInfo & ttl_info,
-    Block & block,
+    const Block & block,
     bool update_part_min_max_ttls)
 {
-    bool remove_column = false;
-    if (!block.has(ttl_entry.result_column))
-    {
-        ttl_entry.expression->execute(block);
-        remove_column = true;
-    }
+    Block block_copy = block;
+    if (!block_copy.has(ttl_entry.result_column))
+        ttl_entry.expression->execute(block_copy);
 
-    const auto & current = block.getByName(ttl_entry.result_column);
-
-    const IColumn * column = current.column.get();
+    const IColumn * column = block_copy.getByName(ttl_entry.result_column).column.get();
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
     {
         const auto & date_lut = DateLUT::instance();
@@ -127,9 +122,6 @@ void updateTTL(
 
     if (update_part_min_max_ttls)
         ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
-
-    if (remove_column)
-        block.erase(ttl_entry.result_column);
 }
 
 }
@@ -271,6 +263,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
             sync_guard.emplace(disk, full_path);
     }
 
+    if (metadata_snapshot->hasRowsTTL())
+        updateTTL(metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+
+    for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
+        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
+
+    const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
+    for (const auto & ttl_entry : recompression_ttl_entries)
+        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
+
+    new_data_part->ttl_infos.update(move_ttl_infos);
+
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
@@ -298,18 +302,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         else
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
-
-    if (metadata_snapshot->hasRowsTTL())
-        updateTTL(metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
-
-    for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
-
-    const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
-    for (const auto & ttl_entry : recompression_ttl_entries)
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
-
-    new_data_part->ttl_infos.update(move_ttl_infos);
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.

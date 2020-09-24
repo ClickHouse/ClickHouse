@@ -86,6 +86,7 @@ TTLBlockInputStream::TTLBlockInputStream(
             if (descr.arguments.empty())
                 for (const auto & name : descr.argument_names)
                     descr.arguments.push_back(header.getPositionByName(name));
+
         agg_aggregate_columns.resize(storage_rows_ttl.aggregate_descriptions.size());
 
         const Settings & settings = storage.global_context.getSettingsRef();
@@ -153,19 +154,26 @@ void TTLBlockInputStream::readSuffixImpl()
         LOG_INFO(log, "Removed {} rows with expired TTL from part {}", rows_removed, data_part->name);
 }
 
+static ColumnPtr extractRequieredColumn(const ExpressionActions & expression, const Block & block, const String & result_column)
+{
+    if (block.has(result_column))
+        return block.getByName(result_column).column;
+
+    Block block_copy;
+    for (const auto & column_name : expression.getRequiredColumns())
+        block_copy.insert(block.getByName(column_name));
+
+    expression.execute(block_copy);
+    return block_copy.getByName(result_column).column;
+}
+
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 {
     auto rows_ttl = metadata_snapshot->getRowsTTL();
+    auto ttl_column = extractRequieredColumn(*rows_ttl.expression, block, rows_ttl.result_column);
 
-    rows_ttl.expression->execute(block);
-    if (rows_ttl.where_expression)
-        rows_ttl.where_expression->execute(block);
-
-    const IColumn * ttl_column =
-        block.getByName(rows_ttl.result_column).column.get();
-
-    const IColumn * where_result_column = rows_ttl.where_expression ?
-        block.getByName(rows_ttl.where_result_column).column.get() : nullptr;
+    auto where_result_column = rows_ttl.where_expression ?
+        extractRequieredColumn(*rows_ttl.where_expression, block, rows_ttl.where_result_column) : nullptr;
 
     const auto & column_names = header.getNames();
 
@@ -181,7 +189,7 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 
             for (size_t i = 0; i < block.rows(); ++i)
             {
-                UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
+                UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
                 bool where_filter_passed = !where_result_column || where_result_column->getBool(i);
                 if (!isTTLExpired(cur_ttl) || !where_filter_passed)
                 {
@@ -206,7 +214,7 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
         auto storage_rows_ttl = metadata_snapshot->getRowsTTL();
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
+            UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
             bool where_filter_passed = !where_result_column || where_result_column->getBool(i);
             bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
 
@@ -221,6 +229,7 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
                     same_as_current = false;
                 }
             }
+
             if (!same_as_current)
             {
                 if (rows_with_current_key)
@@ -311,7 +320,6 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         defaults_expression->execute(block_with_defaults);
     }
 
-    std::vector<String> columns_to_remove;
     for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
     {
         /// If we read not all table columns. E.g. while mutation.
@@ -329,11 +337,7 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         if (isTTLExpired(old_ttl_info.max))
             continue;
 
-        if (!block.has(ttl_entry.result_column))
-        {
-            columns_to_remove.push_back(ttl_entry.result_column);
-            ttl_entry.expression->execute(block);
-        }
+        auto ttl_column = extractRequieredColumn(*ttl_entry.expression, block, ttl_entry.result_column);
 
         ColumnPtr default_column = nullptr;
         if (block_with_defaults.has(name))
@@ -344,11 +348,9 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         MutableColumnPtr result_column = values_column->cloneEmpty();
         result_column->reserve(block.rows());
 
-        const IColumn * ttl_column = block.getByName(ttl_entry.result_column).column.get();
-
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
+            UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
             if (isTTLExpired(cur_ttl))
             {
                 if (default_column)
@@ -365,34 +367,24 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         }
         column_with_type.column = std::move(result_column);
     }
-
-    for (const String & column : columns_to_remove)
-        block.erase(column);
 }
 
 void TTLBlockInputStream::updateTTLWithDescriptions(Block & block, const TTLDescriptions & descriptions, TTLInfoMap & ttl_info_map)
 {
-    std::vector<String> columns_to_remove;
     for (const auto & ttl_entry : descriptions)
     {
         auto & new_ttl_info = ttl_info_map[ttl_entry.result_column];
         if (!block.has(ttl_entry.result_column))
-        {
-            columns_to_remove.push_back(ttl_entry.result_column);
             ttl_entry.expression->execute(block);
-        }
 
-        const IColumn * ttl_column = block.getByName(ttl_entry.result_column).column.get();
+        auto ttl_column = extractRequieredColumn(*ttl_entry.expression, block, ttl_entry.result_column);
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
+            UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
             new_ttl_info.update(cur_ttl);
         }
     }
-
-    for (const String & column : columns_to_remove)
-        block.erase(column);
 }
 
 void TTLBlockInputStream::updateMovesTTL(Block & block)
