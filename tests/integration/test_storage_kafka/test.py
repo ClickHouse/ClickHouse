@@ -79,10 +79,6 @@ def kafka_produce(topic, messages, timestamp=None):
         producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
 
-
-#    print ("Produced {} messages for topic {}".format(len(messages), topic))
-
-
 def kafka_consume(topic):
     consumer = KafkaConsumer(bootstrap_servers="localhost:9092", auto_offset_reset="earliest")
     consumer.subscribe(topics=(topic))
