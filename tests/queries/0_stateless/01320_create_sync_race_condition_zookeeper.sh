@@ -26,4 +26,4 @@ timeout 10 bash -c thread2 &
 
 wait
 
-$CLICKHOUSE_CLIENT --query "DROP DATABASE test_01320" 2>&1 | grep -v "New table appeared in database being dropped or detached. Try again." || exit 0
+$CLICKHOUSE_CLIENT --query "DROP DATABASE test_01320" 2>&1 | grep -F "Code:" | grep -v "New table appeared in database being dropped or detached" || exit 0
