@@ -97,7 +97,7 @@ ccache --zero-stats ||:
 mkdir build
 cd build
 cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_C_COMPILER=clang-10 "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/cmake_log.txt
-ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/build_log.txt
+time ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/build_log.txt
 ninja install | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/install_log.txt
 
 
@@ -192,7 +192,7 @@ TESTS_TO_SKIP=(
     01460_DistributedFilesToInsert
 )
 
-clickhouse-test -j 8 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
+time clickhouse-test -j 8 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
 
 
 # substr is to remove semicolon after test name
@@ -210,7 +210,7 @@ then
     kill_clickhouse
 
     # Clean the data so that there is no interference from the previous test run.
-    rm -rvf /var/lib/clickhouse ||:
+    rm -rf /var/lib/clickhouse ||:
     mkdir /var/lib/clickhouse
 
     clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
