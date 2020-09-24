@@ -111,35 +111,9 @@ ln -s /test_output /var/log/clickhouse-server
 cp "$CLICKHOUSE_DIR/programs/server/config.xml" /etc/clickhouse-server/
 cp "$CLICKHOUSE_DIR/programs/server/users.xml" /etc/clickhouse-server/
 
-mkdir -p /etc/clickhouse-server/dict_examples
-ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/metric_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/custom_settings_prefixes.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
-ln -s /usr/share/clickhouse-test/config/readonly.xml /etc/clickhouse-server/users.d/
-ln -s /usr/share/clickhouse-test/config/access_management.xml /etc/clickhouse-server/users.d/
-ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/executable_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/
-#ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/clusters.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/graphite.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/
-ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
+# install tests config
+$CLICKHOUSE_DIR/tests/config/install.sh
 
-# Keep original query_masking_rules.xml
-ln -s --backup=simple --suffix=_original.xml /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
 
 # Kill the server in case we are running locally and not in docker
 kill_clickhouse
