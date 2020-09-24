@@ -88,7 +88,11 @@
     ],
     "release-build": [
     ],
-    "database-atomic": [
+    "database-ordinary": [
         "00604_show_create_database"
+    ],
+    "polymorphic-parts": [
+        "00933_test_fix_extra_seek_on_compressed_cache",
+        "00446_clear_column_in_partition_zookeeper"
     ]
 }

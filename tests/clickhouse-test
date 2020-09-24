@@ -456,7 +456,7 @@ class BuildFlags(object):
     DEBUG = 'debug-build'
     UNBUNDLED = 'unbundled-build'
     RELEASE = 'release-build'
-    DATABASE_ATOMIC = 'database-atomic'
+    DATABASE_ORDINARY = 'database-ordinary'
     POLYMORPHIC_PARTS = 'polymorphic-parts'
 
 
@@ -501,8 +501,8 @@ def collect_build_flags(client):
     (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.settings WHERE name = 'default_database_engine'")
 
     if clickhouse_proc.returncode == 0:
-        if 'Atomic' in stdout:
-            result.append(BuildFlags.DATABASE_ATOMIC)
+        if 'Ordinary' in stdout:
+            result.append(BuildFlags.DATABASE_ORDINARY)
     else:
         raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 

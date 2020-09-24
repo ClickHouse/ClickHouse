@@ -8,49 +8,9 @@ dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 dpkg -i package_folder/clickhouse-test_*.deb
 
-mkdir -p /etc/clickhouse-server/dict_examples
-ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/metric_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/custom_settings_prefixes.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
-ln -s /usr/share/clickhouse-test/config/readonly.xml /etc/clickhouse-server/users.d/
-ln -s /usr/share/clickhouse-test/config/access_management.xml /etc/clickhouse-server/users.d/
-ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/executable_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/clusters.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/graphite.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/database_atomic_configd.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/database_atomic_usersd.xml /etc/clickhouse-server/users.d/
+# install test configs
+/usr/share/clickhouse-test/config/install.sh
 
-# Retain any pre-existing config and allow ClickHouse to load it if required
-ln -s --backup=simple --suffix=_original.xml \
-    /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
-
-if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
-    ln -s /usr/share/clickhouse-test/config/polymorphic_parts.xml /etc/clickhouse-server/config.d/
-fi
-if [[ -n "$USE_DATABASE_ATOMIC" ]] && [[ "$USE_DATABASE_ATOMIC" -eq 1 ]]; then #FIXME USE_DATABASE_ORDINARY
-    ln -s /usr/share/clickhouse-test/config/database_ordinary_usersd.xml /etc/clickhouse-server/config.d/
-fi
-
-ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
-
-service zookeeper start
-sleep 5
 service clickhouse-server start && sleep 5
 
 if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then
