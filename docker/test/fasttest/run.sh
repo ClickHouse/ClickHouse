@@ -216,7 +216,7 @@ TESTS_TO_SKIP=(
     01460_DistributedFilesToInsert
 )
 
-clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
+clickhouse-test -j 8 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
 
 
 # substr is to remove semicolon after test name
