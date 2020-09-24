@@ -1,5 +1,5 @@
 if (USE_CLANG_TIDY)
-    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH} -fix")
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
 # The `clickhouse` binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),

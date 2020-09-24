@@ -23,12 +23,12 @@ public:
     void prepareReadBuffer(ReadBuffer & buffer) override
     {
         /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-        skipBOMIfExists(in);
+        skipBOMIfExists(buffer);
 
-        skipWhitespaceIfAny(in);
-        if (!in.eof() && *in.position() == '[')
+        skipWhitespaceIfAny(buffer);
+        if (!buffer.eof() && *buffer.position() == '[')
         {
-            ++in.position();
+            ++buffer.position();
             data_in_square_brackets = true;
         }
     }
