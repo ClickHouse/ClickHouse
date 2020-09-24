@@ -80,7 +80,7 @@ antlrcpp::Any ParseTreeVisitor::visitShowDatabasesStmt(ClickHouseParser::ShowDat
 {
     auto database_name = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("name"));
     auto expr_list = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(database_name)});
-    auto select_stmt = std::make_shared<SelectStmt>(expr_list);
+    auto select_stmt = std::make_shared<SelectStmt>(false, expr_list);
 
     auto system = std::make_shared<DatabaseIdentifier>(std::make_shared<Identifier>("system"));
     auto databases = std::make_shared<TableIdentifier>(system, std::make_shared<Identifier>("databases"));
@@ -97,7 +97,7 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
 
     auto table_name = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("name"));
     auto expr_list = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(table_name)});
-    auto select_stmt = std::make_shared<SelectStmt>(expr_list);
+    auto select_stmt = std::make_shared<SelectStmt>(false, expr_list);
 
     auto and_args = PtrTo<ColumnExprList>(new ColumnExprList{Literal::createNumber("1")});
 

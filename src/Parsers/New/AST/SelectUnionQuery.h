@@ -60,10 +60,15 @@ class ArrayJoinClause : public INode
 class PrewhereClause : public INode
 {
     public:
-        explicit PrewhereClause(PtrTo<ColumnExpr> expr_);
+        explicit PrewhereClause(PtrTo<ColumnExpr> expr);
+
+        ASTPtr convertToOld() const override;
 
     private:
-        PtrTo<ColumnExpr> expr;
+        enum ChildIndex : UInt8
+        {
+            EXPR = 0,  // ColumnExpr
+        };
 };
 
 class WhereClause : public INode
@@ -159,7 +164,7 @@ class SettingsClause : public INode
 class SelectStmt : public INode
 {
     public:
-        explicit SelectStmt(PtrTo<ColumnExprList> expr_list);
+        SelectStmt(bool distinct_, PtrTo<ColumnExprList> expr_list);
 
         void setWithClause(PtrTo<WithClause> clause);
         void setFromClause(PtrTo<FromClause> clause);
@@ -195,6 +200,8 @@ class SelectStmt : public INode
 
             MAX_INDEX,
         };
+
+        const bool distinct;
 };
 
 class SelectUnionQuery : public Query

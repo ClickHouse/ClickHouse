@@ -10,7 +10,8 @@ namespace DB::AST
 
 Identifier::Identifier(const String & name_) : name(name_)
 {
-    // TODO: strip quotes.
+    if (name.front() == '`' || name.front() == '"')
+        name = name.substr(1, name.size() - 2);
 }
 
 Identifier::Identifier(const String & name_, const String & nested_name) : name(name_ + "." + nested_name)

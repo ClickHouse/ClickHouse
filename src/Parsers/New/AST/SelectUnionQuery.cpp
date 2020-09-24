@@ -53,8 +53,14 @@ ArrayJoinClause::ArrayJoinClause(PtrTo<ColumnExprList> expr_list, bool left_) : 
 
 // PREWHERE Clause
 
-PrewhereClause::PrewhereClause(PtrTo<ColumnExpr> expr_) : expr(expr_)
+PrewhereClause::PrewhereClause(PtrTo<ColumnExpr> expr)
 {
+    children.push_back(expr);
+}
+
+ASTPtr PrewhereClause::convertToOld() const
+{
+    return children[EXPR]->convertToOld();
 }
 
 // WHERE Clause
@@ -125,7 +131,7 @@ SettingsClause::SettingsClause(PtrTo<SettingExprList> expr_list) : exprs(expr_li
 
 // SELECT Statement
 
-SelectStmt::SelectStmt(PtrTo<ColumnExprList> expr_list)
+SelectStmt::SelectStmt(bool distinct_, PtrTo<ColumnExprList> expr_list) : distinct(distinct_)
 {
     children.resize(MAX_INDEX);
 
@@ -197,6 +203,7 @@ ASTPtr SelectStmt::convertToOld() const
     auto old_select = std::make_shared<ASTSelectQuery>();
 
     old_select->setExpression(ASTSelectQuery::Expression::SELECT, children[COLUMNS]->convertToOld());
+    old_select->distinct = distinct;
 
     if (has(WITH)) old_select->setExpression(ASTSelectQuery::Expression::WITH, children[WITH]->convertToOld());
     if (has(FROM)) old_select->setExpression(ASTSelectQuery::Expression::TABLES, children[FROM]->convertToOld());
@@ -322,7 +329,7 @@ antlrcpp::Any ParseTreeVisitor::visitSettingsClause(ClickHouseParser::SettingsCl
 
 antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)
 {
-    auto select_stmt = std::make_shared<SelectStmt>(visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>());
+    auto select_stmt = std::make_shared<SelectStmt>(!!ctx->DISTINCT(), visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>());
 
     if (ctx->withClause()) select_stmt->setWithClause(visit(ctx->withClause()));
     if (ctx->fromClause()) select_stmt->setFromClause(visit(ctx->fromClause()));

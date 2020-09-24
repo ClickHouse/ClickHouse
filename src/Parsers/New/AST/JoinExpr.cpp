@@ -177,6 +177,9 @@ ASTPtr JoinExpr::convertToOld() const
             {
                 case JoinConstraintClause::ConstraintType::ON:
                     element->on_expression = constraint->convertToOld();
+                    if (element->on_expression->children.size() > 1)
+                        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Cannot convert JoinExpr with more than one ON expression");
+                    element->on_expression = element->on_expression->children[0];
                     element->children.push_back(element->on_expression);
                     break;
                 case JoinConstraintClause::ConstraintType::USING:
