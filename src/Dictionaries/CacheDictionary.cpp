@@ -661,13 +661,13 @@ void CacheDictionary::setAttributeInPlace(AttributeValue & place, AttributeUnder
     switch (type)
     {
         case AttributeUnderlyingType::utUInt8:
-            place = value.get<UInt8>();
+            place = static_cast<UInt8>(value.get<UInt64>());
             break;
         case AttributeUnderlyingType::utUInt16:
-            place = value.get<UInt16>();
+            place = static_cast<UInt16>(value.get<UInt64>());
             break;
         case AttributeUnderlyingType::utUInt32:
-            place = value.get<UInt32>();
+            place = static_cast<UInt32>(value.get<UInt64>());
             break;
         case AttributeUnderlyingType::utUInt64:
             place = value.get<UInt64>();
@@ -676,20 +676,22 @@ void CacheDictionary::setAttributeInPlace(AttributeValue & place, AttributeUnder
             place = value.get<UInt128>();
             break;
         case AttributeUnderlyingType::utInt8:
-            place = value.get<Int8>();
+            place = static_cast<Int8>(value.get<Int64>());
             break;
         case AttributeUnderlyingType::utInt16:
-            place = value.get<Int16>();
+            place = static_cast<Int16>(value.get<Int64>());
             break;
         case AttributeUnderlyingType::utInt32:
-            place = value.get<Int32>();
+            place = static_cast<Int32>(value.get<Int64>());
             break;
         case AttributeUnderlyingType::utInt64:
             place = value.get<Int64>();
             break;
         case AttributeUnderlyingType::utFloat32:
-            place = value.get<Float32>();
+        {
+            place = static_cast<Float32>(value.get<Float64>());
             break;
+        }
         case AttributeUnderlyingType::utFloat64:
             place = value.get<Float64>();
             break;
