@@ -18,8 +18,21 @@ import xml.etree.ElementTree as et
 from threading import Thread
 from scipy import stats
 
+
+total_start_seconds = time.perf_counter()
+stage_start_seconds = total_start_seconds
+
+def reportStageEnd(stage):
+    global stage_start_seconds, total_start_seconds
+
+    current = time.perf_counter()
+    print(f'stage\t{stage}\t{current - stage_start_seconds:.3f}\t{current - total_start_seconds:.3f}')
+    stage_start_seconds = current
+
+
 def tsv_escape(s):
     return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
+
 
 parser = argparse.ArgumentParser(description='Run performance test.')
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
@@ -33,10 +46,14 @@ parser.add_argument('--print-queries', action='store_true', help='Print test que
 parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
 args = parser.parse_args()
 
+reportStageEnd('start')
+
 test_name = os.path.splitext(os.path.basename(args.file[0].name))[0]
 
 tree = et.parse(args.file[0])
 root = tree.getroot()
+
+reportStageEnd('parse')
 
 # Process query parameters
 subst_elems = root.findall('substitutions/substitution')
@@ -109,12 +126,16 @@ if not args.long:
 if 'max_ignored_relative_change' in root.attrib:
     print(f'report-threshold\t{root.attrib["max_ignored_relative_change"]}')
 
+reportStageEnd('before-connect')
+
 # Open connections
 servers = [{'host': host, 'port': port} for (host, port) in zip(args.host, args.port)]
 all_connections = [clickhouse_driver.Client(**server) for server in servers]
 
 for s in servers:
     print('server\t{}\t{}'.format(s['host'], s['port']))
+
+reportStageEnd('connect')
 
 # Run drop queries, ignoring errors. Do this before all other activity, because
 # clickhouse_driver disconnects on error (this is not configurable), and the new
@@ -128,6 +149,8 @@ for conn_index, c in enumerate(all_connections):
             print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
         except:
             pass
+
+reportStageEnd('drop-1')
 
 # Apply settings.
 # If there are errors, report them and continue -- maybe a new test uses a setting
@@ -146,6 +169,8 @@ for conn_index, c in enumerate(all_connections):
         except:
             print(traceback.format_exc(), file=sys.stderr)
 
+reportStageEnd('settings')
+
 # Check tables that should exist. If they don't exist, just skip this test.
 tables = [e.text for e in root.findall('preconditions/table_exists')]
 for t in tables:
@@ -157,6 +182,8 @@ for t in tables:
             skipped_message = ' '.join(exception_message.split('\n')[:2])
             print(f'skipped\t{tsv_escape(skipped_message)}')
             sys.exit(0)
+
+reportStageEnd('preconditions')
 
 # Run create and fill queries. We will run them simultaneously for both servers,
 # to save time.
@@ -187,6 +214,8 @@ for t in threads:
 
 for t in threads:
     t.join()
+
+reportStageEnd('create')
 
 # Run the queries in randomized order, but preserve their indexes as specified
 # in the test XML. To avoid using too much time, limit the number of queries
@@ -342,9 +371,14 @@ for query_index in queries_to_run:
                 break
             # And don't bother with short queries
 
+
+reportStageEnd('run')
+
 # Run drop queries
 drop_queries = substitute_parameters(drop_query_templates)
 for conn_index, c in enumerate(all_connections):
     for q in drop_queries:
         c.execute(q)
         print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
+
+reportStageEnd('drop-2')

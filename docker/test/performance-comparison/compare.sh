@@ -658,13 +658,15 @@ create view test_runs as
     group by test
     ;
 
-create table test_times_report engine File(TSV, 'report/test-times.tsv') as
-    select wall_clock_time_per_test.test, real,
-        toDecimal64(total_client_time, 3),
+create view test_times_view as
+    select
+        wall_clock_time_per_test.test test,
+        real,
+        total_client_time,
         queries,
-        toDecimal64(query_max, 3),
-        toDecimal64(real / queries, 3) avg_real_per_query,
-        toDecimal64(query_min, 3),
+        query_max,
+        real / queries avg_real_per_query,
+        query_min,
         runs
     from test_time
         -- wall clock times are also measured for skipped tests, so don't
@@ -673,7 +675,43 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv') as
             on wall_clock_time_per_test.test = test_time.test
         full join test_runs
             on test_runs.test = test_time.test
-    order by avg_real_per_query desc;
+    ;
+
+-- WITH TOTALS doesn't work with INSERT SELECT, so we have to jump through these
+-- hoops: https://github.com/ClickHouse/ClickHouse/issues/15227
+create view test_times_view_total as
+    select
+        'Total' test,
+        sum(real),
+        sum(total_client_time),
+        sum(queries),
+        max(query_max),
+        sum(real) / sum(queries) avg_real_per_query,
+        min(query_min),
+        -- Totaling the number of runs doesn't make sense, but use the max so
+        -- that the reporting script doesn't complain about queries being too
+        -- long.
+        max(runs)
+    from test_times_view
+    ;
+
+create table test_times_report engine File(TSV, 'report/test-times.tsv') as
+    select
+        test,
+        toDecimal64(real, 3),
+        toDecimal64(total_client_time, 3),
+        queries,
+        toDecimal64(query_max, 3),
+        toDecimal64(avg_real_per_query, 3),
+        toDecimal64(query_min, 3),
+        runs
+    from (
+        select * from test_times_view
+        union all
+        select * from test_times_view_total
+        )
+    order by test = 'Total' desc, avg_real_per_query desc
+    ;
 
 -- report for all queries page, only main metric
 create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
