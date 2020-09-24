@@ -1415,14 +1415,14 @@ def test_kafka_virtual_columns2(kafka_cluster):
     producer.send(topic='virt2_0', value=json.dumps({'value': 1}), partition=0, key='k1', timestamp_ms=1577836801001,
                   headers=[('content-encoding', b'base64')])
     producer.send(topic='virt2_0', value=json.dumps({'value': 2}), partition=0, key='k2', timestamp_ms=1577836802002,
-                  headers=[('empty_value', ''), ('', 'empty name'), ('', ''), ('repetition', '1'), ('repetition', '2')])
+                  headers=[('empty_value', b''), ('', b'empty name'), ('', b''), ('repetition', b'1'), ('repetition', b'2')])
     producer.flush()
     time.sleep(1)
 
     producer.send(topic='virt2_0', value=json.dumps({'value': 3}), partition=1, key='k3', timestamp_ms=1577836803003,
-                  headers=[('b', 'b'), ('a', 'a')])
+                  headers=[('b', b'b'), ('a', b'a')])
     producer.send(topic='virt2_0', value=json.dumps({'value': 4}), partition=1, key='k4', timestamp_ms=1577836804004,
-                  headers=[('a', 'a'), ('b', 'b')])
+                  headers=[('a', b'a'), ('b', b'b')])
     producer.flush()
     time.sleep(1)
 
