@@ -1,5 +1,5 @@
 <yandex>
     <merge_tree>
-        <min_bytes_for_wide_part>10485760</min_bytes_for_wide_part>
+        <randomize_part_type>1</randomize_part_type>
     </merge_tree>
 </yandex>
