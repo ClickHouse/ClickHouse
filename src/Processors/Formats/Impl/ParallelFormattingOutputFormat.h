@@ -16,9 +16,6 @@
 namespace DB
 {
 
-const size_t min_chunk_bytes_for_parallel_formatting = 1024;
-const size_t max_threads_for_parallel_formatting = 6;
-
 class ParallelFormattingOutputFormat : public IOutputFormat
 {
 public:
@@ -30,15 +27,16 @@ public:
         WriteBuffer & out;
         const Block & header;
         InternalFormatterCreator internal_formatter_creator;
+        const size_t max_thread_for_parallel_formatting;
     };
 
     explicit ParallelFormattingOutputFormat(Params params)
         : IOutputFormat(params.header, params.out)
         , internal_formatter_creator(params.internal_formatter_creator)
-        , pool(max_threads_for_parallel_formatting)
+        , pool(params.max_threads_for_parallel_formatting)
 
     {
-        processing_units.resize(max_threads_for_parallel_formatting + 2);
+        processing_units.resize(params.max_threads_for_parallel_formatting + 2);
 
         collector_thread = ThreadFromGlobalPool([&] { collectorThreadFunction(); });
     }

@@ -39,15 +39,12 @@ protected:
 
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
 
-    friend class ParallelFormattingOutputFormat;
-
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
     virtual void finalize() {}
 
 public:
-
     IOutputFormat(const Block & header_, WriteBuffer & out_);
 
     Status prepare() override;
