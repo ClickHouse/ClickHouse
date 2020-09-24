@@ -1410,7 +1410,7 @@ def test_kafka_virtual_columns2(kafka_cluster):
         SELECT value, _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp), toUnixTimestamp64Milli(_timestamp_ms), _headers.name, _headers.value FROM test.kafka;
         ''')
 
-    producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=value_serializer)
+    producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=value_serializer, key_serializer=value_serializer)
 
     producer.send(topic='virt2_0', value=json.dumps({'value': 1}), partition=0, key='k1', timestamp_ms=1577836801001,
                   headers=[('content-encoding', b'base64')])
