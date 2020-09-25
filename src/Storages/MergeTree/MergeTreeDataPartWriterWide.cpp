@@ -94,6 +94,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
 
     std::unique_ptr<ThreadPool> writing_thread_pool;
     std::vector<WrittenOffsetColumns> offset_columns_per_column;
+    std::vector<bool> column_data_written(columns_list.size(), false);
     if (settings.max_threads != 1)
     {
         offset_columns_per_column.reserve(columns_list.size());
@@ -126,31 +127,33 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
         WrittenOffsetColumns & offset_columns = writing_thread_pool ? offset_columns_per_column[i] : offset_columns_per_column.back();
         const ColumnWithTypeAndName & column = block.getByName(it->name);
 
-        auto write_column_job = [&, it]
+        auto write_column_job = [&, i, it]
         {
+            bool written = false;
             if (permutation)
             {
                 if (primary_key_block.has(it->name))
                 {
                     const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                    writeColumn(column.name, *column.type, primary_column, offset_columns);
+                    written = writeColumn(column.name, *column.type, primary_column, offset_columns);
                 }
                 else if (skip_indexes_block.has(it->name))
                 {
                     const auto & index_column = *skip_indexes_block.getByName(it->name).column;
-                    writeColumn(column.name, *column.type, index_column, offset_columns);
+                    written = writeColumn(column.name, *column.type, index_column, offset_columns);
                 }
                 else
                 {
                     /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                     ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                    writeColumn(column.name, *column.type, *permuted_column, offset_columns);
+                    written = writeColumn(column.name, *column.type, *permuted_column, offset_columns);
                 }
             }
             else
             {
-                writeColumn(column.name, *column.type, *column.column, offset_columns);
+                written = writeColumn(column.name, *column.type, *column.column, offset_columns);
             }
+            column_data_written[i] = written;
         };
 
         if (writing_thread_pool)
@@ -161,6 +164,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
 
     if (writing_thread_pool)
         writing_thread_pool->wait();
+
+    // data_written = std::any_of(column_data_written.begin(), column_data_written.end(), std::identity());
+    data_written = std::find(column_data_written.begin(), column_data_written.end(), true) != column_data_written.end();
 }
 
 void MergeTreeDataPartWriterWide::writeSingleMark(
@@ -266,7 +272,7 @@ void MergeTreeDataPartWriterWide::prepareWriteColumn(
 
 
 /// Column must not be empty. (column.size() !== 0)
-void MergeTreeDataPartWriterWide::writeColumn(
+bool MergeTreeDataPartWriterWide::writeColumn(
     const String & name,
     const IDataType & type,
     const IColumn & column,
@@ -278,6 +284,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
 
+    bool column_data_written = false;
     size_t total_rows = column.size();
     size_t current_row = 0;
     size_t current_column_mark = getCurrentMark();
@@ -304,7 +311,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
         }
 
         if (rows_to_write != 0)
-            data_written = true;
+            column_data_written = true;
 
         current_row = writeSingleGranule(
             name,
@@ -334,6 +341,8 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     next_mark = current_column_mark;
     next_index_offset = current_row - total_rows;
+
+    return column_data_written;
 }
 
 void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
