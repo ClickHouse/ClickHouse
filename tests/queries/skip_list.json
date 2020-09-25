@@ -125,6 +125,7 @@
         "limit_memory",
         "memory_limit",
         "memory_leak",
+        "attach",
         /// Bad tests for parallel run found by fasttest
         "00693_max_block_size_system_tables_columns",
         "01414_mutations_and_errors_zookeeper",
@@ -149,6 +150,9 @@
         "00933_ttl_replicated_zookeeper",
         "01459_manual_write_to_replicas",
         "00446_clear_column_in_partition_concurrent_zookeeper",
-        "00446_clear_column_in_partition_zookeeper"
+        "00446_clear_column_in_partition_zookeeper",
+        "01135_default_and_alter_zookeeper",
+        "01130_in_memory_parts_partitons",
+        "01127_month_partitioning_consistency_select"
     ]
 }
