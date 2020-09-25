@@ -690,6 +690,9 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
 {
     auto lock = getLock();
 
+    client_info.current_user = credentials.getUserName();
+    client_info.current_address = address;
+
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
     client_info.current_password.clear();
