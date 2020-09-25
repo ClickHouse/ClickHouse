@@ -66,6 +66,8 @@ if [[ ! -d data ]]; then
     tar $TAR_PARAMS --strip-components=1 --directory=. -x -v -f $DATASET
 fi
 
+uptime
+
 echo "Starting clickhouse-server"
 
 ./clickhouse server > server.log 2>&1 &
