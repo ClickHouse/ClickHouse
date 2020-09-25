@@ -88,7 +88,7 @@
     ],
     "release-build": [
     ],
-    "database-atomic": [
+    "database-ordinary": [
         /// Inner tables of materialized views have different names
         "00738_lock_for_inner_table",
         "00609_mv_index_in_in",
@@ -154,5 +154,10 @@
         "00062_replicated_merge_tree_alter_zookeeper",
         "01388_clear_all_columns",
         "00699_materialized_view_mutations"
+        "00652_mergetree_mutations",
+        "00933_ttl_replicated_zookeeper",
+        "01459_manual_write_to_replicas",
+        "00446_clear_column_in_partition_concurrent_zookeeper",
+        "00446_clear_column_in_partition_zookeeper"
     ]
 }

@@ -27,12 +27,10 @@ public:
     /// The purpose of this function is to rollback a group of unfinished writes.
     void repair();
 
+private:
     /// File name -> size.
     using Map = std::map<String, UInt64>;
 
-    Map getFileSizes() const;
-
-private:
     void initialize();
     void updateImpl(const String & file_path);
     void load(Map & local_map, const String & path) const;
