@@ -44,6 +44,9 @@ set (SRCS
 
 add_library (clickhouse_parsers_new ${SRCS})
 
+# XXX: hack for old clang-10!
+check_cxx_compiler_flag("-Wsuggest-destructor-override" HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
+
 target_compile_options (clickhouse_parsers_new
     PRIVATE
         -Wno-c++20-compat
@@ -52,13 +55,19 @@ target_compile_options (clickhouse_parsers_new
         -Wno-documentation
         -Wno-documentation-deprecated-sync
         -Wno-shadow-field
-        # TODO: -Wno-suggest-destructor-override
         -Wno-unused-parameter
 
     PUBLIC
         -Wno-extra-semi
         -Wno-inconsistent-missing-destructor-override
 )
+if (HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
+    target_compile_options (clickhouse_parsers_new
+        PRIVATE
+            -Wno-suggest-destructor-override
+    )
+endif ()
+
 target_link_libraries (clickhouse_parsers_new PUBLIC antlr4-runtime clickhouse_common_io clickhouse_parsers)
 
 # ANTLR generates u8 string literals, which are incompatible with |std::string| in C++20.
