@@ -8,6 +8,7 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
+# test
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1',
