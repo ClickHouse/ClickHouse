@@ -97,7 +97,6 @@ struct LastBlockInputParameters
     Block header;
 };
 
-
 class TCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
@@ -124,7 +123,7 @@ private:
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    UInt64 client_revision = 0;
+    UInt64 client_tcp_protocol_version = 0;
 
     Context connection_context;
     std::optional<Context> query_context;
@@ -138,6 +137,12 @@ private:
     Stopwatch after_send_progress;
 
     String default_database;
+
+    /// For inter-server secret (remote_server.*.secret)
+    String salt;
+    String cluster;
+    String cluster_secret;
+
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
@@ -186,6 +191,8 @@ private:
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
+
+    void receiveClusterNameAndSalt();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

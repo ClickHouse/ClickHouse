@@ -160,7 +160,7 @@ void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(
     column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
 }
 
-void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     if (columns_buffer.size() != 0)
         writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
@@ -184,6 +184,12 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     plain_file->next();
     marks.next();
     addToChecksums(checksums);
+
+    if (sync)
+    {
+        plain_file->sync();
+        marks_file->sync();
+    }
 }
 
 static void fillIndexGranularityImpl(

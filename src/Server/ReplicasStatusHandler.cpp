@@ -33,7 +33,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         /// Even if lag is small, output detailed information about the lag.
         bool verbose = params.get("verbose", "") == "1";
 
-        const MergeTreeSettings & settings = context.getMergeTreeSettings();
+        const MergeTreeSettings & settings = context.getReplicatedMergeTreeSettings();
 
         bool ok = true;
         std::stringstream message;

@@ -6,7 +6,7 @@
 
 #    include <memory>
 #    include <vector>
-#    include <Core/Types.h>
+#    include <common/types.h>
 #    include <IO/BufferWithOwnMemory.h>
 #    include <IO/HTTPCommon.h>
 #    include <IO/WriteBuffer.h>

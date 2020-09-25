@@ -4,16 +4,16 @@ from __future__ import print_function
 
 import datetime
 import decimal
+import os
+import subprocess
+import sys
+import time
+import uuid
+
 import docker
 import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
-import os
-import sys
-import subprocess
-import time
-import uuid
-
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 
 psycopg2.extras.register_uuid()
@@ -24,7 +24,8 @@ DOCKER_COMPOSE_PATH = get_docker_compose_path()
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=["configs/postresql.xml", "configs/log.xml", "configs/ssl_conf.xml",
                                                   "configs/dhparam.pem", "configs/server.crt", "configs/server.key"],
-                            user_configs=["configs/default_passwd.xml"], env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
+                            user_configs=["configs/default_passwd.xml"],
+                            env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
 
 server_port = 5433
 
@@ -41,7 +42,8 @@ def server_address():
 @pytest.fixture(scope='module')
 def psql_client():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgesql.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
+    subprocess.check_call(
+        ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_psql_1')
 
 
@@ -64,7 +66,8 @@ def psql_server(psql_client):
 @pytest.fixture(scope='module')
 def java_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgesql_java_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
+    subprocess.check_call(
+        ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_java_1')
 
 
@@ -73,7 +76,7 @@ def test_psql_is_ready(psql_server):
 
 
 def test_psql_client(psql_client, server_address):
-    cmd_prefix = 'psql "sslmode=require host={server_address} port={server_port} user=default dbname=default password=123" '\
+    cmd_prefix = 'psql "sslmode=require host={server_address} port={server_port} user=default dbname=default password=123" ' \
         .format(server_address=server_address, server_port=server_port)
     cmd_prefix += "--no-align --field-separator=' ' "
 
@@ -116,7 +119,8 @@ def test_python_client(server_address):
         cur = ch.cursor()
         cur.execute('select name from tables;')
 
-    assert exc_info.value.args == ("Query execution failed.\nDB::Exception: Table default.tables doesn't exist.\nSSL connection has been closed unexpectedly\n",)
+    assert exc_info.value.args == (
+        "Query execution failed.\nDB::Exception: Table default.tables doesn't exist.\nSSL connection has been closed unexpectedly\n",)
 
     ch = py_psql.connect(host=server_address, port=server_port, user='default', password='123', database='')
     cur = ch.cursor()
@@ -127,10 +131,14 @@ def test_python_client(server_address):
 
     cur.execute('CREATE DATABASE x')
     cur.execute('USE x')
-    cur.execute('CREATE TEMPORARY TABLE tmp2 (ch Int8, i64 Int64, f64 Float64, str String, date Date, dec Decimal(19, 10), uuid UUID) ENGINE = Memory')
-    cur.execute("insert into tmp2 (ch, i64, f64, str, date, dec, uuid) values (44, 534324234, 0.32423423, 'hello', '2019-01-23', 0.333333, '61f0c404-5cb3-11e7-907b-a6006ad3dba0')")
+    cur.execute(
+        'CREATE TEMPORARY TABLE tmp2 (ch Int8, i64 Int64, f64 Float64, str String, date Date, dec Decimal(19, 10), uuid UUID) ENGINE = Memory')
+    cur.execute(
+        "insert into tmp2 (ch, i64, f64, str, date, dec, uuid) values (44, 534324234, 0.32423423, 'hello', '2019-01-23', 0.333333, '61f0c404-5cb3-11e7-907b-a6006ad3dba0')")
     cur.execute('select * from tmp2')
-    assert cur.fetchall()[0] == ('44', 534324234, 0.32423423, 'hello', datetime.date(2019, 1, 23), decimal.Decimal('0.3333330000'), uuid.UUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))
+    assert cur.fetchall()[0] == (
+        '44', 534324234, 0.32423423, 'hello', datetime.date(2019, 1, 23), decimal.Decimal('0.3333330000'),
+        uuid.UUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))
 
 
 def test_java_client(server_address, java_container):
@@ -138,13 +146,15 @@ def test_java_client(server_address, java_container):
         reference = fp.read()
 
     # database not exists exception.
-    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user default --database '
-                                                     'abc'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = java_container.exec_run(
+        'java JavaConnectorTest --host {host} --port {port} --user default --database '
+        'abc'.format(host=server_address, port=server_port), demux=True)
     assert code == 1
 
     # non-empty password passed.
-    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database '
-                                                     'default'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = java_container.exec_run(
+        'java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database '
+        'default'.format(host=server_address, port=server_port), demux=True)
     print(stdout, stderr, file=sys.stderr)
     assert code == 0
     assert stdout == reference

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Storages/MergeTree/MergeSelector.h>
 #include <Storages/TTLDescription.h>
 
