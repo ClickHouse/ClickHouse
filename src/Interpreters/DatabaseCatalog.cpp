@@ -657,7 +657,10 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
     if (table)
+    {
         drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        table->is_dropped = true;
+    }
     else
     {
         /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk or remove data from all volumes)
@@ -674,6 +677,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             try
             {
                 table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, *global_context, false).second;
+                table->is_dropped = true;
             }
             catch (...)
             {
@@ -763,7 +767,6 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table) const
     if (table.table)
     {
         table.table->drop();
-        table.table->is_dropped = true;
     }
 
     /// Even if table is not loaded, try remove its data from disk.

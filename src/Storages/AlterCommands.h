@@ -37,6 +37,22 @@ struct AlterCommand
         MODIFY_SETTING,
         MODIFY_QUERY,
         RENAME_COLUMN,
+        REMOVE_TTL,
+    };
+
+    /// Which property user wants to remove from column
+    enum class RemoveProperty
+    {
+        NO_PROPERTY,
+        /// Default specifiers
+        DEFAULT,
+        MATERIALIZED,
+        ALIAS,
+
+        /// Other properties
+        COMMENT,
+        CODEC,
+        TTL
     };
 
     Type type;
@@ -107,15 +123,12 @@ struct AlterCommand
     /// Target column name
     String rename_to;
 
+    /// What to remove from column (or TTL)
+    RemoveProperty to_remove = RemoveProperty::NO_PROPERTY;
+
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
     void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
-
-    /// Checks that alter query changes data. For MergeTree:
-    ///    * column files (data and marks)
-    ///    * each part meta (columns.txt)
-    /// in each part on disk (it's not lightweight alter).
-    bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
     /// Check that alter command require data modification (mutation) to be
     /// executed. For example, cast from Date to UInt16 type can be executed
@@ -131,6 +144,9 @@ struct AlterCommand
 
     /// Checks that any TTL changed by alter
     bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
+
+    /// Command removing some property from column or table
+    bool isRemovingProperty() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
@@ -163,9 +179,6 @@ public:
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
     void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
-
-    /// At least one command modify data on disk.
-    bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
     /// At least one command modify settings.
     bool isSettingsAlter() const;

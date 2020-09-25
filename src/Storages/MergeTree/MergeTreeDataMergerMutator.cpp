@@ -29,6 +29,7 @@
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FileSyncGuard.h>
 #include <Parsers/queryToString.h>
 
 #include <cmath>
@@ -61,10 +62,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ABORTED;
 }
-
-
-using MergeAlgorithm = MergeTreeDataMergerMutator::MergeAlgorithm;
-
 
 /// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
 /// This value is chosen to not allow big merges to eat all free space. Thus allowing small merges to proceed.
@@ -276,7 +273,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
-        part_info.ttl_infos = part->ttl_infos;
+        part_info.ttl_infos = &part->ttl_infos;
         part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
 
         parts_ranges.back().emplace_back(part_info);
@@ -613,6 +610,13 @@ public:
     }
 };
 
+static bool needSyncPart(const size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
+{
+    return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
+        || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
+}
+
+
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FutureMergedMutatedPart & future_part,
@@ -698,7 +702,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
     size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
+    size_t sum_compressed_bytes_upper_bound = merge_entry->total_size_bytes_compressed;
     MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
+    merge_entry->merge_algorithm = merge_alg;
 
     LOG_DEBUG(log, "Selected MergeAlgorithm: {}", ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
@@ -734,6 +740,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         gathering_columns.clear();
         gathering_column_names.clear();
     }
+
+    std::optional<FileSyncGuard> sync_guard;
+    if (data.getSettings()->fsync_part_directory)
+        sync_guard.emplace(disk, new_part_tmp_path);
 
     /** Read from all parts, merge and write into a new one.
       * In passing, we calculate expression for sorting.
@@ -858,7 +868,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (need_remove_expired_values)
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, force_ttl);
 
-
     if (metadata_snapshot->hasSecondaryIndices())
     {
         const auto & indices = metadata_snapshot->getSecondaryIndices();
@@ -918,6 +927,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (need_remove_expired_values && ttl_merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts with expired TTL", ErrorCodes::ABORTED);
 
+    bool need_sync = needSyncPart(sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
     MergeTreeData::DataPart::Checksums checksums_gathered_columns;
 
     /// Gather ordinary columns
@@ -1001,7 +1011,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
             column_gathered_stream.readSuffix();
-            auto changed_checksums = column_to.writeSuffixAndGetChecksums(new_data_part, checksums_gathered_columns);
+            auto changed_checksums = column_to.writeSuffixAndGetChecksums(new_data_part, checksums_gathered_columns, need_sync);
             checksums_gathered_columns.add(std::move(changed_checksums));
 
             if (rows_written != column_elems_written)
@@ -1038,9 +1048,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
     if (merge_alg != MergeAlgorithm::Vertical)
-        to.writeSuffixAndFinalizePart(new_data_part);
+        to.writeSuffixAndFinalizePart(new_data_part, need_sync);
     else
-        to.writeSuffixAndFinalizePart(new_data_part, &storage_columns, &checksums_gathered_columns);
+        to.writeSuffixAndFinalizePart(new_data_part, need_sync, &storage_columns, &checksums_gathered_columns);
 
     return new_data_part;
 }
@@ -1069,6 +1079,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto context_for_reading = context;
     context_for_reading.setSetting("max_streams_to_max_threads_ratio", 1);
     context_for_reading.setSetting("max_threads", 1);
+    /// Allow mutations to work when force_index_by_date or force_primary_key is on.
+    context_for_reading.setSetting("force_index_by_date", Field(0));
+    context_for_reading.setSetting("force_primary_key", Field(0));
 
     MutationCommands commands_for_part;
     for (const auto & command : commands)
@@ -1130,10 +1143,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     disk->createDirectories(new_part_tmp_path);
 
+    std::optional<FileSyncGuard> sync_guard;
+    if (data.getSettings()->fsync_part_directory)
+        sync_guard.emplace(disk, new_part_tmp_path);
+
     /// Don't change granularity type while mutating subset of columns
     auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(new_data_part->getType())
                                                                          : getNonAdaptiveMrkExtension();
-
+    bool need_sync = needSyncPart(source_part->rows_count, source_part->getBytesOnDisk(), *data_settings);
     bool need_remove_expired_values = false;
 
     if (in && shouldExecuteTTL(metadata_snapshot, in->getHeader().getNamesAndTypesList().getNames(), commands_for_part))
@@ -1158,7 +1175,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             time_of_mutation,
             compression_codec,
             merge_entry,
-            need_remove_expired_values);
+            need_remove_expired_values,
+            need_sync);
 
         /// no finalization required, because mutateAllPartColumns use
         /// MergedBlockOutputStream which finilaze all part fields itself
@@ -1214,7 +1232,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 time_of_mutation,
                 compression_codec,
                 merge_entry,
-                need_remove_expired_values);
+                need_remove_expired_values,
+                need_sync);
         }
 
         for (const auto & [rename_from, rename_to] : files_to_rename)
@@ -1238,7 +1257,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 }
 
 
-MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMergeAlgorithm(
+MergeAlgorithm MergeTreeDataMergerMutator::chooseMergeAlgorithm(
     const MergeTreeData::DataPartsVector & parts, size_t sum_rows_upper_bound,
     const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const
 {
@@ -1695,7 +1714,8 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     time_t time_of_mutation,
     const CompressionCodecPtr & compression_codec,
     MergeListEntry & merge_entry,
-    bool need_remove_expired_values) const
+    bool need_remove_expired_values,
+    bool need_sync) const
 {
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -1731,7 +1751,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
 
     new_data_part->minmax_idx = std::move(minmax_idx);
     mutating_stream->readSuffix();
-    out.writeSuffixAndFinalizePart(new_data_part);
+    out.writeSuffixAndFinalizePart(new_data_part, need_sync);
 }
 
 void MergeTreeDataMergerMutator::mutateSomePartColumns(
@@ -1744,7 +1764,8 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     time_t time_of_mutation,
     const CompressionCodecPtr & compression_codec,
     MergeListEntry & merge_entry,
-    bool need_remove_expired_values) const
+    bool need_remove_expired_values,
+    bool need_sync) const
 {
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -1778,10 +1799,9 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
 
     mutating_stream->readSuffix();
 
-    auto changed_checksums = out.writeSuffixAndGetChecksums(new_data_part, new_data_part->checksums);
+    auto changed_checksums = out.writeSuffixAndGetChecksums(new_data_part, new_data_part->checksums, need_sync);
 
     new_data_part->checksums.add(std::move(changed_checksums));
-
 }
 
 void MergeTreeDataMergerMutator::finalizeMutatedPart(

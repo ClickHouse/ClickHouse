@@ -14,6 +14,7 @@
 
 #include <Access/AccessFlags.h>
 
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -25,7 +26,7 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
@@ -66,7 +67,7 @@
 
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
@@ -248,6 +249,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Read from prepared input.
         source_header = input_pipe->getHeader();
     }
+
+    ApplyWithSubqueryVisitor().visit(query_ptr);
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
@@ -618,7 +621,6 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
-    SpecialSort special_sort = context.getSettings().special_sort.value;
     for (const auto & elem : query.orderBy()->children)
     {
         String name = elem->children.front()->getColumnName();
@@ -632,10 +634,10 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
             order_descr.emplace_back(name, order_by_elem.direction,
-                order_by_elem.nulls_direction, collator, special_sort, true, fill_desc);
+                order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, special_sort);
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
     return order_descr;
@@ -925,8 +927,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 join_step->setStepDescription("JOIN");
                 query_plan.addStep(std::move(join_step));
 
-                if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
+                if (expressions.join_has_delayed_stream)
                 {
+                    auto stream = std::make_shared<LazyNonJoinedBlockInputStream>(*join, join_result_sample, settings.max_block_size);
                     auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
                     auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
                             query_plan.getCurrentDataStream(), std::move(source));
@@ -1069,6 +1072,37 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
     if (query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
+}
+
+static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
+{
+    StreamLocalLimits limits;
+    limits.mode = LimitsMode::LIMITS_TOTAL;
+    limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read,
+                                    settings.read_overflow_mode);
+    limits.speed_limits.max_execution_time = settings.max_execution_time;
+    limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+
+    /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
+      *  because the initiating server has a summary of the execution of the request on all servers.
+      *
+      * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
+      *  additionally on each remote server, because these limits are checked per block of data processed,
+      *  and remote servers may process way more blocks of data than are received by initiator.
+      *
+      * The limits to throttle maximum execution speed is also checked on all servers.
+      */
+    if (options.to_stage == QueryProcessingStage::Complete)
+    {
+        limits.speed_limits.min_execution_rps = settings.min_execution_speed;
+        limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
+    }
+
+    limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+    limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
+    limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+
+    return limits;
 }
 
 void InterpreterSelectQuery::executeFetchColumns(
@@ -1409,12 +1443,24 @@ void InterpreterSelectQuery::executeFetchColumns(
             query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
         }
 
-        auto read_step = std::make_unique<ReadFromStorageStep>(
-            table_lock, metadata_snapshot, options, storage,
-                required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+        StreamLocalLimits limits;
+        SizeLimits leaf_limits;
+        std::shared_ptr<const EnabledQuota> quota;
 
-        read_step->setStepDescription("Read from " + storage->getName());
-        query_plan.addStep(std::move(read_step));
+
+        /// Set the limits and quota for reading data, the speed and time of the query.
+        if (!options.ignore_limits)
+        {
+            limits = getLimitsForStorage(settings, options);
+            leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, settings.max_bytes_to_read_leaf,
+                                          settings.read_overflow_mode_leaf);
+        }
+
+        if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
+            quota = context->getQuota();
+
+        storage->read(query_plan, table_lock, metadata_snapshot, limits, leaf_limits, std::move(quota),
+                      required_columns, query_info, context, processing_stage, max_block_size, max_streams);
     }
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
@@ -1862,14 +1908,8 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
 
     const Settings & settings = context->getSettingsRef();
 
-    auto creating_sets = std::make_unique<CreatingSetsStep>(
-            query_plan.getCurrentDataStream(),
-            std::move(subqueries_for_sets),
-            SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
-            *context);
-
-    creating_sets->setStepDescription("Create sets for subqueries and joins");
-    query_plan.addStep(std::move(creating_sets));
+    SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), limits, *context);
 }
 
 

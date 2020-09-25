@@ -37,7 +37,7 @@ struct DivideFloatingImpl
 };
 
 struct NameDivide { static constexpr auto name = "divide"; };
-using FunctionDivide = FunctionBinaryArithmetic<DivideFloatingImpl, NameDivide>;
+using FunctionDivide = BinaryArithmeticOverloadResolver<DivideFloatingImpl, NameDivide>;
 
 void registerFunctionDivide(FunctionFactory & factory)
 {

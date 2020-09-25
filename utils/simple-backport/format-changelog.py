@@ -93,7 +93,7 @@ for line in args.file:
 
     # Normalize category name
     for c in categories_preferred_order:
-        if fuzzywuzzy.fuzz.ratio(pr['category'], c) >= 90:
+        if fuzzywuzzy.fuzz.ratio(pr['category'].lower(), c.lower()) >= 90:
             pr['category'] = c
             break
 

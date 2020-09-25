@@ -186,7 +186,7 @@ void AccessControlManager::addUsersConfigStorage(
     {
         if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
         {
-            if (users_config_storage->getStoragePath() == users_config_path_)
+            if (users_config_storage->isPathEqual(users_config_path_))
                 return;
         }
     }
@@ -229,7 +229,7 @@ void AccessControlManager::addDiskStorage(const String & storage_name_, const St
     {
         if (auto disk_storage = typeid_cast<std::shared_ptr<DiskAccessStorage>>(storage))
         {
-            if (disk_storage->isStoragePathEqual(directory_))
+            if (disk_storage->isPathEqual(directory_))
             {
                 if (readonly_)
                     disk_storage->setReadOnly(readonly_);
@@ -338,6 +338,11 @@ void AccessControlManager::addStoragesFromMainConfig(
         addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);
 }
 
+
+UUID AccessControlManager::login(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const
+{
+    return MultipleAccessStorage::login(user_name, password, address, *external_authenticators);
+}
 
 void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {

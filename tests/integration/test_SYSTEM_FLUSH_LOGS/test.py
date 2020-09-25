@@ -24,6 +24,7 @@ system_logs = [
 # decrease timeout for the test to show possible issues.
 timeout = pytest.mark.timeout(30)
 
+
 @pytest.fixture(scope='module', autouse=True)
 def start_cluster():
     try:
@@ -32,9 +33,11 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 @pytest.fixture(scope='function')
 def flush_logs():
     node.query('SYSTEM FLUSH LOGS')
+
 
 @timeout
 @pytest.mark.parametrize('table,exists', system_logs)
@@ -44,6 +47,7 @@ def test_system_logs(flush_logs, table, exists):
         node.query(q)
     else:
         assert "Table {} doesn't exist".format(table) in node.query_and_get_error(q)
+
 
 # Logic is tricky, let's check that there is no hang in case of message queue
 # is not empty (this is another code path in the code).
