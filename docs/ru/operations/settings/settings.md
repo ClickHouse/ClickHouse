@@ -1882,7 +1882,7 @@ SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
 
 ## cast_keep_nullable {#cast_keep_nullable}
 
-Включает или отключает финальное преобразование аргумента функции [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) к типу `Nullable`.
+Включает или отключает сохранение типа `Nullable` для аргумента функции [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast).
 
 Если настройка включена, то функция `CAST(something_nullable AS Type)` возвращает `Nullable(Type)`.
 
