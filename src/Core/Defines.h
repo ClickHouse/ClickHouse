@@ -70,7 +70,7 @@
 /// Mininum revision supporting interserver secret.
 #define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
 
-/// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
+/// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
 #define DBMS_TCP_PROTOCOL_VERSION 54441
 
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
