@@ -26,6 +26,7 @@ ln -s $SRC_PATH/config.d/disks.xml $DEST_SERVER_PATH/config.d/
 ln -s $SRC_PATH/config.d/secure_ports.xml $DEST_SERVER_PATH/config.d/
 ln -s $SRC_PATH/config.d/clusters.xml $DEST_SERVER_PATH/config.d/
 ln -s $SRC_PATH/config.d/graphite.xml $DEST_SERVER_PATH/config.d/
+ln -s $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -s $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
 ln -s $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/
 ln -s $SRC_PATH/users.d/access_management.xml $DEST_SERVER_PATH/users.d/
@@ -46,9 +47,8 @@ ln -s --backup=simple --suffix=_original.xml \
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -s $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
 fi
-if [[ -n "$USE_DATABASE_ATOMIC" ]] && [[ "$USE_DATABASE_ATOMIC" -eq 1 ]]; then
-    ln -s $SRC_PATH/config.d/database_atomic_configd.xml $DEST_SERVER_PATH/config.d/
-    ln -s $SRC_PATH/users.d/database_atomic_usersd.xml $DEST_SERVER_PATH/users.d/
+if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
+    ln -s $SRC_PATH/users.d/database_ordinary.xml $DEST_SERVER_PATH/users.d/
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml
