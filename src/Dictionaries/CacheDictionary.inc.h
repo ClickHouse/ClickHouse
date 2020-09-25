@@ -128,7 +128,7 @@ void CacheDictionary::getItemsNumberImpl(
         {
             std::vector<Key> required_expired_ids;
             required_expired_ids.reserve(cache_expired_cound);
-            std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids), 
+            std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
                            std::back_inserter(required_expired_ids), [](auto & pair) { return pair.first; });
 
             /// request new values
@@ -147,7 +147,7 @@ void CacheDictionary::getItemsNumberImpl(
 
     std::vector<Key> required_ids;
     required_ids.reserve(cache_not_found_count + cache_expired_cound);
-    std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids), 
+    std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
                    std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
 
     /// Request new values
@@ -155,7 +155,7 @@ void CacheDictionary::getItemsNumberImpl(
 
     tryPushToUpdateQueueOrThrow(update_unit_ptr);
     waitForCurrentUpdateFinish(update_unit_ptr);
-    
+
     /// Add updated keys to asnwer.
 
     const size_t attribute_index = getAttributeIndex(attribute.name);
@@ -265,19 +265,18 @@ void CacheDictionary::getItemsString(
                         cache_expired_or_not_found_ids[id].push_back(row);
                         continue;
                     }
-                    
+
                     cache_expired_count++;
                     cache_expired_or_not_found_ids[id].push_back(row);
 
                     if (allow_read_expired_keys)
                         insert_value_routine();
-                } 
+                }
                 else
                 {
                     cache_not_found_count++;
                     cache_expired_or_not_found_ids[id].push_back(row);
                 }
-                    
             } else
             {
                 ++cache_hit;
