@@ -729,4 +729,45 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 └──────────────────────────────────────┘
 ```
 
+## formatRow {#formatrow}
+
+Converts arbitrary expressions into a string via given format. 
+
+**Syntax** 
+
+``` sql
+formatRow(format, x, y, ...)
+```
+
+**Parameters** 
+
+-   `format` — text format. For example [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — expressions.
+
+**Returned value**
+
+-   expressions converted to the `format`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatRow('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Result:
+
+``` text
+┌─formatRow('CSV', number, 'good')─┐
+│ 0,"good"
+                         │
+│ 1,"good"
+                         │
+│ 2,"good"
+                         │
+└──────────────────────────────────┘
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->
