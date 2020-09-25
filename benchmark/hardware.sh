@@ -107,8 +107,8 @@ echo
 
 echo '----Version, build id-----------'
 ./clickhouse local --query "SELECT format('Version: {}, build id: {}', version(), buildId())"
-./clickhouse local --query "SELECT format('The number of threads is: {}', value) FROM system.settings WHERE name = 'max_threads'"
-./clickhouse local --query "SELECT format('Current time: {}', toString(now('UTC')))"
+./clickhouse local --query "SELECT format('The number of threads is: {}', value) FROM system.settings WHERE name = 'max_threads'" --output-format TSVRaw
+./clickhouse local --query "SELECT format('Current time: {}', toString(now(), 'UTC'))"
 echo '----CPU-------------------------'
 lscpu
 echo '----Block Devices---------------'
