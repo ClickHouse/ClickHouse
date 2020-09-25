@@ -97,10 +97,15 @@
         "00604_show_create_database",
         /// UUID must be specified in ATTACH TABLE
         "01190_full_attach_syntax",
+        "01249_bad_arguments_for_bloom_filter",
         /// Assumes blocking DROP
         "01320_create_sync_race_condition",
         /// Internal distionary name is different
         "01225_show_create_table_from_dictionary",
         "01224_no_superfluous_dict_reload"
+    ],
+    "polymorphic-parts": [
+        "00933_test_fix_extra_seek_on_compressed_cache",
+        "00446_clear_column_in_partition_zookeeper"
     ]
 }

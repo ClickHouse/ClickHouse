@@ -1,6 +1,5 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <Common/ClickHouseRevision.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/ISource.h>
 #include <Processors/Pipe.h>
@@ -56,7 +55,7 @@ namespace
     public:
         SourceFromNativeStream(const Block & header, const std::string & path)
                 : ISource(header), file_in(path), compressed_in(file_in),
-                  block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get()))
+                  block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
         {
             block_in->readPrefix();
         }

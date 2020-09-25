@@ -516,7 +516,7 @@ Result:
 
 **See Also**
 
--   \[ISO 8601 announcement by @xkcd\](https://xkcd.com/1179/)
+-   [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)

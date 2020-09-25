@@ -15,6 +15,8 @@ import sys
 import time
 import traceback
 import xml.etree.ElementTree as et
+from threading import Thread
+from scipy import stats
 
 def tsv_escape(s):
     return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
@@ -22,10 +24,11 @@ def tsv_escape(s):
 parser = argparse.ArgumentParser(description='Run performance test.')
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
-parser.add_argument('--host', nargs='*', default=['localhost'], help="Server hostname(s). Corresponds to '--port' options.")
-parser.add_argument('--port', nargs='*', default=[9000], help="Server port(s). Corresponds to '--host' options.")
+parser.add_argument('--host', nargs='*', default=['localhost'], help="Space-separated list of server hostname(s). Corresponds to '--port' options.")
+parser.add_argument('--port', nargs='*', default=[9000], help="Space-separated list of server port(s). Corresponds to '--host' options.")
 parser.add_argument('--runs', type=int, default=1, help='Number of query runs per server.')
 parser.add_argument('--max-queries', type=int, default=None, help='Test no more than this number of queries, chosen at random.')
+parser.add_argument('--queries-to-run', nargs='*', type=int, default=None, help='Space-separated list of indexes of queries to test.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
 parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
@@ -156,8 +159,11 @@ for t in tables:
             print(f'skipped\t{tsv_escape(skipped_message)}')
             sys.exit(0)
 
-# Run create queries
-create_query_templates = [q.text for q in root.findall('create_query')]
+# Run create and fill queries. We will run them simultaneously for both servers,
+# to save time.
+# The weird search is to keep the relative order of elements, which matters, and
+# etree doesn't support the appropriate xpath query.
+create_query_templates = [q.text for q in root.findall('./*') if q.tag in ('create_query', 'fill_query')]
 create_queries = substitute_parameters(create_query_templates)
 
 # Disallow temporary tables, because the clickhouse_driver reconnects on errors,
@@ -169,23 +175,34 @@ for q in create_queries:
             file = sys.stderr)
         sys.exit(1)
 
-for conn_index, c in enumerate(all_connections):
-    for q in create_queries:
-        c.execute(q)
-        print(f'create\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
+def do_create(connection, index, queries):
+    for q in queries:
+        connection.execute(q)
+        print(f'create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}')
 
-# Run fill queries
-fill_query_templates = [q.text for q in root.findall('fill_query')]
-fill_queries = substitute_parameters(fill_query_templates)
-for conn_index, c in enumerate(all_connections):
-    for q in fill_queries:
-        c.execute(q)
-        print(f'fill\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
+threads = [Thread(target = do_create, args = (connection, index, create_queries))
+                for index, connection in enumerate(all_connections)]
 
-# Run the queries in randomized order, but preserve their indexes as specified
-# in the test XML. To avoid using too much time, limit the number of queries
-# we run per test.
-queries_to_run = random.sample(range(0, len(test_queries)), min(len(test_queries), args.max_queries or len(test_queries)))
+for t in threads:
+    t.start()
+
+for t in threads:
+    t.join()
+
+queries_to_run = range(0, len(test_queries))
+
+if args.max_queries:
+    # If specified, test a limited number of queries chosen at random.
+    queries_to_run = random.sample(range(0, len(test_queries)), min(len(test_queries), args.max_queries))
+
+if args.queries_to_run:
+    # Run the specified queries, with some sanity check.
+    for i in args.queries_to_run:
+        if i < 0 or i >= len(test_queries):
+            print(f'There is no query no. "{i}" in this test, only [{0}-{len(test_queries) - 1}] are present')
+            exit(1)
+
+    queries_to_run = args.queries_to_run
 
 # Run test queries.
 for query_index in queries_to_run:
@@ -211,7 +228,8 @@ for query_index in queries_to_run:
     for conn_index, c in enumerate(all_connections):
         try:
             prewarm_id = f'{query_prefix}.prewarm0'
-            res = c.execute(q, query_id = prewarm_id)
+            # Will also detect too long queries during warmup stage
+            res = c.execute(q, query_id = prewarm_id, settings = {'max_execution_time': 10})
             print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
         except KeyboardInterrupt:
             raise
@@ -220,7 +238,6 @@ for query_index in queries_to_run:
             # might lead to further errors or unexpected behavior.
             query_error_on_connection[conn_index] = traceback.format_exc();
             continue
-
 
     # Report all errors that ocurred during prewarm and decide what to do next.
     # If prewarm fails for the query on all servers -- skip the query and
@@ -246,7 +263,14 @@ for query_index in queries_to_run:
     # sending excessive data.
     start_seconds = time.perf_counter()
     server_seconds = 0
+    profile_seconds = 0
     run = 0
+
+    # Arrays of run times for each connection.
+    all_server_times = []
+    for conn_index, c in enumerate(this_query_connections):
+        all_server_times.append([])
+
     while True:
         run_id = f'{query_prefix}.run{run}'
 
@@ -259,14 +283,17 @@ for query_index in queries_to_run:
                 e.message = run_id + ': ' + e.message
                 raise
 
-            server_seconds += c.last_query.elapsed
-            print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
+            elapsed = c.last_query.elapsed
+            all_server_times[conn_index].append(elapsed)
 
-            if c.last_query.elapsed > 10:
+            server_seconds += elapsed
+            print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}')
+
+            if elapsed > 10:
                 # Stop processing pathologically slow queries, to avoid timing out
                 # the entire test task. This shouldn't really happen, so we don't
                 # need much handling for this case and can just exit.
-                print(f'The query no. {query_index} is taking too long to run ({c.last_query.elapsed} s)', file=sys.stderr)
+                print(f'The query no. {query_index} is taking too long to run ({elapsed} s)', file=sys.stderr)
                 exit(2)
 
         # Be careful with the counter, after this line it's the next iteration
@@ -296,6 +323,35 @@ for query_index in queries_to_run:
 
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
+
+    #print(all_server_times)
+    #print(stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue)
+
+    # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
+    # We have to do it after normal runs because otherwise it will affect test statistics too much
+    if len(all_server_times) == 2 and stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue < 0.1:
+        run = 0
+        while True:
+            run_id = f'{query_prefix}.profile{run}'
+
+            for conn_index, c in enumerate(this_query_connections):
+                try:
+                    res = c.execute(q, query_id = run_id, settings = {'query_profiler_real_time_period_ns': 10000000})
+                    print(f'profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
+                except Exception as e:
+                    # Add query id to the exception to make debugging easier.
+                    e.args = (run_id, *e.args)
+                    e.message = run_id + ': ' + e.message
+                    raise
+
+                elapsed = c.last_query.elapsed
+                profile_seconds += elapsed
+
+            run += 1
+            # Don't spend too much time for profile runs
+            if run > args.runs or profile_seconds > 10:
+                break
+            # And don't bother with short queries
 
 # Run drop queries
 drop_queries = substitute_parameters(drop_query_templates)

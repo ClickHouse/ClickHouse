@@ -118,7 +118,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     appendClientInfo(client_info, columns, i);
 
-    columns[i++]->insert(ClickHouseRevision::get());
+    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     {
         Array threads_array;
@@ -172,7 +172,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.os_user);
     columns[i++]->insert(client_info.client_hostname);
     columns[i++]->insert(client_info.client_name);
-    columns[i++]->insert(client_info.client_revision);
+    columns[i++]->insert(client_info.client_tcp_protocol_version);
     columns[i++]->insert(client_info.client_version_major);
     columns[i++]->insert(client_info.client_version_minor);
     columns[i++]->insert(client_info.client_version_patch);
