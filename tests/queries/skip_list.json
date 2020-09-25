@@ -94,7 +94,7 @@
         "00510_materizlized_view_and_deduplication_zookeeper",
         "00738_lock_for_inner_table"
     ],
-    "sequential":
+    "parallel":
     [
         /// Pessimistic list of tests which work badly in parallel.
         /// Probably they need better investigation.
@@ -144,7 +144,7 @@
         "01277_alter_rename_column_constraint_zookeeper",
         "00062_replicated_merge_tree_alter_zookeeper",
         "01388_clear_all_columns",
-        "00699_materialized_view_mutations"
+        "00699_materialized_view_mutations",
         "00652_mergetree_mutations",
         "00933_ttl_replicated_zookeeper",
         "01459_manual_write_to_replicas",
