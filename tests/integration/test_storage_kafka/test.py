@@ -982,7 +982,7 @@ def test_kafka_protobuf(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(30)
 def test_kafka_protobuf_no_delimiter(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value String)
@@ -1005,6 +1005,31 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
             break
 
     kafka_check_result(result, True)
+
+    instance.query('''
+    CREATE TABLE test.kafka_writer (key UInt64, value String)
+        ENGINE = Kafka
+        SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'pb_no_delimiter',
+                    kafka_group_name = 'pb_no_delimiter',
+                    kafka_format = 'ProtobufSingle',
+                    kafka_schema = 'kafka.proto:KeyValuePair';
+    ''')
+
+    instance.query("INSERT INTO test.kafka_writer VALUES (13,'Friday'),(42,'Answer to the Ultimate Question of Life, the Universe, and Everything'), (110, 'just a number')")
+
+    time.sleep(1)
+
+    result = instance.query("SELECT * FROM test.kafka ORDER BY key", ignore_error=True)
+
+    expected = '''\
+13	Friday
+42	Answer to the Ultimate Question of Life, the Universe, and Everything
+110	just a number
+'''
+    assert TSV(result) == TSV(expected)
+
+
 
 @pytest.mark.timeout(180)
 def test_kafka_materialized_view(kafka_cluster):
