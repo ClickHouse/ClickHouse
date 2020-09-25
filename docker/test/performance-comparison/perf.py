@@ -42,6 +42,7 @@ parser.add_argument('--port', nargs='*', default=[9000], help="Space-separated l
 parser.add_argument('--runs', type=int, default=1, help='Number of query runs per server.')
 parser.add_argument('--max-queries', type=int, default=None, help='Test no more than this number of queries, chosen at random.')
 parser.add_argument('--queries-to-run', nargs='*', type=int, default=None, help='Space-separated list of indexes of queries to test.')
+parser.add_argument('--profile-seconds', type=int, default=0, help='For how many seconds to profile a query for which the performance has changed.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
 parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
@@ -235,6 +236,7 @@ if args.queries_to_run:
     queries_to_run = args.queries_to_run
 
 # Run test queries.
+profile_total_seconds = 0
 for query_index in queries_to_run:
     q = test_queries[query_index]
     query_prefix = f'{test_name}.query{query_index}'
@@ -354,35 +356,38 @@ for query_index in queries_to_run:
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
 
-    #print(all_server_times)
-    #print(stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue)
-
     # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
-    if len(all_server_times) == 2 and stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue < 0.1:
-        run = 0
-        while True:
-            run_id = f'{query_prefix}.profile{run}'
+    if len(all_server_times) != 2:
+        continue
 
-            for conn_index, c in enumerate(this_query_connections):
-                try:
-                    res = c.execute(q, query_id = run_id, settings = {'query_profiler_real_time_period_ns': 10000000})
-                    print(f'profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
-                except Exception as e:
-                    # Add query id to the exception to make debugging easier.
-                    e.args = (run_id, *e.args)
-                    e.message = run_id + ': ' + e.message
-                    raise
+    pvalue = stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue
+    print(f'pvalue\t{pvalue}')
+    if pvalue > 0.05:
+        continue
 
-                elapsed = c.last_query.elapsed
-                profile_seconds += elapsed
+    # Perform profile runs for fixed amount of time. Don't limit the number
+    # of runs, because we also have short queries.
+    profile_start_seconds = time.perf_counter()
+    run = 0
+    while time.perf_counter() - profile_start_seconds < args.profile_seconds:
+        run_id = f'{query_prefix}.profile{run}'
 
-            run += 1
-            # Don't spend too much time for profile runs
-            if run > args.runs or profile_seconds > 10:
-                break
-            # And don't bother with short queries
+        for conn_index, c in enumerate(this_query_connections):
+            try:
+                res = c.execute(q, query_id = run_id, settings = {'query_profiler_real_time_period_ns': 10000000})
+                print(f'profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
+            except Exception as e:
+                # Add query id to the exception to make debugging easier.
+                e.args = (run_id, *e.args)
+                e.message = run_id + ': ' + e.message
+                raise
 
+        run += 1
+
+    profile_total_seconds += time.perf_counter() - profile_start_seconds
+
+print(f'profile-total\t{profile_total_seconds}')
 
 reportStageEnd('run')
 
