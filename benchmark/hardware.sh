@@ -114,6 +114,7 @@ echo '----Version, build id-----------'
 ./clickhouse local --query "SELECT format('The number of threads is: {}', value) FROM system.settings WHERE name = 'max_threads'" --output-format TSVRaw
 ./clickhouse local --query "SELECT format('Current time: {}', toString(now(), 'UTC'))"
 echo '----CPU-------------------------'
+cat /proc/cpuinfo | grep -i -F 'model name' | uniq
 lscpu
 echo '----Block Devices---------------'
 lsblk
