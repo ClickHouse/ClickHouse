@@ -95,9 +95,9 @@ then
         exit 3
     fi
 
-    export DEB_CC=${DEB_CC=clang-6.0}
-    export DEB_CXX=${DEB_CXX=clang++-6.0}
-    EXTRAPACKAGES="$EXTRAPACKAGES clang-6.0 lld-6.0"
+    export DEB_CC=${DEB_CC=clang-10}
+    export DEB_CXX=${DEB_CXX=clang++-10}
+    EXTRAPACKAGES="$EXTRAPACKAGES clang-10 lld-10"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
     VERSION_POSTFIX+="+valgrind"
@@ -118,8 +118,8 @@ echo -e "\nCurrent version is $VERSION_STRING"
 if [ -z "$NO_BUILD" ] ; then
     gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
     if [ -z "$USE_PBUILDER" ] ; then
-        DEB_CC=${DEB_CC:=`which gcc-9 gcc-8 gcc | head -n1`}
-        DEB_CXX=${DEB_CXX:=`which g++-9 g++-8 g++ | head -n1`}
+        DEB_CC=${DEB_CC:=`which gcc-10 gcc-9 gcc | head -n1`}
+        DEB_CXX=${DEB_CXX:=`which gcc-10 g++-9 g++ | head -n1`}
         # Build (only binary packages).
         debuild --preserve-env -e PATH \
         -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
