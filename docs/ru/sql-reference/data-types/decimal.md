@@ -99,4 +99,80 @@ SELECT toDecimal32(1, 8) < 100
 DB::Exception: Can't compare.
 ```
 
+## isDecimalOverflow {#is-decimal-overflow}
+
+Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) вне его (или заданной) области значений.
+
+**Синтаксис**
+
+``` sql
+isDecimalOverflow(d, [p])
+```
+
+**Параметры** 
+
+-   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
+-   `p` — точность. Не обязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64#uint-ranges). 
+
+**Возвращаемое значение**
+
+-   `1` - Десятичное значение имеет больше цифр, чем это позволяет точность,
+-   `0` - Десятичное значение удовлетворяет заданной точности.
+
+**Пример**
+
+Query:
+
+``` sql
+SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(1000000000, 0)),
+       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(-1000000000, 0));
+```
+
+Result:
+
+``` text
+1	1	1	1
+```
+
+## countDigits {#count-digits}
+
+Возвращает количество десятичных цифр, необходимых для представления значения.
+
+**Синтаксис**
+
+``` sql
+countDigits(x)
+```
+
+**Параметры** 
+
+-   `x` — [Целое](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) или [Дробное](#decimalp-s-decimal32s-decimal64s-decimal128s) число.
+
+**Возвращаемое значение**
+
+Количество цифр.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64#uint-ranges).
+
+ !!! note "Примечание"
+    Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
+
+**Пример**
+
+Query:
+
+``` sql
+SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
+       countDigits(toDecimal64(1, 18)), countDigits(toDecimal64(-1, 18)),
+       countDigits(toDecimal128(1, 38)), countDigits(toDecimal128(-1, 38));
+```
+
+Result:
+
+``` text
+10	10	19	19	39	39
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/decimal/) <!--hide-->
