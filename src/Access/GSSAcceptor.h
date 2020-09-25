@@ -45,6 +45,7 @@ public:
     MAYBE_NORETURN String processToken(const String & input_token, Poco::Logger * log);
 
 private:
+    void reset();
     void resetHandles() noexcept;
     void initHandles();
 

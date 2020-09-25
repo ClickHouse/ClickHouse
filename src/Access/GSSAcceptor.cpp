@@ -153,6 +153,8 @@ String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, con
 
 String extractStatusMessages(OM_uint32 major_status_code, OM_uint32 minor_status_code, const gss_OID & mech_type)
 {
+    std::scoped_lock lock(gss_global_mutex);
+
     const auto gss_messages = extractSpecificStatusMessages(major_status_code, GSS_C_GSS_CODE, mech_type);
     const auto mech_messages = extractSpecificStatusMessages(minor_status_code, GSS_C_MECH_CODE, mech_type);
 
@@ -237,6 +239,15 @@ bool equalMechanisms(const String & left_str, const gss_OID & right_oid)
 
 }
 
+void GSSAcceptorContext::reset()
+{
+    is_ready = false;
+    is_failed = false;
+    user_name.clear();
+    realm.clear();
+    initHandles();
+}
+
 void GSSAcceptorContext::resetHandles() noexcept
 {
     std::scoped_lock lock(gss_global_mutex);
@@ -266,6 +277,7 @@ void GSSAcceptorContext::resetHandles() noexcept
 void GSSAcceptorContext::initHandles()
 {
     std::scoped_lock lock(gss_global_mutex);
+
     resetHandles();
 
     if (!params.principal.empty())
@@ -334,13 +346,7 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
     try
     {
         if (is_ready || is_failed || context_handle == GSS_C_NO_CONTEXT)
-        {
-            is_ready = false;
-            is_failed = false;
-            user_name.clear();
-            realm.clear();
-            initHandles();
-        }
+            reset();
 
         gss_buffer_desc input_token_buf;
         input_token_buf.length = input_token.size();
@@ -440,6 +446,10 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
 }
 
 #else // USE_KRB5
+
+void GSSAcceptorContext::reset()
+{
+}
 
 void GSSAcceptorContext::resetHandles() noexcept
 {
