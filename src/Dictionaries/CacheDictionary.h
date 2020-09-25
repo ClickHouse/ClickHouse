@@ -70,7 +70,7 @@ public:
         Decimal32, Decimal64, Decimal128,
         Float32, Float64, String>;
 
-    struct AttributeValuesForKey 
+    struct AttributeValuesForKey
     {
         bool found{false};
         std::vector<AttributeValue> values;
@@ -266,7 +266,7 @@ private:
     Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
-    void getItemsNumberImpl( 
+    void getItemsNumberImpl(
         Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
 
     template <typename DefaultGetter>
@@ -402,7 +402,7 @@ private:
         CurrentMetrics::Increment alive_batch{CurrentMetrics::CacheDictionaryUpdateQueueBatches};
         CurrentMetrics::Increment alive_keys;
 
-        std::string dump_found_ids();
+        std::string dumpFoundIds();
     };
 
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
