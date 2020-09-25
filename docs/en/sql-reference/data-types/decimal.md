@@ -162,7 +162,7 @@ Number of digits.
 Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64#uint-ranges).
 
  !!! note "Note"
-    For Decimal values takes in account their scales: calculates result over underlying int type which is (value * scale). For example: countDigits(42) = 2, countDigits(42.000) = 5, countDigits(0.04200) = 4. I.e. you may check decimal overflow for Decimal64 with 'countDecimal(x) > 18'. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
+    For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
 
 **Example**
 
