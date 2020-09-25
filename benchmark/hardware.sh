@@ -60,7 +60,7 @@ if [[ ! -d data ]]; then
     if [[ ! -f $DATASET ]]; then
         $FASTER_DOWNLOAD "https://clickhouse-datasets.s3.yandex.net/hits/partitions/$DATASET"
     fi
-    
+
     tar $TAR_PARAMS --strip-components=1 --directory=. -x -v -f $DATASET
 fi
 
@@ -105,8 +105,10 @@ echo
 echo "Benchmark complete. System info:"
 echo
 
-echo '----Version and build id--------'
-./clickhouse local --query "SELECT version(), buildId()"
+echo '----Version, build id-----------'
+./clickhouse local --query "SELECT format('Version: {}, build id: {}', version(), buildId())"
+./clickhouse local --query "SELECT format('The number of threads is: {}', value) FROM system.settings WHERE name = 'max_threads'"
+./clickhouse local --query "SELECT format('Current time: {}', toString(now('UTC')))"
 echo '----CPU-------------------------'
 lscpu
 echo '----Block Devices---------------'
