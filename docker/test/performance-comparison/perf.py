@@ -37,10 +37,11 @@ def tsv_escape(s):
 parser = argparse.ArgumentParser(description='Run performance test.')
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
-parser.add_argument('--host', nargs='*', default=['localhost'], help="Server hostname(s). Corresponds to '--port' options.")
-parser.add_argument('--port', nargs='*', default=[9000], help="Server port(s). Corresponds to '--host' options.")
+parser.add_argument('--host', nargs='*', default=['localhost'], help="Space-separated list of server hostname(s). Corresponds to '--port' options.")
+parser.add_argument('--port', nargs='*', default=[9000], help="Space-separated list of server port(s). Corresponds to '--host' options.")
 parser.add_argument('--runs', type=int, default=1, help='Number of query runs per server.')
 parser.add_argument('--max-queries', type=int, default=None, help='Test no more than this number of queries, chosen at random.')
+parser.add_argument('--queries-to-run', nargs='*', type=int, default=None, help='Space-separated list of indexes of queries to test.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
 parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
@@ -217,10 +218,21 @@ for t in threads:
 
 reportStageEnd('create')
 
-# Run the queries in randomized order, but preserve their indexes as specified
-# in the test XML. To avoid using too much time, limit the number of queries
-# we run per test.
-queries_to_run = random.sample(range(0, len(test_queries)), min(len(test_queries), args.max_queries or len(test_queries)))
+# By default, test all queries.
+queries_to_run = range(0, len(test_queries))
+
+if args.max_queries:
+    # If specified, test a limited number of queries chosen at random.
+    queries_to_run = random.sample(range(0, len(test_queries)), min(len(test_queries), args.max_queries))
+
+if args.queries_to_run:
+    # Run the specified queries, with some sanity check.
+    for i in args.queries_to_run:
+        if i < 0 or i >= len(test_queries):
+            print(f'There is no query no. "{i}" in this test, only [{0}-{len(test_queries) - 1}] are present')
+            exit(1)
+
+    queries_to_run = args.queries_to_run
 
 # Run test queries.
 for query_index in queries_to_run:
