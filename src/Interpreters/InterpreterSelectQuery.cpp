@@ -14,6 +14,7 @@
 
 #include <Access/AccessFlags.h>
 
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -25,7 +26,7 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
@@ -250,6 +251,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Read from prepared input.
         source_header = input_pipe->getHeader();
     }
+
+    ApplyWithSubqueryVisitor().visit(query_ptr);
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
@@ -620,7 +623,6 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
-    SpecialSort special_sort = context.getSettings().special_sort.value;
     for (const auto & elem : query.orderBy()->children)
     {
         String name = elem->children.front()->getColumnName();
@@ -634,10 +636,10 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
             order_descr.emplace_back(name, order_by_elem.direction,
-                order_by_elem.nulls_direction, collator, special_sort, true, fill_desc);
+                order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, special_sort);
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
     return order_descr;
@@ -927,8 +929,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 join_step->setStepDescription("JOIN");
                 query_plan.addStep(std::move(join_step));
 
-                if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
+                if (expressions.join_has_delayed_stream)
                 {
+                    auto stream = std::make_shared<LazyNonJoinedBlockInputStream>(*join, join_result_sample, settings.max_block_size);
                     auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
                     auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
                             query_plan.getCurrentDataStream(), std::move(source));
@@ -1969,14 +1972,8 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
 
     const Settings & settings = context->getSettingsRef();
 
-    auto creating_sets = std::make_unique<CreatingSetsStep>(
-            query_plan.getCurrentDataStream(),
-            std::move(subqueries_for_sets),
-            SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
-            *context);
-
-    creating_sets->setStepDescription("Create sets for subqueries and joins");
-    query_plan.addStep(std::move(creating_sets));
+    SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), limits, *context);
 }
 
 
