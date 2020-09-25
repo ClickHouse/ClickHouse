@@ -117,7 +117,7 @@ isDecimalOverflow(d, [p])
 **Parameters** 
 
 -   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
--   `p` — precision. This argument can be omitted. In this case, Decimal presicion of the first argument is used. Form with 2 arguments could be helpful for extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64#uint-ranges). 
+-   `p` — precision. Optional. If omitted, the initial presicion of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64#uint-ranges). 
 
 **Returned values**
 
