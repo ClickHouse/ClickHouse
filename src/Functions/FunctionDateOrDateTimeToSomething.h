@@ -71,7 +71,9 @@ public:
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
-            if (time_zone.empty())
+            /// only validate the time_zone part if the number of arguments is 2. This is mainly
+            /// to accommodate functions like toStartOfDay(today()), toStartOfDay(yesterday()) etc.
+            if (arguments.size() == 2 && time_zone.empty())
                 throw Exception(
                     "Function " + getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
