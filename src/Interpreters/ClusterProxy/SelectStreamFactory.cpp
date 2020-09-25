@@ -90,6 +90,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     auto converting = std::make_unique<ConvertingStep>(query_plan->getCurrentDataStream(), header, true);
     converting->setStepDescription("Convert block structure for query from local replica");
     query_plan->addStep(std::move(converting));
+
+    return query_plan;
 }
 
 String formattedAST(const ASTPtr & ast)

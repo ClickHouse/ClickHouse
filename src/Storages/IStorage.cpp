@@ -12,6 +12,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 
 
 namespace DB
@@ -103,8 +104,16 @@ void IStorage::read(
         unsigned num_streams)
 {
     auto pipe = read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName());
-    query_plan.addStep(std::move(read_step));
+    if (pipe.empty())
+    {
+        auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+    }
+    else
+    {
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName());
+        query_plan.addStep(std::move(read_step));
+    }
 }
 
 Pipe IStorage::alterPartition(
