@@ -1444,7 +1444,7 @@ isDecimalOverflow(d, [p])
 **Параметры** 
 
 -   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
--   `p` — точность. Не обязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64#uint-ranges). 
+-   `p` — точность. Не обязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
 
 **Возвращаемое значение**
 
@@ -1486,7 +1486,7 @@ countDigits(x)
 
 Количество цифр.
 
-Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64#uint-ranges).
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
  !!! note "Примечание"
     Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
