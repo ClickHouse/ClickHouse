@@ -81,11 +81,11 @@ class Task1:
         for cluster_num in ["0", "1"]:
             ddl_check_query(instance, "DROP DATABASE IF EXISTS default ON CLUSTER cluster{}".format(cluster_num))
             ddl_check_query(instance,
-                            "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{} ENGINE=Ordinary".format(
+                            "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{}".format(
                                 cluster_num))
 
         ddl_check_query(instance, "CREATE TABLE hits ON CLUSTER cluster0 (d UInt64, d1 UInt64 MATERIALIZED d+1) " +
-                        "ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/hits', '{replica}') " +
+                        "ENGINE=ReplicatedMergeTree " +
                         "PARTITION BY d % 3 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16")
         ddl_check_query(instance,
                         "CREATE TABLE hits_all ON CLUSTER cluster0 (d UInt64) ENGINE=Distributed(cluster0, default, hits, d)")
@@ -110,10 +110,11 @@ class Task1:
 
 class Task2:
 
-    def __init__(self, cluster):
+    def __init__(self, cluster, unique_zk_path):
         self.cluster = cluster
         self.zk_task_path = "/clickhouse-copier/task_month_to_week_partition"
         self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_month_to_week_description.xml'), 'r').read()
+        self.unique_zk_path = unique_zk_path
 
     def start(self):
         instance = cluster.instances['s0_0_0']
@@ -121,11 +122,13 @@ class Task2:
         for cluster_num in ["0", "1"]:
             ddl_check_query(instance, "DROP DATABASE IF EXISTS default ON CLUSTER cluster{}".format(cluster_num))
             ddl_check_query(instance,
-                            "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{} ENGINE=Ordinary".format(
+                            "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{}".format(
                                 cluster_num))
 
         ddl_check_query(instance,
-                        "CREATE TABLE a ON CLUSTER cluster0 (date Date, d UInt64, d1 UInt64 ALIAS d+1) ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/a', '{replica}', date, intHash64(d), (date, intHash64(d)), 8192)")
+                        "CREATE TABLE a ON CLUSTER cluster0 (date Date, d UInt64, d1 UInt64 ALIAS d+1) "
+                        "ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/" + self.unique_zk_path + "', "
+                                                   "'{replica}', date, intHash64(d), (date, intHash64(d)), 8192)")
         ddl_check_query(instance,
                         "CREATE TABLE a_all ON CLUSTER cluster0 (date Date, d UInt64) ENGINE=Distributed(cluster0, default, a, d)")
 
@@ -169,7 +172,7 @@ class Task_test_block_size:
 
         ddl_check_query(instance, """
             CREATE TABLE test_block_size ON CLUSTER shard_0_0 (partition Date, d UInt64)
-            ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/test_block_size', '{replica}')
+            ENGINE=ReplicatedMergeTree
             ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d)""", 2)
 
         instance.query(
@@ -332,17 +335,17 @@ def test_copy_with_recovering_after_move_faults(started_cluster, use_sample_offs
 
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition(started_cluster):
-    execute_task(Task2(started_cluster), [])
+    execute_task(Task2(started_cluster, "test1"), [])
 
 
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition_with_recovering(started_cluster):
-    execute_task(Task2(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
+    execute_task(Task2(started_cluster, "test2"), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 
 @pytest.mark.timeout(600)
 def test_copy_month_to_week_partition_with_recovering_after_move_faults(started_cluster):
-    execute_task(Task2(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
+    execute_task(Task2(started_cluster, "test3"), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 
 def test_block_size(started_cluster):

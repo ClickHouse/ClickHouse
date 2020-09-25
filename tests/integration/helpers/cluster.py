@@ -486,7 +486,7 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                connection.database_names()
+                connection.list_database_names()
                 print("Connected to Mongo dbs:", connection.database_names())
                 return
             except Exception as ex:
