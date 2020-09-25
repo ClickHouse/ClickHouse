@@ -305,9 +305,7 @@ def run_tests_array(all_tests_with_params):
 
                         if clickhouse_proc.returncode != 0:
                             failures += 1
-                            print(MSG_FAIL, end='')
-                            print_test_time(0)
-                            print(" - server does not respond to health check")
+                            print("Server does not respond to health check")
                             SERVER_DIED = True
                             break
 
