@@ -307,7 +307,7 @@ std::string CacheDictionary::AttributeValuesForKey::dump()
 };
 
 
-std::string CacheDictionary::UpdateUnit::dump_found_ids()
+std::string CacheDictionary::UpdateUnit::dumpFoundIds()
 {
     std::string ans;
     for (auto it : found_ids)
@@ -471,7 +471,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         if (value.found)
             for (const auto row : cache_expired_or_not_found_ids[key])
                 out[row] = true;
-        else 
+        else
             for (const auto row : cache_expired_or_not_found_ids[key])
                 out[row] = false;
     }
@@ -725,7 +725,7 @@ size_t CacheDictionary::getAttributeIndex(const std::string & attribute_name) co
     if (it == std::end(attribute_index_by_name))
         throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
-    return it->second; 
+    return it->second;
 }
 
 bool CacheDictionary::isEmptyCell(const UInt64 idx) const
