@@ -223,7 +223,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     if (part_column_queried)
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context);
 
-    std::multiset<String> part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+    auto part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
     metadata_snapshot->check(real_column_names, data.getVirtuals(), data.getStorageID());
 
