@@ -77,3 +77,30 @@ def test_alter_ddl(started_cluster):
 
     node2.query("SYSTEM SYNC REPLICA replica_2.replicated_local;", timeout=5)
     assert_eq_with_retry(node1, "SELECT count(*) FROM replica_2.replicated", '0')
+
+def test_atomic_database(started_cluster):
+    node1.query('''DROP DATABASE IF EXISTS replica_1 ON CLUSTER cross_3shards_2replicas;
+                   DROP DATABASE IF EXISTS replica_2 ON CLUSTER cross_3shards_2replicas;
+                   CREATE DATABASE replica_1 ON CLUSTER cross_3shards_2replicas ENGINE=Atomic;
+                   CREATE DATABASE replica_2 ON CLUSTER cross_3shards_2replicas ENGINE=Atomic;''')
+
+    assert "It's not supported for cross replication" in \
+           node1.query_and_get_error("CREATE TABLE rmt ON CLUSTER cross_3shards_2replicas (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n")
+    assert "It's not supported for cross replication" in \
+           node1.query_and_get_error("CREATE TABLE replica_1.rmt ON CLUSTER cross_3shards_2replicas (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n")
+    assert "It's not supported for cross replication" in \
+           node1.query_and_get_error("CREATE TABLE rmt ON CLUSTER cross_3shards_2replicas (n UInt64, s String) ENGINE=ReplicatedMergeTree('/{shard}/{uuid}/', '{replica}') ORDER BY n")
+    assert "It's not supported for cross replication" in \
+           node1.query_and_get_error("CREATE TABLE replica_2.rmt ON CLUSTER cross_3shards_2replicas (n UInt64, s String) ENGINE=ReplicatedMergeTree('/{shard}/{uuid}/', '{replica}') ORDER BY n")
+    assert "For a distributed DDL on circular replicated cluster its table name must be qualified by database name" in \
+           node1.query_and_get_error("CREATE TABLE rmt ON CLUSTER cross_3shards_2replicas (n UInt64, s String) ENGINE=ReplicatedMergeTree('/tables/{shard}/rmt/', '{replica}') ORDER BY n")
+
+    node1.query("CREATE TABLE replica_1.rmt ON CLUSTER cross_3shards_2replicas (n UInt64, s String) ENGINE=ReplicatedMergeTree('/tables/{shard}/rmt/', '{replica}') ORDER BY n")
+    node1.query("CREATE TABLE replica_2.rmt ON CLUSTER cross_3shards_2replicas (n UInt64, s String) ENGINE=ReplicatedMergeTree('/tables/{shard_bk}/rmt/', '{replica_bk}') ORDER BY n")
+
+    assert node1.query("SELECT countDistinct(uuid) from remote('node1,node2,node3', 'system', 'databases') WHERE uuid != 0 AND name='replica_1'") == "1\n"
+    assert node1.query("SELECT countDistinct(uuid) from remote('node1,node2,node3', 'system', 'tables') WHERE uuid != 0 AND name='rmt'") == "2\n"
+
+    node1.query("INSERT INTO replica_1.rmt VALUES (1, 'test')")
+    node2.query("SYSTEM SYNC REPLICA replica_2.rmt", timeout=5)
+    assert_eq_with_retry(node2, "SELECT * FROM replica_2.rmt", '1\ttest')

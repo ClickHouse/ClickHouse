@@ -48,7 +48,7 @@ function configure
     cp -av "$repo_dir"/programs/server/config* db
     cp -av "$repo_dir"/programs/server/user* db
     # TODO figure out which ones are needed
-    cp -av "$repo_dir"/tests/config/listen.xml db/config.d
+    cp -av "$repo_dir"/tests/config/config.d/listen.xml db/config.d
     cp -av "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
 }
 
