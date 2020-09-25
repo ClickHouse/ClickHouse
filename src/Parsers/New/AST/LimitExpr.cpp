@@ -8,18 +8,16 @@
 namespace DB::AST
 {
 
-LimitExpr::LimitExpr(PtrTo<NumberLiteral> limit, PtrTo<NumberLiteral> offset)
+LimitExpr::LimitExpr(PtrTo<NumberLiteral> limit, PtrTo<NumberLiteral> offset) : INode{limit, offset}
 {
-    children.push_back(limit);
-    children.push_back(offset);
 }
 
 ASTPtr LimitExpr::convertToOld() const
 {
     auto list = std::make_shared<ASTExpressionList>();
 
-    list->children.push_back(children[LIMIT]->convertToOld());
-    if (has(OFFSET)) list->children.push_back(children[OFFSET]->convertToOld());
+    list->children.push_back(get(LIMIT)->convertToOld());
+    if (has(OFFSET)) list->children.push_back(get(OFFSET)->convertToOld());
 
     return list;
 }

@@ -8,9 +8,8 @@
 namespace DB::AST
 {
 
-DescribeQuery::DescribeQuery(PtrTo<TableExpr> expr)
+DescribeQuery::DescribeQuery(PtrTo<TableExpr> expr) : Query{expr}
 {
-    children.push_back(expr);
 }
 
 ASTPtr DescribeQuery::convertToOld() const

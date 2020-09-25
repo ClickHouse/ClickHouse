@@ -11,16 +11,15 @@
 namespace DB::AST
 {
 
-SetQuery::SetQuery(PtrTo<SettingExprList> list)
+SetQuery::SetQuery(PtrTo<SettingExprList> list) : Query{list}
 {
-    children.push_back(list);
 }
 
 ASTPtr SetQuery::convertToOld() const
 {
     auto expr = std::make_shared<ASTSetQuery>();
 
-    for (const auto & child : children[EXPRS]->as<SettingExprList &>())
+    for (const auto & child : get(EXPRS)->as<SettingExprList &>())
     {
         const auto * setting = child->as<SettingExpr>();
         expr->changes.emplace_back(setting->getName()->getName(), setting->getValue()->convertToOld()->as<ASTLiteral>()->value);

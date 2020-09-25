@@ -8,19 +8,7 @@ namespace DB::AST
 
 // Clauses
 
-class PartitionByClause : public INode
-{
-    public:
-        explicit PartitionByClause(PtrTo<ColumnExpr> expr);
-
-        ASTPtr convertToOld() const override;
-
-    private:
-        enum ChildIndex : UInt8
-        {
-            EXPR = 0,  // ColumnExpr
-        };
-};
+using PartitionByClause = SimpleClause<ColumnExpr>;
 
 class PrimaryKeyClause : public INode
 {
@@ -64,8 +52,6 @@ class EngineClause : public INode
             SAMPLE_BY,     // SampleByClause (optional)
             TTL,           // TTLClause (optional)
             SETTINGS,      // SettingsClause (optional)
-
-            MAX_INDEX,
         };
 };
 

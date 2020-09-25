@@ -13,14 +13,12 @@
 namespace DB::AST
 {
 
-TableArgExpr::TableArgExpr(PtrTo<Literal> literal)
+TableArgExpr::TableArgExpr(PtrTo<Literal> literal) : INode{literal}
 {
-    children.push_back(literal);
 }
 
-TableArgExpr::TableArgExpr(PtrTo<TableExpr> expr)
+TableArgExpr::TableArgExpr(PtrTo<TableExpr> expr) : INode{expr}
 {
-    children.push_back(expr);
 }
 
 // static
@@ -47,9 +45,8 @@ PtrTo<TableExpr> TableExpr::createSubquery(PtrTo<SelectUnionQuery> subquery)
     return PtrTo<TableExpr>(new TableExpr(ExprType::SUBQUERY, {subquery}));
 }
 
-TableExpr::TableExpr(TableExpr::ExprType type, PtrList exprs) : expr_type(type)
+TableExpr::TableExpr(TableExpr::ExprType type, PtrList exprs) : INode(exprs), expr_type(type)
 {
-    children = exprs;
 }
 
 ASTPtr TableExpr::convertToOld() const
@@ -60,22 +57,22 @@ ASTPtr TableExpr::convertToOld() const
     {
         case ExprType::ALIAS:
         {
-            auto expr = children[EXPR]->convertToOld();
+            auto expr = get(EXPR)->convertToOld();
             auto * table_expr = expr->as<ASTTableExpression>();
 
             if (table_expr->database_and_table_name)
-                table_expr->database_and_table_name->setAlias(children[ALIAS]->as<Identifier>()->getName());
+                table_expr->database_and_table_name->setAlias(get<Identifier>(ALIAS)->getName());
             else if (table_expr->table_function)
-                table_expr->table_function->setAlias(children[ALIAS]->as<Identifier>()->getName());
+                table_expr->table_function->setAlias(get<Identifier>(ALIAS)->getName());
             else if (table_expr->subquery)
-                table_expr->subquery->setAlias(children[ALIAS]->as<Identifier>()->getName());
+                table_expr->subquery->setAlias(get<Identifier>(ALIAS)->getName());
 
             return expr;
         }
         case ExprType::FUNCTION:
         {
             auto expr = std::make_shared<ASTTableExpression>();
-            auto func = children[FUNCTION]->convertToOld();
+            auto func = get(FUNCTION)->convertToOld();
 
             expr->table_function = func;
             expr->children.push_back(func);
@@ -86,7 +83,7 @@ ASTPtr TableExpr::convertToOld() const
         {
             auto expr = std::make_shared<ASTTableExpression>();
 
-            expr->database_and_table_name = children[IDENTIFIER]->convertToOld();
+            expr->database_and_table_name = get(IDENTIFIER)->convertToOld();
             expr->children.emplace_back(expr->database_and_table_name);
 
             return expr;
@@ -96,7 +93,7 @@ ASTPtr TableExpr::convertToOld() const
             auto expr = std::make_shared<ASTTableExpression>();
 
             expr->subquery = std::make_shared<ASTSubquery>();
-            expr->subquery->children.push_back(children[SUBQUERY]->convertToOld());
+            expr->subquery->children.push_back(get(SUBQUERY)->convertToOld());
             expr->children.push_back(expr->subquery);
 
             return expr;
@@ -104,18 +101,16 @@ ASTPtr TableExpr::convertToOld() const
     }
 }
 
-TableFunctionExpr::TableFunctionExpr(PtrTo<Identifier> name, PtrTo<TableArgList> args)
+TableFunctionExpr::TableFunctionExpr(PtrTo<Identifier> name, PtrTo<TableArgList> args) : INode{name, args}
 {
-    children.push_back(name);
-    children.push_back(args);
 }
 
 ASTPtr TableFunctionExpr::convertToOld() const
 {
     auto func = std::make_shared<ASTFunction>();
 
-    func->name = children[NAME]->as<Identifier>()->getName();
-    func->arguments = children[ARGS] ? children[ARGS]->convertToOld() : std::make_shared<TableArgList>()->convertToOld();
+    func->name = get<Identifier>(NAME)->getName();
+    func->arguments = has(ARGS) ? get(ARGS)->convertToOld() : std::make_shared<TableArgList>()->convertToOld();
     func->children.push_back(func->arguments);
 
     return func;
@@ -138,7 +133,7 @@ antlrcpp::Any ParseTreeVisitor::visitTableArgExpr(ClickHouseParser::TableArgExpr
 antlrcpp::Any ParseTreeVisitor::visitTableArgList(ClickHouseParser::TableArgListContext * ctx)
 {
     auto list = std::make_shared<TableArgList>();
-    for (auto * arg : ctx->tableArgExpr()) list->append(visit(arg));
+    for (auto * arg : ctx->tableArgExpr()) list->push(visit(arg));
     return list;
 }
 

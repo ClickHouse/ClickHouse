@@ -31,9 +31,8 @@ PtrTo<SchemaClause> SchemaClause::createAsFunction(PtrTo<TableFunctionExpr> expr
     return PtrTo<SchemaClause>(new SchemaClause(ClauseType::FUNCTION, {expr}));
 }
 
-SchemaClause::SchemaClause(ClauseType type, PtrList exprs) : clause_type(type)
+SchemaClause::SchemaClause(ClauseType type, PtrList exprs) : INode(exprs), clause_type(type)
 {
-    children = exprs;
 }
 
 ASTPtr SchemaClause::convertToOld() const
@@ -48,7 +47,7 @@ ASTPtr SchemaClause::convertToOld() const
             auto constraint_list = std::make_shared<ASTExpressionList>();
             auto index_list = std::make_shared<ASTExpressionList>();
 
-            for (const auto & element : children.front()->as<TableElementList &>())
+            for (const auto & element : get(ELEMENTS)->as<TableElementList &>())
             {
                 switch(element->as<TableElementExpr>()->getType())
                 {
@@ -72,7 +71,7 @@ ASTPtr SchemaClause::convertToOld() const
         }
         case ClauseType::FUNCTION:
         case ClauseType::TABLE:
-            return children.front()->convertToOld();
+            return get(EXPR)->convertToOld();
     }
 }
 
@@ -94,12 +93,8 @@ CreateTableQuery::CreateTableQuery(
     PtrTo<SchemaClause> schema,
     PtrTo<EngineClause> engine,
     PtrTo<SelectUnionQuery> query)
-    : attach(attach_), temporary(temporary_), if_not_exists(if_not_exists_)
+    : DDLQuery{identifier, schema, engine, query}, attach(attach_), temporary(temporary_), if_not_exists(if_not_exists_)
 {
-    children.push_back(identifier);
-    children.push_back(schema);
-    children.push_back(engine);
-    children.push_back(query);
 }
 
 ASTPtr CreateTableQuery::convertToOld() const
@@ -107,7 +102,7 @@ ASTPtr CreateTableQuery::convertToOld() const
     auto query = std::make_shared<ASTCreateQuery>();
 
     {
-        auto table_id = getTableIdentifier(children[NAME]->convertToOld());
+        auto table_id = getTableIdentifier(get(NAME)->convertToOld());
         query->database = table_id.database_name;
         query->table = table_id.table_name;
         query->uuid = table_id.uuid;
@@ -119,29 +114,29 @@ ASTPtr CreateTableQuery::convertToOld() const
 
     if (has(SCHEMA))
     {
-        switch(children[SCHEMA]->as<SchemaClause>()->getType())
+        switch(get<SchemaClause>(SCHEMA)->getType())
         {
             case SchemaClause::ClauseType::DESCRIPTION:
             {
-                query->set(query->columns_list, children[SCHEMA]->convertToOld());
+                query->set(query->columns_list, get(SCHEMA)->convertToOld());
                 break;
             }
             case SchemaClause::ClauseType::TABLE:
             {
-                auto table_id = getTableIdentifier(children[SCHEMA]->convertToOld());
+                auto table_id = getTableIdentifier(get(SCHEMA)->convertToOld());
                 query->as_database = table_id.database_name;
                 query->as_table = table_id.table_name;
                 break;
             }
             case SchemaClause::ClauseType::FUNCTION:
             {
-                query->as_table_function = children[SCHEMA]->convertToOld();
+                query->as_table_function = get(SCHEMA)->convertToOld();
                 break;
             }
         }
     }
-    if (has(ENGINE)) query->set(query->storage, children[ENGINE]->convertToOld());
-    if (has(SUBQUERY)) query->set(query->select, children[SUBQUERY]->convertToOld());
+    if (has(ENGINE)) query->set(query->storage, get(ENGINE)->convertToOld());
+    if (has(SUBQUERY)) query->set(query->select, get(SUBQUERY)->convertToOld());
 
     return query;
 }
@@ -179,7 +174,7 @@ antlrcpp::Any ParseTreeVisitor::visitCreateTableStmt(ClickHouseParser::CreateTab
 antlrcpp::Any ParseTreeVisitor::visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *ctx)
 {
     auto elems = std::make_shared<TableElementList>();
-    for (auto * elem : ctx->tableElementExpr()) elems->append(visit(elem).as<PtrTo<TableElementExpr>>());
+    for (auto * elem : ctx->tableElementExpr()) elems->push(visit(elem));
     return SchemaClause::createDescription(elems);
 }
 

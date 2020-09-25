@@ -10,14 +10,14 @@ namespace DB::AST
 
 UseQuery::UseQuery(PtrTo<DatabaseIdentifier> identifier)
 {
-    children.push_back(identifier);
+    push(identifier);
 }
 
 ASTPtr UseQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTUseQuery>();
 
-    query->database = children[DATABASE]->as<DatabaseIdentifier>()->getName();
+    query->database = get<DatabaseIdentifier>(DATABASE)->getName();
 
     return query;
 }

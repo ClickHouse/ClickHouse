@@ -23,7 +23,7 @@ class Literal : public INode
             STRING,
         };
 
-        static PtrTo<Literal> createNull(antlr4::tree::TerminalNode * literal);
+        static PtrTo<Literal> createNull();
         static PtrTo<NumberLiteral> createNumber(antlr4::tree::TerminalNode * literal, bool negative = false);
         static PtrTo<NumberLiteral> createNumber(const String& literal); // checks first symbol for '-' character
         static PtrTo<StringLiteral> createString(antlr4::tree::TerminalNode * literal);

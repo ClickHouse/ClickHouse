@@ -10,7 +10,7 @@ namespace DB::AST
 
 CheckQuery::CheckQuery(PtrTo<TableIdentifier> identifier)
 {
-    children.push_back(identifier);
+    push(identifier);
 }
 
 ASTPtr CheckQuery::convertToOld() const

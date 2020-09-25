@@ -10,12 +10,9 @@ namespace DB::AST
 {
 
 CreateViewQuery::CreateViewQuery(bool if_not_exists_, PtrTo<TableIdentifier> identifier, PtrTo<SelectUnionQuery> query)
-    : if_not_exists(if_not_exists_)
+    : DDLQuery{identifier, query}, if_not_exists(if_not_exists_)
 {
-    children.push_back(identifier);
-    children.push_back(query);
-
-    (void)if_not_exists; // TODO
+    (void) if_not_exists; // TODO
 }
 
 ASTPtr CreateViewQuery::convertToOld() const

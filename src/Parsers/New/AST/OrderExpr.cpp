@@ -10,23 +10,21 @@ namespace DB::AST
 {
 
 OrderExpr::OrderExpr(PtrTo<ColumnExpr> expr, NullsOrder nulls_, PtrTo<StringLiteral> collate, bool ascending)
-    : nulls(nulls_), asc(ascending)
+    : INode{expr, collate}, nulls(nulls_), asc(ascending)
 {
-    children.push_back(expr);
-    children.push_back(collate);
 }
 
 ASTPtr OrderExpr::convertToOld() const
 {
     auto expr = std::make_shared<ASTOrderByElement>();
 
-    expr->children.push_back(children[EXPR]->convertToOld());
+    expr->children.push_back(get(EXPR)->convertToOld());
     expr->direction = asc ? 1 : -1;
     expr->nulls_direction = (nulls == NULLS_LAST) ? 1 : -1;
     expr->nulls_direction_was_explicitly_specified = (nulls != NATURAL);
     if (has(COLLATE))
     {
-        expr->collation = children[COLLATE]->convertToOld();
+        expr->collation = get(COLLATE)->convertToOld();
         expr->children.push_back(expr->collation);
     }
     // TODO: WITH FILL?
@@ -42,7 +40,7 @@ namespace DB
 antlrcpp::Any ParseTreeVisitor::visitOrderExprList(ClickHouseParser::OrderExprListContext *ctx)
 {
     auto expr_list = std::make_shared<AST::OrderExprList>();
-    for (auto* expr : ctx->orderExpr()) expr_list->append(visit(expr));
+    for (auto* expr : ctx->orderExpr()) expr_list->push(visit(expr));
     return expr_list;
 }
 

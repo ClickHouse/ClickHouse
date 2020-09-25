@@ -12,6 +12,12 @@ class RenameQuery : public DDLQuery
         explicit RenameQuery(PtrTo<List<TableIdentifier>> list);
 
         ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            EXPRS = 0,  // List<TableIdentifier>
+        };
 };
 
 }

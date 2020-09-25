@@ -20,14 +20,7 @@ class TableColumnPropertyExpr : public INode
 
         auto getType() const { return property_type; }
 
-        ASTPtr convertToOld() const override;
-
     private:
-        enum ChildIndex : UInt8
-        {
-            EXPR = 0,  // ColumnExpr
-        };
-
         PropertyType property_type;
 };
 

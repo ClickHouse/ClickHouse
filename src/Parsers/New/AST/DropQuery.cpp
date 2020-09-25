@@ -27,9 +27,8 @@ PtrTo<DropQuery> DropQuery::createDropTable(bool if_exists, bool temporary, PtrT
     return query;
 }
 
-DropQuery::DropQuery(QueryType type, PtrList exprs) : query_type(type)
+DropQuery::DropQuery(QueryType type, PtrList exprs) : DDLQuery(exprs), query_type(type)
 {
-    children = exprs;
 }
 
 ASTPtr DropQuery::convertToOld() const
@@ -44,12 +43,12 @@ ASTPtr DropQuery::convertToOld() const
     switch(query_type)
     {
         case QueryType::DATABASE:
-            query->database = children[NAME]->as<DatabaseIdentifier>()->getName();
+            query->database = get<DatabaseIdentifier>(NAME)->getName();
             break;
         case QueryType::TABLE:
         {
-            query->table = children[NAME]->as<TableIdentifier>()->getName();
-            if (auto database = children[NAME]->as<TableIdentifier>()->getDatabase())
+            query->table = get<TableIdentifier>(NAME)->getName();
+            if (auto database = get<TableIdentifier>(NAME)->getDatabase())
                 query->database = database->getName();
             break;
         }

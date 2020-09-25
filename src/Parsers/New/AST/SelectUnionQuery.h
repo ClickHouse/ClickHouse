@@ -12,14 +12,7 @@ namespace DB::AST
 
 // Clauses
 
-class WithClause : public INode
-{
-    public:
-        explicit WithClause(PtrTo<ColumnExprList> expr_list);
-
-    private:
-        PtrTo<ColumnExprList> exprs;
-};
+using WithClause = SimpleClause<ColumnExprList>;
 
 class FromClause : public INode
 {
@@ -31,10 +24,10 @@ class FromClause : public INode
     private:
         enum ChildIndex : UInt8
         {
-            EXPR = 0,
+            EXPR = 0,  // JoinExpr
         };
 
-        bool final;
+        const bool final;
 };
 
 class SampleClause : public INode
@@ -57,33 +50,9 @@ class ArrayJoinClause : public INode
         bool left;
 };
 
-class PrewhereClause : public INode
-{
-    public:
-        explicit PrewhereClause(PtrTo<ColumnExpr> expr);
+using PrewhereClause = SimpleClause<ColumnExpr>;
 
-        ASTPtr convertToOld() const override;
-
-    private:
-        enum ChildIndex : UInt8
-        {
-            EXPR = 0,  // ColumnExpr
-        };
-};
-
-class WhereClause : public INode
-{
-    public:
-        explicit WhereClause(PtrTo<ColumnExpr> expr);
-
-        ASTPtr convertToOld() const override;
-
-    private:
-        enum ChildIndex : UInt8
-        {
-            EXPR = 0,  // ColumnExpr
-        };
-};
+using WhereClause = SimpleClause<ColumnExpr>;
 
 class GroupByClause : public INode
 {
@@ -92,39 +61,11 @@ class GroupByClause : public INode
 
         bool withTotals() const { return with_totals; }
 
-        ASTPtr convertToOld() const override;
-
     private:
-        enum ChildIndex : UInt8
-        {
-            EXPRS = 0,  // ColumnExprList
-        };
-
-        bool with_totals;
+        const bool with_totals;
 };
 
-class HavingClause : public INode
-{
-    public:
-        explicit HavingClause(PtrTo<ColumnExpr> expr_);
-
-    private:
-        PtrTo<ColumnExpr> expr;
-};
-
-class OrderByClause : public INode
-{
-    public:
-        explicit OrderByClause(PtrTo<OrderExprList> expr_list);
-
-        ASTPtr convertToOld() const override;
-
-    private:
-        enum ChildIndex : UInt8
-        {
-            EXPRS = 0,  // OrderExprList
-        };
-};
+using HavingClause = SimpleClause<ColumnExpr>;
 
 class LimitByClause : public INode
 {
@@ -136,19 +77,7 @@ class LimitByClause : public INode
         PtrTo<ColumnExprList> by;
 };
 
-class LimitClause : public INode
-{
-    public:
-        explicit LimitClause(PtrTo<LimitExpr> expr);
-
-        ASTPtr convertToOld() const override;
-
-    private:
-        enum ChildIndex : UInt8
-        {
-            EXPR = 0,
-        };
-};
+using LimitClause = SimpleClause<LimitExpr>;
 
 class SettingsClause : public INode
 {
@@ -189,19 +118,19 @@ class SelectStmt : public INode
     private:
         enum ChildIndex : UInt8
         {
-            COLUMNS = 0,
-            WITH,
-            FROM,
-            SAMPLE,
-            ARRAY_JOIN,
-            PREWHERE,
-            WHERE,
-            GROUP_BY,
-            HAVING,
-            ORDER_BY,
-            LIMIT_BY,
-            LIMIT,
-            SETTINGS,
+            COLUMNS = 0,  // ColumnExprList
+            WITH,         // WithClause (optional)
+            FROM,         // FromClause (optional)
+            SAMPLE,       // SampleClause (optional)
+            ARRAY_JOIN,   // ArrayJoinClause (optional)
+            PREWHERE,     // PrewhereClause (optional)
+            WHERE,        // WhereClause (optional)
+            GROUP_BY,     // GroupByClause (optional)
+            HAVING,       // HavingClause (optional)
+            ORDER_BY,     // OrderByClause (optional)
+            LIMIT_BY,     // LimitByClause (optional)
+            LIMIT,        // LimitClause (optional)
+            SETTINGS,     // SettingsClause (optional)
 
             MAX_INDEX,
         };
@@ -213,7 +142,7 @@ class SelectUnionQuery : public Query
 {
     public:
         SelectUnionQuery() = default;
-        explicit SelectUnionQuery(std::list<PtrTo<SelectStmt>> stmts);
+        explicit SelectUnionQuery(PtrTo<List<SelectStmt>> stmts);
 
         void appendSelect(PtrTo<SelectStmt> stmt);
         void appendSelect(PtrTo<SelectUnionQuery> query);
@@ -222,6 +151,11 @@ class SelectUnionQuery : public Query
         ASTPtr convertToOld() const override;
 
     private:
+        enum ChildIndex : UInt8
+        {
+            STMTS = 0,  // List<SelectStmt>
+        };
+
         bool is_scalar = false;
 };
 

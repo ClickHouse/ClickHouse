@@ -33,15 +33,14 @@ PtrTo<DataClause> DataClause::createValues(size_t data_offset)
     return clause;
 }
 
-DataClause::DataClause(ClauseType type, PtrList exprs) : clause_type(type)
+DataClause::DataClause(ClauseType type, PtrList exprs) : INode(exprs), clause_type(type)
 {
-    children = exprs;
 }
 
 ASTPtr DataClause::convertToOld() const
 {
     if (clause_type != ClauseType::SELECT) return {};
-    return children[SUBQUERY]->convertToOld();
+    return get(SUBQUERY)->convertToOld();
 }
 
 // static
@@ -56,9 +55,8 @@ PtrTo<InsertQuery> InsertQuery::createFunction(PtrTo<TableFunctionExpr> function
     return PtrTo<InsertQuery>(new InsertQuery(QueryType::FUNCTION, {function, list, clause}));
 }
 
-InsertQuery::InsertQuery(QueryType type, PtrList exprs) : query_type(type)
+InsertQuery::InsertQuery(QueryType type, PtrList exprs) : Query(exprs), query_type(type)
 {
-    children = exprs;
 }
 
 ASTPtr InsertQuery::convertToOld() const
@@ -68,17 +66,17 @@ ASTPtr InsertQuery::convertToOld() const
     switch(query_type)
     {
         case QueryType::FUNCTION:
-            query->table_function = children[FUNCTION]->convertToOld();
+            query->table_function = get(FUNCTION)->convertToOld();
             break;
         case QueryType::TABLE:
-            query->table_id = children[IDENTIFIER]->convertToOld();
+            query->table_id = get(IDENTIFIER)->convertToOld();
             break;
     }
 
-    if (has(COLUMNS)) query->columns = children[COLUMNS]->convertToOld();
-    if (children[DATA]->as<DataClause>()->getType() == DataClause::ClauseType::SELECT)
+    if (has(COLUMNS)) query->columns = get(COLUMNS)->convertToOld();
+    if (get<DataClause>(DATA)->getType() == DataClause::ClauseType::SELECT)
     {
-        query->select = children[DATA]->convertToOld();
+        query->select = get(DATA)->convertToOld();
         query->children.push_back(query->select);
     }
 
@@ -95,7 +93,7 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitColumnsClause(ClickHouseParser::ColumnsClauseContext *ctx)
 {
     auto list = std::make_shared<ColumnNameList>();
-    for (auto * name : ctx->nestedIdentifier()) list->append(visit(name));
+    for (auto * name : ctx->nestedIdentifier()) list->push(visit(name));
     return list;
 }
 

@@ -12,75 +12,65 @@
 namespace DB::AST
 {
 
-PartitionByClause::PartitionByClause(PtrTo<ColumnExpr> expr)
+PrimaryKeyClause::PrimaryKeyClause(PtrTo<ColumnExpr> expr) : INode{expr}
 {
-    children.push_back(expr);
 }
 
-ASTPtr PartitionByClause::convertToOld() const
+SampleByClause::SampleByClause(PtrTo<ColumnExpr> expr) : INode{expr}
 {
-    return children[EXPR]->convertToOld();
 }
 
-PrimaryKeyClause::PrimaryKeyClause(PtrTo<ColumnExpr> expr)
+TTLClause::TTLClause(PtrTo<TTLExprList> list) : INode{list}
 {
-    children.push_back(expr);
 }
 
-SampleByClause::SampleByClause(PtrTo<ColumnExpr> expr)
+EngineClause::EngineClause(PtrTo<EngineExpr> expr) : INode{expr}
 {
-    children.push_back(expr);
-}
-
-TTLClause::TTLClause(PtrTo<TTLExprList> list)
-{
-    children.assign(list->begin(), list->end());
-}
-
-EngineClause::EngineClause(PtrTo<EngineExpr> expr)
-{
-    children.resize(MAX_INDEX);
-
-    children[ENGINE] = expr;
 }
 
 void EngineClause::setOrderByClause(PtrTo<OrderByClause> clause)
 {
-    children[ORDER_BY] = clause;
+    assert(has<EngineExpr>(ENGINE));
+    push(clause);
 }
 
 void EngineClause::setPartitionByClause(PtrTo<PartitionByClause> clause)
 {
-    children[PARTITION_BY] = clause;
+    assert(has<OrderByClause>(ORDER_BY));
+    push(clause);
 }
 
 void EngineClause::setPrimaryKeyClause(PtrTo<PrimaryKeyClause> clause)
 {
-    children[PRIMARY_KEY] = clause;
+    assert(has<PartitionByClause>(PARTITION_BY));
+    push(clause);
 }
 
 void EngineClause::setSampleByClause(PtrTo<SampleByClause> clause)
 {
-    children[SAMPLE_BY] = clause;
+    assert(has<PrimaryKeyClause>(PRIMARY_KEY));
+    push(clause);
 }
 
 void EngineClause::setTTLClause(PtrTo<TTLClause> clause)
 {
-    children[TTL] = clause;
+    assert(has<SampleByClause>(SAMPLE_BY));
+    push(clause);
 }
 
 void EngineClause::setSettingsClause(PtrTo<SettingsClause> clause)
 {
-    children[SETTINGS] = clause;
+    assert(has<TTLClause>(TTL));
+    push(clause);
 }
 
 ASTPtr EngineClause::convertToOld() const
 {
     auto storage = std::make_shared<ASTStorage>();
 
-    storage->set(storage->engine, children[ENGINE]->convertToOld());
-    if (has(PARTITION_BY)) storage->set(storage->partition_by, children[PARTITION_BY]->convertToOld());
-    if (has(PRIMARY_KEY)) storage->set(storage->primary_key, children[PRIMARY_KEY]->convertToOld());
+    storage->set(storage->engine, get(ENGINE)->convertToOld());
+    if (has(PARTITION_BY)) storage->set(storage->partition_by, get(PARTITION_BY)->convertToOld());
+    if (has(PRIMARY_KEY)) storage->set(storage->primary_key, get(PRIMARY_KEY)->convertToOld());
     if (has(ORDER_BY))
     {
         auto tuple = std::make_shared<ASTFunction>();
@@ -88,7 +78,7 @@ ASTPtr EngineClause::convertToOld() const
         tuple->arguments = std::make_shared<ASTExpressionList>();
         tuple->children.push_back(tuple->arguments);
 
-        auto expr_list = children[ORDER_BY]->convertToOld();
+        auto expr_list = get(ORDER_BY)->convertToOld();
         for (const auto & child : expr_list->children)
             tuple->arguments->children.push_back(child->children.back());
 
@@ -100,38 +90,34 @@ ASTPtr EngineClause::convertToOld() const
 
         storage->set(storage->order_by, tuple);
     }
-    if (has(SAMPLE_BY)) storage->set(storage->sample_by, children[SAMPLE_BY]->convertToOld());
-    if (has(TTL)) storage->set(storage->ttl_table, children[TTL]->convertToOld());
-    if (has(SETTINGS)) storage->set(storage->settings, children[SETTINGS]->convertToOld());
+    if (has(SAMPLE_BY)) storage->set(storage->sample_by, get(SAMPLE_BY)->convertToOld());
+    if (has(TTL)) storage->set(storage->ttl_table, get(TTL)->convertToOld());
+    if (has(SETTINGS)) storage->set(storage->settings, get(SETTINGS)->convertToOld());
 
     return storage;
 }
 
-EngineExpr::EngineExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> args)
+EngineExpr::EngineExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> args) : INode{identifier, args}
 {
-    children.push_back(identifier);
-    children.push_back(args);
 }
 
 ASTPtr EngineExpr::convertToOld() const
 {
     auto expr = std::make_shared<ASTFunction>();
 
-    expr->name = children[NAME]->as<Identifier>()->getName();
+    expr->name = get<Identifier>(NAME)->getName();
     if (has(ARGS))
     {
-        expr->arguments = children[ARGS]->convertToOld();
+        expr->arguments = get(ARGS)->convertToOld();
         expr->children.push_back(expr->arguments);
     }
 
     return expr;
 }
 
-TTLExpr::TTLExpr(PtrTo<ColumnExpr> expr, TTLType type, PtrTo<StringLiteral> literal) : ttl_type(type)
+TTLExpr::TTLExpr(PtrTo<ColumnExpr> expr, TTLType type, PtrTo<StringLiteral> literal) : INode{expr, literal}, ttl_type(type)
 {
-    children.push_back(expr);
-    children.push_back(literal);
-    (void)ttl_type; // TODO
+    (void) ttl_type; // TODO
 }
 
 }
@@ -179,7 +165,7 @@ antlrcpp::Any ParseTreeVisitor::visitSampleByClause(ClickHouseParser::SampleByCl
 antlrcpp::Any ParseTreeVisitor::visitTtlClause(ClickHouseParser::TtlClauseContext *ctx)
 {
     auto list = std::make_shared<TTLExprList>();
-    for (auto * expr : ctx->ttlExpr()) list->append(visit(expr));
+    for (auto * expr : ctx->ttlExpr()) list->push(visit(expr));
     return std::make_shared<TTLClause>(list);
 }
 

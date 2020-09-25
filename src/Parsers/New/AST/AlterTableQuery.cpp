@@ -51,7 +51,7 @@ PtrTo<AlterTableClause> AlterTableClause::createDelete(PtrTo<ColumnExpr> expr)
 // static
 PtrTo<AlterTableClause> AlterTableClause::createDetach(PtrTo<PartitionExprList> list)
 {
-    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::DETACH, {list->begin(), list->end()}));
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::DETACH, {list}));
 }
 
 // static
@@ -89,17 +89,13 @@ PtrTo<AlterTableClause> AlterTableClause::createReplace(PtrTo<PartitionExprList>
     return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::REPLACE, {list, identifier}));
 }
 
-AlterTableClause::AlterTableClause(ClauseType type, PtrList exprs) : clause_type(type)
+AlterTableClause::AlterTableClause(ClauseType type, PtrList exprs) : INode(exprs), clause_type(type)
 {
-    children = exprs;
-
     (void) clause_type; // TODO
 }
 
-AlterTableQuery::AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses)
+AlterTableQuery::AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses) : DDLQuery{identifier, clauses}
 {
-    children.push_back(identifier);
-    children.push_back(clauses);
 }
 
 ASTPtr AlterTableQuery::convertToOld() const
@@ -178,7 +174,7 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseReplace(ClickHouseParser::A
 antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext * ctx)
 {
     auto list = std::make_shared<List<AlterTableClause>>();
-    for (auto * clause : ctx->alterTableClause()) list->append(visit(clause));
+    for (auto * clause : ctx->alterTableClause()) list->push(visit(clause));
     return std::make_shared<AlterTableQuery>(visit(ctx->tableIdentifier()), list);
 }
 

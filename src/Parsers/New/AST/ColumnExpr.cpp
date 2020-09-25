@@ -42,7 +42,7 @@ PtrTo<ColumnExpr> ColumnExpr::createIdentifier(PtrTo<ColumnIdentifier> identifie
 }
 
 // static
-PtrTo<ColumnExpr> ColumnExpr::createLambda(PtrTo<List<Identifier, ','> > params, PtrTo<ColumnExpr> expr)
+PtrTo<ColumnExpr> ColumnExpr::createLambda(PtrTo<List<Identifier>> params, PtrTo<ColumnExpr> expr)
 {
     return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::LAMBDA, {params, expr}));
 }
@@ -60,9 +60,8 @@ PtrTo<ColumnExpr> ColumnExpr::createSubquery(PtrTo<SelectUnionQuery> query, bool
     return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::SUBQUERY, {query}));
 }
 
-ColumnExpr::ColumnExpr(ColumnExpr::ExprType type, PtrList exprs) : expr_type(type)
+ColumnExpr::ColumnExpr(ColumnExpr::ExprType type, PtrList exprs) : INode(exprs), expr_type(type)
 {
-    children = exprs;
 }
 
 ASTPtr ColumnExpr::convertToOld() const
@@ -71,10 +70,10 @@ ASTPtr ColumnExpr::convertToOld() const
     {
         case ExprType::ALIAS:
         {
-            ASTPtr expr = children[EXPR]->convertToOld();
+            ASTPtr expr = get(EXPR)->convertToOld();
 
             if (auto * expr_with_alias = dynamic_cast<ASTWithAlias*>(expr.get()))
-                expr_with_alias->setAlias(children[ALIAS]->as<Identifier>()->getName());
+                expr_with_alias->setAlias(get<Identifier>(ALIAS)->getName());
             else
                 throw std::runtime_error("Trying to convert new expression with alias to old one without alias support: " + expr->getID());
 
@@ -86,22 +85,22 @@ ASTPtr ColumnExpr::convertToOld() const
         {
             auto func = std::make_shared<ASTFunction>();
 
-            func->name = children[NAME]->as<Identifier>()->getName();
-            if (children[ARGS])
+            func->name = get<Identifier>(NAME)->getName();
+            if (has(ARGS))
             {
-                func->arguments = children[ARGS]->convertToOld();
+                func->arguments = get(ARGS)->convertToOld();
                 func->children.push_back(func->arguments);
             }
-            if (children[PARAMS])
+            if (has(PARAMS))
             {
-                func->parameters = children[PARAMS]->convertToOld();
+                func->parameters = get(PARAMS)->convertToOld();
                 func->children.push_back(func->parameters);
             }
 
             return func;
         }
         case ExprType::IDENTIFIER:
-            return children[IDENTIFIER]->convertToOld();
+            return get(IDENTIFIER)->convertToOld();
         case ExprType::LAMBDA:
         {
             auto func = std::make_shared<ASTFunction>();
@@ -110,21 +109,21 @@ ASTPtr ColumnExpr::convertToOld() const
             func->name = "lambda";
             func->arguments = std::make_shared<ASTExpressionList>();
             func->arguments->children.push_back(tuple);
-            func->arguments->children.push_back(children[LAMBDA_EXPR]->convertToOld());
+            func->arguments->children.push_back(get(LAMBDA_EXPR)->convertToOld());
             func->children.push_back(func->arguments);
 
             tuple->name = "tuple";
-            tuple->arguments = children[LAMBDA_ARGS]->convertToOld();
+            tuple->arguments = get(LAMBDA_ARGS)->convertToOld();
             tuple->children.push_back(tuple->arguments);
 
             return func;
         }
         case ExprType::LITERAL:
-            return children[LITERAL]->convertToOld();
+            return get(LITERAL)->convertToOld();
         case ExprType::SUBQUERY:
         {
             auto subquery = std::make_shared<ASTSubquery>();
-            subquery->children.push_back(children[SUBQUERY]->convertToOld());
+            subquery->children.push_back(get(SUBQUERY)->convertToOld());
             return subquery;
         }
     }
@@ -198,7 +197,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnArgExpr(ClickHouseParser::ColumnArgEx
 antlrcpp::Any ParseTreeVisitor::visitColumnArgList(ClickHouseParser::ColumnArgListContext *ctx)
 {
     auto list = std::make_shared<ColumnExprList>();
-    for (auto * arg : ctx->columnArgExpr()) list->append(visit(arg));
+    for (auto * arg : ctx->columnArgExpr()) list->push(visit(arg));
     return list;
 }
 
@@ -219,7 +218,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprArrayAccess(ClickHouseParser::Col
     auto name = std::make_shared<Identifier>("arrayElement");
     auto args = std::make_shared<ColumnExprList>();
 
-    for (auto * expr : ctx->columnExpr()) args->append(visit(expr));
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -237,24 +236,24 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprBetween(ClickHouseParser::ColumnE
     {
         auto name = std::make_shared<Identifier>(ctx->NOT() ? "lessOrEquals" : "greaterOrEquals");
         auto args = std::make_shared<ColumnExprList>();
-        args->append(visit(ctx->columnExpr(0)));
-        args->append(visit(ctx->columnExpr(1)));
+        args->push(visit(ctx->columnExpr(0)));
+        args->push(visit(ctx->columnExpr(1)));
         expr1 = ColumnExpr::createFunction(name, nullptr, args);
     }
 
     {
         auto name = std::make_shared<Identifier>(ctx->NOT() ? "greaterOrEquals" : "lessOrEquals");
         auto args = std::make_shared<ColumnExprList>();
-        args->append(visit(ctx->columnExpr(0)));
-        args->append(visit(ctx->columnExpr(2)));
+        args->push(visit(ctx->columnExpr(0)));
+        args->push(visit(ctx->columnExpr(2)));
         expr2 = ColumnExpr::createFunction(name, nullptr, args);
     }
 
     auto name = std::make_shared<Identifier>("and");
     auto args = std::make_shared<ColumnExprList>();
 
-    args->append(expr1);
-    args->append(expr2);
+    args->push(expr1);
+    args->push(expr2);
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -264,7 +263,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprBinaryOp(ClickHouseParser::Column
     auto name = std::make_shared<Identifier>(visit(ctx->binaryOp()).as<String>());
     auto args = std::make_shared<ColumnExprList>();
 
-    for (auto * expr : ctx->columnExpr()) args->append(visit(expr));
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -275,8 +274,8 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprCase(ClickHouseParser::ColumnExpr
     auto name = std::make_shared<Identifier>(has_case_expr ? "caseWithExpression" : "multiIf");
     auto args = std::make_shared<ColumnExprList>();
 
-    for (auto * expr : ctx->columnExpr()) args->append(visit(expr));
-    // TODO: if (!ctx->ELSE()) args->append(Literal::createNull(???));
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
+    if (!ctx->ELSE()) args->push(ColumnExpr::createLiteral(Literal::createNull()));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -286,7 +285,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprCast(ClickHouseParser::ColumnExpr
     auto args = std::make_shared<ColumnExprList>();
     auto params = std::make_shared<ColumnParamList>();
 
-    args->append(visit(ctx->columnExpr()));
+    args->push(visit(ctx->columnExpr()));
     // TODO: params->append(Literal::createString(???));
 
     return ColumnExpr::createFunction(std::make_shared<Identifier>("cast"), params, args);
@@ -298,7 +297,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnE
     auto args = std::make_shared<ColumnExprList>();
     auto params = std::make_shared<ColumnParamList>();
 
-    args->append(visit(ctx->columnExpr()));
+    args->push(visit(ctx->columnExpr()));
     // TODO: params->append(Literal::createString(???));
 
     return ColumnExpr::createFunction(name, params, args);
@@ -322,7 +321,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprInterval(ClickHouseParser::Column
     auto args = std::make_shared<ColumnExprList>();
     auto params = std::make_shared<ColumnParamList>();
 
-    args->append(visit(ctx->columnExpr()));
+    args->push(visit(ctx->columnExpr()));
     // TODO: params->append(Literal::createString(???));
 
     return ColumnExpr::createFunction(name, params, args);
@@ -333,7 +332,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprIsNull(ClickHouseParser::ColumnEx
     auto name = std::make_shared<Identifier>(ctx->NOT() ? "isNotNull" : "isNull");
     auto args = std::make_shared<ColumnExprList>();
 
-    args->append(visit(ctx->columnExpr()));
+    args->push(visit(ctx->columnExpr()));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -341,7 +340,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprIsNull(ClickHouseParser::ColumnEx
 antlrcpp::Any ParseTreeVisitor::visitColumnExprList(ClickHouseParser::ColumnExprListContext *ctx)
 {
     auto list = std::make_shared<ColumnExprList>();
-    for (auto * expr : ctx->columnsExpr()) list->append(visit(expr));
+    for (auto * expr : ctx->columnsExpr()) list->push(visit(expr));
     return list;
 }
 
@@ -367,7 +366,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprSubstring(ClickHouseParser::Colum
     auto name = std::make_shared<Identifier>("substring");
     auto args = std::make_shared<ColumnExprList>();
 
-    for (auto * expr : ctx->columnExpr()) args->append(visit(expr));
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -377,7 +376,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTernaryOp(ClickHouseParser::Colum
     auto name = std::make_shared<Identifier>("if");
     auto args = std::make_shared<ColumnExprList>();
 
-    for (auto * expr : ctx->columnExpr()) args->append(visit(expr));
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -388,9 +387,9 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTrim(ClickHouseParser::ColumnExpr
     auto args = std::make_shared<ColumnExprList>();
     auto params = std::make_shared<ColumnParamList>();
 
-    args->append(visit(ctx->columnExpr()));
+    args->push(visit(ctx->columnExpr()));
     // TODO: params->append(Literal::createString(???));
-    params->append(ColumnExpr::createLiteral(Literal::createString(ctx->STRING_LITERAL())));
+    params->push(ColumnExpr::createLiteral(Literal::createString(ctx->STRING_LITERAL())));
 
     return ColumnExpr::createFunction(name, params, args);
 }
@@ -407,8 +406,8 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTupleAccess(ClickHouseParser::Col
     auto name = std::make_shared<Identifier>("tupleElement");
     auto args = std::make_shared<ColumnExprList>();
 
-    args->append(visit(ctx->columnExpr()));
-    args->append(ColumnExpr::createLiteral(Literal::createNumber(ctx->INTEGER_LITERAL())));
+    args->push(visit(ctx->columnExpr()));
+    args->push(ColumnExpr::createLiteral(Literal::createNumber(ctx->INTEGER_LITERAL())));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -418,15 +417,15 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprUnaryOp(ClickHouseParser::ColumnE
     auto name = std::make_shared<Identifier>(visit(ctx->unaryOp()).as<String>());
     auto args = std::make_shared<ColumnExprList>();
 
-    args->append(visit(ctx->columnExpr()));
+    args->push(visit(ctx->columnExpr()));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnLambdaExpr(ClickHouseParser::ColumnLambdaExprContext *ctx)
 {
-    auto params = std::make_shared<List<Identifier, ','>>();
-    for (auto * id : ctx->identifier()) params->append(visit(id));
+    auto params = std::make_shared<List<Identifier>>();
+    for (auto * id : ctx->identifier()) params->push(visit(id));
     return ColumnExpr::createLambda(params, visit(ctx->columnExpr()));
 }
 

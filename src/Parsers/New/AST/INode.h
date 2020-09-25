@@ -22,11 +22,28 @@ class INode : public TypePromotion<INode>
         void dump() const { dump(0); }
 
     protected:
-        bool has(size_t i) const { return i < children.size() && children[i]; }
+        INode() = default;
+        INode(std::initializer_list<Ptr> list) { children = list; }
+        explicit INode(PtrList list) { children = list; }
+        explicit INode(size_t size) { children.resize(size); }
 
-        PtrList children;  // any child potentially may point to |nullptr|
+        void push(const Ptr& child) { children.push_back(child); }
+        void set(size_t i, const Ptr& child) { children[i] = child; }
+        bool has(size_t i) const { return i < children.size() && children[i]; }
+        const Ptr & get(size_t i) const { return children[i]; }
+
+        template <class ChildType>
+        bool has(size_t i) const { return has(i) && children[i]->as<ChildType>(); }
+
+        template <class ChildType>
+        ChildType * get(size_t i) const { return children[i]->template as<ChildType>(); }
+
+        auto begin() const { return children.cbegin(); }
+        auto end() const { return children.cend(); }
 
     private:
+        PtrList children;  // any child potentially may point to |nullptr|
+
         void dump(int indentation) const
         {
             for (auto i = 0; i < indentation; ++i) std::cout << " ";
@@ -37,16 +54,19 @@ class INode : public TypePromotion<INode>
         virtual String dumpInfo() const { return ""; }
 };
 
-template <class T, char Separator>
+template <class T>
 class List : public INode {
     public:
         List() = default;
-        List(std::initializer_list<Ptr> list) { children = list; }
+        List(std::initializer_list<PtrTo<T>> list)
+        {
+            for (const auto & i : list) push(i);
+        }
 
-        void append(PtrTo<T> node) { children.push_back(node); }
+        using INode::begin;
+        using INode::end;
 
-        auto begin() const { return children.cbegin(); }
-        auto end() const { return children.cend(); }
+        void push(const PtrTo<T> & node) { INode::push(node); }
 
         ASTPtr convertToOld() const override
         {
@@ -54,6 +74,14 @@ class List : public INode {
             for (const auto & child : *this) list->children.emplace_back(child->convertToOld());
             return list;
         }
+};
+
+template <class T>
+class SimpleClause : public INode
+{
+    public:
+        explicit SimpleClause(PtrTo<T> expr) : INode{expr} {}
+        ASTPtr convertToOld() const override { return get(0)->convertToOld(); }
 };
 
 }

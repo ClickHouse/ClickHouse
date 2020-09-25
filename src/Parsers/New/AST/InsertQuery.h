@@ -44,8 +44,8 @@ class InsertQuery : public Query
         static PtrTo<InsertQuery> createFunction(PtrTo<TableFunctionExpr> function, PtrTo<ColumnNameList> list, PtrTo<DataClause> clause);
         static PtrTo<InsertQuery> createTable(PtrTo<TableIdentifier> identifier, PtrTo<ColumnNameList> list, PtrTo<DataClause> clause);
 
-        bool hasData() const { return children[DATA]->as<DataClause>()->getType() != DataClause::ClauseType::SELECT; }
-        size_t getDataOffset() const { return children[DATA]->as<DataClause>()->getOffset(); }
+        bool hasData() const { return get<DataClause>(DATA)->getType() != DataClause::ClauseType::SELECT; }
+        size_t getDataOffset() const { return get<DataClause>(DATA)->getOffset(); }
 
         ASTPtr convertToOld() const override;
 

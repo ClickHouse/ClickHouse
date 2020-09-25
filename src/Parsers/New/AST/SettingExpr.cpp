@@ -9,10 +9,8 @@
 namespace DB::AST
 {
 
-SettingExpr::SettingExpr(PtrTo<Identifier> name, PtrTo<Literal> value)
+SettingExpr::SettingExpr(PtrTo<Identifier> name, PtrTo<Literal> value) : INode{name, value}
 {
-    children.push_back(name);
-    children.push_back(value);
 }
 
 }
@@ -23,7 +21,7 @@ namespace DB
 antlrcpp::Any ParseTreeVisitor::visitSettingExprList(ClickHouseParser::SettingExprListContext *ctx)
 {
     auto expr_list = std::make_shared<AST::SettingExprList>();
-    for (auto* expr : ctx->settingExpr()) expr_list->append(visit(expr));
+    for (auto* expr : ctx->settingExpr()) expr_list->push(visit(expr));
     return expr_list;
 }
 

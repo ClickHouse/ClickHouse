@@ -11,7 +11,7 @@ namespace DB::AST
 TruncateQuery::TruncateQuery(bool temporary_, bool if_exists_, PtrTo<TableIdentifier> identifier)
     : temporary(temporary_), if_exists(if_exists_)
 {
-    children.push_back(identifier);
+    push(identifier);
 
     (void) temporary, (void) if_exists; // TODO
 }

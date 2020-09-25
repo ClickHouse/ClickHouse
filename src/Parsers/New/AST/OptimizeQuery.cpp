@@ -13,10 +13,8 @@ namespace DB::AST
 {
 
 OptimizeQuery::OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionExprList> list, bool final_, bool deduplicate_)
-    : final(final_), deduplicate(deduplicate_)
+    : DDLQuery{identifier, list}, final(final_), deduplicate(deduplicate_)
 {
-    children.push_back(identifier);
-    children.push_back(list);
 }
 
 ASTPtr OptimizeQuery::convertToOld() const
@@ -24,7 +22,7 @@ ASTPtr OptimizeQuery::convertToOld() const
     auto query = std::make_shared<ASTOptimizeQuery>();
 
     {
-        auto table_id = getTableIdentifier(children[TABLE]->convertToOld());
+        auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
         query->database = table_id.database_name;
         query->table = table_id.table_name;
         query->uuid = table_id.uuid;
@@ -32,7 +30,7 @@ ASTPtr OptimizeQuery::convertToOld() const
 
     if (has(PARTITION))
     {
-        query->partition = children[PARTITION]->convertToOld();
+        query->partition = get(PARTITION)->convertToOld();
         query->children.push_back(query->partition);
     }
 
@@ -60,7 +58,7 @@ antlrcpp::Any ParseTreeVisitor::visitPartitionClause(ClickHouseParser::Partition
 {
     auto list = std::make_shared<PartitionExprList>();
 
-    if (ctx->STRING_LITERAL()) list->append(Literal::createString(ctx->STRING_LITERAL()));
+    if (ctx->STRING_LITERAL()) list->push(Literal::createString(ctx->STRING_LITERAL()));
     else
     {
         auto tuple = visit(ctx->columnExpr()).as<PtrTo<ColumnExpr>>();
@@ -72,7 +70,7 @@ antlrcpp::Any ParseTreeVisitor::visitPartitionClause(ClickHouseParser::Partition
                 auto * expr = (*it)->as<ColumnExpr>();
 
                 if (expr->getType() == ColumnExpr::ExprType::LITERAL)
-                    list->append(expr->getLiteral());
+                    list->push(expr->getLiteral());
                 else
                 {
                     // TODO: 'Expected tuple of literals as Partition Expression'.

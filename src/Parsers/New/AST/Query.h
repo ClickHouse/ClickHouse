@@ -14,6 +14,10 @@ class Query : public INode {
         void setFormat(PtrTo<Identifier> id);
 
     protected:
+        Query() = default;
+        Query(std::initializer_list<Ptr> list) : INode(list) {}
+        explicit Query(PtrList list) : INode(list) {}
+
         void convertToOldPartially(const std::shared_ptr<ASTQueryWithOutput> & query) const;
 
     private:

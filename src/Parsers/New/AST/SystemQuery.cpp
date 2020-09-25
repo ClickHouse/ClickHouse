@@ -30,11 +30,9 @@ PtrTo<SystemQuery> SystemQuery::createSync(PtrTo<TableIdentifier> identifier)
     return PtrTo<SystemQuery>(new SystemQuery(QueryType::SYNC, {identifier}));
 }
 
-SystemQuery::SystemQuery(QueryType type, PtrList exprs) : query_type(type)
+SystemQuery::SystemQuery(QueryType type, PtrList exprs) : Query(exprs), query_type(type)
 {
-    children = exprs;
-
-    (void)query_type; // TODO
+    (void) query_type; // TODO
 }
 
 ASTPtr SystemQuery::convertToOld() const

@@ -13,14 +13,8 @@
 namespace DB::AST
 {
 
-TableColumnPropertyExpr::TableColumnPropertyExpr(PropertyType type, PtrTo<ColumnExpr> expr) : property_type(type)
+TableColumnPropertyExpr::TableColumnPropertyExpr(PropertyType type, PtrTo<ColumnExpr> expr) : INode{expr}, property_type(type)
 {
-    children.push_back(expr);
-}
-
-ASTPtr TableColumnPropertyExpr::convertToOld() const
-{
-    return children[EXPR]->convertToOld();
 }
 
 // static
@@ -34,9 +28,8 @@ PtrTo<TableElementExpr> TableElementExpr::createColumn(
     return PtrTo<TableElementExpr>(new TableElementExpr(TableElementExpr::ExprType::COLUMN, {name, type, property, comment, ttl}));
 }
 
-TableElementExpr::TableElementExpr(ExprType type, PtrList exprs) : expr_type(type)
+TableElementExpr::TableElementExpr(ExprType type, PtrList exprs) : INode(exprs), expr_type(type)
 {
-    children = exprs;
 }
 
 ASTPtr TableElementExpr::convertToOld() const
@@ -47,15 +40,15 @@ ASTPtr TableElementExpr::convertToOld() const
         {
             auto expr = std::make_shared<ASTColumnDeclaration>();
 
-            expr->name = children[NAME]->as<Identifier>()->getName(); // FIXME: do we have correct nested identifier here already?
+            expr->name = get<Identifier>(NAME)->getName(); // FIXME: do we have correct nested identifier here already?
             if (has(TYPE))
             {
-                expr->type = children[TYPE]->convertToOld();
+                expr->type = get(TYPE)->convertToOld();
                 expr->children.push_back(expr->type);
             }
             if (has(PROPERTY))
             {
-                switch(children[PROPERTY]->as<TableColumnPropertyExpr>()->getType())
+                switch(get<TableColumnPropertyExpr>(PROPERTY)->getType())
                 {
                     case TableColumnPropertyExpr::PropertyType::ALIAS:
                         expr->default_specifier = "ALIAS";
@@ -67,18 +60,18 @@ ASTPtr TableElementExpr::convertToOld() const
                         expr->default_specifier = "MATERIALIZED";
                         break;
                 }
-                expr->default_expression = children[PROPERTY]->convertToOld();
+                expr->default_expression = get(PROPERTY)->convertToOld();
                 expr->children.push_back(expr->default_expression);
             }
             if (has(COMMENT))
             {
-                expr->comment = children[COMMENT]->convertToOld();
+                expr->comment = get(COMMENT)->convertToOld();
                 expr->children.push_back(expr->comment);
             }
             // TODO: CODEC
             if (has(TTL))
             {
-                expr->ttl = children[TTL]->convertToOld();
+                expr->ttl = get(TTL)->convertToOld();
                 expr->children.push_back(expr->ttl);
             }
 

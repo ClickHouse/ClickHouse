@@ -11,8 +11,8 @@ class SettingExpr : public INode
     public:
         SettingExpr(PtrTo<Identifier> name, PtrTo<Literal> value);
 
-        auto getName() const { return static_pointer_cast<Identifier>(children[NAME]); }
-        auto getValue() const { return static_pointer_cast<Literal>(children[VALUE]); }
+        auto getName() const { return static_pointer_cast<Identifier>(get(NAME)); }
+        auto getValue() const { return static_pointer_cast<Literal>(get(VALUE)); }
 
     private:
         enum ChildIndex : UInt8

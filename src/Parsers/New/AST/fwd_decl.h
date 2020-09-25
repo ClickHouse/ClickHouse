@@ -6,9 +6,14 @@
 
 namespace DB::AST
 {
+
 class INode;
-template <class T, char Separator = ','>
+
+template <class T>
 class List;
+
+template <class T>
+class SimpleClause;
 
 template <class T = INode>
 using PtrTo = std::shared_ptr<T>;
@@ -32,7 +37,6 @@ class JsonValue;
 class LimitExpr;
 class Literal;
 class NumberLiteral;
-class OrderByClause;
 class OrderExpr;
 class Query;
 class RatioExpr;
@@ -59,10 +63,12 @@ using JsonExprList = List<JsonExpr>;
 using JsonValueList = List<JsonValue>;
 using OrderExprList = List<OrderExpr>;
 using PartitionExprList = List<Literal>;
-using QueryList = List<Query, ';'>;
+using QueryList = List<Query>;
 using SettingExprList = List<SettingExpr>;
 using TableArgList = List<TableArgExpr>;
 using TableElementList = List<TableElementExpr>;
 using TTLExprList = List<TTLExpr>;
+
+using OrderByClause = SimpleClause<OrderExprList>;
 
 }

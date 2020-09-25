@@ -23,6 +23,11 @@ class AlterTableClause : public INode
         static PtrTo<AlterTableClause> createReplace(PtrTo<PartitionExprList> list, PtrTo<TableIdentifier> identifier);
 
     private:
+        enum ChildIndex : UInt8
+        {
+            DETACH_PARTITION = 0,  // PartitionExprList
+        };
+
         enum class ClauseType
         {
             ADD,

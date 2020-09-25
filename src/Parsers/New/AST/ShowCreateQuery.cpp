@@ -22,11 +22,9 @@ PtrTo<ShowCreateQuery> ShowCreateQuery::createTable(bool temporary, PtrTo<TableI
     return query;
 }
 
-ShowCreateQuery::ShowCreateQuery(QueryType type, PtrList exprs) : query_type(type)
+ShowCreateQuery::ShowCreateQuery(QueryType type, PtrList exprs) : Query(exprs), query_type(type)
 {
-    children = exprs;
-
-    (void)query_type, (void)temporary; // TODO
+    (void) query_type, (void) temporary; // TODO
 }
 
 ASTPtr ShowCreateQuery::convertToOld() const

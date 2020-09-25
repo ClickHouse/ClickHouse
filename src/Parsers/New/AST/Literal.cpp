@@ -9,9 +9,8 @@ namespace DB::AST
 {
 
 // static
-PtrTo<Literal> Literal::createNull(antlr4::tree::TerminalNode *)
+PtrTo<Literal> Literal::createNull()
 {
-    // FIXME: check that it's a really Null literal.
     return PtrTo<Literal>(new Literal(LiteralType::NULL_LITERAL, String()));
 }
 
@@ -98,7 +97,7 @@ antlrcpp::Any ParseTreeVisitor::visitFloatingLiteral(ClickHouseParser::FloatingL
 antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext * ctx)
 {
     if (ctx->NULL_SQL())
-        return Literal::createNull(ctx->NULL_SQL());
+        return Literal::createNull();
     if (ctx->STRING_LITERAL())
         return static_pointer_cast<Literal>(Literal::createString(ctx->STRING_LITERAL()));
     if (ctx->numberLiteral())

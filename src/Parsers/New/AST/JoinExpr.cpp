@@ -15,14 +15,8 @@ namespace DB::ErrorCodes
 namespace DB::AST
 {
 
-JoinConstraintClause::JoinConstraintClause(ConstraintType type_, PtrTo<ColumnExprList> list) : type(type_)
+JoinConstraintClause::JoinConstraintClause(ConstraintType type_, PtrTo<ColumnExprList> list) : SimpleClause{list}, type(type_)
 {
-    children.push_back(list);
-}
-
-ASTPtr JoinConstraintClause::convertToOld() const
-{
-    return children.back()->convertToOld();
 }
 
 // static
@@ -37,15 +31,13 @@ PtrTo<JoinExpr> JoinExpr::createJoinOp(PtrTo<JoinExpr> left_expr, PtrTo<JoinExpr
     return PtrTo<JoinExpr>(new JoinExpr(ExprType::JOIN_OP, op, mode, {left_expr, right_expr, clause}));
 }
 
-JoinExpr::JoinExpr(JoinExpr::ExprType type, PtrList exprs) : expr_type(type)
+JoinExpr::JoinExpr(JoinExpr::ExprType type, PtrList exprs) : INode(exprs), expr_type(type)
 {
-    children = exprs;
 }
 
 JoinExpr::JoinExpr(JoinExpr::ExprType type, JoinExpr::JoinOpType op, JoinExpr::JoinOpMode mode, PtrList exprs)
-    : expr_type(type), op_type(op), op_mode(mode)
+    : INode(exprs), expr_type(type), op_type(op), op_mode(mode)
 {
-    children = exprs;
 }
 
 ASTPtr JoinExpr::convertToOld() const
@@ -72,17 +64,17 @@ ASTPtr JoinExpr::convertToOld() const
     if (expr_type == ExprType::TABLE)
     {
         auto element = std::make_shared<ASTTablesInSelectQueryElement>();
-        element->children.emplace_back(children[TABLE]->convertToOld());
+        element->children.emplace_back(get(TABLE)->convertToOld());
         element->table_expression = element->children.back();
 
         list->children.emplace_back(element);
     }
     else if (expr_type == ExprType::JOIN_OP)
     {
-        if (children[RIGHT_EXPR]->as<JoinExpr>()->expr_type != ExprType::TABLE)
+        if (get<JoinExpr>(RIGHT_EXPR)->expr_type != ExprType::TABLE)
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Cannot convert new tree-like JoinExpr to old AST");
 
-        auto left = children[LEFT_EXPR]->convertToOld(), right = children[RIGHT_EXPR]->convertToOld();  // ASTExpressionList's
+        auto left = get(LEFT_EXPR)->convertToOld(), right = get(RIGHT_EXPR)->convertToOld();  // ASTExpressionList's
         list->children.insert(list->children.end(), left->children.begin(), left->children.end());  // Insert all the previously parsed left subtree
         list->children.emplace_back(right->children[0]);  // Insert only first (single) ASTTablesInSelectQueryElement which should contain only ASTTableExpression
 
@@ -172,7 +164,7 @@ ASTPtr JoinExpr::convertToOld() const
 
         if (has(CONSTRAINT))
         {
-            const auto * constraint = children[CONSTRAINT]->as<JoinConstraintClause>();
+            const auto * constraint = get<JoinConstraintClause>(CONSTRAINT);
             switch(constraint->getType())
             {
                 case JoinConstraintClause::ConstraintType::ON:

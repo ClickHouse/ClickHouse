@@ -7,10 +7,8 @@
 namespace DB::AST
 {
 
-RatioExpr::RatioExpr(PtrTo<NumberLiteral> num1, PtrTo<NumberLiteral> num2)
+RatioExpr::RatioExpr(PtrTo<NumberLiteral> num1, PtrTo<NumberLiteral> num2) : INode{num1, num2}
 {
-    children.push_back(num1);
-    children.push_back(num2);
 }
 
 }

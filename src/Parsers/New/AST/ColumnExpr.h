@@ -14,7 +14,7 @@ class ColumnExpr : public INode
         static PtrTo<ColumnExpr> createAsterisk(PtrTo<TableIdentifier> identifier, bool single_column);
         static PtrTo<ColumnExpr> createFunction(PtrTo<Identifier> name, PtrTo<ColumnParamList> params, PtrTo<ColumnExprList> args);
         static PtrTo<ColumnExpr> createIdentifier(PtrTo<ColumnIdentifier> identifier);
-        static PtrTo<ColumnExpr> createLambda(PtrTo<List<Identifier, ','>> params, PtrTo<ColumnExpr> expr);
+        static PtrTo<ColumnExpr> createLambda(PtrTo<List<Identifier>> params, PtrTo<ColumnExpr> expr);
         static PtrTo<ColumnExpr> createLiteral(PtrTo<Literal> literal);
         static PtrTo<ColumnExpr> createSubquery(PtrTo<SelectUnionQuery> query, bool scalar);
 
@@ -32,12 +32,12 @@ class ColumnExpr : public INode
         auto getType() const { return expr_type; };
 
         // FUNCTION
-        auto getFunctionName() const { return children[NAME]->as<Identifier>()->getName(); }
-        auto argumentsBegin() const { return children[ARGS] ? children[ARGS]->as<ColumnExprList>()->begin() : children.end(); }
-        auto argumentsEnd() const { return children[ARGS] ? children[ARGS]->as<ColumnExprList>()->end() : children.end(); }
+        auto getFunctionName() const { return get<Identifier>(NAME)->getName(); }
+        auto argumentsBegin() const { return has(ARGS) ? get<ColumnExprList>(ARGS)->begin() : end(); }
+        auto argumentsEnd() const { return has(ARGS) ? get<ColumnExprList>(ARGS)->end() : end(); }
 
         // LITERAL
-        auto getLiteral() const { return static_pointer_cast<Literal>(children[LITERAL]); }
+        auto getLiteral() const { return static_pointer_cast<Literal>(get(LITERAL)); }
 
         ASTPtr convertToOld() const override;
 

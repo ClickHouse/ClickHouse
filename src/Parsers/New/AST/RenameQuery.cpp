@@ -8,9 +8,8 @@
 namespace DB::AST
 {
 
-RenameQuery::RenameQuery(PtrTo<List<TableIdentifier>> list)
+RenameQuery::RenameQuery(PtrTo<List<TableIdentifier>> list) : DDLQuery{list}
 {
-    children.insert(children.end(), list->begin(), list->end());
 }
 
 ASTPtr RenameQuery::convertToOld() const
@@ -32,7 +31,7 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitRenameStmt(ClickHouseParser::RenameStmtContext *ctx)
 {
     auto list = std::make_shared<List<TableIdentifier>>();
-    for (auto * identifier : ctx->tableIdentifier()) list->append(visit(identifier));
+    for (auto * identifier : ctx->tableIdentifier()) list->push(visit(identifier));
     return std::make_shared<RenameQuery>(list);
 }
 

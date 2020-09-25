@@ -8,11 +8,9 @@
 namespace DB::AST
 {
 
-ExistsQuery::ExistsQuery(bool temporary_, PtrTo<TableIdentifier> identifier) : temporary(temporary_)
+ExistsQuery::ExistsQuery(bool temporary_, PtrTo<TableIdentifier> identifier) : Query{identifier}, temporary(temporary_)
 {
-    children.push_back(identifier);
-
-    (void)temporary; // TODO
+    (void) temporary; // TODO
 }
 
 ASTPtr ExistsQuery::convertToOld() const

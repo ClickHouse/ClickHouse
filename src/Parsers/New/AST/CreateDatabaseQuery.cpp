@@ -10,10 +10,8 @@ namespace DB::AST
 {
 
 CreateDatabaseQuery::CreateDatabaseQuery(bool if_not_exists_, PtrTo<DatabaseIdentifier> identifier, PtrTo<EngineExpr> expr)
-    : if_not_exists(if_not_exists_)
+    : DDLQuery{identifier, expr}, if_not_exists(if_not_exists_)
 {
-    children.push_back(identifier);
-    children.push_back(expr);
 }
 
 ASTPtr CreateDatabaseQuery::convertToOld() const
@@ -21,9 +19,9 @@ ASTPtr CreateDatabaseQuery::convertToOld() const
     auto query = std::make_shared<ASTCreateQuery>();
 
     query->if_not_exists = if_not_exists;
-    query->database = children[NAME]->as<DatabaseIdentifier>()->getName();
+    query->database = get<DatabaseIdentifier>(NAME)->getName();
     // TODO: if (cluster) query->cluster = cluster->getName();
-    if (children[ENGINE]) query->set(query->storage, children[ENGINE]->convertToOld());
+    if (has(ENGINE)) query->set(query->storage, get(ENGINE)->convertToOld());
     // TODO: query->uuid
 
     return query;

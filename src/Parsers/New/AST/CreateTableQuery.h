@@ -26,6 +26,15 @@ class SchemaClause : public INode
         ASTPtr convertToOld() const override;
 
     private:
+        enum ChildIndex : UInt8
+        {
+            // DESCRIPTION
+            ELEMENTS = 0,  // TableElementList
+
+            // TABLE and FUNCTION
+            EXPR = 0,      // TableIdentifier or TableFunctionExpr
+        };
+
         ClauseType clause_type;
 
         SchemaClause(ClauseType type, PtrList exprs);

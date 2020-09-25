@@ -11,8 +11,6 @@ class TableArgExpr : public INode
     public:
         explicit TableArgExpr(PtrTo<Literal> literal);
         explicit TableArgExpr(PtrTo<TableExpr> expr);
-
-        ASTPtr convertToOld() const override { return children[0]->convertToOld(); }
 };
 
 class TableExpr : public INode

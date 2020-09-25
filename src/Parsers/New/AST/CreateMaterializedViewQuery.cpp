@@ -11,9 +11,8 @@
 namespace DB::AST
 {
 
-DestinationClause::DestinationClause(PtrTo<TableIdentifier> identifier)
+DestinationClause::DestinationClause(PtrTo<TableIdentifier> identifier) : INode{identifier}
 {
-    children.push_back(identifier);
 }
 
 CreateMaterializedViewQuery::CreateMaterializedViewQuery(
@@ -23,15 +22,9 @@ CreateMaterializedViewQuery::CreateMaterializedViewQuery(
     PtrTo<DestinationClause> destination,
     PtrTo<EngineClause> engine,
     PtrTo<SelectUnionQuery> query)
-    : if_not_exists(if_not_exists_)
+    : DDLQuery{identifier, schema, destination, engine, query}, if_not_exists(if_not_exists_)
 {
-    children.push_back(identifier);
-    children.push_back(schema);
-    children.push_back(destination);
-    children.push_back(engine);
-    children.push_back(query);
-
-    (void)if_not_exists; // TODO
+    (void) if_not_exists; // TODO
 }
 
 ASTPtr CreateMaterializedViewQuery::convertToOld() const
