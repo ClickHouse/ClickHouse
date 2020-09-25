@@ -41,7 +41,7 @@ namespace
 {
 
 /// Rewrite original query removing joined tables from it
-bool removeJoin(const ASTSelectQuery & select)
+bool removeJoin(ASTSelectQuery & select)
 {
     const auto & tables = select.tables();
     if (!tables || tables->children.size() < 2)
@@ -266,7 +266,7 @@ Pipe StorageMerge::createSources(
     modified_query_info.query = query_info.query->clone();
 
     /// Original query could contain JOIN but we need only the first joined table and its columns.
-    auto & modified_select = *modified_query_info.query->as<ASTSelectQuery>();
+    auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
     if (removeJoin(modified_select))
     {
         /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
@@ -288,7 +288,7 @@ Pipe StorageMerge::createSources(
         return pipe;
     }
 
-    auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, query_info.query);
+    auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, modified_query_info.query);
     if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
@@ -300,7 +300,7 @@ Pipe StorageMerge::createSources(
     }
     else if (processed_stage > storage_stage)
     {
-        modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_name);
+        modified_select.replaceDatabaseAndTable(source_database, table_name);
 
         /// Maximum permissible parallelism is streams_num
         modified_context->setSetting("max_threads", streams_num);
