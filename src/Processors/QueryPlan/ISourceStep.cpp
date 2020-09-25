@@ -14,7 +14,8 @@ QueryPipelinePtr ISourceStep::updatePipeline(QueryPipelines)
     auto pipeline = std::make_unique<QueryPipeline>();
     QueryPipelineProcessorsCollector collector(*pipeline, this);
     initializePipeline(*pipeline);
-    processors = collector.detachProcessors();
+    auto added_processors = collector.detachProcessors();
+    processors.insert(processors.end(), added_processors.begin(), added_processors.end());
     return pipeline;
 }
 

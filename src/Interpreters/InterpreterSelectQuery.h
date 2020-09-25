@@ -94,6 +94,8 @@ public:
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
+    static void addEmptySourceToQueryPlan(QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info);
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,

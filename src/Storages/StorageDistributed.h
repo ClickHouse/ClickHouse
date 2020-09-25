@@ -77,7 +77,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    Pipe StorageDistributed::read(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
