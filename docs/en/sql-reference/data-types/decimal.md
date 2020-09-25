@@ -106,7 +106,7 @@ DB::Exception: Can't compare.
 
 ## isDecimalOverflow {#is-decimal-overflow}
 
-Checks if the value in [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) column is out of its (or specified) precision.
+Checks whether the [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) value is out of its (or specified) precision.
 
 **Syntax**
 
