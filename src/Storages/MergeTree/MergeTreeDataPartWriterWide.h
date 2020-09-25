@@ -49,9 +49,8 @@ private:
         WrittenOffsetColumns & offset_columns);
 
     /// Write data of one column.
-    /// Return how many marks were written and
-    /// how many rows were written for last mark
-    void writeColumn(
+    /// Return true if any data was written.
+    bool writeColumn(
         const String & name,
         const IDataType & type,
         const IColumn & column,
