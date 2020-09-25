@@ -38,14 +38,6 @@ if [[ ! -f clickhouse ]]; then
         $FASTER_DOWNLOAD "$AMD64_BIN_URL"
     elif [[ $CPU == aarch64 ]]; then
         $FASTER_DOWNLOAD "$AARCH64_BIN_URL"
-
-        # Download configs. ARM version has no embedded configs.
-        wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.xml
-        wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/users.xml
-        mkdir config.d
-        wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/path.xml -O config.d/path.xml
-        wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/access_control.xml -O config.d/access_control.xml
-        wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
     else
         echo "Unsupported CPU type: $CPU"
         exit 1
