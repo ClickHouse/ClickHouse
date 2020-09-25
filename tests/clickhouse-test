@@ -789,8 +789,8 @@ def collect_sequential_list(skip_list_path):
         content = skip_list_file.read()
         # allows to have comments in skip_list.json
         skip_dict = json.loads(json_minify(content))
-        if 'sequential' in skip_dict:
-            return skip_dict['sequential']
+        if 'parallel' in skip_dict:
+            return skip_dict['parallel']
         return set([])
 
 
