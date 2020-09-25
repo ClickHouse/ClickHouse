@@ -244,4 +244,90 @@ Removes the query string and fragment identifier. The question mark and number s
 
 Removes the ‘name’ URL parameter, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 
+## normalizeQuery {#normalized-query}
+
+Replaces literals, sequences of literals and complex aliases with placeholders.
+
+**Syntax** (without SELECT)
+
+``` sql
+<function syntax>
+```
+
+Alias: `<alias name>`. (Optional)
+
+More text (Optional).
+
+**Parameters** (Optional)
+
+-   `x` — Description. [Type name](relative/path/to/type/dscr.md#type).
+-   `y` — Description. [Type name](relative/path/to/type/dscr.md#type).
+
+**Returned value(s)**
+
+-   Returned values list.
+
+Type: [Type](relative/path/to/type/dscr.md#type).
+
+**Example**
+
+SELECT count(*) FROM table WHERE date = '2020-01-02' AND id IN (1, 2, 3) LIMIT 10, 10
+should be replaced to
+SELECT count(*) FROM table WHERE date = ? AND id IN (?) LIMIT ?
+
+Query:
+
+``` sql
+```
+
+Result:
+
+``` text
+```
+
+## normalizedQueryHash {#normalized-query-hash}
+
+Returns identical 64bit hash values for similar queries. It helps to analyze query log.
+calculate a hash of query structure without the values of literals.
+
+**Syntax** (without SELECT)
+
+``` sql
+<function syntax>
+```
+
+Alias: `<alias name>`. (Optional)
+
+More text (Optional).
+
+**Parameters** (Optional)
+
+-   `x` — Description. [Type name](relative/path/to/type/dscr.md#type).
+-   `y` — Description. [Type name](relative/path/to/type/dscr.md#type).
+
+**Returned value(s)**
+
+-   Returned values list.
+
+Type: [Type](relative/path/to/type/dscr.md#type).
+
+**Example**
+
+The example must show usage and/or a use cases. The following text contains recommended parts of an example.
+
+Input table (Optional):
+
+``` text
+```
+
+Query:
+
+``` sql
+```
+
+Result:
+
+``` text
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/url_functions/) <!--hide-->
