@@ -13,7 +13,7 @@ path_to_data = '/var/lib/clickhouse/'
 def started_cluster():
     try:
         cluster.start()
-        q('CREATE DATABASE test ENGINE = Ordinary')
+        q('CREATE DATABASE test ENGINE = Ordinary')     # Different path in shadow/ with Atomic
 
         yield cluster
 
@@ -176,7 +176,7 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     exec_bash('cp -pr {} {}'.format(path_to_detached + '0_3_3_0', path_to_detached + 'deleting_0_7_7_0'))
 
     error = instance.client.query_and_get_error("ALTER TABLE test.attach_partition ATTACH PARTITION 0")
-    assert 0 <= error.find('No columns in part 0_5_5_0')
+    assert 0 <= error.find('No columns in part 0_5_5_0') or 0 <= error.find('No columns.txt in part 0_5_5_0')
 
     parts = q("SElECT name FROM system.parts WHERE table='attach_partition' AND database='test' ORDER BY name")
     assert TSV(parts) == TSV('1_2_2_0\n1_4_4_0')
