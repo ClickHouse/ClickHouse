@@ -836,7 +836,7 @@ void obfuscateLiteral(std::string_view src, WriteBuffer & result, SipHash hash_f
 
             ++src_pos;
         }
-        else if (src_pos[0])
+        else
         {
             /// Start of UTF-8 sequence.
             hash_func.update(src_pos[0]);
