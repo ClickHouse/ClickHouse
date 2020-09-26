@@ -2,6 +2,7 @@
 
 #include <Parsers/obfuscateQueries.h>
 #include <Parsers/Lexer.h>
+#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/BitHelpers.h>
@@ -884,7 +885,10 @@ void obfuscateQueries(
 
         if (token.type == TokenType::BareWord)
         {
-            if (keywords.count(whole_token)
+            std::string whole_token_uppercase(whole_token);
+            Poco::toUpperInPlace(whole_token_uppercase);
+
+            if (keywords.count(whole_token_uppercase)
                 || known_identifier_func(whole_token))
             {
                 /// Keep keywords as is.
