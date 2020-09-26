@@ -392,9 +392,9 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
 
             std::unordered_map<String, String> need_dumping_tables;
             MaterializeMetadata metadata(
-                connection,
                 getDatabase(database_name).getMetadataPath() + "/.metadata",
                 mysql_version);
+            metadata.tryInitFromFile(connection);
 
             fetchMetadata(connection, mysql_database_name, metadata, opened_transaction, need_dumping_tables);
 

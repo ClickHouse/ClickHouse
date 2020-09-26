@@ -6,6 +6,7 @@
 
 #if USE_MYSQL
 
+#include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <mysqlxx/Connection.h>
@@ -40,14 +41,17 @@ struct MaterializeMetadata
 
     void fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection, bool force = false);
 
+    Block getShowMasterLogHeader() const;
+
     bool checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection) const;
+
+    void commitMetadata(const std::function<void()> & function, const String & persistent_tmp_path) const;
 
     void transaction(const MySQLReplication::Position & position, const std::function<void()> & fun);
 
-    bool tryInitFromFile(mysqlxx::PoolWithFailover::Entry & connection);
+    void tryInitFromFile(mysqlxx::PoolWithFailover::Entry & connection);
 
     MaterializeMetadata(
-        mysqlxx::PoolWithFailover::Entry & connection,
         const String & path_,
         const String & mysql_version_);
 };
