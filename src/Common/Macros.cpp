@@ -2,6 +2,7 @@
 #include <Common/Macros.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -12,19 +13,31 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key)
+Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key, Poco::Logger * log)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(root_key, keys);
     for (const String & key : keys)
     {
         macros[key] = config.getString(root_key + "." + key);
+        if (key == "database" || key == "table" || key == "uuid")
+        {
+            LOG_WARNING(log,
+                "Config file contains '{}' macro. This macro has special meaning "
+                "and it's explicit definition is not recommended. Implicit unfolding for "
+                "'database', 'table' and 'uuid' macros will be disabled.",
+                key);
+            enable_special_macros = false;
+        }
     }
 }
 
 String Macros::expand(const String & s,
                       MacroExpansionInfo & info) const
 {
+    /// Do not allow recursion if we expand only special macros, because it will be infinite recursion
+    assert(info.level == 0 || !info.expand_special_macros_only);
+
     if (s.find('{') == String::npos)
         return s;
 
@@ -33,6 +46,10 @@ String Macros::expand(const String & s,
 
     if (info.level >= 10)
         throw Exception("Too deep recursion while expanding macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
+
+    /// If config file contains explicit special macro, then we do not expand it in this mode.
+    if (!enable_special_macros && info.expand_special_macros_only)
+        return s;
 
     String res;
     size_t pos = 0;
@@ -59,15 +76,21 @@ String Macros::expand(const String & s,
         auto it = macros.find(macro_name);
 
         /// Prefer explicit macros over implicit.
-        if (it != macros.end())
+        if (it != macros.end() && !info.expand_special_macros_only)
             res += it->second;
-        else if (macro_name == "database" && !info.database_name.empty())
-            res += info.database_name;
-        else if (macro_name == "table" && !info.table_name.empty())
-            res += info.table_name;
+        else if (macro_name == "database" && !info.table_id.database_name.empty())
+        {
+            res += info.table_id.database_name;
+            info.expanded_database = true;
+        }
+        else if (macro_name == "table" && !info.table_id.table_name.empty())
+        {
+            res += info.table_id.table_name;
+            info.expanded_table = true;
+        }
         else if (macro_name == "uuid")
         {
-            if (info.uuid == UUIDHelpers::Nil)
+            if (info.table_id.uuid == UUIDHelpers::Nil)
                 throw Exception("Macro 'uuid' and empty arguments of ReplicatedMergeTree "
                                 "are supported only for ON CLUSTER queries with Atomic database engine",
                                 ErrorCodes::SYNTAX_ERROR);
@@ -76,12 +99,16 @@ String Macros::expand(const String & s,
             /// It becomes impossible to check if {uuid} is contained inside some unknown macro.
             if (info.level)
                 throw Exception("Macro 'uuid' should not be inside another macro", ErrorCodes::SYNTAX_ERROR);
-            res += toString(info.uuid);
+            res += toString(info.table_id.uuid);
             info.expanded_uuid = true;
         }
-        else if (info.ignore_unknown)
+        else if (info.ignore_unknown || info.expand_special_macros_only)
         {
+            if (info.expand_special_macros_only)
+                res += '{';
             res += macro_name;
+            if (info.expand_special_macros_only)
+                res += '}';
             info.has_unknown = true;
         }
         else
@@ -93,6 +120,9 @@ String Macros::expand(const String & s,
     }
 
     ++info.level;
+    if (info.expand_special_macros_only)
+        return res;
+
     return expand(res, info);
 }
 
@@ -113,9 +143,9 @@ String Macros::expand(const String & s) const
 String Macros::expand(const String & s, const StorageID & table_id, bool allow_uuid) const
 {
     MacroExpansionInfo info;
-    info.database_name = table_id.database_name;
-    info.table_name = table_id.table_name;
-    info.uuid = allow_uuid ? table_id.uuid : UUIDHelpers::Nil;
+    info.table_id = table_id;
+    if (!allow_uuid)
+        info.table_id.uuid = UUIDHelpers::Nil;
     return expand(s, info);
 }
 
