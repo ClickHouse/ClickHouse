@@ -671,6 +671,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+    /// Set current database name before loading tables and databases because
+    /// system logs may copy global context.
+    global_context->setCurrentDatabaseNameInGlobalContext(default_database);
+
     LOG_INFO(log, "Loading metadata from {}", path);
 
     try
@@ -678,11 +682,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
         loadMetadataSystem(*global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
+        auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-        attachSystemTablesServer(*DatabaseCatalog::instance().getSystemDatabase(), has_zookeeper);
+        attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
         /// Then, load remaining databases
         loadMetadata(*global_context, default_database);
-        DatabaseCatalog::instance().loadDatabases();
+        database_catalog.loadDatabases();
+        /// After loading validate that default database exists
+        database_catalog.assertDatabaseExists(default_database);
     }
     catch (...)
     {
@@ -744,8 +751,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
-
-    global_context->setCurrentDatabase(default_database);
 
     if (has_zookeeper && config().has("distributed_ddl"))
     {
