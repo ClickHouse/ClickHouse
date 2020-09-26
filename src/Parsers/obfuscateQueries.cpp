@@ -171,7 +171,7 @@ std::initializer_list<std::string_view> nouns
 "councilperson", "counsel", "counseling", "counselling", "counsellor", "counselor", "count", "counter", "counterpart",
 "counterterrorism", "countess", "country", "countryside", "county", "couple", "coupon", "courage", "course", "court", "courthouse", "courtroom",
 "cousin", "covariate", "cover", "coverage", "coverall", "cow", "cowbell", "cowboy", "coyote", "crab", "crack", "cracker", "crackers",
-"cradle", "craft", "craftsman", "cranberry", "crane", "cranky", "crap", "crash", "crate", "cravat", "craw", "crawdad", "crayfish", "crayon",
+"cradle", "craft", "craftsman", "cranberry", "crane", "cranky", "crash", "crate", "cravat", "craw", "crawdad", "crayfish", "crayon",
 "crazy", "cream", "creation", "creationism", "creationist", "creative", "creativity", "creator", "creature", "creche", "credential",
 "credenza", "credibility", "credit", "creditor", "creek", "creme brulee", "crepe", "crest", "crew", "crewman", "crewmate", "crewmember",
 "crewmen", "cria", "crib", "cribbage", "cricket", "cricketer", "crime", "criminal", "crinoline", "crisis", "crisp", "criteria", "criterion",
