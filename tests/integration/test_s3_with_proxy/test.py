@@ -40,7 +40,7 @@ def cluster():
 def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET", "DELETE"}):
     for i in range(10):
         logs = cluster.get_container_logs(proxy_instance)
-        # Check that all possible interactions with Minio are present
+        # Check with retry that all possible interactions with Minio are present
         for http_method in http_methods:
             if logs.find(http_method + " http://minio1") >= 0:
                 return
