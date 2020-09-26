@@ -17,18 +17,21 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
 
     def prepare(self, replace_hostnames_with_ips=True):
         try:
-            main_configs_files = ["clusters.xml", "zookeeper_session_timeout.xml", "macro.xml", "query_log.xml","ddl.xml"]
+            main_configs_files = ["clusters.xml", "zookeeper_session_timeout.xml", "macro.xml", "query_log.xml",
+                                  "ddl.xml"]
             main_configs = [os.path.join(self.test_config_dir, "config.d", f) for f in main_configs_files]
-            user_configs = [os.path.join(self.test_config_dir, "users.d", f) for f in ["restricted_user.xml", "query_log.xml"]]
+            user_configs = [os.path.join(self.test_config_dir, "users.d", f) for f in
+                            ["restricted_user.xml", "query_log.xml"]]
             if self.test_config_dir == "configs_secure":
-                main_configs += [os.path.join(self.test_config_dir, f) for f in ["server.crt", "server.key", "dhparam.pem", "config.d/ssl_conf.xml"]]
+                main_configs += [os.path.join(self.test_config_dir, f) for f in
+                                 ["server.crt", "server.key", "dhparam.pem", "config.d/ssl_conf.xml"]]
 
             for i in xrange(4):
                 self.add_instance(
-                    'ch{}'.format(i+1),
+                    'ch{}'.format(i + 1),
                     main_configs=main_configs,
                     user_configs=user_configs,
-                    macros={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1},
+                    macros={"layer": 0, "shard": i / 2 + 1, "replica": i % 2 + 1},
                     with_zookeeper=True)
 
             self.start()
@@ -40,8 +43,12 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             # Select sacrifice instance to test CONNECTION_LOSS and server fail on it
             sacrifice = self.instances['ch4']
             self.pm_random_drops = PartitionManager()
-            self.pm_random_drops._add_rule({'probability': 0.01, 'destination': sacrifice.ip_address, 'source_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
-            self.pm_random_drops._add_rule({'probability': 0.01, 'source': sacrifice.ip_address, 'destination_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
+            self.pm_random_drops._add_rule(
+                {'probability': 0.01, 'destination': sacrifice.ip_address, 'source_port': 2181,
+                 'action': 'REJECT --reject-with tcp-reset'})
+            self.pm_random_drops._add_rule(
+                {'probability': 0.01, 'source': sacrifice.ip_address, 'destination_port': 2181,
+                 'action': 'REJECT --reject-with tcp-reset'})
 
             # Initialize databases and service tables
             instance = self.instances['ch1']
@@ -67,7 +74,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             num_hosts = len(self.instances)
 
         M = TSV.toMat(tsv_content)
-        hosts = [(l[0], l[1]) for l in M] # (host, port)
+        hosts = [(l[0], l[1]) for l in M]  # (host, port)
         codes = [l[2] for l in M]
         messages = [l[3] for l in M]
 
@@ -88,14 +95,17 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
 
         for inst_name in instances_to_replace:
             inst = self.instances[inst_name]
-            self.instances[inst_name].exec_in_container(['bash', '-c', 'echo "$NEW_CONFIG" > /etc/clickhouse-server/config.d/clusters.xml'], environment={"NEW_CONFIG": clusters_config}, privileged=True)
+            self.instances[inst_name].exec_in_container(
+                ['bash', '-c', 'echo "$NEW_CONFIG" > /etc/clickhouse-server/config.d/clusters.xml'],
+                environment={"NEW_CONFIG": clusters_config}, privileged=True)
             # print cluster.instances[inst_name].exec_in_container(['cat', "/etc/clickhouse-server/config.d/clusters.xml"])
 
     @staticmethod
     def ddl_check_there_are_no_dublicates(instance):
         query = "SELECT max(c), argMax(q, c) FROM (SELECT lower(query) AS q, count() AS c FROM system.query_log WHERE type=2 AND q LIKE '/* ddl_entry=query-%' GROUP BY query)"
         rows = instance.query(query)
-        assert len(rows) > 0 and rows[0][0] == "1", "dublicates on {} {}, query {}".format(instance.name, instance.ip_address, query)
+        assert len(rows) > 0 and rows[0][0] == "1", "dublicates on {} {}, query {}".format(instance.name,
+                                                                                           instance.ip_address, query)
 
     @staticmethod
     def insert_reliable(instance, query_insert):

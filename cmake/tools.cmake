@@ -28,7 +28,7 @@ elseif (COMPILER_CLANG)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fchar8_t")
         endif ()
     else ()
-        set (CLANG_MINIMUM_VERSION 8)
+        set (CLANG_MINIMUM_VERSION 9)
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
             message (FATAL_ERROR "Clang version must be at least ${CLANG_MINIMUM_VERSION}.")
         endif ()
@@ -40,7 +40,9 @@ endif ()
 STRING(REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
 LIST(GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 
+# Example values: `lld-10`, `gold`.
 option (LINKER_NAME "Linker name or full path")
+
 if (COMPILER_GCC AND NOT LINKER_NAME)
     find_program (LLD_PATH NAMES "ld.lld")
     find_program (GOLD_PATH NAMES "ld.gold")

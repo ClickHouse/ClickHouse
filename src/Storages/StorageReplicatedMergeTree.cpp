@@ -113,6 +113,7 @@ namespace ErrorCodes
     extern const int ALL_REPLICAS_LOST;
     extern const int REPLICA_STATUS_CHANGED;
     extern const int CANNOT_ASSIGN_ALTER;
+    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -697,7 +698,9 @@ void StorageReplicatedMergeTree::drop()
 
     if (has_metadata_in_zookeeper)
     {
-        auto zookeeper = tryGetZooKeeper();
+        /// Table can be shut down, restarting thread is not active
+        /// and calling StorageReplicatedMergeTree::getZooKeeper() won't suffice.
+        auto zookeeper = global_context.getZooKeeper();
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (is_readonly || !zookeeper)
@@ -897,10 +900,17 @@ ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & m
 
         if (metadata_diff.ttl_table_changed)
         {
-            ParserTTLExpressionList parser;
-            auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-            new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                ttl_for_table_ast, new_metadata.columns, global_context, new_metadata.primary_key);
+            if (!metadata_diff.new_ttl_table.empty())
+            {
+                ParserTTLExpressionList parser;
+                auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                    ttl_for_table_ast, new_metadata.columns, global_context, new_metadata.primary_key);
+            }
+            else /// TTL was removed
+            {
+                new_metadata.table_ttl = TTLTableDescription{};
+            }
         }
     }
 
@@ -3314,6 +3324,15 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             part->renameTo("detached/" + part_name, true);
         }
     }
+    catch (const Exception & e)
+    {
+        /// The same part is being written right now (but probably it's not committed yet).
+        /// We will check the need for fetch later.
+        if (e.code() == ErrorCodes::DIRECTORY_ALREADY_EXISTS)
+            return false;
+
+        throw;
+    }
     catch (...)
     {
         if (!to_detached)
@@ -3806,7 +3825,12 @@ void StorageReplicatedMergeTree::alter(
             future_metadata_in_zk.partition_key = serializeAST(*future_metadata.partition_key.expression_list_ast);
 
         if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata->table_ttl.definition_ast))
-            future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
+        {
+            if (future_metadata.table_ttl.definition_ast)
+                future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
+            else /// TTL was removed
+                future_metadata_in_zk.ttl_table = "";
+        }
 
         String new_indices_str = future_metadata.secondary_indices.toString();
         if (new_indices_str != current_metadata->secondary_indices.toString())
@@ -4773,9 +4797,11 @@ void StorageReplicatedMergeTree::fetchPartition(
         missing_parts.clear();
         for (const String & part : parts_to_fetch)
         {
+            bool fetched = false;
+
             try
             {
-                fetchPart(part, metadata_snapshot, best_replica_path, true, 0, zookeeper);
+                fetched = fetchPart(part, metadata_snapshot, best_replica_path, true, 0, zookeeper);
             }
             catch (const DB::Exception & e)
             {
@@ -4784,8 +4810,10 @@ void StorageReplicatedMergeTree::fetchPartition(
                     throw;
 
                 LOG_INFO(log, e.displayText());
-                missing_parts.push_back(part);
             }
+
+            if (!fetched)
+                missing_parts.push_back(part);
         }
 
         ++try_no;
