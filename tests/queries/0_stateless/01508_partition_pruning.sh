@@ -2,12 +2,8 @@
 
 #--------------------------------------------
 # Description of test result:
-#   Test the correctness of the optimization
-#   by asserting read marks in the log.
-# Relation of read marks and optimization:
-#   read marks =
-#       the number of monotonic marks filtered through predicates
-#       + no monotonic marks count
+#   Test the correctness of the partition
+#   pruning
 #--------------------------------------------
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
