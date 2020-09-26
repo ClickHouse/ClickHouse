@@ -105,6 +105,15 @@ public:
 
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
+        if (arguments.size() > 1)
+        {
+            throw Exception("Arguments size of function " + getName() + " should be 0 or 1", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        }
+        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
+        {
+            throw Exception(
+                "Arguments of function " + getName() + " should be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
         if (arguments.size() == 1)
             return std::make_unique<FunctionBaseNow>(
                 time(nullptr), std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0)));
