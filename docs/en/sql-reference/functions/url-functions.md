@@ -248,86 +248,75 @@ Removes the ‘name’ URL parameter, if present. This function works under the 
 
 Replaces literals, sequences of literals and complex aliases with placeholders.
 
-**Syntax** (without SELECT)
-
+**Syntax** 
 ``` sql
-<function syntax>
+normalizeQuery(x)
 ```
-
-Alias: `<alias name>`. (Optional)
-
-More text (Optional).
-
-**Parameters** (Optional)
-
--   `x` — Description. [Type name](relative/path/to/type/dscr.md#type).
--   `y` — Description. [Type name](relative/path/to/type/dscr.md#type).
-
-**Returned value(s)**
-
--   Returned values list.
-
-Type: [Type](relative/path/to/type/dscr.md#type).
-
-**Example**
-
+!!! note "Note"
 SELECT count(*) FROM table WHERE date = '2020-01-02' AND id IN (1, 2, 3) LIMIT 10, 10
 should be replaced to
 SELECT count(*) FROM table WHERE date = ? AND id IN (?) LIMIT ?
 
+**Parameters** 
+
+-   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+
+**Returned value(s)**
+
+-   Sequence of characters with placeholders.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
 Query:
 
 ``` sql
+SELECT normalizeQuery('[1, 2, 3, x]') AS query;
 ```
 
 Result:
 
 ``` text
+┌─query────┐
+│ [?.., x] │
+└──────────┘
 ```
 
 ## normalizedQueryHash {#normalized-query-hash}
 
-Returns identical 64bit hash values for similar queries. It helps to analyze query log.
-calculate a hash of query structure without the values of literals.
+Returns identical 64bit hash values without the values of literals for similar queries. It helps to analyze query log.
 
-**Syntax** (without SELECT)
+**Syntax** 
 
 ``` sql
-<function syntax>
+normalizedQueryHash(x)
 ```
 
-Alias: `<alias name>`. (Optional)
+**Parameters** 
 
-More text (Optional).
+-   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
-**Parameters** (Optional)
+**Returned value**
 
--   `x` — Description. [Type name](relative/path/to/type/dscr.md#type).
--   `y` — Description. [Type name](relative/path/to/type/dscr.md#type).
+-   Hash value.
 
-**Returned value(s)**
-
--   Returned values list.
-
-Type: [Type](relative/path/to/type/dscr.md#type).
+Type: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Example**
-
-The example must show usage and/or a use cases. The following text contains recommended parts of an example.
-
-Input table (Optional):
-
-``` text
-```
 
 Query:
 
 ``` sql
+SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
 ```
 
 Result:
 
 ``` text
+┌─res─┐
+│   1 │
+└─────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/url_functions/) <!--hide-->
