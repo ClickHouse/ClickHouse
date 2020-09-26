@@ -66,7 +66,7 @@ inline size_t getLeadingZeroBits(T x)
 template <typename T>
 inline uint32_t bitScanReverse(T x)
 {
-    return sizeof(T) * 8 - 1 - getLeadingZeroBitsUnsafe(x);
+    return (std::max<size_t>(sizeof(T), sizeof(unsigned int))) * 8 - 1 - getLeadingZeroBitsUnsafe(x);
 }
 
 // Unsafe since __builtin_ctz()-family explicitly state that result is undefined on x == 0
