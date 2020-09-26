@@ -23,11 +23,6 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
      {"round_robin",      LoadBalancing::ROUND_ROBIN}})
 
 
-IMPLEMENT_SETTING_ENUM(SpecialSort, ErrorCodes::UNKNOWN_JOIN,
-    {{"not_specified",  SpecialSort::NOT_SPECIFIED},
-     {"opencl_bitonic", SpecialSort::OPENCL_BITONIC}})
-
-
 IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,
     {{"",    JoinStrictness::Unspecified},
      {"ALL", JoinStrictness::ALL},

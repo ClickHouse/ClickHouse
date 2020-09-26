@@ -3,7 +3,7 @@ machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 ---
 
-# 在运营商 {#select-in-operators}
+# IN 操作符 {#select-in-operators}
 
 该 `IN`, `NOT IN`, `GLOBAL IN`，和 `GLOBAL NOT IN` 运算符是单独复盖的，因为它们的功能相当丰富。
 
