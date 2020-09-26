@@ -23,6 +23,7 @@
 #    include <Common/setThreadName.h>
 #    include <common/sleep.h>
 #    include <ext/bit_cast.h>
+#    include <mysqlxx/PoolWithFailover.h>
 
 namespace DB
 {
@@ -261,12 +262,12 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
 }
 
 static inline void dumpDataForTables(
-    mysqlxx::Pool::Entry & connection, MaterializeMetadata & master_info,
+    mysqlxx::Pool::Entry & connection, std::unordered_map<String, String>& need_dumping_tables,
     const String & query_prefix, const String & database_name, const String & mysql_database_name,
     const Context & context, const std::function<bool()> & is_cancelled)
 {
-    auto iterator = master_info.need_dumping_tables.begin();
-    for (; iterator != master_info.need_dumping_tables.end() && !is_cancelled(); ++iterator)
+    auto iterator = need_dumping_tables.begin();
+    for (; iterator != need_dumping_tables.end() && !is_cancelled(); ++iterator)
     {
         const auto & table_name = iterator->first;
         Context query_context = createQueryContext(context);
@@ -297,6 +298,86 @@ static inline UInt32 randomNumber()
     return dist6(rng);
 }
 
+static std::vector<String> fetchTablesInDB(
+    const mysqlxx::PoolWithFailover::Entry & connection,
+    const std::string & database)
+{
+    Block header{{std::make_shared<DataTypeString>(), "table_name"}};
+    String query = "SELECT TABLE_NAME AS table_name FROM INFORMATION_SCHEMA.TABLES  WHERE TABLE_SCHEMA = " + quoteString(database);
+
+    std::vector<String> tables_in_db;
+    MySQLBlockInputStream input(connection, query, header, DEFAULT_BLOCK_SIZE);
+
+    while (Block block = input.read())
+    {
+        tables_in_db.reserve(tables_in_db.size() + block.rows());
+        for (size_t index = 0; index < block.rows(); ++index)
+            tables_in_db.emplace_back((*block.getByPosition(0).column)[index].safeGet<String>());
+    }
+
+    return tables_in_db;
+}
+
+static std::unordered_map<String, String> fetchTablesCreateQuery(
+    const mysqlxx::PoolWithFailover::Entry & connection,
+    const String & database_name)
+{
+    std::vector<String> fetch_tables = fetchTablesInDB(connection, database_name);
+    std::unordered_map<String, String> tables_create_query;
+    for (const auto & fetch_table_name : fetch_tables)
+    {
+        Block show_create_table_header{
+            {std::make_shared<DataTypeString>(), "Table"},
+            {std::make_shared<DataTypeString>(), "Create Table"},
+        };
+
+        MySQLBlockInputStream show_create_table(
+            connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_table_name),
+            show_create_table_header, DEFAULT_BLOCK_SIZE);
+
+        Block create_query_block = show_create_table.read();
+        if (!create_query_block || create_query_block.rows() != 1)
+            throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
+
+        tables_create_query[fetch_table_name] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
+    }
+
+    return tables_create_query;
+}
+
+void fetchMetadata(
+    mysqlxx::PoolWithFailover::Entry & connection,
+    const String & database_name,
+    MaterializeMetadata & materialize_metadata,
+    bool & opened_transaction,
+    std::unordered_map<String, String> & need_dumping_tables)
+{
+
+    bool locked_tables = false;
+
+    try
+    {
+        connection->query("FLUSH TABLES;").execute();
+        connection->query("FLUSH TABLES WITH READ LOCK;").execute();
+
+        locked_tables = true;
+        materialize_metadata.fetchMasterStatus(connection);
+        connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
+        connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
+
+        opened_transaction = true;
+        need_dumping_tables = fetchTablesCreateQuery(connection, database_name);
+        connection->query("UNLOCK TABLES;").execute();
+    }
+    catch (...)
+    {
+        if (locked_tables)
+            connection->query("UNLOCK TABLES;").execute();
+
+        throw;
+    }
+}
+
 std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchronized(const String & mysql_version)
 {
     bool opened_transaction = false;
@@ -309,11 +390,15 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             connection = pool.get();
             opened_transaction = false;
 
+            std::unordered_map<String, String> need_dumping_tables;
             MaterializeMetadata metadata(
-                connection, getDatabase(database_name).getMetadataPath() + "/.metadata",
-                mysql_database_name, opened_transaction, mysql_version);
+                connection,
+                getDatabase(database_name).getMetadataPath() + "/.metadata",
+                mysql_version);
 
-            if (!metadata.need_dumping_tables.empty())
+            fetchMetadata(connection, mysql_database_name, metadata, opened_transaction, need_dumping_tables);
+
+            if (!need_dumping_tables.empty())
             {
                 Position position;
                 position.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set);
@@ -321,7 +406,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 metadata.transaction(position, [&]()
                 {
                     cleanOutdatedTables(database_name, global_context);
-                    dumpDataForTables(connection, metadata, query_prefix, database_name, mysql_database_name, global_context, [this] { return isCancelled(); });
+                    dumpDataForTables(connection, need_dumping_tables, query_prefix, database_name, mysql_database_name, global_context, [this] { return isCancelled(); });
                 });
 
                 const auto & position_message = [&]()
