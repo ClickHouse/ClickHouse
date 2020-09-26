@@ -106,6 +106,9 @@ Selected 3 parts by partition key, 3 parts by primary key, 4 marks by primary ke
 select uniqExact(_part), count() FROM tDD WHERE toYYYYMMDD(d) >= 20200923 and toDate(d) <= '2020-09-26'
 Selected 3 parts by partition key, 3 parts by primary key, 4 marks by primary key, 4 marks to read from 3 ranges
 
+select uniqExact(_part), count() from sDD;
+Selected 6 parts by partition key, 6 parts by primary key, 6 marks by primary key, 6 marks to read from 6 ranges
+
 select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,1000))-1)+1 = 202010
 Selected 3 parts by partition key, 3 parts by primary key, 3 marks by primary key, 3 marks to read from 3 ranges
 
