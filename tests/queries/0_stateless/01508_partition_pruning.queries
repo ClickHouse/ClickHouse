@@ -12,9 +12,11 @@ INSERT INTO tMM SELECT toDateTime('2020-10-01 00:00:00') + number*60, number FRO
 INSERT INTO tMM SELECT toDateTime('2020-10-15 00:00:00') + number*60, number FROM numbers(5000)
 
 CREATE TABLE tDD(d DateTime,a Int) ENGINE = MergeTree PARTITION BY toYYYYMMDD(d) ORDER BY tuple()
+SYSTEM STOP MERGES tDD;
 insert into tDD select toDateTime(toDate('2020-09-23')), number from numbers(10000) UNION ALL select toDateTime(toDateTime('2020-09-23 11:00:00')), number from numbers(10000) UNION ALL select toDateTime(toDate('2020-09-24')), number from numbers(10000) UNION ALL select toDateTime(toDate('2020-09-25')), number from numbers(10000) UNION ALL select toDateTime(toDate('2020-08-15')), number from numbers(10000);
 
 CREATE TABLE sDD(d UInt64,a Int) ENGINE = MergeTree PARTITION BY toYYYYMM(toDate(intDiv(d,1000))) ORDER BY tuple()
+SYSTEM STOP MERGES sDD;
 insert into sDD select (1597536000+number*60)*1000, number from numbers(5000);
 insert into sDD select (1597536000+number*60)*1000, number from numbers(5000);
 insert into sDD select (1598918400+number*60)*1000, number from numbers(5000);
@@ -69,6 +71,7 @@ select uniqExact(_part), count() from tMM where toYYYYMM(d-1)+1 = 202010
 select uniqExact(_part), count() from tMM where toYYYYMM(d)+1 > 202010
 select uniqExact(_part), count() from tMM where toYYYYMM(d) between 202009 and 202010
 
+SYSTEM START MERGES tDD
 OPTIMIZE TABLE tDD FINAL
 
 select uniqExact(_part), count() from tDD where toDate(d)=toDate('2020-09-24')
