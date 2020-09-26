@@ -214,39 +214,47 @@ public:
 
     virtual antlrcpp::Any visitColumnExprExtract(ClickHouseParser::ColumnExprExtractContext *context) = 0;
 
-    virtual antlrcpp::Any visitColumnExprTrim(ClickHouseParser::ColumnExprTrimContext *context) = 0;
-
     virtual antlrcpp::Any visitColumnExprSubquery(ClickHouseParser::ColumnExprSubqueryContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprLiteral(ClickHouseParser::ColumnExprLiteralContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprArray(ClickHouseParser::ColumnExprArrayContext *context) = 0;
 
-    virtual antlrcpp::Any visitColumnExprTuple(ClickHouseParser::ColumnExprTupleContext *context) = 0;
-
     virtual antlrcpp::Any visitColumnExprSubstring(ClickHouseParser::ColumnExprSubstringContext *context) = 0;
-
-    virtual antlrcpp::Any visitColumnExprArrayAccess(ClickHouseParser::ColumnExprArrayAccessContext *context) = 0;
-
-    virtual antlrcpp::Any visitColumnExprBetween(ClickHouseParser::ColumnExprBetweenContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *context) = 0;
 
-    virtual antlrcpp::Any visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *context) = 0;
+    virtual antlrcpp::Any visitColumnExprPrecedence1(ClickHouseParser::ColumnExprPrecedence1Context *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprPrecedence2(ClickHouseParser::ColumnExprPrecedence2Context *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprPrecedence3(ClickHouseParser::ColumnExprPrecedence3Context *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprPrecedence4(ClickHouseParser::ColumnExprPrecedence4Context *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprUnaryOp(ClickHouseParser::ColumnExprUnaryOpContext *context) = 0;
-
-    virtual antlrcpp::Any visitColumnExprTupleAccess(ClickHouseParser::ColumnExprTupleAccessContext *context) = 0;
-
-    virtual antlrcpp::Any visitColumnExprCase(ClickHouseParser::ColumnExprCaseContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprInterval(ClickHouseParser::ColumnExprIntervalContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprIsNull(ClickHouseParser::ColumnExprIsNullContext *context) = 0;
 
-    virtual antlrcpp::Any visitColumnExprIdentifier(ClickHouseParser::ColumnExprIdentifierContext *context) = 0;
+    virtual antlrcpp::Any visitColumnExprTrim(ClickHouseParser::ColumnExprTrimContext *context) = 0;
 
-    virtual antlrcpp::Any visitColumnExprBinaryOp(ClickHouseParser::ColumnExprBinaryOpContext *context) = 0;
+    virtual antlrcpp::Any visitColumnExprTuple(ClickHouseParser::ColumnExprTupleContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprArrayAccess(ClickHouseParser::ColumnExprArrayAccessContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprBetween(ClickHouseParser::ColumnExprBetweenContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprAnd(ClickHouseParser::ColumnExprAndContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprTupleAccess(ClickHouseParser::ColumnExprTupleAccessContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprCase(ClickHouseParser::ColumnExprCaseContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprIdentifier(ClickHouseParser::ColumnExprIdentifierContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *context) = 0;
 
@@ -293,8 +301,6 @@ public:
     virtual antlrcpp::Any visitIdentifierOrNull(ClickHouseParser::IdentifierOrNullContext *context) = 0;
 
     virtual antlrcpp::Any visitUnaryOp(ClickHouseParser::UnaryOpContext *context) = 0;
-
-    virtual antlrcpp::Any visitBinaryOp(ClickHouseParser::BinaryOpContext *context) = 0;
 
     virtual antlrcpp::Any visitEnumValue(ClickHouseParser::EnumValueContext *context) = 0;
 

@@ -151,42 +151,6 @@ namespace DB
 
 using namespace AST;
 
-antlrcpp::Any ParseTreeVisitor::visitBinaryOp(ClickHouseParser::BinaryOpContext *ctx)
-{
-    if (ctx->CONCAT()) return String("concat");
-    if (ctx->ASTERISK()) return String("multiply");
-    if (ctx->SLASH()) return String("divide");
-    if (ctx->PERCENT()) return String("modulo");
-    if (ctx->PLUS()) return String("plus");
-    if (ctx->DASH()) return String("minus");
-    if (ctx->EQ_DOUBLE() || ctx->EQ_SINGLE()) return String("equals");
-    if (ctx->NOT_EQ()) return String("notEquals");
-    if (ctx->LE()) return String("lessOrEquals");
-    if (ctx->GE()) return String("greaterOrEquals");
-    if (ctx->LT()) return String("less");
-    if (ctx->GT()) return String("greater");
-    if (ctx->AND()) return String("and");
-    if (ctx->OR()) return String("or");
-    if (ctx->LIKE())
-    {
-        if (ctx->NOT()) return String("notLike");
-        else return String("like");
-    }
-    if (ctx->IN())
-    {
-        if (ctx->GLOBAL())
-        {
-            if (ctx->NOT()) return String("globalNotIn");
-            else return String("globalIn");
-        }
-        else {
-            if (ctx->NOT()) return String("notIn");
-            else return String("in");
-        }
-    }
-    __builtin_unreachable();
-}
-
 antlrcpp::Any ParseTreeVisitor::visitColumnArgExpr(ClickHouseParser::ColumnArgExprContext *ctx)
 {
     if (ctx->columnExpr()) return visit(ctx->columnExpr());
@@ -204,6 +168,16 @@ antlrcpp::Any ParseTreeVisitor::visitColumnArgList(ClickHouseParser::ColumnArgLi
 antlrcpp::Any ParseTreeVisitor::visitColumnExprAlias(ClickHouseParser::ColumnExprAliasContext *ctx)
 {
     return ColumnExpr::createAlias(visit(ctx->columnExpr()), visit(ctx->identifier()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitColumnExprAnd(ClickHouseParser::ColumnExprAndContext *ctx)
+{
+    auto name = std::make_shared<Identifier>("and");
+    auto args = std::make_shared<ColumnExprList>();
+
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprArray(ClickHouseParser::ColumnExprArrayContext *ctx)
@@ -254,16 +228,6 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprBetween(ClickHouseParser::ColumnE
 
     args->push(expr1);
     args->push(expr2);
-
-    return ColumnExpr::createFunction(name, nullptr, args);
-}
-
-antlrcpp::Any ParseTreeVisitor::visitColumnExprBinaryOp(ClickHouseParser::ColumnExprBinaryOpContext *ctx)
-{
-    auto name = std::make_shared<Identifier>(visit(ctx->binaryOp()).as<String>());
-    auto args = std::make_shared<ColumnExprList>();
-
-    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -354,11 +318,82 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprParens(ClickHouseParser::ColumnEx
     return visit(ctx->columnExpr());
 }
 
+antlrcpp::Any ParseTreeVisitor::visitColumnExprPrecedence1(ClickHouseParser::ColumnExprPrecedence1Context *ctx)
+{
+    PtrTo<Identifier> name;
+    if (ctx->ASTERISK()) name = std::make_shared<Identifier>("multiply");
+    else if (ctx->SLASH()) name = std::make_shared<Identifier>("divide");
+    else if (ctx->PERCENT()) name = std::make_shared<Identifier>("modulo");
+
+    auto args = std::make_shared<ColumnExprList>();
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitColumnExprPrecedence2(ClickHouseParser::ColumnExprPrecedence2Context *ctx)
+{
+    PtrTo<Identifier> name;
+    if (ctx->PLUS()) name = std::make_shared<Identifier>("plus");
+    else if (ctx->DASH()) name = std::make_shared<Identifier>("minus");
+    else if (ctx->CONCAT()) name = std::make_shared<Identifier>("concat");
+
+    auto args = std::make_shared<ColumnExprList>();
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitColumnExprPrecedence3(ClickHouseParser::ColumnExprPrecedence3Context *ctx)
+{
+    PtrTo<Identifier> name;
+    if (ctx->EQ_DOUBLE() || ctx->EQ_SINGLE()) name = std::make_shared<Identifier>("equals");
+    else if (ctx->NOT_EQ()) name = std::make_shared<Identifier>("notEquals");
+    else if (ctx->LE()) name = std::make_shared<Identifier>("lessOrEquals");
+    else if (ctx->GE()) name = std::make_shared<Identifier>("greaterOrEquals");
+    else if (ctx->LT()) name = std::make_shared<Identifier>("less");
+    else if (ctx->GT()) name = std::make_shared<Identifier>("greater");
+    else if (ctx->IN())
+    {
+        if (ctx->GLOBAL())
+        {
+            if (ctx->NOT()) name = std::make_shared<Identifier>("globalNotIn");
+            else name = std::make_shared<Identifier>("globalIn");
+        }
+        else
+        {
+            if (ctx->NOT()) name = std::make_shared<Identifier>("notIn");
+            else name = std::make_shared<Identifier>("in");
+        }
+    }
+
+    auto args = std::make_shared<ColumnExprList>();
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitColumnExprPrecedence4(ClickHouseParser::ColumnExprPrecedence4Context *ctx)
+{
+    PtrTo<Identifier> name;
+    if (ctx->OR()) name = std::make_shared<Identifier>("or");
+    else if (ctx->LIKE())
+    {
+        if (ctx->NOT()) name = std::make_shared<Identifier>("notLike");
+        else name = std::make_shared<Identifier>("like");
+    }
+
+    auto args = std::make_shared<ColumnExprList>();
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitColumnExprSubquery(ClickHouseParser::ColumnExprSubqueryContext *ctx)
 {
     // IN-operator is special since it accepts non-scalar subqueries on the right side.
-    auto * parent = dynamic_cast<ClickHouseParser::ColumnExprBinaryOpContext*>(ctx->parent);
-    return ColumnExpr::createSubquery(visit(ctx->selectUnionStmt()), !(parent && parent->binaryOp()->IN()));
+    auto * parent = dynamic_cast<ClickHouseParser::ColumnExprPrecedence3Context*>(ctx->parent);
+    return ColumnExpr::createSubquery(visit(ctx->selectUnionStmt()), !(parent && parent->IN()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprSubstring(ClickHouseParser::ColumnExprSubstringContext *ctx)

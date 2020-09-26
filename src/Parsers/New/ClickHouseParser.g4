@@ -252,14 +252,37 @@ columnExpr
     | SUBSTRING LPAREN columnExpr FROM columnExpr (FOR columnExpr)? RPAREN           # ColumnExprSubstring
     | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
     | identifier (LPAREN columnExprList? RPAREN)? LPAREN columnArgList? RPAREN       # ColumnExprFunction
+
+    // FIXME(ilezhankin): this part looks very ugly, maybe there is another way to express it
     | columnExpr LBRACKET columnExpr RBRACKET                                        # ColumnExprArrayAccess
     | columnExpr DOT INTEGER_LITERAL                                                 # ColumnExprTupleAccess
     | unaryOp columnExpr                                                             # ColumnExprUnaryOp
+    | columnExpr ( ASTERISK                                                          // multiply
+                 | SLASH                                                             // divide
+                 | PERCENT                                                           // modulo
+                 ) columnExpr                                                        # ColumnExprPrecedence1
+    | columnExpr ( PLUS                                                              // plus
+                 | DASH                                                              // minus
+                 | CONCAT                                                            // concat
+                 ) columnExpr                                                        # ColumnExprPrecedence2
+    | columnExpr ( EQ_DOUBLE                                                         // equals
+                 | EQ_SINGLE                                                         // equals
+                 | NOT_EQ                                                            // notEquals
+                 | LE                                                                // lessOrEquals
+                 | GE                                                                // greaterOrEquals
+                 | LT                                                                // less
+                 | GT                                                                // greater
+                 | GLOBAL? NOT? IN *                                                 // in, notIn, globalIn, globalNotIn
+                 ) columnExpr                                                        # ColumnExprPrecedence3
     | columnExpr IS NOT? NULL_SQL                                                    # ColumnExprIsNull
-    | columnExpr binaryOp columnExpr                                                 # ColumnExprBinaryOp
-    | columnExpr QUERY columnExpr COLON columnExpr                                   # ColumnExprTernaryOp
+    | columnExpr AND columnExpr                                                      # ColumnExprAnd
+    | columnExpr ( OR                                                                // or
+                 | NOT? LIKE                                                         // like, notLike
+                 ) columnExpr                                                        # ColumnExprPrecedence4
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                              # ColumnExprBetween
+    | <assoc=right> columnExpr QUERY columnExpr COLON columnExpr                     # ColumnExprTernaryOp
     | columnExpr AS? identifier                                                      # ColumnExprAlias
+
     | (tableIdentifier DOT)? ASTERISK                                                # ColumnExprAsterisk  // single-column only
     | LPAREN selectUnionStmt RPAREN                                                  # ColumnExprSubquery  // single-column only
     | LPAREN columnExpr RPAREN                                                       # ColumnExprParens    // single-column only
@@ -327,23 +350,4 @@ keyword
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
 unaryOp: DASH | NOT;
-binaryOp
-    : CONCAT
-    | ASTERISK
-    | SLASH
-    | PLUS
-    | DASH
-    | PERCENT
-    | AND
-    | OR
-    | EQ_DOUBLE
-    | EQ_SINGLE
-    | NOT_EQ
-    | LE
-    | GE
-    | LT
-    | GT
-    | NOT? LIKE
-    | GLOBAL? NOT? IN
-    ;
 enumValue: STRING_LITERAL EQ_SINGLE numberLiteral;

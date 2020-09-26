@@ -17,6 +17,11 @@ TableColumnPropertyExpr::TableColumnPropertyExpr(PropertyType type, PtrTo<Column
 {
 }
 
+ASTPtr TableColumnPropertyExpr::convertToOld() const
+{
+    return get(EXPR)->convertToOld();
+}
+
 // static
 PtrTo<TableElementExpr> TableElementExpr::createColumn(
     PtrTo<Identifier> name,
