@@ -58,7 +58,7 @@ ENGINE = MergeTree()
 PARTITION BY tuple()
 ORDER BY id;
 
-INSERT INTO bbb VALUES (2, 'fre'),(3, 'jhg');
+INSERT INTO bbb VALUES (2, 'fre'), (3, 'jhg');
 
 with (select groupArray(id) from bbb) as ids
 select *
