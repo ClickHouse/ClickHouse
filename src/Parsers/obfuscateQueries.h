@@ -18,7 +18,7 @@ using WordMap = std::unordered_map<std::string_view, std::string_view>;
 using WordSet = std::unordered_set<std::string_view>;
 using KnownIdentifierFunc = std::function<bool(std::string_view)>;
 
-/** Takes one or multiple queries and obfuscate them by replacing identifiers to pseudorandom words
+/** Takes one or multiple queries and obfuscates them by replacing identifiers to pseudorandom words
   * and replacing literals to random values, while preserving the structure of the queries and the general sense.
   *
   * Its intended use case is when the user wants to share their queries for testing and debugging
