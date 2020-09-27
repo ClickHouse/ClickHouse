@@ -26,7 +26,7 @@ class Macros
 {
 public:
     Macros() = default;
-    Macros(const Poco::Util::AbstractConfiguration & config, const String & key, Poco::Logger * log);
+    Macros(const Poco::Util::AbstractConfiguration & config, const String & key, Poco::Logger * log = nullptr);
 
     struct MacroExpansionInfo
     {
