@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
-#--------------------------------------------
+#-------------------------------------------------------------------------------------------
 # Description of test result:
 #   Test the correctness of the partition
 #   pruning
-#--------------------------------------------
+#   
+#   Script executes queries from a file 01508_partition_pruning.queries  (1 line = 1 query) 
+#   Queries are started with 'select' (but NOT with 'SELECT') are executed with log_level=debug
+#-------------------------------------------------------------------------------------------
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
