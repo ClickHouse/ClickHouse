@@ -739,14 +739,14 @@ Converts arbitrary expressions into a string via given format.
 formatRow(format, x, y, ...)
 ```
 
-**Parameters** 
+**Parameters**
 
--   `format` — text format. For example [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
--   `x`,`y`, ... — expressions.
+-   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Expressions.
 
 **Returned value**
 
--   expressions converted to the `format`.
+-   A formatted string terminated with the new line symbol.
 
 **Example**
 
