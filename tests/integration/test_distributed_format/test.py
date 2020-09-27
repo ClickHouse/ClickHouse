@@ -15,7 +15,7 @@ cluster_param = pytest.mark.parametrize("cluster", [
 def started_cluster():
     try:
         cluster.start()
-        node.query("create database test engine=Ordinary")
+        node.query("create database test")
         yield cluster
 
     finally:

@@ -114,8 +114,6 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    changed_test_files=""
-
     # Find the directory with test files.
     if [ -v CHPC_TEST_PATH ]
     then
@@ -130,14 +128,6 @@ function run_tests
     else
         # For PRs, use newer test files so we can test these changes.
         test_prefix=right/performance
-
-        # If only the perf tests were changed in the PR, we will run only these
-        # tests. The list of changed tests in changed-test.txt is prepared in
-        # entrypoint.sh from git diffs, because it has the cloned repo.  Used
-        # to use rsync for that but it was really ugly and not always correct
-        # (e.g. when the reference SHA is really old and has some other
-        # differences to the tested SHA, besides the one introduced by the PR).
-        changed_test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
     fi
 
     # Determine which tests to run.
@@ -146,25 +136,32 @@ function run_tests
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
         test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
-    elif [ "$changed_test_files" != "" ]
+    elif [ "$PR_TO_TEST" -ne 0 ] \
+        && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
+        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ] \
+        && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
     then
-        # Use test files that changed in the PR.
-        test_files="$changed_test_files"
+        # If only the perf tests were changed in the PR, we will run only these
+        # tests. The lists of changed files are prepared in entrypoint.sh because
+        # it has the repository.
+        test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt)
     else
         # The default -- run all tests found in the test dir.
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
-    # For PRs, test only a subset of queries, and run them less times.
-    # If the corresponding environment variables are already set, keep
-    # those values.
-    if [ "$PR_TO_TEST" == "0" ]
+    # For PRs w/o changes in test definitons and scripts, test only a subset of
+    # queries, and run them less times. If the corresponding environment variables
+    # are already set, keep those values.
+    if [ "$PR_TO_TEST" -ne 0 ] \
+        && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ] \
+        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ]
     then
-        CHPC_RUNS=${CHPC_RUNS:-13}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
-    else
         CHPC_RUNS=${CHPC_RUNS:-7}
         CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-20}
+    else
+        CHPC_RUNS=${CHPC_RUNS:-13}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
     fi
     export CHPC_RUNS
     export CHPC_MAX_QUERIES
@@ -629,17 +626,53 @@ create table test_time engine Memory as
     from total_client_time_per_query full join queries using (test, query_index)
     group by test;
 
+create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
+    'test text, query_index int, query_id text, version UInt8, time float');
+
+--
+-- Guess the number of query runs used for this test. The number is required to
+-- calculate and check the average query run time in the report.
+-- We have to be careful, because we will encounter:
+--  1) partial queries which run only on one server
+--  2) short queries which run for a much higher number of times
+--  3) some errors that make query run for a different number of times on a
+--     particular server.
+--
+create view test_runs as
+    select test,
+        -- Default to 7 runs if there are only 'short' queries in the test, and
+        -- we can't determine the number of runs.
+        if((ceil(medianOrDefaultIf(t.runs, not short), 0) as r) != 0, r, 7) runs
+    from (
+        select
+            -- The query id is the same for both servers, so no need to divide here.
+            uniqExact(query_id) runs,
+            (test, query_index) in
+                (select * from file('analyze/marked-short-queries.tsv', TSV,
+                    'test text, query_index int'))
+            as short,
+            test, query_index
+        from query_runs
+        group by test, query_index
+        ) t
+    group by test
+    ;
+
 create table test_times_report engine File(TSV, 'report/test-times.tsv') as
     select wall_clock_time_per_test.test, real,
         toDecimal64(total_client_time, 3),
         queries,
         toDecimal64(query_max, 3),
         toDecimal64(real / queries, 3) avg_real_per_query,
-        toDecimal64(query_min, 3)
+        toDecimal64(query_min, 3),
+        runs
     from test_time
-    -- wall clock times are also measured for skipped tests, so don't
-    -- do full join
-    left join wall_clock_time_per_test using test
+        -- wall clock times are also measured for skipped tests, so don't
+        -- do full join
+        left join wall_clock_time_per_test
+            on wall_clock_time_per_test.test = test_time.test
+        full join test_runs
+            on test_runs.test = test_time.test
     order by avg_real_per_query desc;
 
 -- report for all queries page, only main metric
@@ -688,12 +721,13 @@ create view shortness
 -- Report of queries that have inconsistent 'short' markings:
 -- 1) have short duration, but are not marked as 'short'
 -- 2) the reverse -- marked 'short' but take too long.
--- The threshold for 2) is twice the threshold for 1), to avoid jitter.
+-- The threshold for 2) is significantly larger than the threshold for 1), to
+-- avoid jitter.
 create table inconsistent_short_marking_report
-    engine File(TSV, 'report/inconsistent-short-marking.tsv')
+    engine File(TSV, 'report/unexpected-query-duration.tsv')
     as select
-        multiIf(marked_short and time > 0.1, 'marked as short but is too long',
-                not marked_short and time < 0.02, 'is short but not marked as such',
+        multiIf(marked_short and time > 0.1, '\"short\" queries must run faster than 0.02 s',
+                not marked_short and time < 0.02, '\"normal\" queries must run longer than 0.1 s',
                 '') problem,
         marked_short, time,
         test, query_index, query_display_name
@@ -1031,7 +1065,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || restart && get_profiles ) ||:
+    ( get_profiles || { restart && get_profiles ; } ) ||:
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.

@@ -1,7 +1,7 @@
 # docker build -t yandex/clickhouse-test-base .
 FROM ubuntu:19.10
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -43,7 +43,6 @@ RUN apt-get update \
         llvm-${LLVM_VERSION} \
         moreutils \
         perl \
-        perl \
         pigz \
         pkg-config \
         tzdata \
@@ -53,6 +52,7 @@ RUN apt-get update \
 RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment; \
   echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
   echo "MSAN_OPTIONS='abort_on_error=1'" >> /etc/environment; \
+  echo "LSAN_OPTIONS='suppressions=/usr/share/clickhouse-test/config/lsan_suppressions.txt'" >> /etc/environment; \
   ln -s /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;
 
 CMD sleep 1
