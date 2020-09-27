@@ -26,6 +26,7 @@ public:
         TableLockHolder table_lock,
         StorageMetadataPtr metadata_snapshot,
         StreamLocalLimits & limits,
+        SizeLimits & leaf_limits,
         std::shared_ptr<const EnabledQuota> quota,
         StoragePtr storage,
         const Names & required_columns,
@@ -47,6 +48,7 @@ private:
     TableLockHolder table_lock;
     StorageMetadataPtr metadata_snapshot;
     StreamLocalLimits limits;
+    SizeLimits leaf_limits;
     std::shared_ptr<const EnabledQuota> quota;
 
     StoragePtr storage;

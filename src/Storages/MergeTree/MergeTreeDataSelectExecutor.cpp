@@ -583,6 +583,14 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     {
         std::atomic<size_t> total_rows {0};
 
+        SizeLimits limits;
+        if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
+            limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
+
+        SizeLimits leaf_limits;
+        if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
+            leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
+
         auto process_part = [&](size_t part_index)
         {
             auto & part = parts[part_index];
@@ -610,18 +618,14 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
 
             if (!ranges.ranges.empty())
             {
-                if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
+                if (limits.max_rows || leaf_limits.max_rows)
                 {
                     /// Fail fast if estimated number of rows to read exceeds the limit
                     auto current_rows_estimate = ranges.getRowsCount();
                     size_t prev_total_rows_estimate = total_rows.fetch_add(current_rows_estimate);
                     size_t total_rows_estimate = current_rows_estimate + prev_total_rows_estimate;
-                    if (total_rows_estimate > settings.max_rows_to_read)
-                        throw Exception(
-                            "Limit for rows (controlled by 'max_rows_to_read' setting) exceeded, max rows: "
-                            + formatReadableQuantity(settings.max_rows_to_read)
-                            + ", estimated rows to read (at least): " + formatReadableQuantity(total_rows_estimate),
-                            ErrorCodes::TOO_MANY_ROWS);
+                    limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
+                    leaf_limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
                 }
 
                 parts_with_ranges[part_index] = std::move(ranges);
@@ -675,7 +679,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
         parts_with_ranges.resize(next_part);
     }
 
-    LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks by primary key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks_pk.load(std::memory_order_relaxed), sum_marks, sum_ranges);
+    LOG_DEBUG(log, "Selected {} parts by partition key, {} parts by primary key, {} marks by primary key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks_pk.load(std::memory_order_relaxed), sum_marks, sum_ranges);
 
     if (parts_with_ranges.empty())
         return {};
@@ -1498,78 +1502,55 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
     else
     {
-        // Do inclusion search, where we only look for one range
+        /// In case when SELECT's predicate defines a single continuous interval of keys,
+        /// we can use binary search algorithm to find the left and right endpoint key marks of such interval.
+        /// The returned value is the minumum range of marks, containing all keys for which KeyCondition holds
+
+        LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part->name, marks_count);
 
         size_t steps = 0;
 
-        auto find_leaf = [&](bool left) -> std::optional<size_t>
+        MarkRange result_range;
+
+        size_t searched_left = 0;
+        size_t searched_right = marks_count;
+
+        while (searched_left + 1 < searched_right)
         {
-            std::vector<MarkRange> stack = {};
-
-            MarkRange range = {0, marks_count};
-
-            steps++;
-
+            const size_t middle = (searched_left + searched_right) / 2;
+            MarkRange range(0, middle);
             if (may_be_true_in_range(range))
-                stack.emplace_back(range.begin, range.end);
+                searched_right = middle;
+            else
+                searched_left = middle;
+            ++steps;
+        }
+        result_range.begin = searched_left;
+        LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
 
-            while (!stack.empty())
-            {
-                range = stack.back();
-                stack.pop_back();
+        searched_right = marks_count;
+        while (searched_left + 1 < searched_right)
+        {
+            const size_t middle = (searched_left + searched_right) / 2;
+            MarkRange range(middle, marks_count);
+            if (may_be_true_in_range(range))
+                searched_left = middle;
+            else
+                searched_right = middle;
+            ++steps;
+        }
+        result_range.end = searched_right;
+        LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
-                if (range.end == range.begin + 1)
-                {
-                    if (left)
-                        return range.begin;
-                    else
-                        return range.end;
-                }
-                else
-                {
-                    std::vector<MarkRange> check_order = {};
+        if (result_range.begin < result_range.end && may_be_true_in_range(result_range))
+            res.emplace_back(std::move(result_range));
 
-                    MarkRange left_range = {range.begin, (range.begin + range.end) / 2};
-                    MarkRange right_range = {(range.begin + range.end) / 2, range.end};
-
-                    if (left)
-                    {
-                        check_order.emplace_back(left_range.begin, left_range.end);
-                        check_order.emplace_back(right_range.begin, right_range.end);
-                    }
-                    else
-                    {
-                        check_order.emplace_back(right_range.begin, right_range.end);
-                        check_order.emplace_back(left_range.begin, left_range.end);
-                    }
-
-                    steps++;
-
-                    if (may_be_true_in_range(check_order[0]))
-                    {
-                        stack.emplace_back(check_order[0].begin, check_order[0].end);
-                        continue;
-                    }
-
-                    if (may_be_true_in_range(check_order[1]))
-                        stack.emplace_back(check_order[1].begin, check_order[1].end);
-                    else
-                        break; // No mark range would suffice
-                }
-            }
-
-            return std::nullopt;
-        };
-
-        auto left_leaf = find_leaf(true);
-        if (left_leaf)
-            res.emplace_back(left_leaf.value(), find_leaf(false).value());
-
-        LOG_TRACE(log, "Used optimized inclusion search over index for part {} with {} steps", part->name, steps);
+        LOG_TRACE(log, "Found {} range in {} steps", res.empty() ? "empty" : "continuous", steps);
     }
 
     return res;
 }
+
 
 MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index_helper,
