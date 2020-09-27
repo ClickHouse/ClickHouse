@@ -53,7 +53,7 @@ public:
         ASTPtr clone() const override
         {
             auto replacement = std::make_shared<Replacement>(*this);
-            replacement->name = name;
+            replacement->children.clear();
             replacement->expr = expr->clone();
             replacement->children.push_back(replacement->expr);
             return replacement;

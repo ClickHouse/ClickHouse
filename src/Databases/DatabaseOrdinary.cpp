@@ -294,6 +294,8 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
 
             if (metadata.table_ttl.definition_ast)
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
+            else if (storage_ast.ttl_table != nullptr) /// TTL was removed
+                storage_ast.ttl_table = nullptr;
 
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);

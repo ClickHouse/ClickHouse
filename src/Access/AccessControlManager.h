@@ -106,6 +106,7 @@ public:
     bool isSettingNameAllowed(const std::string_view & name) const;
     void checkSettingNameIsAllowed(const std::string_view & name) const;
 
+    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const;
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
     std::shared_ptr<const ContextAccess> getContextAccess(

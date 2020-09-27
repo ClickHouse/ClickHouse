@@ -635,13 +635,15 @@ public:
         UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move,
-        size_t min_volume_index = 0) const;
+        size_t min_volume_index = 0,
+        bool is_insert = false) const;
 
     ReservationPtr tryReserveSpacePreferringTTLRules(
         UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move,
-        size_t min_volume_index = 0) const;
+        size_t min_volume_index = 0,
+        bool is_insert = false) const;
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
@@ -649,9 +651,9 @@ public:
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
-    /// Returns destination disk or volume for the TTL rule according to current
-    /// storage policy
-    SpacePtr getDestinationForTTL(const TTLDescription & ttl) const;
+    /// Returns destination disk or volume for the TTL rule according to current storage policy
+    /// 'is_insert' - is TTL move performed on new data part insert.
+    SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl, bool is_insert = false) const;
 
     /// Checks if given part already belongs destination disk or volume for the
     /// TTL rule.
@@ -715,6 +717,8 @@ protected:
 
     bool require_part_metadata;
 
+    /// Relative path data, changes during rename for ordinary databases use
+    /// under lockForShare if rename is possible.
     String relative_data_path;
 
 

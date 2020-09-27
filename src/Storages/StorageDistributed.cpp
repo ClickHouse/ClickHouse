@@ -57,6 +57,7 @@
 #include <memory>
 #include <filesystem>
 #include <optional>
+#include <cassert>
 
 
 namespace
@@ -842,6 +843,7 @@ void StorageDistributed::flushClusterNodesAllData()
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
+    assert(relative_data_path != new_path_to_table_data);
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
@@ -852,10 +854,9 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
     for (const DiskPtr & disk : data_volume->getDisks())
     {
-        const String path(disk->getPath());
-        auto new_path = path + new_path_to_table_data;
-        Poco::File(path + relative_data_path).renameTo(new_path);
+        disk->moveDirectory(relative_data_path, new_path_to_table_data);
 
+        auto new_path = disk->getPath() + new_path_to_table_data;
         LOG_DEBUG(log, "Updating path to {}", new_path);
 
         std::lock_guard lock(cluster_nodes_mutex);
