@@ -22,11 +22,12 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
         macros[key] = config.getString(root_key + "." + key);
         if (key == "database" || key == "table" || key == "uuid")
         {
-            LOG_WARNING(log,
-                "Config file contains '{}' macro. This macro has special meaning "
-                "and it's explicit definition is not recommended. Implicit unfolding for "
-                "'database', 'table' and 'uuid' macros will be disabled.",
-                key);
+            if (log)
+                LOG_WARNING(log,
+                    "Config file contains '{}' macro. This macro has special meaning "
+                    "and it's explicit definition is not recommended. Implicit unfolding for "
+                    "'database', 'table' and 'uuid' macros will be disabled.",
+                    key);
             enable_special_macros = false;
         }
     }
