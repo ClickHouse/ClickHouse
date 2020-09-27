@@ -92,71 +92,26 @@ MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
     }
 }
 
-static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection)
-{
-    Block variables_header{
-        {std::make_shared<DataTypeString>(), "Variable_name"},
-        {std::make_shared<DataTypeString>(), "Value"}
-    };
-
-    const String & check_query = "SHOW VARIABLES WHERE "
-         "(Variable_name = 'log_bin' AND upper(Value) = 'ON') "
-         "OR (Variable_name = 'binlog_format' AND upper(Value) = 'ROW') "
-         "OR (Variable_name = 'binlog_row_image' AND upper(Value) = 'FULL') "
-         "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD');";
-
-    MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE);
-
-    Block variables_block = variables_input.read();
-    if (!variables_block || variables_block.rows() != 4)
-    {
-        std::unordered_map<String, String> variables_error_message{
-            {"log_bin", "log_bin = 'ON'"},
-            {"binlog_format", "binlog_format='ROW'"},
-            {"binlog_row_image", "binlog_row_image='FULL'"},
-            {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"}
-        };
-        ColumnPtr variable_name_column = variables_block.getByName("Variable_name").column;
-
-        for (size_t index = 0; index < variables_block.rows(); ++index)
-        {
-            const auto & error_message_it = variables_error_message.find(variable_name_column->getDataAt(index).toString());
-
-            if (error_message_it != variables_error_message.end())
-                variables_error_message.erase(error_message_it);
-        }
-
-        bool first = true;
-        std::stringstream error_message;
-        error_message << "Illegal MySQL variables, the MaterializeMySQL engine requires ";
-        for (const auto & [variable_name, variable_error_message] : variables_error_message)
-        {
-            error_message << (first ? "" : ", ") << variable_error_message;
-
-            if (first)
-                first = false;
-        }
-
-        throw Exception(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
-    }
-
-    Block version_header{{std::make_shared<DataTypeString>(), "version"}};
-    MySQLBlockInputStream version_input(connection, "SELECT version() AS version;", version_header, DEFAULT_BLOCK_SIZE);
-
-    Block version_block = version_input.read();
-    if (!version_block || version_block.rows() != 1)
-        throw Exception("LOGICAL ERROR: cannot get mysql version.", ErrorCodes::LOGICAL_ERROR);
-
-    return version_block.getByPosition(0).column->getDataAt(0).toString();
-}
-
 MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
-    const Context & context, const String & database_name_, const String & mysql_database_name_,
-    mysqlxx::Pool && pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_)
-    : log(&Poco::Logger::get("MaterializeMySQLSyncThread")), global_context(context.getGlobalContext()), database_name(database_name_)
-    , mysql_database_name(mysql_database_name_), pool(std::move(pool_)), client(std::move(client_)), settings(settings_)
+    const Context & context,
+    const String & database_name_,
+    const String & mysql_database_name_,
+    mysqlxx::Pool && pool_,
+    MySQLClient && client_,
+    MaterializeMySQLSettings * settings_,
+    MaterializeMetadata & materialize_metadata_)
+    : log(&Poco::Logger::get("MaterializeMySQLSyncThread"))
+    , global_context(context.getGlobalContext())
+    , database_name(database_name_)
+    , mysql_database_name(mysql_database_name_)
+    , pool(std::move(pool_))
+    , client(std::move(client_))
+    , settings(settings_)
+    , materialize_metadata(materialize_metadata_)
 {
-    query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
+    query_prefix = "EXTERNAL DDL FROM MySQL(" +
+        backQuoteIfNeed(database_name) + ", " +
+        backQuoteIfNeed(mysql_database_name) + ") ";
 }
 
 void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
@@ -165,7 +120,7 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
 
     try
     {
-        if (std::optional<MaterializeMetadata> metadata = prepareSynchronized(mysql_version))
+        if (prepareSynchronized(mysql_version))
         {
             Stopwatch watch;
             Buffers buffers(database_name);
@@ -178,7 +133,7 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
 
                 {
                     if (binlog_event)
-                        onEvent(buffers, binlog_event, *metadata);
+                        onEvent(buffers, binlog_event);
 
                     if (watch.elapsedMilliseconds() > max_flush_time || buffers.checkThresholds(
                             settings->max_rows_in_buffer, settings->max_bytes_in_buffer,
@@ -188,7 +143,7 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
                         watch.restart();
 
                         if (!buffers.data.empty())
-                            flushBuffersData(buffers, *metadata);
+                            flushBuffersData(buffers);
                     }
                 }
             }
@@ -212,7 +167,7 @@ void MaterializeMySQLSyncThread::stopSynchronization()
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
-    const auto & mysql_server_version = checkVariableAndGetVersion(pool.get());
+    const auto & mysql_server_version = "";
 
     background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
         [this, mysql_server_version = mysql_server_version]() { synchronization(mysql_server_version); });
@@ -378,7 +333,7 @@ void fetchMetadata(
     }
 }
 
-std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchronized(const String & mysql_version)
+bool MaterializeMySQLSyncThread::prepareSynchronized(const String & /*mysql_version*/)
 {
     bool opened_transaction = false;
     mysqlxx::PoolWithFailover::Entry connection;
@@ -391,19 +346,16 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             opened_transaction = false;
 
             std::unordered_map<String, String> need_dumping_tables;
-            MaterializeMetadata metadata(
-                getDatabase(database_name).getMetadataPath() + "/.metadata",
-                mysql_version);
-            metadata.tryInitFromFile(connection);
+            materialize_metadata.tryInitFromFile(connection);
 
-            fetchMetadata(connection, mysql_database_name, metadata, opened_transaction, need_dumping_tables);
+            fetchMetadata(connection, mysql_database_name, materialize_metadata, opened_transaction, need_dumping_tables);
 
             if (!need_dumping_tables.empty())
             {
                 Position position;
-                position.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set);
+                position.update(materialize_metadata.binlog_position, materialize_metadata.binlog_file, materialize_metadata.executed_gtid_set);
 
-                metadata.transaction(position, [&]()
+                materialize_metadata.transaction(position, [&]()
                 {
                     cleanOutdatedTables(database_name, global_context);
                     dumpDataForTables(connection, need_dumping_tables, query_prefix, database_name, mysql_database_name, global_context, [this] { return isCancelled(); });
@@ -422,8 +374,8 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 connection->query("COMMIT").execute();
 
             client.connect();
-            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set);
-            return metadata;
+            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, materialize_metadata.executed_gtid_set);
+            return true;
         }
         catch (...)
         {
@@ -444,12 +396,12 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
         }
     }
 
-    return {};
+    return false;
 }
 
-void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata)
+void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers)
 {
-    metadata.transaction(client.getPosition(), [&]() { buffers.commit(global_context); });
+    materialize_metadata.transaction(client.getPosition(), [&]() { buffers.commit(global_context); });
 
     const auto & position_message = [&]()
     {
@@ -667,33 +619,33 @@ static inline size_t onUpdateData(const std::vector<Field> & rows_data, Block & 
     return buffer.bytes() - prev_bytes;
 }
 
-void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr & receive_event, MaterializeMetadata & metadata)
+void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr & receive_event)
 {
     if (receive_event->type() == MYSQL_WRITE_ROWS_EVENT)
     {
         WriteRowsEvent & write_rows_event = static_cast<WriteRowsEvent &>(*receive_event);
         Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(write_rows_event.table, global_context);
-        size_t bytes = onWriteOrDeleteData<1>(write_rows_event.rows, buffer->first, ++metadata.data_version);
+        size_t bytes = onWriteOrDeleteData<1>(write_rows_event.rows, buffer->first, ++materialize_metadata.data_version);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), write_rows_event.rows.size(), bytes);
     }
     else if (receive_event->type() == MYSQL_UPDATE_ROWS_EVENT)
     {
         UpdateRowsEvent & update_rows_event = static_cast<UpdateRowsEvent &>(*receive_event);
         Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(update_rows_event.table, global_context);
-        size_t bytes = onUpdateData(update_rows_event.rows, buffer->first, ++metadata.data_version, buffer->second);
+        size_t bytes = onUpdateData(update_rows_event.rows, buffer->first, ++materialize_metadata.data_version, buffer->second);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), update_rows_event.rows.size(), bytes);
     }
     else if (receive_event->type() == MYSQL_DELETE_ROWS_EVENT)
     {
         DeleteRowsEvent & delete_rows_event = static_cast<DeleteRowsEvent &>(*receive_event);
         Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(delete_rows_event.table, global_context);
-        size_t bytes = onWriteOrDeleteData<-1>(delete_rows_event.rows, buffer->first, ++metadata.data_version);
+        size_t bytes = onWriteOrDeleteData<-1>(delete_rows_event.rows, buffer->first, ++materialize_metadata.data_version);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), delete_rows_event.rows.size(), bytes);
     }
     else if (receive_event->type() == MYSQL_QUERY_EVENT)
     {
         QueryEvent & query_event = static_cast<QueryEvent &>(*receive_event);
-        flushBuffersData(buffers, metadata);
+        flushBuffersData(buffers);
 
         try
         {

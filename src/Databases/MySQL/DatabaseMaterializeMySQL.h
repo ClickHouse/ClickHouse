@@ -36,7 +36,7 @@ protected:
     std::unique_ptr<MaterializeMySQLSettings> settings;
 
     Poco::Logger * log;
-    MaterializeMySQLSyncThread materialize_thread;
+    MaterializeMySQLSyncThreadPtr materialize_thread;
 
     std::exception_ptr exception;
 

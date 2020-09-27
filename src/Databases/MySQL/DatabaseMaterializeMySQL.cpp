@@ -10,6 +10,7 @@
 #    include <Databases/DatabaseOrdinary.h>
 #    include <Databases/MySQL/DatabaseMaterializeTablesIterator.h>
 #    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#    include <Databases/MySQL/MySQLUtils.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Storages/StorageMaterializeMySQL.h>
 #    include <Poco/File.h>
@@ -25,13 +26,32 @@ namespace ErrorCodes
 }
 
 DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
-    const Context & context, const String & database_name_, const String & metadata_path_, const IAST * database_engine_define_
-    , const String & mysql_database_name_, mysqlxx::Pool && pool_, MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_)
-    : IDatabase(database_name_), global_context(context.getGlobalContext()), engine_define(database_engine_define_->clone())
+    const Context & context,
+    const String & database_name_,
+    const String & metadata_path_,
+    const IAST * database_engine_define_,
+    const String & mysql_database_name_,
+    mysqlxx::Pool && pool_,
+    MySQLClient && client_,
+    std::unique_ptr<MaterializeMySQLSettings> settings_)
+    : IDatabase(database_name_)
+    , global_context(context.getGlobalContext())
+    , engine_define(database_engine_define_->clone())
     , nested_database(std::make_shared<DatabaseOrdinary>(database_name_, metadata_path_, context))
-    , settings(std::move(settings_)), log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
-    , materialize_thread(context, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
+    , settings(std::move(settings_))
+    , log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
 {
+    MaterializeMetadata materialize_metadata(
+                this->getMetadataPath() + "/.metadata",
+                checkVariableAndGetVersion(pool_.get()));
+    materialize_thread = std::make_shared<MaterializeMySQLSyncThread>(
+        context,
+        database_name_,
+        mysql_database_name_,
+        std::move(pool_),
+        std::move(client_),
+        settings.get(),
+        materialize_metadata);
 }
 
 void DatabaseMaterializeMySQL::rethrowExceptionIfNeed() const
@@ -71,7 +91,7 @@ void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_for
     {
         std::unique_lock<std::mutex> lock(mutex);
         nested_database->loadStoredObjects(context, has_force_restore_data_flag, force_attach);
-        materialize_thread.startSynchronization();
+        materialize_thread->startSynchronization();
     }
     catch (...)
     {
@@ -84,7 +104,7 @@ void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_for
 
 void DatabaseMaterializeMySQL::shutdown()
 {
-    materialize_thread.stopSynchronization();
+    materialize_thread->stopSynchronization();
 
     auto iterator = nested_database->getTablesIterator(global_context, {});
 

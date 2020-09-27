@@ -42,8 +42,13 @@ public:
     ~MaterializeMySQLSyncThread();
 
     MaterializeMySQLSyncThread(
-        const Context & context, const String & database_name_, const String & mysql_database_name_
-        , mysqlxx::Pool && pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_);
+        const Context & context,
+        const String & database_name_,
+        const String & mysql_database_name_,
+        mysqlxx::Pool && pool_,
+        MySQLClient && client_,
+        MaterializeMySQLSettings * settings_,
+        MaterializeMetadata & materialize_metadata);
 
     void stopSynchronization();
 
@@ -61,6 +66,7 @@ private:
     mutable mysqlxx::Pool pool;
     mutable MySQLClient client;
     MaterializeMySQLSettings * settings;
+    MaterializeMetadata materialize_metadata;
     String query_prefix;
 
     struct Buffers
@@ -92,15 +98,17 @@ private:
 
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
 
-    std::optional<MaterializeMetadata> prepareSynchronized(const String & mysql_version);
+    bool prepareSynchronized(const String & mysql_version);
 
-    void flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata);
+    void flushBuffersData(Buffers & buffers);
 
-    void onEvent(Buffers & buffers, const MySQLReplication::BinlogEventPtr & event, MaterializeMetadata & metadata);
+    void onEvent(Buffers & buffers, const MySQLReplication::BinlogEventPtr & event);
 
     std::atomic<bool> sync_quit{false};
     std::unique_ptr<ThreadFromGlobalPool> background_thread_pool;
 };
+
+using MaterializeMySQLSyncThreadPtr = std::shared_ptr<MaterializeMySQLSyncThread>;
 
 }
 
