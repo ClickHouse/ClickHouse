@@ -161,11 +161,11 @@ select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,100
 0	0
 Selected 0 parts by partition key, 0 parts by primary key, 0 marks by primary key, 0 marks to read from 0 ranges
 
-select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,1000),'UTC'))+1 > 202009 and toStartOfDay(toDateTime(intDiv(d,1000))) < '2020-10-02 00:00:00';
+select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,1000),'UTC'))+1 > 202009 and toStartOfDay(toDateTime(intDiv(d,1000),'UTC')) < toDateTime('2020-10-02 00:00:00','UTC');
 3	11440
 Selected 3 parts by partition key, 3 parts by primary key, 3 marks by primary key, 3 marks to read from 3 ranges
 
-select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,1000),'UTC'))+1 > 202009 and toDateTime(intDiv(d,1000)) < '2020-10-01 00:00:00';
+select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,1000),'UTC'))+1 > 202009 and toDateTime(intDiv(d,1000),'UTC') < toDateTime('2020-10-01 00:00:00','UTC');
 2	10000
 Selected 2 parts by partition key, 2 parts by primary key, 2 marks by primary key, 2 marks to read from 2 ranges
 
