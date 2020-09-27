@@ -114,13 +114,13 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
         backQuoteIfNeed(mysql_database_name) + ") ";
 }
 
-void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
+void MaterializeMySQLSyncThread::synchronization()
 {
     setThreadName(MYSQL_BACKGROUND_THREAD_NAME);
 
     try
     {
-        if (prepareSynchronized(mysql_version))
+        if (prepareSynchronized())
         {
             Stopwatch watch;
             Buffers buffers(database_name);
@@ -167,10 +167,8 @@ void MaterializeMySQLSyncThread::stopSynchronization()
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
-    const auto & mysql_server_version = "";
-
     background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
-        [this, mysql_server_version = mysql_server_version]() { synchronization(mysql_server_version); });
+        [this]() { synchronization(); });
 }
 
 static inline void cleanOutdatedTables(const String & database_name, const Context & context)
@@ -333,7 +331,7 @@ void fetchMetadata(
     }
 }
 
-bool MaterializeMySQLSyncThread::prepareSynchronized(const String & /*mysql_version*/)
+bool MaterializeMySQLSyncThread::prepareSynchronized()
 {
     bool opened_transaction = false;
     mysqlxx::PoolWithFailover::Entry connection;
