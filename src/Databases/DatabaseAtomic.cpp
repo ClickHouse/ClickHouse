@@ -282,7 +282,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path)
 {
-    bool check_file_exists = supportsRenameat2();
+    bool check_file_exists = true;
     SCOPE_EXIT({ std::error_code code; if (check_file_exists) std::filesystem::remove(table_metadata_tmp_path, code); });
 
     std::unique_lock lock{mutex};
@@ -291,9 +291,8 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
-    if (check_file_exists)
-        renameExchange(table_metadata_tmp_path, table_metadata_path);
-    else
+    check_file_exists = renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
+    if (!check_file_exists)
         std::filesystem::rename(table_metadata_tmp_path, table_metadata_path);
 }
 
@@ -307,7 +306,7 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     /// To avoid it, we remember UUIDs of detached tables and does not allow ATTACH table with such UUID until detached instance still in use.
     if (detached_tables.count(uuid))
         throw Exception("Cannot attach table with UUID " + toString(uuid) +
-              ", because it was detached but still used by come query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
+              ", because it was detached but still used by some query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 DatabaseAtomic::DetachedTables DatabaseAtomic::cleenupDetachedTables()
