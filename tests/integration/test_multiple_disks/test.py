@@ -308,7 +308,7 @@ def get_used_disks_for_table(node, table_name):
 
 def test_no_warning_about_zero_max_data_part_size(start_cluster):
     def get_log(node):
-        return node.exec_in_container(["bash", "-c", "cat /var/log/clickhouse-server/clickhouse-server.log"])
+        return node.exec_in_container(["bash", "-c", "cat /var/log/clickhouse-server/clickhouse-server.log"]).decode()
 
     for node in (node1, node2):
         node.query("""
