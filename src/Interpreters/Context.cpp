@@ -1885,6 +1885,15 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
 #endif
 }
 
+void Context::reloadMergeTreeSettings(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    MergeTreeSettings mt_settings;
+    mt_settings.loadFromConfig("merge_tree", config);
+    shared->merge_tree_settings.emplace(mt_settings);
+}
+
 
 const MergeTreeSettings & Context::getMergeTreeSettings() const
 {

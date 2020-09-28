@@ -23,6 +23,7 @@ try:
 except ImportError:
     termcolor = None
 from random import random
+from random import randint
 import commands
 import multiprocessing
 from contextlib import closing
@@ -111,14 +112,71 @@ def get_db_engine(args):
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
 
-def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
 
+def need_randomize_part_type(case_file, args):
+    def has_in_file(filename, pattern):
+        output = commands.getoutput("grep -o '{}' {}".format(pattern, case_file))
+        return len(output) > 0
+
+    return args.randomize_part_type \
+        and has_in_file(case_file, "MergeTree") \
+        and not has_in_file(case_file, "min_rows_for_wide_part") \
+        and not has_in_file(case_file, "min_bytes_for_wide_part")
+
+
+# Randomize part type to cover in tests more cases and avoid running them twice
+def get_random_part_type_config():
+    part_types_config_template = '''
+<yandex>
+    <merge_tree>
+        <min_bytes_for_wide_part>{}</min_bytes_for_wide_part>
+        <min_rows_for_wide_part>{}</min_rows_for_wide_part>
+    </merge_tree>
+</yandex>'''
+
+    # Create all parts in wide type with probability 1/2
+    if randint(0, 1) == 0:
+        min_bytes_for_wide_part = 0
+        min_rows_for_wide_part = 0
+    else:
+        min_bytes_for_wide_part = randint(0, 10 * 1024 * 1024)
+        min_rows_for_wide_part = randint(0, 100000)
+
+    return part_types_config_template.format(min_bytes_for_wide_part, min_rows_for_wide_part)
+
+
+def reload_config(client):
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    clickhouse_proc.communicate("SYSTEM RELOAD CONFIG")
+
+
+def add_config(config_name, config_content, client):
+    config_path = config_dir + "/config.d/" + config_name
+    try:
+        open(config_path, 'w').write(config_content)
+        reload_config(client)
+    except Exception as e:
+        print('\nCannot add config {}. {}\n'.format(config_path, str(e)))
+
+
+def remove_config(config_name, client):
+    config_path = config_dir + "/config.d/" + config_name
+    if not os.path.exists(config_path):
+        return
+
+    try:
+        os.remove(config_path)
+        reload_config(client)
+    except Exception as e:
+        print("\nCannot remove config {}. {}\n".format(config_path, str(e)))
+
+
+def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
     # print(client_options)
 
     if args.database:
         database = args.database
         os.environ.setdefault("CLICKHOUSE_DATABASE", database)
-
     else:
         # If --database is not specified, we will create temporary database with unique name
         # And we will recreate and drop it for each test
@@ -142,6 +200,14 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         'stdout': stdout_file,
         'stderr': stderr_file,
     }
+
+    additional_context = None
+    randomize_part_type = need_randomize_part_type(case_file, args)
+
+    if randomize_part_type:
+        part_type_config = get_random_part_type_config()
+        add_config("part_types.xml", part_type_config, args.client)
+        additional_context = "In test {} applied config:\n{}\n".format(os.path.split(case_file)[1], part_type_config)
 
     pattern = '{test} > {stdout} 2> {stderr}'
 
@@ -171,8 +237,10 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
     stderr = unicode(stderr, errors='replace', encoding='utf-8')
 
-    return proc, stdout, stderr, total_time
+    if randomize_part_type:
+        remove_config("part_types.xml", args.client)
 
+    return proc, stdout, stderr, total_time, additional_context
 
 def need_retry(stderr):
     return any(msg in stderr for msg in MESSAGES_TO_RETRY)
@@ -313,7 +381,8 @@ def run_tests_array(all_tests_with_params):
                     stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
-                    proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+                    passed = False
+                    proc, stdout, stderr, total_time, additional_context = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                     if proc.returncode is None:
                         try:
                             proc.kill()
@@ -328,7 +397,7 @@ def run_tests_array(all_tests_with_params):
                     else:
                         counter = 1
                         while proc.returncode != 0 and need_retry(stderr):
-                            proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+                            proc, stdout, stderr, total_time, additional_context = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                             sleep(2**counter)
                             counter += 1
                             if counter > 6:
@@ -381,6 +450,7 @@ def run_tests_array(all_tests_with_params):
                                 print_test_time(total_time)
                                 print(" - result differs with reference:\n{}".format(diff))
                             else:
+                                passed = True
                                 passed_total += 1
                                 failures_chain = 0
                                 print(MSG_OK, end='')
@@ -390,6 +460,10 @@ def run_tests_array(all_tests_with_params):
                                     os.remove(stdout_file)
                                 if os.path.exists(stderr_file):
                                     os.remove(stderr_file)
+
+                    if not passed and additional_context:
+                        print(additional_context)
+
         except KeyboardInterrupt as e:
             print(colored("Break tests execution", args, "red"))
             raise e
@@ -520,6 +594,7 @@ def main(args):
     global stop_time
     global exit_code
     global server_logs_level
+    global config_dir
 
     def is_data_present():
         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
@@ -552,6 +627,8 @@ def main(args):
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
+
+    config_dir, _ = os.path.split(os.environ.get("CLICKHOUSE_CONFIG"))
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
@@ -799,6 +876,7 @@ if __name__ == '__main__':
     parser.add_argument('--skip-list-path', help="Path to skip-list file")
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
     parser.add_argument('--db-engine', help='Database engine name')
+    parser.add_argument('--randomize-part-type', action='store_true', default=False, help='Randomizes part type between wide and compact')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')

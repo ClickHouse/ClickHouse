@@ -547,6 +547,7 @@ public:
     /// Provide table name to make required checks.
     std::shared_ptr<PartLog> getPartLog(const String & part_database);
 
+    void reloadMergeTreeSettings(const Poco::Util::AbstractConfiguration & config);
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const StorageS3Settings & getStorageS3Settings() const;
