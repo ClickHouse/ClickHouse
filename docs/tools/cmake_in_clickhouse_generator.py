@@ -98,7 +98,9 @@ def process_folder(root_path:str, name: str) -> None:
             if f == "CMakeLists.txt" or ".cmake" in f:
                 process_file(root, f)
 
-def generate_cmake_flags_files(root_path: str) -> None:
+def generate_cmake_flags_files() -> None:
+    root_path: str = os.path.join(os.path.dirname(__file__), '..', '..')
+
     output_file_name: str = os.path.join(root_path, "docs/en/development/cmake-in-clickhouse.md")
     header_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_header.md")
     footer_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_footer.md")
@@ -132,14 +134,14 @@ def generate_cmake_flags_files(root_path: str) -> None:
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 
-        f.write("\n### External libraries system/bundled mode\n" + table_header)
+        f.write("\n\n### External libraries system/bundled mode\n" + table_header)
 
         for k in sorted_keys:
             if k.startswith("USE_INTERNAL_"):
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 
-        f.write("\n### Other flags\n" + table_header)
+        f.write("\n\n### Other flags\n" + table_header)
 
         for k in sorted(set(sorted_keys).difference(set(ignored_keys))):
             f.write(entities[k][1] + "\n")
@@ -149,4 +151,4 @@ def generate_cmake_flags_files(root_path: str) -> None:
 
 
 if __name__ == '__main__':
-    generate_cmake_flags_files("../../")
+    generate_cmake_flags_files()
