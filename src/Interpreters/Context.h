@@ -360,6 +360,9 @@ public:
     String getInitialQueryId() const;
 
     void setCurrentDatabase(const String & name);
+    /// Set current_database for global context. We don't validate that database
+    /// exists because it should be set before databases loading.
+    void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery();

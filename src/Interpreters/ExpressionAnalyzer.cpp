@@ -525,7 +525,7 @@ static bool allowDictJoin(StoragePtr joined_storage, const Context & context, St
     if (!dict)
         return false;
 
-    dict_name = dict->dictionaryName();
+    dict_name = dict->resolvedDictionaryName();
     auto dictionary = context.getExternalDictionariesLoader().getDictionary(dict_name);
     if (!dictionary)
         return false;
