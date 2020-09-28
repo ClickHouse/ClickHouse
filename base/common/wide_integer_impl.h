@@ -439,39 +439,103 @@ private:
     constexpr static auto multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
         integer<Bits, Signed> res{};
-#if 1
-        integer<Bits, Signed> lhs2 = plus(lhs, shift_left(lhs, 1));
-        integer<Bits, Signed> lhs3 = plus(lhs2, shift_left(lhs, 2));
-#endif
-        for (unsigned i = 0; i < item_count; ++i)
+
+        if constexpr (Bits == 256 && sizeof(base_type) == 8)
         {
-            base_type rhs_item = get_item(rhs, i);
-            unsigned pos = i * base_bits;
+            /// @sa https://github.com/abseil/abseil-cpp/blob/master/absl/numeric/int128.h
+            using FullType = integer<Bits, unsigned>;
+            using HalfType = unsigned __int128;
 
-            while (rhs_item)
+            HalfType a01 = (HalfType(lhs.items[little(1)]) << 64) + lhs.items[little(0)];
+            HalfType a23 = (HalfType(lhs.items[little(3)]) << 64) + lhs.items[little(2)];
+            HalfType a0 = lhs.items[little(0)];
+            HalfType a1 = lhs.items[little(1)];
+
+            HalfType b01 = rhs;
+            HalfType b0 = b01 & std::numeric_limits<uint64_t>::max();
+            HalfType b1 = 0;
+            HalfType b23 = 0;
+            if constexpr (sizeof(T) > 8)
+                b1 = b01 >> (Bits / 4);
+            if constexpr (sizeof(T) > 16)
+                b23 = rhs >> (Bits / 2);
+
+            HalfType r23 = a23 * b01 + a01 * b23 + a1 * b1;
+            HalfType r01 = a0 * b0;
+            HalfType r12 = a1 * b0;
+
+            res.items[little(0)] = r01;
+            res.items[little(1)] = r01 >> 64;
+            res.items[little(2)] = r23;
+            res.items[little(3)] = r23 >> 64;
+
+            FullType tmp;
+
+            if constexpr (sizeof(T) > 8)
             {
-#if 1 /// optimization
-                if ((rhs_item & 0x7) == 0x7)
-                {
-                    res = plus(res, shift_left(lhs3, pos));
-                    rhs_item >>= 3;
-                    pos += 3;
-                    continue;
-                }
+                HalfType r12_x = a0 * b1;
 
-                if ((rhs_item & 0x3) == 0x3)
+                tmp.items[little(0)] = 0;
+                tmp.items[little(1)] = r12 + r12_x;
+                tmp.items[little(2)] = (r12 >> 64) + (r12_x >> 64);
+                tmp.items[little(3)] = 0;
+
+                if (tmp.items[little(2)] < (r12 >> 64))
+                    ++tmp.items[little(3)];
+
+                if (tmp.items[little(1)] < r12)
                 {
-                    res = plus(res, shift_left(lhs2, pos));
-                    rhs_item >>= 2;
-                    pos += 2;
-                    continue;
+                    ++tmp.items[little(2)];
+                    if (tmp.items[little(2)] == 0)
+                        ++tmp.items[little(3)];
                 }
+            }
+            else
+            {
+                tmp.items[little(0)] = 0;
+                tmp.items[little(1)] = r12;
+                tmp.items[little(2)] = (r12 >> 64);
+                tmp.items[little(3)] = 0;
+            }
+
+            res += tmp;
+        }
+        else
+        {
+#if 1
+            integer<Bits, Signed> lhs2 = plus(lhs, shift_left(lhs, 1));
+            integer<Bits, Signed> lhs3 = plus(lhs2, shift_left(lhs, 2));
 #endif
-                if (rhs_item & 1)
-                    res = plus(res, shift_left(lhs, pos));
+            for (unsigned i = 0; i < item_count; ++i)
+            {
+                base_type rhs_item = get_item(rhs, i);
+                unsigned pos = i * base_bits;
 
-                rhs_item >>= 1;
-                ++pos;
+                while (rhs_item)
+                {
+#if 1 /// optimization
+                    if ((rhs_item & 0x7) == 0x7)
+                    {
+                        res = plus(res, shift_left(lhs3, pos));
+                        rhs_item >>= 3;
+                        pos += 3;
+                        continue;
+                    }
+
+                    if ((rhs_item & 0x3) == 0x3)
+                    {
+                        res = plus(res, shift_left(lhs2, pos));
+                        rhs_item >>= 2;
+                        pos += 2;
+                        continue;
+                    }
+#endif
+                    if (rhs_item & 1)
+                        res = plus(res, shift_left(lhs, pos));
+
+                    rhs_item >>= 1;
+                    ++pos;
+                }
             }
         }
 
