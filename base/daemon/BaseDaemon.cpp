@@ -781,7 +781,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 void BaseDaemon::logRevision() const
 {
     Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
-        + " with revision " + std::to_string(ClickHouseRevision::get())
+        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
 }
