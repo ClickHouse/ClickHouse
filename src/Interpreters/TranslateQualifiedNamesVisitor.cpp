@@ -228,6 +228,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 
     for (const auto & child : old_children)
     {
+        ASTs columns;
         if (const auto * asterisk = child->as<ASTAsterisk>())
         {
             bool first_table = true;
@@ -237,7 +238,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     if (first_table || !data.join_using_columns.count(column.name))
                     {
-                        addIdentifier(node.children, table.table, column.name, AsteriskSemantic::getAliases(*asterisk));
+                        addIdentifier(columns, table.table, column.name, AsteriskSemantic::getAliases(*asterisk));
                     }
                 }
 
@@ -245,7 +246,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             }
             for (const auto & transformer : asterisk->children)
             {
-                IASTColumnsTransformer::transform(transformer, node.children);
+                IASTColumnsTransformer::transform(transformer, columns);
             }
         }
         else if (const auto * asterisk_pattern = child->as<ASTColumnsMatcher>())
@@ -253,7 +254,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (asterisk_pattern->column_list)
             {
                 for (const auto & ident : asterisk_pattern->column_list->children)
-                    node.children.emplace_back(ident->clone());
+                    columns.emplace_back(ident->clone());
             }
             else
             {
@@ -264,7 +265,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     {
                         if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
                         {
-                            addIdentifier(node.children, table.table, column.name, AsteriskSemantic::getAliases(*asterisk_pattern));
+                            addIdentifier(columns, table.table, column.name, AsteriskSemantic::getAliases(*asterisk_pattern));
                         }
                     }
 
@@ -274,7 +275,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             // ColumnsMatcher's transformers start to appear at child 1
             for (auto it = asterisk_pattern->children.begin() + 1; it != asterisk_pattern->children.end(); ++it)
             {
-                IASTColumnsTransformer::transform(*it, node.children);
+                IASTColumnsTransformer::transform(*it, columns);
             }
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
@@ -287,7 +288,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     for (const auto & column : table.columns)
                     {
-                        addIdentifier(node.children, table.table, column.name, AsteriskSemantic::getAliases(*qualified_asterisk));
+                        addIdentifier(columns, table.table, column.name, AsteriskSemantic::getAliases(*qualified_asterisk));
                     }
                     break;
                 }
@@ -295,11 +296,16 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             // QualifiedAsterisk's transformers start to appear at child 1
             for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
             {
-                IASTColumnsTransformer::transform(*it, node.children);
+                IASTColumnsTransformer::transform(*it, columns);
             }
         }
         else
-            node.children.emplace_back(child);
+            columns.emplace_back(child);
+
+        node.children.insert(
+            node.children.end(),
+            std::make_move_iterator(columns.begin()),
+            std::make_move_iterator(columns.end()));
     }
 }
 
