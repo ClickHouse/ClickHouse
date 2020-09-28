@@ -8,7 +8,7 @@ TMP_DIR="/tmp"
 $CLICKHOUSE_CLIENT -n --query="
 DROP DATABASE IF EXISTS test_01037;
 
-CREATE DATABASE test_01037 Engine = Ordinary;
+CREATE DATABASE test_01037;
 
 DROP TABLE IF EXISTS test_01037.polygons_array;
 

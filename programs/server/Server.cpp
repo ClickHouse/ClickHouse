@@ -339,16 +339,23 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))
             {
-                /// Get the memory area with (current) code segment.
-                /// It's better to lock only the code segment instead of calling "mlockall",
-                /// because otherwise debug info will be also locked in memory, and it can be huge.
-                auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
+                try
+                {
+                    /// Get the memory area with (current) code segment.
+                    /// It's better to lock only the code segment instead of calling "mlockall",
+                    /// because otherwise debug info will be also locked in memory, and it can be huge.
+                    auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
 
-                LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
-                if (0 != mlock(addr, len))
-                    LOG_WARNING(log, "Failed mlock: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
-                else
-                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
+                    LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
+                    if (0 != mlock(addr, len))
+                        LOG_WARNING(log, "Failed mlock: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
+                    else
+                        LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
+                }
+                catch (...)
+                {
+                    LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
+                }
             }
             else
             {
@@ -664,6 +671,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+    /// Set current database name before loading tables and databases because
+    /// system logs may copy global context.
+    global_context->setCurrentDatabaseNameInGlobalContext(default_database);
+
     LOG_INFO(log, "Loading metadata from {}", path);
 
     try
@@ -671,11 +682,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
         loadMetadataSystem(*global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
+        auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-        attachSystemTablesServer(*DatabaseCatalog::instance().getSystemDatabase(), has_zookeeper);
+        attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
         /// Then, load remaining databases
         loadMetadata(*global_context, default_database);
-        DatabaseCatalog::instance().loadDatabases();
+        database_catalog.loadDatabases();
+        /// After loading validate that default database exists
+        database_catalog.assertDatabaseExists(default_database);
     }
     catch (...)
     {
@@ -737,8 +751,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
-
-    global_context->setCurrentDatabase(default_database);
 
     if (has_zookeeper && config().has("distributed_ddl"))
     {

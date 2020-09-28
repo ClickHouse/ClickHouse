@@ -45,6 +45,7 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
+
 def subprocess_check_call(args):
     # Uncomment for debugging
     # print('run:', ' ' . join(args))
@@ -124,7 +125,6 @@ class ClickHouseCluster:
         self.base_zookeeper_cmd = None
         self.base_mysql_cmd = []
         self.base_kafka_cmd = []
-        self.base_kerberized_kafka_cmd = []
         self.base_rabbitmq_cmd = []
         self.base_cassandra_cmd = []
         self.pre_zookeeper_commands = []
@@ -133,7 +133,6 @@ class ClickHouseCluster:
         self.with_mysql = False
         self.with_postgres = False
         self.with_kafka = False
-        self.with_kerberized_kafka = False
         self.with_rabbitmq = False
         self.with_odbc_drivers = False
         self.with_hdfs = False
@@ -170,7 +169,7 @@ class ClickHouseCluster:
 
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None,
-                     with_zookeeper=False, with_mysql=False, with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False,
+                     with_zookeeper=False, with_mysql=False, with_kafka=False, with_rabbitmq=False,
                      clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
@@ -208,7 +207,6 @@ class ClickHouseCluster:
             zookeeper_config_path=self.zookeeper_config_path,
             with_mysql=with_mysql,
             with_kafka=with_kafka,
-            with_kerberized_kafka=with_kerberized_kafka,
             with_rabbitmq=with_rabbitmq,
             with_mongo=with_mongo,
             with_redis=with_redis,
@@ -291,13 +289,6 @@ class ClickHouseCluster:
                                    self.project_name, '--file',
                                    p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
-
-        if with_kerberized_kafka and not self.with_kerberized_kafka:
-            self.with_kerberized_kafka = True
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')])
-            self.base_kerberized_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')]
-            cmds.append(self.base_kerberized_kafka_cmd)
 
         if with_rabbitmq and not self.with_rabbitmq:
             self.with_rabbitmq = True
@@ -495,8 +486,8 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                connection.database_names()
-                print "Connected to Mongo dbs:", connection.database_names()
+                connection.list_database_names()
+                print "Connected to Mongo dbs:", connection.list_database_names()
                 return
             except Exception as ex:
                 print "Can't connect to Mongo " + str(ex)
@@ -617,11 +608,6 @@ class ClickHouseCluster:
                 self.kafka_docker_id = self.get_instance_docker_id('kafka1')
                 self.wait_schema_registry_to_start(120)
 
-            if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
-                env = os.environ.copy()
-                env['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
-                subprocess.check_call(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], env=env)
-                self.kerberized_kafka_docker_id = self.get_instance_docker_id('kerberized_kafka1')
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
                 self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
@@ -802,12 +788,9 @@ services:
             - {instance_config_dir}:/etc/clickhouse-server/
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
-            - /etc/passwd:/etc/passwd:ro
             {binary_volume}
             {odbc_bridge_volume}
             {odbc_ini_path}
-            {keytab_path}
-            {krb5_conf}
         entrypoint: {entrypoint_cmd}
         tmpfs: {tmpfs}
         cap_add:
@@ -837,7 +820,7 @@ class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
-            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_kerberized_kafka, with_rabbitmq, with_mongo,
+            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo,
             with_redis, with_minio,
             with_cassandra, server_bin_path, odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers,
             hostname=None, env_variables=None,
@@ -856,7 +839,6 @@ class ClickHouseInstance:
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
         self.custom_dictionaries_paths = [p.abspath(p.join(base_path, c)) for c in custom_dictionaries]
         self.clickhouse_path_dir = p.abspath(p.join(base_path, clickhouse_path_dir)) if clickhouse_path_dir else None
-        self.kerberos_secrets_dir = p.abspath(p.join(base_path, 'secrets'))
         self.macros = macros if macros is not None else {}
         self.with_zookeeper = with_zookeeper
         self.zookeeper_config_path = zookeeper_config_path
@@ -866,7 +848,6 @@ class ClickHouseInstance:
 
         self.with_mysql = with_mysql
         self.with_kafka = with_kafka
-        self.with_kerberized_kafka = with_kerberized_kafka
         self.with_rabbitmq = with_rabbitmq
         self.with_mongo = with_mongo
         self.with_redis = with_redis
@@ -881,13 +862,6 @@ class ClickHouseInstance:
             self.with_mysql = True
         else:
             self.odbc_ini_path = ""
-
-        if with_kerberized_kafka:
-            self.keytab_path = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets:/tmp/keytab"
-            self.krb5_conf = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets/krb.conf:/etc/krb5.conf:ro"
-        else:
-            self.keytab_path = ""
-            self.krb5_conf = ""
 
         self.docker_client = None
         self.ip_address = None
@@ -1218,9 +1192,6 @@ class ClickHouseInstance:
         if self.with_zookeeper:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
-        if self.with_kerberized_kafka:
-            shutil.copytree(self.kerberos_secrets_dir, p.abspath(p.join(self.path, 'secrets')))
-
         # Copy config.d configs
         print "Copy custom test config files {} to {}".format(self.custom_main_config_paths, self.config_d_dir)
         for path in self.custom_main_config_paths:
@@ -1255,9 +1226,6 @@ class ClickHouseInstance:
         if self.with_kafka:
             depends_on.append("kafka1")
             depends_on.append("schema-registry")
-
-        if self.with_kerberized_kafka:
-            depends_on.append("kerberized_kafka1")
 
         if self.with_rabbitmq:
             depends_on.append("rabbitmq1")
@@ -1322,8 +1290,6 @@ class ClickHouseInstance:
                 user=os.getuid(),
                 env_file=env_file,
                 odbc_ini_path=odbc_ini_path,
-                keytab_path=self.keytab_path,
-                krb5_conf=self.krb5_conf,
                 entrypoint_cmd=entrypoint_cmd,
                 networks=networks,
                 app_net=app_net,

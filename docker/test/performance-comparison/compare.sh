@@ -726,8 +726,8 @@ create view shortness
 create table inconsistent_short_marking_report
     engine File(TSV, 'report/unexpected-query-duration.tsv')
     as select
-        multiIf(marked_short and time > 0.1, '"short" queries must run faster than 0.02 s',
-                not marked_short and time < 0.02, '"normal" queries must run longer than 0.1 s',
+        multiIf(marked_short and time > 0.1, '\"short\" queries must run faster than 0.02 s',
+                not marked_short and time < 0.02, '\"normal\" queries must run longer than 0.1 s',
                 '') problem,
         marked_short, time,
         test, query_index, query_display_name
@@ -1065,7 +1065,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || restart && get_profiles ) ||:
+    ( get_profiles || { restart && get_profiles ; } ) ||:
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.
