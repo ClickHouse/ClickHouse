@@ -21,7 +21,8 @@ def started_cluster():
 
         node1.query('''
             CREATE TABLE non_replicated_mt(date Date, id UInt32, value Int32)
-            ENGINE = MergeTree() PARTITION BY toYYYYMM(date) ORDER BY id;
+            ENGINE = MergeTree() PARTITION BY toYYYYMM(date) ORDER BY id
+            SETTINGS min_bytes_for_wide_part=0;
         ''')
 
         yield cluster

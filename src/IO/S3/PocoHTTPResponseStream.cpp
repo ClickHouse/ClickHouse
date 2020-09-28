@@ -1,3 +1,8 @@
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
+
 #include "PocoHTTPResponseStream.h"
 
 #include <utility>
@@ -10,3 +15,5 @@ PocoHTTPResponseStream::PocoHTTPResponseStream(std::shared_ptr<Poco::Net::HTTPCl
 }
 
 }
+
+#endif

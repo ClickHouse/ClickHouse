@@ -88,45 +88,10 @@
     ],
     "release-build": [
     ],
-    "database-atomic": [
-        /// Inner tables of materialized views have different names
-        "00738_lock_for_inner_table",
+    "database-ordinary": [
+        "00604_show_create_database",
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
-        /// Different database engine
-        "00604_show_create_database",
-        /// UUID must be specified in ATTACH TABLE
-        "01190_full_attach_syntax",
-        /// Assumes blocking DROP
-        "01320_create_sync_race_condition",
-        /// Internal distionary name is different
-        "01225_show_create_table_from_dictionary",
-        "01224_no_superfluous_dict_reload"
-    ],
-    "polymorphic-parts": [
-        /// These tests fail with compact parts, because they
-        /// check some implementation defined things
-        /// like checksums, computed granularity, ProfileEvents, etc.
-        "01045_order_by_pk_special_storages",
-        "01042_check_query_and_last_granule_size",
-        "00961_checksums_in_system_parts_columns_table",
-        "00933_test_fix_extra_seek_on_compressed_cache",
-        "00926_adaptive_index_granularity_collapsing_merge_tree",
-        "00926_adaptive_index_granularity_merge_tree",
-        "00926_adaptive_index_granularity_replacing_merge_tree",
-        "00926_adaptive_index_granularity_versioned_collapsing_merge_tree",
-        "00804_test_delta_codec_compression",
-        "00731_long_merge_tree_select_opened_files",
-        "00653_verification_monotonic_data_load",
-        "00484_preferred_max_column_in_block_size_bytes",
-        "00446_clear_column_in_partition_zookeeper",
-        "00443_preferred_block_size_bytes",
-        "00160_merge_and_index_in_in",
-        "01055_compact_parts",
-        "01039_mergetree_exec_time",
-        "00933_ttl_simple", /// Maybe it's worth to fix it
-        "00753_system_columns_and_system_tables",
-        "01343_min_bytes_to_use_mmap_io",
-        "01344_min_bytes_to_use_mmap_io_index"
+        "00738_lock_for_inner_table"
     ]
 }

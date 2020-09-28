@@ -228,7 +228,7 @@ struct AggregationMethodString
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -254,7 +254,7 @@ struct AggregationMethodStringNoCache
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -280,7 +280,7 @@ struct AggregationMethodFixedString
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -305,7 +305,7 @@ struct AggregationMethodFixedStringNoCache
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 

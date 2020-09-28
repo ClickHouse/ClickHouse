@@ -16,7 +16,7 @@ def started_cluster():
         instance_test_mutations.query(
             '''CREATE TABLE test_mutations_with_ast_elements(date Date, a UInt64, b String) ENGINE = MergeTree(date, (a, date), 8192)''')
         instance_test_mutations.query(
-            '''INSERT INTO test_mutations_with_ast_elements SELECT '2019-07-29' AS date, 1, toString(number) FROM numbers(1)''')
+            '''INSERT INTO test_mutations_with_ast_elements SELECT '2019-07-29' AS date, 1, toString(number) FROM numbers(1) SETTINGS force_index_by_date = 0, force_primary_key = 0''')
         yield cluster
     finally:
         cluster.shutdown()
@@ -38,14 +38,14 @@ def test_mutations_with_merge_background_task(started_cluster):
             instance_test_mutations.query('''DETACH TABLE test_mutations_with_ast_elements''')
             instance_test_mutations.query('''ATTACH TABLE test_mutations_with_ast_elements''')
             return int(instance.query(
-                "SELECT sum(is_done) FROM system.mutations WHERE table = 'test_mutations_with_ast_elements'").rstrip())
+                "SELECT sum(is_done) FROM system.mutations WHERE table = 'test_mutations_with_ast_elements' SETTINGS force_index_by_date = 0, force_primary_key = 0").rstrip())
 
         if get_done_mutations(instance_test_mutations) == 100:
             all_done = True
             break
 
     print instance_test_mutations.query(
-        "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations_with_ast_elements' FORMAT TSVWithNames")
+        "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations_with_ast_elements' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT TSVWithNames")
     assert all_done
 
 
@@ -59,4 +59,4 @@ def test_mutations_with_truncate_table(started_cluster):
 
     instance_test_mutations.query("TRUNCATE TABLE test_mutations_with_ast_elements")
     assert instance_test_mutations.query(
-        "SELECT COUNT() FROM system.mutations WHERE table = 'test_mutations_with_ast_elements'").rstrip() == '0'
+        "SELECT COUNT() FROM system.mutations WHERE table = 'test_mutations_with_ast_elements SETTINGS force_index_by_date = 0, force_primary_key = 0'").rstrip() == '0'
