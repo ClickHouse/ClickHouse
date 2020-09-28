@@ -277,16 +277,16 @@ void CacheDictionary::getString(
 }
 
 template<class... Ts>
-struct overloaded : Ts... {using Ts::operator()...;};
+struct Overloaded : Ts... {using Ts::operator()...;};
 
 template<class... Ts>
-overloaded(Ts...) -> overloaded<Ts...>;
+Overloaded(Ts...) -> Overloaded<Ts...>;
 
 std::string CacheDictionary::AttributeValuesForKey::dump()
 {
     std::ostringstream os;
     for (auto & attr : values)
-        std::visit(overloaded {
+        std::visit(Overloaded {
             [&os](UInt8 arg)   { os << "type: UInt8, value: "   <<  std::to_string(arg) << "\n"; },
             [&os](UInt16 arg)  { os << "type: UInt16, value: "  <<  std::to_string(arg) << "\n"; },
             [&os](UInt32 arg)  { os << "type: UInt32, value: "  <<  std::to_string(arg) << "\n"; },
@@ -586,40 +586,38 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
     switch (attribute.type)
     {
         case AttributeUnderlyingType::utUInt8:
-            /// Strange code. Why UInt8 and UInt64? I looked through the history. It's always been like this.
-            std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.safeGet<UInt64>();
+            std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
         case AttributeUnderlyingType::utUInt16:
-            std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.safeGet<UInt64>();
+            std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
         case AttributeUnderlyingType::utUInt32:
-            std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.safeGet<UInt64>();
+            std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
         case AttributeUnderlyingType::utUInt64:
-            std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.safeGet<UInt64>();
+            std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
         case AttributeUnderlyingType::utUInt128:
-            std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = value.safeGet<UInt128>();
+            std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = value.get<UInt128>();
             break;
         case AttributeUnderlyingType::utInt8:
-            std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.safeGet<Int64>();
+            std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
         case AttributeUnderlyingType::utInt16:
-            std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.safeGet<Int64>();
+            std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
         case AttributeUnderlyingType::utInt32:
-            std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.safeGet<Int64>();
+            std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
         case AttributeUnderlyingType::utInt64:
-            std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.safeGet<Int64>();
+            std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
         case AttributeUnderlyingType::utFloat32:
-            std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.safeGet<Float64>();
+            std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>();
             break;
         case AttributeUnderlyingType::utFloat64:
-            std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.safeGet<Float64>();
+            std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>();
             break;
-
         case AttributeUnderlyingType::utDecimal32:
             std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = value.get<Decimal32>();
             break;
@@ -655,63 +653,6 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
     }
 }
 
-
-void CacheDictionary::setAttributeInPlace(AttributeValue & place, AttributeUnderlyingType type, const Field & value) const
-{
-    switch (type)
-    {
-        case AttributeUnderlyingType::utUInt8:
-            place = static_cast<UInt8>(value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            place = static_cast<UInt16>(value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            place = static_cast<UInt32>(value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            place = value.get<UInt64>();
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            place = value.get<UInt128>();
-            break;
-        case AttributeUnderlyingType::utInt8:
-            place = static_cast<Int8>(value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt16:
-            place = static_cast<Int16>(value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt32:
-            place = static_cast<Int32>(value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt64:
-            place = value.get<Int64>();
-            break;
-        case AttributeUnderlyingType::utFloat32:
-        {
-            place = static_cast<Float32>(value.get<Float64>());
-            break;
-        }
-        case AttributeUnderlyingType::utFloat64:
-            place = value.get<Float64>();
-            break;
-        case AttributeUnderlyingType::utDecimal32:
-            place = value.get<Decimal32>();
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            place = value.get<Decimal64>();
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            place = value.get<Decimal128>();
-            break;
-        case AttributeUnderlyingType::utString:
-        {
-            /// FIXME: Work with arena.
-            place = value.get<String>();
-            break;
-        }
-    }
-}
 
 CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & attribute_name) const
 {
@@ -919,6 +860,95 @@ void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_pt
                 std::to_string(update_queue.size()));
 }
 
+
+std::vector<CacheDictionary::AttributeValue> CacheDictionary::getAttributeValuesFromBlockAtPosition(const std::vector<const IColumn *> & column_ptrs, size_t position) 
+{
+    std::vector<AttributeValue> answer;
+    answer.reserve(column_ptrs.size());
+
+    for (size_t i = 0; i < column_ptrs.size(); ++i) 
+    {
+        const auto pure_column = column_ptrs[i];
+        
+        if (auto column = typeid_cast<const ColumnUInt8 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        } 
+        if (auto column = typeid_cast<const ColumnUInt16 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        } 
+        if (auto column = typeid_cast<const ColumnUInt32 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        } 
+        if (auto column = typeid_cast<const ColumnUInt64 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        } 
+        if (auto column = typeid_cast<const ColumnUInt128 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        } 
+        if (auto column = typeid_cast<const ColumnInt8 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        } 
+        if (auto column = typeid_cast<const ColumnInt16 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        } 
+        if (auto column = typeid_cast<const ColumnInt32 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        } 
+        if (auto column = typeid_cast<const ColumnInt64 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        } 
+        if (auto column = typeid_cast<const ColumnFloat32 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        } 
+        if (auto column = typeid_cast<const ColumnFloat64 *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        }
+        if (auto column = typeid_cast<const ColumnDecimal<Decimal32> *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        }
+        if (auto column = typeid_cast<const ColumnDecimal<Decimal64> *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        }
+        if (auto column = typeid_cast<const ColumnDecimal<Decimal128> *>(pure_column)) 
+        {
+            answer.emplace_back(column->getElement(position));
+            continue;
+        }
+        if (auto column = typeid_cast<const ColumnString *>(pure_column)) 
+        {
+            answer.emplace_back(column->getDataAt(position).toString());
+            continue;
+        }
+    }
+    return answer;
+}
+
 void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
@@ -983,16 +1013,13 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
 
                     auto & all_attributes = it->second;
                     all_attributes.found = true;
-                    all_attributes.values.assign(attributes.size(), {});
+                    all_attributes.values = getAttributeValuesFromBlockAtPosition(column_ptrs, i);
 
                     for (const auto attribute_idx : ext::range(0, attributes.size()))
                     {
                         const auto & attribute_column = *column_ptrs[attribute_idx];
                         auto & attribute = attributes[attribute_idx];
 
-                        auto & place_for_attribute = all_attributes.values[attribute_idx];
-
-                        setAttributeInPlace(place_for_attribute, attribute.type, attribute_column[i]);
                         setAttributeValue(attribute, cell_idx, attribute_column[i]);
                     }
 
