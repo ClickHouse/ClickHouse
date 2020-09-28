@@ -936,6 +936,7 @@ StoragePtr Context::getViewSource()
 
 Settings Context::getSettings() const
 {
+    auto lock = getLock();
     return settings;
 }
 
