@@ -43,7 +43,7 @@ def test_partition_simple(partition_table_simple):
 
 def exec_bash(cmd):
     cmd = '/bin/bash -c "{}"'.format(cmd.replace('"', '\\"'))
-    return instance.exec_in_container(cmd)
+    return instance.exec_in_container(cmd).decode()
 
 
 def partition_complex_assert_columns_txt():
