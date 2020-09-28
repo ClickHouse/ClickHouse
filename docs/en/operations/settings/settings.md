@@ -1144,9 +1144,9 @@ See also:
 
 ## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
-Write to quorum timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
+Write to quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
-Default value: 60 seconds.
+Default value: 600000 milliseconds.
 
 See also:
 
