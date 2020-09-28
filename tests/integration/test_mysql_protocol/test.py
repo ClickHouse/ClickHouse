@@ -238,7 +238,9 @@ def test_mysql_federated(mysql_server, server_address):
         node.query('''INSERT INTO mysql_federated.test VALUES (0), (1), (5)''', settings={"password": "123"})
 
         def check_retryable_error_in_stderr(stderr):
-            return "Can't connect to local MySQL server through socket" in stderr or "MySQL server has gone away" in stderr
+            return ("Can't connect to local MySQL server through socket" in stderr
+                    or "MySQL server has gone away" in stderr
+                    or "Server shutdown in progress" in stderr)
 
         code, (stdout, stderr) = mysql_server.exec_run('''
             mysql
