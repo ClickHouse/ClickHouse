@@ -14,7 +14,7 @@ class HDFSApi(object):
         self.http_data_port = "50075"
         self.user = user
 
-    def read_data(self, path):
+    def read_data(self, path, universal_newlines=True):
         response = requests.get(
             "http://{host}:{port}/webhdfs/v1{path}?op=OPEN".format(host=self.host, port=self.http_proxy_port,
                                                                    path=path), allow_redirects=False)
@@ -27,7 +27,10 @@ class HDFSApi(object):
         if response_data.status_code != 200:
             response_data.raise_for_status()
 
-        return response_data.text
+        if universal_newlines:
+            return response_data.text
+        else:
+            return response_data.content
 
     # Requests can't put file
     def _curl_to_put(self, filename, path, params):
@@ -64,4 +67,4 @@ class HDFSApi(object):
         self.write_data(path, out.getvalue())
 
     def read_gzip_data(self, path):
-        return gzip.GzipFile(fileobj=io.StringIO(self.read_data(path))).read()
+        return gzip.GzipFile(fileobj=io.StringIO(self.read_data(path, universal_newlines=False))).read()
