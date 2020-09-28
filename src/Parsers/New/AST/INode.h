@@ -17,7 +17,9 @@ class INode : public TypePromotion<INode>
 {
     public:
         virtual ~INode() = default;
+
         virtual ASTPtr convertToOld() const { return ASTPtr(); }
+        virtual String toString() const { return {}; }
 
         void dump() const { dump(0); }
 

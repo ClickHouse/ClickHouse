@@ -3,6 +3,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/New/AST/ColumnTypeExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
@@ -250,7 +251,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprCast(ClickHouseParser::ColumnExpr
     auto params = std::make_shared<ColumnParamList>();
 
     args->push(visit(ctx->columnExpr()));
-    // TODO: params->append(Literal::createString(???));
+    args->push(ColumnExpr::createLiteral(Literal::createString(visit(ctx->columnTypeExpr()).as<PtrTo<ColumnTypeExpr>>()->toString())));
 
     return ColumnExpr::createFunction(std::make_shared<Identifier>("cast"), params, args);
 }

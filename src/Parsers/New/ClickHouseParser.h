@@ -173,12 +173,13 @@ public:
     QueryStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     QueryContext *query();
+    antlr4::tree::TerminalNode *SEMICOLON();
+    antlr4::tree::TerminalNode *EOF();
     antlr4::tree::TerminalNode *INTO();
     antlr4::tree::TerminalNode *OUTFILE();
     antlr4::tree::TerminalNode *STRING_LITERAL();
     antlr4::tree::TerminalNode *FORMAT();
     IdentifierOrNullContext *identifierOrNull();
-    antlr4::tree::TerminalNode *SEMICOLON();
     InsertStmtContext *insertStmt();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -2229,7 +2230,6 @@ public:
     antlr4::tree::TerminalNode *ANTI();
     antlr4::tree::TerminalNode *ANY();
     antlr4::tree::TerminalNode *ARRAY();
-    antlr4::tree::TerminalNode *AS();
     antlr4::tree::TerminalNode *ASOF();
     antlr4::tree::TerminalNode *ATTACH();
     antlr4::tree::TerminalNode *BETWEEN();
