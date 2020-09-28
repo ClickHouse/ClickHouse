@@ -66,6 +66,20 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
+## custom_settings_prefixes {#custom_settings_prefixes}
+
+List of prefixes for [custom settings](../../operations/settings/index.md#custom_settings). The prefixes must be separated with commas.
+
+**Example**
+
+```xml
+<custom_settings_prefixes>custom_</custom_settings_prefixes>
+```
+
+**See Also**
+
+-   [Custom settings](../../operations/settings/index.md#custom_settings)
+
 ## default\_database {#default-database}
 
 The default database.
