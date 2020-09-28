@@ -124,6 +124,9 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
         clickhouse_node.query("INSERT INTO `test_database`.`test_table`(`i``d`) select number from numbers(10000)")
         assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '10000'
 
+        clickhouse_node.query("DROP DATABASE test_database")
+        assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
+
         mysql_node.query("DROP DATABASE test_database")
 
 
@@ -184,6 +187,8 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         clickhouse_node.query("ATTACH DATABASE test_database_1")
         assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
 
+        clickhouse_node.query("DROP DATABASE test_database")
+        assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
         mysql_node.query("DROP DATABASE test")
 
 
