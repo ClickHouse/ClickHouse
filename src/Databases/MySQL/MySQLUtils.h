@@ -18,7 +18,6 @@ namespace DB {
 
 String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection);
 
-#if 0
 Context createQueryContext(const Context & global_context);
 
 BlockIO tryToExecuteQuery(
@@ -27,7 +26,9 @@ BlockIO tryToExecuteQuery(
     const String & database,
     const String & comment);
 
+#if 0
 DatabaseMaterializeMySQL & getDatabase(const String & database_name);
+#endif
 
 BlockOutputStreamPtr getTableOutput(
     const String & database_name,
@@ -35,6 +36,7 @@ BlockOutputStreamPtr getTableOutput(
     Context & query_context,
     bool insert_materialized = false);
 
+#if 0
 std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entry & connection, const std::string & database);
 
 std::unordered_map<String, String> fetchTablesCreateQuery(

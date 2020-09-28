@@ -10,10 +10,11 @@
 #    include <random>
 #    include <Columns/ColumnTuple.h>
 #    include <DataStreams/CountingBlockOutputStream.h>
-#    include <DataStreams/OneBlockInputStream.h>
+#    include <DataStreams/IBlockStream_fwd.h>
 #    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
+#    include <Databases/MySQL/MySQLUtils.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <Interpreters/Context.h>
@@ -37,38 +38,6 @@ namespace ErrorCodes
 }
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
-
-static Context createQueryContext(const Context & global_context)
-{
-    Settings new_query_settings = global_context.getSettings();
-    new_query_settings.insert_allow_materialized_columns = true;
-
-    Context query_context(global_context);
-    query_context.setSettings(new_query_settings);
-    CurrentThread::QueryScope query_scope(query_context);
-
-    query_context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    query_context.setCurrentQueryId(""); // generate random query_id
-    return query_context;
-}
-
-static BlockIO tryToExecuteQuery(const String & query_to_execute, Context & query_context, const String & database, const String & comment)
-{
-    try
-    {
-        if (!database.empty())
-            query_context.setCurrentDatabase(database);
-
-        return executeQuery("/*" + comment + "*/ " + query_to_execute, query_context, true);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(
-            &Poco::Logger::get("MaterializeMySQLSyncThread(" + database + ")"),
-            "Query " + query_to_execute + " wasn't finished successfully");
-        throw;
-    }
-}
 
 static inline DatabaseMaterializeMySQL & getDatabase(const String & database_name)
 {
@@ -125,7 +94,7 @@ void MaterializeMySQLSyncThread::synchronization()
     try
     {
         Stopwatch watch;
-        Buffers buffers(database_name);
+        MySQLBuffer buffers(database_name);
 
         while (!isCancelled())
         {
@@ -193,35 +162,6 @@ static inline void cleanOutdatedTables(const String & database_name, const Conte
         String table_name = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(iterator->name());
         tryToExecuteQuery(" DROP TABLE " + table_name, query_context, database_name, comment);
     }
-}
-
-static inline BlockOutputStreamPtr getTableOutput(const String & database_name, const String & table_name, Context & query_context, bool insert_materialized = false)
-{
-    const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
-
-    std::stringstream insert_columns_str;
-    const StorageInMemoryMetadata & storage_metadata = storage->getInMemoryMetadata();
-    const ColumnsDescription & storage_columns = storage_metadata.getColumns();
-    const NamesAndTypesList & insert_columns_names = insert_materialized ? storage_columns.getAllPhysical() : storage_columns.getOrdinary();
-
-
-    for (auto iterator = insert_columns_names.begin(); iterator != insert_columns_names.end(); ++iterator)
-    {
-        if (iterator != insert_columns_names.begin())
-            insert_columns_str << ", ";
-
-        insert_columns_str << backQuoteIfNeed(iterator->name);
-    }
-
-
-    String comment = "Materialize MySQL step 1: execute dump data";
-    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + "(" + insert_columns_str.str() + ")" + " VALUES",
-        query_context, database_name, comment);
-
-    if (!res.out)
-        throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-    return res.out;
 }
 
 static inline void dumpDataForTables(
@@ -440,7 +380,7 @@ bool MaterializeMySQLSyncThread::prepareSynchronized()
     return has_consumers;
 }
 
-void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers)
+void MaterializeMySQLSyncThread::flushBuffersData(MySQLBuffer & buffers)
 {
     materialize_metadata->transaction(client.getPosition(), [&]() { buffers.commit(global_context); });
 
@@ -660,26 +600,26 @@ static inline size_t onUpdateData(const std::vector<Field> & rows_data, Block & 
     return buffer.bytes() - prev_bytes;
 }
 
-void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr & receive_event)
+void MaterializeMySQLSyncThread::onEvent(MySQLBuffer & buffers, const BinlogEventPtr & receive_event)
 {
     if (receive_event->type() == MYSQL_WRITE_ROWS_EVENT)
     {
         WriteRowsEvent & write_rows_event = static_cast<WriteRowsEvent &>(*receive_event);
-        Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(write_rows_event.table, global_context);
+        MySQLBuffer::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(write_rows_event.table, global_context);
         size_t bytes = onWriteOrDeleteData<1>(write_rows_event.rows, buffer->first, ++materialize_metadata->data_version);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), write_rows_event.rows.size(), bytes);
     }
     else if (receive_event->type() == MYSQL_UPDATE_ROWS_EVENT)
     {
         UpdateRowsEvent & update_rows_event = static_cast<UpdateRowsEvent &>(*receive_event);
-        Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(update_rows_event.table, global_context);
+        MySQLBuffer::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(update_rows_event.table, global_context);
         size_t bytes = onUpdateData(update_rows_event.rows, buffer->first, ++materialize_metadata->data_version, buffer->second);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), update_rows_event.rows.size(), bytes);
     }
     else if (receive_event->type() == MYSQL_DELETE_ROWS_EVENT)
     {
         DeleteRowsEvent & delete_rows_event = static_cast<DeleteRowsEvent &>(*receive_event);
-        Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(delete_rows_event.table, global_context);
+        MySQLBuffer::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(delete_rows_event.table, global_context);
         size_t bytes = onWriteOrDeleteData<-1>(delete_rows_event.rows, buffer->first, ++materialize_metadata->data_version);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), delete_rows_event.rows.size(), bytes);
     }
@@ -721,69 +661,6 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
 bool MaterializeMySQLSyncThread::isMySQLSyncThread()
 {
     return getThreadName() == MYSQL_BACKGROUND_THREAD_NAME;
-}
-
-void MaterializeMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)
-{
-    total_blocks_rows += written_rows;
-    total_blocks_bytes += written_bytes;
-    max_block_rows = std::max(block_rows, max_block_rows);
-    max_block_bytes = std::max(block_bytes, max_block_bytes);
-}
-
-bool MaterializeMySQLSyncThread::Buffers::checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes) const
-{
-    return max_block_rows >= check_block_rows || max_block_bytes >= check_block_bytes || total_blocks_rows >= check_total_rows
-        || total_blocks_bytes >= check_total_bytes;
-}
-
-void MaterializeMySQLSyncThread::Buffers::commit(const Context & context)
-{
-    try
-    {
-        for (auto & table_name_and_buffer : data)
-        {
-            Context query_context = createQueryContext(context);
-            OneBlockInputStream input(table_name_and_buffer.second->first);
-            BlockOutputStreamPtr out = getTableOutput(database, table_name_and_buffer.first, query_context, true);
-            copyData(input, *out);
-        }
-
-        data.clear();
-        max_block_rows = 0;
-        max_block_bytes = 0;
-        total_blocks_rows = 0;
-        total_blocks_bytes = 0;
-    }
-    catch (...)
-    {
-        data.clear();
-        throw;
-    }
-}
-
-MaterializeMySQLSyncThread::Buffers::BufferAndSortingColumnsPtr MaterializeMySQLSyncThread::Buffers::getTableDataBuffer(
-    const String & table_name, const Context & context)
-{
-    const auto & iterator = data.find(table_name);
-    if (iterator == data.end())
-    {
-        StoragePtr storage = DatabaseCatalog::instance().getTable(StorageID(database, table_name), context);
-
-        const StorageInMemoryMetadata & metadata = storage->getInMemoryMetadata();
-        BufferAndSortingColumnsPtr & buffer_and_soring_columns = data.try_emplace(
-            table_name, std::make_shared<BufferAndSortingColumns>(metadata.getSampleBlock(), std::vector<size_t>{})).first->second;
-
-        Names required_for_sorting_key = metadata.getColumnsRequiredForSortingKey();
-
-        for (const auto & required_name_for_sorting_key : required_for_sorting_key)
-            buffer_and_soring_columns->second.emplace_back(
-                buffer_and_soring_columns->first.getPositionByName(required_name_for_sorting_key));
-
-        return buffer_and_soring_columns;
-    }
-
-    return iterator->second;
 }
 
 }

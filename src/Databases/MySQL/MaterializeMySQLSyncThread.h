@@ -16,6 +16,7 @@
 #    include <Databases/IDatabase.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
+#    include <Databases/MySQL/MySQLBuffer.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <mysqlxx/Pool.h>
 #    include <mysqlxx/PoolWithFailover.h>
@@ -88,31 +89,6 @@ private:
     };
     */
 
-    struct Buffers
-    {
-        String database;
-
-        /// thresholds
-        size_t max_block_rows = 0;
-        size_t max_block_bytes = 0;
-        size_t total_blocks_rows = 0;
-        size_t total_blocks_bytes = 0;
-
-        using BufferAndSortingColumns = std::pair<Block, std::vector<size_t>>;
-        using BufferAndSortingColumnsPtr = std::shared_ptr<BufferAndSortingColumns>;
-        std::unordered_map<String, BufferAndSortingColumnsPtr> data;
-
-        Buffers(const String & database_) : database(database_) {}
-
-        void commit(const Context & context);
-
-        void add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes);
-
-        bool checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes) const;
-
-        BufferAndSortingColumnsPtr getTableDataBuffer(const String & table, const Context & context);
-    };
-
     void synchronization();
 
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
@@ -123,9 +99,9 @@ private:
         mysqlxx::Pool::Entry & connection,
         std::unordered_map<String, String> & need_dumping_tables);
 
-    void flushBuffersData(Buffers & buffers);
+    void flushBuffersData(MySQLBuffer & buffers);
 
-    void onEvent(Buffers & buffers, const MySQLReplication::BinlogEventPtr & event);
+    void onEvent(MySQLBuffer & buffers, const MySQLReplication::BinlogEventPtr & event);
 
     std::atomic<bool> sync_quit{false};
     std::unique_ptr<ThreadFromGlobalPool> background_thread_pool;

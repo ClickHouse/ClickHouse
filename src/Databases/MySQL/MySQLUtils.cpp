@@ -95,7 +95,6 @@ String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection)
     return version_block.getByPosition(0).column->getDataAt(0).toString();
 }
 
-#if 0
 Context createQueryContext(const Context & global_context)
 {
     Settings new_query_settings = global_context.getSettings();
@@ -132,6 +131,7 @@ BlockIO tryToExecuteQuery(
     }
 }
 
+#if 0
 DatabaseMaterializeMySQL & getDatabase(const String & database_name)
 {
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
@@ -141,6 +141,7 @@ DatabaseMaterializeMySQL & getDatabase(const String & database_name)
 
     throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
 }
+#endif
 
 BlockOutputStreamPtr getTableOutput(
     const String & database_name,
@@ -177,6 +178,7 @@ BlockOutputStreamPtr getTableOutput(
     return res.out;
 }
 
+#if 0
 std::vector<String> fetchTablesInDB(
     const mysqlxx::PoolWithFailover::Entry & connection,
     const std::string & database_name)
