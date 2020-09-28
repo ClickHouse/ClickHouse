@@ -235,8 +235,7 @@ private:
         std::mutex mutex;
         bool wake_flag = false;
 
-        /// Exception from executing thread itself.
-        std::exception_ptr exception;
+        /// std::queue<ExecutionState *> pinned_tasks;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;

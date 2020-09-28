@@ -33,7 +33,7 @@ private:
     std::mutex text_log_mutex;
 
     std::weak_ptr<DB::TextLog> text_log;
-    std::atomic<int> text_log_max_priority = -1;
+    int text_log_max_priority = -1;
 };
 
 }

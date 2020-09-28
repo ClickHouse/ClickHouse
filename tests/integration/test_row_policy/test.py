@@ -98,6 +98,26 @@ def test_prewhere_not_supported():
     assert expected_error in instance.query_and_get_error("SELECT * FROM mydb.filtered_table3 PREWHERE 1")
 
 
+def test_single_table_name():
+    copy_policy_xml('tag_with_table_name.xml')
+    assert instance.query("SELECT * FROM mydb.table") == "1\t0\n1\t1\n"
+    assert instance.query("SELECT * FROM mydb.filtered_table2") == "0\t0\t0\t0\n0\t0\t6\t0\n"
+    assert instance.query("SELECT * FROM mydb.filtered_table3") == "0\t1\n1\t0\n"
+
+    assert instance.query("SELECT a FROM mydb.table") == "1\n1\n"
+    assert instance.query("SELECT b FROM mydb.table") == "0\n1\n"
+    assert instance.query("SELECT a FROM mydb.table WHERE a = 1") == "1\n1\n"
+    assert instance.query("SELECT a = 1 FROM mydb.table") == "1\n1\n"
+
+    assert instance.query("SELECT a FROM mydb.filtered_table3") == "0\n1\n"
+    assert instance.query("SELECT b FROM mydb.filtered_table3") == "1\n0\n"
+    assert instance.query("SELECT c FROM mydb.filtered_table3") == "1\n1\n"
+    assert instance.query("SELECT a + b FROM mydb.filtered_table3") == "1\n1\n"
+    assert instance.query("SELECT a FROM mydb.filtered_table3 WHERE c = 1") == "0\n1\n"
+    assert instance.query("SELECT c = 1 FROM mydb.filtered_table3") == "1\n1\n"
+    assert instance.query("SELECT a + b = 1 FROM mydb.filtered_table3") == "1\n1\n"
+
+
 def test_policy_from_users_xml_affects_only_user_assigned():
     assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t0\n1\t1\n"
     assert instance.query("SELECT * FROM mydb.filtered_table1", user="another") == "0\t0\n0\t1\n1\t0\n1\t1\n"
@@ -107,6 +127,26 @@ def test_policy_from_users_xml_affects_only_user_assigned():
 
     assert instance.query("SELECT * FROM mydb.local") == "1\t0\n1\t1\n2\t0\n2\t1\n"
     assert instance.query("SELECT * FROM mydb.local", user="another") == "1\t0\n1\t1\n"
+
+
+def test_custom_table_name():
+    copy_policy_xml('multiple_tags_with_table_names.xml')
+    assert instance.query("SELECT * FROM mydb.table") == "1\t0\n1\t1\n"
+    assert instance.query("SELECT * FROM mydb.filtered_table2") == "0\t0\t0\t0\n0\t0\t6\t0\n"
+    assert instance.query("SELECT * FROM mydb.`.filtered_table4`") == "0\t1\n1\t0\n"
+
+    assert instance.query("SELECT a FROM mydb.table") == "1\n1\n"
+    assert instance.query("SELECT b FROM mydb.table") == "0\n1\n"
+    assert instance.query("SELECT a FROM mydb.table WHERE a = 1") == "1\n1\n"
+    assert instance.query("SELECT a = 1 FROM mydb.table") == "1\n1\n"
+
+    assert instance.query("SELECT a FROM mydb.`.filtered_table4`") == "0\n1\n"
+    assert instance.query("SELECT b FROM mydb.`.filtered_table4`") == "1\n0\n"
+    assert instance.query("SELECT c FROM mydb.`.filtered_table4`") == "1\n1\n"
+    assert instance.query("SELECT a + b FROM mydb.`.filtered_table4`") == "1\n1\n"
+    assert instance.query("SELECT a FROM mydb.`.filtered_table4` WHERE c = 1") == "0\n1\n"
+    assert instance.query("SELECT c = 1 FROM mydb.`.filtered_table4`") == "1\n1\n"
+    assert instance.query("SELECT a + b = 1 FROM mydb.`.filtered_table4`") == "1\n1\n"
 
 
 def test_change_of_users_xml_changes_row_policies():
