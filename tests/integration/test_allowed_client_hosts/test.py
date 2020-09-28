@@ -20,7 +20,7 @@ clientD3 = cluster.add_instance('clientD3', hostname='clientD0003.ru')
 
 def check_clickhouse_is_ok(client_node, server_node):
     assert client_node.exec_in_container(
-        ["bash", "-c", "/usr/bin/curl -s {}:8123 ".format(server_node.hostname)]) == "Ok.\n"
+        ["bash", "-c", "/usr/bin/curl -s {}:8123 ".format(server_node.hostname)]) == b"Ok.\n"
 
 
 def query_from_one_node_to_another(client_node, server_node, query):
