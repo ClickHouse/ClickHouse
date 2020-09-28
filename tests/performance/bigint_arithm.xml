@@ -1,0 +1,15 @@
+<test>
+    <settings>
+        <max_memory_usage>10G</max_memory_usage>
+    </settings>
+
+    <query>SELECT toInt128(number) + number FROM numbers_mt(100000000) FORMAT Null</query>
+    <query>SELECT toInt128(number) - number FROM numbers_mt(100000000) FORMAT Null</query>
+    <query>SELECT toInt128(number) * number FROM numbers_mt(100000000) FORMAT Null</query>
+    <query>SELECT toInt128(number) / number FROM numbers_mt(10000000) FORMAT Null</query>
+    
+    <query>SELECT toInt256(number) + number FROM numbers_mt(100000000) FORMAT Null</query>
+    <query>SELECT toInt256(number) - number FROM numbers_mt(100000000) FORMAT Null</query>
+    <query>SELECT toInt256(number) * number FROM numbers_mt(100000000) FORMAT Null</query>
+    <query>SELECT toInt256(number) / number FROM numbers_mt(10000000) FORMAT Null</query>
+</test>
