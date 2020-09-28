@@ -1,8 +1,0 @@
-<yandex>
-    <profiles>
-        <default>
-            <default_database_engine>Atomic</default_database_engine>
-            <show_table_uuid_in_table_create_query_if_not_nil>0</show_table_uuid_in_table_create_query_if_not_nil>
-        </default>
-    </profiles>
-</yandex>
