@@ -49,7 +49,10 @@ private:
     struct lessWithCollation;
 
     ColumnString() = default;
-    ColumnString(const ColumnString & src);
+
+    ColumnString(const ColumnString & src)
+        : offsets(src.offsets.begin(), src.offsets.end()),
+        chars(src.chars.begin(), src.chars.end()) {}
 
 public:
     const char * getFamilyName() const override { return "String"; }
@@ -83,7 +86,7 @@ public:
     void get(size_t n, Field & res) const override
     {
         assert(n < size());
-        res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
+        res.assignString(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     StringRef getDataAt(size_t n) const override

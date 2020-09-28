@@ -185,24 +185,13 @@ void removeLowCardinalityInplace(Block & block)
     }
 }
 
-void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type)
+void removeLowCardinalityInplace(Block & block, const Names & names)
 {
     for (const String & column_name : names)
     {
         auto & col = block.getByName(column_name);
         col.column = recursiveRemoveLowCardinality(col.column);
-        if (change_type)
-            col.type = recursiveRemoveLowCardinality(col.type);
-    }
-}
-
-void restoreLowCardinalityInplace(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        auto & col = block.getByPosition(i);
-        if (col.type->lowCardinality() && col.column && !col.column->lowCardinality())
-            col.column = changeLowCardinality(col.column, col.type->createColumn());
+        col.type = recursiveRemoveLowCardinality(col.type);
     }
 }
 

@@ -1,5 +1,5 @@
 # docker build -t yandex/clickhouse-stateless-pytest .
-FROM yandex/clickhouse-test-base
+FROM yandex/clickhouse-deb-builder
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \

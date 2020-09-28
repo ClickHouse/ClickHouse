@@ -7,8 +7,7 @@
 #include <Common/ClickHouseRevision.h>
 
 
-namespace DB
-{
+using namespace DB;
 
 using TraceDataType = TraceLogElement::TraceDataType;
 
@@ -43,12 +42,10 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
     columns[i++]->insert(timestamp_ns);
-    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
+    columns[i++]->insert(ClickHouseRevision::get());
     columns[i++]->insert(static_cast<UInt8>(trace_type));
     columns[i++]->insert(thread_id);
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(trace);
     columns[i++]->insert(size);
-}
-
 }

@@ -64,7 +64,7 @@ StorageMySQL::StorageMySQL(
 }
 
 
-Pipe StorageMySQL::read(
+Pipes StorageMySQL::read(
     const Names & column_names_,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info_,
@@ -94,9 +94,11 @@ Pipe StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    /// TODO: rewrite MySQLBlockInputStream
-    return Pipe(std::make_shared<SourceFromInputStream>(
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromInputStream>(
             std::make_shared<MySQLLazyBlockInputStream>(pool, query, sample_block, max_block_size_, /* auto_close = */ true)));
+
+    return pipes;
 }
 
 

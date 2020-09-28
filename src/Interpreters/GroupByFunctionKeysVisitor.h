@@ -8,7 +8,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
 

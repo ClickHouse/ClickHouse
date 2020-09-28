@@ -16,14 +16,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 template <typename ToDataType, typename Name>
 class FunctionReinterpretStringAs : public IFunction
@@ -53,7 +51,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -134,7 +132,6 @@ using FunctionReinterpretAsFloat64 = FunctionReinterpretStringAs<DataTypeFloat64
 using FunctionReinterpretAsDate = FunctionReinterpretStringAs<DataTypeDate,         NameReinterpretAsDate>;
 using FunctionReinterpretAsDateTime = FunctionReinterpretStringAs<DataTypeDateTime, NameReinterpretAsDateTime>;
 
-}
 
 void registerFunctionsReinterpretStringAs(FunctionFactory & factory)
 {
@@ -153,3 +150,5 @@ void registerFunctionsReinterpretStringAs(FunctionFactory & factory)
 }
 
 }
+
+

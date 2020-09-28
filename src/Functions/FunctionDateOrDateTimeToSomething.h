@@ -67,16 +67,8 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         /// For DateTime, if time zone is specified, attach it to type.
-        /// If the time zone is specified but empty, throw an exception.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-        {
-            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
-            if (time_zone.empty())
-                throw Exception(
-                    "Function " + getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            return std::make_shared<ToDataType>(time_zone);
-        }
+            return std::make_shared<ToDataType>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             Int64 scale = DataTypeDateTime64::default_scale;
@@ -92,7 +84,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
         WhichDataType which(from_type);

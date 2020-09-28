@@ -112,6 +112,9 @@ void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, const Cont
         auto quota = access_control.tryRead<Quota>(id);
         if (!quota)
             continue;
+        const auto * storage = access_control.findStorage(id);
+        if (!storage)
+            continue;
 
         add_rows(quota->getName(), quota->all_limits);
     }

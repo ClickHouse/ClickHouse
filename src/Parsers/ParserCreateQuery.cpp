@@ -13,7 +13,6 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserDictionary.h>
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
-#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -427,8 +426,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
         {
-            /// ENGINE can not be specified for table functions.
-            if (storage || !table_function_p.parse(pos, as_table_function, expected))
+            if (!table_function_p.parse(pos, as_table_function, expected))
             {
                 /// AS [db.]table
                 if (!name_p.parse(pos, as_table, expected))
@@ -597,7 +595,6 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     ASTPtr database;
     ASTPtr storage;
-    UUID uuid = UUIDHelpers::Nil;
 
     String cluster_str;
     bool attach = false;
@@ -620,15 +617,6 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (!name_p.parse(pos, database, expected))
         return false;
 
-    if (ParserKeyword("UUID").ignore(pos, expected))
-    {
-        ParserStringLiteral uuid_p;
-        ASTPtr ast_uuid;
-        if (!uuid_p.parse(pos, ast_uuid, expected))
-            return false;
-        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
-    }
-
     if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
@@ -645,7 +633,6 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->if_not_exists = if_not_exists;
 
     tryGetIdentifierNameInto(database, query->database);
-    query->uuid = uuid;
     query->cluster = cluster_str;
 
     query->set(query->storage, storage);
@@ -797,7 +784,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_on("ON");
-    ParserCompoundIdentifier dict_name_p(true);
+    ParserIdentifier name_p;
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
     ParserToken s_dot(TokenType::Dot);
@@ -806,6 +793,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 
     bool if_not_exists = false;
 
+    ASTPtr database;
     ASTPtr name;
     ASTPtr attributes;
     ASTPtr dictionary;
@@ -826,8 +814,15 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     if (s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
-    if (!dict_name_p.parse(pos, name, expected))
+    if (!name_p.parse(pos, name, expected))
         return false;
+
+    if (s_dot.ignore(pos))
+    {
+        database = name;
+        if (!name_p.parse(pos, name, expected))
+            return false;
+    }
 
     if (s_on.ignore(pos, expected))
     {
@@ -855,10 +850,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->is_dictionary = true;
     query->attach = attach;
 
-    StorageID dict_id = getTableIdentifier(name);
-    query->database = dict_id.database_name;
-    query->table = dict_id.table_name;
-    query->uuid = dict_id.uuid;
+    tryGetIdentifierNameInto(database, query->database);
+    tryGetIdentifierNameInto(name, query->table);
 
     query->if_not_exists = if_not_exists;
     query->set(query->dictionary_attributes_list, attributes);

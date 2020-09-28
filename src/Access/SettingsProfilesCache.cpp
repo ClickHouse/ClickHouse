@@ -2,7 +2,6 @@
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsProfile.h>
 #include <Core/Settings.h>
-#include <Common/SettingsChanges.h>
 #include <Common/quoteString.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -103,7 +102,6 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
     default_profile_id = it->second;
 }
 
-
 void SettingsProfilesCache::mergeSettingsAndConstraints()
 {
     /// `mutex` is already locked.
@@ -144,10 +142,9 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
 
     substituteProfiles(merged_settings);
 
-    auto settings = merged_settings.toSettings();
-    auto constraints = merged_settings.toSettingsConstraints(manager);
     enabled.setSettingsAndConstraints(
-        std::make_shared<Settings>(std::move(settings)), std::make_shared<SettingsConstraints>(std::move(constraints)));
+                std::make_shared<Settings>(merged_settings.toSettings()),
+                std::make_shared<SettingsConstraints>(merged_settings.toSettingsConstraints()));
 }
 
 

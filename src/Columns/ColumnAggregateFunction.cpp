@@ -1,6 +1,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/assert_cast.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>

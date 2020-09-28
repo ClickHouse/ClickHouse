@@ -49,7 +49,7 @@ public:
         return getLeastSupertype(arguments);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const DataTypePtr & return_type = block.getByPosition(result).type;
 
@@ -58,6 +58,8 @@ public:
             block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
+
+        auto result_column = return_type->createColumn();
 
         size_t rows = input_rows_count;
         size_t num_args = arguments.size();
@@ -93,9 +95,10 @@ public:
                 throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
         }
 
-        auto sink = GatherUtils::concat(sources);
+        auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), rows);
+        GatherUtils::concat(sources, *sink);
 
-        block.getByPosition(result).column = std::move(sink);
+        block.getByPosition(result).column = std::move(result_column);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

@@ -12,7 +12,9 @@
 #    include <aws/s3/S3Client.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <IO/S3/PocoHTTPClientFactory.h>
+#    include <IO/S3/PocoHTTPClientFactory.cpp>
 #    include <IO/S3/PocoHTTPClient.h>
+#    include <IO/S3/PocoHTTPClient.cpp>
 #    include <boost/algorithm/string.hpp>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
@@ -20,12 +22,6 @@
 
 namespace
 {
-
-const char * S3_LOGGER_TAG_NAMES[][2] = {
-    {"AWSClient", "AWSClient"},
-    {"AWSAuthV4Signer", "AWSClient (AWSAuthV4Signer)"},
-};
-
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
@@ -44,46 +40,26 @@ const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::U
 class AWSLogger final : public Aws::Utils::Logging::LogSystemInterface
 {
 public:
-    AWSLogger()
-    {
-        for (auto [tag, name] : S3_LOGGER_TAG_NAMES)
-            tag_loggers[tag] = &Poco::Logger::get(name);
-
-        default_logger = tag_loggers[S3_LOGGER_TAG_NAMES[0][0]];
-    }
-
     ~AWSLogger() final = default;
 
     Aws::Utils::Logging::LogLevel GetLogLevel() const final { return Aws::Utils::Logging::LogLevel::Trace; }
 
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
-        callLogImpl(log_level, tag, format_str); /// FIXME. Variadic arguments?
+        const auto & [level, prio] = convertLogLevel(log_level);
+        LOG_IMPL(log, level, prio, "{}: {}", tag, format_str);
     }
 
     void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final
     {
-        callLogImpl(log_level, tag, message_stream.str().c_str());
-    }
-
-    void callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
-    {
         const auto & [level, prio] = convertLogLevel(log_level);
-        if (tag_loggers.count(tag) > 0)
-        {
-            LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
-        }
-        else
-        {
-            LOG_IMPL(default_logger, level, prio, "{}: {}", tag, message);
-        }
+        LOG_IMPL(log, level, prio, "{}: {}", tag, message_stream.str());
     }
 
     void Flush() final {}
 
 private:
-    Poco::Logger * default_logger;
-    std::unordered_map<String, Poco::Logger *> tag_loggers;
+    Poco::Logger * log = &Poco::Logger::get("AWSClient");
 };
 
 class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
@@ -126,9 +102,7 @@ public:
 private:
     const DB::HeaderCollection headers;
 };
-
 }
-
 
 namespace DB
 {
@@ -164,27 +138,25 @@ namespace S3
         const String & endpoint,
         bool is_virtual_hosted_style,
         const String & access_key_id,
-        const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter)
+        const String & secret_access_key)
     {
         Aws::Client::ClientConfiguration cfg;
 
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, remote_host_filter);
+        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key);
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
-        const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter)
+        const String & secret_access_key)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
-        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter);
+        Aws::Client::ClientConfiguration client_configuration = cfg;
 
         if (!client_configuration.endpointOverride.empty())
         {
@@ -214,11 +186,9 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        HeaderCollection headers,
-        const RemoteHostFilter & remote_host_filter)
+        HeaderCollection headers)
     {
-        PocoHTTPClientConfiguration cfg({}, remote_host_filter);
-
+        Aws::Client::ClientConfiguration cfg;
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
@@ -235,30 +205,24 @@ namespace S3
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos)([.\-][a-z0-9\-.:]+))");
+        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3[.\-][a-z0-9\-.:]+))");
 
         /// Case when bucket name and key represented in path of S3 URL.
         /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
         static const RE2 path_style_pattern("^/([^/]*)/(.*)");
 
-        static constexpr auto S3 = "S3";
-        static constexpr auto COSN = "COSN";
-        static constexpr auto COS = "COS";
-
         uri = uri_;
-        storage_name = S3;
 
         if (uri.getHost().empty())
             throw Exception("Host is empty in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-        String name;
         String endpoint_authority_from_uri;
 
-        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
+        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &endpoint_authority_from_uri))
         {
             is_virtual_hosted_style = true;
-            endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
+            endpoint = uri.getScheme() + "://" + endpoint_authority_from_uri;
 
             /// S3 specification requires at least 3 and at most 63 characters in bucket name.
             /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
@@ -270,19 +234,6 @@ namespace S3
             key = uri.getPath().substr(1);
             if (key.empty() || key == "/")
                 throw Exception("Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
-            boost::to_upper(name);
-            if (name != S3 && name != COS)
-            {
-                throw Exception("Object storage system name is unrecognized in virtual hosted style S3 URI: " + name + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
-            }
-            if (name == S3)
-            {
-                storage_name = name;
-            }
-            else
-            {
-                storage_name = COSN;
-            }
         }
         else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
         {
