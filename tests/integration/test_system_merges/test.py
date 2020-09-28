@@ -21,7 +21,7 @@ node2 = cluster.add_instance('node2',
 def started_cluster():
     try:
         cluster.start()
-        node1.query('CREATE DATABASE test ENGINE=Ordinary')
+        node1.query('CREATE DATABASE test ENGINE=Ordinary') # Different paths with Atomic
         node2.query('CREATE DATABASE test ENGINE=Ordinary')
         yield cluster
 

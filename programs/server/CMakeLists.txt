@@ -3,7 +3,7 @@ set(CLICKHOUSE_SERVER_SOURCES
     Server.cpp
 )
 
-if (OS_LINUX AND ARCH_AMD64)
+if (OS_LINUX)
     set (LINK_CONFIG_LIB INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:clickhouse_server_configs> -Wl,${NO_WHOLE_ARCHIVE}")
 endif ()
 

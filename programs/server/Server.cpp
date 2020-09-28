@@ -273,7 +273,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 #endif
 
-    CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
+    CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
     if (ThreadFuzzer::instance().isEffective())
@@ -296,6 +296,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
+
+    // Initialize global thread pool. Do it before we fetch configs from zookeeper
+    // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
+    // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
+    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
     bool has_zookeeper = config().has("zookeeper");
 
@@ -334,16 +339,23 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))
             {
-                /// Get the memory area with (current) code segment.
-                /// It's better to lock only the code segment instead of calling "mlockall",
-                /// because otherwise debug info will be also locked in memory, and it can be huge.
-                auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
+                try
+                {
+                    /// Get the memory area with (current) code segment.
+                    /// It's better to lock only the code segment instead of calling "mlockall",
+                    /// because otherwise debug info will be also locked in memory, and it can be huge.
+                    auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
 
-                LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
-                if (0 != mlock(addr, len))
-                    LOG_WARNING(log, "Failed mlock: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
-                else
-                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
+                    LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
+                    if (0 != mlock(addr, len))
+                        LOG_WARNING(log, "Failed mlock: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
+                    else
+                        LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
+                }
+                catch (...)
+                {
+                    LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
+                }
             }
             else
             {
@@ -435,9 +447,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     LOG_DEBUG(log, "Initializing DateLUT.");
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
-
-    /// Initialize global thread pool
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
     /// Storage with temporary data for processing of heavy queries.
     {
