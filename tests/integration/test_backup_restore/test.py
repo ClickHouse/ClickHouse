@@ -24,7 +24,7 @@ def started_cluster():
 
 def exec_bash(cmd):
     cmd = '/bin/bash -c "{}"'.format(cmd.replace('"', '\\"'))
-    return instance.exec_in_container(cmd)
+    return instance.exec_in_container(cmd).decode()
 
 
 def copy_backup_to_detached(database, src_table, dst_table):
