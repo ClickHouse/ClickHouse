@@ -409,7 +409,7 @@ class ClickHouseCluster:
                 print(message)
             else:
                 raise Exception(message)
-        return output
+        return output.decode()
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "r") as fdata:
