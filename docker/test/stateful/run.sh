@@ -2,7 +2,7 @@
 
 set -e -x
 
-# Choose random timezone for this test run.
+# Choose random timezone for this test run
 TZ="$(grep -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
 ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
