@@ -29,7 +29,7 @@ node2 = cluster.add_instance('node2',
 
 
 def get_log(node):
-    return node.exec_in_container(["bash", "-c", "cat /var/log/clickhouse-server/clickhouse-server.log"])
+    return node.exec_in_container(["bash", "-c", "cat /var/log/clickhouse-server/clickhouse-server.log"]).decode()
 
 
 @pytest.fixture(scope="module")
