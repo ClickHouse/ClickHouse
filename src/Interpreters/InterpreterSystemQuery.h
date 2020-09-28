@@ -5,7 +5,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Common/ActionLock.h>
-#include <Disks/VolumeJBOD.h>
+#include <Disks/IVolume.h>
 
 
 namespace Poco { class Logger; }

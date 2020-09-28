@@ -99,7 +99,7 @@ private:
     /// filled more than total_size * move_factor
     double move_factor = 0.1; /// by default move factor is 10%
 
-    void updateIndicesForNewVolume(size_t volume_index);
+    void buildVolumeIndices();
 };
 
 
