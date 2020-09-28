@@ -525,7 +525,7 @@ static bool allowDictJoin(StoragePtr joined_storage, const Context & context, St
     if (!dict)
         return false;
 
-    dict_name = dict->dictionaryName();
+    dict_name = dict->resolvedDictionaryName();
     auto dictionary = context.getExternalDictionariesLoader().getDictionary(dict_name);
     if (!dictionary)
         return false;
@@ -582,7 +582,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
         ExpressionActionsPtr joined_block_actions = createJoinedBlockActions(context, analyzedJoin());
 
         Names original_right_columns;
-        if (subquery_for_join.source.empty())
+        if (!subquery_for_join.source)
         {
             NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
                 joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());

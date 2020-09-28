@@ -235,11 +235,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
     return header.cloneWithColumns(std::move(columns));
 }
 
-/** Create a block for set from literal.
-  * 'set_element_types' - types of what are on the left hand side of IN.
-  * 'right_arg' - Literal - Tuple or Array.
-  */
-static Block createBlockForSet(
+Block createBlockForSet(
     const DataTypePtr & left_arg_type,
     const ASTPtr & right_arg,
     const DataTypes & set_element_types,
@@ -280,14 +276,7 @@ static Block createBlockForSet(
     return block;
 }
 
-/** Create a block for set from expression.
-  * 'set_element_types' - types of what are on the left hand side of IN.
-  * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-  *
-  *  We need special implementation for ASTFunction, because in case, when we interpret
-  *  large tuple or array as function, `evaluateConstantExpression` works extremely slow.
-  */
-static Block createBlockForSet(
+Block createBlockForSet(
     const DataTypePtr & left_arg_type,
     const std::shared_ptr<ASTFunction> & right_arg,
     const DataTypes & set_element_types,
@@ -900,10 +889,11 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           *   in the subquery_for_set object, this subquery is set as source and the temporary table _data1 as the table.
           * - this function shows the expression IN_data1.
           */
-        if (subquery_for_set.source.empty() && data.no_storage_or_local)
+        if (!subquery_for_set.source && data.no_storage_or_local)
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
-            subquery_for_set.source = QueryPipeline::getPipe(interpreter->execute().pipeline);
+            subquery_for_set.source = std::make_unique<QueryPlan>();
+            interpreter->buildQueryPlan(*subquery_for_set.source);
         }
 
         subquery_for_set.set = set;

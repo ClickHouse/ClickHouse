@@ -21,9 +21,7 @@ RUN apt-get update -y \
             telnet \
             tree \
             unixodbc \
-            wget \
-            zookeeper \
-            zookeeperd
+            wget
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
