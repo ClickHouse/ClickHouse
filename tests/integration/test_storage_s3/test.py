@@ -62,10 +62,10 @@ def get_s3_file_content(cluster, bucket, filename):
     # type: (ClickHouseCluster, str) -> str
 
     data = cluster.minio_client.get_object(bucket, filename)
-    data_str = ""
+    data_str = b""
     for chunk in data.stream():
         data_str += chunk
-    return data_str
+    return data_str.decode()
 
 
 @pytest.fixture(scope="module")
