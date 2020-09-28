@@ -237,7 +237,7 @@
                 "with_coverage": false
             }
         },
-        "Functional stateful tests (release, DatabaseAtomic)": {
+        "Functional stateful tests (release, DatabaseOrdinary)": {
             "required_build_properties": {
                 "compiler": "gcc-10",
                 "package_type": "deb",
@@ -345,7 +345,7 @@
                 "with_coverage": false
             }
         },
-        "Functional stateless tests (release, DatabaseAtomic)": {
+        "Functional stateless tests (release, DatabaseOrdinary)": {
             "required_build_properties": {
                 "compiler": "gcc-10",
                 "package_type": "deb",
@@ -435,6 +435,18 @@
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "Integration tests flaky check (asan)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang-tidy": "disable",

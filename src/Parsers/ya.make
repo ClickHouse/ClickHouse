@@ -85,6 +85,7 @@ SRCS(
     MySQL/ASTDeclareReference.cpp
     MySQL/ASTDeclareSubPartition.cpp
     MySQL/ASTDeclareTableOptions.cpp
+    obfuscateQueries.cpp
     parseDatabaseAndTableName.cpp
     parseIdentifierOrStringLiteral.cpp
     parseIntervalKind.cpp

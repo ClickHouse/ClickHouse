@@ -399,16 +399,18 @@ private:
                 absent_id_handler([](Key, size_t){}){}
 
 
-        PresentIdHandler getPresentIdHandler()
+        void callPresentIdHandler(Key key, size_t cell_idx)
         {
             std::lock_guard lock(callback_mutex);
-            return can_use_callback ? present_id_handler : PresentIdHandler{};
+            if (can_use_callback)
+                present_id_handler(key, cell_idx);
         }
 
-        AbsentIdHandler getAbsentIdHandler()
+        void callAbsentIdHandler(Key key, size_t cell_idx)
         {
             std::lock_guard lock(callback_mutex);
-            return can_use_callback ? absent_id_handler : AbsentIdHandler{};
+            if (can_use_callback)
+                absent_id_handler(key, cell_idx);
         }
 
         std::vector<Key> requested_ids;
