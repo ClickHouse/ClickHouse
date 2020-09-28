@@ -57,7 +57,7 @@ def test_allowed_host():
     # expected_to_fail.extend([clientC3, clientD2])
 
     for client_node in expected_to_pass:
-        assert query_from_one_node_to_another(client_node, server, "SELECT * FROM test_table") == "5\n"
+        assert query_from_one_node_to_another(client_node, server, "SELECT * FROM test_table") == b"5\n"
 
     for client_node in expected_to_fail:
         with pytest.raises(Exception, match=r'default: Authentication failed'):
