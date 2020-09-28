@@ -331,6 +331,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
+void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
 
 /// Formats for both input/output.
 
@@ -400,6 +401,7 @@ FormatFactory::FormatFactory()
     registerFileSegmentationEngineJSONEachRow(*this);
     registerFileSegmentationEngineRegexp(*this);
     registerFileSegmentationEngineJSONAsString(*this);
+    registerFileSegmentationEngineLineAsString(*this);
 
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
