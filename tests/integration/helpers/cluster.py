@@ -485,36 +485,41 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait ZooKeeper container")
 
-    def wait_hdfs_to_start(self, timeout=600, kerberized=False):
+    def wait_hdfs_to_start(self, timeout=60, kerberized=False):
         start = time.time()
         if kerberized:
             keytab = p.abspath(p.join(self.instances['node1'].path, "secrets/clickhouse.keytab"))
             krb_conf = p.abspath(p.join(self.instances['node1'].path, "secrets/krb.conf"))
             hdfs_ip = self.get_instance_ip('kerberizedhdfs1')
             print("kerberizedhdfs1 ip ", hdfs_ip)
-            kdc_ip = self.get_instance_ip('hdfs_kerberos')
+            kdc_ip = self.get_instance_ip('hdfskerberos')
             print("kdc_ip ", kdc_ip)
-            hdfs_api = HDFSApi(user="root",
+            self.hdfs_api = HDFSApi(user="root",
                                timeout=timeout,
                                kerberized=True,
-                               principal="hdfsuser@TEST.CLICKHOUSE.TECH",
+                               principal="root@TEST.CLICKHOUSE.TECH",
                                keytab=keytab,
                                krb_conf=krb_conf,
+                               # host="kerberizedhdfs1.test.clickhouse.tech",
                                host="kerberizedhdfs1",
-                               protocol="https",
-                               proxy_port=50470,
-                               data_port=50475,
+                               protocol="http",
+                               # protocol="https",
+                               proxy_port=50070,
+                               # proxy_port=50470,
+                               # data_port=50475,
+                               data_port=1006,
                                hdfs_ip=hdfs_ip,
                                kdc_ip=kdc_ip)
+            # self.hdfs_api = hdfs_api
         else:
-            hdfs_api = HDFSApi(user="root")
+            self.hdfs_api = HDFSApi(user="root", host="hdfs1")
 
-        # time.sleep(280)
+        # time.sleep(150)
         # return
 
         while time.time() - start < timeout:
             try:
-                hdfs_api.write_data("/somefilewithrandomname222", "1")
+                self.hdfs_api.write_data("/somefilewithrandomname222", "1")
                 print("Connected to HDFS and SafeMode disabled! ")
                 return
             except Exception as ex:
@@ -677,7 +682,7 @@ class ClickHouseCluster:
                 files_to_cleanup.append(_create_env_file(self.base_dir, env_var, ".env"))
                 files_to_cleanup.append(_create_env_file(os.getcwd(), env_var, ".env"))
                 subprocess.check_call(self.base_kerberized_hdfs_cmd + common_opts, env=env_var)
-                self.wait_hdfs_to_start(120, kerberized=True)
+                self.wait_hdfs_to_start(kerberized=True, timeout=300)
                 remove_files(files_to_cleanup)
 
             if self.with_mongo and self.base_mongo_cmd:
@@ -935,7 +940,7 @@ class ClickHouseInstance:
 
         if with_kerberized_kafka or with_kerberized_hdfs:
             self.keytab_path = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets:/tmp/keytab"
-            self.krb5_conf = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets/krb.conf:/etc/krb5.conf:ro"
+            self.krb5_conf = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets/krb_ch.conf:/etc/krb5.conf:ro"
         else:
             self.keytab_path = ""
             self.krb5_conf = ""

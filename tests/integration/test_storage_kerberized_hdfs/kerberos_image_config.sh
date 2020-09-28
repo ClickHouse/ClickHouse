@@ -92,6 +92,11 @@ create_admin_user() {
 create_keytabs() {
 
 
+  # kadmin.local -q "addprinc -randkey hdfs/kerberizedhdfs1.${DOMAIN_REALM}@${REALM}"
+  # kadmin.local -q "ktadd -norandkey -k /tmp/keytab/hdfs.keytab hdfs/kerberizedhdfs1.${DOMAIN_REALM}@${REALM}"
+
+  # kadmin.local -q "addprinc -randkey HTTP/kerberizedhdfs1.${DOMAIN_REALM}@${REALM}"
+  # kadmin.local -q "ktadd -norandkey -k /tmp/keytab/hdfs.keytab HTTP/kerberizedhdfs1.${DOMAIN_REALM}@${REALM}"
   kadmin.local -q "addprinc -randkey hdfs/kerberizedhdfs1@${REALM}"
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/hdfs.keytab hdfs/kerberizedhdfs1@${REALM}"
 
@@ -102,6 +107,10 @@ create_keytabs() {
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab hdfsuser/node1@${REALM}"
   kadmin.local -q "addprinc -randkey hdfsuser@${REALM}"
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab hdfsuser@${REALM}"
+  kadmin.local -q "addprinc -randkey root@${REALM}"
+  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab root@${REALM}"
+  kadmin.local -q "addprinc -randkey specuser@${REALM}"
+  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab specuser@${REALM}"
 
   chmod g+r /tmp/keytab/clickhouse.keytab
 }

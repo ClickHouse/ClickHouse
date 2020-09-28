@@ -1,6 +1,7 @@
 #include "ReadBufferFromHDFS.h"
 
 #if USE_HDFS
+#include <Interpreters/Context.h>
 #include <IO/HDFSCommon.h>
 #include <hdfs/hdfs.h>
 #include <mutex>
@@ -58,12 +59,15 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     }
 };
 
+
 std::mutex ReadBufferFromHDFS::ReadBufferFromHDFSImpl::hdfs_init_mutex;
 
-ReadBufferFromHDFS::ReadBufferFromHDFS(const std::string & hdfs_name_, const Context & context_, size_t buf_size)
+ReadBufferFromHDFS::ReadBufferFromHDFS(const std::string & hdfs_name_, const Context & context, size_t buf_size)
     : BufferWithOwnMemory<ReadBuffer>(buf_size)
-    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_name_, context_))
+    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_name_, context))
 {
+    // auto modified_context = std::make_shared<Context>(context);
+    // impl = std::make_unique<ReadBufferFromHDFSImpl>(hdfs_name_, modified_context);
 }
 
 

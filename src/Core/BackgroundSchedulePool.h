@@ -148,6 +148,11 @@ using BackgroundSchedulePoolTaskInfoPtr = std::shared_ptr<BackgroundSchedulePool
 class BackgroundSchedulePoolTaskHolder
 {
 public:
+    using CleanupFunc = std::function<void()>;
+
+    CleanupFunc cleanup_func;
+
+
     BackgroundSchedulePoolTaskHolder() = default;
     explicit BackgroundSchedulePoolTaskHolder(const BackgroundSchedulePoolTaskInfoPtr & task_info_) : task_info(task_info_) {}
     BackgroundSchedulePoolTaskHolder(const BackgroundSchedulePoolTaskHolder & other) = delete;
@@ -159,12 +164,16 @@ public:
     {
         if (task_info)
             task_info->deactivate();
+        if (cleanup_func)
+            cleanup_func();
     }
 
     operator bool() const { return task_info != nullptr; }
 
     BackgroundSchedulePoolTaskInfo * operator->() { return task_info.get(); }
     const BackgroundSchedulePoolTaskInfo * operator->() const { return task_info.get(); }
+
+    void setCleanupFunc(const CleanupFunc function) {cleanup_func = function;}
 
 private:
     BackgroundSchedulePoolTaskInfoPtr task_info;
