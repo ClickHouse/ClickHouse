@@ -45,13 +45,13 @@ static constexpr const std::chrono::seconds cleaner_sleep_time{30};
 static const std::chrono::seconds lock_acquire_timeout{10};
 
 DatabaseConnectionMySQL::DatabaseConnectionMySQL(const Context & context, const String & database_name_, const String & metadata_path_,
-    const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, mysqlxx::Pool && pool)
+    const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, std::unique_ptr<ConnectionMySQLSettings> settings_, mysqlxx::Pool && pool)
     : IDatabase(database_name_)
     , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
-    , mysql_datatypes_support_level(context.getQueryContext().getSettingsRef().mysql_datatypes_support_level)
+    , database_settings(std::move(settings_))
     , mysql_pool(std::move(pool))
 {
     empty(); /// test database is works fine.
@@ -273,7 +273,7 @@ std::map<String, NamesAndTypesList> DatabaseConnectionMySQL::fetchTablesColumnsL
             database_name_in_mysql,
             tables_name,
             settings.external_table_functions_use_nulls,
-            mysql_datatypes_support_level);
+            database_settings->mysql_datatypes_support_level);
 }
 
 void DatabaseConnectionMySQL::shutdown()
