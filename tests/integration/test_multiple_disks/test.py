@@ -1424,7 +1424,7 @@ def _check_merges_are_working(node, storage_policy, volume, shall_work):
     try:
         name = "_check_merges_are_working_{storage_policy}_{volume}".format(storage_policy=storage_policy, volume=volume)
 
-        node1.query("""
+        node.query("""
             CREATE TABLE {name} (
                 n Int64
             ) ENGINE = MergeTree
@@ -1436,26 +1436,26 @@ def _check_merges_are_working(node, storage_policy, volume, shall_work):
         created_parts = 24
 
         for i in range(created_parts):
-            node1.query("""INSERT INTO {name} VALUES ({n})""".format(name=name, n=i))
+            node.query("""INSERT INTO {name} VALUES ({n})""".format(name=name, n=i))
             try:
-                node1.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO VOLUME '{volume}' """.format(name=name, volume=volume))
+                node.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO VOLUME '{volume}' """.format(name=name, volume=volume))
             except:
                 """Ignore 'nothing to move'."""
 
-        expected_disks = set(node1.query("""
+        expected_disks = set(node.query("""
             SELECT disks FROM system.storage_policies ARRAY JOIN disks WHERE volume_name = '{volume_name}'
         """.format(volume_name=volume)).splitlines())
 
-        disks = get_used_disks_for_table(node1, name)
+        disks = get_used_disks_for_table(node, name)
         assert set(disks) <= expected_disks
 
-        node1.query("""OPTIMIZE TABLE {name} FINAL""".format(name=name))
+        node.query("""OPTIMIZE TABLE {name} FINAL""".format(name=name))
 
-        parts = get_used_parts_for_table(node1, name)
+        parts = get_used_parts_for_table(node, name)
         assert len(parts) == 1 if shall_work else created_parts
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
 
 def _get_prefer_not_to_merge_for_storage_policy(node, storage_policy):
