@@ -10,16 +10,16 @@ namespace DB
 class WriteBuffer;
 
 
-/** This format only allows to output one column of type String or similar.
-  * It is output as raw bytes without any delimiters or escaping.
+/** This format only allows to output columns of type String
+  *  or types that have contiguous representation in memory.
+  * They are output as raw bytes without any delimiters or escaping.
   *
   * The difference between RawBLOB and TSVRaw:
-  * - only single column dataset is supported;
-  * - data is output in binary;
+  * - data is output in binary, no escaping;
+  * - no delimiters between values;
   * - no newline at the end of each value.
   *
   * The difference between RawBLOB and RowBinary:
-  * - only single column dataset is supported;
   * - strings are output without their lengths.
   *
   * If you are output more than one value, the output format is ambiguous and you may not be able to read data back.
