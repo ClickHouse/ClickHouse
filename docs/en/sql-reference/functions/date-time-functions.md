@@ -339,26 +339,110 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┘
 ```
 
-## date_trunc(datepart, time\_or\_data\[, time\_zone\]), dateTrunc(datepart, time\_or\_data\[, time\_zone\]) {#date_trunc}
+## date_trunc {#date_trunc}
 
-Truncates a date or date with time based on the specified datepart, such as
-- `second`
-- `minute`
-- `hour`
-- `day`
-- `week`
-- `month`
-- `quarter`
-- `year`
+Truncates a date or date with time based on the specified datepart.
+
+**Syntax** 
+
+``` sql
+date_trunc(datepart, value[, time_zone])
+```
+
+Alias: `dateTrunc`. 
+
+**Parameters**
+
+-   `datepart` — Name of the datepart. [String](../../sql-reference/data-types/string.md).
+    Possible values:
+
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Value, truncated to the specified datepart.
+
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+Query without timezone:
+
+``` sql
+SELECT now(), date_trunc('hour', now());
+```
+
+Result:
+
+``` text
+┌───────────────now()─┬─date_trunc('hour', now())─┐
+│ 2020-09-28 10:40:45 │       2020-09-28 10:00:00 │
+└─────────────────────┴───────────────────────────┘
+```
+
+Query with the specified timezone:
 
 ```sql
-SELECT date_trunc('hour', now())
+SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
 ```
+
+Result:
+
+```
+┌───────────────now()─┬─date_trunc('hour', now(), 'Europe/Moscow')─┐
+│ 2020-09-28 10:46:26 │                        2020-09-28 13:00:00 │
+└─────────────────────┴────────────────────────────────────────────┘
+```
+
+**See also**
+
+-   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
 ## now {#now}
 
-Accepts zero arguments and returns the current time at one of the moments of request execution.
-This function returns a constant, even if the request took a long time to complete.
+Returns the current date and time. 
+
+**Syntax** 
+
+``` sql
+now()
+```
+
+**Parameters**
+
+No parameters.
+
+**Returned value**
+
+-   Current date and time.
+
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT now();
+```
+
+Result:
+
+``` text
+┌───────────────now()─┐
+│ 2020-09-28 10:38:45 │
+└─────────────────────┘
+```
 
 ## today {#today}
 
