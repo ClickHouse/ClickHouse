@@ -66,7 +66,7 @@ void CacheDictionary::getItemsNumberImpl(
                 *    2. cell has expired,
                 *    3. explicit defaults were specified and cell was set default. */
 
-            const auto find_result = findCellIdx(id, now);
+            const auto find_result = findCell(id, now);
 
             auto update_routine = [&]()
             {

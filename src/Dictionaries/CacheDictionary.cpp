@@ -85,6 +85,7 @@ CacheDictionary::CacheDictionary(
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
+    , cache{size_}
     , rnd_engine(randomSeed())
     , update_queue(max_update_queue_size_)
     , update_pool(max_threads_for_updates)
@@ -319,44 +320,17 @@ std::string CacheDictionary::UpdateUnit::dumpFoundIds()
     return ans;
 };
 
-/// returns cell_idx (always valid for replacing), 'cell is valid' flag, 'cell is outdated' flag
-/// true  false   found and valid
-/// false true    not found (something outdated, maybe our cell)
-/// false false   not found (other id stored with valid data)
-/// true  true    impossible
-///
-/// todo: split this func to two: find_for_get and find_for_set
-CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const CellMetadata::time_point_t now) const
+
+CacheDictionary::FindResult CacheDictionary::findCell(const Key & id, const time_point_t now) const
 {
-    auto pos = getCellIdx(id);
-    auto oldest_id = pos;
-    auto oldest_time = CellMetadata::time_point_t::max();
-    const auto stop = pos + max_collision_length;
-    for (; pos < stop; ++pos)
-    {
-        const auto cell_idx = pos & size_overlap_mask;
-        const auto & cell = cells[cell_idx];
+    auto result = cache.get(id);
+    if (!result)
+        return {result, false, false};
+    
+    if (result->deadline > now)
+        return {result, true, true};
 
-        if (cell.id != id)
-        {
-            /// maybe we already found nearest expired cell (try minimize collision_length on insert)
-            if (oldest_time > now && oldest_time > cell.expiresAt())
-            {
-                oldest_time = cell.expiresAt();
-                oldest_id = cell_idx;
-            }
-            continue;
-        }
-
-        if (cell.expiresAt() < now)
-        {
-            return {cell_idx, false, true};
-        }
-
-        return {cell_idx, true, false};
-    }
-
-    return {oldest_id, false, false};
+    return {result, true, false};
 }
 
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
@@ -481,15 +455,10 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 void CacheDictionary::createAttributes()
 {
     const auto attributes_size = dict_struct.attributes.size();
-    attributes.reserve(attributes_size);
-
-    bytes_allocated += size * sizeof(CellMetadata);
-    bytes_allocated += attributes_size * sizeof(attributes.front());
 
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithTypeAndName(attribute.underlying_type, attribute.name, attribute.null_value));
 
         if (attribute.hierarchical)
         {
@@ -575,78 +544,6 @@ void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key 
 
                 string_ref = StringRef{null_value_ref};
             }
-
-            break;
-        }
-    }
-}
-
-void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, const Field & value) const
-{
-    switch (attribute.type)
-    {
-        case AttributeUnderlyingType::utUInt8:
-            std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>();
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>();
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>();
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>();
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = value.get<UInt128>();
-            break;
-        case AttributeUnderlyingType::utInt8:
-            std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>();
-            break;
-        case AttributeUnderlyingType::utInt16:
-            std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>();
-            break;
-        case AttributeUnderlyingType::utInt32:
-            std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>();
-            break;
-        case AttributeUnderlyingType::utInt64:
-            std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>();
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>();
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>();
-            break;
-        case AttributeUnderlyingType::utDecimal32:
-            std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = value.get<Decimal32>();
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = value.get<Decimal64>();
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = value.get<Decimal128>();
-            break;
-
-        case AttributeUnderlyingType::utString:
-        {
-            const auto & string = value.get<String>();
-            auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
-            const auto & null_value_ref = std::get<String>(attribute.null_values);
-
-            /// free memory unless it points to a null_value
-            if (string_ref.data && string_ref.data != null_value_ref.data())
-                string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
-
-            const auto str_size = string.size();
-            if (str_size != 0)
-            {
-                auto * string_ptr = string_arena->alloc(str_size + 1);
-                std::copy(string.data(), string.data() + str_size + 1, string_ptr);
-                string_ref = StringRef{string_ptr, str_size};
-            }
-            else
-                string_ref = {};
 
             break;
         }
@@ -956,10 +853,6 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
 
     auto & map_ids = update_unit_ptr->found_ids;
 
-    std::unordered_map<Key, UInt8> remaining_ids{update_unit_ptr->requested_ids.size()};
-    for (const auto id : update_unit_ptr->requested_ids)
-        remaining_ids.insert({id, 0});
-
     size_t found_num = 0;
 
     const auto now = std::chrono::system_clock::now();
@@ -990,7 +883,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
 
                 /// cache column pointers
                 const auto column_ptrs = ext::map<std::vector>(
-                        ext::range(0, attributes.size()), [&block](size_t i) { return block.safeGetByPosition(i + 1).column.get(); });
+                        ext::range(0, attributes.size()), [&block] (size_t i) { return block.safeGetByPosition(i + 1).column.get(); });
 
                 found_num += ids.size();
 
@@ -998,46 +891,36 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                 {
                     /// Modifying cache with write lock
                     ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+
                     const auto id = ids[i];
-
-                    const auto find_result = findCellIdx(id, now);
-                    const auto & cell_idx = find_result.cell_idx;
-
-                    auto & cell = cells[cell_idx];
-
                     auto it = map_ids.find(id);
 
                     /// We have some extra keys from source. Won't add them to cache.
                     if (it == map_ids.end())
                         continue;
 
+                    auto all_values = getAttributeValuesFromBlockAtPosition(column_ptrs, i);
+
                     auto & all_attributes = it->second;
                     all_attributes.found = true;
-                    all_attributes.values = getAttributeValuesFromBlockAtPosition(column_ptrs, i);
+                    /// Copy attributes here
+                    all_attributes.values = all_values;
 
-                    for (const auto attribute_idx : ext::range(0, attributes.size()))
-                    {
-                        const auto & attribute_column = *column_ptrs[attribute_idx];
-                        auto & attribute = attributes[attribute_idx];
+                    element_count.fetch_add(1, std::memory_order_relaxed);
 
-                        setAttributeValue(attribute, cell_idx, attribute_column[i]);
-                    }
-
-                    /// if cell id is zero and zero does not map to this cell, then the cell is unused
-                    if (cell.id == 0 && cell_idx != zero_cell_idx)
-                        element_count.fetch_add(1, std::memory_order_relaxed);
-
-                    cell.id = id;
+                    /// Set deadline
+                    std::chrono::system_clock::time_point deadline;
                     if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
                     {
                         std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-                        cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
+                        deadline = now + std::chrono::seconds{distribution(rnd_engine);
                     }
                     else
-                        cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
+                        deadline = std::chrono::time_point<std::chrono::system_clock>::max();
 
-                    /// mark corresponding id as found
-                    remaining_ids[id] = 1;
+                    auto mapped_cell = std::make_shared<MappedCell>(std::move(all_values), deadline);
+
+                    cache.set(id, mapped_cell);
                 }
             }
 

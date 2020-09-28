@@ -22,6 +22,8 @@
 #include "IDictionary.h"
 #include "IDictionarySource.h"
 
+#include <Common/LRUCache.h>
+
 namespace CurrentMetrics
 {
     extern const Metric CacheDictionaryUpdateQueueBatches;
@@ -209,57 +211,27 @@ public:
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
+
+    using time_point_t = std::chrono::system_clock::time_point;
+
+    struct MappedCell
+    {
+        time_point_t deadline;
+        std::vector<AttributeValue> values;
+
+        MappedCell(std::vector<AttributeValue> && values_, time_point_t deadline_) : values(std::move(values_))), deadline(deadline_) {}
+
+        bool isAlive(time_point_t now) { return now < deadline; }
+    }
+
+    using InnerCache = LRUCache<Key, MappedCell>;
+
+    InnerCache cache;
+
     template <typename Value>
     using ContainerType = Value[];
     template <typename Value>
     using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
-
-    struct CellMetadata final
-    {
-        using time_point_t = std::chrono::system_clock::time_point;
-        using time_point_rep_t = time_point_t::rep;
-        using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
-
-        static constexpr UInt64 EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
-        static constexpr UInt64 IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
-
-        UInt64 id;
-        /// Stores both expiration time and `is_default` flag in the most significant bit
-        time_point_urep_t data;
-
-        time_point_t strict_max;
-
-        /// Sets expiration time, resets `is_default` flag to false
-        time_point_t expiresAt() const { return ext::safe_bit_cast<time_point_t>(data & EXPIRES_AT_MASK); }
-        void setExpiresAt(const time_point_t & t) { data = ext::safe_bit_cast<time_point_urep_t>(t); }
-
-        bool isDefault() const { return (data & IS_DEFAULT_MASK) == IS_DEFAULT_MASK; }
-        void setDefault() { data |= IS_DEFAULT_MASK; }
-    };
-
-    struct Attribute final
-    {
-        AttributeUnderlyingType type;
-        String name;
-        AttributeValue null_values;
-        std::variant<
-            ContainerPtrType<UInt8>,
-            ContainerPtrType<UInt16>,
-            ContainerPtrType<UInt32>,
-            ContainerPtrType<UInt64>,
-            ContainerPtrType<UInt128>,
-            ContainerPtrType<Int8>,
-            ContainerPtrType<Int16>,
-            ContainerPtrType<Int32>,
-            ContainerPtrType<Int64>,
-            ContainerPtrType<Decimal32>,
-            ContainerPtrType<Decimal64>,
-            ContainerPtrType<Decimal128>,
-            ContainerPtrType<Float32>,
-            ContainerPtrType<Float64>,
-            ContainerPtrType<StringRef>>
-            arrays;
-    };
 
     void createAttributes();
 
@@ -309,7 +281,7 @@ private:
 
     struct FindResult
     {
-        const size_t cell_idx;
+        std::shared_ptr<MappedCell> result;
         const bool valid;
         const bool outdated;
     };
