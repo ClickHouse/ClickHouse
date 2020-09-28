@@ -115,7 +115,7 @@ def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
     assert node3.query("SELECT count(*) from test_table_update") == "6\n"
 
     curl_result = node4.exec_in_container(["bash", "-c", "curl -s 'node3:8123'"])
-    assert curl_result == 'Ok.\n'
+    assert curl_result == b'Ok.\n'
     cat_resolv = node4.exec_in_container(["bash", "-c", "cat /etc/resolv.conf"])
     print(("RESOLV {}".format(cat_resolv)))
 
