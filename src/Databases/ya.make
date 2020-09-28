@@ -23,6 +23,7 @@ SRCS(
     MySQL/MaterializeMetadata.cpp
     MySQL/MaterializeMySQLSettings.cpp
     MySQL/MaterializeMySQLSyncThread.cpp
+    MySQL/ConnectionMySQLSettings.cpp
 
 )
 
