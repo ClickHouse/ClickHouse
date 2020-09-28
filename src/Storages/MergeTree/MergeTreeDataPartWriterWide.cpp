@@ -94,7 +94,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
 
     std::unique_ptr<ThreadPool> writing_thread_pool;
     std::vector<WrittenOffsetColumns> offset_columns_per_column;
-    std::vector<bool> column_data_written(columns_list.size(), false);
+    std::vector<ColumnWriteResult> write_results(columns_list.size());
     if (settings.max_threads != 1)
     {
         offset_columns_per_column.reserve(columns_list.size());
@@ -129,31 +129,31 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
 
         auto write_column_job = [&, i, it]
         {
-            bool written = false;
+            ColumnWriteResult result;
             if (permutation)
             {
                 if (primary_key_block.has(it->name))
                 {
                     const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                    written = writeColumn(column.name, *column.type, primary_column, offset_columns);
+                    result = writeColumn(column.name, *column.type, primary_column, offset_columns);
                 }
                 else if (skip_indexes_block.has(it->name))
                 {
                     const auto & index_column = *skip_indexes_block.getByName(it->name).column;
-                    written = writeColumn(column.name, *column.type, index_column, offset_columns);
+                    result = writeColumn(column.name, *column.type, index_column, offset_columns);
                 }
                 else
                 {
                     /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                     ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                    written = writeColumn(column.name, *column.type, *permuted_column, offset_columns);
+                    result = writeColumn(column.name, *column.type, *permuted_column, offset_columns);
                 }
             }
             else
             {
-                written = writeColumn(column.name, *column.type, *column.column, offset_columns);
+                result = writeColumn(column.name, *column.type, *column.column, offset_columns);
             }
-            column_data_written[i] = written;
+            write_results[i] = result;
         };
 
         if (writing_thread_pool)
@@ -165,8 +165,26 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     if (writing_thread_pool)
         writing_thread_pool->wait();
 
-    // data_written = std::any_of(column_data_written.begin(), column_data_written.end(), std::identity());
-    data_written = std::find(column_data_written.begin(), column_data_written.end(), true) != column_data_written.end();
+    if (!columns_list.empty())
+    {
+        bool data_written = write_results[0].data_written;
+        const size_t new_next_mark = write_results[0].next_mark;
+        const size_t new_next_index_offset = write_results[0].next_index_offset;
+
+        for (size_t i = 1; i < write_results.size(); ++i)
+        {
+            data_written |= write_results[i].data_written;
+            if (new_next_mark != write_results[i].next_mark
+                || new_next_index_offset != write_results[i].next_index_offset)
+            {
+                throw Exception("Columns have different sizes", ErrorCodes::LOGICAL_ERROR);
+            }
+        }
+
+        /// Each column resets these values to its own size. There is a hope it is the same value.
+        next_mark = new_next_mark;
+        next_index_offset = new_next_index_offset;
+    }
 }
 
 void MergeTreeDataPartWriterWide::writeSingleMark(
@@ -272,7 +290,7 @@ void MergeTreeDataPartWriterWide::prepareWriteColumn(
 
 
 /// Column must not be empty. (column.size() !== 0)
-bool MergeTreeDataPartWriterWide::writeColumn(
+MergeTreeDataPartWriterWide::ColumnWriteResult MergeTreeDataPartWriterWide::writeColumn(
     const String & name,
     const IDataType & type,
     const IColumn & column,
@@ -339,10 +357,7 @@ bool MergeTreeDataPartWriterWide::writeColumn(
         }
     }, serialize_settings.path);
 
-    next_mark = current_column_mark;
-    next_index_offset = current_row - total_rows;
-
-    return column_data_written;
+    return { column_data_written, current_column_mark, current_row - total_rows };
 }
 
 void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)

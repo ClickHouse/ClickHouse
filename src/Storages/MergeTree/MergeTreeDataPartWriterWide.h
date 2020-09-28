@@ -28,6 +28,13 @@ public:
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 
 private:
+    struct ColumnWriteResult
+    {
+        bool data_written;
+        size_t next_mark;
+        size_t next_index_offset;
+    };
+
     /// Get offset_columns to be written for given column.
     static WrittenOffsetColumns getOffsetColumnsForColumn(
         const String & name,
@@ -41,8 +48,8 @@ private:
         WrittenOffsetColumns & offset_columns);
 
     /// Write data of one column.
-    /// Return true if any data was written.
-    bool writeColumn(
+    /// Returns information about position and whether data was written.
+    ColumnWriteResult writeColumn(
         const String & name,
         const IDataType & type,
         const IColumn & column,
