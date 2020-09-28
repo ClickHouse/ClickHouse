@@ -1469,70 +1469,74 @@ def test_simple_merge_tree_merges_are_disabled(start_cluster):
 def test_no_merges_in_configuration_allow_from_query_without_reload(start_cluster):
     try:
         name = "test_no_merges_in_configuration_allow_from_query_without_reload"
+        policy = "small_jbod_with_external_no_merges"
         node1.restart_clickhouse(kill=True)
-        assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 1]
-        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
 
-        _insert_merge_execute(name, "small_jbod_with_external_no_merges", 2, [
-                "SYSTEM START MERGES ON VOLUME small_jbod_with_external_no_merges.external"
+        _insert_merge_execute(name, policy, 2, [
+                "SYSTEM START MERGES ON VOLUME {}.external".format(policy)
             ], 2, 1)
-        assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 0]
-        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
 
     finally:
-        node1.query("SYSTEM STOP MERGES ON VOLUME small_jbod_with_external_no_merges.external")
+        node1.query("SYSTEM STOP MERGES ON VOLUME {}.external".format(policy))
 
 
 def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
     try:
         name = "test_no_merges_in_configuration_allow_from_query_with_reload"
+        policy = "small_jbod_with_external_no_merges"
         node1.restart_clickhouse(kill=True)
-        assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 1]
-        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
 
-        _insert_merge_execute(name, "small_jbod_with_external_no_merges", 2, [
-                "SYSTEM START MERGES ON VOLUME small_jbod_with_external_no_merges.external",
+        _insert_merge_execute(name, policy, 2, [
+                "SYSTEM START MERGES ON VOLUME {}.external".format(policy),
                 "SYSTEM RELOAD CONFIG"
             ], 2, 1)
-        assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 0]
-        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
 
     finally:
-        node1.query("SYSTEM STOP MERGES ON VOLUME small_jbod_with_external_no_merges.external")
+        node1.query("SYSTEM STOP MERGES ON VOLUME {}.external".format(policy))
 
 
 def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cluster):
     try:
         name = "test_yes_merges_in_configuration_allow_from_query_without_reload"
+        policy = "small_jbod_with_external"
         node1.restart_clickhouse(kill=True)
-        assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external") == [0, 0]
-        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
 
-        _insert_merge_execute(name, "small_jbod_with_external", 2, [
-                "SYSTEM STOP MERGES ON VOLUME small_jbod_with_external.external",
+        _insert_merge_execute(name, policy, 2, [
+                "SYSTEM STOP MERGES ON VOLUME {}.external".format(policy),
                 "INSERT INTO {name} VALUES (2)".format(name=name)
             ], 1, 2)
-        assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external") == [0, 1]
-        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
 
     finally:
-        node1.query("SYSTEM START MERGES ON VOLUME small_jbod_with_external.external")
+        node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))
 
 
 def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_cluster):
     try:
         name = "test_yes_merges_in_configuration_allow_from_query_with_reload"
+        policy = "small_jbod_with_external"
         node1.restart_clickhouse(kill=True)
-        assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external") == [0, 0]
-        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
 
-        _insert_merge_execute(name, "small_jbod_with_external", 2, [
-                "SYSTEM STOP MERGES ON VOLUME small_jbod_with_external.external",
+        _insert_merge_execute(name, policy, 2, [
+                "SYSTEM STOP MERGES ON VOLUME {}.external".format(policy),
                 "INSERT INTO {name} VALUES (2)".format(name=name),
                 "SYSTEM RELOAD CONFIG"
             ], 1, 2)
-        assert _get_prefer_not_to_merge_for_storage_policy(node1, "small_jbod_with_external") == [0, 1]
-        _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
 
     finally:
-        node1.query("SYSTEM START MERGES ON VOLUME small_jbod_with_external.external")
+        node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))
