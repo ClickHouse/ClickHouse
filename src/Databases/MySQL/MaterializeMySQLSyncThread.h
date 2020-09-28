@@ -91,6 +91,8 @@ private:
         String materialize_metadata_path;
         bool prepared;
 
+        String database_name;
+
         MaterializeMetadataPtr materialize_metadata;
         IMySQLBufferPtr buffer;
     };
