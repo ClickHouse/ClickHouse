@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -37,10 +38,15 @@ def cluster():
 
 
 def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET"}):
-    logs = cluster.get_container_logs(proxy_instance)
-    # Check that all possible interactions with Minio are present
-    for http_method in http_methods:
-        assert logs.find(http_method + " http://minio1") >= 0
+    for i in range(10):
+        logs = cluster.get_container_logs(proxy_instance)
+        # Check with retry that all possible interactions with Minio are present
+        for http_method in http_methods:
+            if logs.find(http_method + " http://minio1") >= 0:
+                return
+            time.sleep(1)
+        else:
+            assert False, "http method not found in logs"
 
 
 @pytest.mark.parametrize(
@@ -66,5 +72,5 @@ def test_s3_with_proxy_list(cluster, policy):
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
-    check_proxy_logs(cluster, "proxy1", ["PUT", "POST"])
-    check_proxy_logs(cluster, "proxy2", ["PUT", "POST", "GET"])
+    for proxy in ["proxy1", "proxy2"]:
+        check_proxy_logs(cluster, proxy, ["PUT", "GET"])

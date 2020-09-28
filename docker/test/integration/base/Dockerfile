@@ -16,8 +16,7 @@ RUN apt-get update \
         odbc-postgresql \
         sqlite3 \
         curl \
-        tar \
-        krb5-user
+        tar
 RUN rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

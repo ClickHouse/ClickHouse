@@ -333,16 +333,16 @@ class _SourceExecutableBase(ExternalSource):
                                         user='root')
 
 
-class SourceExecutableCache(_SourceExecutableBase):
+class SourceExecutableHashed(_SourceExecutableBase):
 
     def _get_cmd(self, path):
         return "cat {}".format(path)
 
     def compatible_with_layout(self, layout):
-        return 'cache' not in layout.name
+        return 'hashed' in layout.name
 
 
-class SourceExecutableHashed(_SourceExecutableBase):
+class SourceExecutableCache(_SourceExecutableBase):
 
     def _get_cmd(self, path):
         return "cat - >/dev/null;cat {}".format(path)

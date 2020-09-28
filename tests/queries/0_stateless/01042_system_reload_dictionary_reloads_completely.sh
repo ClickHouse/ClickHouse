@@ -8,7 +8,7 @@ set -e -o pipefail
 # Run the client.
 $CLICKHOUSE_CLIENT --multiquery <<'EOF'
 DROP DATABASE IF EXISTS dictdb;
-CREATE DATABASE dictdb Engine = Ordinary;
+CREATE DATABASE dictdb;
 CREATE TABLE dictdb.table(x Int64, y Int64, insert_time DateTime) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dictdb.table VALUES (12, 102, now());
 
