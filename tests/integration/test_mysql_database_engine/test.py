@@ -160,6 +160,33 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
         mysql_node.query("DROP DATABASE test_bad_arguments")
 
 
+def test_data_types_support_level_for_mysql_database_engine(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+        mysql_node.query("CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'")
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test_database, 'root', 'clickhouse')",
+            settings={"mysql_datatypes_support_level": "decimal,datetime64"})
+
+        assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
+        clickhouse_node.query("DETACH DATABASE test_database")
+
+        # without context settings
+        clickhouse_node.query("ATTACH DATABASE test_database")
+        assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
+
+        clickhouse_node.query(
+            "CREATE DATABASE test_database_1 ENGINE = MySQL('mysql1:3306', test_database, 'root', 'clickhouse') SETTINGS mysql_datatypes_support_level = 'decimal,datetime64'",
+            settings={"mysql_datatypes_support_level": "decimal"})
+
+        assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
+        clickhouse_node.query("DETACH DATABASE test_database_1")
+
+        # without context settings
+        clickhouse_node.query("ATTACH DATABASE test_database_1")
+        assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
+
+        mysql_node.query("DROP DATABASE test")
+
+
 decimal_values = [0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
 timestamp_values = ['2015-05-18 07:40:01.123', '2019-09-16 19:20:11.123']
 timestamp_values_no_subsecond = ['2015-05-18 07:40:01', '2019-09-16 19:20:11']
