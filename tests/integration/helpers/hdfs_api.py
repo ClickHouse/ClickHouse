@@ -27,7 +27,7 @@ class mk_krb_conf(object):
     def __enter__(self):
         with open(self.krb_conf) as f:
             content = f.read()
-        amended_content = content.replace('hdfs_kerberos', self.kdc_ip)
+        amended_content = content.replace('hdfskerberos', self.kdc_ip)
         self.amended_krb_conf = tempfile.NamedTemporaryFile(delete=False)
         self.amended_krb_conf.write(amended_content)
         self.amended_krb_conf.close()
@@ -39,12 +39,12 @@ class mk_krb_conf(object):
 
 class dns_hook(object):
     def __init__(self, hdfs_api):
-        print("dns_hook.init ", hdfs_api.kerberized)
+        print("dns_hook.init ", hdfs_api.kerberized, hdfs_api.host, hdfs_api.data_port, hdfs_api.proxy_port)
         self.hdfs_api = hdfs_api
     def __enter__(self):
         global g_dns_hook
         g_dns_hook = self
-        if self.hdfs_api.kerberized:
+        if True: # self.hdfs_api.kerberized:
             print("g_dns_hook is None ", g_dns_hook is None)
             self.original_getaddrinfo = socket.getaddrinfo
             socket.getaddrinfo = custom_getaddrinfo
@@ -52,15 +52,15 @@ class dns_hook(object):
     def __exit__(self, type, value, traceback):
         global g_dns_hook
         g_dns_hook = None
-        if self.hdfs_api.kerberized:
+        if True: # self.hdfs_api.kerberized:
             socket.getaddrinfo = self.original_getaddrinfo
     def custom_getaddrinfo(self, *args):
-        print("top of custom_getaddrinfo")
         (hostname, port) = args[:2]
+        print("top of custom_getaddrinfo", hostname, port)
 
         if hostname == self.hdfs_api.host and (port == self.hdfs_api.data_port or port == self.hdfs_api.proxy_port):
             print("dns_hook substitute")
-            return [(socket.AF_INET, 1, 6, '', (self.hdfs_api.hdfs_ip, port))]
+            return [(socket.AF_INET, 1, 6, '', ("127.0.0.1", port))]  #self.hdfs_api.hdfs_ip
         else:
             return self.original_getaddrinfo(*args)
 
@@ -72,7 +72,7 @@ class HDFSApi(object):
     def __init__(self, user, timeout=100, kerberized=False, principal=None,
                  keytab=None, krb_conf=None,
                  host = "localhost", protocol = "http",
-                 proxy_port = "50070", data_port = "50075", hdfs_ip = None, kdc_ip = None):
+                 proxy_port = 50070, data_port = 50075, hdfs_ip = None, kdc_ip = None):
         self.host = host
         self.protocol = protocol
         self.proxy_port = proxy_port
@@ -87,10 +87,18 @@ class HDFSApi(object):
         self.krb_conf = krb_conf
 
         logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
+        requests_log = logging.getLogger("requests.packages.urllib3")
+        requests_log.setLevel(logging.DEBUG)
+        requests_log.propagate = True
+
+
+
 
         if kerberized:
             self._run_kinit()
-            self.kerberos_auth = reqkerb.HTTPKerberosAuth(principal=self.principal, hostname_override=self.host)
+            self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override=self.host, principal=self.principal)
+                #principal=self.principal,
                 #hostname_override=self.host, principal=self.principal)
                 # , mutual_authentication=reqkerb.REQUIRED, force_preemptive=True)
         else:
@@ -105,7 +113,7 @@ class HDFSApi(object):
 
             os.environ["KRB5_CONFIG"] = instantiated_krb_conf
 
-            cmd = "KRB5_CONFIG={instantiated_krb_conf} kinit -R -t {keytab} -k {principal} || KRB5_CONFIG={instantiated_krb_conf} kinit -R -t {keytab} -k {principal}".format(instantiated_krb_conf=instantiated_krb_conf, keytab=self.keytab, principal=self.principal)
+            cmd = "(kinit -R -t {keytab} -k {principal} || (sleep 5 && kinit -R -t {keytab} -k {principal})) ; klist".format(instantiated_krb_conf=instantiated_krb_conf, keytab=self.keytab, principal=self.principal)
 
             print(cmd)
 
@@ -123,14 +131,19 @@ class HDFSApi(object):
         raise Exception("Kinit running failure")
 
     def read_data(self, path, universal_newlines=True):
-        response = requests.get("{protocol}://{host}:{port}/webhdfs/v1{path}?op=OPEN".format(protocol=self.protocol, host=self.host, port=self.proxy_port, path=path), headers={'host': 'localhost'}, allow_redirects=False, verify=False, auth=self.kerberos_auth)
+        with dns_hook(self):
+            response = requests.get("{protocol}://{host}:{port}/webhdfs/v1{path}?op=OPEN".format(protocol=self.protocol, host=self.host, port=self.proxy_port, path=path), headers={'host': 'localhost'}, allow_redirects=False, verify=False, auth=self.kerberos_auth)
         if response.status_code != 307:
             response.raise_for_status()
-        additional_params = '&'.join(response.headers['Location'].split('&')[1:2])
-        response_data = requests.get("{protocol}://{host}:{port}/webhdfs/v1{path}?op=OPEN&{params}".format(protocol=self.protocol, host=self.host, port=self.data_port, path=path, params=additional_params), headers={'host': 'localhost'}, verify=False, auth=self.kerberos_auth)
+        # additional_params = '&'.join(response.headers['Location'].split('&')[1:2])
+        url = "{location}".format(location=response.headers['Location'])
+        print("redirected to ", url)
+        with dns_hook(self):
+            response_data = requests.get(url,
+                                         headers={'host': 'localhost'},
+                                         verify=False, auth=self.kerberos_auth)
         if response_data.status_code != 200:
             response_data.raise_for_status()
-
         if universal_newlines:
             return response_data.text
         else:
@@ -144,7 +157,7 @@ class HDFSApi(object):
                                                                                       path=path,
                                                                                       params=params)
         if self.kerberized:
-            cmd = "curl -k --negotiate -s -i -X PUT -T {fname} '{url}'".format(fname=filename, url=url)
+            cmd = "curl -k --negotiate -s -i -X PUT -T {fname} -u : '{url}' --resolve {host}:{port}:127.0.0.1".format(fname=filename, url=url)
         else:
             cmd = "curl -s -i -X PUT -T {fname} '{url}'".format(fname=filename, url=url)
         output = subprocess.check_output(cmd, shell=True)
@@ -157,16 +170,29 @@ class HDFSApi(object):
             content = content.encode()
         named_file.write(content)
         named_file.flush()
-        print("before request.put")
+
+
+        if self.kerberized:
+            print("before request.put", os.environ["KRB5_CONFIG"])
+            self._run_kinit()
+            # cmd = "klist"
+            # subprocess.call(cmd, shell=True)
+            self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override=self.host, principal=self.principal)
+            print(self.kerberos_auth)
+
         with dns_hook(self):
             response = requests.put(
                 "{protocol}://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(protocol=self.protocol, host=self.host,
                                                                                port=self.proxy_port,
                                                                                path=path, user=self.user),
-                allow_redirects=False, headers={'host': 'localhost'}, verify=False, auth=self.kerberos_auth
+                allow_redirects=False,
+                headers={'host': 'localhost'},
+                params={'overwrite' : 'true'},
+                verify=False, auth=self.kerberos_auth
             )
         print("after request.put", response.status_code)
         if response.status_code != 307:
+            print(response.headers)
             response.raise_for_status()
         print("after status code check")
 
@@ -174,20 +200,24 @@ class HDFSApi(object):
         additional_params = '&'.join(
             response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
 
-        if not self.kerberized:
+        if False: #not self.kerberized:
             output = self._curl_to_put(fpath, path, additional_params)
             if "201 Created" not in output:
                 raise Exception("Can't create file on hdfs:\n {}".format(output))
         else:
             with dns_hook(self), open(fpath) as fh:
                 file_data = fh.read()
+                protocol = "http" # self.protocol
                 response = requests.put(
-                    "{protocol}://{host}:{port}/webhdfs/v1{path}?op=CREATE&{params}".format(protocol=self.protocol, host=self.host, port=self.proxy_port, path=path, user=self.user, params=additional_params),
+                    "{location}".format(location=response.headers['Location']),
                     data=file_data,
                     headers={'content-type':'text/plain', 'host': 'localhost'},
-                    params={'file': path},
+                    params={'file': path, 'user.name' : self.user},
                     allow_redirects=False, verify=False, auth=self.kerberos_auth
                 )
+                print(response)
+                if response.status_code != 201:
+                    response.raise_for_status()
 
 
     def write_gzip_data(self, path, content):

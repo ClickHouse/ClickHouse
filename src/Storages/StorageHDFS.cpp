@@ -176,7 +176,7 @@ public:
     HDFSBlockOutputStream(const String & uri,
         const String & format,
         const Block & sample_block_,
-        const Context & context,
+        Context & context,
         const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {

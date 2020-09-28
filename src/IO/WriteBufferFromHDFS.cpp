@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 
+#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromHDFS.h>
 #include <IO/HDFSCommon.h>
 #include <hdfs/hdfs.h>
@@ -36,9 +37,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         if (path.find_first_of("*?{") != std::string::npos)
             throw Exception("URI '" + hdfs_uri + "' contains globs, so the table is in readonly mode", ErrorCodes::CANNOT_OPEN_FILE);
 
-        if (!hdfsExists(fs.get(), path.c_str()))
-            throw Exception("File: " + path + " is already exists", ErrorCodes::BAD_ARGUMENTS);
-        fout = hdfsOpenFile(fs.get(), path.c_str(), O_WRONLY, 0, 0, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
+        int flags = hdfsExists(fs.get(), path.c_str()) ? (O_WRONLY|O_APPEND) : O_WRONLY; /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
+        fout =  hdfsOpenFile(fs.get(), path.c_str(), flags, 0, 0, 0);
 
         if (fout == nullptr)
         {
@@ -76,6 +76,8 @@ WriteBufferFromHDFS::WriteBufferFromHDFS(const std::string & hdfs_name_, const C
     : BufferWithOwnMemory<WriteBuffer>(buf_size)
     , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, context))
 {
+    // auto modified_context = std::make_shared<Context>(context);
+    // impl = std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, modified_context);
 }
 
 

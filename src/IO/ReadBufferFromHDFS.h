@@ -20,6 +20,8 @@ class ReadBufferFromHDFS : public BufferWithOwnMemory<ReadBuffer>
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
 public:
     ReadBufferFromHDFS(const std::string & hdfs_name_, const Context & context, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+
+    // ReadBufferFromHDFS(ReadBufferFromHDFS &&) = default;
     ReadBufferFromHDFS(ReadBufferFromHDFS &&) = default;
     ~ReadBufferFromHDFS() override;
 

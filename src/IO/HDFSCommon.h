@@ -28,6 +28,47 @@ struct HDFSFsDeleter
     }
 };
 
+
+
+#if 0
+
+class KinitTaskHolder
+{
+    using Container = std::map<std::string, BackgroundSchedulePool::TaskHolder>;
+    Container container;
+
+
+    String make_key(const HDFSBuilderWrapper & hbw)
+    {
+        return hbw.hadoop_kerberos_keytab + "^"
+            + hbw.hadoop_kerberos_principal + "^"
+            + std::to_string(time_relogin);
+    }
+
+public:
+    using Descriptor = Container::iterator;
+
+    Descriptor addTask(const HDFSBuilderWrapper & hdfs_builder_wrapper)
+    {
+        auto key = make_key(hdfs_builder_wrapper);
+
+        auto it = container.find(key);
+        if ( it != std::end(container))
+        {
+            it = container.insert({key, task}).first;
+        }
+
+        return it.second->getptr();
+
+    }
+    void delTask(Descriptor it)
+    {
+        container.erase(it);
+    }
+};
+
+#endif
+
 }
 
 struct HDFSFileInfo
@@ -54,10 +95,13 @@ struct HDFSFileInfo
 
 class HDFSBuilderWrapper
 {
-
     hdfsBuilder * hdfs_builder;
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
+    String hadoop_kerberos_kinit_command = "kinit";
+		String hadoop_security_kerberos_ticket_cache_path;
+
+    static std::mutex kinit_mtx;
 
     /*mutable*/ std::vector<std::pair<String, String>> config_stor;
 
@@ -66,18 +110,23 @@ class HDFSBuilderWrapper
         return config_stor.emplace_back(std::make_pair(k, v));
     }
 
-    void
-    loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & path);
 
-public:
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & path);
 
-    static const String CONFIG_PREFIX;
+    String getKinitCmd();
+
 
     bool
     needKinit{false};
 
-    String
-    getKinitCmd();
+
+
+    void
+    runKinit();
+
+    static const String CONFIG_PREFIX;
+
+public:
 
     hdfsBuilder *
     get()
@@ -86,14 +135,15 @@ public:
     }
 
     HDFSBuilderWrapper()
+        : hdfs_builder(hdfsNewBuilder())
     {
-        hdfs_builder = hdfsNewBuilder();
     }
 
     ~HDFSBuilderWrapper()
     {
         hdfsFreeBuilder(hdfs_builder);
-    };
+
+    }
 
     HDFSBuilderWrapper(const HDFSBuilderWrapper &) = delete;
     HDFSBuilderWrapper(HDFSBuilderWrapper &&) = default;
