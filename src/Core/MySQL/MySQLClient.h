@@ -37,6 +37,8 @@ public:
     BinlogEventPtr readOneBinlogEvent(UInt64 milliseconds = 0);
     Position getPosition() const { return replication.getPosition(); }
 
+    bool isConnected();
+
 private:
     String host;
     UInt16 port;

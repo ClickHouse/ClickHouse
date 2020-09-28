@@ -41,9 +41,6 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
     , settings(std::move(settings_))
     , log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
 {
-    MaterializeMetadata materialize_metadata(
-                this->getMetadataPath() + "/.metadata",
-                checkVariableAndGetVersion(pool_.get()));
     materialize_thread = std::make_shared<MaterializeMySQLSyncThread>(
         context,
         database_name_,
@@ -51,7 +48,8 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
         std::move(pool_),
         std::move(client_),
         settings.get(),
-        materialize_metadata);
+        this->getMetadataPath() + "/.metadata",
+        checkVariableAndGetVersion(pool_.get()));
 }
 
 void DatabaseMaterializeMySQL::rethrowExceptionIfNeed() const

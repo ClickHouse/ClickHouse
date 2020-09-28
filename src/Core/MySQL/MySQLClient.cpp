@@ -32,6 +32,10 @@ MySQLClient::MySQLClient(MySQLClient && other)
 {
 }
 
+bool MySQLClient::isConnected() {
+    return connected;
+}
+
 void MySQLClient::connect()
 {
     if (connected)

@@ -56,6 +56,8 @@ struct MaterializeMetadata
         const String & mysql_version_);
 };
 
+using MaterializeMetadataPtr = std::shared_ptr<MaterializeMetadata>;
+
 }
 
 #endif

@@ -48,7 +48,8 @@ public:
         mysqlxx::Pool && pool_,
         MySQLClient && client_,
         MaterializeMySQLSettings * settings_,
-        MaterializeMetadata & materialize_metadata);
+        const String & materialize_metadata_path_,
+        const String & mysql_version_);
 
     void stopSynchronization();
 
@@ -66,8 +67,26 @@ private:
     mutable mysqlxx::Pool pool;
     mutable MySQLClient client;
     MaterializeMySQLSettings * settings;
-    MaterializeMetadata materialize_metadata;
+    String materialize_metadata_path;
+    String mysql_version;
+
+    std::atomic<bool> has_new_consumers;
+    bool has_consumers;
+
     String query_prefix;
+
+    MaterializeMetadataPtr materialize_metadata;
+
+    /*
+    struct Consumer
+    {
+        String materialize_metadata_path;
+        bool waiting;
+
+        MaterializeMetadataPtr materialize_metadata;
+        IBuffer buffer;
+    };
+    */
 
     struct Buffers
     {
@@ -99,6 +118,10 @@ private:
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
 
     bool prepareSynchronized();
+
+    void dumpTables(
+        mysqlxx::Pool::Entry & connection,
+        std::unordered_map<String, String> & need_dumping_tables);
 
     void flushBuffersData(Buffers & buffers);
 
