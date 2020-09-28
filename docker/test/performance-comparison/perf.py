@@ -130,17 +130,19 @@ if not args.long:
             sys.exit(0)
 
 # Print report threshold for the test if it is set.
+ignored_change = 0.05
 if 'max_ignored_relative_change' in root.attrib:
-    print(f'report-threshold\t{root.attrib["max_ignored_relative_change"]}')
+    ignored_change = float(root.attrib["max_ignored_relative_change"])
+    print(f'report-threshold\t{ignored_change}')
 
 reportStageEnd('before-connect')
 
 # Open connections
-servers = [{'host': host, 'port': port} for (host, port) in zip(args.host, args.port)]
+servers = [{'host': host or args.host[0], 'port': port or args.port[0]} for (host, port) in itertools.zip_longest(args.host, args.port)]
 all_connections = [clickhouse_driver.Client(**server) for server in servers]
 
-for s in servers:
-    print('server\t{}\t{}'.format(s['host'], s['port']))
+for i, s in enumerate(servers):
+    print(f'server\t{i}\t{s["host"]}\t{s["port"]}')
 
 reportStageEnd('connect')
 
@@ -361,9 +363,14 @@ for query_index in queries_to_run:
     if len(all_server_times) != 2:
         continue
 
+    if len(all_server_times[0]) < 3:
+        # Don't fail if for some reason there are not enough measurements.
+        continue
+
     pvalue = stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue
-    print(f'pvalue\t{pvalue}')
-    if pvalue > 0.05:
+    diff = statistics.median(all_server_times[1]) - statistics.median(all_server_times[0])
+    print(f'diff\t{diff}\t{pvalue}')
+    if abs(diff) < ignored_change or pvalue > 0.05:
         continue
 
     # Perform profile runs for fixed amount of time. Don't limit the number
