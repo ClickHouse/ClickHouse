@@ -282,7 +282,7 @@ private:
 
     void setAttributeValue(Attribute & attribute, const Key idx, const Field & value) const;
 
-    void setAttributeInPlace(AttributeValue & place, AttributeUnderlyingType type, const Field & value) const;
+    static std::vector<AttributeValue> getAttributeValuesFromBlockAtPosition(const std::vector<const IColumn *> & column_ptrs, size_t position);
 
     Attribute & getAttribute(const std::string & attribute_name) const;
     size_t getAttributeIndex(const std::string & attribute_name) const;
