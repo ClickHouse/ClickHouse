@@ -187,8 +187,10 @@ def td(value, cell_attributes = ''):
         cell_attributes = cell_attributes,
         value = value)
 
-def th(x):
-    return '<th>' + str(x) + '</th>'
+def th(value, cell_attributes = ''):
+    return '<th {cell_attributes}>{value}</th>'.format(
+        cell_attributes = cell_attributes,
+        value = value)
 
 def tableRow(cell_values, cell_attributes = [], anchor=None):
     return tr(
@@ -199,8 +201,13 @@ def tableRow(cell_values, cell_attributes = [], anchor=None):
             if a is not None and v is not None]),
         anchor)
 
-def tableHeader(r):
-    return tr(''.join([th(f) for f in r]))
+def tableHeader(cell_values, cell_attributes = []):
+    return tr(
+        ''.join([th(v, a)
+            for v, a in itertools.zip_longest(
+                cell_values, cell_attributes,
+                fillvalue = '')
+            if a is not None and v is not None]))
 
 def tableStart(title):
     cls = '-'.join(title.lower().split(' ')[:3]);
@@ -377,16 +384,16 @@ if args.report == 'main':
             'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)',                 # 2
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 3
             'p&nbsp;<&nbsp;0.01 threshold',                   # 4
-            # Failed                                           # 5
+            '', # Failed                                           # 5
             'Test',                                            # 6
             '#',                                               # 7
             'Query',                                           # 8
             ]
-
-        text += tableHeader(columns)
-
         attrs = ['' for c in columns]
         attrs[5] = None
+
+        text += tableHeader(columns, attrs)
+
         for row in rows:
             anchor = f'{currentTableAnchor()}.{row[6]}.{row[7]}'
             if int(row[5]):
@@ -421,17 +428,17 @@ if args.report == 'main':
             'New,&nbsp;s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
             'p&nbsp;&lt;&nbsp;0.01 threshold', #3
-            # Failed #4
+            '', # Failed #4
             'Test', #5
             '#',    #6
             'Query' #7
         ]
-
-        text = tableStart('Unstable Queries')
-        text += tableHeader(columns)
-
         attrs = ['' for c in columns]
         attrs[4] = None
+
+        text = tableStart('Unstable Queries')
+        text += tableHeader(columns, attrs)
+
         for r in unstable_rows:
             anchor = f'{currentTableAnchor()}.{r[5]}.{r[6]}'
             if int(r[4]):
@@ -464,19 +471,19 @@ if args.report == 'main':
             'Test',                                               #0
             'Wall clock time,&nbsp;s',                            #1
             'Total client time,&nbsp;s',                          #2
-            'Total queries',                                 #3
+            'Total queries',                                      #3
             'Longest query<br>(sum for all runs),&nbsp;s',        #4
             'Avg wall clock time<br>(sum for all runs),&nbsp;s',  #5
             'Shortest query<br>(sum for all runs),&nbsp;s',       #6
-            # 'Runs'                                              #7
+            '', # Runs                                            #7
             ]
         attrs = ['' for c in columns]
         attrs[7] = None
 
         text = tableStart('Test Times')
-        text += tableHeader(columns)
+        text += tableHeader(columns, attrs)
 
-        allowed_average_run_time = 3.75 # 60 seconds per test at 7 runs
+        allowed_average_run_time = 1.6 # 30 seconds per test at 7 runs
         for r in rows:
             anchor = f'{currentTableAnchor()}.{r[0]}'
             total_runs = (int(r[7]) + 1) * 2  # one prewarm run, two servers
@@ -581,8 +588,8 @@ elif args.report == 'all-queries':
             return
 
         columns = [
-            # Changed #0
-            # Unstable #1
+            '', # Changed #0
+            '', # Unstable #1
             'Old,&nbsp;s', #2
             'New,&nbsp;s', #3
             'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)',                 #4
@@ -592,13 +599,13 @@ elif args.report == 'all-queries':
             '#',                                      #8
             'Query',                                  #9
             ]
-
-        text = tableStart('All Query Times')
-        text += tableHeader(columns)
-
         attrs = ['' for c in columns]
         attrs[0] = None
         attrs[1] = None
+
+        text = tableStart('All Query Times')
+        text += tableHeader(columns, attrs)
+
         for r in rows:
             anchor = f'{currentTableAnchor()}.{r[7]}.{r[8]}'
             if int(r[1]):
