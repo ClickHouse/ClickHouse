@@ -13,6 +13,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int CANNOT_SCHEDULE_TASK;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -233,6 +234,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
                 job();
+                job = {};
             }
             catch (...)
             {
@@ -276,7 +278,11 @@ std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
 void GlobalThreadPool::initialize(size_t max_threads)
 {
-    assert(!the_instance);
+    if (the_instance)
+    {
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+            "The global thread pool is initialized twice");
+    }
 
     the_instance.reset(new GlobalThreadPool(max_threads,
         1000 /*max_free_threads*/, 10000 /*max_queue_size*/,

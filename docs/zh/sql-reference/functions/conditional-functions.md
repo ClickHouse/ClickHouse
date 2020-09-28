@@ -34,7 +34,7 @@
     │ 2 │    3 │
     └───┴──────┘
 
-执行查询 `SELECT multiIf(isNull(y) x, y < 3, y, NULL) FROM t_null`。结果：
+执行查询 `SELECT multiIf(isNull(y), x, y < 3, y, NULL) FROM t_null`。结果：
 
     ┌─multiIf(isNull(y), x, less(y, 3), y, NULL)─┐
     │                                          1 │

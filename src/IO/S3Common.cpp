@@ -12,9 +12,7 @@
 #    include <aws/s3/S3Client.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <IO/S3/PocoHTTPClientFactory.h>
-#    include <IO/S3/PocoHTTPClientFactory.cpp>
 #    include <IO/S3/PocoHTTPClient.h>
-#    include <IO/S3/PocoHTTPClient.cpp>
 #    include <boost/algorithm/string.hpp>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
