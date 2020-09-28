@@ -26,9 +26,6 @@ def started_cluster():
         instance = cluster.instances['ch1']
         instance.query('CREATE DATABASE dictionaries ENGINE = Dictionary')
         instance.query('CREATE TABLE dictionary_source (id UInt64, value UInt8) ENGINE = Memory')
-        print(instance.query('SELECT * FROM system.dictionaries FORMAT Vertical'))
-        print("Started ", instance.ip_address)
-
         yield cluster
 
     finally:
