@@ -52,7 +52,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -200,17 +199,6 @@ StorageFile::StorageFile(CommonArguments args)
     setInMemoryMetadata(storage_metadata);
 }
 
-
-static std::chrono::seconds getLockTimeout(const Context & context)
-{
-    const Settings & settings = context.getSettingsRef();
-    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
-    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
-        lock_timeout = settings.max_execution_time.totalSeconds();
-    return std::chrono::seconds{lock_timeout};
-}
-
-
 class StorageFileSource : public SourceWithProgress
 {
 public:
@@ -257,9 +245,7 @@ public:
     {
         if (storage->use_table_fd)
         {
-            unique_lock = std::unique_lock(storage->rwlock, getLockTimeout(context));
-            if (!unique_lock)
-                throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+            unique_lock = std::unique_lock(storage->rwlock);
 
             /// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
             ///  and add ability to seek unseekable files, but cache sync isn't supported.
@@ -278,9 +264,7 @@ public:
         }
         else
         {
-            shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
-            if (!shared_lock)
-                throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+            shared_lock = std::shared_lock(storage->rwlock);
         }
     }
 
@@ -389,8 +373,8 @@ private:
 
     bool finished_generate = false;
 
-    std::shared_lock<std::shared_timed_mutex> shared_lock;
-    std::unique_lock<std::shared_timed_mutex> unique_lock;
+    std::shared_lock<std::shared_mutex> shared_lock;
+    std::unique_lock<std::shared_mutex> unique_lock;
 };
 
 
@@ -433,7 +417,7 @@ Pipe StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns().getDefaults()));
+                this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns().getDefaults()));
 
     return Pipe::unitePipes(std::move(pipes));
 }
@@ -445,16 +429,12 @@ public:
     explicit StorageFileBlockOutputStream(
         StorageFile & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        std::unique_lock<std::shared_timed_mutex> && lock_,
         const CompressionMethod compression_method,
         const Context & context)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-        , lock(std::move(lock_))
+        , lock(storage.rwlock)
     {
-        if (!lock)
-            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (storage.use_table_fd)
         {
@@ -508,7 +488,7 @@ public:
 private:
     StorageFile & storage;
     StorageMetadataPtr metadata_snapshot;
-    std::unique_lock<std::shared_timed_mutex> lock;
+    std::unique_lock<std::shared_mutex> lock;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
     bool prefix_written{false};
@@ -526,7 +506,7 @@ BlockOutputStreamPtr StorageFile::write(
     if (!paths.empty())
         path = paths[0];
 
-    return std::make_shared<StorageFileBlockOutputStream>(*this, metadata_snapshot, std::unique_lock{rwlock, getLockTimeout(context)},
+    return std::make_shared<StorageFileBlockOutputStream>(*this, metadata_snapshot,
         chooseCompressionMethod(path, compression_method), context);
 }
 
@@ -549,6 +529,8 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
     if (path_new == paths[0])
         return;
 
+    std::unique_lock<std::shared_mutex> lock(rwlock);
+
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
     Poco::File(paths[0]).renameTo(path_new);
 
@@ -564,6 +546,8 @@ void StorageFile::truncate(
 {
     if (paths.size() != 1)
         throw Exception("Can't truncate table '" + getStorageID().getNameForLogs() + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     if (use_table_fd)
     {

@@ -1,5 +1,5 @@
 DROP DATABASE IF EXISTS database_for_dict;
-CREATE DATABASE database_for_dict Engine = Ordinary;
+CREATE DATABASE database_for_dict;
 
 DROP TABLE IF EXISTS database_for_dict.dict_source;
 CREATE TABLE database_for_dict.dict_source (id UInt64, parent_id UInt64, value String) ENGINE = Memory;
