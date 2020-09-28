@@ -51,14 +51,6 @@ namespace ErrorCodes
 }
 
 
-inline size_t CacheDictionary::getCellIdx(const Key id) const
-{
-    const auto hash = intHash64(id);
-    const auto idx = hash & size_overlap_mask;
-    return idx;
-}
-
-
 CacheDictionary::CacheDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
@@ -82,10 +74,8 @@ CacheDictionary::CacheDictionary(
     , query_wait_timeout_milliseconds(query_wait_timeout_milliseconds_)
     , max_threads_for_updates(max_threads_for_updates_)
     , log(&Poco::Logger::get("ExternalDictionaries"))
-    , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
-    , size_overlap_mask{this->size - 1}
-    , cells{this->size}
     , cache{size_}
+    , size{size_}
     , rnd_engine(randomSeed())
     , update_queue(max_update_queue_size_)
     , update_pool(max_threads_for_updates)
@@ -129,7 +119,7 @@ const IDictionarySource * CacheDictionary::getSource() const
 
 void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_value);
 
     getItemsNumberImpl<UInt64, UInt64>(*hierarchical_attribute, ids, out, [&](const size_t) { return null_value; });
 }
@@ -140,6 +130,7 @@ static inline CacheDictionary::Key getAt(const PaddedPODArray<CacheDictionary::K
 {
     return arr[idx];
 }
+
 static inline CacheDictionary::Key getAt(const CacheDictionary::Key & value, const size_t)
 {
     return value;
@@ -154,7 +145,7 @@ void CacheDictionary::isInImpl(const PaddedPODArray<Key> & child_ids, const Ance
     size_t out_size = out.size();
     memset(out.data(), 0xFF, out_size); /// 0xFF means "not calculated"
 
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_value);
 
     PaddedPODArray<Key> children(out_size, 0);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
@@ -226,7 +217,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
 {
     /// Special case with single child value.
 
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_value);
 
     PaddedPODArray<Key> child(1, child_id);
     PaddedPODArray<Key> parent(1);
@@ -254,7 +245,7 @@ void CacheDictionary::getString(const std::string & attribute_name, const Padded
     auto & attribute = getAttribute(attribute_name);
     checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
-    const auto null_value = StringRef{std::get<String>(attribute.null_values)};
+    const auto null_value = StringRef{std::get<String>(attribute.null_value)};
 
     getItemsString(attribute, ids, out, [&](const size_t) { return null_value; });
 }
@@ -325,12 +316,88 @@ CacheDictionary::FindResult CacheDictionary::findCell(const Key & id, const time
 {
     auto result = cache.get(id);
     if (!result)
-        return {result, false, false};
+        return {result, false, false, false};
     
     if (result->deadline > now)
-        return {result, true, true};
+        return {result, true, false, false};
+    
+    if (result->deadline + std::chrono::seconds(strict_max_lifetime_seconds) > now)
+        return {result, false, true, false};
 
-    return {result, true, false};
+    return {result, false, true, true};
+}
+
+void CacheDictionary::createAttributes()
+{
+    for (const auto & attribute : dict_struct.attributes)
+    {
+        attribute_index_by_name.emplace(attribute.name, attributes.size());
+        attributes.push_back(createAttributeWithTypeAndName(attribute.underlying_type, attribute.name, attribute.null_value));
+
+        if (attribute.hierarchical)
+        {
+            hierarchical_attribute = &attributes.back();
+
+            if (hierarchical_attribute->type != AttributeUnderlyingType::utUInt64)
+                throw Exception{full_name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
+        }
+    }
+}
+
+CacheDictionary::AttributeMetadata CacheDictionary::createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value)
+{
+    AttributeMetadata attr;
+
+    switch (type)
+    {
+#define DISPATCH(TYPE) \
+    case AttributeUnderlyingType::ut##TYPE: \
+        attr.type = type; \
+        attr.name = name; \
+        attr.null_value = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT */ \
+        bytes_allocated += size * sizeof(TYPE); \
+        break;
+        DISPATCH(UInt8)
+        DISPATCH(UInt16)
+        DISPATCH(UInt32)
+        DISPATCH(UInt64)
+        DISPATCH(UInt128)
+        DISPATCH(Int8)
+        DISPATCH(Int16)
+        DISPATCH(Int32)
+        DISPATCH(Int64)
+        DISPATCH(Decimal32)
+        DISPATCH(Decimal64)
+        DISPATCH(Decimal128)
+        DISPATCH(Float32)
+        DISPATCH(Float64)
+#undef DISPATCH
+        case AttributeUnderlyingType::utString:
+            attr.type = type;
+            attr.name = name;
+            attr.null_value = null_value.get<String>();
+            bytes_allocated += size * sizeof(StringRef);
+            if (!string_arena)
+                string_arena = std::make_unique<ArenaWithFreeLists>();
+            break;
+    }
+
+    return attr;
+}
+
+CacheDictionary::AttributeMetadata & CacheDictionary::getAttribute(const std::string & attribute_name) const
+{
+    const size_t attr_index = getAttributeIndex(attribute_name);
+    return attributes[attr_index];
+}
+
+size_t CacheDictionary::getAttributeIndex(const std::string & attribute_name) const
+{
+    const auto it = attribute_index_by_name.find(attribute_name);
+    if (it == std::end(attribute_index_by_name))
+        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+
+    return it->second;
 }
 
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
@@ -343,12 +410,15 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
     std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
 
-    size_t cache_hit = 0;
+    /// First fill everything with zeros.
+    const auto rows = ext::size(ids);
+    for (const auto row : ext::range(0, rows))
+        out[row] = false;
 
+    size_t cache_hit = 0;
     size_t cache_expired_count = 0;
     size_t cache_not_found_count = 0;
-
-    const auto rows = ext::size(ids);
+    
     {
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
@@ -357,20 +427,19 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
-            const auto find_result = findCellIdx(id, now);
-            const auto & cell_idx = find_result.cell_idx;
+            const auto cell = findCell(id, now);
 
             auto insert_to_answer_routine = [&] ()
             {
-                out[row] = !cells[cell_idx].isDefault();
+                out[row] = true;
             };
 
-            if (!find_result.valid)
+            if (!cell.valid)
             {
-                if (find_result.outdated)
+                if (cell.outdated)
                 {
                     /// Protection of reading very expired keys.
-                    if (now > cells[find_result.cell_idx].strict_max)
+                    if (cell.rotten)
                     {
                         cache_not_found_count++;
                         cache_expired_or_not_found_ids[id].push_back(row);
@@ -445,146 +514,18 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         if (value.found)
             for (const auto row : cache_expired_or_not_found_ids[key])
                 out[row] = true;
-        else
-            for (const auto row : cache_expired_or_not_found_ids[key])
-                out[row] = false;
     }
 }
 
-
-void CacheDictionary::createAttributes()
-{
-    const auto attributes_size = dict_struct.attributes.size();
-
-    for (const auto & attribute : dict_struct.attributes)
-    {
-        attribute_index_by_name.emplace(attribute.name, attributes.size());
-
-        if (attribute.hierarchical)
-        {
-            hierarchical_attribute = &attributes.back();
-
-            if (hierarchical_attribute->type != AttributeUnderlyingType::utUInt64)
-                throw Exception{full_name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
-        }
-    }
-}
-
-CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value)
-{
-    Attribute attr{type, name, {}, {}};
-
-    switch (type)
-    {
-#define DISPATCH(TYPE) \
-    case AttributeUnderlyingType::ut##TYPE: \
-        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT */ \
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT */ \
-        bytes_allocated += size * sizeof(TYPE); \
-        break;
-        DISPATCH(UInt8)
-        DISPATCH(UInt16)
-        DISPATCH(UInt32)
-        DISPATCH(UInt64)
-        DISPATCH(UInt128)
-        DISPATCH(Int8)
-        DISPATCH(Int16)
-        DISPATCH(Int32)
-        DISPATCH(Int64)
-        DISPATCH(Decimal32)
-        DISPATCH(Decimal64)
-        DISPATCH(Decimal128)
-        DISPATCH(Float32)
-        DISPATCH(Float64)
-#undef DISPATCH
-        case AttributeUnderlyingType::utString:
-            attr.null_values = null_value.get<String>();
-            attr.arrays = std::make_unique<ContainerType<StringRef>>(size);
-            bytes_allocated += size * sizeof(StringRef);
-            if (!string_arena)
-                string_arena = std::make_unique<ArenaWithFreeLists>();
-            break;
-    }
-
-    return attr;
-}
-
-void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key idx) const
-{
-    switch (attribute.type)
-    {
-#define DISPATCH(TYPE) \
-        case AttributeUnderlyingType::ut##TYPE: \
-            std::get<ContainerPtrType<TYPE>>(attribute.arrays)[idx] = std::get<TYPE>(attribute.null_values); /* NOLINT */ \
-            break;
-        DISPATCH(UInt8)
-        DISPATCH(UInt16)
-        DISPATCH(UInt32)
-        DISPATCH(UInt64)
-        DISPATCH(UInt128)
-        DISPATCH(Int8)
-        DISPATCH(Int16)
-        DISPATCH(Int32)
-        DISPATCH(Int64)
-        DISPATCH(Decimal32)
-        DISPATCH(Decimal64)
-        DISPATCH(Decimal128)
-        DISPATCH(Float32)
-        DISPATCH(Float64)
-#undef DISPATCH
-        case AttributeUnderlyingType::utString:
-        {
-            const auto & null_value_ref = std::get<String>(attribute.null_values);
-            auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
-
-            if (string_ref.data != null_value_ref.data())
-            {
-                if (string_ref.data)
-                    string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
-
-                string_ref = StringRef{null_value_ref};
-            }
-
-            break;
-        }
-    }
-}
-
-
-CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & attribute_name) const
-{
-    const size_t attr_index = getAttributeIndex(attribute_name);
-    return attributes[attr_index];
-}
-
-size_t CacheDictionary::getAttributeIndex(const std::string & attribute_name) const
-{
-    const auto it = attribute_index_by_name.find(attribute_name);
-    if (it == std::end(attribute_index_by_name))
-        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
-
-    return it->second;
-}
-
-bool CacheDictionary::isEmptyCell(const UInt64 idx) const
-{
-    return (idx != zero_cell_idx && cells[idx].id == 0)
-        || (cells[idx].data == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t()));
-}
 
 PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
 {
     const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
     PaddedPODArray<Key> array;
-    for (size_t idx = 0; idx < cells.size(); ++idx)
-    {
-        auto & cell = cells[idx];
-        if (!isEmptyCell(idx) && !cells[idx].isDefault())
-        {
-            array.push_back(cell.id);
-        }
-    }
+    /// Maybe inherit from LRUCache? 
+
+
     return array;
 }
 
@@ -913,7 +854,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                     if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
                     {
                         std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-                        deadline = now + std::chrono::seconds{distribution(rnd_engine);
+                        deadline = now + std::chrono::seconds(distribution(rnd_engine));
                     }
                     else
                         deadline = std::chrono::time_point<std::chrono::system_clock>::max();

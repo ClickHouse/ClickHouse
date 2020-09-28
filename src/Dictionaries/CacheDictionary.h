@@ -80,6 +80,15 @@ public:
         std::string dump();
     };
 
+    struct AttributeMetadata final
+    {
+        AttributeUnderlyingType type;
+        std::string name;
+        AttributeValue null_value;
+    };
+
+    mutable std::vector<AttributeMetadata> attributes;
+
     using FoundValuesForKeys = std::unordered_map<Key, AttributeValuesForKey>;
 
     std::string getTypeName() const override { return "Cache"; }
@@ -216,33 +225,28 @@ private:
 
     struct MappedCell
     {
-        time_point_t deadline;
         std::vector<AttributeValue> values;
+        time_point_t deadline;
 
-        MappedCell(std::vector<AttributeValue> && values_, time_point_t deadline_) : values(std::move(values_))), deadline(deadline_) {}
+        MappedCell(std::vector<AttributeValue> && values_, time_point_t deadline_) : values(std::move(values_)), deadline(deadline_) {}
 
         bool isAlive(time_point_t now) { return now < deadline; }
-    }
+    };
 
     using InnerCache = LRUCache<Key, MappedCell>;
 
-    InnerCache cache;
-
-    template <typename Value>
-    using ContainerType = Value[];
-    template <typename Value>
-    using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
+    
 
     void createAttributes();
 
-    Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value);
+    AttributeMetadata createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
-        Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
+        AttributeMetadata & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
 
     template <typename DefaultGetter>
-    void getItemsString(Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
+    void getItemsString(AttributeMetadata & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
 
     PaddedPODArray<Key> getCachedIds() const;
 
@@ -250,13 +254,9 @@ private:
 
     size_t getCellIdx(const Key id) const;
 
-    void setDefaultAttributeValue(Attribute & attribute, const Key idx) const;
-
-    void setAttributeValue(Attribute & attribute, const Key idx, const Field & value) const;
-
     static std::vector<AttributeValue> getAttributeValuesFromBlockAtPosition(const std::vector<const IColumn *> & column_ptrs, size_t position);
 
-    Attribute & getAttribute(const std::string & attribute_name) const;
+    AttributeMetadata & getAttribute(const std::string & attribute_name) const;
     size_t getAttributeIndex(const std::string & attribute_name) const;
 
     using SharedDictionarySourcePtr = std::shared_ptr<IDictionarySource>;
@@ -284,9 +284,10 @@ private:
         std::shared_ptr<MappedCell> result;
         const bool valid;
         const bool outdated;
+        const bool rotten;
     };
 
-    FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
+    FindResult findCell(const Key & id, const time_point_t now) const;
 
     template <typename AncestorType>
     void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
@@ -306,6 +307,7 @@ private:
     const size_t max_threads_for_updates;
 
     Poco::Logger * log;
+    mutable InnerCache cache;
 
     /// This lock is used for the inner cache state update function lock it for
     /// write, when it need to update cache state all other functions just
@@ -315,17 +317,8 @@ private:
     /// Actual size will be increased to match power of 2
     const size_t size;
 
-    /// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
-    const size_t size_overlap_mask;
-
-    /// Max tries to find cell, overlapped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
-    static constexpr size_t max_collision_length = 10;
-
-    const size_t zero_cell_idx{getCellIdx(0)};
     std::map<std::string, size_t> attribute_index_by_name;
-    mutable std::vector<Attribute> attributes;
-    mutable std::vector<CellMetadata> cells;
-    Attribute * hierarchical_attribute = nullptr;
+    AttributeMetadata * hierarchical_attribute = nullptr;
     std::unique_ptr<ArenaWithFreeLists> string_arena;
 
     mutable std::exception_ptr last_exception;
@@ -400,7 +393,6 @@ private:
      */
     void updateThreadFunction();
     void update(UpdateUnitPtr & update_unit_ptr) const;
-
 
     void tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const;
     void waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr) const;

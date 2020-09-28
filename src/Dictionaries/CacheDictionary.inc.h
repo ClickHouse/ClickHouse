@@ -34,9 +34,10 @@ namespace ErrorCodes
 {
 }
 
+
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumberImpl(
-    Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
+    AttributeMetadata & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
     /// First fill everything with default values
     const auto rows = ext::size(ids);
@@ -46,11 +47,11 @@ void CacheDictionary::getItemsNumberImpl(
     /// Maybe there are duplicate keys, so we remember their indices.
     std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
 
-    auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
-
     size_t cache_hit = 0;
     size_t cache_not_found_count = 0;
     size_t cache_expired_cound = 0;
+
+    const size_t attribute_index = getAttributeIndex(attribute.name);
 
     {
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
@@ -66,23 +67,19 @@ void CacheDictionary::getItemsNumberImpl(
                 *    2. cell has expired,
                 *    3. explicit defaults were specified and cell was set default. */
 
-            const auto find_result = findCell(id, now);
+            const auto cell = findCell(id, now);
 
             auto update_routine = [&]()
             {
-                const auto & cell_idx = find_result.cell_idx;
-                const auto & cell = cells[cell_idx];
-                if (!cell.isDefault())
-                    out[row] = static_cast<OutputType>(attribute_array[cell_idx]);
+                out[row] = std::get<OutputType>(cell.result->values[attribute_index]);
             };
 
-            if (!find_result.valid)
+            if (!cell.valid)
             {
-
-                if (find_result.outdated)
+                if (cell.outdated)
                 {
                     /// Protection of reading very expired keys.
-                    if (now > cells[find_result.cell_idx].strict_max)
+                    if (cell.rotten)
                     {
                         cache_not_found_count++;
                         cache_expired_or_not_found_ids[id].push_back(row);
@@ -157,30 +154,29 @@ void CacheDictionary::getItemsNumberImpl(
 
     /// Add updated keys to asnwer.
 
-    const size_t attribute_index = getAttributeIndex(attribute.name);
-
     for (auto & [key, value] : update_unit_ptr->found_ids)
     {
         if (value.found)
         {
             for (const size_t row : cache_expired_or_not_found_ids[key])
                 out[row] = std::get<OutputType>(value.values[attribute_index]);
+               
         }
     }
 }
 
 template <typename DefaultGetter>
 void CacheDictionary::getItemsString(
-    Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const
+    AttributeMetadata & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const
 {
     const auto rows = ext::size(ids);
 
     /// save on some allocations
     out->getOffsets().reserve(rows);
 
-    auto & attribute_array = std::get<ContainerPtrType<StringRef>>(attribute.arrays);
-
     auto found_outdated_values = false;
+
+    const auto attribute_index = getAttributeIndex(attribute.name); 
 
     /// perform optimistic version, fallback to pessimistic if failed
     {
@@ -192,18 +188,17 @@ void CacheDictionary::getItemsString(
         {
             const auto id = ids[row];
 
-            const auto find_result = findCellIdx(id, now);
-            if (!find_result.valid)
+            const auto cell = findCell(id, now);
+
+            if (!cell.valid)
             {
                 found_outdated_values = true;
                 break;
             }
             else
             {
-                const auto & cell_idx = find_result.cell_idx;
-                const auto & cell = cells[cell_idx];
-                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
-                out->insertData(string_ref.data, string_ref.size);
+                const auto string_ref = std::get<String>(cell.result->values[attribute_index]);
+                out->insertData(string_ref.data(), string_ref.size());
             }
         }
     }
@@ -238,27 +233,20 @@ void CacheDictionary::getItemsString(
         {
             const auto id = ids[row];
 
-            const auto find_result = findCellIdx(id, now);
+            const auto cell = findCell(id, now);
 
-
-            auto insert_value_routine = [&]()
+            auto insert_value_routine = [&] ()
             {
-                const auto & cell_idx = find_result.cell_idx;
-                const auto & cell = cells[cell_idx];
-                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
-
-                if (!cell.isDefault())
-                    inside_cache[id] = String{string_ref};
-
-                total_length += string_ref.size + 1;
+                inside_cache[id] = std::get<String>(cell.result->values[attribute_index]);
+                total_length += inside_cache[id].size() + 1;
             };
 
-            if (!find_result.valid)
+            if (!cell.valid)
             {
-                if (find_result.outdated)
+                if (cell.outdated)
                 {
                     /// Protection of reading very expired keys.
-                    if (now > cells[find_result.cell_idx].strict_max)
+                    if (cell.rotten)
                     {
                         cache_not_found_count++;
                         cache_expired_or_not_found_ids[id].push_back(row);
@@ -321,8 +309,6 @@ void CacheDictionary::getItemsString(
 
     tryPushToUpdateQueueOrThrow(update_unit_ptr);
     waitForCurrentUpdateFinish(update_unit_ptr);
-
-    const size_t attribute_index = getAttributeIndex(attribute.name);
 
     /// Only calculate the total length.
     for (auto & [key, value] : update_unit_ptr->found_ids)

@@ -9,7 +9,7 @@ namespace DB
     { \
         auto & attribute = getAttribute(attribute_name); \
         checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-        const auto null_value = std::get<TYPE>(attribute.null_values); \
+        const auto null_value = std::get<TYPE>(attribute.null_value); \
         getItemsNumberImpl<TYPE, TYPE>(attribute, ids, out, [&](const size_t) { return null_value; }); \
     }
 
