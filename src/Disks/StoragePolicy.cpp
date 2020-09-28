@@ -59,14 +59,12 @@ StoragePolicy::StoragePolicy(
             throw Exception(
                 "Volume name can contain only alphanumeric and '_' in storage policy " + backQuote(name) + " (" + attr_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         volumes.emplace_back(createVolumeFromConfig(attr_name, config, volumes_prefix + "." + attr_name, disks));
-        updateIndicesForNewVolume(volumes.size() - 1);
     }
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)
     {
         auto default_volume = std::make_shared<VolumeJBOD>(DEFAULT_VOLUME_NAME, std::vector<DiskPtr>{disks->get(DEFAULT_DISK_NAME)}, 0, false);
         volumes.emplace_back(std::move(default_volume));
-        updateIndicesForNewVolume(0);
     }
 
     if (volumes.empty())
@@ -76,6 +74,8 @@ StoragePolicy::StoragePolicy(
     move_factor = config.getDouble(config_prefix + ".move_factor", default_move_factor);
     if (move_factor > 1)
         throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
+
+    buildVolumeIndices();
 }
 
 
@@ -88,8 +88,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     if (move_factor > 1)
         throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
 
-    for (size_t i = 0; i < volumes.size(); ++i)
-        updateIndicesForNewVolume(i);
+    buildVolumeIndices();
 }
 
 
@@ -281,27 +280,30 @@ size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
 }
 
 
-void StoragePolicy::updateIndicesForNewVolume(size_t volume_index)
+void StoragePolicy::buildVolumeIndices()
 {
-    const VolumePtr & volume = volumes[volume_index];
-
-    if (volume_index_by_volume_name.find(volume->getName()) != volume_index_by_volume_name.end())
-        throw Exception("Volume names must be unique in storage policy "
-                + backQuote(name) + " (" + backQuote(volume->getName()) + " is duplicated)"
-            , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
-    volume_index_by_volume_name[volume->getName()] = volumes.size() - 1;
-
-    for (const auto & disk : volume->getDisks())
+    for (size_t index = 0; index < volumes.size(); ++index)
     {
-        const String & disk_name = disk->getName();
+        const VolumePtr & volume = volumes[index];
 
-        if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
-            throw Exception("Disk names must be unique in storage policy "
-                    + backQuote(name) + " (" + backQuote(disk_name) + " is duplicated)"
+        if (volume_index_by_volume_name.find(volume->getName()) != volume_index_by_volume_name.end())
+            throw Exception("Volume names must be unique in storage policy "
+                    + backQuote(name) + " (" + backQuote(volume->getName()) + " is duplicated)"
                 , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
-        volume_index_by_disk_name[disk_name] = volumes.size() - 1;
+        volume_index_by_volume_name[volume->getName()] = index;
+
+        for (const auto & disk : volume->getDisks())
+        {
+            const String & disk_name = disk->getName();
+
+            if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
+                throw Exception("Disk names must be unique in storage policy "
+                        + backQuote(name) + " (" + backQuote(disk_name) + " is duplicated)"
+                    , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
+            volume_index_by_disk_name[disk_name] = index;
+        }
     }
 }
 
@@ -318,7 +320,7 @@ StoragePolicySelector::StoragePolicySelector(
     {
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
             throw Exception(
-                "Storage policy name can contain only alphanumeric and '_' (" + name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+                "Storage policy name can contain only alphanumeric and '_' (" + backQuote(name) + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
         LOG_INFO(&Poco::Logger::get("StoragePolicySelector"), "Storage policy {} loaded", backQuote(name));

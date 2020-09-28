@@ -1385,9 +1385,9 @@ def test_move_across_policies_does_not_work(start_cluster):
         node1.query("DROP TABLE IF EXISTS {name}2".format(name=name))
 
 
-def _insert_merge_execute(name, policy, parts, cmds, parts_before_cmds, parts_after_cmds):
+def _insert_merge_execute(node, name, policy, parts, cmds, parts_before_cmds, parts_after_cmds):
     try:
-        node1.query("""
+        node.query("""
             CREATE TABLE {name} (
                 n Int64
             ) ENGINE = MergeTree
@@ -1398,26 +1398,26 @@ def _insert_merge_execute(name, policy, parts, cmds, parts_before_cmds, parts_af
         """.format(name=name, policy=policy))
 
         for i in range(parts):
-            node1.query("""INSERT INTO {name} VALUES ({n})""".format(name=name, n=i))
+            node.query("""INSERT INTO {name} VALUES ({n})""".format(name=name, n=i))
 
-        disks = get_used_disks_for_table(node1, name)
+        disks = get_used_disks_for_table(node, name)
         assert set(disks) == {"external"}
 
-        node1.query("""OPTIMIZE TABLE {name}""".format(name=name))
+        node.query("""OPTIMIZE TABLE {name}""".format(name=name))
 
-        parts = get_used_parts_for_table(node1, name)
+        parts = get_used_parts_for_table(node, name)
         assert len(parts) == parts_before_cmds
 
         for cmd in cmds:
-            node1.query(cmd)
+            node.query(cmd)
 
-        node1.query("""OPTIMIZE TABLE {name}""".format(name=name))
+        node.query("""OPTIMIZE TABLE {name}""".format(name=name))
 
-        parts = get_used_parts_for_table(node1, name)
+        parts = get_used_parts_for_table(node, name)
         assert len(parts) == parts_after_cmds
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
 
 def _check_merges_are_working(node, storage_policy, volume, shall_work):
@@ -1474,7 +1474,7 @@ def test_no_merges_in_configuration_allow_from_query_without_reload(start_cluste
         assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
         _check_merges_are_working(node1, policy, "external", False)
 
-        _insert_merge_execute(name, policy, 2, [
+        _insert_merge_execute(node1, name, policy, 2, [
                 "SYSTEM START MERGES ON VOLUME {}.external".format(policy)
             ], 2, 1)
         assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
@@ -1492,7 +1492,7 @@ def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
         assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
         _check_merges_are_working(node1, policy, "external", False)
 
-        _insert_merge_execute(name, policy, 2, [
+        _insert_merge_execute(node1, name, policy, 2, [
                 "SYSTEM START MERGES ON VOLUME {}.external".format(policy),
                 "SYSTEM RELOAD CONFIG"
             ], 2, 1)
@@ -1511,7 +1511,7 @@ def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cl
         assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
         _check_merges_are_working(node1, policy, "external", True)
 
-        _insert_merge_execute(name, policy, 2, [
+        _insert_merge_execute(node1, name, policy, 2, [
                 "SYSTEM STOP MERGES ON VOLUME {}.external".format(policy),
                 "INSERT INTO {name} VALUES (2)".format(name=name)
             ], 1, 2)
@@ -1530,7 +1530,7 @@ def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_clust
         assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
         _check_merges_are_working(node1, policy, "external", True)
 
-        _insert_merge_execute(name, policy, 2, [
+        _insert_merge_execute(node1, name, policy, 2, [
                 "SYSTEM STOP MERGES ON VOLUME {}.external".format(policy),
                 "INSERT INTO {name} VALUES (2)".format(name=name),
                 "SYSTEM RELOAD CONFIG"

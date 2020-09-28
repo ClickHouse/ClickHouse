@@ -133,7 +133,11 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     auto manager = context.getActionLocksManager();
     manager->cleanExpired();
 
-    if (table_id)
+    if (volume_ptr && action_type == ActionLocks::PartsMerge)
+    {
+        volume_ptr->setAvoidMergesUserOverride(!start);
+    }
+    else if (table_id)
     {
         context.checkAccess(getRequiredAccessType(action_type), table_id);
         if (start)
@@ -163,9 +167,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                     continue;
                 }
 
-                if (volume_ptr && action_type == ActionLocks::PartsMerge)
-                    volume_ptr->setAvoidMergesUserOverride(!start);
-                else if (start)
+                if (start)
                     manager->remove(table, action_type);
                 else
                     manager->add(table, action_type);
@@ -202,7 +204,7 @@ BlockIO InterpreterSystemQuery::execute()
         query.target_dictionary = query.database + "." + query.target_dictionary;
 
     volume_ptr = {};
-    if (!query.storage_policy.empty() || !query.volume.empty())
+    if (!query.storage_policy.empty() && !query.volume.empty())
         volume_ptr = context.getStoragePolicy(query.storage_policy)->getVolumeByName(query.volume);
 
     switch (query.type)
