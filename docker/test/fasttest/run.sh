@@ -116,7 +116,6 @@ $CLICKHOUSE_DIR/tests/config/install.sh
 # doesn't support SSL
 rm -f /etc/clickhouse-server/config.d/secure_ports.xml
 
-
 # Kill the server in case we are running locally and not in docker
 kill_clickhouse
 
