@@ -223,7 +223,7 @@ def test_multipart_put(cluster, maybe_auth, positive):
     one_line_length = 6  # 3 digits, 2 commas, 1 line separator.
 
     # Generate data having size more than one part
-    int_data = [[1, 2, 3] for i in range(csv_size_bytes / one_line_length)]
+    int_data = [[1, 2, 3] for i in range(csv_size_bytes // one_line_length)]
     csv_data = "".join(["{},{},{}\n".format(x, y, z) for x, y, z in int_data])
 
     assert len(csv_data) > min_part_size_bytes
