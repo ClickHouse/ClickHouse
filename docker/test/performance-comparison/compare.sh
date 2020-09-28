@@ -212,7 +212,7 @@ function run_tests
             || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
 
         profile_seconds_left=$(awk -F'	' \
-            'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $1 } END { print s }' \
+            'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
     done
 
