@@ -90,8 +90,16 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext * ctx)
 {
-    // TODO: implement this.
-    return Literal::createNumber("0");
+    if (ctx->FLOATING_LITERAL()) return Literal::createNumber(ctx->FLOATING_LITERAL());
+    if (ctx->INTEGER_LITERAL().size() == 2)
+        return Literal::createNumber(
+            ctx->INTEGER_LITERAL(0)->getSymbol()->getText() + ctx->DOT()->getSymbol()->getText()
+            + ctx->INTEGER_LITERAL(1)->getSymbol()->getText());
+    if (ctx->DOT()->getSymbol()->getTokenIndex() < ctx->INTEGER_LITERAL(0)->getSymbol()->getTokenIndex())
+        return Literal::createNumber(ctx->DOT()->getSymbol()->getText() + ctx->INTEGER_LITERAL(0)->getSymbol()->getText());
+    else
+        return Literal::createNumber(ctx->INTEGER_LITERAL(0)->getSymbol()->getText() + ctx->DOT()->getSymbol()->getText());
+    __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext * ctx)

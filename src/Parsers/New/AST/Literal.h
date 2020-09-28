@@ -44,7 +44,7 @@ class Literal : public INode
             T number;
             std::stringstream ss(String(minus ? "-" : "+") + token);
             ss >> number;
-            if (ss.fail())
+            if (ss.fail() || !ss.eof())
                 return {};
             return number;
         }
