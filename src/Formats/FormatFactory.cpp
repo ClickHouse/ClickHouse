@@ -367,6 +367,8 @@ void registerInputFormatProcessorArrow(FormatFactory & factory);
 void registerOutputFormatProcessorArrow(FormatFactory & factory);
 void registerInputFormatProcessorAvro(FormatFactory & factory);
 void registerOutputFormatProcessorAvro(FormatFactory & factory);
+void registerInputFormatProcessorRawBLOB(FormatFactory & factory);
+void registerOutputFormatProcessorRawBLOB(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -426,6 +428,9 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorTemplate(*this);
     registerInputFormatProcessorMsgPack(*this);
     registerOutputFormatProcessorMsgPack(*this);
+    registerInputFormatProcessorRawBLOB(*this);
+    registerOutputFormatProcessorRawBLOB(*this);
+
 #if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorORC(*this);
     registerOutputFormatProcessorORC(*this);
@@ -456,6 +461,7 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorRegexp(*this);
     registerInputFormatProcessorJSONAsString(*this);
     registerInputFormatProcessorLineAsString(*this);
+
 #if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorCapnProto(*this);
 #endif
