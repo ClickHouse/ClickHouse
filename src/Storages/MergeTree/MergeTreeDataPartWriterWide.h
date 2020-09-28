@@ -49,7 +49,7 @@ private:
         WrittenOffsetColumns & offset_columns);
 
     /// Write data of one column.
-    /// Return true if any data was written.
+    /// Returns information about position and whether data was written.
     bool writeColumn(
         const String & name,
         const IDataType & type,

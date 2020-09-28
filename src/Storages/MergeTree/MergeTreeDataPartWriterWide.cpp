@@ -183,7 +183,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
 
     std::unique_ptr<ThreadPool> writing_thread_pool;
     std::vector<WrittenOffsetColumns> offset_columns_per_column;
-    std::vector<bool> column_data_written(columns_list.size(), false);
+    std::vector<ColumnWriteResult> write_results(columns_list.size());
     if (settings.max_threads != 1)
     {
         offset_columns_per_column.reserve(columns_list.size());
@@ -218,7 +218,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
 
         auto write_column_job = [&, i, it]
         {
-            bool written = false;
+            ColumnWriteResult result;
             if (permutation)
             {
                 if (primary_key_block.has(it->name))
@@ -242,7 +242,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
             {
                 written = writeColumn(column.name, *column.type, *column.column, offset_columns, granules_to_write);
             }
-            column_data_written[i] = written;
+            write_results[i] = result;
         };
 
         if (writing_thread_pool)
