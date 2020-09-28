@@ -96,11 +96,16 @@ for e in root.findall('query'):
 
 assert(len(test_queries) == len(is_short))
 
+# If we're given a list of queries to run, check that it makes sense.
+for i in args.queries_to_run or []:
+    if i < 0 or i >= len(test_queries):
+        print(f'There is no query no. {i} in this test, only [{0}-{len(test_queries) - 1}] are present')
+        exit(1)
 
-# If we're only asked to print the queries, do that and exit
+# If we're only asked to print the queries, do that and exit.
 if args.print_queries:
-    for q in test_queries:
-        print(q)
+    for i in args.queries_to_run or range(0, len(test_queries)):
+        print(test_queries[i])
     exit(0)
 
 # Print short queries
@@ -227,12 +232,7 @@ if args.max_queries:
     queries_to_run = random.sample(range(0, len(test_queries)), min(len(test_queries), args.max_queries))
 
 if args.queries_to_run:
-    # Run the specified queries, with some sanity check.
-    for i in args.queries_to_run:
-        if i < 0 or i >= len(test_queries):
-            print(f'There is no query no. "{i}" in this test, only [{0}-{len(test_queries) - 1}] are present')
-            exit(1)
-
+    # Run the specified queries.
     queries_to_run = args.queries_to_run
 
 # Run test queries.
