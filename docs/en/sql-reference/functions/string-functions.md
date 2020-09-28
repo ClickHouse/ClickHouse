@@ -500,7 +500,7 @@ normalizeQuery(x)
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
-**Returned value(s)**
+**Returned value**
 
 -   Sequence of characters with placeholders.
 
