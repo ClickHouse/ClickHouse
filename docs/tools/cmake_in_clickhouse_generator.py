@@ -66,8 +66,8 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
 
     entities[name] = path, formatted_entity
 
-def process_file(root_path: str, input_name: str) -> None:
-    with open(os.path.join(root_path, input_name), 'r') as cmake_file:
+def process_file(root_path: str, file_path: str, file_name: str) -> None:
+    with open(os.path.join(file_path, file_name), 'r') as cmake_file:
         contents: str = cmake_file.read()
 
         def get_line_and_comment(target: str) -> Tuple[int, str]:
@@ -88,15 +88,17 @@ def process_file(root_path: str, input_name: str) -> None:
 
         matches: Optional[List[Entity]] = re.findall(cmake_option_regex, contents, re.MULTILINE)
 
+        file_rel_path_with_name: str = os.path.join(file_path[len(root_path):], file_name)[1:]
+
         if matches:
             for entity in matches:
-                build_entity(os.path.join(root_path[6:], input_name), entity, get_line_and_comment(entity[0]))
+                build_entity(file_rel_path_with_name, entity, get_line_and_comment(entity[0]))
 
-def process_folder(root_path:str, name: str) -> None:
+def process_folder(root_path: str, name: str) -> None:
     for root, _, files in os.walk(os.path.join(root_path, name)):
         for f in files:
             if f == "CMakeLists.txt" or ".cmake" in f:
-                process_file(root, f)
+                process_file(root_path, root, f)
 
 def generate_cmake_flags_files() -> None:
     root_path: str = os.path.join(os.path.dirname(__file__), '..', '..')
@@ -105,8 +107,8 @@ def generate_cmake_flags_files() -> None:
     header_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_header.md")
     footer_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_footer.md")
 
-    process_file(root_path, "CMakeLists.txt")
-    process_file(root_path, "programs/CMakeLists.txt")
+    process_file(root_path, root_path, "CMakeLists.txt")
+    process_file(root_path, os.path.join(root_path, "programs"), "CMakeLists.txt")
 
     process_folder(root_path, "base")
     process_folder(root_path, "cmake")
