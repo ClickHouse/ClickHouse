@@ -18,7 +18,10 @@
 namespace DB
 {
 
-struct MySQLBuffer
+using MySQLBufferAndSortingColumns = std::pair<Block, std::vector<size_t>>;
+using MySQLBufferAndSortingColumnsPtr = std::shared_ptr<MySQLBufferAndSortingColumns>;
+
+struct IMySQLBuffer
 {
     String database;
 
@@ -28,20 +31,44 @@ struct MySQLBuffer
     size_t total_blocks_rows = 0;
     size_t total_blocks_bytes = 0;
 
-    using BufferAndSortingColumns = std::pair<Block, std::vector<size_t>>;
-    using BufferAndSortingColumnsPtr = std::shared_ptr<BufferAndSortingColumns>;
-    std::unordered_map<String, BufferAndSortingColumnsPtr> data;
+    std::unordered_map<String, MySQLBufferAndSortingColumnsPtr> data;
 
-    MySQLBuffer(const String & database_) : database(database_) {}
+    IMySQLBuffer(const String & database_) : database(database_) {}
 
-    void commit(const Context & context);
+    void add(
+        size_t block_rows,
+        size_t block_bytes,
+        size_t written_rows,
+        size_t written_bytes);
 
-    void add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes);
+    bool checkThresholds(
+        size_t check_block_rows,
+        size_t check_block_bytes,
+        size_t check_total_rows,
+        size_t check_total_bytes) const;
 
-    bool checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes) const;
+    virtual void commit(const Context & context) = 0;
 
-    BufferAndSortingColumnsPtr getTableDataBuffer(const String & table, const Context & context);
+    virtual MySQLBufferAndSortingColumnsPtr getTableDataBuffer(
+        const String & table,
+        const Context & context) = 0;
+
+    virtual ~IMySQLBuffer() = default;
 };
+
+using IMySQLBufferPtr = std::shared_ptr<IMySQLBuffer>;
+
+struct MySQLDatabaseBuffer : public IMySQLBuffer
+{
+    MySQLDatabaseBuffer(const String & database_) : IMySQLBuffer(database_) {}
+    void commit(const Context & context) override;
+
+    MySQLBufferAndSortingColumnsPtr getTableDataBuffer(
+        const String & table,
+        const Context & context) override;
+};
+
+using MySQLDatabaseBufferPtr = std::shared_ptr<MySQLDatabaseBuffer>;
 
 }
 

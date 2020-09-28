@@ -56,6 +56,8 @@ public:
 
     void startSynchronization();
 
+    void registerConsumerDatabase(const String & materialize_metadata_path);
+
     static bool isMySQLSyncThread();
 
 private:
@@ -68,7 +70,6 @@ private:
     mutable mysqlxx::Pool pool;
     mutable MySQLClient client;
     MaterializeMySQLSettings * settings;
-    String materialize_metadata_path;
     String mysql_version;
 
     std::atomic<bool> has_new_consumers;
@@ -78,30 +79,42 @@ private:
 
     MaterializeMetadataPtr materialize_metadata;
 
-    /*
     struct Consumer
     {
+        enum Type
+        {
+            kDatabase,
+            kTable
+        };
+        Type consumer_type;
+
         String materialize_metadata_path;
-        bool waiting;
+        bool prepared;
 
         MaterializeMetadataPtr materialize_metadata;
-        IBuffer buffer;
+        IMySQLBufferPtr buffer;
     };
-    */
+
+    std::vector<Consumer> consumers;
 
     void synchronization();
 
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
 
-    bool prepareSynchronized();
+    void startClient();
+
+    bool prepareConsumers();
+
+    bool prepareConsumer(Consumer & consumer);
 
     void dumpTables(
+        const Consumer & consumer,
         mysqlxx::Pool::Entry & connection,
         std::unordered_map<String, String> & need_dumping_tables);
 
-    void flushBuffersData(MySQLBuffer & buffers);
+    void flushBuffersData(Consumer & consumer);
 
-    void onEvent(MySQLBuffer & buffers, const MySQLReplication::BinlogEventPtr & event);
+    void onEvent(Consumer & consumer, const MySQLReplication::BinlogEventPtr & event);
 
     std::atomic<bool> sync_quit{false};
     std::unique_ptr<ThreadFromGlobalPool> background_thread_pool;

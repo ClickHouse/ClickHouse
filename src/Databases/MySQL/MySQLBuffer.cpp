@@ -10,7 +10,6 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/copyData.h>
-#include <Databases/MySQL/MySQLBuffer.h>
 #include <Databases/MySQL/MySQLUtils.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -19,7 +18,7 @@
 namespace DB
 {
 
-void MySQLBuffer::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)
+void IMySQLBuffer::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)
 {
     total_blocks_rows += written_rows;
     total_blocks_bytes += written_bytes;
@@ -27,13 +26,13 @@ void MySQLBuffer::add(size_t block_rows, size_t block_bytes, size_t written_rows
     max_block_bytes = std::max(block_bytes, max_block_bytes);
 }
 
-bool MySQLBuffer::checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes) const
+bool IMySQLBuffer::checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes) const
 {
     return max_block_rows >= check_block_rows || max_block_bytes >= check_block_bytes || total_blocks_rows >= check_total_rows
         || total_blocks_bytes >= check_total_bytes;
 }
 
-void MySQLBuffer::commit(const Context & context)
+void MySQLDatabaseBuffer::commit(const Context & context)
 {
     try
     {
@@ -58,7 +57,7 @@ void MySQLBuffer::commit(const Context & context)
     }
 }
 
-MySQLBuffer::BufferAndSortingColumnsPtr MySQLBuffer::getTableDataBuffer(
+MySQLBufferAndSortingColumnsPtr MySQLDatabaseBuffer::getTableDataBuffer(
     const String & table_name, const Context & context)
 {
     const auto & iterator = data.find(table_name);
@@ -67,8 +66,8 @@ MySQLBuffer::BufferAndSortingColumnsPtr MySQLBuffer::getTableDataBuffer(
         StoragePtr storage = DatabaseCatalog::instance().getTable(StorageID(database, table_name), context);
 
         const StorageInMemoryMetadata & metadata = storage->getInMemoryMetadata();
-        BufferAndSortingColumnsPtr & buffer_and_soring_columns = data.try_emplace(
-            table_name, std::make_shared<BufferAndSortingColumns>(metadata.getSampleBlock(), std::vector<size_t>{})).first->second;
+        MySQLBufferAndSortingColumnsPtr & buffer_and_soring_columns = data.try_emplace(
+            table_name, std::make_shared<MySQLBufferAndSortingColumns>(metadata.getSampleBlock(), std::vector<size_t>{})).first->second;
 
         Names required_for_sorting_key = metadata.getColumnsRequiredForSortingKey();
 
