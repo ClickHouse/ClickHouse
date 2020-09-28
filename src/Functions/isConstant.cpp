@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Returns 1 if and only if the argument is constant expression.
 /// This function exists for development, debugging and demonstration purposes.
@@ -44,7 +42,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionIsConstant(FunctionFactory & factory)
 {

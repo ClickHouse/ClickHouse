@@ -1,4 +1,4 @@
-# system.text\_log {#system_tables-text_log}
+# system.text_log {#system-tables-text-log}
 
 Contains logging entries. Logging level which goes to this table can be limited with `text_log.level` server setting.
 

@@ -5,8 +5,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /** ignore(...) is a function that takes any arguments, and always returns 0.
   */
@@ -51,7 +49,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionIgnore(FunctionFactory & factory)
 {

@@ -8,8 +8,6 @@ PEERDIR(
     contrib/libs/poco/NetSSL_OpenSSL
 )
 
-CFLAGS(-g0)
-
 SRCS(
     clickhouse-server.cpp
 

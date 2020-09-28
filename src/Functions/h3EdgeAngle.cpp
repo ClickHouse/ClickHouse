@@ -18,9 +18,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-namespace
-{
-
 class FunctionH3EdgeAngle : public IFunction
 {
 public:
@@ -69,7 +66,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionH3EdgeAngle(FunctionFactory & factory)
 {
