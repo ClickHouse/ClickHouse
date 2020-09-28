@@ -272,7 +272,7 @@ columnExpr
                  | GE                                                                // greaterOrEquals
                  | LT                                                                // less
                  | GT                                                                // greater
-                 | GLOBAL? NOT? IN *                                                 // in, notIn, globalIn, globalNotIn
+                 | GLOBAL? NOT? IN                                                   // in, notIn, globalIn, globalNotIn
                  ) columnExpr                                                        # ColumnExprPrecedence3
     | columnExpr IS NOT? NULL_SQL                                                    # ColumnExprIsNull
     | columnExpr AND columnExpr                                                      # ColumnExprAnd
