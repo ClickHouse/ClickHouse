@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int SYNTAX_ERROR;
     extern const int AMBIGUOUS_COLUMN_NAME;
 }
 
@@ -147,7 +147,7 @@ std::optional<size_t> IdentifierSemantic::chooseTableColumnMatch(const ASTIdenti
 StorageID IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
 {
     if (identifier.name_parts.size() > 2)
-        throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Syntax error: more than two components in table expression", ErrorCodes::SYNTAX_ERROR);
 
     if (identifier.name_parts.size() == 2)
         return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
