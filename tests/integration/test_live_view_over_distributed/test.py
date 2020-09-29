@@ -7,6 +7,8 @@ from helpers.cluster import ClickHouseCluster
 from helpers.uclient import client, prompt, end_of_block
 
 cluster = ClickHouseCluster(__file__)
+# log = sys.stdout
+log = None
 
 NODES = {'node' + str(i): cluster.add_instance(
     'node' + str(i),
@@ -87,7 +89,6 @@ node2\t1\t11
                == "22\n"
 
     def test_watch_live_view_order_by_node(self, started_cluster, node, source):
-        log = sys.stdout
         command = " ".join(node.client.command)
         args = dict(log=log, command=command)
 
@@ -130,7 +131,6 @@ node2\t1\t11
             client1.expect('"node3",3,3,3')
 
     def test_watch_live_view_order_by_key(self, started_cluster, node, source):
-        log = sys.stdout
         command = " ".join(node.client.command)
         args = dict(log=log, command=command)
 
@@ -173,7 +173,6 @@ node2\t1\t11
             client1.expect('"node3",3,3,3')
 
     def test_watch_live_view_group_by_node(self, started_cluster, node, source):
-        log = sys.stdout
         command = " ".join(node.client.command)
         args = dict(log=log, command=command)
 
@@ -208,7 +207,6 @@ node2\t1\t11
             client1.expect('"node3",3,3')
 
     def test_watch_live_view_group_by_key(self, started_cluster, node, source):
-        log = sys.stdout
         command = " ".join(node.client.command)
         args = dict(log=log, command=command)
         sep = ' \xe2\x94\x82'
@@ -245,7 +243,6 @@ node2\t1\t11
             client1.expect('3,3,3')
 
     def test_watch_live_view_sum(self, started_cluster, node, source):
-        log = sys.stdout
         command = " ".join(node.client.command)
         args = dict(log=log, command=command)
 
