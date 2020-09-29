@@ -60,7 +60,7 @@ ENGINE = Distributed(cluster, default, merge_for_alter, i)
 """)
 
     for i in range(4):
-        k = (i / 2) * 2
+        k = (i // 2) * 2
         test_cluster.insert_reliable(test_cluster.instances['ch{}'.format(i + 1)],
                                      "INSERT INTO merge_for_alter (i) VALUES ({})({})".format(k, k + 1))
 
@@ -77,7 +77,7 @@ ENGINE = Distributed(cluster, default, merge_for_alter, i)
         ''.join(['{}\t{}\n'.format(x, x) for x in range(4)]))
 
     for i in range(4):
-        k = (i / 2) * 2 + 4
+        k = (i // 2) * 2 + 4
         test_cluster.insert_reliable(test_cluster.instances['ch{}'.format(i + 1)],
                                      "INSERT INTO merge_for_alter (p, i) VALUES (31, {})(31, {})".format(k, k + 1))
 
