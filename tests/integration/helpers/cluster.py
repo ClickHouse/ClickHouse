@@ -386,7 +386,7 @@ class ClickHouseCluster:
 
     def get_container_logs(self, instance_name):
         container_id = self.get_container_id(instance_name)
-        return self.docker_client.api.logs(container_id)
+        return self.docker_client.api.logs(container_id).decode()
 
     def exec_in_container(self, container_id, cmd, detach=False, nothrow=False, **kwargs):
         exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
