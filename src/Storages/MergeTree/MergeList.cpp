@@ -24,6 +24,7 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
     , num_parts{future_part.parts.size()}
     , thread_id{getThreadId()}
     , merge_type{future_part.merge_type}
+    , merge_algorithm{MergeAlgorithm::Undecided}
 {
     for (const auto & source_part : future_part.parts)
     {
@@ -74,6 +75,7 @@ MergeInfo MergeListElement::getInfo() const
     res.memory_usage = memory_tracker.get();
     res.thread_id = thread_id;
     res.merge_type = toString(merge_type);
+    res.merge_algorithm = toString(merge_algorithm);
 
     for (const auto & source_part_name : source_part_names)
         res.source_part_names.emplace_back(source_part_name);

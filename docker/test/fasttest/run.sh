@@ -10,7 +10,7 @@ stage=${stage:-}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
-# it being undefined. Also read it as array so that we can pass an empty list 
+# it being undefined. Also read it as array so that we can pass an empty list
 # of additional variable to cmake properly, and it doesn't generate an extra
 # empty parameter.
 read -ra FASTTEST_CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
@@ -83,7 +83,7 @@ SUBMODULES_TO_UPDATE=(contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco
 
 git submodule update --init --recursive "${SUBMODULES_TO_UPDATE[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/submodule_log.txt
 
-export CMAKE_LIBS_CONFIG="-DENABLE_LIBRARIES=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_THINLTO=0 -DUSE_UNWIND=1"
+CMAKE_LIBS_CONFIG=(-DENABLE_LIBRARIES=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_THINLTO=0 -DUSE_UNWIND=1)
 
 export CCACHE_DIR=/ccache
 export CCACHE_BASEDIR=/ClickHouse
@@ -96,8 +96,8 @@ ccache --zero-stats ||:
 
 mkdir build
 cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_C_COMPILER=clang-10 "$CMAKE_LIBS_CONFIG" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/cmake_log.txt
-ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/build_log.txt
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_C_COMPILER=clang-10 "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/cmake_log.txt
+time ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/build_log.txt
 ninja install | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/install_log.txt
 
 
@@ -111,34 +111,10 @@ ln -s /test_output /var/log/clickhouse-server
 cp "$CLICKHOUSE_DIR/programs/server/config.xml" /etc/clickhouse-server/
 cp "$CLICKHOUSE_DIR/programs/server/users.xml" /etc/clickhouse-server/
 
-mkdir -p /etc/clickhouse-server/dict_examples
-ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/metric_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/custom_settings_prefixes.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
-ln -s /usr/share/clickhouse-test/config/readonly.xml /etc/clickhouse-server/users.d/
-ln -s /usr/share/clickhouse-test/config/access_management.xml /etc/clickhouse-server/users.d/
-ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/
-#ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/clusters.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/graphite.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/
-ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
-
-# Keep original query_masking_rules.xml
-ln -s --backup=simple --suffix=_original.xml /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
+# install tests config
+$CLICKHOUSE_DIR/tests/config/install.sh
+# doesn't support SSL
+rm -f /etc/clickhouse-server/config.d/secure_ports.xml
 
 # Kill the server in case we are running locally and not in docker
 kill_clickhouse
@@ -215,7 +191,7 @@ TESTS_TO_SKIP=(
     01460_DistributedFilesToInsert
 )
 
-clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
+time clickhouse-test -j 8 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
 
 
 # substr is to remove semicolon after test name
@@ -233,7 +209,7 @@ then
     kill_clickhouse
 
     # Clean the data so that there is no interference from the previous test run.
-    rm -rvf /var/lib/clickhouse ||:
+    rm -rf /var/lib/clickhouse ||:
     mkdir /var/lib/clickhouse
 
     clickhouse-server --config /etc/clickhouse-server/config.xml --daemon

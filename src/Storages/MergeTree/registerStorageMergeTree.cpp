@@ -8,6 +8,7 @@
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -233,6 +234,25 @@ If you use the Replicated version of engines, see https://clickhouse.tech/docs/e
 }
 
 
+static void randomizePartTypeSettings(const std::unique_ptr<MergeTreeSettings> & storage_settings)
+{
+    static constexpr auto MAX_THRESHOLD_FOR_ROWS = 100000;
+    static constexpr auto MAX_THRESHOLD_FOR_BYTES = 1024 * 1024 * 10;
+
+    /// Create all parts in wide format with probability 1/3.
+    if (thread_local_rng() % 3 == 0)
+    {
+        storage_settings->min_rows_for_wide_part = 0;
+        storage_settings->min_bytes_for_wide_part = 0;
+    }
+    else
+    {
+        storage_settings->min_rows_for_wide_part = std::uniform_int_distribution{0, MAX_THRESHOLD_FOR_ROWS}(thread_local_rng);
+        storage_settings->min_bytes_for_wide_part = std::uniform_int_distribution{0, MAX_THRESHOLD_FOR_BYTES}(thread_local_rng);
+    }
+}
+
+
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
     /** [Replicated][|Summing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
@@ -395,9 +415,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        bool has_arguments = arg_num + 2 <= arg_cnt && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
+        bool has_arguments = arg_num + 2 <= arg_cnt;
+        bool has_valid_arguments = has_arguments && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
 
-        if (has_arguments)
+        if (has_valid_arguments)
         {
             const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
@@ -420,7 +441,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
             ++arg_num;
         }
-        else if (is_extended_storage_def)
+        else if (is_extended_storage_def && !has_arguments)
         {
             /// Try use default values if arguments are not specified.
             /// It works for ON CLUSTER queries when database engine is Atomic and there are {shard} and {replica} in config.
@@ -428,7 +449,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             replica_name = "{replica}"; /// TODO maybe use hostname if {replica} is not defined?
         }
         else
-            throw Exception("Expected zookeper_path and replica_name arguments", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Expected two string literal arguments: zookeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -514,7 +535,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     StorageInMemoryMetadata metadata;
     metadata.columns = args.columns;
 
-    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
+    std::unique_ptr<MergeTreeSettings> storage_settings;
+    if (replicated)
+        storage_settings = std::make_unique<MergeTreeSettings>(args.context.getReplicatedMergeTreeSettings());
+    else
+        storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {
@@ -558,8 +583,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.context);
 
         if (args.storage_def->ttl_table)
+        {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 args.storage_def->ttl_table->ptr(), metadata.columns, args.context, metadata.primary_key);
+        }
 
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
@@ -648,6 +675,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
         ++arg_num;
+    }
+
+    /// Allow to randomize part type for tests to cover more cases.
+    /// But if settings were set explicitly restrict it.
+    if (storage_settings->randomize_part_type
+        && !storage_settings->min_rows_for_wide_part.changed
+        && !storage_settings->min_bytes_for_wide_part.changed)
+    {
+        randomizePartTypeSettings(storage_settings);
+        LOG_INFO(&Poco::Logger::get(args.table_id.getNameForLogs() + " (registerStorageMergeTree)"),
+            "Applied setting 'randomize_part_type'. "
+            "Setting 'min_rows_for_wide_part' changed to {}. "
+            "Setting 'min_bytes_for_wide_part' changed to {}.",
+            storage_settings->min_rows_for_wide_part, storage_settings->min_bytes_for_wide_part);
     }
 
     if (arg_num != arg_cnt)

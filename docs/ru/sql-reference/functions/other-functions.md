@@ -508,6 +508,29 @@ SELECT
 └────────────────┴────────────┘
 ```
 
+## formatReadableQuantity(x) {#formatreadablequantityx}
+
+Принимает число. Возвращает округленное число с суффиксом (thousand, million, billion и т.д.) в виде строки.
+
+Облегчает визуальное восприятие больших чисел живым человеком.
+
+Пример:
+
+``` sql
+SELECT
+    arrayJoin([1024, 1234 * 1000, (4567 * 1000) * 1000, 98765432101234]) AS number,
+    formatReadableQuantity(number) AS number_for_humans
+```
+
+``` text
+┌─────────number─┬─number_for_humans─┐
+│           1024 │ 1.02 thousand     │
+│        1234000 │ 1.23 million      │
+│     4567000000 │ 4.57 billion      │
+│ 98765432101234 │ 98.77 trillion    │
+└────────────────┴───────────────────┘
+```
+
 ## least(a, b) {#leasta-b}
 
 Возвращает наименьшее значение из a и b.

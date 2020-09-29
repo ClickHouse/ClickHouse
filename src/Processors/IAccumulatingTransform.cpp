@@ -49,13 +49,15 @@ IAccumulatingTransform::Status IAccumulatingTransform::prepare()
         return Status::Finished;
     }
 
-    /// Close input if flag was set manually.
+    if (input.isFinished())
+        finished_input = true;
+
     if (finished_input)
+    {
+        /// Close input if flag was set manually.
         input.close();
 
-    /// Read from totals port if has it.
-    if (input.isFinished())
-    {
+        /// Read from totals port if has it.
         if (inputs.size() > 1)
         {
             auto & totals_input = inputs.back();
@@ -69,12 +71,8 @@ IAccumulatingTransform::Status IAccumulatingTransform::prepare()
                 totals_input.close();
             }
         }
-    }
 
-    /// Generate output block.
-    if (input.isFinished())
-    {
-        finished_input = true;
+        /// Generate output block.
         return Status::Ready;
     }
 

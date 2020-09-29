@@ -616,8 +616,16 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
 {
     for (const auto & action : actions)
     {
-        action.execute(block, dry_run);
-        checkLimits(block);
+        try
+        {
+            action.execute(block, dry_run);
+            checkLimits(block);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while executing '{}'", action.toString()));
+            throw;
+        }
     }
 }
 

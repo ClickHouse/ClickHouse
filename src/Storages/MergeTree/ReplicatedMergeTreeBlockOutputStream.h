@@ -2,7 +2,7 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Core/Types.h>
+#include <common/types.h>
 
 
 namespace Poco { class Logger; }

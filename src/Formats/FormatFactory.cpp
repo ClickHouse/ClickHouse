@@ -324,12 +324,85 @@ void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegm
     target = std::move(file_segmentation_engine);
 }
 
+/// File Segmentation Engines for parallel reading
+
+void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
+void registerFileSegmentationEngineCSV(FormatFactory & factory);
+void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
+void registerFileSegmentationEngineRegexp(FormatFactory & factory);
+void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
+
+/// Formats for both input/output.
+
+void registerInputFormatNative(FormatFactory & factory);
+void registerOutputFormatNative(FormatFactory & factory);
+
+void registerInputFormatProcessorNative(FormatFactory & factory);
+void registerOutputFormatProcessorNative(FormatFactory & factory);
+void registerInputFormatProcessorRowBinary(FormatFactory & factory);
+void registerOutputFormatProcessorRowBinary(FormatFactory & factory);
+void registerInputFormatProcessorTabSeparated(FormatFactory & factory);
+void registerOutputFormatProcessorTabSeparated(FormatFactory & factory);
+void registerInputFormatProcessorValues(FormatFactory & factory);
+void registerOutputFormatProcessorValues(FormatFactory & factory);
+void registerInputFormatProcessorCSV(FormatFactory & factory);
+void registerOutputFormatProcessorCSV(FormatFactory & factory);
+void registerInputFormatProcessorTSKV(FormatFactory & factory);
+void registerOutputFormatProcessorTSKV(FormatFactory & factory);
+void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
+void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
+void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
+void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
+void registerInputFormatProcessorProtobuf(FormatFactory & factory);
+void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
+void registerInputFormatProcessorTemplate(FormatFactory & factory);
+void registerOutputFormatProcessorTemplate(FormatFactory & factory);
+void registerInputFormatProcessorMsgPack(FormatFactory & factory);
+void registerOutputFormatProcessorMsgPack(FormatFactory & factory);
+void registerInputFormatProcessorORC(FormatFactory & factory);
+void registerOutputFormatProcessorORC(FormatFactory & factory);
+void registerInputFormatProcessorParquet(FormatFactory & factory);
+void registerOutputFormatProcessorParquet(FormatFactory & factory);
+void registerInputFormatProcessorArrow(FormatFactory & factory);
+void registerOutputFormatProcessorArrow(FormatFactory & factory);
+void registerInputFormatProcessorAvro(FormatFactory & factory);
+void registerOutputFormatProcessorAvro(FormatFactory & factory);
+
+/// Output only (presentational) formats.
+
+void registerOutputFormatNull(FormatFactory & factory);
+
+void registerOutputFormatProcessorPretty(FormatFactory & factory);
+void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
+void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
+void registerOutputFormatProcessorVertical(FormatFactory & factory);
+void registerOutputFormatProcessorJSON(FormatFactory & factory);
+void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
+void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
+void registerOutputFormatProcessorXML(FormatFactory & factory);
+void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
+void registerOutputFormatProcessorNull(FormatFactory & factory);
+void registerOutputFormatProcessorMySQLWire(FormatFactory & factory);
+void registerOutputFormatProcessorMarkdown(FormatFactory & factory);
+void registerOutputFormatProcessorPostgreSQLWire(FormatFactory & factory);
+
+/// Input only formats.
+
+void registerInputFormatProcessorRegexp(FormatFactory & factory);
+void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
+void registerInputFormatProcessorLineAsString(FormatFactory & factory);
+void registerInputFormatProcessorCapnProto(FormatFactory & factory);
+
 FormatFactory::FormatFactory()
 {
+    registerFileSegmentationEngineTabSeparated(*this);
+    registerFileSegmentationEngineCSV(*this);
+    registerFileSegmentationEngineJSONEachRow(*this);
+    registerFileSegmentationEngineRegexp(*this);
+    registerFileSegmentationEngineJSONAsString(*this);
+
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
-
-    registerOutputFormatProcessorJSONEachRowWithProgress(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);
@@ -349,8 +422,11 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorJSONCompactEachRow(*this);
     registerInputFormatProcessorProtobuf(*this);
     registerOutputFormatProcessorProtobuf(*this);
+    registerInputFormatProcessorTemplate(*this);
+    registerOutputFormatProcessorTemplate(*this);
+    registerInputFormatProcessorMsgPack(*this);
+    registerOutputFormatProcessorMsgPack(*this);
 #if !defined(ARCADIA_BUILD)
-    registerInputFormatProcessorCapnProto(*this);
     registerInputFormatProcessorORC(*this);
     registerOutputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
@@ -360,18 +436,6 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorAvro(*this);
     registerOutputFormatProcessorAvro(*this);
 #endif
-    registerInputFormatProcessorTemplate(*this);
-    registerOutputFormatProcessorTemplate(*this);
-    registerInputFormatProcessorRegexp(*this);
-    registerInputFormatProcessorMsgPack(*this);
-    registerOutputFormatProcessorMsgPack(*this);
-    registerInputFormatProcessorJSONAsString(*this);
-
-    registerFileSegmentationEngineTabSeparated(*this);
-    registerFileSegmentationEngineCSV(*this);
-    registerFileSegmentationEngineJSONEachRow(*this);
-    registerFileSegmentationEngineRegexp(*this);
-    registerFileSegmentationEngineJSONAsString(*this);
 
     registerOutputFormatNull(*this);
 
@@ -381,12 +445,20 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorVertical(*this);
     registerOutputFormatProcessorJSON(*this);
     registerOutputFormatProcessorJSONCompact(*this);
+    registerOutputFormatProcessorJSONEachRowWithProgress(*this);
     registerOutputFormatProcessorXML(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWire(*this);
     registerOutputFormatProcessorMarkdown(*this);
     registerOutputFormatProcessorPostgreSQLWire(*this);
+
+    registerInputFormatProcessorRegexp(*this);
+    registerInputFormatProcessorJSONAsString(*this);
+    registerInputFormatProcessorLineAsString(*this);
+#if !defined(ARCADIA_BUILD)
+    registerInputFormatProcessorCapnProto(*this);
+#endif
 }
 
 FormatFactory & FormatFactory::instance()
