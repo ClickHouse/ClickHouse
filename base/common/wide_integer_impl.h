@@ -358,7 +358,12 @@ private:
         }
         else
         {
-            if (number * sizeof(base_type) < sizeof(T))
+            if constexpr (sizeof(T) <= sizeof(base_type))
+            {
+                if (!number)
+                    return x;
+            }
+            else if (number * sizeof(base_type) < sizeof(T))
                 return x >> (number * base_bits); // & std::numeric_limits<base_type>::max()
             return 0;
         }
@@ -366,26 +371,32 @@ private:
 
     template <typename T>
     constexpr static integer<Bits, Signed>
-    op_minus(const integer<Bits, Signed> & lhs, T rhs)
+    minus(const integer<Bits, Signed> & lhs, T rhs)
     {
-        integer<Bits, Signed> res;
+        constexpr const unsigned rhs_items = (sizeof(T) > sizeof(base_type)) ? (sizeof(T) / sizeof(base_type)) : 1;
+        constexpr const unsigned op_items = (item_count < rhs_items) ? item_count : rhs_items;
 
-        bool is_underflow = false;
-        for (unsigned i = 0; i < item_count; ++i)
+        integer<Bits, Signed> res(lhs);
+        bool underflows[item_count] = {};
+
+        for (unsigned i = 0; i < op_items; ++i)
         {
-            base_type lhs_item = lhs.items[little(i)];
             base_type rhs_item = get_item(rhs, i);
+            base_type & res_item = res.items[little(i)];
 
-            if (is_underflow)
+            underflows[i] = res_item < rhs_item;
+            res_item -= rhs_item;
+        }
+
+        for (unsigned i = 1; i < item_count; ++i)
+        {
+            if (underflows[i-1])
             {
-                is_underflow = (lhs_item == 0);
-                --lhs_item;
+                base_type & res_item = res.items[little(i)];
+                if (res_item == 0)
+                    underflows[i] = true;
+                --res_item;
             }
-
-            if (lhs_item < rhs_item)
-                is_underflow = true;
-
-            res.items[little(i)] = lhs_item - rhs_item;
         }
 
         return res;
@@ -393,73 +404,126 @@ private:
 
     template <typename T>
     constexpr static integer<Bits, Signed>
-    op_plus(const integer<Bits, Signed> & lhs, T rhs)
+    plus(const integer<Bits, Signed> & lhs, T rhs)
     {
-        integer<Bits, Signed> res;
+        constexpr const unsigned rhs_items = (sizeof(T) > sizeof(base_type)) ? (sizeof(T) / sizeof(base_type)) : 1;
+        constexpr const unsigned op_items = (item_count < rhs_items) ? item_count : rhs_items;
 
-        bool is_overflow = false;
-        for (unsigned i = 0; i < item_count; ++i)
+        integer<Bits, Signed> res(lhs);
+        bool overflows[item_count] = {};
+
+        for (unsigned i = 0; i < op_items; ++i)
         {
-            base_type lhs_item = lhs.items[little(i)];
             base_type rhs_item = get_item(rhs, i);
-
-            if (is_overflow)
-            {
-                ++lhs_item;
-                is_overflow = (lhs_item == 0);
-            }
-
             base_type & res_item = res.items[little(i)];
-            res_item = lhs_item + rhs_item;
 
-            if (res_item < rhs_item)
-                is_overflow = true;
+            res_item += rhs_item;
+            overflows[i] = res_item < rhs_item;
+        }
+
+        for (unsigned i = 1; i < item_count; ++i)
+        {
+            if (overflows[i-1])
+            {
+                base_type & res_item = res.items[little(i)];
+                ++res_item;
+                if (res_item == 0)
+                    overflows[i] = true;
+            }
         }
 
         return res;
     }
 
     template <typename T>
-    constexpr static auto op_multiply(const integer<Bits, Signed> & lhs, const T & rhs)
+    constexpr static integer<Bits, Signed>
+    multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
-        integer<Bits, Signed> res{};
-#if 1
-        integer<Bits, Signed> lhs2 = op_plus(lhs, shift_left(lhs, 1));
-        integer<Bits, Signed> lhs3 = op_plus(lhs2, shift_left(lhs, 2));
-#endif
-        for (unsigned i = 0; i < item_count; ++i)
+        if constexpr (Bits == 256 && sizeof(base_type) == 8)
         {
-            base_type rhs_item = get_item(rhs, i);
-            unsigned pos = i * base_bits;
+            /// @sa https://github.com/abseil/abseil-cpp/blob/master/absl/numeric/int128.h
+            using HalfType = unsigned __int128;
 
-            while (rhs_item)
+            HalfType a01 = (HalfType(lhs.items[little(1)]) << 64) + lhs.items[little(0)];
+            HalfType a23 = (HalfType(lhs.items[little(3)]) << 64) + lhs.items[little(2)];
+            HalfType a0 = lhs.items[little(0)];
+            HalfType a1 = lhs.items[little(1)];
+
+            HalfType b01 = rhs;
+            uint64_t b0 = b01;
+            uint64_t b1 = 0;
+            HalfType b23 = 0;
+            if constexpr (sizeof(T) > 8)
+                b1 = b01 >> 64;
+            if constexpr (sizeof(T) > 16)
+                b23 = (HalfType(rhs.items[little(3)]) << 64) + rhs.items[little(2)];
+
+            HalfType r23 = a23 * b01 + a01 * b23 + a1 * b1;
+            HalfType r01 = a0 * b0;
+            HalfType r12 = (r01 >> 64) + (r23 << 64);
+            HalfType r12_x = a1 * b0;
+
+            integer<Bits, Signed> res;
+            res.items[little(0)] = r01;
+            res.items[little(3)] = r23 >> 64;
+
+            if constexpr (sizeof(T) > 8)
             {
-#if 1 /// optimization
-                if ((rhs_item & 0x7) == 0x7)
-                {
-                    res = op_plus(res, shift_left(lhs3, pos));
-                    rhs_item >>= 3;
-                    pos += 3;
-                    continue;
-                }
-
-                if ((rhs_item & 0x3) == 0x3)
-                {
-                    res = op_plus(res, shift_left(lhs2, pos));
-                    rhs_item >>= 2;
-                    pos += 2;
-                    continue;
-                }
-#endif
-                if (rhs_item & 1)
-                    res = op_plus(res, shift_left(lhs, pos));
-
-                rhs_item >>= 1;
-                ++pos;
+                HalfType r12_y = a0 * b1;
+                r12_x += r12_y;
+                if (r12_x < r12_y)
+                    ++res.items[little(3)];
             }
-        }
 
-        return res;
+            r12 += r12_x;
+            if (r12 < r12_x)
+                ++res.items[little(3)];
+
+            res.items[little(1)] = r12;
+            res.items[little(2)] = r12 >> 64;
+            return res;
+        }
+        else
+        {
+            integer<Bits, Signed> res{};
+#if 1
+            integer<Bits, Signed> lhs2 = plus(lhs, shift_left(lhs, 1));
+            integer<Bits, Signed> lhs3 = plus(lhs2, shift_left(lhs, 2));
+#endif
+            for (unsigned i = 0; i < item_count; ++i)
+            {
+                base_type rhs_item = get_item(rhs, i);
+                unsigned pos = i * base_bits;
+
+                while (rhs_item)
+                {
+#if 1 /// optimization
+                    if ((rhs_item & 0x7) == 0x7)
+                    {
+                        res = plus(res, shift_left(lhs3, pos));
+                        rhs_item >>= 3;
+                        pos += 3;
+                        continue;
+                    }
+
+                    if ((rhs_item & 0x3) == 0x3)
+                    {
+                        res = plus(res, shift_left(lhs2, pos));
+                        rhs_item >>= 2;
+                        pos += 2;
+                        continue;
+                    }
+#endif
+                    if (rhs_item & 1)
+                        res = plus(res, shift_left(lhs, pos));
+
+                    rhs_item >>= 1;
+                    ++pos;
+                }
+            }
+
+            return res;
+        }
     }
 
 public:
@@ -475,7 +539,7 @@ public:
     constexpr static integer<Bits, Signed>
     operator_unary_minus(const integer<Bits, Signed> & lhs) noexcept(std::is_same_v<Signed, unsigned>)
     {
-        return op_plus(operator_unary_tilda(lhs), 1);
+        return plus(operator_unary_tilda(lhs), 1);
     }
 
     template <typename T>
@@ -484,9 +548,9 @@ public:
         if constexpr (should_keep_size<T>())
         {
             if (is_negative(rhs))
-                return op_minus(lhs, -rhs);
+                return minus(lhs, -rhs);
             else
-                return op_plus(lhs, rhs);
+                return plus(lhs, rhs);
         }
         else
         {
@@ -502,9 +566,9 @@ public:
         if constexpr (should_keep_size<T>())
         {
             if (is_negative(rhs))
-                return op_plus(lhs, -rhs);
+                return plus(lhs, -rhs);
             else
-                return op_minus(lhs, rhs);
+                return minus(lhs, rhs);
         }
         else
         {
@@ -523,12 +587,12 @@ public:
 
             if constexpr (std::is_signed_v<Signed>)
             {
-                res = op_multiply((is_negative(lhs) ? make_positive(lhs) : lhs),
+                res = multiply((is_negative(lhs) ? make_positive(lhs) : lhs),
                                   (is_negative(rhs) ? make_positive(rhs) : rhs));
             }
             else
             {
-                res = op_multiply(lhs, (is_negative(rhs) ? make_positive(rhs) : rhs));
+                res = multiply(lhs, (is_negative(rhs) ? make_positive(rhs) : rhs));
             }
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs) != is_negative(rhs))
@@ -775,20 +839,20 @@ public:
             {
                 if (*c >= '0' && *c <= '9')
                 {
-                    res = op_multiply(res, 16U);
-                    res = op_plus(res, *c - '0');
+                    res = multiply(res, 16U);
+                    res = plus(res, *c - '0');
                     ++c;
                 }
                 else if (*c >= 'a' && *c <= 'f')
                 {
-                    res = op_multiply(res, 16U);
-                    res = op_plus(res, *c - 'a' + 10U);
+                    res = multiply(res, 16U);
+                    res = plus(res, *c - 'a' + 10U);
                     ++c;
                 }
                 else if (*c >= 'A' && *c <= 'F')
                 { // tolower must be used, but it is not constexpr
-                    res = op_multiply(res, 16U);
-                    res = op_plus(res, *c - 'A' + 10U);
+                    res = multiply(res, 16U);
+                    res = plus(res, *c - 'A' + 10U);
                     ++c;
                 }
                 else
@@ -802,8 +866,8 @@ public:
                 if (*c < '0' || *c > '9')
                     throwError("invalid char from");
 
-                res = op_multiply(res, 10U);
-                res = op_plus(res, *c - '0');
+                res = multiply(res, 10U);
+                res = plus(res, *c - '0');
                 ++c;
             }
         }

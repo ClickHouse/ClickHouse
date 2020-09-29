@@ -23,6 +23,8 @@ INSERT INTO database_for_dict.table_for_dict SELECT number, 0, -1, 'c' FROM syst
 
 DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
 
+-- FIXME filesystem error: in create_directory: Permission denied [/var/lib/clickhouse]
+-- Probably we need rewrite it to integration test
 CREATE DICTIONARY database_for_dict.ssd_dict
 (
     id UInt64,
