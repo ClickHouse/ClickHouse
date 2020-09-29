@@ -575,7 +575,7 @@
         },
         "Release": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
