@@ -116,7 +116,6 @@ private:
     Poco::Logger * log;
     const Context & global_context;
 
-    String database_name;
     String mysql_database_name;
 
     mutable mysqlxx::Pool pool;

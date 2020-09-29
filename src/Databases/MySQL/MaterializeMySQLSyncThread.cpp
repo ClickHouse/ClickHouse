@@ -68,7 +68,6 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     const String & mysql_version_)
     : log(&Poco::Logger::get("MaterializeMySQLSyncThread"))
     , global_context(context.getGlobalContext())
-    , database_name(database_name_)
     , mysql_database_name(mysql_database_name_)
     , pool(std::move(pool_))
     , client(std::move(client_))
@@ -148,7 +147,13 @@ void MaterializeMySQLSyncThread::synchronization()
     {
         client.disconnect();
         tryLogCurrentException(log);
-        getDatabase(database_name).setException(std::current_exception());
+
+        for (auto consumer : consumers) {
+            if (auto c = dynamic_pointer_cast<ConsumerDatabase>(consumer)){
+                getDatabase(c->database_name)
+                    .setException(std::current_exception());
+            }
+        }
     }
 }
 
