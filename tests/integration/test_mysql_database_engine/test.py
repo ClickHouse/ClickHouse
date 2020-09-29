@@ -169,23 +169,23 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test, 'root', 'clickhouse')",
             settings={"mysql_datatypes_support_level": "decimal,datetime64"})
 
-        assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
+        assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
         clickhouse_node.query("DETACH DATABASE test_database")
 
         # without context settings
         clickhouse_node.query("ATTACH DATABASE test_database")
-        assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
+        assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
 
         clickhouse_node.query(
             "CREATE DATABASE test_database_1 ENGINE = MySQL('mysql1:3306', test, 'root', 'clickhouse') SETTINGS mysql_datatypes_support_level = 'decimal,datetime64'",
             settings={"mysql_datatypes_support_level": "decimal"})
 
-        assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
+        assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
         clickhouse_node.query("DETACH DATABASE test_database_1")
 
         # without context settings
         clickhouse_node.query("ATTACH DATABASE test_database_1")
-        assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
+        assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
 
         clickhouse_node.query("DROP DATABASE test_database")
         assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
