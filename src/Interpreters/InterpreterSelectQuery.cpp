@@ -1112,12 +1112,14 @@ void InterpreterSelectQuery::executeFetchColumns(
     /// Optimization for trivial query like SELECT count() FROM table.
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
+        && settings.select_sequential_consistency
         && storage
         && !filter_info
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
         && typeid_cast<AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
+    
 
     if (optimize_trivial_count)
     {
