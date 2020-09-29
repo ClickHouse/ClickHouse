@@ -744,7 +744,7 @@ void DatabaseCatalog::dropTableDataTask()
         {
             dropTableFinally(table);
             std::lock_guard lock(tables_marked_dropped_mutex);
-            auto removed = tables_marked_dropped_ids.erase(table.table_id.uuid);
+            [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table.table_id.uuid);
             assert(removed);
         }
         catch (...)
