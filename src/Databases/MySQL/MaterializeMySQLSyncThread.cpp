@@ -62,7 +62,7 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
-    MaterializeMySQLSettings * settings_,
+    MaterializeMySQLSettingsPtr settings_,
     const String & mysql_version_)
     : log(&Poco::Logger::get("MaterializeMySQLSyncThread"))
     , global_context(context.getGlobalContext())

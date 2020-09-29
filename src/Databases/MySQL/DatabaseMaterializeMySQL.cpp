@@ -33,12 +33,12 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
-    std::unique_ptr<MaterializeMySQLSettings> settings_)
+    MaterializeMySQLSettingsPtr settings_)
     : IDatabase(database_name_)
     , global_context(context.getGlobalContext())
     , engine_define(database_engine_define_->clone())
     , nested_database(std::make_shared<DatabaseOrdinary>(database_name_, metadata_path_, context))
-    , settings(std::move(settings_))
+    , settings(settings_)
     , log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
 {
     materialize_thread = std::make_shared<MaterializeMySQLSyncThread>(
@@ -46,7 +46,7 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
         mysql_database_name_,
         std::move(pool_),
         std::move(client_),
-        settings.get(),
+        settings,
         checkVariableAndGetVersion(pool_.get()));
 }
 

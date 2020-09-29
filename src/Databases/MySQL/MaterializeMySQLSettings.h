@@ -28,4 +28,6 @@ struct MaterializeMySQLSettings : public BaseSettings<MaterializeMySQLSettingsTr
     void loadFromQuery(ASTStorage & storage_def);
 };
 
+using MaterializeMySQLSettingsPtr = std::shared_ptr<MaterializeMySQLSettings>;
+
 }

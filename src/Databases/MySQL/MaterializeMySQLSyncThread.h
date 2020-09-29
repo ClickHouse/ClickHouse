@@ -97,7 +97,7 @@ public:
         const String & mysql_database_name_,
         mysqlxx::Pool && pool_,
         MySQLClient && client_,
-        MaterializeMySQLSettings * settings_,
+        MaterializeMySQLSettingsPtr settings_,
         const String & mysql_version_);
 
     void stopSynchronization();
@@ -118,15 +118,11 @@ private:
 
     mutable mysqlxx::Pool pool;
     mutable MySQLClient client;
-    MaterializeMySQLSettings * settings;
+    MaterializeMySQLSettingsPtr settings;
     String mysql_version;
 
     std::atomic<bool> has_new_consumers;
     bool has_consumers;
-
-    String query_prefix;
-
-    MaterializeMetadataPtr materialize_metadata;
 
     std::vector<ConsumerPtr> consumers;
 

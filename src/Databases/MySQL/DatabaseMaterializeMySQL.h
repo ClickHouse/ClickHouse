@@ -23,7 +23,7 @@ public:
     DatabaseMaterializeMySQL(
         const Context & context, const String & database_name_, const String & metadata_path_,
         const IAST * database_engine_define_, const String & mysql_database_name_, mysqlxx::Pool && pool_,
-        MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_);
+        MySQLClient && client_, MaterializeMySQLSettingsPtr settings_);
 
     void rethrowExceptionIfNeed() const;
 
@@ -33,7 +33,7 @@ protected:
 
     ASTPtr engine_define;
     DatabasePtr nested_database;
-    std::unique_ptr<MaterializeMySQLSettings> settings;
+    MaterializeMySQLSettingsPtr settings;
 
     Poco::Logger * log;
     MaterializeMySQLSyncThreadPtr materialize_thread;
