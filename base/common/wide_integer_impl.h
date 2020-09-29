@@ -436,14 +436,12 @@ private:
     }
 
     template <typename T>
-    constexpr static auto multiply(const integer<Bits, Signed> & lhs, const T & rhs)
+    constexpr static integer<Bits, Signed>
+    multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
-        integer<Bits, Signed> res{};
-
         if constexpr (Bits == 256 && sizeof(base_type) == 8)
         {
             /// @sa https://github.com/abseil/abseil-cpp/blob/master/absl/numeric/int128.h
-            using FullType = integer<Bits, unsigned>;
             using HalfType = unsigned __int128;
 
             HalfType a01 = (HalfType(lhs.items[little(1)]) << 64) + lhs.items[little(0)];
@@ -462,32 +460,32 @@ private:
 
             HalfType r23 = a23 * b01 + a01 * b23 + a1 * b1;
             HalfType r01 = a0 * b0;
-            HalfType r12 = a1 * b0;
+            HalfType r12 = (r01 >> 64) + (r23 << 64);
+            HalfType r12_x = a1 * b0;
 
+            integer<Bits, Signed> res;
             res.items[little(0)] = r01;
-            res.items[little(1)] = r01 >> 64;
-            res.items[little(2)] = r23;
             res.items[little(3)] = r23 >> 64;
-
-            FullType tmp;
-            tmp.items[little(0)] = 0;
-            tmp.items[little(3)] = 0;
 
             if constexpr (sizeof(T) > 8)
             {
-                HalfType r12_x = a0 * b1;
-                r12 += r12_x;
-                if (r12 < r12_x)
-                    ++tmp.items[little(3)];
+                HalfType r12_y = a0 * b1;
+                r12_x += r12_y;
+                if (r12_x < r12_y)
+                    ++res.items[little(3)];
             }
 
-            tmp.items[little(1)] = r12;
-            tmp.items[little(2)] = r12 >> 64;
+            r12 += r12_x;
+            if (r12 < r12_x)
+                ++res.items[little(3)];
 
-            res += tmp;
+            res.items[little(1)] = r12;
+            res.items[little(2)] = r12 >> 64;
+            return res;
         }
         else
         {
+            integer<Bits, Signed> res{};
 #if 1
             integer<Bits, Signed> lhs2 = plus(lhs, shift_left(lhs, 1));
             integer<Bits, Signed> lhs3 = plus(lhs2, shift_left(lhs, 2));
@@ -523,9 +521,9 @@ private:
                     ++pos;
                 }
             }
-        }
 
-        return res;
+            return res;
+        }
     }
 
 public:
