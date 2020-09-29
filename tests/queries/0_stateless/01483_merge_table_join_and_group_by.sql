@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS m;
 
 CREATE TABLE a (key UInt32) ENGINE = MergeTree ORDER BY key;
 CREATE TABLE b (key UInt32, ID UInt32) ENGINE = MergeTree ORDER BY key;
-CREATE TABLE m (key UInt32) ENGINE = Merge(default, 'a');
+CREATE TABLE m (key UInt32) ENGINE = Merge(currentDatabase(), 'a');
 
 INSERT INTO a VALUES (0);
 INSERT INTO b VALUES (0, 1);
