@@ -62,7 +62,7 @@ class HDFSApi(object):
 
     def write_gzip_data(self, path, content):
         out = io.StringIO()
-        with gzip.GzipFile(fileobj=out, mode="w") as f:
+        with gzip.GzipFile(fileobj=out, mode="wb") as f:
             f.write(content)
         self.write_data(path, out.getvalue())
 
