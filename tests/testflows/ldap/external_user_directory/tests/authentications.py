@@ -506,4 +506,4 @@ def feature(self, servers=None, server=None, node="clickhouse1"):
         with rbac_roles("ldap_role") as roles:
             with ldap_external_user_directory(server=server, roles=roles, restart=True):
                 for scenario in loads(current_module(), Scenario):
-                    scenario(server=server)
+                    Scenario(test=scenario, flags=TE)(server=server)
