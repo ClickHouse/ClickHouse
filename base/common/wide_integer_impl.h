@@ -452,13 +452,13 @@ private:
             HalfType a1 = lhs.items[little(1)];
 
             HalfType b01 = rhs;
-            HalfType b0 = b01 & std::numeric_limits<uint64_t>::max();
-            HalfType b1 = 0;
+            uint64_t b0 = b01;
+            uint64_t b1 = 0;
             HalfType b23 = 0;
             if constexpr (sizeof(T) > 8)
-                b1 = b01 >> (Bits / 4);
+                b1 = b01 >> 64;
             if constexpr (sizeof(T) > 16)
-                b23 = rhs >> (Bits / 2);
+                b23 = (HalfType(rhs.items[little(3)]) << 64) + rhs.items[little(2)];
 
             HalfType r23 = a23 * b01 + a01 * b23 + a1 * b1;
             HalfType r01 = a0 * b0;
@@ -470,33 +470,19 @@ private:
             res.items[little(3)] = r23 >> 64;
 
             FullType tmp;
+            tmp.items[little(0)] = 0;
+            tmp.items[little(3)] = 0;
 
             if constexpr (sizeof(T) > 8)
             {
                 HalfType r12_x = a0 * b1;
-
-                tmp.items[little(0)] = 0;
-                tmp.items[little(1)] = r12 + r12_x;
-                tmp.items[little(2)] = (r12 >> 64) + (r12_x >> 64);
-                tmp.items[little(3)] = 0;
-
-                if (tmp.items[little(2)] < (r12 >> 64))
+                r12 += r12_x;
+                if (r12 < r12_x)
                     ++tmp.items[little(3)];
+            }
 
-                if (tmp.items[little(1)] < r12)
-                {
-                    ++tmp.items[little(2)];
-                    if (tmp.items[little(2)] == 0)
-                        ++tmp.items[little(3)];
-                }
-            }
-            else
-            {
-                tmp.items[little(0)] = 0;
-                tmp.items[little(1)] = r12;
-                tmp.items[little(2)] = (r12 >> 64);
-                tmp.items[little(3)] = 0;
-            }
+            tmp.items[little(1)] = r12;
+            tmp.items[little(2)] = r12 >> 64;
 
             res += tmp;
         }
