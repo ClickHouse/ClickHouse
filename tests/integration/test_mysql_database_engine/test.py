@@ -188,6 +188,7 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
 
         clickhouse_node.query("DROP DATABASE test_database")
+        clickhouse_node.query("DROP DATABASE test_database_1")
         assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
         mysql_node.query("DROP DATABASE test")
 
