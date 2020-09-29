@@ -199,7 +199,7 @@ function run_tests
 
         # Don't profile if we're past the time limit.
         # Use awk because bash doesn't support floating point arithmetics.
-        profile_seconds=$(awk "BEGIN { print $profile_seconds_left > 0 ? 10 : 0 }")
+        profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         # The grep is to filter out set -x output and keep only time output.
