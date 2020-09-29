@@ -19,6 +19,7 @@
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/MySQLBinlogEvent.h>
 #    include <Databases/MySQL/MySQLUtils.h>
+#    include <Databases/MySQL/MySQLDump.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <Interpreters/Context.h>
@@ -32,6 +33,8 @@
 namespace DB
 {
 
+using namespace MySQLReplicaConsumer;
+
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
@@ -41,16 +44,6 @@ namespace ErrorCodes
 }
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
-
-static inline DatabaseMaterializeMySQL & getDatabase(const String & database_name)
-{
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    if (DatabaseMaterializeMySQL * database_materialize = typeid_cast<DatabaseMaterializeMySQL *>(database.get()))
-        return *database_materialize;
-
-    throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
-}
 
 MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
 {
@@ -123,7 +116,12 @@ void MaterializeMySQLSyncThread::synchronization()
             {
                 for (auto consumer : consumers)
                 {
-                    onEvent(consumer, binlog_event);
+                    onEvent(
+                        global_context,
+                        consumer,
+                        binlog_event,
+                        log,
+                        [this](ConsumerPtr c) -> void { flushBuffersData(c); });
                 }
             }
 
@@ -168,190 +166,6 @@ void MaterializeMySQLSyncThread::startSynchronization()
 {
     background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
         [this]() { synchronization(); });
-}
-
-static inline void cleanOutdatedTables(const String & database_name, const Context & context)
-{
-    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
-    const DatabasePtr & clean_database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
-    {
-        Context query_context = createQueryContext(context);
-        String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-        String table_name = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(iterator->name());
-        tryToExecuteQuery(" DROP TABLE " + table_name, query_context, database_name, comment);
-    }
-}
-
-static inline void dumpDataForTables(
-    mysqlxx::Pool::Entry & connection,
-    std::unordered_map<String, String>& need_dumping_tables,
-    const String & query_prefix,
-    const String & database_name,
-    const String & mysql_database_name,
-    const Context & context,
-    const std::function<bool()> & is_cancelled)
-{
-    auto iterator = need_dumping_tables.begin();
-    for (; iterator != need_dumping_tables.end() && !is_cancelled(); ++iterator)
-    {
-        const auto & table_name = iterator->first;
-        Context query_context = createQueryContext(context);
-        String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-        tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
-
-        auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
-        MySQLBlockInputStream input(
-            connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
-            out->getHeader(), DEFAULT_BLOCK_SIZE);
-
-        Stopwatch watch;
-        copyData(input, *out, is_cancelled);
-        const Progress & progress = out->getProgress();
-        LOG_INFO(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database_name + ")"),
-            "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
-            , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
-            , watch.elapsedSeconds(), formatReadableQuantity(static_cast<size_t>(progress.written_rows / watch.elapsedSeconds()))
-            , formatReadableSizeWithBinarySuffix(static_cast<size_t>(progress.written_bytes / watch.elapsedSeconds())));
-    }
-}
-
-static inline UInt32 randomNumber()
-{
-    std::mt19937 rng;
-    rng.seed(std::random_device()());
-    std::uniform_int_distribution<std::mt19937::result_type> dist6(std::numeric_limits<UInt32>::min(), std::numeric_limits<UInt32>::max());
-    return dist6(rng);
-}
-
-static std::vector<String> fetchTablesInDB(
-    const mysqlxx::PoolWithFailover::Entry & connection,
-    const std::string & mysql_database_name)
-{
-    Block header{{std::make_shared<DataTypeString>(), "table_name"}};
-    String query = "SELECT TABLE_NAME AS table_name FROM INFORMATION_SCHEMA.TABLES  WHERE TABLE_SCHEMA = " + quoteString(mysql_database_name);
-
-    std::vector<String> tables_in_db;
-    MySQLBlockInputStream input(connection, query, header, DEFAULT_BLOCK_SIZE);
-
-    while (Block block = input.read())
-    {
-        tables_in_db.reserve(tables_in_db.size() + block.rows());
-        for (size_t index = 0; index < block.rows(); ++index)
-            tables_in_db.emplace_back((*block.getByPosition(0).column)[index].safeGet<String>());
-    }
-
-    return tables_in_db;
-}
-
-static std::unordered_map<String, String> fetchTablesCreateQuery(
-    const mysqlxx::PoolWithFailover::Entry & connection,
-    const String & mysql_database_name)
-{
-    std::vector<String> fetch_tables = fetchTablesInDB(
-        connection,
-        mysql_database_name);
-    std::unordered_map<String, String> tables_create_query;
-    for (const auto & fetch_table_name : fetch_tables)
-    {
-        Block show_create_table_header{
-            {std::make_shared<DataTypeString>(), "Table"},
-            {std::make_shared<DataTypeString>(), "Create Table"},
-        };
-
-        MySQLBlockInputStream show_create_table(
-            connection,
-            "SHOW CREATE TABLE " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(fetch_table_name),
-            show_create_table_header,
-            DEFAULT_BLOCK_SIZE);
-
-        Block create_query_block = show_create_table.read();
-        if (!create_query_block || create_query_block.rows() != 1)
-            throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
-
-        tables_create_query[fetch_table_name] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
-    }
-
-    return tables_create_query;
-}
-
-void fetchMetadata(
-    mysqlxx::PoolWithFailover::Entry & connection,
-    const String & mysql_database_name,
-    MaterializeMetadataPtr materialize_metadata,
-    bool fetch_need_dumping_tables,
-    bool & opened_transaction,
-    std::unordered_map<String, String> & need_dumping_tables)
-{
-
-    bool locked_tables = false;
-
-    try
-    {
-        connection->query("FLUSH TABLES;").execute();
-        connection->query("FLUSH TABLES WITH READ LOCK;").execute();
-
-        locked_tables = true;
-        materialize_metadata->fetchMasterStatus(connection);
-
-        if (fetch_need_dumping_tables) {
-            connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
-            connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
-
-            opened_transaction = true;
-            need_dumping_tables = fetchTablesCreateQuery(
-                connection,
-                mysql_database_name);
-        }
-
-        connection->query("UNLOCK TABLES;").execute();
-    }
-    catch (...)
-    {
-        if (locked_tables)
-            connection->query("UNLOCK TABLES;").execute();
-
-        throw;
-    }
-}
-
-void MaterializeMySQLSyncThread::dumpTables(
-    std::shared_ptr<const ConsumerDatabase> consumer,
-    mysqlxx::Pool::Entry & connection,
-    std::unordered_map<String, String> & need_dumping_tables)
-{
-    if (need_dumping_tables.empty())
-    {
-        return;
-    }
-
-    Position position;
-    position.update(
-        consumer->materialize_metadata->binlog_position,
-        consumer->materialize_metadata->binlog_file,
-        consumer->materialize_metadata->executed_gtid_set);
-
-    consumer->materialize_metadata->transaction(position, [&]()
-    {
-        cleanOutdatedTables(consumer->database_name, global_context);
-        dumpDataForTables(
-            connection,
-            need_dumping_tables,
-            consumer->getQueryPrefix(),
-            consumer->database_name,
-            mysql_database_name,
-            global_context,
-            [this] { return isCancelled(); });
-    });
-
-    const auto & position_message = [&]()
-    {
-        std::stringstream ss;
-        position.dump(ss);
-        return ss.str();
-    };
-    LOG_INFO(log, "MySQL dump database position: \n {}", position_message());
 }
 
 bool MaterializeMySQLSyncThread::prepareConsumers() {
@@ -403,7 +217,13 @@ bool MaterializeMySQLSyncThread::prepareConsumer(ConsumerPtr consumer)
 
             if (consumer_database)
             {
-                dumpTables(consumer_database, connection, need_dumping_tables);
+                dumpTables(
+                    global_context,
+                    connection,
+                    log,
+                    consumer_database,
+                    need_dumping_tables,
+                    [this] { return isCancelled(); });
             }
 
             if (opened_transaction)
@@ -438,6 +258,14 @@ bool MaterializeMySQLSyncThread::prepareConsumer(ConsumerPtr consumer)
     return consumer->prepared;
 }
 
+static inline UInt32 randomNumber()
+{
+    std::mt19937 rng;
+    rng.seed(std::random_device()());
+    std::uniform_int_distribution<std::mt19937::result_type> dist6(std::numeric_limits<UInt32>::min(), std::numeric_limits<UInt32>::max());
+    return dist6(rng);
+}
+
 void MaterializeMySQLSyncThread::startClient()
 {
     if (!client.isConnected())
@@ -461,77 +289,6 @@ void MaterializeMySQLSyncThread::flushBuffersData(ConsumerPtr consumer)
         return ss.str();
     };
     LOG_INFO(log, "MySQL executed position: \n {}", position_message());
-}
-
-void MaterializeMySQLSyncThread::onEvent(ConsumerPtr consumer, const BinlogEventPtr & receive_event)
-{
-    if (receive_event->type() == MYSQL_WRITE_ROWS_EVENT)
-    {
-        WriteRowsEvent & write_rows_event = static_cast<WriteRowsEvent &>(*receive_event);
-        MySQLBufferAndSortingColumnsPtr buffer = consumer->buffer->getTableDataBuffer(write_rows_event.table, global_context);
-        size_t bytes = onWriteOrDeleteData<1>(write_rows_event.rows, buffer->first, ++consumer->materialize_metadata->data_version);
-        consumer->buffer->add(buffer->first.rows(), buffer->first.bytes(), write_rows_event.rows.size(), bytes);
-    }
-    else if (receive_event->type() == MYSQL_UPDATE_ROWS_EVENT)
-    {
-        UpdateRowsEvent & update_rows_event = static_cast<UpdateRowsEvent &>(*receive_event);
-        MySQLBufferAndSortingColumnsPtr buffer = consumer->buffer->getTableDataBuffer(update_rows_event.table, global_context);
-        size_t bytes = onUpdateData(update_rows_event.rows, buffer->first, ++consumer->materialize_metadata->data_version, buffer->second);
-        consumer->buffer->add(buffer->first.rows(), buffer->first.bytes(), update_rows_event.rows.size(), bytes);
-    }
-    else if (receive_event->type() == MYSQL_DELETE_ROWS_EVENT)
-    {
-        DeleteRowsEvent & delete_rows_event = static_cast<DeleteRowsEvent &>(*receive_event);
-        MySQLBufferAndSortingColumnsPtr buffer = consumer->buffer->getTableDataBuffer(delete_rows_event.table, global_context);
-        size_t bytes = onWriteOrDeleteData<-1>(delete_rows_event.rows, buffer->first, ++consumer->materialize_metadata->data_version);
-        consumer->buffer->add(buffer->first.rows(), buffer->first.bytes(), delete_rows_event.rows.size(), bytes);
-    }
-    else if (receive_event->type() == MYSQL_QUERY_EVENT)
-    {
-        ConsumerDatabasePtr consumer_database =
-            std::dynamic_pointer_cast<ConsumerDatabase>(consumer);
-        if (!consumer_database) {
-            return;
-        }
-
-        QueryEvent & query_event = static_cast<QueryEvent &>(*receive_event);
-        flushBuffersData(consumer);
-
-        try
-        {
-            Context query_context = createQueryContext(global_context);
-            String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
-            String event_database = "";
-            if (query_event.schema == mysql_database_name) {
-                event_database = consumer_database->database_name;
-            }
-            tryToExecuteQuery(
-                consumer_database->getQueryPrefix() + query_event.query,
-                query_context,
-                event_database,
-                comment);
-        }
-        catch (Exception & exception)
-        {
-            tryLogCurrentException(log);
-
-            /// If some DDL query was not successfully parsed and executed
-            /// Then replication may fail on next binlog events anyway
-            if (exception.code() != ErrorCodes::SYNTAX_ERROR)
-                throw;
-        }
-    }
-    else if (receive_event->header.type != HEARTBEAT_EVENT)
-    {
-        const auto & dump_event_message = [&]()
-        {
-            std::stringstream ss;
-            receive_event->dump(ss);
-            return ss.str();
-        };
-
-        LOG_DEBUG(log, "Skip MySQL event: \n {}", dump_event_message());
-    }
 }
 
 bool MaterializeMySQLSyncThread::isMySQLSyncThread()

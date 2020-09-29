@@ -266,6 +266,16 @@ DatabaseTablesIteratorPtr DatabaseMaterializeMySQL::getTablesIterator(const Cont
     return nested_database->getTablesIterator(context, filter_by_table_name);
 }
 
+DatabaseMaterializeMySQL & getDatabase(const String & database_name)
+{
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
+
+    if (DatabaseMaterializeMySQL * database_materialize = typeid_cast<DatabaseMaterializeMySQL *>(database.get()))
+        return *database_materialize;
+
+    throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
+}
+
 }
 
 #endif

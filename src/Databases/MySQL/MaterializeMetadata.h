@@ -59,6 +59,14 @@ struct MaterializeMetadata
 
 using MaterializeMetadataPtr = std::shared_ptr<MaterializeMetadata>;
 
+void fetchMetadata(
+    mysqlxx::PoolWithFailover::Entry & connection,
+    const String & mysql_database_name,
+    MaterializeMetadataPtr materialize_metadata,
+    bool fetch_need_dumping_tables,
+    bool & opened_transaction,
+    std::unordered_map<String, String> & need_dumping_tables);
+
 }
 
 #endif

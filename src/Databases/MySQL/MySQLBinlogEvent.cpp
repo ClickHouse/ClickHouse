@@ -6,8 +6,12 @@
 
 #include <Databases/MySQL/MySQLBinlogEvent.h>
 
+#include <Databases/MySQL/MySQLUtils.h>
+
 namespace DB
 {
+
+using namespace MySQLReplicaConsumer;
 
 namespace ErrorCodes
 {
@@ -112,6 +116,82 @@ size_t onUpdateData(
     buffer.getByPosition(buffer.columns() - 2).column = std::move(sign_mutable_column);
     buffer.getByPosition(buffer.columns() - 1).column = std::move(version_mutable_column);
     return buffer.bytes() - prev_bytes;
+}
+
+void onEvent(
+    const Context & global_context,
+    ConsumerPtr consumer,
+    const MySQLReplication::BinlogEventPtr & receive_event,
+    Poco::Logger * log,
+    std::function<void(ConsumerPtr)> flushBuffersData)
+{
+    if (receive_event->type() == MYSQL_WRITE_ROWS_EVENT)
+    {
+        WriteRowsEvent & write_rows_event = static_cast<WriteRowsEvent &>(*receive_event);
+        MySQLBufferAndSortingColumnsPtr buffer = consumer->buffer->getTableDataBuffer(write_rows_event.table, global_context);
+        size_t bytes = onWriteOrDeleteData<1>(write_rows_event.rows, buffer->first, ++consumer->materialize_metadata->data_version);
+        consumer->buffer->add(buffer->first.rows(), buffer->first.bytes(), write_rows_event.rows.size(), bytes);
+    }
+    else if (receive_event->type() == MYSQL_UPDATE_ROWS_EVENT)
+    {
+        UpdateRowsEvent & update_rows_event = static_cast<UpdateRowsEvent &>(*receive_event);
+        MySQLBufferAndSortingColumnsPtr buffer = consumer->buffer->getTableDataBuffer(update_rows_event.table, global_context);
+        size_t bytes = onUpdateData(update_rows_event.rows, buffer->first, ++consumer->materialize_metadata->data_version, buffer->second);
+        consumer->buffer->add(buffer->first.rows(), buffer->first.bytes(), update_rows_event.rows.size(), bytes);
+    }
+    else if (receive_event->type() == MYSQL_DELETE_ROWS_EVENT)
+    {
+        DeleteRowsEvent & delete_rows_event = static_cast<DeleteRowsEvent &>(*receive_event);
+        MySQLBufferAndSortingColumnsPtr buffer = consumer->buffer->getTableDataBuffer(delete_rows_event.table, global_context);
+        size_t bytes = onWriteOrDeleteData<-1>(delete_rows_event.rows, buffer->first, ++consumer->materialize_metadata->data_version);
+        consumer->buffer->add(buffer->first.rows(), buffer->first.bytes(), delete_rows_event.rows.size(), bytes);
+    }
+    else if (receive_event->type() == MYSQL_QUERY_EVENT)
+    {
+        ConsumerDatabasePtr consumer_database =
+            std::dynamic_pointer_cast<ConsumerDatabase>(consumer);
+        if (!consumer_database) {
+            return;
+        }
+
+        QueryEvent & query_event = static_cast<QueryEvent &>(*receive_event);
+        flushBuffersData(consumer);
+
+        try
+        {
+            Context query_context = createQueryContext(global_context);
+            String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
+            String event_database = "";
+            if (query_event.schema == consumer_database->mysql_database_name) {
+                event_database = consumer_database->database_name;
+            }
+            tryToExecuteQuery(
+                consumer_database->getQueryPrefix() + query_event.query,
+                query_context,
+                event_database,
+                comment);
+        }
+        catch (Exception & exception)
+        {
+            tryLogCurrentException(log);
+
+            /// If some DDL query was not successfully parsed and executed
+            /// Then replication may fail on next binlog events anyway
+            if (exception.code() != ErrorCodes::SYNTAX_ERROR)
+                throw;
+        }
+    }
+    else if (receive_event->header.type != HEARTBEAT_EVENT)
+    {
+        const auto & dump_event_message = [&]()
+        {
+            std::stringstream ss;
+            receive_event->dump(ss);
+            return ss.str();
+        };
+
+        LOG_DEBUG(log, "Skip MySQL event: \n {}", dump_event_message());
+    }
 }
 
 }

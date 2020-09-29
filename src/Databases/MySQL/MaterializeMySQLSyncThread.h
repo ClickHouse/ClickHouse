@@ -25,6 +25,55 @@
 namespace DB
 {
 
+namespace MySQLReplicaConsumer
+{
+    struct Consumer
+    {
+        Consumer(
+            const String & mysql_database_name_,
+            const String & materialize_metadata_path_)
+            : mysql_database_name(mysql_database_name_)
+            , materialize_metadata_path(materialize_metadata_path_)
+            , prepared(false)
+        {
+        }
+
+        String mysql_database_name;
+
+        String materialize_metadata_path;
+        bool prepared;
+
+        MaterializeMetadataPtr materialize_metadata;
+        IMySQLBufferPtr buffer;
+
+        virtual ~Consumer() = default;
+    };
+
+    using ConsumerPtr = std::shared_ptr<Consumer>;
+
+    struct ConsumerDatabase : public Consumer {
+        ConsumerDatabase(
+            const String & database_name_,
+            const String & mysql_database_name_,
+            const String & materialize_metadata_path_)
+            : Consumer(mysql_database_name_, materialize_metadata_path_)
+            , database_name(database_name_)
+        {
+        }
+
+        String database_name;
+        String getQueryPrefix() const {
+            return "EXTERNAL DDL FROM MySQL(" +
+                backQuoteIfNeed(database_name) + ", " +
+                backQuoteIfNeed(mysql_database_name) + ") ";
+        }
+    };
+
+    using ConsumerDatabasePtr = std::shared_ptr<ConsumerDatabase>;
+}
+
+using namespace MySQLReplicaConsumer;
+
 /** MySQL table structure and data synchronization thread
  *
  *  When catch exception, it always exits immediately.
@@ -82,52 +131,6 @@ private:
 
     MaterializeMetadataPtr materialize_metadata;
 
-    struct Consumer
-    {
-        Consumer(
-            const String & mysql_database_name_,
-            const String & materialize_metadata_path_)
-            : mysql_database_name(mysql_database_name_)
-            , materialize_metadata_path(materialize_metadata_path_)
-            , prepared(false)
-        {
-        }
-
-        String mysql_database_name;
-
-        String materialize_metadata_path;
-        bool prepared;
-
-        MaterializeMetadataPtr materialize_metadata;
-        IMySQLBufferPtr buffer;
-
-        virtual ~Consumer() = default;
-    };
-
-    using ConsumerPtr = std::shared_ptr<Consumer>;
-
-    struct ConsumerDatabase : public Consumer {
-        ConsumerDatabase(
-            const String & database_name_,
-            const String & mysql_database_name_,
-            const String & materialize_metadata_path_)
-            : Consumer(mysql_database_name_, materialize_metadata_path_)
-            , database_name(database_name_)
-        {
-        }
-
-        String database_name;
-        String getQueryPrefix() const {
-            return "EXTERNAL DDL FROM MySQL(" +
-                backQuoteIfNeed(database_name) + ", " +
-                backQuoteIfNeed(mysql_database_name) + ") ";
-        }
-
-//        virtual ~ConsumerDatabase() = default;
-    };
-
-    using ConsumerDatabasePtr = std::shared_ptr<ConsumerDatabase>;
-
     std::vector<ConsumerPtr> consumers;
 
     void synchronization();
@@ -140,14 +143,7 @@ private:
 
     bool prepareConsumer(ConsumerPtr consumer);
 
-    void dumpTables(
-        std::shared_ptr<const ConsumerDatabase> consumer,
-        mysqlxx::Pool::Entry & connection,
-        std::unordered_map<String, String> & need_dumping_tables);
-
     void flushBuffersData(ConsumerPtr consumer);
-
-    void onEvent(ConsumerPtr consumer, const MySQLReplication::BinlogEventPtr & event);
 
     std::atomic<bool> sync_quit{false};
     std::unique_ptr<ThreadFromGlobalPool> background_thread_pool;

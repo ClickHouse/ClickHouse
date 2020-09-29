@@ -88,6 +88,8 @@ public:
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
 };
 
+DatabaseMaterializeMySQL & getDatabase(const String & database_name);
+
 }
 
 #endif

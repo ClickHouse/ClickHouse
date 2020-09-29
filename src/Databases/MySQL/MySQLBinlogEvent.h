@@ -19,6 +19,7 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/Types.h>
+#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 
 namespace DB
 {
@@ -195,6 +196,13 @@ size_t onUpdateData(
     const std::vector<Field> & rows_data,
     Block & buffer, size_t version,
     const std::vector<size_t> & sorting_columns_index);
+
+void onEvent(
+    const Context & global_context,
+    ConsumerPtr consumer,
+    const BinlogEventPtr & receive_event,
+    Poco::Logger * log,
+    std::function<void(ConsumerPtr)> flushBuffersData);
 
 }
 

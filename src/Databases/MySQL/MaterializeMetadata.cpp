@@ -4,6 +4,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/MySQL/MySQLDump.h>
 #include <Formats/MySQLBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -149,6 +150,46 @@ MaterializeMetadata::MaterializeMetadata(
     , mysql_version(mysql_version_)
     , is_initialized(false)
 {
+}
+
+void fetchMetadata(
+    mysqlxx::PoolWithFailover::Entry & connection,
+    const String & mysql_database_name,
+    MaterializeMetadataPtr materialize_metadata,
+    bool fetch_need_dumping_tables,
+    bool & opened_transaction,
+    std::unordered_map<String, String> & need_dumping_tables)
+{
+
+    bool locked_tables = false;
+
+    try
+    {
+        connection->query("FLUSH TABLES;").execute();
+        connection->query("FLUSH TABLES WITH READ LOCK;").execute();
+
+        locked_tables = true;
+        materialize_metadata->fetchMasterStatus(connection);
+
+        if (fetch_need_dumping_tables) {
+            connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
+            connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
+
+            opened_transaction = true;
+            need_dumping_tables = fetchTablesCreateQuery(
+                connection,
+                mysql_database_name);
+        }
+
+        connection->query("UNLOCK TABLES;").execute();
+    }
+    catch (...)
+    {
+        if (locked_tables)
+            connection->query("UNLOCK TABLES;").execute();
+
+        throw;
+    }
 }
 
 }
