@@ -115,6 +115,8 @@ public:
     static bool isMySQLSyncThread();
 
 private:
+    std::mutex mutex;
+
     Poco::Logger * log;
     const Context & global_context;
 
@@ -124,7 +126,7 @@ private:
     mutable MySQLClient client;
     String mysql_version;
 
-    std::atomic<bool> has_new_consumers;
+    bool has_new_consumers;
     bool has_consumers;
 
     UInt64 max_flush_time;

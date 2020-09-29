@@ -87,6 +87,7 @@ void MaterializeMySQLSyncThread::registerConsumerDatabase(
         mysql_database_name,
         materialize_metadata_path,
         settings);
+    std::unique_lock<std::mutex> lock(mutex);
     consumers.push_back(consumer);
     has_new_consumers = true;
 }
@@ -94,6 +95,8 @@ void MaterializeMySQLSyncThread::registerConsumerDatabase(
 void MaterializeMySQLSyncThread::synchronization()
 {
     setThreadName(MYSQL_BACKGROUND_THREAD_NAME);
+
+    std::unique_lock<std::mutex> lock(mutex, std::defer_lock);
 
     try
     {
@@ -113,6 +116,7 @@ void MaterializeMySQLSyncThread::synchronization()
 
             if (binlog_event)
             {
+                lock.lock();
                 for (auto consumer : consumers)
                 {
                     if (!consumer->prepared) {
@@ -126,9 +130,11 @@ void MaterializeMySQLSyncThread::synchronization()
                         log,
                         [this](ConsumerPtr c) -> void { flushBuffersData(c); });
                 }
+                lock.unlock();
             }
 
             bool need_watch_restart = false;
+            lock.lock();
             for (auto consumer : consumers)
             {
                 if (!consumer->prepared) {
@@ -151,6 +157,7 @@ void MaterializeMySQLSyncThread::synchronization()
                     }
                 }
             }
+            lock.unlock();
 
             if (need_watch_restart)
             {
@@ -163,6 +170,7 @@ void MaterializeMySQLSyncThread::synchronization()
         client.disconnect();
         tryLogCurrentException(log);
 
+        lock.lock();
         for (auto consumer : consumers) {
             if (!consumer->prepared) {
                 continue;
@@ -172,6 +180,7 @@ void MaterializeMySQLSyncThread::synchronization()
                     .setException(std::current_exception());
             }
         }
+        lock.unlock();
     }
 }
 
@@ -192,6 +201,7 @@ void MaterializeMySQLSyncThread::startSynchronization()
 }
 
 bool MaterializeMySQLSyncThread::prepareConsumers() {
+    std::unique_lock<std::mutex> lock(mutex, std::defer_lock);
     if (!has_new_consumers)
     {
         return has_consumers;
