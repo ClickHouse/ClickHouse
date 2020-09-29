@@ -72,7 +72,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-11",
+            "compiler": "clang-10",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -102,7 +102,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-11",
+            "compiler": "clang-10",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -124,7 +124,7 @@
             "with_coverage": true
         },
         {
-            "compiler": "clang-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -467,7 +467,7 @@
         },
         "Split build smoke test": {
             "required_build_properties": {
-                "compiler": "clang-10",
+                "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
