@@ -156,7 +156,8 @@ ccache --show-stats ||:
 
 function configure
 {
-export PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
+PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
+export PATH
 
 clickhouse-client --version
 clickhouse-test --help
@@ -171,6 +172,7 @@ rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
 
 function run_tests
 {
+echo "$PATH"
 clickhouse-server --version
 clickhouse-test --help
 
