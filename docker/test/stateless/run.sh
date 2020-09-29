@@ -17,4 +17,13 @@ if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 
-clickhouse-test --testname --shard --zookeeper "$SKIP_LIST_OPT" $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+function run_tests()
+{
+    for i in $(seq 1 $NUM_TRIES); do
+        clickhouse-test --testname --shard --zookeeper "$SKIP_LIST_OPT" $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a test_output/test_result.txt
+    done
+}
+
+export -f run_tests
+
+timeout $MAX_RUN_TIME bash -c run_tests ||:
