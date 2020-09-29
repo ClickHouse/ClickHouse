@@ -51,7 +51,7 @@ public:
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
-    void assertCanBeDetached(bool cleenup);
+    void assertCanBeDetached(bool cleanup);
 
     UUID tryGetTableUUID(const String & table_name) const override;
 
