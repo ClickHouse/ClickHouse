@@ -89,6 +89,7 @@ SRCS(
     printPipeline.cpp
     QueryPipeline.cpp
     QueryPlan/AddingDelayedSourceStep.cpp
+    QueryPlan/AddingMissedStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
     QueryPlan/ConvertingStep.cpp
