@@ -55,7 +55,7 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
         anchor=make_anchor(name),
         name=name,
         path=path,
-        line=line if line > 0 else 1)
+        line=line)
 
     formatted_description: str = "".join(description.split("\n"))
 
@@ -75,7 +75,7 @@ def process_file(root_path: str, file_path: str, file_name: str) -> None:
             comment: str = ""
 
             for n, line in enumerate(contents_list):
-                if line.find(target) == -1:
+                if 'option' not in line.lower() or target not in line:
                     continue
 
                 for maybe_comment_line in contents_list[n - 1::-1]:
@@ -84,11 +84,15 @@ def process_file(root_path: str, file_path: str, file_name: str) -> None:
 
                     comment = re.sub("\s*#\s*", "", maybe_comment_line) + " " + comment
 
-                return n, comment
+                # line numbering starts with 1
+                return n + 1, comment
 
         matches: Optional[List[Entity]] = re.findall(cmake_option_regex, contents, re.MULTILINE)
 
-        file_rel_path_with_name: str = os.path.join(file_path[len(root_path):], file_name)[1:]
+
+        file_rel_path_with_name: str = os.path.join(file_path[len(root_path):], file_name)
+        if file_rel_path_with_name.startswith('/'):
+            file_rel_path_with_name = file_rel_path_with_name[1:]
 
         if matches:
             for entity in matches:
