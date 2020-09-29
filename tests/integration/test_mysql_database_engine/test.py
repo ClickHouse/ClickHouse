@@ -166,7 +166,7 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
 def test_data_types_support_level_for_mysql_database_engine(started_cluster):
     with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
         mysql_node.query("CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'")
-        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test_database, 'root', 'clickhouse')",
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test, 'root', 'clickhouse')",
             settings={"mysql_datatypes_support_level": "decimal,datetime64"})
 
         assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
@@ -177,7 +177,7 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
 
         clickhouse_node.query(
-            "CREATE DATABASE test_database_1 ENGINE = MySQL('mysql1:3306', test_database, 'root', 'clickhouse') SETTINGS mysql_datatypes_support_level = 'decimal,datetime64'",
+            "CREATE DATABASE test_database_1 ENGINE = MySQL('mysql1:3306', test, 'root', 'clickhouse') SETTINGS mysql_datatypes_support_level = 'decimal,datetime64'",
             settings={"mysql_datatypes_support_level": "decimal"})
 
         assert "SETTINGS mysql_datatypes_support_level = \'decimal,datetime64\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
