@@ -2455,7 +2455,7 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
     }
 
     /// This object will mark the element of the queue as running.
-    ReplicatedMergeTreeQueue::SelectedEntry selected;
+    LogEntryPtr selected;
 
     try
     {
@@ -2466,14 +2466,12 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    LogEntryPtr & entry = selected.first;
-
-    if (!entry)
+    if (!selected)
         return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
 
-    time_t prev_attempt_time = entry->last_attempt_time;
+    time_t prev_attempt_time = selected->last_attempt_time;
 
-    bool res = queue.processEntry([this]{ return getZooKeeper(); }, entry, [&](LogEntryPtr & entry_to_process)
+    bool res = queue.processEntry([this]{ return getZooKeeper(); }, selected, [&](LogEntryPtr & entry_to_process)
     {
         try
         {
@@ -2514,7 +2512,7 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
     });
 
     /// We will go to sleep if the processing fails and if we have already processed this record recently.
-    bool need_sleep = !res && (entry->last_attempt_time - prev_attempt_time < 10);
+    bool need_sleep = !res && (selected->last_attempt_time - prev_attempt_time < 10);
 
     /// If there was no exception, you do not need to sleep.
     return need_sleep ? BackgroundProcessingPoolTaskResult::ERROR : BackgroundProcessingPoolTaskResult::SUCCESS;
