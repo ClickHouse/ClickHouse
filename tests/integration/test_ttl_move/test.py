@@ -370,7 +370,7 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
         for i in range(35):
             data.append("randomPrintableASCII(1024*1024)")
 
-        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ",".join(["('" + x + "')" for x in data])))
+        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ",".join(["(" + x + ")" for x in data])))
         used_disks = get_used_disks_for_table(node1, name_temp)
         assert set(used_disks) == {"jbod2"}
 
@@ -523,7 +523,7 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
         for i in range(35):
             data.append("randomPrintableASCII(1024*1024)")
 
-        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ",".join(["('" + x + "')" for x in data])))
+        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ",".join(["(" + x + ")" for x in data])))
         used_disks = get_used_disks_for_table(node1, name_temp)
         assert set(used_disks) == {"jbod2"}
 
