@@ -23,8 +23,6 @@ using MySQLBufferAndSortingColumnsPtr = std::shared_ptr<MySQLBufferAndSortingCol
 
 struct IMySQLBuffer
 {
-    String database;
-
     /// thresholds
     size_t max_block_rows = 0;
     size_t max_block_bytes = 0;
@@ -32,8 +30,6 @@ struct IMySQLBuffer
     size_t total_blocks_bytes = 0;
 
     std::unordered_map<String, MySQLBufferAndSortingColumnsPtr> data;
-
-    IMySQLBuffer(const String & database_) : database(database_) {}
 
     void add(
         size_t block_rows,
@@ -60,7 +56,10 @@ using IMySQLBufferPtr = std::shared_ptr<IMySQLBuffer>;
 
 struct MySQLDatabaseBuffer : public IMySQLBuffer
 {
-    MySQLDatabaseBuffer(const String & database_) : IMySQLBuffer(database_) {}
+    String database;
+
+    MySQLDatabaseBuffer(const String & database_) : database(database_) {}
+
     void commit(const Context & context) override;
 
     MySQLBufferAndSortingColumnsPtr getTableDataBuffer(

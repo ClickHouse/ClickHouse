@@ -7,6 +7,7 @@
 #if USE_MYSQL
 
 #    include <mutex>
+#    include <Common/quoteString.h>
 #    include <Core/BackgroundSchedulePool.h>
 #    include <Core/MySQL/MySQLClient.h>
 #    include <DataStreams/BlockIO.h>
@@ -56,7 +57,9 @@ public:
 
     void startSynchronization();
 
-    void registerConsumerDatabase(const String & materialize_metadata_path);
+    void registerConsumerDatabase(
+        const String & database_name_,
+        const String & materialize_metadata_path);
 
     static bool isMySQLSyncThread();
 
@@ -81,23 +84,51 @@ private:
 
     struct Consumer
     {
-        enum Type
+        Consumer(
+            const String & mysql_database_name_,
+            const String & materialize_metadata_path_)
+            : mysql_database_name(mysql_database_name_)
+            , materialize_metadata_path(materialize_metadata_path_)
+            , prepared(false)
         {
-            kDatabase,
-            kTable
-        };
-        Type consumer_type;
+        }
+
+        String mysql_database_name;
 
         String materialize_metadata_path;
         bool prepared;
 
-        String database_name;
-
         MaterializeMetadataPtr materialize_metadata;
         IMySQLBufferPtr buffer;
+
+        virtual ~Consumer() = default;
     };
 
-    std::vector<Consumer> consumers;
+    using ConsumerPtr = std::shared_ptr<Consumer>;
+
+    struct ConsumerDatabase : public Consumer {
+        ConsumerDatabase(
+            const String & database_name_,
+            const String & mysql_database_name_,
+            const String & materialize_metadata_path_)
+            : Consumer(mysql_database_name_, materialize_metadata_path_)
+            , database_name(database_name_)
+        {
+        }
+
+        String database_name;
+        String getQueryPrefix() const {
+            return "EXTERNAL DDL FROM MySQL(" +
+                backQuoteIfNeed(database_name) + ", " +
+                backQuoteIfNeed(mysql_database_name) + ") ";
+        }
+
+//        virtual ~ConsumerDatabase() = default;
+    };
+
+    using ConsumerDatabasePtr = std::shared_ptr<ConsumerDatabase>;
+
+    std::vector<ConsumerPtr> consumers;
 
     void synchronization();
 
@@ -107,16 +138,16 @@ private:
 
     bool prepareConsumers();
 
-    bool prepareConsumer(Consumer & consumer);
+    bool prepareConsumer(ConsumerPtr consumer);
 
     void dumpTables(
-        const Consumer & consumer,
+        std::shared_ptr<const ConsumerDatabase> consumer,
         mysqlxx::Pool::Entry & connection,
         std::unordered_map<String, String> & need_dumping_tables);
 
-    void flushBuffersData(Consumer & consumer);
+    void flushBuffersData(ConsumerPtr consumer);
 
-    void onEvent(Consumer & consumer, const MySQLReplication::BinlogEventPtr & event);
+    void onEvent(ConsumerPtr consumer, const MySQLReplication::BinlogEventPtr & event);
 
     std::atomic<bool> sync_quit{false};
     std::unique_ptr<ThreadFromGlobalPool> background_thread_pool;
