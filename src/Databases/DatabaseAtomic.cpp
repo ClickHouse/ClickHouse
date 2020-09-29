@@ -207,11 +207,13 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move dictionary to other database");
 
     StoragePtr table = getTableUnlocked(table_name, db_lock);
+    table->checkTableCanBeRenamed();
     assert_can_move_mat_view(table);
     StoragePtr other_table;
     if (exchange)
     {
         other_table = other_db.getTableUnlocked(to_table_name, other_db_lock);
+        other_table->checkTableCanBeRenamed();
         assert_can_move_mat_view(other_table);
     }
 
