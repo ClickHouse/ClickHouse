@@ -353,7 +353,7 @@ Alias: `dateTrunc`.
 
 **Parameters**
 
--   `datepart` — Name of the datepart. [String](../../sql-reference/data-types/string.md).
+-   `datepart` — Name of the datepart. [String](../syntax.md#syntax-string-literal).
     Possible values:
 
     - `second`

@@ -243,7 +243,7 @@ date_trunc(datepart, value[, time_zone])
 
 **Параметры**
 
--   `datepart` — Название части даты или времени. [String](../../sql-reference/data-types/string.md).
+-   `datepart` — Название части даты или времени. [String](../syntax.md#syntax-string-literal).
     Возможные значения:
 
     - `second`
@@ -256,7 +256,7 @@ date_trunc(datepart, value[, time_zone])
     - `year`
 
 -   `value` — Дата и время. [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — [Часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../data-types/string.md)
+-   `timezone` — [Часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../../sql-reference/data-types/string.md)
 
 **Возвращаемое значение**
 
