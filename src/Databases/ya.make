@@ -17,13 +17,13 @@ SRCS(
     DatabaseOrdinary.cpp
     DatabasesCommon.cpp
     DatabaseWithDictionaries.cpp
+    MySQL/ConnectionMySQLSettings.cpp
     MySQL/DatabaseConnectionMySQL.cpp
     MySQL/DatabaseMaterializeMySQL.cpp
     MySQL/FetchTablesColumnsList.cpp
     MySQL/MaterializeMetadata.cpp
     MySQL/MaterializeMySQLSettings.cpp
     MySQL/MaterializeMySQLSyncThread.cpp
-    MySQL/ConnectionMySQLSettings.cpp
 
 )
 
