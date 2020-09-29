@@ -41,6 +41,9 @@ BlockIO InterpreterDropQuery::execute()
     if (!drop.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccessForDDLOnCluster());
 
+    if (context.getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
+        drop.no_delay = true;
+
     if (!drop.table.empty())
     {
         if (!drop.is_dictionary)

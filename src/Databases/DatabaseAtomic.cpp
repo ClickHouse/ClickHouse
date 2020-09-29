@@ -519,7 +519,7 @@ void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
             if (detached_tables.count(uuid) == 0)
                 return;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 
