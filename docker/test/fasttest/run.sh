@@ -306,7 +306,9 @@ case "$stage" in
     build
     ;&
 "configure")
-    configure
+    # The `install_log.txt` is also needed for compatibility with old CI task --
+    # if there is no log, it will decide that build failed.
+    configure | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/install_log.txt"
     ;&
 "run_tests")
     run_tests
