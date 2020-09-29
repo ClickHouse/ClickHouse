@@ -930,17 +930,17 @@ class ClickHouseInstance:
 
         params["query"] = sql
 
-        auth = ""
+        auth = None
         if user and password:
-            auth = "{}:{}@".format(user, password)
+            auth = requests.auth.HTTPBasicAuth(user, password)
         elif user:
-            auth = "{}@".format(user)
-        url = "http://" + auth + self.ip_address + ":8123/?" + urllib.parse.urlencode(params)
+            auth = requests.auth.HTTPBasicAuth(user, '')
+        url = "http://" + self.ip_address + ":8123/?" + urllib.parse.urlencode(params)
 
         if data:
-            r = requests.post(url, data)
+            r = requests.post(url, data, auth=auth)
         else:
-            r = requests.get(url)
+            r = requests.get(url, auth=auth)
 
         def http_code_and_message():
             code = r.status_code
