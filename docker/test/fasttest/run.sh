@@ -26,15 +26,9 @@ server_pid=none
 
 function stop_server
 {
-    if ! kill -- "$server_pid"
-    then
-        echo "The server we started ($server_pid) is not present, won't do anything"
-        return 0
-    fi
-
     for _ in {1..60}
     do
-        if ! kill -- "$server_pid" ; then break ; fi
+        if ! pkill -f "clickhouse-server" && ! kill -- "$server_pid" ; then break ; fi
         sleep 1
     done
 
@@ -45,6 +39,8 @@ function stop_server
         echo "Failed to kill the ClickHouse server pid '$server_pid'"
         return 1
     fi
+
+    server_pid=none
 }
 
 function start_server
@@ -126,10 +122,9 @@ git submodule foreach git clean -xfd
 )
 }
 
-
-function build
+function run_cmake
 {
-CMAKE_LIBS_CONFIG=(-DENABLE_LIBRARIES=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_THINLTO=0 -DUSE_UNWIND=1)
+CMAKE_LIBS_CONFIG=("-DENABLE_LIBRARIES=0" "-DENABLE_TESTS=0" "-DENABLE_UTILS=0" "-DENABLE_EMBEDDED_COMPILER=0" "-DENABLE_THINLTO=0" "-DUSE_UNWIND=1")
 
 # TODO remove this? we don't use ccache anyway. An option would be to download it
 # from S3 simultaneously with cloning.
@@ -143,13 +138,20 @@ ccache --show-stats ||:
 ccache --zero-stats ||:
 
 mkdir "$FASTTEST_BUILD" ||:
+
 (
 cd "$FASTTEST_BUILD"
 cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_C_COMPILER=clang-10 "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
-time ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
 )
+}
 
+function build
+{
+(
+cd "$FASTTEST_BUILD"
+time ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
 ccache --show-stats ||:
+)
 }
 
 function configure
@@ -296,6 +298,9 @@ case "$stage" in
     ;&
 "clone_submodules")
     clone_submodules | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/submodule_log.txt"
+    ;&
+"run_cmake")
+    run_cmake
     ;&
 "build")
     build
