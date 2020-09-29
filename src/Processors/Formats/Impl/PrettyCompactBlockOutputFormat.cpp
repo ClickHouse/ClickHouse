@@ -69,6 +69,15 @@ void PrettyCompactBlockOutputFormat::writeHeader(
     const Widths & max_widths,
     const Widths & name_widths)
 {
+    if (format_settings.pretty.output_format_pretty_row_numbers)
+    {
+        /// Write left blank
+        for (size_t i = 0; i < row_number_width; ++i)
+        {
+            writeCString(" ", out);
+        }
+    }
+
     const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
                                        utf8_grid_symbols :
                                        ascii_grid_symbols;
@@ -117,6 +126,15 @@ void PrettyCompactBlockOutputFormat::writeHeader(
 
 void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
 {
+    if (format_settings.pretty.output_format_pretty_row_numbers)
+    {
+        /// Write left blank
+        for (size_t i = 0; i < row_number_width; ++i)
+        {
+            writeCString(" ", out);
+        }
+    }
+
     const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
                                        utf8_grid_symbols :
                                        ascii_grid_symbols;
@@ -144,6 +162,17 @@ void PrettyCompactBlockOutputFormat::writeRow(
     const WidthsPerColumn & widths,
     const Widths & max_widths)
 {
+    if (format_settings.pretty.output_format_pretty_row_numbers)
+    {
+        // Write row number;
+        auto row_num_string = std::to_string(row_num + 1) + ". ";
+        for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
+        {
+            writeCString(" ", out);
+        }
+        writeString(row_num_string, out);
+    }
+
     const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
                                        utf8_grid_symbols :
                                        ascii_grid_symbols;
