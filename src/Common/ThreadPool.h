@@ -165,10 +165,15 @@ public:
         {
             try
             {
+                /// Move capture in order to destroy it before `state->set()`.
+                /// It will guarantee that after ThreadFromGlobalPool::join all resources are destroyed.
+                auto function = std::move(func);
+                auto arguments = std::move(args);
+
                 /// Thread status holds raw pointer on query context, thus it always must be destroyed
                 /// before sending signal that permits to join this thread.
                 DB::ThreadStatus thread_status;
-                std::apply(func, args);
+                std::apply(function, arguments);
             }
             catch (...)
             {
