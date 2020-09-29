@@ -94,12 +94,10 @@ public:
 
     MaterializeMySQLSyncThread(
         const Context & context,
-        const String & database_name_,
         const String & mysql_database_name_,
         mysqlxx::Pool && pool_,
         MySQLClient && client_,
         MaterializeMySQLSettings * settings_,
-        const String & materialize_metadata_path_,
         const String & mysql_version_);
 
     void stopSynchronization();

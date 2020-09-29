@@ -43,12 +43,10 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
 {
     materialize_thread = std::make_shared<MaterializeMySQLSyncThread>(
         context,
-        database_name_,
         mysql_database_name_,
         std::move(pool_),
         std::move(client_),
         settings.get(),
-        this->getMetadataPath() + "/.metadata",
         checkVariableAndGetVersion(pool_.get()));
 }
 
@@ -89,6 +87,9 @@ void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_for
     {
         std::unique_lock<std::mutex> lock(mutex);
         nested_database->loadStoredObjects(context, has_force_restore_data_flag, force_attach);
+        materialize_thread->registerConsumerDatabase(
+            database_name,
+            this->getMetadataPath() + "/.metadata");
         materialize_thread->startSynchronization();
     }
     catch (...)

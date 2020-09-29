@@ -59,12 +59,10 @@ MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
 
 MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     const Context & context,
-    const String & database_name_,
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
     MaterializeMySQLSettings * settings_,
-    const String & materialize_metadata_path_,
     const String & mysql_version_)
     : log(&Poco::Logger::get("MaterializeMySQLSyncThread"))
     , global_context(context.getGlobalContext())
@@ -76,7 +74,6 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     , has_new_consumers(true)
     , has_consumers(false)
 {
-    registerConsumerDatabase(database_name_, materialize_metadata_path_);
 }
 
 void MaterializeMySQLSyncThread::registerConsumerDatabase(
