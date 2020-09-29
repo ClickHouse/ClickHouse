@@ -9,11 +9,25 @@ namespace DB::AST
 {
 
 // static
+PtrTo<SystemQuery> SystemQuery::createDistributed(bool stop, PtrTo<TableIdentifier> identifier)
+{
+    PtrTo<SystemQuery> query(new SystemQuery(QueryType::DISTRIBUTED, {identifier}));
+    query->stop = stop;
+    return query;
+}
+
+// static
 PtrTo<SystemQuery> SystemQuery::createFetches(bool stop, PtrTo<TableIdentifier> identifier)
 {
     PtrTo<SystemQuery> query(new SystemQuery(QueryType::FETCHES, {identifier}));
     query->stop = stop;
     return query;
+}
+
+// static
+PtrTo<SystemQuery> SystemQuery::createFlush(PtrTo<TableIdentifier> identifier)
+{
+    return PtrTo<SystemQuery>(new SystemQuery(QueryType::FLUSH, {identifier}));
 }
 
 // static
@@ -56,6 +70,8 @@ antlrcpp::Any ParseTreeVisitor::visitSystemStmt(ClickHouseParser::SystemStmtCont
     if (ctx->SYNC()) return SystemQuery::createSync(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
     if (ctx->MERGES()) return SystemQuery::createMerges(!!ctx->STOP(), visit(ctx->tableIdentifier()));
     if (ctx->FETCHES()) return SystemQuery::createFetches(!!ctx->STOP(), visit(ctx->tableIdentifier()));
+    if (ctx->DISTRIBUTED()) return SystemQuery::createDistributed(!!ctx->STOP(), visit(ctx->tableIdentifier()));
+    if (ctx->FLUSH()) return SystemQuery::createFlush(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
     __builtin_unreachable();
 }
 

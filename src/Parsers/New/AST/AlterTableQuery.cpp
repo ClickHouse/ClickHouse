@@ -1,6 +1,8 @@
 #include <Parsers/New/AST/AlterTableQuery.h>
 
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
@@ -89,9 +91,124 @@ PtrTo<AlterTableClause> AlterTableClause::createReplace(PtrTo<PartitionExprList>
     return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::REPLACE, {list, identifier}));
 }
 
+ASTPtr AlterTableClause::convertToOld() const
+{
+    auto command = std::make_shared<ASTAlterCommand>();
+
+    switch(clause_type)
+    {
+        case ClauseType::ADD:
+            command->type = ASTAlterCommand::ADD_COLUMN;
+            command->if_not_exists = if_not_exists;
+            // TODO: command->first
+            command->col_decl = get(ELEMENT)->convertToOld();
+            if (has(AFTER)) command->column = get(AFTER)->convertToOld();
+            break;
+
+        case ClauseType::ATTACH:
+            command->type = ASTAlterCommand::ATTACH_PARTITION;
+            command->partition = get(PARTITION)->convertToOld(); // FIXME: make proper convertion
+            if (has(FROM))
+            {
+                auto table_id = getTableIdentifier(get(FROM)->convertToOld());
+
+                command->from_database = table_id.database_name;
+                command->from_table = table_id.table_name;
+                command->replace = false;
+                command->type = ASTAlterCommand::REPLACE_PARTITION;
+            }
+            break;
+
+        case ClauseType::CLEAR:
+            command->type = ASTAlterCommand::DROP_COLUMN;
+            command->if_exists = if_exists;
+            command->clear_column = true;
+            command->detach = false;
+            command->column = get(COLUMN)->convertToOld();
+            command->partition = get(IN)->convertToOld(); // FIXME: should be optional?
+            break;
+
+        case ClauseType::COMMENT:
+            command->type = ASTAlterCommand::COMMENT_COLUMN;
+            command->if_exists = if_exists;
+            command->column = get(COLUMN)->convertToOld();
+            command->comment = get(COMMENT)->convertToOld();
+            break;
+
+        case ClauseType::DELETE:
+            command->type = ASTAlterCommand::DELETE;
+            command->predicate = get(EXPR)->convertToOld();
+            break;
+
+        case ClauseType::DETACH:
+            command->type = ASTAlterCommand::DROP_PARTITION;
+            command->detach = true;
+            command->partition = get(PARTITION)->convertToOld();
+            break;
+
+        case ClauseType::DROP_COLUMN:
+            command->type = ASTAlterCommand::DROP_COLUMN;
+            command->if_exists = if_exists;
+            command->detach = false;
+            command->column = get(COLUMN)->convertToOld();
+            break;
+
+        case ClauseType::DROP_PARTITION:
+            command->type = ASTAlterCommand::DROP_PARTITION;
+            command->partition = get(PARTITION)->convertToOld();
+            break;
+
+        case ClauseType::MODIFY:
+            command->type = ASTAlterCommand::MODIFY_COLUMN;
+            command->if_exists = if_exists;
+            command->col_decl = get(ELEMENT)->convertToOld();
+            break;
+
+        case ClauseType::ORDER_BY:
+            command->type = ASTAlterCommand::MODIFY_ORDER_BY;
+            command->order_by = get(EXPR)->convertToOld();
+            break;
+
+        case ClauseType::REPLACE:
+            command->type = ASTAlterCommand::REPLACE_PARTITION;
+            command->replace = true;
+            command->partition = get(PARTITION)->convertToOld();
+            {
+                auto table_id = getTableIdentifier(get(FROM)->convertToOld());
+                command->from_database = table_id.database_name;
+                command->from_table = table_id.table_name;
+            }
+            break;
+    }
+
+    if (command->col_decl)
+        command->children.push_back(command->col_decl);
+    if (command->column)
+        command->children.push_back(command->column);
+    if (command->partition)
+        command->children.push_back(command->partition);
+    if (command->order_by)
+        command->children.push_back(command->order_by);
+    if (command->sample_by)
+        command->children.push_back(command->sample_by);
+    if (command->predicate)
+        command->children.push_back(command->predicate);
+    if (command->update_assignments)
+        command->children.push_back(command->update_assignments);
+    if (command->values)
+        command->children.push_back(command->values);
+    if (command->comment)
+        command->children.push_back(command->comment);
+    if (command->ttl)
+        command->children.push_back(command->ttl);
+    if (command->settings_changes)
+        command->children.push_back(command->settings_changes);
+
+    return command;
+}
+
 AlterTableClause::AlterTableClause(ClauseType type, PtrList exprs) : INode(exprs), clause_type(type)
 {
-    (void) clause_type; // TODO
 }
 
 AlterTableQuery::AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses) : DDLQuery{identifier, clauses}
@@ -102,7 +219,14 @@ ASTPtr AlterTableQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTAlterQuery>();
 
-    // TODO: implement this.
+    {
+        auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
+        query->database = table_id.database_name;
+        query->table = table_id.table_name;
+    }
+
+    // TODO: query->cluster
+    query->set(query->command_list, get(CLAUSES)->convertToOld());
 
     return query;
 }

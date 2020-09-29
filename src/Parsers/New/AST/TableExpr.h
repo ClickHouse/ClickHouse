@@ -11,6 +11,14 @@ class TableArgExpr : public INode
     public:
         explicit TableArgExpr(PtrTo<Literal> literal);
         explicit TableArgExpr(PtrTo<TableExpr> expr);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            EXPR = 0,  // Literal or TableExpr
+        };
 };
 
 class TableExpr : public INode

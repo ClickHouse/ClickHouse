@@ -30,7 +30,14 @@ PtrTo<TableElementExpr> TableElementExpr::createColumn(
     PtrTo<StringLiteral> comment,
     PtrTo<ColumnExpr> ttl)
 {
-    return PtrTo<TableElementExpr>(new TableElementExpr(TableElementExpr::ExprType::COLUMN, {name, type, property, comment, ttl}));
+    return PtrTo<TableElementExpr>(new TableElementExpr(ExprType::COLUMN, {name, type, property, comment, ttl}));
+}
+
+// static
+PtrTo<TableElementExpr>
+TableElementExpr::createIndex(PtrTo<Identifier> name, PtrTo<ColumnExpr> expr, PtrTo<ColumnTypeExpr> type, PtrTo<NumberLiteral> granularity)
+{
+    return PtrTo<TableElementExpr>(new TableElementExpr(ExprType::INDEX, {name, expr, type, granularity}));
 }
 
 TableElementExpr::TableElementExpr(ExprType type, PtrList exprs) : INode(exprs), expr_type(type)
@@ -94,7 +101,10 @@ ASTPtr TableElementExpr::convertToOld() const
         {
             auto expr = std::make_shared<ASTIndexDeclaration>();
 
-            // TODO
+            expr->name = get<Identifier>(NAME)->getName();
+            expr->set(expr->expr, get(EXPR)->convertToOld());
+            expr->set(expr->type, get(INDEX_TYPE)->convertToOld());
+            expr->granularity = get<NumberLiteral>(GRANULARITY)->as<UInt64>().value_or(0); // FIXME: throw exception instead of default.
 
             return expr;
         }
@@ -122,9 +132,13 @@ antlrcpp::Any ParseTreeVisitor::visitTableColumnPropertyExpr(ClickHouseParser::T
 
 antlrcpp::Any ParseTreeVisitor::visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext *ctx)
 {
-    if (ctx->tableColumnDfnt())
-        return visit(ctx->tableColumnDfnt());
-    __builtin_unreachable();
+    return visit(ctx->tableColumnDfnt());
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableElementExprIndex(ClickHouseParser::TableElementExprIndexContext *ctx)
+{
+    return TableElementExpr::createIndex(
+        visit(ctx->identifier()), visit(ctx->columnExpr()), visit(ctx->columnTypeExpr()), Literal::createNumber(ctx->INTEGER_LITERAL()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext *ctx)

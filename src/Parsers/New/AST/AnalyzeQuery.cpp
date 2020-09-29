@@ -20,7 +20,7 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitAnalyzeStmt(ClickHouseParser::AnalyzeStmtContext *ctx)
 {
-    return std::make_shared<AnalyzeQuery>(visit(ctx->queryStmt()).as<PtrTo<Query>>());
+    return std::make_shared<AnalyzeQuery>(visit(ctx->query()).as<PtrTo<Query>>());
 }
 
 }

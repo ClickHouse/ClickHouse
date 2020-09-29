@@ -9,7 +9,7 @@ namespace DB::AST
 class CreateViewQuery : public DDLQuery
 {
     public:
-        CreateViewQuery(bool if_not_exists, PtrTo<TableIdentifier> identifier, PtrTo<SelectUnionQuery> query);
+        CreateViewQuery(bool attach, bool if_not_exists, PtrTo<TableIdentifier> identifier, PtrTo<SelectUnionQuery> query);
 
         ASTPtr convertToOld() const override;
 
@@ -20,7 +20,7 @@ class CreateViewQuery : public DDLQuery
             SUBQUERY = 1,
         };
 
-        const bool if_not_exists;
+        const bool attach, if_not_exists;
 };
 
 }

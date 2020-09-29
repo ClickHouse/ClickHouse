@@ -11,21 +11,39 @@ class AlterTableClause : public INode
 {
     public:
         static PtrTo<AlterTableClause> createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
-        static PtrTo<AlterTableClause> createAttach(PtrTo<PartitionExprList> list, PtrTo<TableIdentifier> identifier);
-        static PtrTo<AlterTableClause> createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionExprList> clause);
-        static PtrTo<AlterTableClause> createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> literal);
+        static PtrTo<AlterTableClause> createAttach(PtrTo<PartitionExprList> list, PtrTo<TableIdentifier> from);
+        static PtrTo<AlterTableClause> createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionExprList> in);
+        static PtrTo<AlterTableClause> createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> comment);
         static PtrTo<AlterTableClause> createDelete(PtrTo<ColumnExpr> expr);
         static PtrTo<AlterTableClause> createDetach(PtrTo<PartitionExprList> list);
         static PtrTo<AlterTableClause> createDropColumn(bool if_exists, PtrTo<Identifier> identifier);
         static PtrTo<AlterTableClause> createDropPartition(PtrTo<PartitionExprList> list);
         static PtrTo<AlterTableClause> createModify(bool if_exists, PtrTo<TableElementExpr> element);
         static PtrTo<AlterTableClause> createOrderBy(PtrTo<ColumnExpr> expr);
-        static PtrTo<AlterTableClause> createReplace(PtrTo<PartitionExprList> list, PtrTo<TableIdentifier> identifier);
+        static PtrTo<AlterTableClause> createReplace(PtrTo<PartitionExprList> list, PtrTo<TableIdentifier> from);
+
+        ASTPtr convertToOld() const override;
 
     private:
         enum ChildIndex : UInt8
         {
-            DETACH_PARTITION = 0,  // PartitionExprList
+            // ADD
+            ELEMENT = 0,  // TableElementExpr
+            AFTER = 1,    // Identifier (optional)
+
+            // ATTACH/REPLACE
+            PARTITION = 0,  // PartitionExprList
+            FROM = 1,       // TableIdentifier (optional)
+
+            // CLEAR
+            COLUMN = 0,  // Identifier
+            IN = 1,      // PartitionExprList
+
+            // COMMENT
+            COMMENT = 1,  // StringLiteral
+
+            // DELETE
+            EXPR = 0,  // ColumnExpr
         };
 
         enum class ClauseType
@@ -59,6 +77,13 @@ class AlterTableQuery : public DDLQuery
         AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses);
 
         ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            TABLE = 0,    // TableIdentifier
+            CLAUSES = 1,  // List<AlterTableClause>
+        };
 };
 
 }

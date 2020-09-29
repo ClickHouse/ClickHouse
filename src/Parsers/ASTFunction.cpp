@@ -28,12 +28,13 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 
     writeChar('(', ostr);
-    for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
-    {
-        if (it != arguments->children.begin())
-            writeCString(", ", ostr);
-        (*it)->appendColumnName(ostr);
-    }
+    if (arguments)
+        for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
+        {
+            if (it != arguments->children.begin())
+                writeCString(", ", ostr);
+            (*it)->appendColumnName(ostr);
+        }
     writeChar(')', ostr);
 }
 

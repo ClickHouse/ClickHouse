@@ -9,7 +9,9 @@ namespace DB::AST
 class SystemQuery : public Query
 {
     public:
+        static PtrTo<SystemQuery> createDistributed(bool stop, PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createFetches(bool stop, PtrTo<TableIdentifier> identifier);
+        static PtrTo<SystemQuery> createFlush(PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createMerges(bool stop, PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createSync(PtrTo<TableIdentifier> identifier);
 
@@ -18,7 +20,9 @@ class SystemQuery : public Query
     private:
         enum class QueryType
         {
+            DISTRIBUTED,
             FETCHES,
+            FLUSH,
             MERGES,
             SYNC,
         };

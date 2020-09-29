@@ -6,7 +6,7 @@ options {
 
 // Top-level statements
 
-queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)? (SEMICOLON | EOF) | insertStmt;
+queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)? (SEMICOLON)? | insertStmt;
 query
     : alterStmt     // DDL
     | analyzeStmt
@@ -47,7 +47,7 @@ alterTableClause
 
 // ANALYZE statement
 
-analyzeStmt: ANALYZE queryStmt;
+analyzeStmt: ANALYZE query;
 
 // CHECK statement
 
@@ -87,8 +87,8 @@ ttlClause: TTL ttlExpr (COMMA ttlExpr)*;
 
 engineExpr: ENGINE EQ_SINGLE? identifierOrNull (LPAREN columnExprList? RPAREN)?;
 tableElementExpr
-    : tableColumnDfnt  # TableElementExprColumn
-    // TODO: INDEX
+    : tableColumnDfnt                                                              # TableElementExprColumn
+    | INDEX identifier columnExpr TYPE columnTypeExpr GRANULARITY INTEGER_LITERAL  # TableElementExprIndex
     // TODO: CONSTRAINT
     ;
 tableColumnDfnt
@@ -214,7 +214,8 @@ showStmt
 // SYSTEM statements
 
 systemStmt
-    : SYSTEM (START | STOP) (FETCHES | MERGES) tableIdentifier
+    : SYSTEM FLUSH DISTRIBUTED tableIdentifier
+    | SYSTEM (START | STOP) (DISTRIBUTED SENDS | FETCHES | MERGES) tableIdentifier
     | SYSTEM SYNC REPLICA tableIdentifier
     ;
 
@@ -336,16 +337,16 @@ literal
     | NULL_SQL
     ;
 keyword
-    // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER, FOR, GROUP, DEST, DESCENDING, ASCENDING, FORMAT,
-    //        SETTINGS, AS
-    : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
+    // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER, FOR, GROUP, DEST, DESCENDING, ASCENDING, FORMAT, SETTINGS
+    : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
     | CHECK | CLEAR | CLUSTER | COLLATE | COLUMN | COMMENT | CREATE | CROSS | DATABASE | DATABASES | DAY | DEDUPLICATE | DEFAULT | DELAY
-    | DELETE | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FETCHES | FINAL
-    | FIRST | FULL | FUNCTION | GLOBAL | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE
-    | JSON_TRUE | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS
-    | OFFSET | ON | OPTIMIZE | OR | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLACE | REPLICA | RIGHT
-    | SAMPLE | SECOND | SEMI | SET | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES
-    | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
+    | DELETE | DESCRIBE | DETACH | DISK | DISTINCT | DISTRIBUTED | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FETCHES | FINAL
+    | FIRST | FLUSH | FULL | FUNCTION | GLOBAL | GRANULARITY | HAVING | HOUR | ID | IF | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS
+    | JOIN | JSON_FALSE | JSON_TRUE | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH
+    | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLACE
+    | REPLICA | RIGHT | SAMPLE | SECOND | SEMI | SENDS | SET | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY
+    | THEN | TIES | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH
+    | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.

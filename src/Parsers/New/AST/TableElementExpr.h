@@ -48,6 +48,9 @@ class TableElementExpr : public INode
             PtrTo<StringLiteral> comment,
             PtrTo<ColumnExpr> ttl);
 
+        static PtrTo<TableElementExpr>
+        createIndex(PtrTo<Identifier> name, PtrTo<ColumnExpr> expr, PtrTo<ColumnTypeExpr> type, PtrTo<NumberLiteral> granularity);
+
         auto getType() const { return expr_type; }
 
         ASTPtr convertToOld() const override;
@@ -56,11 +59,16 @@ class TableElementExpr : public INode
         enum ChildIndex: UInt8
         {
             // COLUMN
-            NAME = 0,  // Identifier
-            TYPE,      // ColumnExprType (optional)
-            PROPERTY,  // TableColumnPropertyExpr
-            COMMENT,   // StringLiteral
-            TTL,       // ColumnExpr
+            NAME = 0,      // Identifier
+            TYPE = 1,      // ColumnExprType (optional)
+            PROPERTY = 2,  // TableColumnPropertyExpr
+            COMMENT = 3,   // StringLiteral
+            TTL = 4,       // ColumnExpr
+
+            // INDEX
+            EXPR = 1,         // ColumnExpr
+            INDEX_TYPE = 2,   // ColumnTypeExpr
+            GRANULARITY = 3,  // NumberLiteral
         };
 
         const ExprType expr_type;

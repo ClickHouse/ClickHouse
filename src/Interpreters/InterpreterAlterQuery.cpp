@@ -56,8 +56,9 @@ BlockIO InterpreterAlterQuery::execute()
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
     LiveViewCommands live_view_commands;
-    for (ASTAlterCommand * command_ast : alter.command_list->commands)
+    for (const auto & child : alter.command_list->children)
     {
+        auto * command_ast = child->as<ASTAlterCommand>();
         if (auto alter_command = AlterCommand::parse(command_ast))
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
@@ -124,8 +125,8 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    for (ASTAlterCommand * command : alter.command_list->commands)
-        boost::range::push_back(required_access, getRequiredAccessForCommand(*command, alter.database, alter.table));
+    for (const auto & child : alter.command_list->children)
+        boost::range::push_back(required_access, getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.database, alter.table));
     return required_access;
 }
 

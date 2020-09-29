@@ -20,31 +20,32 @@ public:
     COMMENT = 26, CREATE = 27, CROSS = 28, DATABASE = 29, DATABASES = 30, 
     DAY = 31, DEDUPLICATE = 32, DEFAULT = 33, DELAY = 34, DELETE = 35, DESC = 36, 
     DESCENDING = 37, DESCRIBE = 38, DETACH = 39, DISK = 40, DISTINCT = 41, 
-    DROP = 42, ELSE = 43, END = 44, ENGINE = 45, EXISTS = 46, EXTRACT = 47, 
-    FETCHES = 48, FINAL = 49, FIRST = 50, FOR = 51, FORMAT = 52, FROM = 53, 
-    FULL = 54, FUNCTION = 55, GLOBAL = 56, GROUP = 57, HAVING = 58, HOUR = 59, 
-    ID = 60, IF = 61, IN = 62, INF = 63, INNER = 64, INSERT = 65, INTERVAL = 66, 
-    INTO = 67, IS = 68, JOIN = 69, KEY = 70, LAST = 71, LEADING = 72, LEFT = 73, 
-    LIKE = 74, LIMIT = 75, LOCAL = 76, MATERIALIZED = 77, MERGES = 78, MINUTE = 79, 
-    MODIFY = 80, MONTH = 81, NAN_SQL = 82, NO = 83, NOT = 84, NULL_SQL = 85, 
-    NULLS = 86, OFFSET = 87, ON = 88, OPTIMIZE = 89, OR = 90, ORDER = 91, 
-    OUTER = 92, OUTFILE = 93, PARTITION = 94, POPULATE = 95, PREWHERE = 96, 
-    PRIMARY = 97, QUARTER = 98, RENAME = 99, REPLACE = 100, REPLICA = 101, 
-    RIGHT = 102, SAMPLE = 103, SECOND = 104, SELECT = 105, SEMI = 106, SET = 107, 
-    SETTINGS = 108, SHOW = 109, START = 110, STOP = 111, SUBSTRING = 112, 
-    SYNC = 113, SYSTEM = 114, TABLE = 115, TABLES = 116, TEMPORARY = 117, 
-    THEN = 118, TIES = 119, TO = 120, TOTALS = 121, TRAILING = 122, TRIM = 123, 
-    TRUNCATE = 124, TTL = 125, UNION = 126, USE = 127, USING = 128, VALUES = 129, 
-    VIEW = 130, VOLUME = 131, WEEK = 132, WHEN = 133, WHERE = 134, WITH = 135, 
-    YEAR = 136, JSON_FALSE = 137, JSON_TRUE = 138, IDENTIFIER = 139, FLOATING_LITERAL = 140, 
-    HEXADECIMAL_LITERAL = 141, INTEGER_LITERAL = 142, STRING_LITERAL = 143, 
-    ARROW = 144, ASTERISK = 145, BACKQUOTE = 146, BACKSLASH = 147, COLON = 148, 
-    COMMA = 149, CONCAT = 150, DASH = 151, DOT = 152, EQ_DOUBLE = 153, EQ_SINGLE = 154, 
-    GE = 155, GT = 156, LBRACE = 157, LBRACKET = 158, LE = 159, LPAREN = 160, 
-    LT = 161, NOT_EQ = 162, PERCENT = 163, PLUS = 164, QUERY = 165, QUOTE_DOUBLE = 166, 
-    QUOTE_SINGLE = 167, RBRACE = 168, RBRACKET = 169, RPAREN = 170, SEMICOLON = 171, 
-    SLASH = 172, UNDERSCORE = 173, MULTI_LINE_COMMENT = 174, SINGLE_LINE_COMMENT = 175, 
-    WHITESPACE = 176
+    DISTRIBUTED = 42, DROP = 43, ELSE = 44, END = 45, ENGINE = 46, EXISTS = 47, 
+    EXTRACT = 48, FETCHES = 49, FINAL = 50, FIRST = 51, FLUSH = 52, FOR = 53, 
+    FORMAT = 54, FROM = 55, FULL = 56, FUNCTION = 57, GLOBAL = 58, GRANULARITY = 59, 
+    GROUP = 60, HAVING = 61, HOUR = 62, ID = 63, IF = 64, IN = 65, INDEX = 66, 
+    INF = 67, INNER = 68, INSERT = 69, INTERVAL = 70, INTO = 71, IS = 72, 
+    JOIN = 73, KEY = 74, LAST = 75, LEADING = 76, LEFT = 77, LIKE = 78, 
+    LIMIT = 79, LOCAL = 80, MATERIALIZED = 81, MERGES = 82, MINUTE = 83, 
+    MODIFY = 84, MONTH = 85, NAN_SQL = 86, NO = 87, NOT = 88, NULL_SQL = 89, 
+    NULLS = 90, OFFSET = 91, ON = 92, OPTIMIZE = 93, OR = 94, ORDER = 95, 
+    OUTER = 96, OUTFILE = 97, PARTITION = 98, POPULATE = 99, PREWHERE = 100, 
+    PRIMARY = 101, QUARTER = 102, RENAME = 103, REPLACE = 104, REPLICA = 105, 
+    RIGHT = 106, SAMPLE = 107, SECOND = 108, SELECT = 109, SEMI = 110, SENDS = 111, 
+    SET = 112, SETTINGS = 113, SHOW = 114, START = 115, STOP = 116, SUBSTRING = 117, 
+    SYNC = 118, SYSTEM = 119, TABLE = 120, TABLES = 121, TEMPORARY = 122, 
+    THEN = 123, TIES = 124, TO = 125, TOTALS = 126, TRAILING = 127, TRIM = 128, 
+    TRUNCATE = 129, TTL = 130, TYPE = 131, UNION = 132, USE = 133, USING = 134, 
+    VALUES = 135, VIEW = 136, VOLUME = 137, WEEK = 138, WHEN = 139, WHERE = 140, 
+    WITH = 141, YEAR = 142, JSON_FALSE = 143, JSON_TRUE = 144, IDENTIFIER = 145, 
+    FLOATING_LITERAL = 146, HEXADECIMAL_LITERAL = 147, INTEGER_LITERAL = 148, 
+    STRING_LITERAL = 149, ARROW = 150, ASTERISK = 151, BACKQUOTE = 152, 
+    BACKSLASH = 153, COLON = 154, COMMA = 155, CONCAT = 156, DASH = 157, 
+    DOT = 158, EQ_DOUBLE = 159, EQ_SINGLE = 160, GE = 161, GT = 162, LBRACE = 163, 
+    LBRACKET = 164, LE = 165, LPAREN = 166, LT = 167, NOT_EQ = 168, PERCENT = 169, 
+    PLUS = 170, QUERY = 171, QUOTE_DOUBLE = 172, QUOTE_SINGLE = 173, RBRACE = 174, 
+    RBRACKET = 175, RPAREN = 176, SEMICOLON = 177, SLASH = 178, UNDERSCORE = 179, 
+    MULTI_LINE_COMMENT = 180, SINGLE_LINE_COMMENT = 181, WHITESPACE = 182
   };
 
   enum {
@@ -173,13 +174,12 @@ public:
     QueryStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     QueryContext *query();
-    antlr4::tree::TerminalNode *SEMICOLON();
-    antlr4::tree::TerminalNode *EOF();
     antlr4::tree::TerminalNode *INTO();
     antlr4::tree::TerminalNode *OUTFILE();
     antlr4::tree::TerminalNode *STRING_LITERAL();
     antlr4::tree::TerminalNode *FORMAT();
     IdentifierOrNullContext *identifierOrNull();
+    antlr4::tree::TerminalNode *SEMICOLON();
     InsertStmtContext *insertStmt();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -390,7 +390,7 @@ public:
     AnalyzeStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *ANALYZE();
-    QueryStmtContext *queryStmt();
+    QueryContext *query();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
@@ -685,6 +685,20 @@ public:
     TableElementExprColumnContext(TableElementExprContext *ctx);
 
     TableColumnDfntContext *tableColumnDfnt();
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  TableElementExprIndexContext : public TableElementExprContext {
+  public:
+    TableElementExprIndexContext(TableElementExprContext *ctx);
+
+    antlr4::tree::TerminalNode *INDEX();
+    IdentifierContext *identifier();
+    ColumnExprContext *columnExpr();
+    antlr4::tree::TerminalNode *TYPE();
+    ColumnTypeExprContext *columnTypeExpr();
+    antlr4::tree::TerminalNode *GRANULARITY();
+    antlr4::tree::TerminalNode *INTEGER_LITERAL();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -1480,9 +1494,12 @@ public:
     SystemStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *SYSTEM();
+    antlr4::tree::TerminalNode *FLUSH();
+    antlr4::tree::TerminalNode *DISTRIBUTED();
     TableIdentifierContext *tableIdentifier();
     antlr4::tree::TerminalNode *START();
     antlr4::tree::TerminalNode *STOP();
+    antlr4::tree::TerminalNode *SENDS();
     antlr4::tree::TerminalNode *FETCHES();
     antlr4::tree::TerminalNode *MERGES();
     antlr4::tree::TerminalNode *SYNC();
@@ -2230,6 +2247,7 @@ public:
     antlr4::tree::TerminalNode *ANTI();
     antlr4::tree::TerminalNode *ANY();
     antlr4::tree::TerminalNode *ARRAY();
+    antlr4::tree::TerminalNode *AS();
     antlr4::tree::TerminalNode *ASOF();
     antlr4::tree::TerminalNode *ATTACH();
     antlr4::tree::TerminalNode *BETWEEN();
@@ -2256,6 +2274,7 @@ public:
     antlr4::tree::TerminalNode *DETACH();
     antlr4::tree::TerminalNode *DISK();
     antlr4::tree::TerminalNode *DISTINCT();
+    antlr4::tree::TerminalNode *DISTRIBUTED();
     antlr4::tree::TerminalNode *DROP();
     antlr4::tree::TerminalNode *ELSE();
     antlr4::tree::TerminalNode *END();
@@ -2265,14 +2284,17 @@ public:
     antlr4::tree::TerminalNode *FETCHES();
     antlr4::tree::TerminalNode *FINAL();
     antlr4::tree::TerminalNode *FIRST();
+    antlr4::tree::TerminalNode *FLUSH();
     antlr4::tree::TerminalNode *FULL();
     antlr4::tree::TerminalNode *FUNCTION();
     antlr4::tree::TerminalNode *GLOBAL();
+    antlr4::tree::TerminalNode *GRANULARITY();
     antlr4::tree::TerminalNode *HAVING();
     antlr4::tree::TerminalNode *HOUR();
     antlr4::tree::TerminalNode *ID();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *IN();
+    antlr4::tree::TerminalNode *INDEX();
     antlr4::tree::TerminalNode *INNER();
     antlr4::tree::TerminalNode *INSERT();
     antlr4::tree::TerminalNode *INTERVAL();
@@ -2313,6 +2335,7 @@ public:
     antlr4::tree::TerminalNode *SAMPLE();
     antlr4::tree::TerminalNode *SECOND();
     antlr4::tree::TerminalNode *SEMI();
+    antlr4::tree::TerminalNode *SENDS();
     antlr4::tree::TerminalNode *SET();
     antlr4::tree::TerminalNode *SHOW();
     antlr4::tree::TerminalNode *START();
@@ -2331,6 +2354,7 @@ public:
     antlr4::tree::TerminalNode *TRUNCATE();
     antlr4::tree::TerminalNode *TO();
     antlr4::tree::TerminalNode *TTL();
+    antlr4::tree::TerminalNode *TYPE();
     antlr4::tree::TerminalNode *UNION();
     antlr4::tree::TerminalNode *USE();
     antlr4::tree::TerminalNode *VALUES();

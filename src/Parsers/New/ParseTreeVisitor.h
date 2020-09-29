@@ -132,12 +132,15 @@ public:
     // SystemQuery
     antlrcpp::Any visitSystemStmt(ClickHouseParser::SystemStmtContext * ctx) override;
 
+    // TableElementExpr
+    antlrcpp::Any visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext * ctx) override;
+    antlrcpp::Any visitTableElementExprIndex(ClickHouseParser::TableElementExprIndexContext * ctx) override;
+
     // TableExpr
     antlrcpp::Any visitTableArgExpr(ClickHouseParser::TableArgExprContext * ctx) override;
     antlrcpp::Any visitTableArgList(ClickHouseParser::TableArgListContext * ctx) override;
     antlrcpp::Any visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext * ctx) override;
     antlrcpp::Any visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext * ctx) override;
-    antlrcpp::Any visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext * ctx) override;
     antlrcpp::Any visitTableExprAlias(ClickHouseParser::TableExprAliasContext * ctx) override;
     antlrcpp::Any visitTableExprFunction(ClickHouseParser::TableExprFunctionContext * ctx) override;
     antlrcpp::Any visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext * ctx) override;

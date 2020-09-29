@@ -21,6 +21,11 @@ TableArgExpr::TableArgExpr(PtrTo<TableExpr> expr) : INode{expr}
 {
 }
 
+ASTPtr TableArgExpr::convertToOld() const
+{
+    return get(EXPR)->convertToOld();
+}
+
 // static
 PtrTo<TableExpr> TableExpr::createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier> alias)
 {
