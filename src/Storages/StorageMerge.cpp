@@ -11,6 +11,8 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
@@ -55,6 +57,28 @@ bool removeJoin(ASTSelectQuery & select)
     /// TODO: we also need to remove joined columns and related functions (taking in account aliases if any).
     tables->children.resize(1);
     return true;
+}
+
+void modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_result)
+{
+    if (removeJoin(select))
+    {
+        /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
+        select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+
+        /// Replace select list to remove joined columns
+        auto select_list = std::make_shared<ASTExpressionList>();
+        for (const auto & column : rewriter_result.required_source_columns)
+            select_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+
+        select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
+
+        /// TODO: keep WHERE/PREWHERE. We have to remove joined columns and their expressions but keep others.
+        select.setExpression(ASTSelectQuery::Expression::WHERE, {});
+        select.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+        select.setExpression(ASTSelectQuery::Expression::HAVING, {});
+        select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+    }
 }
 
 }
@@ -267,11 +291,7 @@ Pipe StorageMerge::createSources(
 
     /// Original query could contain JOIN but we need only the first joined table and its columns.
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
-    if (removeJoin(modified_select))
-    {
-        /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
-        modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-    }
+    modifySelect(modified_select, *query_info.syntax_analyzer_result);
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
 
