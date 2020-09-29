@@ -11,7 +11,7 @@ RUN apt-get update \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-11 main" >> \
+    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list
 
 # initial packages
@@ -49,6 +49,11 @@ RUN apt-get update \
         lld-11 \
         llvm-11 \
         llvm-11-dev \
+        clang-10 \
+        clang-tidy-10 \
+        lld-10 \
+        llvm-10 \
+        llvm-10-dev \
         ninja-build \
         perl \
         pkg-config \
@@ -75,7 +80,7 @@ RUN apt-get update \
 RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
 # This symlink required by gcc to find lld compiler
-RUN ln -s /usr/bin/lld-11 /usr/bin/ld.lld
+RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 
 COPY build.sh /
 

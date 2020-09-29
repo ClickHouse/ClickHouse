@@ -1,7 +1,7 @@
 {
     "build_config": [
         {
-            "compiler": "gcc-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -124,7 +124,7 @@
             "with_coverage": true
         },
         {
-            "compiler": "clang-11",
+            "compiler": "clang-10",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -227,7 +227,7 @@
         },
         "Functional stateful tests (release)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -239,7 +239,7 @@
         },
         "Functional stateful tests (release, DatabaseOrdinary)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -311,7 +311,7 @@
         },
         "Functional stateless tests (release)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -335,7 +335,7 @@
         },
         "Functional stateless tests (release, polymorphic parts enabled)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -347,7 +347,7 @@
         },
         "Functional stateless tests (release, DatabaseOrdinary)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -431,7 +431,7 @@
         },
         "Integration tests (release)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -455,7 +455,7 @@
         },
         "Compatibility check": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -479,7 +479,7 @@
         },
         "Testflows check": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
