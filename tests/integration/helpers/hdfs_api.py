@@ -42,8 +42,10 @@ class HDFSApi(object):
         return output
 
     def write_data(self, path, content):
-        named_file = NamedTemporaryFile(mode='w+')
+        named_file = NamedTemporaryFile(mode='wb+')
         fpath = named_file.name
+        if isinstance(content, str):
+            content = content.encode()
         named_file.write(content)
         named_file.flush()
         response = requests.put(
@@ -61,10 +63,12 @@ class HDFSApi(object):
             raise Exception("Can't create file on hdfs:\n {}".format(output))
 
     def write_gzip_data(self, path, content):
-        out = io.StringIO()
+        if isinstance(content, str):
+            content = content.encode()
+        out = io.BytesIO()
         with gzip.GzipFile(fileobj=out, mode="wb") as f:
             f.write(content)
         self.write_data(path, out.getvalue())
 
     def read_gzip_data(self, path):
-        return gzip.GzipFile(fileobj=io.BytesIO(self.read_data(path, universal_newlines=False))).read()
+        return gzip.GzipFile(fileobj=io.BytesIO(self.read_data(path, universal_newlines=False))).read().decode()
