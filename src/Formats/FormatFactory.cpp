@@ -107,6 +107,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ?
                                      FormatSettings::Pretty::Charset::ASCII :
                                      FormatSettings::Pretty::Charset::UTF8;
+    format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
