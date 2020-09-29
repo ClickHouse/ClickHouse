@@ -32,6 +32,11 @@ RUN apt-get update \
         curl \
         gcc-9 \
         g++-9 \
+        clang-10 \
+        clang-tidy-10 \
+        lld-10 \
+        llvm-10 \
+        llvm-10-dev \
         clang-11 \
         clang-tidy-11 \
         lld-11 \
