@@ -79,7 +79,6 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
         Coordination::Stat partitions_stat;
         Strings partitions = zookeeper.getChildren(block_numbers_path, &partitions_stat);
 
-        /// TODO: It needs some explanation here on why this algorithm of creating lock holder nodes is safe (when retried)
         if (holders.size() < partitions.size())
         {
             std::vector<std::future<Coordination::CreateResponse>> holder_futures;
@@ -96,13 +95,13 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
         }
 
         Coordination::Requests lock_ops;
-        lock_ops.push_back(zkutil::makeCheckRequest(block_numbers_path, partitions_stat.version));
         for (size_t i = 0; i < partitions.size(); ++i)
         {
             String partition_path_prefix = block_numbers_path + "/" + partitions[i] + "/" + path_prefix;
             lock_ops.push_back(zkutil::makeCreateRequest(
                     partition_path_prefix, holders[i], zkutil::CreateMode::EphemeralSequential));
         }
+        lock_ops.push_back(zkutil::makeCheckRequest(block_numbers_path, partitions_stat.version));
 
         Coordination::Responses lock_responses;
         Coordination::Error rc = zookeeper.tryMulti(lock_ops, lock_responses);
