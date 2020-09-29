@@ -403,7 +403,6 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
 
         node1.query("DROP TABLE {} NO DELAY".format(name_temp))
 
-        time.sleep(2)
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod2"}
 

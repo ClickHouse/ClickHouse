@@ -124,6 +124,19 @@ BlockIO InterpreterDropQuery::executeToTable(
         }
     }
 
+    table.reset();
+    ddl_guard = {};
+    if (query.no_delay)
+    {
+        if (query.kind == ASTDropQuery::Kind::Drop)
+            DatabaseCatalog::instance().waitTableFinallyDropped(table_id.uuid);
+        else if (query.kind == ASTDropQuery::Kind::Detach)
+        {
+            if (auto * atomic = typeid_cast<DatabaseAtomic *>(database.get()))
+                atomic->waitDetachedTableNotInUse(table_id.uuid);
+        }
+    }
+
     return {};
 }
 
