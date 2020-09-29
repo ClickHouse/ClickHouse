@@ -717,6 +717,8 @@ protected:
 
     bool require_part_metadata;
 
+    /// Relative path data, changes during rename for ordinary databases use
+    /// under lockForShare if rename is possible.
     String relative_data_path;
 
 

@@ -80,7 +80,7 @@ public:
     DataTypePtr getReturnType(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
