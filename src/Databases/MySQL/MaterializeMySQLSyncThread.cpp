@@ -6,6 +6,7 @@
 
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 
+#    include <climits>
 #    include <cstdlib>
 #    include <memory>
 #    include <random>
@@ -62,28 +63,30 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
-    MaterializeMySQLSettingsPtr settings_,
     const String & mysql_version_)
     : log(&Poco::Logger::get("MaterializeMySQLSyncThread"))
     , global_context(context.getGlobalContext())
     , mysql_database_name(mysql_database_name_)
     , pool(std::move(pool_))
     , client(std::move(client_))
-    , settings(settings_)
     , mysql_version(mysql_version_)
     , has_new_consumers(true)
     , has_consumers(false)
+    , max_flush_time(LLONG_MAX)
+    , max_wait_time_when_mysql_unavailable(LLONG_MAX)
 {
 }
 
 void MaterializeMySQLSyncThread::registerConsumerDatabase(
     const String & database_name_,
-    const String & materialize_metadata_path)
+    const String & materialize_metadata_path,
+    MaterializeMySQLSettingsPtr settings)
 {
     ConsumerDatabasePtr consumer = std::make_shared<ConsumerDatabase>(
         database_name_,
         mysql_database_name,
-        materialize_metadata_path);
+        materialize_metadata_path,
+        settings);
     consumers.push_back(consumer);
     has_new_consumers = true;
 }
@@ -101,17 +104,21 @@ void MaterializeMySQLSyncThread::synchronization()
             if (!prepareConsumers()) {
                 continue;
             }
+
             startClient();
 
-            UInt64 max_flush_time = settings->max_flush_data_time;
-            BinlogEventPtr binlog_event = client.readOneBinlogEvent(
-                std::max(UInt64(1),
+            BinlogEventPtr binlog_event = client.readOneBinlogEvent(std::max(
+                UInt64(1),
                 max_flush_time - watch.elapsedMilliseconds()));
 
             if (binlog_event)
             {
                 for (auto consumer : consumers)
                 {
+                    if (!consumer->prepared) {
+                        continue;
+                    }
+
                     onEvent(
                         global_context,
                         consumer,
@@ -121,8 +128,14 @@ void MaterializeMySQLSyncThread::synchronization()
                 }
             }
 
+            bool need_watch_restart = false;
             for (auto consumer : consumers)
             {
+                if (!consumer->prepared) {
+                    continue;
+                }
+
+                auto settings = consumer->settings;
                 if (watch.elapsedMilliseconds() > max_flush_time ||
                     consumer->buffer->checkThresholds(
                         settings->max_rows_in_buffer,
@@ -130,13 +143,18 @@ void MaterializeMySQLSyncThread::synchronization()
                         settings->max_rows_in_buffers,
                         settings->max_bytes_in_buffers))
                 {
-                    watch.restart();
+                    need_watch_restart = true;
 
                     if (!consumer->buffer->data.empty())
                     {
                         flushBuffersData(consumer);
                     }
                 }
+            }
+
+            if (need_watch_restart)
+            {
+                watch.restart();
             }
         }
     }
@@ -146,6 +164,9 @@ void MaterializeMySQLSyncThread::synchronization()
         tryLogCurrentException(log);
 
         for (auto consumer : consumers) {
+            if (!consumer->prepared) {
+                continue;
+            }
             if (auto c = dynamic_pointer_cast<ConsumerDatabase>(consumer)){
                 getDatabase(c->database_name)
                     .setException(std::current_exception());
@@ -248,7 +269,7 @@ bool MaterializeMySQLSyncThread::prepareConsumer(ConsumerPtr consumer)
             catch (const mysqlxx::ConnectionFailed &)
             {
                 /// Avoid busy loop when MySQL is not available.
-                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+                sleepForMilliseconds(max_wait_time_when_mysql_unavailable);
             }
         }
     }
@@ -256,6 +277,13 @@ bool MaterializeMySQLSyncThread::prepareConsumer(ConsumerPtr consumer)
     if (ConsumerDatabasePtr c = std::dynamic_pointer_cast<ConsumerDatabase>(consumer)) {
         c->buffer = std::make_shared<MySQLDatabaseBuffer>(c->database_name);
     }
+
+    max_flush_time = std::min(
+        max_flush_time,
+        UInt64(consumer->settings->max_flush_data_time));
+    max_wait_time_when_mysql_unavailable = std::min(
+        max_wait_time_when_mysql_unavailable,
+        UInt64(consumer->settings->max_wait_time_when_mysql_unavailable));
 
     return consumer->prepared;
 }

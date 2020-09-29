@@ -31,16 +31,19 @@ namespace MySQLReplicaConsumer
     {
         Consumer(
             const String & mysql_database_name_,
-            const String & materialize_metadata_path_)
+            const String & materialize_metadata_path_,
+            MaterializeMySQLSettingsPtr settings_)
             : mysql_database_name(mysql_database_name_)
             , materialize_metadata_path(materialize_metadata_path_)
+            , settings(settings_)
             , prepared(false)
         {
         }
 
         String mysql_database_name;
-
         String materialize_metadata_path;
+        MaterializeMySQLSettingsPtr settings;
+
         bool prepared;
 
         MaterializeMetadataPtr materialize_metadata;
@@ -55,8 +58,9 @@ namespace MySQLReplicaConsumer
         ConsumerDatabase(
             const String & database_name_,
             const String & mysql_database_name_,
-            const String & materialize_metadata_path_)
-            : Consumer(mysql_database_name_, materialize_metadata_path_)
+            const String & materialize_metadata_path_,
+            MaterializeMySQLSettingsPtr settings_)
+            : Consumer(mysql_database_name_, materialize_metadata_path_, settings_)
             , database_name(database_name_)
         {
         }
@@ -97,7 +101,6 @@ public:
         const String & mysql_database_name_,
         mysqlxx::Pool && pool_,
         MySQLClient && client_,
-        MaterializeMySQLSettingsPtr settings_,
         const String & mysql_version_);
 
     void stopSynchronization();
@@ -106,7 +109,8 @@ public:
 
     void registerConsumerDatabase(
         const String & database_name_,
-        const String & materialize_metadata_path);
+        const String & materialize_metadata_path,
+        MaterializeMySQLSettingsPtr settings_);
 
     static bool isMySQLSyncThread();
 
@@ -118,11 +122,13 @@ private:
 
     mutable mysqlxx::Pool pool;
     mutable MySQLClient client;
-    MaterializeMySQLSettingsPtr settings;
     String mysql_version;
 
     std::atomic<bool> has_new_consumers;
     bool has_consumers;
+
+    UInt64 max_flush_time;
+    UInt64 max_wait_time_when_mysql_unavailable;
 
     std::vector<ConsumerPtr> consumers;
 

@@ -46,7 +46,6 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
         mysql_database_name_,
         std::move(pool_),
         std::move(client_),
-        settings,
         checkVariableAndGetVersion(pool_.get()));
 }
 
@@ -89,7 +88,8 @@ void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_for
         nested_database->loadStoredObjects(context, has_force_restore_data_flag, force_attach);
         materialize_thread->registerConsumerDatabase(
             database_name,
-            this->getMetadataPath() + "/.metadata");
+            this->getMetadataPath() + "/.metadata",
+            settings);
         materialize_thread->startSynchronization();
     }
     catch (...)
