@@ -63,8 +63,7 @@ def create_table(cluster, additional_settings=None):
         create_table_statement += ","
         create_table_statement += additional_settings
 
-    for node in list(cluster.instances.values()):
-        node.query(create_table_statement)
+    list(cluster.instances.values())[0].query(create_table_statement)
 
 
 @pytest.fixture(autouse=True)
