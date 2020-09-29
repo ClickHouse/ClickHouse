@@ -12,7 +12,7 @@ from ldap.authentication.tests.common import invalid_server_config
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Invalid("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Name("1.0")
 )
-def empty_server_name(self, timeout=20):
+def empty_server_name(self, timeout=60):
     """Check that empty string as a server name is not allowed.
     """
     servers = {"": {"host": "foo", "port": "389", "enable_tls": "no",
@@ -32,7 +32,7 @@ def invalid_host(self):
     servers = {"foo": {"host": "foo", "port": "389", "enable_tls": "no"}}
     users = [{
         "server": "foo", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 20, "message": "DB::Exception: Can't contact LDAP server"
+        "exitcode": 4, "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name."
     }]
     login(servers, "foo", *users)
 
@@ -41,7 +41,7 @@ def invalid_host(self):
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Invalid("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Host("1.0")
 )
-def empty_host(self, tail=20, timeout=20):
+def empty_host(self, tail=20, timeout=60):
     """Check that server returns an error when LDAP server
     host value is empty.
     """
@@ -49,31 +49,15 @@ def empty_host(self, tail=20, timeout=20):
     message = "DB::Exception: Empty 'host' entry"
 
     servers = {"foo": {"host": "", "port": "389", "enable_tls": "no"}}
-    users = [{
-        "server": "foo", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 36, "message": "DB::Exception: LDAP server 'foo' is not configured."
-    }]
 
-    with Given("I prepare the error log by writting empty lines into it"):
-        node.command("echo -e \"%s\" > /var/log/clickhouse-server/clickhouse-server.err.log" % ("-\\n" * tail))
-
-    with ldap_servers(servers):
-        with Then("server shall fail to merge the new config"):
-            started = time.time()
-            command = f"tail -n {tail} /var/log/clickhouse-server/clickhouse-server.err.log | grep \"{message}\""
-            while time.time() - started < timeout:
-                exitcode = node.command(command, steps=False).exitcode
-                if exitcode == 0:
-                    break
-                time.sleep(1)
-            assert exitcode == 0, error()
+    invalid_server_config(servers, message=message, tail=16, timeout=timeout)
 
 @TestScenario
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Invalid("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Host("1.0")
 )
-def missing_host(self, tail=20, timeout=20):
+def missing_host(self, tail=20, timeout=60):
     """Check that server returns an error when LDAP server
     host is missing.
     """
@@ -111,7 +95,7 @@ def invalid_port(self):
     servers = {"openldap1": {"host": "openldap1", "port": "3890", "enable_tls": "no"}}
     users = [{
         "server": "openldap1", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 20, "message": "DB::Exception: Can't contact LDAP server."
+        "exitcode": 4, "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name."
     }]
     login(servers, "openldap1", *users)
 
@@ -130,7 +114,7 @@ def invalid_auth_dn_prefix(self):
     }}
     users = [{
         "server": "openldap1", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 20, "message": "DB::Exception: Invalid DN syntax: invalid DN"
+        "exitcode": 4, "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name."
     }]
     login(servers, "openldap1", *users)
 
@@ -148,7 +132,7 @@ def invalid_auth_dn_suffix(self):
     }}
     users = [{
         "server": "openldap1", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 20, "message": "DB::Exception: Invalid DN syntax: invalid DN"
+        "exitcode": 4, "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name."
     }]
     login(servers, "openldap1", *users)
 
@@ -157,18 +141,15 @@ def invalid_auth_dn_suffix(self):
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Invalid("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_EnableTLS("1.0")
 )
-def invalid_enable_tls_value(self):
+def invalid_enable_tls_value(self, timeout=60):
     """Check that server returns an error when enable_tls
     option has invalid value.
     """
+    message = "Syntax error: Cannot convert to boolean: foo"
     servers = {"openldap1": {"host": "openldap1", "port": "389", "enable_tls": "foo",
         "auth_dn_prefix": "cn=", "auth_dn_suffix": ",ou=users,dc=company,dc=com"
     }}
-    users = [{
-        "server": "openldap1", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 36, "message": "DB::Exception: LDAP server 'openldap1' is not configured"
-    }]
-    login(servers, "openldap1", *users)
+    invalid_server_config(servers, message=message, tail=17, timeout=timeout)
 
 @TestScenario
 @Requirements(
@@ -188,7 +169,7 @@ def invalid_tls_require_cert_value(self):
     }}
     users = [{
         "server": "openldap2", "username": "user2", "password": "user2", "login": True,
-        "exitcode": 36, "message": "DB::Exception: LDAP server 'openldap2' is not configured"
+        "exitcode": 4, "message": "DB::Exception: user2: Authentication failed: password is incorrect or there is no user with such name."
     }]
     login(servers, "openldap2", *users)
 
@@ -208,8 +189,8 @@ def empty_ca_cert_dir(self):
     }}
     users = [{
         "server": "openldap2", "username": "user2", "password": "user2", "login": True,
-        "exitcode": 20,
-        "message": "DB::Exception: Can't contact LDAP server: error:14000086:SSL routines::certificate verify failed (self signed certificate in certificate chain"
+        "exitcode": 4,
+        "message": "DB::Exception: user2: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, "openldap2", *users)
 
@@ -229,8 +210,8 @@ def empty_ca_cert_file(self):
     }}
     users = [{
         "server": "openldap2", "username": "user2", "password": "user2", "login": True,
-        "exitcode": 20,
-        "message": "Received from localhost:9000. DB::Exception: Can't contact LDAP server: error:14000086:SSL routines::certificate verify failed (self signed certificate in certificate chain)"
+        "exitcode": 4,
+        "message": "DB::Exception: user2: Authentication failed: password is incorrect or there is no user with such name."
     }]
     login(servers, "openldap2", *users)
 
