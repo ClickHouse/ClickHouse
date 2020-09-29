@@ -206,10 +206,11 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
     elem.type = QueryLogElementType::EXCEPTION_BEFORE_START;
 
-    // all callers to onExceptionBeforeStart upstream construct the timespec for event_time and
-    // event_time_microseconds from the same timespec. So it can be assumed that both of these
+    // all callers to onExceptionBeforeStart method construct the timespec for event_time and
+    // event_time_microseconds from the same time point. So, it can be assumed that both of these
     // times are equal upto the precision of a second.
     elem.event_time = current_time;
+    elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = current_time;
     elem.query_start_time_microseconds = current_time_microseconds;
 
@@ -319,7 +320,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         logQuery(query_for_logging, context, internal);
 
         if (!internal)
+        {
             onExceptionBeforeStart(query_for_logging, context, current_time, current_time_microseconds, ast);
+        }
 
         throw;
     }
@@ -484,6 +487,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.type = QueryLogElementType::QUERY_START;
 
             elem.event_time = current_time;
+            elem.event_time_microseconds = current_time_microseconds;
             elem.query_start_time = current_time;
             elem.query_start_time_microseconds = current_time_microseconds;
 
@@ -554,8 +558,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElementType::QUERY_FINISH;
 
-                elem.event_time = time(nullptr);
-
+                // construct event_time and event_time_microseconds using the same time point
+                // so that the two times will always be equal up to a precision of a second.
+                const auto time_now = std::chrono::system_clock::now();
+                elem.event_time = time_in_seconds(time_now);
+                elem.event_time_microseconds = time_in_microseconds(time_now);
                 status_info_to_query_log(elem, info, ast);
 
                 auto progress_callback = context.getProgressCallback();
@@ -615,7 +622,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
 
-                elem.event_time = time(nullptr);
+                // event_time and event_time_microseconds are being constructed from the same time point
+                // to ensure that both the times will be equal upto the precision of a second.
+                const auto time_now = std::chrono::system_clock::now();
+
+                elem.event_time = time_in_seconds(time_now);
+                elem.event_time_microseconds = time_in_microseconds(time_now);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception_code = getCurrentExceptionCode();
                 elem.exception = getCurrentExceptionMessage(false);

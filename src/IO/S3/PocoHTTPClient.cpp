@@ -1,3 +1,7 @@
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include "PocoHTTPClient.h"
 
 #include <utility>
@@ -13,6 +17,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <common/logger_useful.h>
+
 
 namespace ProfileEvents
 {
@@ -64,7 +69,7 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
     auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHTTPClient", request);
-    MakeRequestInternal(request, response, readLimiter, writeLimiter);
+    makeRequestInternal(request, response, readLimiter, writeLimiter);
     return response;
 }
 
@@ -74,11 +79,11 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
     auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHTTPClient", request);
-    MakeRequestInternal(*request, response, readLimiter, writeLimiter);
+    makeRequestInternal(*request, response, readLimiter, writeLimiter);
     return response;
 }
 
-void PocoHTTPClient::MakeRequestInternal(
+void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<Aws::Http::Standard::StandardHttpResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
@@ -264,3 +269,5 @@ void PocoHTTPClient::MakeRequestInternal(
     }
 }
 }
+
+#endif

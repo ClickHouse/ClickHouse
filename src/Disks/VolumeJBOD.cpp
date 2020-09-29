@@ -53,6 +53,9 @@ VolumeJBOD::VolumeJBOD(
     static constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
         LOG_WARNING(logger, "Volume {} max_data_part_size is too low ({} < {})", backQuote(name), ReadableSize(max_data_part_size), ReadableSize(MIN_PART_SIZE));
+
+    /// Default value is 'true' due to backward compatibility.
+    perform_ttl_move_on_insert = config.getBool(config_prefix + ".perform_ttl_move_on_insert", true);
 }
 
 DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
