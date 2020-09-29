@@ -9,9 +9,9 @@ class SentryHandler(http.server.BaseHTTPRequestHandler):
         with open(RESULT_PATH, 'w') as f:
             if self.headers.get("content-type") != "application/x-sentry-envelope":
                 f.write("INCORRECT_CONTENT_TYPE")
-            elif self.headers.get("content-length") < 3000:
+            elif int(self.headers.get("content-length")) < 3000:
                 f.write("INCORRECT_CONTENT_LENGTH")
-            elif '"http://6f33034cfe684dd7a3ab9875e57b1c8d@localhost:9500/5226277"' not in post_data:
+            elif b'"http://6f33034cfe684dd7a3ab9875e57b1c8d@localhost:9500/5226277"' not in post_data:
                 f.write('INCORRECT_POST_DATA')
             else:
                 f.write("OK")
@@ -19,7 +19,7 @@ class SentryHandler(http.server.BaseHTTPRequestHandler):
 
     def __read_and_decode_post_data(self):
         transfer_encoding = self.headers.get("transfer-Encoding")
-        decoded = ""
+        decoded = b""
         if transfer_encoding == "chunked":
             while True:
                 s = self.rfile.readline()
