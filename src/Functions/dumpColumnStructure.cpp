@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Dump the structure of type and column.
 class FunctionDumpColumnStructure : public IFunction
@@ -46,6 +48,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionDumpColumnStructure(FunctionFactory & factory)
 {

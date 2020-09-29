@@ -637,13 +637,21 @@ uint8_t CompressionCodecT64::getMethodByte() const
     return codecId();
 }
 
-ASTPtr CompressionCodecT64::getCodecDesc() const
+CompressionCodecT64::CompressionCodecT64(TypeIndex type_idx_, Variant variant_)
+    : type_idx(type_idx_)
+    , variant(variant_)
 {
     if (variant == Variant::Byte)
-        return std::make_shared<ASTIdentifier>("T64");
+        setCodecDescription("T64");
+    else
+        setCodecDescription("T64", {std::make_shared<ASTLiteral>("bit")});
+}
 
-    auto literal = std::make_shared<ASTLiteral>("bit");
-    return makeASTFunction("T64", literal);
+void CompressionCodecT64::updateHash(SipHash & hash) const
+{
+    getCodecDesc()->updateTreeHash(hash);
+    hash.update(type_idx);
+    hash.update(variant);
 }
 
 void registerCodecT64(CompressionCodecFactory & factory)

@@ -3,7 +3,7 @@
 #include <Poco/Event.h>
 #include <common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <thread>
 #include <atomic>
 

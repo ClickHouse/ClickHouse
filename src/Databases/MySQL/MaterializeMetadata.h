@@ -9,6 +9,7 @@
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/MySQL/MySQLReplication.h>
+#include <common/types.h>
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/PoolWithFailover.h>
 

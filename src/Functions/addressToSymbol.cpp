@@ -21,6 +21,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
+
 class FunctionAddressToSymbol : public IFunction
 {
 public:
@@ -85,6 +88,8 @@ public:
         block.getByPosition(result).column = std::move(result_column);
     }
 };
+
+}
 
 void registerFunctionAddressToSymbol(FunctionFactory & factory)
 {

@@ -67,8 +67,16 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         /// For DateTime, if time zone is specified, attach it to type.
+        /// If the time zone is specified but empty, throw an exception.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-            return std::make_shared<ToDataType>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+        {
+            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            if (time_zone.empty())
+                throw Exception(
+                    "Function " + getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            return std::make_shared<ToDataType>(time_zone);
+        }
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             Int64 scale = DataTypeDateTime64::default_scale;

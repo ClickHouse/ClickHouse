@@ -152,7 +152,7 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
 {
     if (const auto * func_node = node->as<ASTFunction>())
     {
-        if (func_node->query)
+        if (func_node->tryGetQueryArgument())
         {
             if (func_node->name != "view")
                 throw Exception("Query argument can only be used in the `view` TableFunction", ErrorCodes::BAD_ARGUMENTS);

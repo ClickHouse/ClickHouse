@@ -128,6 +128,8 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
+    void checkTableCanBeRenamed() const override;
+
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool supportsIndexForIn() const override { return true; }
@@ -304,6 +306,9 @@ private:
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
 
+    /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
+    const bool allow_renaming;
+
     template <class Func>
     void foreachCommittedParts(const Func & func) const;
 
@@ -450,7 +455,8 @@ private:
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
-        int32_t log_version);
+        int32_t log_version,
+        MergeType merge_type);
 
     CreateMergeEntryResult createLogEntryToMutatePart(
         const IMergeTreeDataPart & part,
@@ -570,7 +576,8 @@ protected:
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
-        bool has_force_restore_data_flag);
+        bool has_force_restore_data_flag,
+        bool allow_renaming_);
 };
 
 

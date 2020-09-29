@@ -235,11 +235,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
     return header.cloneWithColumns(std::move(columns));
 }
 
-/** Create a block for set from literal.
-  * 'set_element_types' - types of what are on the left hand side of IN.
-  * 'right_arg' - Literal - Tuple or Array.
-  */
-static Block createBlockForSet(
+Block createBlockForSet(
     const DataTypePtr & left_arg_type,
     const ASTPtr & right_arg,
     const DataTypes & set_element_types,
@@ -280,14 +276,7 @@ static Block createBlockForSet(
     return block;
 }
 
-/** Create a block for set from expression.
-  * 'set_element_types' - types of what are on the left hand side of IN.
-  * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-  *
-  *  We need special implementation for ASTFunction, because in case, when we interpret
-  *  large tuple or array as function, `evaluateConstantExpression` works extremely slow.
-  */
-static Block createBlockForSet(
+Block createBlockForSet(
     const DataTypePtr & left_arg_type,
     const std::shared_ptr<ASTFunction> & right_arg,
     const DataTypes & set_element_types,
@@ -903,35 +892,8 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (!subquery_for_set.source && data.no_storage_or_local)
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
-            subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().getInputStream(); });
-
-            /** Why is LazyBlockInputStream used?
-              *
-              * The fact is that when processing a query of the form
-              *  SELECT ... FROM remote_test WHERE column GLOBAL IN (subquery),
-              *  if the distributed remote_test table contains localhost as one of the servers,
-              *  the query will be interpreted locally again (and not sent over TCP, as in the case of a remote server).
-              *
-              * The query execution pipeline will be:
-              * CreatingSets
-              *  subquery execution, filling the temporary table with _data1 (1)
-              *  CreatingSets
-              *   reading from the table _data1, creating the set (2)
-              *   read from the table subordinate to remote_test.
-              *
-              * (The second part of the pipeline under CreateSets is a reinterpretation of the query inside StorageDistributed,
-              *  the query differs in that the database name and tables are replaced with subordinates, and the subquery is replaced with _data1.)
-              *
-              * But when creating the pipeline, when creating the source (2), it will be found that the _data1 table is empty
-              *  (because the query has not started yet), and empty source will be returned as the source.
-              * And then, when the query is executed, an empty set will be created in step (2).
-              *
-              * Therefore, we make the initialization of step (2) lazy
-              *  - so that it does not occur until step (1) is completed, on which the table will be populated.
-              *
-              * Note: this solution is not very good, you need to think better.
-              */
+            subquery_for_set.source = std::make_unique<QueryPlan>();
+            interpreter->buildQueryPlan(*subquery_for_set.source);
         }
 
         subquery_for_set.set = set;

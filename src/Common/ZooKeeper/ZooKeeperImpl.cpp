@@ -424,7 +424,7 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
 
 struct ZooKeeperResponse : virtual Response
 {
-    virtual ~ZooKeeperResponse() = default;
+    virtual ~ZooKeeperResponse() override = default;
     virtual void readImpl(ReadBuffer &) = 0;
 };
 

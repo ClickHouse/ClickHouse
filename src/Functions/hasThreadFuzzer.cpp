@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** Returns whether Thread Fuzzer is effective.
   * It can be used in tests to prevent too long runs.
@@ -40,6 +42,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionHasThreadFuzzer(FunctionFactory & factory)
 {

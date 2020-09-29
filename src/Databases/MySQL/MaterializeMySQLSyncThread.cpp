@@ -9,6 +9,7 @@
 #    include <cstdlib>
 #    include <random>
 #    include <Columns/ColumnTuple.h>
+#    include <Columns/ColumnDecimal.h>
 #    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/IBlockStream_fwd.h>
 #    include <DataStreams/copyData.h>
@@ -147,6 +148,7 @@ void MaterializeMySQLSyncThread::synchronization()
     }
     catch (...)
     {
+        client.disconnect();
         tryLogCurrentException(log);
         getDatabase(database_name).setException(std::current_exception());
     }
@@ -158,6 +160,7 @@ void MaterializeMySQLSyncThread::stopSynchronization()
     {
         sync_quit = true;
         background_thread_pool->join();
+        client.disconnect();
     }
 }
 

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -711,8 +712,26 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
+        const auto & args = (*it)->arguments->children;
         auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
-        ColumnsWithTypeAndName arguments{{ nullptr, key_column_type, "" }};
+        ColumnsWithTypeAndName arguments;
+        if (args.size() == 2)
+        {
+            if (const auto * arg_left = args[0]->as<ASTLiteral>())
+            {
+                auto left_arg_type = applyVisitor(FieldToDataType(), arg_left->value);
+                arguments.push_back({ left_arg_type->createColumnConst(0, arg_left->value), left_arg_type, "" });
+                arguments.push_back({ nullptr, key_column_type, "" });
+            }
+            else if (const auto * arg_right = args[1]->as<ASTLiteral>())
+            {
+                arguments.push_back({ nullptr, key_column_type, "" });
+                auto right_arg_type = applyVisitor(FieldToDataType(), arg_right->value);
+                arguments.push_back({ right_arg_type->createColumnConst(0, arg_right->value), right_arg_type, "" });
+            }
+        }
+        else
+            arguments.push_back({ nullptr, key_column_type, "" });
         auto func = func_builder->build(arguments);
 
         if (!func || !func->hasInformationAboutMonotonicity())
@@ -750,12 +769,27 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     if (const auto * func = node->as<ASTFunction>())
     {
         const auto & args = func->arguments->children;
-        if (args.size() != 1)
+        if (args.size() > 2 || args.empty())
             return false;
 
         out_functions_chain.push_back(func);
-
-        return isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
+        bool ret = false;
+        if (args.size() == 2)
+        {
+            if (args[0]->as<ASTLiteral>())
+            {
+                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[1], out_key_column_num, out_key_column_type, out_functions_chain);
+            }
+            else if (args[1]->as<ASTLiteral>())
+            {
+                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
+            }
+        }
+        else
+        {
+            ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
+        }
+        return ret;
     }
 
     return false;

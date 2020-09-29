@@ -8,7 +8,8 @@ enum class TTLMode
 {
     DELETE,
     MOVE,
-    GROUP_BY
+    GROUP_BY,
+    RECOMPRESS,
 };
 
 }

@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
     extern const int INCORRECT_DISK_INDEX;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -744,6 +745,30 @@ void DiskS3::createFile(const String & path)
 void DiskS3::setReadOnly(const String & path)
 {
     Poco::File(metadata_path + path).setReadOnly(true);
+}
+
+int DiskS3::open(const String & /*path*/, mode_t /*mode*/) const
+{
+    throw Exception("Method open is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskS3::close(int /*fd*/) const
+{
+    throw Exception("Method close is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskS3::sync(int /*fd*/) const
+{
+    throw Exception("Method sync is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskS3::shutdown()
+{
+    /// This call stops any next retry attempts for ongoing S3 requests.
+    /// If S3 request is failed and the method below is executed S3 client immediately returns the last failed S3 request outcome.
+    /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
+    /// This should significantly speed up shutdown process if S3 is unhealthy.
+    client->DisableRequestProcessing();
 }
 
 }

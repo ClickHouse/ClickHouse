@@ -107,9 +107,9 @@ def remove_control_characters(s):
     return s
 
 def get_db_engine(args):
-    if args.atomic_db_engine:
-        return " ENGINE=Atomic"
-    return ""
+    if args.db_engine:
+        return " ENGINE=" + args.db_engine
+    return ""   # Will use default engine
 
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
 
@@ -303,6 +303,12 @@ def run_tests_array(all_tests_with_params):
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
                         clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
 
+                        if clickhouse_proc.returncode != 0:
+                            failures += 1
+                            print("Server does not respond to health check")
+                            SERVER_DIED = True
+                            break
+
                     reference_file = os.path.join(suite_dir, name) + '.reference'
                     stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
@@ -456,7 +462,7 @@ class BuildFlags(object):
     DEBUG = 'debug-build'
     UNBUNDLED = 'unbundled-build'
     RELEASE = 'release-build'
-    DATABASE_ATOMIC = 'database-atomic'
+    DATABASE_ORDINARY = 'database-ordinary'
     POLYMORPHIC_PARTS = 'polymorphic-parts'
 
 
@@ -501,17 +507,8 @@ def collect_build_flags(client):
     (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.settings WHERE name = 'default_database_engine'")
 
     if clickhouse_proc.returncode == 0:
-        if 'Atomic' in stdout:
-            result.append(BuildFlags.DATABASE_ATOMIC)
-    else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
-
-    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'")
-
-    if clickhouse_proc.returncode == 0:
-        if '10485760' in stdout:
-            result.append(BuildFlags.POLYMORPHIC_PARTS)
+        if 'Ordinary' in stdout:
+            result.append(BuildFlags.DATABASE_ORDINARY)
     else:
         raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
@@ -801,7 +798,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
     parser.add_argument('--skip-list-path', help="Path to skip-list file")
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
-    parser.add_argument('--atomic-db-engine', action='store_true', help='Create databases with Atomic engine by default')
+    parser.add_argument('--db-engine', help='Database engine name')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')

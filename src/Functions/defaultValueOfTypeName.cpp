@@ -13,6 +13,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
+
 /// Returns global default value for type name (example: 0 for numeric types, '' for String).
 class FunctionDefaultValueOfTypeName : public IFunction
 {
@@ -53,6 +56,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionDefaultValueOfTypeName(FunctionFactory & factory)
 {

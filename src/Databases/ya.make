@@ -5,6 +5,8 @@ PEERDIR(
     clickhouse/src/Common
 )
 
+CFLAGS(-g0)
+
 SRCS(
     DatabaseAtomic.cpp
     DatabaseDictionary.cpp
@@ -17,6 +19,7 @@ SRCS(
     DatabaseWithDictionaries.cpp
     MySQL/DatabaseConnectionMySQL.cpp
     MySQL/DatabaseMaterializeMySQL.cpp
+    MySQL/FetchTablesColumnsList.cpp
     MySQL/MaterializeMetadata.cpp
     MySQL/MaterializeMySQLSettings.cpp
     MySQL/MaterializeMySQLSyncThread.cpp

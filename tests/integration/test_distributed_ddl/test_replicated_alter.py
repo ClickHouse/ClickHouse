@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -60,29 +61,34 @@ ENGINE = Distributed(cluster, default, merge_for_alter, i)
 
     for i in xrange(4):
         k = (i / 2) * 2
-        test_cluster.insert_reliable(test_cluster.instances['ch{}'.format(i + 1)], "INSERT INTO merge_for_alter (i) VALUES ({})({})".format(k, k+1))
+        test_cluster.insert_reliable(test_cluster.instances['ch{}'.format(i + 1)],
+                                     "INSERT INTO merge_for_alter (i) VALUES ({})({})".format(k, k + 1))
 
     test_cluster.sync_replicas("merge_for_alter")
 
-    assert TSV(instance.query("SELECT i FROM all_merge_32 ORDER BY i")) == TSV(''.join(['{}\n'.format(x) for x in xrange(4)]))
-
+    assert TSV(instance.query("SELECT i FROM all_merge_32 ORDER BY i")) == TSV(
+        ''.join(['{}\n'.format(x) for x in xrange(4)]))
 
     test_cluster.ddl_check_query(instance, "ALTER TABLE merge_for_alter ON CLUSTER cluster MODIFY COLUMN i Int64")
-    test_cluster.ddl_check_query(instance, "ALTER TABLE merge_for_alter ON CLUSTER cluster ADD COLUMN s String DEFAULT toString(i)")
+    test_cluster.ddl_check_query(instance,
+                                 "ALTER TABLE merge_for_alter ON CLUSTER cluster ADD COLUMN s String DEFAULT toString(i)")
 
-    assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(4)]))
-
+    assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(
+        ''.join(['{}\t{}\n'.format(x, x) for x in xrange(4)]))
 
     for i in xrange(4):
         k = (i / 2) * 2 + 4
-        test_cluster.insert_reliable(test_cluster.instances['ch{}'.format(i + 1)], "INSERT INTO merge_for_alter (p, i) VALUES (31, {})(31, {})".format(k, k+1))
+        test_cluster.insert_reliable(test_cluster.instances['ch{}'.format(i + 1)],
+                                     "INSERT INTO merge_for_alter (p, i) VALUES (31, {})(31, {})".format(k, k + 1))
 
     test_cluster.sync_replicas("merge_for_alter")
 
-    assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(8)]))
+    assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(
+        ''.join(['{}\t{}\n'.format(x, x) for x in xrange(8)]))
 
     test_cluster.ddl_check_query(instance, "ALTER TABLE merge_for_alter ON CLUSTER cluster DETACH PARTITION 197002")
-    assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(4)]))
+    assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(
+        ''.join(['{}\t{}\n'.format(x, x) for x in xrange(4)]))
 
     test_cluster.ddl_check_query(instance, "DROP TABLE merge_for_alter ON CLUSTER cluster")
 

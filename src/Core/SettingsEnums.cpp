@@ -11,6 +11,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
     extern const int UNKNOWN_JOIN;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
 }
 
 
@@ -20,11 +21,6 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
      {"in_order",         LoadBalancing::IN_ORDER},
      {"first_or_random",  LoadBalancing::FIRST_OR_RANDOM},
      {"round_robin",      LoadBalancing::ROUND_ROBIN}})
-
-
-IMPLEMENT_SETTING_ENUM(SpecialSort, ErrorCodes::UNKNOWN_JOIN,
-    {{"not_specified",  SpecialSort::NOT_SPECIFIED},
-     {"opencl_bitonic", SpecialSort::OPENCL_BITONIC}})
 
 
 IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,
@@ -90,5 +86,9 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(LogQueriesType, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS,
     {{"Ordinary", DefaultDatabaseEngine::Ordinary},
      {"Atomic",   DefaultDatabaseEngine::Atomic}})
+
+IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
+    {{"decimal",    MySQLDataTypesSupport::DECIMAL},
+     {"datetime64", MySQLDataTypesSupport::DATETIME64}})
 
 }

@@ -33,4 +33,8 @@ EXPLAIN SYNTAX SELECT a.* APPLY(toDate) REPLACE(i + 1 AS i) APPLY(any) from colu
 -- Multiple REPLACE in a row
 EXPLAIN SYNTAX SELECT * REPLACE(i + 1 AS i) REPLACE(i + 1 AS i) from columns_transformers;
 
+-- Explicit column list
+SELECT COLUMNS(i, j, k) APPLY(sum) from columns_transformers;
+EXPLAIN SYNTAX SELECT COLUMNS(i, j, k) APPLY(sum) from columns_transformers;
+
 DROP TABLE columns_transformers;
