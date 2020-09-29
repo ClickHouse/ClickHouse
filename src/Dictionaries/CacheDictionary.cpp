@@ -1036,6 +1036,8 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                     else
                         cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
+                    cell.strict_max = now + std::chrono::seconds(strict_max_lifetime_seconds);
+
                     /// mark corresponding id as found
                     remaining_ids[id] = 1;
                 }
@@ -1063,12 +1065,33 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
             tryLogException(last_exception, log,
                             "Could not update cache dictionary '" + getDictionaryID().getNameForLogs() +
                             "', next update is scheduled at " + ext::to_string(backoff_end_time.load()));
+            try
+            {
+                std::rethrow_exception(last_exception);
+            }
+            catch (...)
+            {
+                throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                    "Update failed for dictionary {} : {}",
+                    getDictionaryID().getNameForLogs(),
+                    getCurrentExceptionMessage(true /*with stack trace*/,
+                                               true /*check embedded stack trace*/));
+            }
         }
-    }
+    
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, update_unit_ptr->requested_ids.size() - found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
+    }
+    else 
+    {
+        /// Won't request source for keys
+        throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+            "Could not update cache dictionary {} now, because nearest update is scheduled at {}. Try again later.",
+            getDictionaryID().getNameForLogs(),
+            ext::to_string(backoff_end_time.load()));
+    }
 }
 
 }
