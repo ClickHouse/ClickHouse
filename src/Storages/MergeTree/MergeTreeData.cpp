@@ -1458,6 +1458,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
         else if (command.isRequireMutationStage(getInMemoryMetadata()))
         {
+            /// Type change for version column is allowed despite it's a part of sorting key
+            if (command.type == AlterCommand::MODIFY_COLUMN && command.column_name == merging_params.version_column)
+            {
+                if (!command.data_type->canBeUsedAsVersion())
+                    throw Exception("Cannot alter version column " + backQuoteIfNeed(command.column_name) +
+                        " to type " + command.data_type->getName() +
+                        " because version column must be of an integer type or of type Date or DateTime"
+                        , ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                continue;
+            }
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
             if (columns_alter_type_forbidden.count(command.column_name))
