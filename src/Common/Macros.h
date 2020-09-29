@@ -13,6 +13,7 @@ namespace Poco
     {
         class AbstractConfiguration;
     }
+    class Logger;
 }
 
 
@@ -25,18 +26,19 @@ class Macros
 {
 public:
     Macros() = default;
-    Macros(const Poco::Util::AbstractConfiguration & config, const String & key);
+    Macros(const Poco::Util::AbstractConfiguration & config, const String & key, Poco::Logger * log = nullptr);
 
     struct MacroExpansionInfo
     {
         /// Settings
-        String database_name;
-        String table_name;
-        UUID uuid = UUIDHelpers::Nil;
+        StorageID table_id = StorageID::createEmpty();
         bool ignore_unknown = false;
+        bool expand_special_macros_only = false;
 
         /// Information about macro expansion
         size_t level = 0;
+        bool expanded_database = false;
+        bool expanded_table = false;
         bool expanded_uuid = false;
         bool has_unknown = false;
     };
@@ -64,6 +66,7 @@ public:
 
 private:
     MacroMap macros;
+    bool enable_special_macros = true;
 };
 
 
