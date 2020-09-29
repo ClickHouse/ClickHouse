@@ -31,7 +31,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
                     'ch{}'.format(i + 1),
                     main_configs=main_configs,
                     user_configs=user_configs,
-                    macros={"layer": 0, "shard": i / 2 + 1, "replica": i % 2 + 1},
+                    macros={"layer": 0, "shard": i // 2 + 1, "replica": i % 2 + 1},
                     with_zookeeper=True)
 
             self.start()
