@@ -96,7 +96,7 @@ Pipe StorageMySQL::read(
 
     /// TODO: rewrite MySQLBlockInputStream
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MySQLBlockInputStream>(pool.get(), query, sample_block, max_block_size_)));
+            std::make_shared<MySQLLazyBlockInputStream>(pool, query, sample_block, max_block_size_, /* auto_close = */ true)));
 }
 
 

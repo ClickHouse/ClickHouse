@@ -70,8 +70,9 @@ ReplxxLineReader::ReplxxLineReader(
 
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
-        auto range = suggest.getCompletions(context, context_size);
-        return Replxx::completions_t(range.first, range.second);
+        if (auto range = suggest.getCompletions(context, context_size))
+            return Replxx::completions_t(range->first, range->second);
+        return Replxx::completions_t();
     };
 
     rx.set_completion_callback(callback);
