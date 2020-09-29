@@ -108,6 +108,21 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(cons
 
 Pipe StorageMaterializedView::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
+{
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return QueryPipeline::getPipe(std::move(*plan.buildQueryPipeline()));
+}
+
+void StorageMaterializedView::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -122,10 +137,7 @@ Pipe StorageMaterializedView::read(
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
 
-    Pipe pipe = storage->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    pipe.addTableLock(lock);
-
-    return pipe;
+    storage->read(query_plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)

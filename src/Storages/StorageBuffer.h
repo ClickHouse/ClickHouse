@@ -65,6 +65,16 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
     bool supportsParallelInsert() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;

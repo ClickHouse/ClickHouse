@@ -59,8 +59,11 @@ void SettingQuotaAndLimitsStep::transformPipeline(QueryPipeline & pipeline)
     if (quota)
         pipeline.setQuota(quota);
 
-    pipeline.addInterpreterContext(std::move(context));
-    pipeline.addStorageHolder(std::move(storage));
+    if (context)
+        pipeline.addInterpreterContext(std::move(context));
+
+    if (storage)
+        pipeline.addStorageHolder(std::move(storage));
 }
 
 }
