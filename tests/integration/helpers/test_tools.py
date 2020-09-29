@@ -60,3 +60,19 @@ def assert_eq_with_retry(instance, query, expectation, retry_count=20, sleep_tim
         if expectation_tsv != val:
             raise AssertionError("'{}' != '{}'\n{}".format(expectation_tsv, val, '\n'.join(
                 expectation_tsv.diff(val, n1="expectation", n2="query"))))
+
+def assert_logs_contain(instance, substring):
+    if not instance.contains_in_log(substring):
+        raise AssertionError("'{}' not found in logs".format(substring))
+
+def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_time=0.5):
+    for i in xrange(retry_count):
+        try:
+            if instance.contains_in_log(substring):
+                break
+            time.sleep(sleep_time)
+        except Exception as ex:
+            print "contains_in_log_with_retry retry {} exception {}".format(i + 1, ex)
+            time.sleep(sleep_time)
+    else:
+        raise AssertionError("'{}' not found in logs".format(substring))

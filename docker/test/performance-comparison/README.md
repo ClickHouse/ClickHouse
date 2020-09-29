@@ -45,7 +45,7 @@ Action required for every item -- these are errors that must be fixed.
 
 This table shows queries that take significantly longer to process on the client than on the server. A possible reason might be sending too much data to the client, e.g., a forgotten `format Null`.
 
-#### Inconsistent Short Marking
+#### Unexpected Query Duration
 Action required for every item -- these are errors that must be fixed.
 
 Queries that have "short" duration (on the order of 0.1 s) can't be reliably tested in a normal way, where we perform a small (about ten) measurements for each server, because the signal-to-noise ratio is much smaller. There is a special mode for such queries that instead runs them for a fixed amount of time, normally with much higher number of measurements (up to thousands). This mode must be explicitly enabled by the test author to avoid accidental errors. It must be used only for queries that are meant to complete "immediately", such as `select count(*)`. If your query is not supposed to be "immediate", try to make it run longer, by e.g. processing more data.

@@ -13,7 +13,6 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 struct IArraySink
 {
@@ -24,6 +23,8 @@ struct IArraySink
         throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
     }
 };
+
+#pragma GCC visibility push(hidden)
 
 template <typename Derived>
 class ArraySinkImpl : public Visitable<Derived, IArraySink, ArraySinkVisitor> {};

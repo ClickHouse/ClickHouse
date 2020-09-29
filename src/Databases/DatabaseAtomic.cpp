@@ -207,11 +207,13 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move dictionary to other database");
 
     StoragePtr table = getTableUnlocked(table_name, db_lock);
+    table->checkTableCanBeRenamed();
     assert_can_move_mat_view(table);
     StoragePtr other_table;
     if (exchange)
     {
         other_table = other_db.getTableUnlocked(to_table_name, other_db_lock);
+        other_table->checkTableCanBeRenamed();
         assert_can_move_mat_view(other_table);
     }
 
@@ -277,7 +279,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path)
 {
-    bool check_file_exists = supportsRenameat2();
+    bool check_file_exists = true;
     SCOPE_EXIT({ std::error_code code; if (check_file_exists) std::filesystem::remove(table_metadata_tmp_path, code); });
 
     std::unique_lock lock{mutex};
@@ -286,9 +288,8 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
-    if (check_file_exists)
-        renameExchange(table_metadata_tmp_path, table_metadata_path);
-    else
+    check_file_exists = renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
+    if (!check_file_exists)
         std::filesystem::rename(table_metadata_tmp_path, table_metadata_path);
 }
 
