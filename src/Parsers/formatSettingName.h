@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <iosfwd>
+#include <common/types.h>
 
 
 namespace DB

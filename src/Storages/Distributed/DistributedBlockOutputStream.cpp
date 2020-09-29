@@ -21,7 +21,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
-#include <Common/ClickHouseRevision.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
@@ -583,16 +582,16 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         {
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out};
-            NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
+            NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
             /// We wrap the header into a string for compatibility with older versions:
             /// a shard will able to read the header partly and ignore other parts based on its version.
             WriteBufferFromOwnString header_buf;
-            writeVarUInt(ClickHouseRevision::get(), header_buf);
+            writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
             writeStringBinary(query_string, header_buf);
             context.getSettingsRef().write(header_buf);
-            context.getClientInfo().write(header_buf, ClickHouseRevision::get());
+            context.getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);

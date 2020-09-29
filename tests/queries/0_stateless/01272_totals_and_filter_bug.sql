@@ -8,13 +8,13 @@ CREATE TABLE bar (server_date Date, dimension_1 String, metric_2 UInt32) ENGINE 
 INSERT INTO foo VALUES ('2020-01-01', 'test1', 10), ('2020-01-01', 'test2', 20);
 INSERT INTO bar VALUES ('2020-01-01', 'test2', 30), ('2020-01-01', 'test3', 40);
 
-SELECT 
+SELECT
     dimension_1, 
     sum_metric_1, 
     sum_metric_2
 FROM 
 (
-    SELECT 
+    SELECT
         dimension_1, 
         sum(metric_1) AS sum_metric_1
     FROM foo
@@ -23,7 +23,7 @@ FROM
 ) AS subquery_1
 ALL FULL OUTER JOIN 
 (
-    SELECT 
+    SELECT
         dimension_1, 
         sum(metric_2) AS sum_metric_2
     FROM bar

@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Formats/JSONEachRowUtils.h>
@@ -29,8 +30,12 @@ enum
 
 
 JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
-    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
+    ReadBuffer & in_,
+    const Block & header_,
+    Params params_,
+    const FormatSettings & format_settings_,
+    bool yield_strings_)
+    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns()), yield_strings(yield_strings_)
 {
     size_t num_columns = getPort().getHeader().columns();
     for (size_t i = 0; i < num_columns; ++i)
@@ -135,10 +140,26 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     {
         seen_columns[index] = read_columns[index] = true;
         const auto & type = getPort().getHeader().getByPosition(index).type;
-        if (format_settings.null_as_default && !type->isNullable())
-            read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+
+        if (yield_strings)
+        {
+            String str;
+            readJSONString(str, in);
+
+            ReadBufferFromString buf(str);
+
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = DataTypeNullable::deserializeWholeText(*columns[index], buf, format_settings, type);
+            else
+                type->deserializeAsWholeText(*columns[index], buf, format_settings);
+        }
         else
-            type->deserializeAsTextJSON(*columns[index], in, format_settings);
+        {
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+            else
+                type->deserializeAsTextJSON(*columns[index], in, format_settings);
+        }
     }
     catch (Exception & e)
     {
@@ -318,13 +339,23 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
+    });
+
+    factory.registerInputFormatProcessor("JSONStringsEachRow", [](
+        ReadBuffer & buf,
+        const Block & sample,
+        IRowInputFormat::Params params,
+        const FormatSettings & settings)
+    {
+        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, true);
     });
 }
 
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRowImpl);
+    factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRowImpl);
 }
 
 }

@@ -11,6 +11,11 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPipeline.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <DataStreams/CheckSortedBlockInputStream.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -19,6 +24,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 
 
 namespace DB
@@ -524,10 +530,11 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
 
                 auto first_stage_header = interpreter.getSampleBlock();
-                QueryPipeline pipeline;
-                pipeline.init(Pipe(std::make_shared<NullSource>(first_stage_header)));
-                addStreamsForLaterStages(stages_copy, pipeline);
-                updated_header = std::make_unique<Block>(pipeline.getHeader());
+                QueryPlan plan;
+                auto source = std::make_shared<NullSource>(first_stage_header);
+                plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source))));
+                auto pipeline = addStreamsForLaterStages(stages_copy, plan);
+                updated_header = std::make_unique<Block>(pipeline->getHeader());
             }
 
             /// Special step to recalculate affected indices and TTL expressions.
@@ -657,7 +664,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     return select;
 }
 
-void MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPipeline & pipeline) const
+QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
     for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
     {
@@ -669,18 +676,12 @@ void MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & p
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
-                pipeline.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<FilterTransform>(header, step->getExpression(), stage.filter_column_names[i], false);
-                });
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->getExpression(), stage.filter_column_names[i], false));
             }
             else
             {
                 /// Execute UPDATE or final projection.
-                pipeline.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<ExpressionTransform>(header, step->getExpression());
-                });
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->getExpression()));
             }
         }
 
@@ -690,14 +691,17 @@ void MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & p
             const Settings & settings = context.getSettingsRef();
             SizeLimits network_transfer_limits(
                     settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-            pipeline.addCreatingSetsTransform(std::move(subqueries_for_sets), network_transfer_limits, context);
+            addCreatingSetsStep(plan, std::move(subqueries_for_sets), network_transfer_limits, context);
         }
     }
 
-    pipeline.addSimpleTransform([&](const Block & header)
+    auto pipeline = plan.buildQueryPipeline();
+    pipeline->addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<MaterializingTransform>(header);
     });
+
+    return pipeline;
 }
 
 void MutationsInterpreter::validate()
@@ -719,8 +723,9 @@ void MutationsInterpreter::validate()
         }
     }
 
-    auto block_io = select_interpreter->execute();
-    addStreamsForLaterStages(stages, block_io.pipeline);
+    QueryPlan plan;
+    select_interpreter->buildQueryPlan(plan);
+    auto pipeline = addStreamsForLaterStages(stages, plan);
 }
 
 BlockInputStreamPtr MutationsInterpreter::execute()
@@ -728,10 +733,11 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
 
-    auto block_io = select_interpreter->execute();
-    addStreamsForLaterStages(stages, block_io.pipeline);
+    QueryPlan plan;
+    select_interpreter->buildQueryPlan(plan);
 
-    auto result_stream = block_io.getInputStream();
+    auto pipeline = addStreamsForLaterStages(stages, plan);
+    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.

@@ -29,6 +29,7 @@ def empty_user_name(self, timeout=20):
 def empty_server_name(self, timeout=20):
     """Check that if server name is an empty string then login is not allowed.
     """
+    message = "Exception: LDAP server name cannot be empty for user"
     servers = {"openldap1": {
         "host": "openldap1", "port": "389", "enable_tls": "no",
         "auth_dn_prefix": "cn=", "auth_dn_suffix": ",ou=users,dc=company,dc=com"
@@ -37,7 +38,8 @@ def empty_server_name(self, timeout=20):
         "errorcode": 4,
         "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name"
     }]
-    login(servers, *users)
+    config = create_ldap_users_config_content(*users)
+    invalid_user_config(servers, config, message=message, tail=15, timeout=timeout)
 
 @TestScenario
 @Requirements(
@@ -146,9 +148,6 @@ def ldap_and_password(self):
 
     with Then("I expect an error when I try to load the configuration file", description=error_message):
         invalid_user_config(servers, new_config, message=error_message, tail=16)
-
-    with And("I expect the authentication to fail when I try to login"):
-        login(servers, user, config=new_config)
 
 @TestFeature
 @Name("user config")

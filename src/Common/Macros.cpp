@@ -23,18 +23,15 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
 }
 
 String Macros::expand(const String & s,
-                      size_t level,
-                      const String & database_name,
-                      const String & table_name,
-                      const UUID & uuid) const
+                      MacroExpansionInfo & info) const
 {
     if (s.find('{') == String::npos)
         return s;
 
-    if (level && s.size() > 65536)
+    if (info.level && s.size() > 65536)
         throw Exception("Too long string while expanding macros", ErrorCodes::SYNTAX_ERROR);
 
-    if (level >= 10)
+    if (info.level >= 10)
         throw Exception("Too deep recursion while expanding macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
 
     String res;
@@ -64,12 +61,29 @@ String Macros::expand(const String & s,
         /// Prefer explicit macros over implicit.
         if (it != macros.end())
             res += it->second;
-        else if (macro_name == "database" && !database_name.empty())
-            res += database_name;
-        else if (macro_name == "table" && !table_name.empty())
-            res += table_name;
-        else if (macro_name == "uuid" && uuid != UUIDHelpers::Nil)
-            res += toString(uuid);
+        else if (macro_name == "database" && !info.database_name.empty())
+            res += info.database_name;
+        else if (macro_name == "table" && !info.table_name.empty())
+            res += info.table_name;
+        else if (macro_name == "uuid")
+        {
+            if (info.uuid == UUIDHelpers::Nil)
+                throw Exception("Macro 'uuid' and empty arguments of ReplicatedMergeTree "
+                                "are supported only for ON CLUSTER queries with Atomic database engine",
+                                ErrorCodes::SYNTAX_ERROR);
+            /// For ON CLUSTER queries we don't want to require all macros definitions in initiator's config.
+            /// However, initiator must check that for cross-replication cluster zookeeper_path does not contain {uuid} macro.
+            /// It becomes impossible to check if {uuid} is contained inside some unknown macro.
+            if (info.level)
+                throw Exception("Macro 'uuid' should not be inside another macro", ErrorCodes::SYNTAX_ERROR);
+            res += toString(info.uuid);
+            info.expanded_uuid = true;
+        }
+        else if (info.ignore_unknown)
+        {
+            res += macro_name;
+            info.has_unknown = true;
+        }
         else
             throw Exception("No macro '" + macro_name +
                 "' in config while processing substitutions in '" + s + "' at '"
@@ -78,7 +92,8 @@ String Macros::expand(const String & s,
         pos = end + 1;
     }
 
-    return expand(res, level + 1, database_name, table_name);
+    ++info.level;
+    return expand(res, info);
 }
 
 String Macros::getValue(const String & key) const
@@ -88,9 +103,20 @@ String Macros::getValue(const String & key) const
     throw Exception("No macro " + key + " in config", ErrorCodes::SYNTAX_ERROR);
 }
 
+
+String Macros::expand(const String & s) const
+{
+    MacroExpansionInfo info;
+    return expand(s, info);
+}
+
 String Macros::expand(const String & s, const StorageID & table_id, bool allow_uuid) const
 {
-    return expand(s, 0, table_id.database_name, table_id.table_name, allow_uuid ? table_id.uuid : UUIDHelpers::Nil);
+    MacroExpansionInfo info;
+    info.database_name = table_id.database_name;
+    info.table_name = table_id.table_name;
+    info.uuid = allow_uuid ? table_id.uuid : UUIDHelpers::Nil;
+    return expand(s, info);
 }
 
 Names Macros::expand(const Names & source_names, size_t level) const
@@ -98,8 +124,12 @@ Names Macros::expand(const Names & source_names, size_t level) const
     Names result_names;
     result_names.reserve(source_names.size());
 
+    MacroExpansionInfo info;
     for (const String & name : source_names)
-        result_names.push_back(expand(name, level));
+    {
+        info.level = level;
+        result_names.push_back(expand(name, info));
+    }
 
     return result_names;
 }

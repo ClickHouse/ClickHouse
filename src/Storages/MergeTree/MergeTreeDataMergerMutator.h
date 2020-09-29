@@ -6,6 +6,7 @@
 #include <functional>
 #include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeType.h>
 
 
@@ -59,17 +60,17 @@ public:
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
       */
-    UInt64 getMaxSourcePartsSizeForMerge();
+    UInt64 getMaxSourcePartsSizeForMerge() const;
 
     /** For explicitly passed size of pool and number of used tasks.
       * This method could be used to calculate threshold depending on number of tasks in replication queue.
       */
-    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used);
+    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used) const;
 
     /** Get maximum total size of parts to do mutation, at current moment of time.
       * It depends only on amount of free space in disk.
       */
-    UInt64 getMaxSourcePartSizeForMutation();
+    UInt64 getMaxSourcePartSizeForMutation() const;
 
     /** Selects which parts to merge. Uses a lot of heuristics.
       *
@@ -196,7 +197,8 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values) const;
+        bool need_remove_expired_values,
+        bool need_sync) const;
 
     /// Mutate some columns of source part with mutation_stream
     void mutateSomePartColumns(
@@ -209,7 +211,8 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values) const;
+        bool need_remove_expired_values,
+        bool need_sync) const;
 
     /// Initialize and write to disk new part fields like checksums, columns,
     /// etc.
@@ -225,12 +228,6 @@ public :
       */
     ActionBlocker merges_blocker;
     ActionBlocker ttl_merges_blocker;
-
-    enum class MergeAlgorithm
-    {
-        Horizontal, /// per-row merge of all columns
-        Vertical    /// per-row merge of PK and secondary indices columns, per-column gather for non-PK columns
-    };
 
 private:
 
@@ -250,8 +247,11 @@ private:
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
 
-    /// Stores the next TTL merge due time for each partition (used only by TTLMergeSelector)
-    TTLMergeSelector::PartitionIdToTTLs next_ttl_merge_times_by_partition;
+    /// Stores the next TTL delete merge due time for each partition (used only by TTLDeleteMergeSelector)
+    ITTLMergeSelector::PartitionIdToTTLs next_delete_ttl_merge_times_by_partition;
+
+    /// Stores the next TTL recompress merge due time for each partition (used only by TTLRecompressionMergeSelector)
+    ITTLMergeSelector::PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };

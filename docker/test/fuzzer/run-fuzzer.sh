@@ -35,7 +35,7 @@ function download
 #    wget -O- -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/performance/performance.tgz" \
 #        | tar --strip-components=1 -zxv
 
-    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-10_debug_none_bundled_unsplitted_disable_False_binary/clickhouse"
+    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-11_debug_none_bundled_unsplitted_disable_False_binary/clickhouse"
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
@@ -48,7 +48,7 @@ function configure
     cp -av "$repo_dir"/programs/server/config* db
     cp -av "$repo_dir"/programs/server/user* db
     # TODO figure out which ones are needed
-    cp -av "$repo_dir"/tests/config/listen.xml db/config.d
+    cp -av "$repo_dir"/tests/config/config.d/listen.xml db/config.d
     cp -av "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
 }
 

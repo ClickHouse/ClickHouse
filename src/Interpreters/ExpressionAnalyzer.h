@@ -179,6 +179,7 @@ struct ExpressionAnalysisResult
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
+    bool join_has_delayed_stream = false;
 
     ExpressionActionsPtr before_array_join;
     ArrayJoinActionPtr array_join;

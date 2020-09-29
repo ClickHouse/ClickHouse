@@ -8,7 +8,7 @@
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Common/Stopwatch.h>

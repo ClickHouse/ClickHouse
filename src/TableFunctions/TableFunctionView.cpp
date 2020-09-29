@@ -20,18 +20,15 @@ StoragePtr TableFunctionView::executeImpl(const ASTPtr & ast_function, const Con
 {
     if (const auto * function = ast_function->as<ASTFunction>())
     {
-        if (function->query)
+        if (auto * select = function->tryGetQueryArgument())
         {
-            if (auto * select = function->query->as<ASTSelectWithUnionQuery>())
-            {
-                auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(function->query, context);
-                auto columns = ColumnsDescription(sample.getNamesAndTypesList());
-                ASTCreateQuery create;
-                create.select = select;
-                auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns);
-                res->startup();
-                return res;
-            }
+            auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(function->arguments->children[0] /* ASTPtr */, context);
+            auto columns = ColumnsDescription(sample.getNamesAndTypesList());
+            ASTCreateQuery create;
+            create.select = select;
+            auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns);
+            res->startup();
+            return res;
         }
     }
     throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
