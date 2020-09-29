@@ -467,7 +467,7 @@
         },
         "Split build smoke test": {
             "required_build_properties": {
-                "compiler": "clang-11",
+                "compiler": "clang-10",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
