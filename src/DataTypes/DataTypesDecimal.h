@@ -150,7 +150,7 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
             throw Exception(std::string(ToDataType::family_name) + " convert overflow. Cannot convert infinity or NaN to decimal",
                             ErrorCodes::DECIMAL_OVERFLOW);
 
-        auto out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
+        ToNativeType out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
         if constexpr (std::is_same_v<ToNativeType, Int128>)
         {
             static constexpr Int128 min_int128 = minInt128();

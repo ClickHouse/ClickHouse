@@ -50,6 +50,12 @@ static volatile sig_atomic_t signo[NSIG];
 
 static void handler(int);
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#endif
+
 char *
 readpassphrase(const char *prompt, char *buf, size_t bufsiz, int flags)
 {
@@ -197,3 +203,7 @@ static void handler(int s)
 {
     signo[s] = 1;
 }
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
