@@ -387,11 +387,12 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
-
-            /// Check if the key is stored in the cache of defaults.
-            if (default_keys.find(id) != default_keys.end())
-                continue;
-
+            {
+                std::shared_lock shared_lock(default_cache_rw_lock);
+                /// Check if the key is stored in the cache of defaults.
+                if (default_keys.find(id) != default_keys.end())
+                    continue;
+            }
             const auto find_result = findCellIdx(id, now);
 
             auto insert_to_answer_routine = [&] ()
@@ -480,8 +481,11 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
             for (const auto row : cache_expired_or_not_found_ids[key])
                 out[row] = true;
         else
+        {
+            std::unique_lock unique_lock(default_cache_rw_lock);
             /// Cache this key as default.
             default_keys.insert(key);
+        }
     }
 }
 
