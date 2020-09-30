@@ -1,6 +1,4 @@
 if (GLIBC_COMPATIBILITY)
-    set (ENABLE_FASTMEMCPY ON)
-
     enable_language(ASM)
     include(CheckIncludeFile)
 
