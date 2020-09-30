@@ -3518,34 +3518,44 @@ Pipe StorageReplicatedMergeTree::read(
 
 
 template <class Func>
-void StorageReplicatedMergeTree::foreachCommittedParts(const Func & func) const
+void StorageReplicatedMergeTree::foreachCommittedParts(const Func & func, const Context & context) const
 {
-    auto max_added_blocks = getMaxAddedBlocks();
+    std::optional<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock> max_added_blocks = {};
+
+    /** Synchronously go to ZooKeeper when select_sequential_consistency enabled */
+    if (context.getSettingsRef().select_sequential_consistency)
+    {
+        max_added_blocks = getMaxAddedBlocks();
+    }
+
     auto lock = lockParts();
     for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part->isEmpty())
             continue;
 
-        auto blocks_iterator = max_added_blocks.find(part->info.partition_id);
-        if (blocks_iterator == max_added_blocks.end() || part->info.max_block > blocks_iterator->second)
-            continue;
+        if (max_added_blocks)
+        {
+            auto blocks_iterator = max_added_blocks->find(part->info.partition_id);
+            if (blocks_iterator == max_added_blocks->end() || part->info.max_block > blocks_iterator->second)
+                continue;
+        }
 
         func(part);
     }
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
+std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Context & context) const
 {
     UInt64 res = 0;
-    foreachCommittedParts([&res](auto & part) { res += part->rows_count; });
+    foreachCommittedParts([&res](auto & part) { res += part->rows_count; }, context);
     return res;
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalBytes() const
+std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Context & context) const
 {
     UInt64 res = 0;
-    foreachCommittedParts([&res](auto & part) { res += part->getBytesOnDisk(); });
+    foreachCommittedParts([&res](auto & part) { res += part->getBytesOnDisk(); }, context);
     return res;
 }
 

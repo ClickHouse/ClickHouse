@@ -96,8 +96,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
+    std::optional<UInt64> totalRows(const Context & context) const override;
+    std::optional<UInt64> totalBytes(const Context & context) const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
@@ -305,7 +305,7 @@ private:
     bool other_replicas_fixed_granularity = false;
 
     template <class Func>
-    void foreachCommittedParts(const Func & func) const;
+    void foreachCommittedParts(const Func & func, const Context & context) const;
 
     /** Creates the minimum set of nodes in ZooKeeper and create first replica.
       * Returns true if was created, false if exists.
