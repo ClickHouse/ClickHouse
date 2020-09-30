@@ -62,11 +62,12 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
     {
-        // No point writing these numbers with variable length, because they
-        // are random and will probably require the full length anyway.
         if (opentelemetry_trace_id)
         {
+            // Have OpenTelemetry header.
             writeBinary(uint8_t(1), out);
+            // No point writing these numbers with variable length, because they
+            // are random and will probably require the full length anyway.
             writeBinary(opentelemetry_trace_id, out);
             writeBinary(opentelemetry_span_id, out);
             writeBinary(opentelemetry_parent_span_id, out);
@@ -75,6 +76,7 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
         }
         else
         {
+            // Don't have OpenTelemetry header.
             writeBinary(uint8_t(0), out);
         }
     }

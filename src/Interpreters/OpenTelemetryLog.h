@@ -15,6 +15,10 @@ struct OpenTelemetrySpanContext
 };
 */
 
+// using TimeMicroseconds = std::chrono::time_point<
+//     std::chrono::local_t,
+//     std::chrono::duration<UInt64, std::micro>>;
+
 // TODO figure out precisely which part of this is run time, and which part we
 // must log.
 struct OpenTelemetrySpan
@@ -23,8 +27,8 @@ struct OpenTelemetrySpan
     UInt64 span_id;
     UInt64 parent_span_id;
     std::string operation_name;
-    time_t start_time;
-    time_t finish_time;
+    UInt64 start_time_us;
+    UInt64 finish_time_us;
     UInt64 duration_ns;
     Array attribute_names;
     Array attribute_values;
