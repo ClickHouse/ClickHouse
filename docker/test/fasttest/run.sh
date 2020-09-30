@@ -134,9 +134,9 @@ CMAKE_LIBS_CONFIG=(
     "-DUSE_STATIC_LIBRARIES=0"
     "-DSPLIT_SHARED_LIBRARIES=1"
     "-DCLICKHOUSE_SPLIT_BINARY=1"
-    "-DCMAKE_BUILD_TYPE=Debug"
-    "-DCMAKE_C_FLAGS=-Og"
-    "-DCMAKE_CXX_FLAGS=-Og"
+#    "-DCMAKE_BUILD_TYPE=Debug"
+#    "-DCMAKE_C_FLAGS=-Og"
+#    "-DCMAKE_CXX_FLAGS=-Og"
 )
 
 # TODO remove this? we don't use ccache anyway. An option would be to download it
@@ -255,7 +255,7 @@ TESTS_TO_SKIP=(
     00974_query_profiler
 
     # Look at DistributedFilesToInsert, so cannot run in parallel.
-    01460_DistributedFilesToInsert
+    01457_DistributedFilesToInsert
 )
 
 time clickhouse-test -j 8 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
