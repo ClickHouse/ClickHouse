@@ -1,11 +1,9 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Storages/ColumnDefault.h>
 
 namespace DB
 {
-
-struct ColumnDefault;
-using ColumnDefaults = std::unordered_map<std::string, ColumnDefault>;
 
 /// Convert one block structure to another. See ConvertingTransform.
 class AddingMissedStep : public ITransformingStep
@@ -21,7 +19,7 @@ public:
     void transformPipeline(QueryPipeline & pipeline) override;
 
 private:
-    const ColumnDefaults column_defaults;
+    ColumnDefaults column_defaults;
     const Context & context;
 };
 
