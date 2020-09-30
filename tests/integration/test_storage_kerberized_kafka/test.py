@@ -59,7 +59,7 @@ def wait_kafka_is_available(max_retries=50):
 def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x
 def kafka_produce(topic, messages, timestamp=None):
-    producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=producer_serializer)
+    producer = KafkaProducer(bootstrap_servers="localhost:9093", value_serializer=producer_serializer)
     for message in messages:
         producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
