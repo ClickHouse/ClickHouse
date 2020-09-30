@@ -594,9 +594,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElementType::QUERY_FINISH;
 
-                const auto current_time = std::chrono::system_clock::now();
+                const auto finish_time = std::chrono::system_clock::now();
 
-                elem.event_time = time_in_seconds(current_time);
+                elem.event_time = time_in_seconds(finish_time);
 
                 status_info_to_query_log(elem, info, ast);
 
@@ -658,7 +658,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
                     span.operation_name = "query";
                     span.start_time_us = elem.query_start_time_microseconds;
-                    span.finish_time_us = time_in_microseconds(current_time);
+                    span.finish_time_us = time_in_microseconds(finish_time);
                     span.duration_ns = elapsed_seconds * 1000000000;
 
                     // keep values synchonized to type enum in QueryLogElement::createBlock
