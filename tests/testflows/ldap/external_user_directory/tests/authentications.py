@@ -450,7 +450,7 @@ def empty_username_and_empty_password(self, server=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_009_LDAP_ExternalUserDirectory_Users_Lookup_Priority("1.0")
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Users_Lookup_Priority("2.0")
 )
 def user_lookup_priority(self, server):
     """Check that users are looked up in the same priority
