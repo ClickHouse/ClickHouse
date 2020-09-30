@@ -13,6 +13,7 @@
 
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnDecimal.h>
+#    include <Common/parseAddress.h>
 #    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/IBlockStream_fwd.h>
 #    include <DataStreams/copyData.h>
@@ -334,6 +335,45 @@ void MaterializeMySQLSyncThread::flushBuffersData(ConsumerPtr consumer)
 bool MaterializeMySQLSyncThread::isMySQLSyncThread()
 {
     return getThreadName() == MYSQL_BACKGROUND_THREAD_NAME;
+}
+
+MaterializeMySQLSyncThreadPtr getMySQLReplicationThread(
+        const String & mysql_hostname_and_port,
+        const String & mysql_database_name,
+        const String & mysql_user_name,
+        const String & mysql_user_password,
+        Context & global_context)
+{
+    const auto & [host_name, port] = parseAddress(mysql_hostname_and_port, 3306);
+
+    if (auto thr = global_context.mysql_replica_threads[host_name][mysql_database_name]) {
+        return thr;
+    }
+
+    auto mysql_pool = mysqlxx::Pool(
+        mysql_database_name,
+        host_name,
+        mysql_user_name,
+        mysql_user_password,
+        port);
+
+    MySQLClient client(
+        host_name,
+        port,
+        mysql_user_name,
+        mysql_user_password);
+
+    String mysql_version = checkVariableAndGetVersion(mysql_pool.get());
+
+    global_context.mysql_replica_threads[host_name][mysql_database_name] =
+        std::make_shared<MaterializeMySQLSyncThread>(
+        global_context,
+        mysql_database_name,
+        std::move(mysql_pool),
+        std::move(client),
+        mysql_version);
+
+    return global_context.mysql_replica_threads[host_name][mysql_database_name];
 }
 
 }

@@ -112,6 +112,13 @@ class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 
+#if USE_MYSQL
+class MaterializeMySQLSyncThread;
+using MaterializeMySQLSyncThreadPtr = std::shared_ptr<MaterializeMySQLSyncThread>;
+
+// host_name and database_name
+using MySQLToReplicationThreadMap = std::unordered_map<std::string, std::unordered_map<std::string, MaterializeMySQLSyncThreadPtr>>;
+#endif
 
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
@@ -631,6 +638,11 @@ public:
     };
 
     MySQLWireContext mysql;
+
+#if USE_MYSQL
+    MySQLToReplicationThreadMap mysql_replica_threads;
+#endif
+
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 

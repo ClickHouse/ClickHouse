@@ -21,9 +21,14 @@ class DatabaseMaterializeMySQL : public IDatabase
 {
 public:
     DatabaseMaterializeMySQL(
-        const Context & context, const String & database_name_, const String & metadata_path_,
-        const IAST * database_engine_define_, const String & mysql_database_name_, mysqlxx::Pool && pool_,
-        MySQLClient && client_, MaterializeMySQLSettingsPtr settings_);
+        const Context & context,
+        const String & database_name_,
+        const String & metadata_path_,
+        const IAST * database_engine_define_,
+        const String & mysql_database_name_,
+        mysqlxx::Pool && pool_,
+        MySQLClient && client_,
+        MaterializeMySQLSettingsPtr settings_);
 
     void rethrowExceptionIfNeed() const;
 

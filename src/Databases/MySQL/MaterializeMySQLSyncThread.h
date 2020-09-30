@@ -152,6 +152,13 @@ private:
 
 using MaterializeMySQLSyncThreadPtr = std::shared_ptr<MaterializeMySQLSyncThread>;
 
+MaterializeMySQLSyncThreadPtr getMySQLReplicationThread(
+    const String & mysql_hostname_and_port,
+    const String & mysql_database_name,
+    const String & mysql_user_name,
+    const String & mysql_user_password,
+    Context & global_context);
+
 }
 
 #endif

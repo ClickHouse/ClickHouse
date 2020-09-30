@@ -140,7 +140,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                     mysql_database_name,
                     std::move(mysql_pool),
                     std::move(client),
-                    std::move(materialize_mode_settings));
+                    materialize_mode_settings);
             }
 
             return std::make_shared<DatabaseConnectionMySQL>(
