@@ -21,7 +21,7 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 /// The case of an explicit enumeration of values.
 SetPtr makeExplicitSet(
-    const ASTFunction * node, const ActionsDAG::Index & index, bool create_ordered_set,
+    const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
     const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
 
 /** Create a block for set from expression.
@@ -89,7 +89,7 @@ struct ScopeStack
 
     ActionsDAGPtr popLevel();
 
-    const ActionsDAG::Index & getIndex() const;
+    const ActionsDAG & getLastActions() const;
     std::string dumpNames() const;
 };
 

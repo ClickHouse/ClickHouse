@@ -329,7 +329,7 @@ Block createBlockForSet(
 }
 
 SetPtr makeExplicitSet(
-    const ASTFunction * node, const ActionsDAG::Index & index, bool create_ordered_set,
+    const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
     const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
 {
     const IAST & args = *node->arguments;
@@ -340,6 +340,7 @@ SetPtr makeExplicitSet(
     const ASTPtr & left_arg = args.children.at(0);
     const ASTPtr & right_arg = args.children.at(1);
 
+    const auto & index = actions.getIndex();
     auto it = index.find(left_arg->getColumnName());
     if (it == index.end())
         throw Exception("Unknown identifier: '" + left_arg->getColumnName() + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
@@ -408,8 +409,10 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
 
 size_t ScopeStack::getColumnLevel(const std::string & name)
 {
-    for (int i = static_cast<int>(stack.size()) - 1; i >= 0; --i)
+    for (size_t i = stack.size(); i > 0;)
     {
+        --i;
+
         if (stack[i].inputs.count(name))
             return i;
 
@@ -482,9 +485,9 @@ std::string ScopeStack::dumpNames() const
     return stack.back().actions->dumpNames();
 }
 
-const ActionsDAG::Index & ScopeStack::getIndex() const
+const ActionsDAG & ScopeStack::getLastActions() const
 {
-    return stack.back().actions->getIndex();
+    return *stack.back().actions;
 }
 
 struct CachedColumnName
@@ -707,7 +710,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 child_column_name = as_literal->unique_column_name;
             }
 
-            const auto & index = data.actions_stack.getIndex();
+            const auto & index = data.actions_stack.getLastActions().getIndex();
             auto it = index.find(child_column_name);
             if (it != index.end())
             {
@@ -813,7 +816,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     if (literal.unique_column_name.empty())
     {
         const auto default_name = literal.getColumnName();
-        const auto & index = data.actions_stack.getIndex();
+        const auto & index = data.actions_stack.getLastActions().getIndex();
         const ActionsDAG::Node * existing_column = nullptr;
 
         auto it = index.find(default_name);
@@ -927,10 +930,11 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
     }
     else
     {
-        const auto & index = data.actions_stack.getIndex();
+        const auto & last_actions = data.actions_stack.getLastActions();
+        const auto & index = last_actions.getIndex();
         if (index.count(left_in_operand->getColumnName()) != 0)
             /// An explicit enumeration of values in parentheses.
-            return makeExplicitSet(&node, index, false, data.context, data.set_size_limit, data.prepared_sets);
+            return makeExplicitSet(&node, last_actions, false, data.context, data.set_size_limit, data.prepared_sets);
         else
             return {};
     }
