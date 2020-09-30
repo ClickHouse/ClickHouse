@@ -5,6 +5,7 @@ import os
 import random
 import StringIO
 import threading
+import time
 
 import helpers.client
 import pytest
@@ -419,6 +420,7 @@ def test_storage_s3_put_uncompressed(cluster):
             name, cluster.minio_host, cluster.minio_port, bucket, filename))
 
         run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
+
         run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["753"]
 
         uncompressed_content = get_s3_file_content(cluster, bucket, filename)
@@ -454,6 +456,7 @@ def test_storage_s3_put_gzip(cluster):
             name, cluster.minio_host, cluster.minio_port, bucket, filename))
 
         run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
+
         run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["708"]
 
         buf = StringIO.StringIO(get_s3_file_content(cluster, bucket, filename))
