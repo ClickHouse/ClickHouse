@@ -62,9 +62,13 @@ void CacheDictionary::getItemsNumberImpl(
         {
             const auto id = ids[row];
 
-            /// First check if this key in the cache of default keys.
-            if (default_keys.find(id) != default_keys.end())
-                continue;
+            {
+                std::shared_lock shared_lock(default_cache_rw_lock);
+                /// First check if this key in the cache of default keys.
+                if (default_keys.find(id) != default_keys.end())
+                    continue;
+            }
+            
 
             /** cell should be updated if either:
                 *    1. ids do not match,
@@ -171,6 +175,7 @@ void CacheDictionary::getItemsNumberImpl(
         } else 
         {
             /// Add key to the cache of default keys.
+            std::unique_lock unique_lock(default_cache_rw_lock);
             default_keys.emplace(key);
         }
     }
@@ -199,11 +204,14 @@ void CacheDictionary::getItemsString(
         {
             const auto id = ids[row];
 
-            /// Check if the key is stored in the cache of defaults.
-            if (default_keys.find(id) != default_keys.end())
             {
-                const auto string_ref = get_default(row);
-                out->insertData(string_ref.data, string_ref.size);
+                std::shared_lock shared_lock(default_cache_rw_lock);
+                /// Check if the key is stored in the cache of defaults.
+                if (default_keys.find(id) != default_keys.end())
+                {
+                    const auto string_ref = get_default(row);
+                    out->insertData(string_ref.data, string_ref.size);
+                }
             }
 
             const auto find_result = findCellIdx(id, now);
@@ -250,14 +258,15 @@ void CacheDictionary::getItemsString(
         for (const auto row : ext::range(0, ids.size()))
         {
             const auto id = ids[row];
-
-            /// Check if the key is stored in the cache of defaults.
-            if (default_keys.find(id) != default_keys.end())
             {
-                const auto string_ref = get_default(row);
-                out->insertData(string_ref.data, string_ref.size);
+                std::shared_lock shared_lock(default_cache_rw_lock);
+                /// Check if the key is stored in the cache of defaults.
+                if (default_keys.find(id) != default_keys.end())
+                {
+                    const auto string_ref = get_default(row);
+                    out->insertData(string_ref.data, string_ref.size);
+                }
             }
-
             const auto find_result = findCellIdx(id, now);
 
             auto insert_value_routine = [&]()
@@ -374,6 +383,7 @@ void CacheDictionary::getItemsString(
                 value = std::get<String>(found_it->second.values[attribute_index]);
             else
             {
+                std::unique_lock unique_lock(default_cache_rw_lock);
                 default_keys.insert(id);
                 value = get_default(row);
             }
