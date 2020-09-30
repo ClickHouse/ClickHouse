@@ -116,6 +116,7 @@ void ZlibDeflatingWriteBuffer::finish()
 
         if (rc == Z_STREAM_END)
         {
+            out->finalize();
             finished = true;
             return;
         }
