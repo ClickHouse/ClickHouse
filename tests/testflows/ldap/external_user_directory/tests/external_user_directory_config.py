@@ -5,7 +5,7 @@ from ldap.external_user_directory.requirements import *
 
 @TestScenario
 @Requirements(
-    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_LDAPUserDirectory_MoreThanOne("1.0")
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_LDAPUserDirectory_MoreThanOne("2.0")
 )
 def more_than_one_user_directory(self, timeout=20):
     """Check when more than one LDAP user directory is

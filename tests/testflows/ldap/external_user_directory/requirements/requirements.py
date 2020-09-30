@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.200827.1211600.
+# document by TestFlows v1.6.200929.1033606.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Requirement
@@ -14,6 +14,36 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support authenticating users that are defined only on the [LDAP] server.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_009_LDAP_ExternalUserDirectory_MultipleUserDirectories = Requirement(
+        name='RQ.SRS-009.LDAP.ExternalUserDirectory.MultipleUserDirectories',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support authenticating users using multiple [LDAP] external user directories.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_009_LDAP_ExternalUserDirectory_MultipleUserDirectories_Lookup = Requirement(
+        name='RQ.SRS-009.LDAP.ExternalUserDirectory.MultipleUserDirectories.Lookup',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL attempt to authenticate external [LDAP] user\n'
+        'using [LDAP] external user directory in the same order\n'
+        'in which user directories are specified in the `config.xml` file.\n'
+        'If a user cannot be authenticated using the first [LDAP] external user directory\n'
+        'then the next user directory in the list SHALL be used.\n'
         ),
         link=None
     )
@@ -163,6 +193,62 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid = 
         link=None
     )
 
+RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_MultipleServers = Requirement(
+        name='RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Parallel.MultipleServers',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support parallel authentication of external [LDAP] users\n'
+        'authenticated using multiple [LDAP] external user directories.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_LocalOnly = Requirement(
+        name='RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Parallel.LocalOnly',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support parallel authentication of users defined only locally\n'
+        'when one or more [LDAP] external user directories are specified in the configuration file.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_LocalAndMultipleLDAP = Requirement(
+        name='RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Parallel.LocalAndMultipleLDAP',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support parallel authentication of local and external [LDAP] users\n'
+        'authenticated using multiple [LDAP] external user directories.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_SameUser = Requirement(
+        name='RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Parallel.SameUser',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support parallel authentication of the same external [LDAP] user\n'
+        'authenticated using the same [LDAP] external user directory.\n'
+        ),
+        link=None
+    )
+
 RQ_SRS_009_LDAP_ExternalUserDirectory_Connection_Protocol_PlainText = Requirement(
         name='RQ.SRS-009.LDAP.ExternalUserDirectory.Connection.Protocol.PlainText',
         version='1.0',
@@ -306,17 +392,14 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Connection_Authentication_UnreachableServe
 
 RQ_SRS_009_LDAP_ExternalUserDirectory_Users_Lookup_Priority = Requirement(
         name='RQ.SRS-009.LDAP.ExternalUserDirectory.Users.Lookup.Priority',
-        version='1.0',
+        version='2.0',
         priority=None,
         group=None,
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL lookup user presence in the following priority:\n'
-        '\n'
-        '1. access control\n'
-        '2. `users.xml`\n'
-        '3. LDAP\n'
+        '[ClickHouse] SHALL lookup user presence in the same order\n'
+        'as user directories are defined in the `config.xml`.\n'
         ),
         link=None
     )
@@ -863,14 +946,15 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_LDAPUserDirectory = Re
 
 RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_LDAPUserDirectory_MoreThanOne = Requirement(
         name='RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory.MoreThanOne',
-        version='1.0',
+        version='2.0',
         priority=None,
         group=None,
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL only use the first `<ldap>` sub-section in the `<user_directories>` section of the `config.xml`\n'
-        'if more than one `<ldap>` sub-sections are present.\n'
+        '[ClickHouse] SHALL support more than one `<ldap>` sub-sections in the `<user_directories>` section of the `config.xml`\n'
+        'that SHALL allow to define more than one external user directory that use an [LDAP] server as a source\n'
+        'of user definitions.\n'
         ),
         link=None
     )

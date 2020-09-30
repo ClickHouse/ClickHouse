@@ -296,12 +296,12 @@ class Cluster(object):
         :param steps: don't break command into steps, default: True
         """
         debug(f"command() {node}, {command}")
-        with By("executing command", description=command) if steps else NullStep():
+        with By("executing command", description=command, format_description=False) if steps else NullStep():
             r = self.bash(node)(command, *args, **kwargs)
         if exitcode is not None:
-            with Then(f"exitcode should be {exitcode}") if steps else NullStep():
+            with Then(f"exitcode should be {exitcode}", format_name=False) if steps else NullStep():
                 assert r.exitcode == exitcode, error(r.output)
         if message is not None:
-            with Then(f"output should contain message", description=message) if steps else NullStep():
+            with Then(f"output should contain message", description=message, format_description=False) if steps else NullStep():
                 assert message in r.output, error(r.output)
         return r
