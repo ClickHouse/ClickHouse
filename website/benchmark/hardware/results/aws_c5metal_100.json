@@ -1,6 +1,6 @@
 [
     {
-        "system":       "AWS c5.metal",
+        "system":       "AWS c5.metal 100GB",
         "system_full":  "AWS c5.metal 96vCPU 192GiB 100GB SSD",
         "time":         "2020-01-17 00:00:00",
         "kind":         "cloud",

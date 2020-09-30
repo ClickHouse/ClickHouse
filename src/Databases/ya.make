@@ -17,6 +17,7 @@ SRCS(
     DatabaseOrdinary.cpp
     DatabasesCommon.cpp
     DatabaseWithDictionaries.cpp
+    MySQL/ConnectionMySQLSettings.cpp
     MySQL/DatabaseConnectionMySQL.cpp
     MySQL/DatabaseMaterializeMySQL.cpp
     MySQL/FetchTablesColumnsList.cpp
