@@ -624,6 +624,7 @@ void StorageMergeTree::loadMutations()
 
 std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(const StorageMetadataPtr &, bool aggressive, const String & partition_id, bool final, String * out_disable_reason)
 {
+    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     std::unique_lock lock(currently_processing_in_background_mutex);
     auto data_settings = getSettings();
 
@@ -724,15 +725,18 @@ bool StorageMergeTree::merge(
     bool deduplicate,
     String * out_disable_reason)
 {
-    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     auto merge_mutate_entry = selectPartsToMerge(metadata_snapshot, aggressive, partition_id, final, out_disable_reason);
     if (!merge_mutate_entry)
         return false;
 
-    auto & future_part = merge_mutate_entry->future_part;
-    /// Logging
+    return mergeSelectedParts(metadata_snapshot, deduplicate, *merge_mutate_entry);
+}
+
+bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, MergeMutateSelectedEntry & merge_mutate_entry) {
+    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    auto & future_part = merge_mutate_entry.future_part;
     Stopwatch stopwatch;
     MutableDataPartPtr new_part;
 
@@ -745,14 +749,14 @@ bool StorageMergeTree::merge(
             future_part.name,
             new_part,
             future_part.parts,
-            merge_mutate_entry->merge_entry.get());
+            merge_mutate_entry.merge_entry.get());
     };
 
     try
     {
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, metadata_snapshot, *(merge_mutate_entry->merge_entry), table_lock_holder, time(nullptr),
-            merge_mutate_entry->tagger->reserved_space, deduplicate);
+            future_part, metadata_snapshot, *(merge_mutate_entry.merge_entry), table_lock_holder, time(nullptr),
+            merge_mutate_entry.tagger->reserved_space, deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         write_part_log({});
@@ -765,7 +769,6 @@ bool StorageMergeTree::merge(
 
     return true;
 }
-
 
 bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
 {
@@ -792,6 +795,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::movePartsTask()
 
 std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String */* disable_reason */)
 {
+    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     std::lock_guard lock(currently_processing_in_background_mutex);
     size_t max_ast_elements = global_context.getSettingsRef().max_expanded_ast_elements;
 
@@ -874,14 +878,19 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
 
 bool StorageMergeTree::tryMutatePart()
 {
-    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
 
     auto merge_mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
     if (!merge_mutate_entry)
         return false;
 
-    auto & future_part = merge_mutate_entry->future_part;
+    return mutateSelectedPart(metadata_snapshot, *merge_mutate_entry);
+}
+
+bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & merge_mutate_entry)
+{
+    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    auto & future_part = merge_mutate_entry.future_part;
     Stopwatch stopwatch;
     MutableDataPartPtr new_part;
 
@@ -894,14 +903,14 @@ bool StorageMergeTree::tryMutatePart()
             future_part.name,
             new_part,
             future_part.parts,
-            merge_mutate_entry->merge_entry.get());
+            merge_mutate_entry.merge_entry.get());
     };
 
     try
     {
         new_part = merger_mutator.mutatePartToTemporaryPart(
-            future_part, metadata_snapshot, merge_mutate_entry->commands, *(merge_mutate_entry->merge_entry),
-            time(nullptr), global_context, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
+            future_part, metadata_snapshot, merge_mutate_entry.commands, *(merge_mutate_entry.merge_entry),
+            time(nullptr), global_context, merge_mutate_entry.tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
 
@@ -917,7 +926,6 @@ bool StorageMergeTree::tryMutatePart()
 
     return true;
 }
-
 
 BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
 {
