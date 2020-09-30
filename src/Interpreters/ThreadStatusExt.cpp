@@ -322,7 +322,14 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 {
     QueryThreadLogElement elem;
 
-    elem.event_time = time(nullptr);
+    // construct current_time and current_time_microseconds using the same time point
+    // so that the two times will always be equal up to a precision of a second.
+    const auto now = std::chrono::system_clock::now();
+    auto current_time =  time_in_seconds(now);
+    auto current_time_microseconds =  time_in_microseconds(now);
+
+    elem.event_time = current_time;
+    elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = query_start_time;
     elem.query_start_time_microseconds = query_start_time_microseconds;
     elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
