@@ -307,7 +307,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     }
 }
 
-UInt8 getDataBytesSize(DataTypePtr column_type)
+UInt8 getDataBytesSize(const IDataType * column_type)
 {
     if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta is not applicable for {} because the data type is not of fixed size",
@@ -413,7 +413,7 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::DoubleDelta);
     factory.registerCompressionCodecWithType("DoubleDelta", method_code,
-        [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
+        [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
         if (arguments)
             throw Exception("Codec DoubleDelta does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
