@@ -27,10 +27,10 @@ void MergeTreeBlockOutputStream::write(const Block & block)
 
         PartLog::addNewPart(storage.global_context, part, watch.elapsed());
 
-        if (storage.merging_mutating_task_handle)
+        if (storage.merge_assigning_task)
         {
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-            storage.merging_mutating_task_handle->signalReadyToRun();
+            storage.merge_assigning_task->schedule();
         }
     }
 }

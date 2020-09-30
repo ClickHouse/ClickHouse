@@ -119,8 +119,8 @@ private:
     std::atomic<bool> shutdown_called {false};
 
     /// Task handler for merges, mutations and moves.
-    BackgroundProcessingPool::TaskHandle merging_mutating_task_handle;
     BackgroundProcessingPool::TaskHandle moving_task_handle;
+    BackgroundSchedulePool::TaskHolder merge_assigning_task;
 
     void loadMutations();
 
@@ -157,6 +157,9 @@ private:
 
     std::optional<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason);
     bool mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry);
+
+    void mergeMutateAssigningTask();
+    void mergeMutateProcessingTask(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry);
 
     BackgroundProcessingPoolTaskResult mergeMutateTask();
 

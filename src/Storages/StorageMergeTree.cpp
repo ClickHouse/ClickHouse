@@ -100,10 +100,9 @@ void StorageMergeTree::startup()
 
     try
     {
-        auto & merge_pool = global_context.getBackgroundPool();
-        merging_mutating_task_handle = merge_pool.createTask([this] { return mergeMutateTask(); });
-        /// Ensure that thread started only after assignment to 'merging_mutating_task_handle' is done.
-        merge_pool.startTask(merging_mutating_task_handle);
+        auto & schedule_pool = global_context.getSchedulePool();
+        merge_assigning_task = schedule_pool.createTask(getStorageID().getFullTableName() + " (StorageMergeTree::mergeAssigningTask)", [this]() { mergeMutateAssigningTask(); });
+        merge_assigning_task->activateAndSchedule();
 
         startBackgroundMovesIfNeeded();
     }
@@ -142,8 +141,8 @@ void StorageMergeTree::shutdown()
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
-    if (merging_mutating_task_handle)
-        global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
+    if (merge_assigning_task)
+        merge_assigning_task->deactivate();
 
     if (moving_task_handle)
         global_context.getBackgroundMovePool().removeTask(moving_task_handle);
@@ -356,7 +355,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
     current_mutations_by_version.emplace(version, insertion.first->second);
 
     LOG_INFO(log, "Added mutation: {}", mutation_file_name);
-    merging_mutating_task_handle->signalReadyToRun();
+    merge_assigning_task->schedule();
     return version;
 }
 
@@ -586,7 +585,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
-    merging_mutating_task_handle->signalReadyToRun();
+    merge_assigning_task->schedule();
 
     return CancellationCode::CancelSent;
 }
@@ -908,6 +907,70 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     }
 
     return true;
+}
+
+void StorageMergeTree::mergeMutateAssigningTask()
+{
+    if (shutdown_called)
+        return;
+
+    if (merger_mutator.merges_blocker.isCancelled())
+    {
+        merge_assigning_task->scheduleAfter(1000); /// FIXME(alesap)
+        return;
+    }
+
+    try
+    {
+        /// To separate function
+        /// Clear old parts. It is unnecessary to do it more than once a second.
+        if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
+        {
+            {
+                auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+                /// All use relative_data_path which changes during rename
+                /// so execute under share lock.
+                clearOldPartsFromFilesystem();
+                clearOldTemporaryDirectories();
+                clearOldWriteAheadLogs();
+            }
+            clearOldMutations();
+        }
+
+        auto metadata_snapshot = getInMemoryMetadataPtr();
+        auto merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr);
+        if (merge_entry)
+        {
+            global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, merge_entry]()
+            {
+                ///TODO: read deduplicate option from table config
+                mergeSelectedParts(metadata_snapshot, false, *merge_entry);
+            });
+
+            merge_assigning_task->schedule(); /// FIXME(alesap)
+            return;
+        }
+
+        auto mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
+        if (mutate_entry)
+        {
+            global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, mutate_entry]()
+            {
+                mutateSelectedPart(metadata_snapshot, mutate_entry);
+            });
+            merge_assigning_task->schedule(); /// FIXME(alesap)
+            return;
+        }
+
+        merge_assigning_task->scheduleAfter(500); /// FIXME(alesap)
+    }
+    catch (const Exception & e)
+    {
+        merge_assigning_task->scheduleAfter(500); /// FIXME(alesap)
+        if (e.code() == ErrorCodes::ABORTED)
+            LOG_INFO(log, e.message());
+        throw;
+    }
 }
 
 BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()

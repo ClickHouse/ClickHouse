@@ -509,6 +509,7 @@ public:
 
     BackgroundSchedulePool & getBufferFlushSchedulePool();
     BackgroundProcessingPool & getBackgroundPool();
+    ThreadPool & getBackgroundProcessingPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
     BackgroundSchedulePool & getMessageBrokerSchedulePool();

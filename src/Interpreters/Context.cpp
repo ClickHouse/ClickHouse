@@ -341,6 +341,7 @@ struct ContextShared
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
+    std::optional<ThreadPool> background_processing_pool;    /// TODO (alesap)
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
@@ -1398,6 +1399,14 @@ BackgroundProcessingPool & Context::getBackgroundPool()
         shared->background_pool.emplace(settings.background_pool_size, pool_settings);
     }
     return *shared->background_pool;
+}
+
+ThreadPool & Context::getBackgroundProcessingPool()
+{
+    auto lock = getLock();
+    if (!shared->background_processing_pool)
+        shared->background_processing_pool.emplace(settings.background_pool_size);
+    return *shared->background_processing_pool;
 }
 
 BackgroundProcessingPool & Context::getBackgroundMovePool()
