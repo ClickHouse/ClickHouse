@@ -88,7 +88,7 @@ void StorageMySQLReplica::startup()
     materialize_thread->registerConsumerStorage(
         getStorageID(),
         mysql_table_name,
-        getDataPaths().front(),
+        getDataPaths().front() + "/.metadata",
         settings);
     materialize_thread->startSynchronization();
 }
@@ -146,7 +146,7 @@ void registerStorageMySQLReplica(StorageFactory & factory)
             materialize_settings,
             disk,
             args.relative_data_path);
-    });
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
 }
