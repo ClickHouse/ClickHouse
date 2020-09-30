@@ -70,6 +70,8 @@ void ReplicatedMergeTreeCleanupThread::iterate()
     if (storage.is_leader)
     {
         clearOldLogs();
+        /// ALEXELEXA
+        /// may be just remove it?
         clearOldBlocks();
         clearOldMutations();
     }
@@ -344,6 +346,8 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
         String path = storage.zookeeper_path + "/blocks/" + it->node;
+        /// ALEXELEXA
+        /// should check somehow is it quorum block
         try_remove_futures.emplace_back(path, zookeeper->asyncTryRemove(path));
     }
 

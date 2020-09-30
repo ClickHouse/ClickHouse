@@ -1176,6 +1176,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         {
             ops.emplace_back(zkutil::makeCreateRequest(
                 part_path, local_part_header.toString(), zkutil::CreateMode::Persistent));
+            LOG_DEBUG(log, "local_part_header.toString(): {}", local_part_header.toString());
         }
         else
         {
@@ -3028,7 +3029,7 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
 
 /** If a quorum is tracked for a part, update information about it in ZK.
   */
-void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
+void StorageReplicatedMergeTree::updateQuorum(const String & part_name, const std::optional<String> & block_id)
 {
     auto zookeeper = getZooKeeper();
 
@@ -3036,25 +3037,44 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
     const String quorum_status_path = zookeeper_path + "/quorum/status";
     /// The name of the previous part for which the quorum was reached.
     const String quorum_last_part_path = zookeeper_path + "/quorum/last_part";
-
-    String value;
-    Coordination::Stat stat;
+    const String quorum_parallel_status_path = block_id ? zookeeper_path + "/blocks/" + *block_id : "";
 
     /// If there is no node, then all quorum INSERTs have already reached the quorum, and nothing is needed.
-    while (zookeeper->tryGet(quorum_status_path, value, &stat))
+    String value;
+    Coordination::Stat stat;
+    while (true)
     {
+        bool is_parallel = false;
+        ReplicatedMergeTreeBlockEntry block_entry;
         ReplicatedMergeTreeQuorumEntry quorum_entry;
-        quorum_entry.fromString(value);
 
-        if (quorum_entry.part_name != part_name)
+        if (zookeeper->tryGet(quorum_status_path, value, &stat))
+        {
+            quorum_entry.fromString(value);
+            quorum_entry.status.replicas.insert(replica_name);
+        }
+        else if (block_id && zookeeper->tryGet(quorum_parallel_status_path, value, &stat))
+        {
+            block_entry.fromString(value);
+            // The quorum has already been achieved
+            if (!block_entry.quorum_status)
+                break;
+
+            is_parallel = true;
+            block_entry.quorum_status->replicas.insert(replica_name);
+            if (block_entry.quorum_status->isQuorumReached())
+                block_entry.quorum_status.reset();
+        }
+        else
+            break;
+
+        if (quorum_entry.part_name != part_name && block_entry.part_name != part_name)
         {
             /// The quorum has already been achieved. Moreover, another INSERT with a quorum has already started.
             break;
         }
 
-        quorum_entry.replicas.insert(replica_name);
-
-        if (quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
+        if (quorum_entry.status.isQuorumReached())
         {
             /// The quorum is reached. Delete the node, and update information about the last part that was successfully written with quorum.
 
@@ -3098,8 +3118,16 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
         }
         else
         {
-            /// We update the node, registering there one more replica.
-            auto code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
+            Coordination::Error code;
+            if (is_parallel)
+            {
+                /// We update the node, registering there one more replica.
+                code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
+            }
+            else {
+                /// Update parallel quorum. It also might be reached here.
+                code = zookeeper->trySet(quorum_parallel_status_path, block_entry.toString(), stat.version);
+            }
 
             if (code == Coordination::Error::ZOK)
             {
@@ -3588,6 +3616,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
         *this, metadata_snapshot, query_settings.insert_quorum,
         query_settings.insert_quorum_timeout.totalMilliseconds(),
         query_settings.max_partitions_per_insert_block,
+        query_settings.insert_quorum_parallel,
         deduplicate);
 }
 
@@ -4164,7 +4193,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     PartsTemporaryRename renamed_parts(*this, "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
-    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false);   /// TODO Allow to use quorum here.
+    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false);   /// TODO Allow to use quorum here.
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         String old_name = loaded_parts[i]->name;
@@ -5242,6 +5271,8 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
         if (result.error == Coordination::Error::ZNONODE)
             continue;
 
+        /// ALEXELEXA
+        /// should parse it here using another way
         ReadBufferFromString buf(result.data);
         Int64 block_num = 0;
         bool parsed = tryReadIntText(block_num, buf) && buf.eof();
@@ -5661,18 +5692,19 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 void StorageReplicatedMergeTree::getCommitPartOps(
     Coordination::Requests & ops,
     MutableDataPartPtr & part,
-    const String & block_id_path) const
+    const String & block_id_path,
+    ReplicatedMergeTreeBlockEntry block_entry) const
 {
-    const String & part_name = part->name;
     const auto storage_settings_ptr = getSettings();
 
     if (!block_id_path.empty())
     {
         /// Make final duplicate check and commit block_id
+        block_entry.part_name = part->name;
         ops.emplace_back(
             zkutil::makeCreateRequest(
                 block_id_path,
-                part_name,  /// We will be able to know original part number for duplicate blocks, if we want.
+                block_entry.toString(),  /// We will be able to know original part number for duplicate blocks, if we want.
                 zkutil::CreateMode::Persistent));
     }
 
@@ -5683,6 +5715,8 @@ void StorageReplicatedMergeTree::getCommitPartOps(
             replica_path + "/parts/" + part->name,
             ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums).toString(),
             zkutil::CreateMode::Persistent));
+        LOG_DEBUG(log, "ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums).toString(): {}",
+            ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums).toString());
     }
     else
     {

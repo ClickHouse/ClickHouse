@@ -1,4 +1,5 @@
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeBlockEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Interpreters/PartLog.h>
@@ -39,12 +40,14 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t quorum_,
     size_t quorum_timeout_ms_,
     size_t max_parts_per_block_,
+    bool quorum_parallel_,
     bool deduplicate_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , quorum(quorum_)
     , quorum_timeout_ms(quorum_timeout_ms_)
     , max_parts_per_block(max_parts_per_block_)
+    , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
 {
@@ -243,15 +246,21 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
         Int64 block_number = 0;
         String existing_part_name;
+        ReplicatedMergeTreeBlockEntry block_entry;
         if (block_number_lock)
         {
             is_already_existing_part = false;
             block_number = block_number_lock->getNumber();
+            block_entry.part_name = part->name;
 
             /// Set part attributes according to part_number. Prepare an entry for log.
 
             part->info.min_block = block_number;
             part->info.max_block = block_number;
+
+            /// ALEXELEXA
+            /// somehow need to send this block_if to part node. TODO
+            part->info.block_id = block_id;
             part->info.level = 0;
 
             part->name = part->getNewName(part->info);
@@ -282,10 +291,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
               */
             if (quorum)
             {
-                ReplicatedMergeTreeQuorumEntry quorum_entry;
-                quorum_entry.part_name = part->name;
-                quorum_entry.required_number_of_replicas = quorum;
-                quorum_entry.replicas.insert(storage.replica_name);
+                ReplicatedMergeTreeQuorumStatusEntry status_entry;
+                status_entry.required_number_of_replicas = quorum;
+                status_entry.replicas.insert(storage.replica_name);
 
                 /** At this point, this node will contain information that the current replica received a part.
                     * When other replicas will receive this part (in the usual way, processing the replication log),
@@ -294,11 +302,21 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                     *  which indicates that the quorum has been reached.
                     */
 
-                ops.emplace_back(
-                    zkutil::makeCreateRequest(
-                        quorum_info.status_path,
-                        quorum_entry.toString(),
-                        zkutil::CreateMode::Persistent));
+                if (!quorum_parallel)
+                {
+                    ReplicatedMergeTreeQuorumEntry quorum_entry;
+                    quorum_entry.part_name = part->name;
+                    quorum_entry.status = status_entry;
+
+                    ops.emplace_back(
+                        zkutil::makeCreateRequest(
+                            quorum_info.status_path,
+                            quorum_entry.toString(),
+                            zkutil::CreateMode::Persistent));
+
+                }
+                else
+                    block_entry.quorum_status = status_entry;
 
                 /// Make sure that during the insertion time, the replica was not reinitialized or disabled (when the server is finished).
                 ops.emplace_back(
@@ -352,7 +370,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         }
 
         /// Information about the part.
-        storage.getCommitPartOps(ops, part, block_id_path);
+        storage.getCommitPartOps(ops, part, block_id_path, block_entry);
 
         MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
@@ -466,13 +484,15 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         if (is_already_existing_part)
         {
             /// We get duplicate part without fetch
-            storage.updateQuorum(part->name);
+            /// ALEXELEXA
+            /// should reset here something, after thinking in TODO
+            storage.updateQuorum(part->name, part->info.block_id);
         }
 
         /// We are waiting for quorum to be satisfied.
         LOG_TRACE(log, "Waiting for quorum");
 
-        String quorum_status_path = storage.zookeeper_path + "/quorum/status";
+        String quorum_status_path = quorum_parallel ? storage.zookeeper_path + "/blocks/" + block_id : storage.zookeeper_path + "/quorum/status";
 
         try
         {
@@ -481,15 +501,25 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
                 std::string value;
+                ReplicatedMergeTreeQuorumEntry quorum_entry;
+                ReplicatedMergeTreeBlockEntry block_entry;
                 /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.
                 if (!zookeeper->tryGet(quorum_status_path, value, nullptr, event))
                     break;
 
-                ReplicatedMergeTreeQuorumEntry quorum_entry(value);
-
                 /// If the node has time to disappear, and then appear again for the next insert.
-                if (quorum_entry.part_name != part->name)
-                    break;
+                if (quorum_parallel)
+                {
+                    block_entry.fromString(value);
+                    if (block_entry.part_name != part->name)
+                        break;
+                }
+                else
+                {
+                    quorum_entry.fromString(value);
+                    if (quorum_entry.part_name != part->name)
+                        break;
+                }
 
                 if (!event->tryWait(quorum_timeout_ms))
                     throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);

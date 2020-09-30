@@ -227,9 +227,9 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     if (zookeeper->tryGet(storage.zookeeper_path + "/quorum/status", quorum_str))
     {
         ReplicatedMergeTreeQuorumEntry quorum_entry;
-        quorum_entry.fromString(quorum_str);
+        quorum_entry.status.fromString(quorum_str);
 
-        if (!quorum_entry.replicas.count(storage.replica_name)
+        if (!quorum_entry.status.replicas.count(storage.replica_name)
             && zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
         {
             LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
