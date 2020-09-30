@@ -184,11 +184,8 @@ TTLDescription TTLDescription::getTTLFromAST(
             if (ttl_element->group_by_key.size() > pk_columns.size())
                 throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
 
-            NameSet primary_key_columns_set(pk_columns.begin(), pk_columns.end());
             NameSet aggregation_columns_set;
-
-            for (const auto & column : primary_key.expression->getRequiredColumns())
-                primary_key_columns_set.insert(column);
+            NameSet used_primary_key_columns_set;
 
             for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
@@ -196,6 +193,8 @@ TTLDescription TTLDescription::getTTLFromAST(
                     throw Exception(
                         "TTL Expression GROUP BY key should be a prefix of primary key",
                         ErrorCodes::BAD_TTL_EXPRESSION);
+
+                used_primary_key_columns_set.insert(pk_columns[i]);
             }
 
             for (const auto & [name, _] : ttl_element->group_by_aggregations)
@@ -209,9 +208,17 @@ TTLDescription TTLDescription::getTTLFromAST(
             result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
             auto aggregations = ttl_element->group_by_aggregations;
 
+            const auto & primary_key_expressions = primary_key.expression_list_ast->children;
+            for (size_t i = ttl_element->group_by_key.size(); i < primary_key_expressions.size(); ++i)
+            {
+                ASTPtr expr = makeASTFunction("any", primary_key_expressions[i]->clone());
+                aggregations.emplace_back(pk_columns[i], std::move(expr));
+                aggregation_columns_set.insert(pk_columns[i]);
+            }
+
             for (const auto & column : columns.getOrdinary())
             {
-                if (!aggregation_columns_set.count(column.name))
+                if (!aggregation_columns_set.count(column.name) && !used_primary_key_columns_set.count(column.name))
                 {
                     ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
                     aggregations.emplace_back(column.name, std::move(expr));

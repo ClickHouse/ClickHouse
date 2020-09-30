@@ -67,8 +67,13 @@ private:
     /// Removes values with expired ttl and computes new_ttl_infos and empty_columns for part
     void removeValuesWithExpiredColumnTTL(Block & block);
 
+    void executeRowsTTL(Block & block);
+
     /// Removes rows with expired table ttl and computes new ttl_infos for part
-    void removeRowsWithExpiredTableTTL(Block & block);
+    void removeRowsWithExpiredTTL(Block & block, ColumnPtr ttl_column, ColumnPtr where_column);
+
+    /// Aggregates rows with expired table ttl and computes new ttl_infos for part
+    void aggregateRowsWithExpiredTTL(Block & block, ColumnPtr ttl_column, ColumnPtr where_column);
 
     // Calculate aggregates of aggregate_columns into agg_result
     void calculateAggregates(const MutableColumns & aggregate_columns, size_t start_pos, size_t length);
