@@ -178,7 +178,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
-    bool has_force_restore_data_flag)
+    bool has_force_restore_data_flag,
+    bool allow_renaming_)
     : MergeTreeData(table_id_,
                     relative_data_path_,
                     metadata_,
@@ -200,6 +201,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , cleanup_thread(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
+    , allow_renaming(allow_renaming_)
 {
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
@@ -4187,8 +4189,17 @@ void StorageReplicatedMergeTree::checkTableCanBeDropped() const
     global_context.checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 
+void StorageReplicatedMergeTree::checkTableCanBeRenamed() const
+{
+    if (!allow_renaming)
+        throw Exception("Cannot rename Replicated table, because zookeeper_path contains implicit 'database' or 'table' macro. "
+                        "We cannot rename path in ZooKeeper, so path may become inconsistent with table name. If you really want to rename table, "
+                        "you should edit metadata file first and restart server or reattach the table.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 void StorageReplicatedMergeTree::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
+    checkTableCanBeRenamed();
     MergeTreeData::rename(new_path_to_table_data, new_table_id);
 
     /// Update table name in zookeeper
