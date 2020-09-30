@@ -171,7 +171,6 @@ private:
         ///FIXME
         while(hasChunksToWorkWith())
         {
-            std::cout << writer_unit_number << ' ' << collector_unit_number << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
@@ -207,7 +206,7 @@ private:
 
                 /// Do main work here.
                 out.write(unit.segment.data(), unit.actual_memory_size);
-                out.sync();
+                // out.sync();
 
                 ++collector_unit_number;
 
