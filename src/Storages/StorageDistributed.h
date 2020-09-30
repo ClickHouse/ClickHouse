@@ -144,6 +144,7 @@ public:
     const String cluster_name;
 
     bool has_sharding_key;
+    bool replicate;
     bool sharding_key_is_deterministic = false;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
@@ -163,6 +164,7 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
+        bool replicate_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
         bool attach_);
@@ -175,6 +177,7 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
+        bool replicate_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
         bool attach);

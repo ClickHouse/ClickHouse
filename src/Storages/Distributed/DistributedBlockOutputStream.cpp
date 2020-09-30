@@ -86,6 +86,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const ASTPtr & query_ast_,
     const ClusterPtr & cluster_,
+    bool replicate_,
     bool insert_sync_,
     UInt64 insert_timeout_)
     : context(context_)
@@ -94,6 +95,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     , query_ast(query_ast_)
     , query_string(queryToString(query_ast_))
     , cluster(cluster_)
+    , replicate(replicate_)
     , insert_sync(insert_sync_)
     , insert_timeout(insert_timeout_)
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
@@ -139,6 +141,9 @@ void DistributedBlockOutputStream::writeAsync(const Block & block)
 {
     if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
         return writeSplitAsync(block);
+
+    if (replicate)
+        return writeReplicatedAsync(block);
 
     writeAsyncImpl(block);
     ++inserted_blocks;
@@ -507,6 +512,17 @@ void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
     for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
         if (splitted_blocks[shard_idx].rows())
             writeAsyncImpl(splitted_blocks[shard_idx], shard_idx);
+
+    ++inserted_blocks;
+}
+
+
+void DistributedBlockOutputStream::writeReplicatedAsync(const Block & block)
+{
+    const size_t num_shards = cluster->getShardsInfo().size();
+
+    for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
+        writeAsyncImpl(block, shard_idx);
 
     ++inserted_blocks;
 }

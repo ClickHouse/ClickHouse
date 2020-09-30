@@ -360,6 +360,7 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
+    bool replicate_,
     const String & storage_policy_name_,
     const String & relative_data_path_,
     bool attach_)
@@ -370,6 +371,7 @@ StorageDistributed::StorageDistributed(
     , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , cluster_name(global_context->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
+    , replicate(replicate_)
     , relative_data_path(relative_data_path_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -411,10 +413,11 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
+    bool replicate_,
     const String & storage_policy_name_,
     const String & relative_data_path_,
     bool attach)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, attach)
+    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, replicate_, storage_policy_name_, relative_data_path_, attach)
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
@@ -428,7 +431,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     ClusterPtr owned_cluster_,
     const Context & context_)
 {
-    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), String(), false);
+    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), false, String(), String(), false);
     res->owned_cluster = std::move(owned_cluster_);
     return res;
 }
@@ -441,7 +444,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     ClusterPtr & owned_cluster_,
     const Context & context_)
 {
-    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), String(), false);
+    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), false, String(), String(), false);
     res->owned_cluster = owned_cluster_;
     return res;
 }
@@ -569,7 +572,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
         context, *this, metadata_snapshot, createInsertToRemoteTableQuery(remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()), cluster,
-        insert_sync, timeout);
+        replicate, insert_sync, timeout);
 }
 
 
@@ -931,21 +934,36 @@ void registerStorageDistributed(StorageFactory & factory)
 
         const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
         const auto & storage_policy = engine_args.size() >= 5 ? engine_args[4]->as<ASTLiteral &>().value.safeGet<String>() : "default";
+        bool replicate = false;
 
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
         {
-            auto sharding_expr = buildShardingKeyExpression(sharding_key, args.context, args.columns.getAllPhysical(), true);
-            const Block & block = sharding_expr->getSampleBlock();
+            IAST & ast = *sharding_key;
 
-            if (block.columns() != 1)
-                throw Exception("Sharding expression must return exactly one column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+            if (typeid(ast) == typeid(ASTLiteral))
+            {
+                const auto & sharding_policy = static_cast<ASTLiteral &>(ast).value.safeGet<String>();
 
-            auto type = block.getByPosition(0).type;
+                if (sharding_policy == "replicate")
+                    replicate = true;
+                else
+                    throw Exception("Unknown sharding policy " + sharding_policy, ErrorCodes::BAD_ARGUMENTS);
+            }
+            else
+            {
+                auto sharding_expr = buildShardingKeyExpression(sharding_key, args.context, args.columns.getAllPhysical(), true);
+                const Block & block = sharding_expr->getSampleBlock();
 
-            if (!type->isValueRepresentedByInteger())
-                throw Exception("Sharding expression has type " + type->getName() +
-                    ", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
+                if (block.columns() != 1)
+                    throw Exception("Sharding expression must return exactly one column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+
+                auto type = block.getByPosition(0).type;
+
+                if (!type->isValueRepresentedByInteger())
+                    throw Exception("Sharding expression has type " + type->getName() +
+                        ", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
+            }
         }
 
         return StorageDistributed::create(
@@ -953,6 +971,7 @@ void registerStorageDistributed(StorageFactory & factory)
             remote_database, remote_table, cluster_name,
             args.context,
             sharding_key,
+            replicate,
             storage_policy,
             args.relative_data_path,
             args.attach);

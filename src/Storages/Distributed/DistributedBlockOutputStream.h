@@ -43,6 +43,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const ASTPtr & query_ast_,
         const ClusterPtr & cluster_,
+        bool replicate_,
         bool insert_sync_,
         UInt64 insert_timeout_);
 
@@ -61,6 +62,8 @@ private:
     Blocks splitBlock(const Block & block);
 
     void writeSplitAsync(const Block & block);
+
+    void writeReplicatedAsync(const Block & block);
 
     void writeAsyncImpl(const Block & block, const size_t shard_id = 0);
 
@@ -93,6 +96,7 @@ private:
     size_t inserted_blocks = 0;
     size_t inserted_rows = 0;
 
+    bool replicate;
     bool insert_sync;
 
     /// Sync-related stuff
