@@ -13,7 +13,7 @@ function stop()
     timeout 120 service clickhouse-server stop
 
     # Wait for process to disappear from processlist and also try to kill zombies.
-    while kill -9 $(pidof clickhouse-server)
+    while kill -9 "$(pidof clickhouse-server)"
     do
         echo "Killed clickhouse-server"
         sleep 0.5
@@ -35,7 +35,7 @@ function start()
         fi
         timeout 120 service clickhouse-server start
         sleep 0.5
-        counter=$(($counter + 1))
+        counter=$((counter + 1))
     done
 }
 
@@ -49,7 +49,7 @@ export ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_
 
 start
 
-/s3downloader --dataset-names $DATASETS
+/s3downloader --dataset-names "$DATASETS"
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"

@@ -1,15 +1,15 @@
 #!/bin/bash
 
 kill_clickhouse () {
-    kill `pgrep -u clickhouse` 2>/dev/null
+    kill "$(pgrep -u clickhouse)" 2>/dev/null
 
-    for i in {1..10}
+    for _ in {1..10}
     do
-        if ! kill -0 `pgrep -u clickhouse`; then
+        if ! kill -0 "$(pgrep -u clickhouse)"; then
             echo "No clickhouse process"
             break
         else
-            echo "Process" `pgrep -u clickhouse` "still alive"
+            echo "Process $(pgrep -u clickhouse) still alive"
             sleep 10
         fi
     done
@@ -20,19 +20,19 @@ start_clickhouse () {
 }
 
 wait_llvm_profdata () {
-    while kill -0 `pgrep llvm-profdata-10`;
+    while kill -0 "$(pgrep llvm-profdata-10)"
     do
-        echo "Waiting for profdata" `pgrep llvm-profdata-10` "still alive"
+        echo "Waiting for profdata $(pgrep llvm-profdata-10) still alive"
         sleep 3
     done
 }
 
 merge_client_files_in_background () {
-    client_files=`ls /client_*profraw 2>/dev/null`
-    if [ ! -z "$client_files" ]
+    client_files=$(ls /client_*profraw 2>/dev/null)
+    if [ -n "$client_files" ]
     then
-        llvm-profdata-10 merge -sparse $client_files -o merged_client_`date +%s`.profraw
-        rm $client_files
+        llvm-profdata-10 merge -sparse "$client_files" -o "merged_client_$(date +%s).profraw"
+        rm "$client_files"
     fi
 }
 
@@ -66,13 +66,13 @@ function start()
         fi
         timeout 120 service clickhouse-server start
         sleep 0.5
-        counter=$(($counter + 1))
+        counter=$((counter + 1))
     done
 }
 
 start
 
-if ! /s3downloader --dataset-names $DATASETS; then
+if ! /s3downloader --dataset-names "$DATASETS"; then
     echo "Cannot download datatsets"
     exit 1
 fi
@@ -100,11 +100,11 @@ LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TA
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
 
-if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then
+if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-test --testname --shard --zookeeper --no-stateless "$SKIP_LIST_OPT" $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-test --testname --shard --zookeeper --no-stateless "$SKIP_LIST_OPT" "$ADDITIONAL_OPTIONS" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
 kill_clickhouse
 
