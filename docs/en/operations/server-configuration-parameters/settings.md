@@ -351,15 +351,15 @@ Keys for syslog:
 ## send\_crash\_reports {#server_configuration_parameters-logger}
 
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
-Enabling it, especially in pre-production environments, is greatly appreciated.
+Enabling it, especially in pre-production environments, is highly appreciated.
 
-The server will need an access to public Internet via IPv4 (at the time of writing IPv6 is not supported by Sentry) for this feature to be functioning properly.
+The server will need access to the public Internet via IPv4 (at the time of writing IPv6 is not supported by Sentry) for this feature to be functioning properly.
 
 Keys:
 
 -   `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports. 
--   `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax. 
--   `anonymize` - Avoid attaching the server hostname to crash report.
+-   `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax. 
+-   `anonymize` - Avoid attaching the server hostname to the crash report.
 -   `http_proxy` - Configure HTTP proxy for sending crash reports.
 -   `debug` - Sets the Sentry client into debug mode.
 -   `tmp_path` - Filesystem path for temporary crash report state.

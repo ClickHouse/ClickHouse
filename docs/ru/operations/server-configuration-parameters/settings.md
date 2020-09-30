@@ -492,11 +492,11 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## max\_thread\_pool\_size {#max-thread-pool-size}
 
-Максимальное кол-во потоков в глобальном пуле потоков.
+Максимальное количество потоков в глобальном пуле потоков.
 
-Default value: 10000.
+Значение по умолчанию: 10000.
 
-**Example**
+**Пример**
 
 ``` xml
 <max_thread_pool_size>12000</max_thread_pool_size>
