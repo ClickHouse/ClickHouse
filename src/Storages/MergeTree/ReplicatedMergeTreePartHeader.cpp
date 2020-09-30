@@ -34,11 +34,24 @@ ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromColumnsAndCheck
     return ReplicatedMergeTreePartHeader(getSipHash(columns.toString()), std::move(checksums));
 }
 
+ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromColumnsChecksumsBlockID(
+    const NamesAndTypesList & columns,
+    const MergeTreeDataPartChecksums & full_checksums,
+    const String & block_id_)
+{
+    MinimalisticDataPartChecksums checksums;
+    checksums.computeTotalChecksums(full_checksums);
+    return ReplicatedMergeTreePartHeader(getSipHash(columns.toString()), std::move(checksums), block_id_);
+}
+
 void ReplicatedMergeTreePartHeader::read(ReadBuffer & in)
 {
     in >> "part header format version: 1\n";
     in.readStrict(columns_hash.data(), columns_hash.size());
     checksums.deserializeWithoutHeader(in);
+
+    if (!in.eof())
+        in >> "block_id: " >> block_id.value() >> "\n";
 }
 
 ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromString(const String & str)
@@ -54,6 +67,8 @@ void ReplicatedMergeTreePartHeader::write(WriteBuffer & out) const
     writeString("part header format version: 1\n", out);
     out.write(columns_hash.data(), columns_hash.size());
     checksums.serializeWithoutHeader(out);
+    if (block_id)
+        out << "block_id " << block_id.value() << "\n";
 }
 
 String ReplicatedMergeTreePartHeader::toString() const
