@@ -77,23 +77,25 @@ function restart
     while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
+    # Disable percpu arenas because they segfault when the process is bound to
+    # a particular NUMA node: https://github.com/jemalloc/jemalloc/pull/1939
+    # 
+    # About the jemalloc settings:
     # https://github.com/jemalloc/jemalloc/wiki/Getting-Started
     export MALLOC_CONF="percpu_arena:disabled,confirm_conf:true"
 
     set -m # Spawn servers in their own process groups
     
-    numactl --cpunodebind=1 --localalloc \
-        left/clickhouse-server --config-file=left/config/config.xml \
-            -- --path left/db --user_files_path left/db/user_files \
-            &>> left-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml \
+           -- --path left/db --user_files_path left/db/user_files \
+           &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
 
-    numactl --cpunodebind=0 --localalloc \
-        right/clickhouse-server --config-file=right/config/config.xml \
-            -- --path right/db --user_files_path right/db/user_files \
-            &>> right-server-log.log &
+     right/clickhouse-server --config-file=right/config/config.xml \
+         -- --path right/db --user_files_path right/db/user_files \
+         &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
