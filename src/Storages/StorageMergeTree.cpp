@@ -184,12 +184,12 @@ Pipe StorageMergeTree::read(
         context, max_block_size, num_streams);
 }
 
-std::optional<UInt64> StorageMergeTree::totalRows() const
+std::optional<UInt64> StorageMergeTree::totalRows(const Context &) const
 {
     return getTotalActiveSizeInRows();
 }
 
-std::optional<UInt64> StorageMergeTree::totalBytes() const
+std::optional<UInt64> StorageMergeTree::totalBytes(const Context &) const
 {
     return getTotalActiveSizeInBytes();
 }
