@@ -62,11 +62,12 @@ public:
     /// True if parts on this volume participate in merges according to configuration.
     bool are_merges_avoided = true;
 
-    /// True if parts on this volume participate in merges according to START/STOP MERGES ON VOLUME.
-    std::optional<bool> are_merges_avoided_user_override;
-
 private:
+    /// Index of last used disk.
     mutable std::atomic<size_t> last_used = 0;
+
+    /// True if parts on this volume participate in merges according to START/STOP MERGES ON VOLUME.
+    std::atomic<std::optional<bool>> are_merges_avoided_user_override;
 };
 
 }
