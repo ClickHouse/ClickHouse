@@ -140,8 +140,6 @@ private:
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, const String & file_name);
 
-    /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
-    bool tryMutatePart();
     friend struct CurrentlyMergingPartsTagger;
 
     using CurrentlyMergingPartsTaggerPtr = std::unique_ptr<CurrentlyMergingPartsTagger>;
