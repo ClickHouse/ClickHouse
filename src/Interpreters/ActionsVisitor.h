@@ -19,6 +19,9 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class ActionsDAG;
 using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
+class IFunctionOverloadResolver;
+using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+
 /// The case of an explicit enumeration of values.
 SetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
