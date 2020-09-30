@@ -22,6 +22,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseMaterializeMySQL * database_)
     : IStorage(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
@@ -43,16 +48,18 @@ Pipe StorageMaterializeMySQL::read(
     /// If the background synchronization thread has exception.
     database->rethrowExceptionIfNeed();
 
+    const Settings & settings = context.getSettingsRef();
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
     auto lock = nested_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     const StorageMetadataPtr & nested_metadata = nested_storage->getInMemoryMetadataPtr();
 
-    Block nested_header = nested_metadata->getSampleBlock();
-    ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
-    ColumnWithTypeAndName & version_column = nested_header.getByPosition(nested_header.columns() - 1);
-
-    if (ASTSelectQuery * select_query = query_info.query->as<ASTSelectQuery>(); select_query && !column_names_set.count(version_column.name))
+    if (settings.allow_implicitly_collapse_materialize_mysql_database_version)
     {
+        ASTSelectQuery * select_query = query_info.query->as<ASTSelectQuery>();
+
+        if (!select_query)
+            throw Exception("LOGICAL ERROR: query cannot convert to ASTSelectQuery. It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
         auto & tables_in_select_query = select_query->tables()->as<ASTTablesInSelectQuery &>();
 
         if (!tables_in_select_query.children.empty())
@@ -67,9 +74,13 @@ Pipe StorageMaterializeMySQL::read(
     String filter_column_name;
     Names require_columns_name = column_names;
     ASTPtr expressions = std::make_shared<ASTExpressionList>();
-    if (column_names_set.empty() || !column_names_set.count(sign_column.name))
+    if (settings.allow_implicitly_collapse_materialize_mysql_database_sign)
     {
-        require_columns_name.emplace_back(sign_column.name);
+        Block nested_header = nested_metadata->getSampleBlock();
+        ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
+
+        if (!column_names_set.count(sign_column.name))
+            require_columns_name.emplace_back(sign_column.name);
 
         const auto & sign_column_name = std::make_shared<ASTIdentifier>(sign_column.name);
         const auto & fetch_sign_value = std::make_shared<ASTLiteral>(Field(Int8(1)));
