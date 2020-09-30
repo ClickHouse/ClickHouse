@@ -552,7 +552,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
 #if defined(__linux__)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
-        std::string command = fmt::format("command setcap && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {}", main_bin_path.string());
+        std::string command = fmt::format("command -v setcap && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {}", main_bin_path.string());
         fmt::print(" {}\n", command);
         executeScript(command);
 #endif
