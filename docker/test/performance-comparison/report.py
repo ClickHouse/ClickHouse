@@ -487,7 +487,7 @@ if args.report == 'main':
         for r in rows:
             anchor = f'{currentTableAnchor()}.{r[0]}'
             total_runs = (int(r[7]) + 1) * 2  # one prewarm run, two servers
-            if float(r[5]) > allowed_average_run_time * total_runs:
+            if r[0] != 'Total' and float(r[5]) > allowed_average_run_time * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
                 attrs[5] = f'style="background: {color_bad}"'
@@ -495,7 +495,7 @@ if args.report == 'main':
             else:
                 attrs[5] = ''
 
-            if float(r[4]) > allowed_single_run_time * total_runs:
+            if r[0] != 'Total' and float(r[4]) > allowed_single_run_time * total_runs:
                 slow_average_tests += 1
                 attrs[4] = f'style="background: {color_bad}"'
                 errors_explained.append([f'<a href="./all-queries.html#all-query-times.{r[0]}.0">Some query of the test \'{r[0]}\' is too slow to run. See the all queries report'])
