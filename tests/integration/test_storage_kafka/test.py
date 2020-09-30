@@ -70,11 +70,11 @@ def wait_kafka_is_available(max_retries=50):
             print("Waiting for Kafka to start up")
             time.sleep(1)
 
-def value_serializer(x):
+def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x
 
 def kafka_produce(topic, messages, timestamp=None):
-    producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=value_serializer)
+    producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=producer_serializer)
     for message in messages:
         producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
@@ -98,7 +98,7 @@ def kafka_produce_protobuf_messages(topic, start_index, num_messages):
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=value_serializer)
+    producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=producer_serializer)
     producer.send(topic=topic, value=data)
     producer.flush()
     print(("Produced {} messages for topic {}".format(num_messages, topic)))
@@ -1406,7 +1406,7 @@ def test_kafka_virtual_columns2(kafka_cluster):
         SELECT value, _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp), toUnixTimestamp64Milli(_timestamp_ms), _headers.name, _headers.value FROM test.kafka;
         ''')
 
-    producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=value_serializer, key_serializer=value_serializer)
+    producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=producer_serializer, key_serializer=producer_serializer)
 
     producer.send(topic='virt2_0', value=json.dumps({'value': 1}), partition=0, key='k1', timestamp_ms=1577836801001,
                   headers=[('content-encoding', b'base64')])
