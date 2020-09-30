@@ -64,7 +64,7 @@ CacheDictionary::CacheDictionary(
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     DictionaryLifetime dict_lifetime_,
-    size_t strict_max_lifetime_seconds_,
+    size_t extra_lifetime_seconds_,
     size_t size_,
     bool allow_read_expired_keys_,
     size_t max_update_queue_size_,
@@ -75,7 +75,7 @@ CacheDictionary::CacheDictionary(
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
-    , strict_max_lifetime_seconds(strict_max_lifetime_seconds_)
+    , extra_lifetime_seconds(extra_lifetime_seconds_)
     , allow_read_expired_keys(allow_read_expired_keys_)
     , max_update_queue_size(max_update_queue_size_)
     , update_queue_push_timeout_milliseconds(update_queue_push_timeout_milliseconds_)
@@ -326,11 +326,11 @@ std::string CacheDictionary::UpdateUnit::dumpFoundIds()
 /// true  true    impossible
 ///
 /// todo: split this func to two: find_for_get and find_for_set
-CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const CellMetadata::time_point_t now) const
+CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const time_point_t now) const
 {
     auto pos = getCellIdx(id);
     auto oldest_id = pos;
-    auto oldest_time = CellMetadata::time_point_t::max();
+    auto oldest_time = time_point_t::max();
     const auto stop = pos + max_collision_length;
     for (; pos < stop; ++pos)
     {
@@ -340,15 +340,15 @@ CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const C
         if (cell.id != id)
         {
             /// maybe we already found nearest expired cell (try minimize collision_length on insert)
-            if (oldest_time > now && oldest_time > cell.expiresAt())
+            if (oldest_time > now && oldest_time > cell.deadline)
             {
-                oldest_time = cell.expiresAt();
+                oldest_time = cell.deadline;
                 oldest_id = cell_idx;
             }
             continue;
         }
 
-        if (cell.expiresAt() < now)
+        if (cell.deadline < now)
         {
             return {cell_idx, false, true};
         }
@@ -366,6 +366,11 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
     /// - CacheExpired ids. Ids that are in local cache, but their values are rotted (lifetime is expired).
     /// - CacheNotFound ids. We have to go to external storage to know its value.
 
+    /// Mark everything as absent.
+    const auto rows = ext::size(ids);
+    for (const auto row : ext::range(0, rows))
+        out[row] = false;
+
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
     std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
 
@@ -374,7 +379,6 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
     size_t cache_expired_count = 0;
     size_t cache_not_found_count = 0;
 
-    const auto rows = ext::size(ids);
     {
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
@@ -383,12 +387,16 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
+
+            /// Check if the key is stored in the cache of defaults.
+            if (default_keys.find(id) != default_keys.end())
+                continue;
+
             const auto find_result = findCellIdx(id, now);
-            const auto & cell_idx = find_result.cell_idx;
 
             auto insert_to_answer_routine = [&] ()
             {
-                out[row] = !cells[cell_idx].isDefault();
+                out[row] = true;
             };
 
             if (!find_result.valid)
@@ -396,7 +404,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
                 if (find_result.outdated)
                 {
                     /// Protection of reading very expired keys.
-                    if (now > cells[find_result.cell_idx].strict_max)
+                    if (isExpiredPermanently(now, cells[find_result.cell_idx].deadline))
                     {
                         cache_not_found_count++;
                         cache_expired_or_not_found_ids[id].push_back(row);
@@ -472,8 +480,8 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
             for (const auto row : cache_expired_or_not_found_ids[key])
                 out[row] = true;
         else
-            for (const auto row : cache_expired_or_not_found_ids[key])
-                out[row] = false;
+            /// Cache this key as default.
+            default_keys.insert(key);
     }
 }
 
@@ -671,8 +679,7 @@ size_t CacheDictionary::getAttributeIndex(const std::string & attribute_name) co
 
 bool CacheDictionary::isEmptyCell(const UInt64 idx) const
 {
-    return (idx != zero_cell_idx && cells[idx].id == 0)
-        || (cells[idx].data == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t()));
+    return (idx != zero_cell_idx && cells[idx].id == 0) || (cells[idx].deadline == time_point_t());
 }
 
 PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
@@ -683,7 +690,7 @@ PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
     for (size_t idx = 0; idx < cells.size(); ++idx)
     {
         auto & cell = cells[idx];
-        if (!isEmptyCell(idx) && !cells[idx].isDefault())
+        if (!isEmptyCell(idx))
         {
             array.push_back(cell.id);
         }
@@ -735,8 +742,8 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
-        const size_t strict_max_lifetime_seconds =
-                config.getUInt64(layout_prefix + ".cache.strict_max_lifetime_seconds", static_cast<size_t>(dict_lifetime.max_sec));
+        const size_t extra_lifetime_seconds =
+                config.getUInt64(layout_prefix + ".cache.extra_lifetime_seconds", static_cast<size_t>(dict_lifetime.max_sec));
 
         const size_t max_update_queue_size =
                 config.getUInt64(layout_prefix + ".cache.max_update_queue_size", 100000);
@@ -767,7 +774,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
                 dict_struct,
                 std::move(source_ptr),
                 dict_lifetime,
-                strict_max_lifetime_seconds,
+                extra_lifetime_seconds,
                 size,
                 allow_read_expired_keys,
                 max_update_queue_size,
@@ -869,77 +876,27 @@ std::vector<CacheDictionary::AttributeValue> CacheDictionary::getAttributeValues
     for (size_t i = 0; i < column_ptrs.size(); ++i) 
     {
         const auto pure_column = column_ptrs[i];
-        
-        if (auto column = typeid_cast<const ColumnUInt8 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
+
+#define DISPATCH(TYPE) \
+        if (auto column = typeid_cast<const Column##TYPE *>(pure_column)) { \
+            answer.emplace_back(column->getElement(position)); \
+            continue; \
         } 
-        if (auto column = typeid_cast<const ColumnUInt16 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        } 
-        if (auto column = typeid_cast<const ColumnUInt32 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        } 
-        if (auto column = typeid_cast<const ColumnUInt64 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        } 
-        if (auto column = typeid_cast<const ColumnUInt128 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        } 
-        if (auto column = typeid_cast<const ColumnInt8 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        } 
-        if (auto column = typeid_cast<const ColumnInt16 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        } 
-        if (auto column = typeid_cast<const ColumnInt32 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        } 
-        if (auto column = typeid_cast<const ColumnInt64 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        } 
-        if (auto column = typeid_cast<const ColumnFloat32 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        } 
-        if (auto column = typeid_cast<const ColumnFloat64 *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        }
-        if (auto column = typeid_cast<const ColumnDecimal<Decimal32> *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        }
-        if (auto column = typeid_cast<const ColumnDecimal<Decimal64> *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        }
-        if (auto column = typeid_cast<const ColumnDecimal<Decimal128> *>(pure_column)) 
-        {
-            answer.emplace_back(column->getElement(position));
-            continue;
-        }
+        DISPATCH(UInt8)
+        DISPATCH(UInt16)
+        DISPATCH(UInt32)
+        DISPATCH(UInt64)
+        DISPATCH(UInt128)
+        DISPATCH(Int8)
+        DISPATCH(Int16)
+        DISPATCH(Int32)
+        DISPATCH(Int64)
+        DISPATCH(Decimal<Decimal32>)
+        DISPATCH(Decimal<Decimal64>)
+        DISPATCH(Decimal<Decimal128>)
+        DISPATCH(Float32)
+        DISPATCH(Float64)
+#undef DISPATCH
         if (auto column = typeid_cast<const ColumnString *>(pure_column)) 
         {
             answer.emplace_back(column->getDataAt(position).toString());
@@ -955,10 +912,6 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, update_unit_ptr->requested_ids.size());
 
     auto & map_ids = update_unit_ptr->found_ids;
-
-    std::unordered_map<Key, UInt8> remaining_ids{update_unit_ptr->requested_ids.size()};
-    for (const auto id : update_unit_ptr->requested_ids)
-        remaining_ids.insert({id, 0});
 
     size_t found_num = 0;
 
@@ -1031,15 +984,10 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                     if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
                     {
                         std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-                        cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
+                        cell.deadline = now + std::chrono::seconds{distribution(rnd_engine)};
                     }
                     else
-                        cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
-
-                    cell.strict_max = now + std::chrono::seconds(strict_max_lifetime_seconds);
-
-                    /// mark corresponding id as found
-                    remaining_ids[id] = 1;
+                        cell.deadline = std::chrono::time_point<std::chrono::system_clock>::max();
                 }
             }
 
@@ -1088,7 +1036,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
     {
         /// Won't request source for keys
         throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
-            "Could not update cache dictionary {} now, because nearest update is scheduled at {}. Try again later.",
+            "Query contains keys that are not present in cache or expired. Could not update cache dictionary {} now, because nearest update is scheduled at {}. Try again later.",
             getDictionaryID().getNameForLogs(),
             ext::to_string(backoff_end_time.load()));
     }

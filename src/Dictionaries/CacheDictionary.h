@@ -54,7 +54,7 @@ public:
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         DictionaryLifetime dict_lifetime_,
-        size_t strict_max_lifetime_seconds,
+        size_t extra_lifetime_seconds,
         size_t size_,
         bool allow_read_expired_keys_,
         size_t max_update_queue_size_,
@@ -104,7 +104,7 @@ public:
                 dict_struct,
                 getSourceAndUpdateIfNeeded()->clone(),
                 dict_lifetime,
-                strict_max_lifetime_seconds,
+                extra_lifetime_seconds,
                 size,
                 allow_read_expired_keys,
                 max_update_queue_size,
@@ -134,7 +134,7 @@ public:
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
     std::exception_ptr getLastException() const override;
-
+    
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
@@ -214,27 +214,12 @@ private:
     template <typename Value>
     using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
+    using time_point_t = std::chrono::system_clock::time_point;
+
     struct CellMetadata final
     {
-        using time_point_t = std::chrono::system_clock::time_point;
-        using time_point_rep_t = time_point_t::rep;
-        using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
-
-        static constexpr UInt64 EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
-        static constexpr UInt64 IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
-
         UInt64 id;
-        /// Stores both expiration time and `is_default` flag in the most significant bit
-        time_point_urep_t data;
-
-        time_point_t strict_max;
-
-        /// Sets expiration time, resets `is_default` flag to false
-        time_point_t expiresAt() const { return ext::safe_bit_cast<time_point_t>(data & EXPIRES_AT_MASK); }
-        void setExpiresAt(const time_point_t & t) { data = ext::safe_bit_cast<time_point_urep_t>(t); }
-
-        bool isDefault() const { return (data & IS_DEFAULT_MASK) == IS_DEFAULT_MASK; }
-        void setDefault() { data |= IS_DEFAULT_MASK; }
+        time_point_t deadline;
     };
 
     struct Attribute final
@@ -307,6 +292,11 @@ private:
         return source_ptr;
     }
 
+    inline bool isExpiredPermanently(time_point_t now, time_point_t deadline) const 
+    {
+        return now > deadline + std::chrono::seconds(extra_lifetime_seconds);
+    }
+
     struct FindResult
     {
         const size_t cell_idx;
@@ -314,7 +304,7 @@ private:
         const bool outdated;
     };
 
-    FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
+    FindResult findCellIdx(const Key & id, const time_point_t now) const;
 
     template <typename AncestorType>
     void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
@@ -326,7 +316,7 @@ private:
     mutable SharedDictionarySourcePtr source_ptr;
 
     const DictionaryLifetime dict_lifetime;
-    const size_t strict_max_lifetime_seconds;
+    const size_t extra_lifetime_seconds;
     const bool allow_read_expired_keys;
     const size_t max_update_queue_size;
     const size_t update_queue_push_timeout_milliseconds;
@@ -357,7 +347,7 @@ private:
     std::unique_ptr<ArenaWithFreeLists> string_arena;
 
     mutable std::exception_ptr last_exception;
-    mutable std::atomic<size_t> error_count = 0;
+    mutable std::atomic<size_t> error_count{0};
     mutable std::atomic<std::chrono::system_clock::time_point> backoff_end_time{std::chrono::system_clock::time_point{}};
 
     mutable pcg64 rnd_engine;
@@ -366,6 +356,8 @@ private:
     mutable std::atomic<size_t> element_count{0};
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
+
+    mutable std::unordered_set<Key> default_keys;
 
     /*
      * Disclaimer: this comment is written not for fun.
@@ -422,7 +414,7 @@ private:
      * 0 - if set is empty, 1 - otherwise
      *
      * Only if there are no cache_not_found_ids and some cache_expired_ids
-     * (with allow_read_expired_keys_from_cache_dictionary setting) we can perform async update.
+     * (with allow_read_expired_keys setting) we can perform async update.
      * Otherwise we have no concatenate ids and update them sync.
      *
      */
