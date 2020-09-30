@@ -416,6 +416,11 @@ private:
     /// Clone replica if it is lost.
     void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 
+
+    ReplicatedMergeTreeQueue::SelectedEntry selectQueueEntry();
+
+    bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntry & entry);
+
     /** Performs actions from the queue.
       */
     BackgroundProcessingPoolTaskResult queueTask();
