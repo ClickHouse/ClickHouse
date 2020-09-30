@@ -133,6 +133,10 @@
         "name": "yandex/clickhouse-postgresql-java-client",
         "dependent": []
     },
+    "docker/test/integration/kerberos_kdc": {
+        "name": "yandex/clickhouse-kerberos-kdc",
+        "dependent": []
+    },
     "docker/test/base": {
          "name": "yandex/clickhouse-test-base",
          "dependent": [
