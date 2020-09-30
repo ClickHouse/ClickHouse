@@ -156,9 +156,6 @@ ccache --show-stats ||:
 
 function configure
 {
-PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
-export PATH
-
 clickhouse-client --version
 clickhouse-test --help
 
@@ -172,7 +169,6 @@ rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
 
 function run_tests
 {
-echo "$PATH"
 clickhouse-server --version
 clickhouse-test --help
 
@@ -306,6 +302,8 @@ case "$stage" in
     ;&
 "build")
     build
+    PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
+    export PATH
     ;&
 "configure")
     # The `install_log.txt` is also needed for compatibility with old CI task --
