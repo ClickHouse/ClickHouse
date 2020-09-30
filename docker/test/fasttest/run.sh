@@ -124,7 +124,20 @@ git submodule foreach git clean -xfd
 
 function run_cmake
 {
-CMAKE_LIBS_CONFIG=("-DENABLE_LIBRARIES=0" "-DENABLE_TESTS=0" "-DENABLE_UTILS=0" "-DENABLE_EMBEDDED_COMPILER=0" "-DENABLE_THINLTO=0" "-DUSE_UNWIND=1")
+CMAKE_LIBS_CONFIG=(
+    "-DENABLE_LIBRARIES=0"
+    "-DENABLE_TESTS=0"
+    "-DENABLE_UTILS=0"
+    "-DENABLE_EMBEDDED_COMPILER=0"
+    "-DENABLE_THINLTO=0"
+    "-DUSE_UNWIND=1"
+    "-DUSE_STATIC_LIBRARIES=0"
+    "-DSPLIT_SHARED_LIBRARIES=1"
+    "-DCLICKHOUSE_SPLIT_BINARY=1"
+    "-DCMAKE_BUILD_TYPE=Debug"
+    "-DCMAKE_C_FLAGS=-Og"
+    "-DCMAKE_CXX_FLAGS=-Og"
+)
 
 # TODO remove this? we don't use ccache anyway. An option would be to download it
 # from S3 simultaneously with cloning.
