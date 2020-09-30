@@ -1416,6 +1416,49 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             getPartitionIDFromQuery(command.partition, global_context);
         }
 
+        /// Some type changes for version column is allowed despite it's a part of sorting key
+        if (command.type == AlterCommand::MODIFY_COLUMN && command.column_name == merging_params.version_column)
+        {
+            auto new_type = command.data_type;
+            auto old_type = old_types[command.column_name];
+            /// Check new type can be used as version
+            if (!new_type->canBeUsedAsVersion())
+                throw Exception("Cannot alter version column " + backQuoteIfNeed(command.column_name) +
+                    " to type " + new_type->getName() +
+                    " because version column must be of an integer type or of type Date or DateTime"
+                    , ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+
+            auto which_new_type = WhichDataType(new_type);
+            auto which_old_type = WhichDataType(old_type);
+
+            /// Check alter to different sign or float -> int and so on
+            if ((which_old_type.isInt() && !which_new_type.isInt())
+                || (which_old_type.isUInt() && !which_new_type.isUInt())
+                || (which_old_type.isDate() && !which_new_type.isDate())
+                || (which_old_type.isDateTime() && !which_new_type.isDateTime())
+                || (which_old_type.isFloat() && !which_new_type.isFloat()))
+            {
+                throw Exception("Cannot alter version column " + backQuoteIfNeed(command.column_name) +
+                    " from type " + old_type->getName() +
+                    " to type " + new_type->getName() + " because new type will change sort order of version column." +
+                    " The only possible conversion is expansion of the number of bytes of the current type."
+                    , ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+
+            /// Check alter to smaller size: UInt64 -> UInt32 and so on
+            if (new_type->getSizeOfValueInMemory() < old_type->getSizeOfValueInMemory())
+            {
+                throw Exception("Cannot alter version column " + backQuoteIfNeed(command.column_name) +
+                    " from type " + old_type->getName() +
+                    " to type " + new_type->getName() + " because new type is smaller than current in the number of bytes." +
+                    " The only possible conversion is expansion of the number of bytes of the current type."
+                    , ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+
+            /// Positive case, alter allowed
+            continue;
+        }
+
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
         {
             throw Exception(
@@ -1458,16 +1501,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
         else if (command.isRequireMutationStage(getInMemoryMetadata()))
         {
-            /// Type change for version column is allowed despite it's a part of sorting key
-            if (command.type == AlterCommand::MODIFY_COLUMN && command.column_name == merging_params.version_column)
-            {
-                if (!command.data_type->canBeUsedAsVersion())
-                    throw Exception("Cannot alter version column " + backQuoteIfNeed(command.column_name) +
-                        " to type " + command.data_type->getName() +
-                        " because version column must be of an integer type or of type Date or DateTime"
-                        , ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
-                continue;
-            }
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
             if (columns_alter_type_forbidden.count(command.column_name))
