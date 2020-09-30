@@ -37,7 +37,14 @@ RUN apt-get update \
 
 COPY * /
 
-CMD /entrypoint.sh
+# Bind everything to node 0 early. We have to bind both servers and the tmpfs
+# on which the database is stored. How to do it through Yandex Sandbox API is
+# unclear, but by default tmpfs uses 'process allocation policy', not sure
+# which process but hopefully the one that writes to it, so just bind the
+# downloader script as well.
+# We could also try to remount it with proper options in Sandbox task.
+# https://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt
+CMD ['numactl', '--cpunodebind=0', '--localalloc', '/entrypoint.sh']
 
 # docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> yandex/clickhouse-performance-comparison
 
