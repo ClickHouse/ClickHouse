@@ -2537,16 +2537,8 @@ void StorageReplicatedMergeTree::mutationsUpdatingTask()
     }
 }
 
-
-BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
+ReplicatedMergeTreeQueue::SelectedEntry StorageReplicatedMergeTree::selectQueueEntry()
 {
-    /// If replication queue is stopped exit immediately as we successfully executed the task
-    if (queue.actions_blocker.isCancelled())
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        return BackgroundProcessingPoolTaskResult::SUCCESS;
-    }
-
     /// This object will mark the element of the queue as running.
     ReplicatedMergeTreeQueue::SelectedEntry selected;
 
@@ -2559,14 +2551,14 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    LogEntryPtr & entry = selected.first;
+    return selected;
+}
 
-    if (!entry)
-        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
+bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntry & selected_entry)
+{
 
-    time_t prev_attempt_time = entry->last_attempt_time;
-
-    bool res = queue.processEntry([this]{ return getZooKeeper(); }, entry, [&](LogEntryPtr & entry_to_process)
+    LogEntryPtr & entry = selected_entry.first;
+    return queue.processEntry([this]{ return getZooKeeper(); }, entry, [&](LogEntryPtr & entry_to_process)
     {
         try
         {
@@ -2605,6 +2597,28 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
             throw;
         }
     });
+}
+
+BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
+{
+    /// If replication queue is stopped exit immediately as we successfully executed the task
+    if (queue.actions_blocker.isCancelled())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        return BackgroundProcessingPoolTaskResult::SUCCESS;
+    }
+
+    /// This object will mark the element of the queue as running.
+    ReplicatedMergeTreeQueue::SelectedEntry selected_entry = selectQueueEntry();
+
+    LogEntryPtr & entry = selected_entry.first;
+
+    if (!entry)
+        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
+
+    time_t prev_attempt_time = entry->last_attempt_time;
+
+    bool res = processQueueEntry(selected_entry);
 
     /// We will go to sleep if the processing fails and if we have already processed this record recently.
     bool need_sleep = !res && (entry->last_attempt_time - prev_attempt_time < 10);

@@ -21,6 +21,8 @@
 namespace DB
 {
 
+struct CurrentlyMergingPartsTagger;
+
 /** See the description of the data structure in MergeTreeData.
   */
 class StorageMergeTree final : public ext::shared_ptr_helper<StorageMergeTree>, public MergeTreeData
@@ -140,6 +142,20 @@ private:
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
+    friend struct CurrentlyMergingPartsTagger;
+
+    using CurrentlyMergingPartsTaggerPtr = std::unique_ptr<CurrentlyMergingPartsTagger>;
+
+    struct MergeMutateSelectedEntry
+    {
+        FutureMergedMutatedPart future_part;
+        CurrentlyMergingPartsTaggerPtr tagger;
+        MergeList::EntryPtr merge_entry;
+        MutationCommands commands;
+    };
+
+    std::optional<MergeMutateSelectedEntry> selectPartsToMerge(const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * disable_reason);
+    std::optional<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason);
 
     BackgroundProcessingPoolTaskResult mergeMutateTask();
 
@@ -173,7 +189,7 @@ private:
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
-    friend struct CurrentlyMergingPartsTagger;
+
 
 protected:
 
