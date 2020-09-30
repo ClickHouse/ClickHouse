@@ -66,7 +66,7 @@ VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
         DiskSelectorPtr disk_selector)
     : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
 {
-    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override;
+    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load(std::memory_order_relaxed);
     last_used = volume_jbod.last_used.load(std::memory_order_relaxed);
 }
 
@@ -101,15 +101,17 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
 
 bool VolumeJBOD::areMergesAvoided() const
 {
-    if (are_merges_avoided_user_override)
-        return *are_merges_avoided_user_override;
+    auto are_merges_avoided_user_override_value = are_merges_avoided_user_override.load(std::memory_order_relaxed);
+    if (are_merges_avoided_user_override_value)
+        return *are_merges_avoided_user_override_value;
     else
         return are_merges_avoided;
 }
 
 void VolumeJBOD::setAvoidMergesUserOverride(bool avoid)
 {
-    are_merges_avoided_user_override = avoid;
+    are_merges_avoided_user_override.store(avoid, std::memory_order_relaxed);
 }
+
 
 }
