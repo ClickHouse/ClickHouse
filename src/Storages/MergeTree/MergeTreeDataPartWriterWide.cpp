@@ -357,7 +357,7 @@ MergeTreeDataPartWriterOnDisk::WrittenOffsetColumns MergeTreeDataPartWriterWide:
 {
     WrittenOffsetColumns result(offset_columns);
 
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
