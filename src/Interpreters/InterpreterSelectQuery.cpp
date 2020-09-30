@@ -1125,7 +1125,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;
-        std::optional<UInt64> num_rows = storage->totalRows();
+        std::optional<UInt64> num_rows = storage->totalRows(context);
         if (num_rows)
         {
             AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);

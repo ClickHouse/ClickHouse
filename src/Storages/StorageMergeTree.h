@@ -46,8 +46,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
+    std::optional<UInt64> totalRows(const Context &) const override;
+    std::optional<UInt64> totalBytes(const Context &) const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 

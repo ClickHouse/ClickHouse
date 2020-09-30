@@ -45,8 +45,8 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
-    std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
+    std::optional<UInt64> totalRows(const Context &) const override;
+    std::optional<UInt64> totalBytes(const Context &) const override;
 
     /** Delays initialization of StorageMemory::read() until the first read is actually happen.
       * Usually, fore code like this:

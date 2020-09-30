@@ -210,7 +210,7 @@ void StorageMemory::truncate(
     data.clear();
 }
 
-std::optional<UInt64> StorageMemory::totalRows() const
+std::optional<UInt64> StorageMemory::totalRows(const Context &) const
 {
     UInt64 rows = 0;
     std::lock_guard lock(mutex);
@@ -219,7 +219,7 @@ std::optional<UInt64> StorageMemory::totalRows() const
     return rows;
 }
 
-std::optional<UInt64> StorageMemory::totalBytes() const
+std::optional<UInt64> StorageMemory::totalBytes(const Context &) const
 {
     UInt64 bytes = 0;
     std::lock_guard lock(mutex);

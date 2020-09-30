@@ -94,8 +94,8 @@ public:
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
+    std::optional<UInt64> totalRows(const Context & context) const override;
+    std::optional<UInt64> totalBytes(const Context & context) const override;
 
     std::optional<UInt64> lifetimeRows() const override { return writes.rows; }
     std::optional<UInt64> lifetimeBytes() const override { return writes.bytes; }
