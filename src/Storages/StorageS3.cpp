@@ -197,7 +197,7 @@ StorageS3::StorageS3(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     Context & context_,
-    const String & compression_method_ = "")
+    const String & compression_method_)
     : IStorage(table_id_)
     , uri(uri_)
     , context_global(context_)
@@ -372,7 +372,18 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             format_name = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
         }
 
-        return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
+        return StorageS3::create(
+            s3_uri,
+            access_key_id,
+            secret_access_key,
+            args.table_id,
+            format_name,
+            min_upload_part_size,
+            args.columns,
+            args.constraints,
+            args.context,
+            compression_method
+        );
     },
     {
         .source_access_type = AccessType::S3,

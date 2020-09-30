@@ -392,6 +392,41 @@ def test_storage_s3_get_gzip(cluster):
         run_query(instance, "DROP TABLE {}".format(name))
 
 
+def test_storage_s3_put_uncompressed(cluster):
+    bucket = cluster.minio_bucket
+    instance = cluster.instances["dummy"]
+    filename = "test_put_uncompressed.bin"
+    name = "test_put_uncompressed"
+    data = [
+        "'Gloria Thompson',99",
+        "'Matthew Tang',98",
+        "'Patsy Anderson',23",
+        "'Nancy Badillo',93",
+        "'Roy Hunt',5",
+        "'Adam Kirk',51",
+        "'Joshua Douds',28",
+        "'Jolene Ryan',0",
+        "'Roxanne Padilla',50",
+        "'Howard Roberts',41",
+        "'Ricardo Broughton',13",
+        "'Roland Speer',83",
+        "'Cathy Cohan',58",
+        "'Kathie Dawson',100",
+        "'Gregg Mcquistion',11",
+    ]
+    try:
+        run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV')".format(
+            name, cluster.minio_host, cluster.minio_port, bucket, filename))
+
+        run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
+        run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["753"]
+
+        uncompressed_content = get_s3_file_content(cluster, bucket, filename)
+        assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 753
+    finally:
+        run_query(instance, "DROP TABLE {}".format(name))
+
+
 def test_storage_s3_put_gzip(cluster):
     bucket = cluster.minio_bucket
     instance = cluster.instances["dummy"]
@@ -419,6 +454,7 @@ def test_storage_s3_put_gzip(cluster):
             name, cluster.minio_host, cluster.minio_port, bucket, filename))
 
         run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
+        run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["708"]
 
         buf = StringIO.StringIO(get_s3_file_content(cluster, bucket, filename))
         f = gzip.GzipFile(fileobj=buf, mode="rb")
