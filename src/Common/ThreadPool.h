@@ -162,14 +162,12 @@ public:
         GlobalThreadPool::instance().scheduleOrThrow([
             state = state,
             func = std::forward<Function>(func),
-            args = std::make_tuple(std::forward<Args>(args)...)]() mutable
+            args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
-            SCOPE_EXIT({
-               /// Destroy function before exit.
-               /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
-               state->set();
-            });
+            SCOPE_EXIT(state->set());
 
+            /// This moves are needed to destroy function and arguments before exit.
+            /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
             auto function = std::move(func);
             auto arguments = std::move(args);
 
