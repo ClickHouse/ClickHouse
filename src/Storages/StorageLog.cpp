@@ -27,6 +27,8 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 
+#include <cassert>
+
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"
@@ -362,7 +364,7 @@ void LogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, cons
     IDataType::SerializeBinaryBulkSettings settings;
     const auto & [name, type] = name_and_type;
 
-    type->enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    type->enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
@@ -382,7 +384,7 @@ void LogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, cons
     if (serialize_states.count(name) == 0)
          type->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
 
-    type->enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    type->enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
@@ -400,7 +402,7 @@ void LogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, cons
 
     type->serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 
-    type->enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    type->enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name_and_type, path);
         if (!written_streams.emplace(stream_name).second)
@@ -487,7 +489,7 @@ void StorageLog::addFiles(const NameAndTypePair & column)
         throw Exception("Duplicate column with name " + column.name + " in constructor of StorageLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
-    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path)
+    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(column, substream_path);
 
@@ -550,17 +552,20 @@ void StorageLog::loadMarks()
 
 void StorageLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    assert(table_path != new_path_to_table_data);
+    {
+        std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    disk->moveDirectory(table_path, new_path_to_table_data);
+        disk->moveDirectory(table_path, new_path_to_table_data);
 
-    table_path = new_path_to_table_data;
-    file_checker.setPath(table_path + "sizes.json");
+        table_path = new_path_to_table_data;
+        file_checker.setPath(table_path + "sizes.json");
 
-    for (auto & file : files)
-        file.second.data_file_path = table_path + fileName(file.second.data_file_path);
+        for (auto & file : files)
+            file.second.data_file_path = table_path + fileName(file.second.data_file_path);
 
-    marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
+        marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
+    }
     renameInMemory(new_table_id);
 }
 
@@ -593,7 +598,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
     IDataType::SubstreamPath substream_root_path;
-    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column, substream_path);

@@ -463,6 +463,16 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
+ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
+{
+    const auto it = columns.get<1>().find(column_name);
+
+    if (it == columns.get<1>().end() || !it->codec)
+        return default_codec->getFullCodecDesc();
+
+    return it->codec;
+}
+
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
 {
     ColumnTTLs ret;

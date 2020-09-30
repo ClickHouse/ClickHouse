@@ -36,7 +36,7 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
 
     while (newline)
     {
-        pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
+        pos = find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
         buf.position() = pos;
         if (buf.position() == buf.buffer().end())
         {
@@ -46,12 +46,6 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
         else if (*buf.position() == '\n')
         {
             newline = false;
-        }
-        else if (*buf.position() == '\\')
-        {
-            ++buf.position();
-            if (!buf.eof())
-                ++buf.position();
         }
     }
 
@@ -64,10 +58,12 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
 
 bool LineAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if (!buf.eof())
-        readLineObject(*columns[0]);
+    if (buf.eof())
+        return false;
 
-    return !buf.eof();
+    readLineObject(*columns[0]);
+
+    return true;
 }
 
 void registerInputFormatProcessorLineAsString(FormatFactory & factory)
@@ -80,6 +76,32 @@ void registerInputFormatProcessorLineAsString(FormatFactory & factory)
     {
         return std::make_shared<LineAsStringRowInputFormat>(sample, buf, params);
     });
+}
+
+static bool fileSegmentationEngineLineAsStringpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+{
+    char * pos = in.position();
+    bool need_more_data = true;
+
+    while (loadAtPosition(in, memory, pos) && need_more_data)
+    {
+        pos = find_first_symbols<'\n'>(pos, in.buffer().end());
+        if (pos == in.buffer().end())
+            continue;
+
+        if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
+            need_more_data = false;
+
+        ++pos;
+    }
+
+    saveUpToPosition(in, memory, pos);
+    return loadAtPosition(in, memory, pos);
+}
+
+void registerFileSegmentationEngineLineAsString(FormatFactory & factory)
+{
+    factory.registerFileSegmentationEngine("LineAsString", &fileSegmentationEngineLineAsStringpImpl);
 }
 
 }

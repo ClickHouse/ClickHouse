@@ -106,10 +106,11 @@ public:
 
     using SubstreamPath = std::vector<Substream>;
 
-    using StreamCallback = std::function<void(const SubstreamPath &)>;
+    using StreamCallback = std::function<void(const SubstreamPath &, const IDataType &)>;
+
     virtual void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
     {
-        callback(path);
+        callback(path, *this);
     }
     void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
@@ -450,6 +451,10 @@ public:
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & column_name, const SubstreamPath & path);
 
+    /// Substream path supports special compression methods like codec Delta.
+    /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
+    /// generic compression codecs like LZ4.
+    static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 private:
     friend class DataTypeFactory;
     /// Customize this DataType
@@ -695,4 +700,3 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = t
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
 
 }
-
