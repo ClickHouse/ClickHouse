@@ -12,7 +12,9 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
+#include <Databases/MySQL/MaterializeMySQLSettings.h>
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#include <Disks/IDisk.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMemory.h>
@@ -35,6 +37,8 @@ public:
         return "MySQLReplica";
     }
 
+    bool supportsSettings() const override { return true; }
+
     void startup() override;
     void shutdown() override;
 
@@ -47,6 +51,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    Strings getDataPaths() const override { return {fullPath(disk, table_path)}; }
 
 protected:
     StorageMySQLReplica(
@@ -59,7 +64,10 @@ protected:
         const String & mysql_database_name_,
         const String & mysql_table_name_,
         const String & mysql_user_name,
-        const String & mysql_user_password);
+        const String & mysql_user_password,
+        MaterializeMySQLSettingsPtr settings_,
+        DiskPtr disk_,
+        const String & relative_path_);
 
 public:
     // TODO: delete this
@@ -69,6 +77,10 @@ private:
     Context global_context;
 
     std::string mysql_table_name;
+    MaterializeMySQLSettingsPtr settings;
+
+    DiskPtr disk;
+    String table_path;
 
     Poco::Logger * log;
 

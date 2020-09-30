@@ -42,6 +42,7 @@ void registerStorages()
 
     #if USE_MYSQL
     registerStorageMySQL(factory);
+    registerStorageMySQLReplica(factory);
     #endif
 
     registerStorageMongoDB(factory);

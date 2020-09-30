@@ -11,6 +11,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Pipe.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageLogSettings.h>
+
+// TODO: delete this
+#include <chrono>
+#include <thread>
 
 namespace DB
 {
@@ -30,6 +35,8 @@ Pipe StorageMySQLReplica::read(
     size_t max_block_size,
     unsigned num_streams)
 {
+    using namespace std::chrono_literals;
+    std::this_thread::sleep_for(10s);
     return storage_internal->read(
         column_names,
         metadata_snapshot,
@@ -50,11 +57,17 @@ StorageMySQLReplica::StorageMySQLReplica(
     const String & mysql_database_name,
     const String & mysql_table_name_,
     const String & mysql_user_name,
-    const String & mysql_user_password)
+    const String & mysql_user_password,
+    MaterializeMySQLSettingsPtr settings_,
+    DiskPtr disk_,
+    const String & relative_path_)
     : IStorage(table_id_)
     , storage_internal(StorageMemory::create(table_id_, columns_description_, constraints_))
     , global_context(context_.getGlobalContext())
     , mysql_table_name(mysql_table_name_)
+    , settings(settings_)
+    , disk(disk_)
+    , table_path(relative_path_)
     , log(&Poco::Logger::get("MySQLReplica (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -72,6 +85,11 @@ StorageMySQLReplica::StorageMySQLReplica(
 
 void StorageMySQLReplica::startup()
 {
+    materialize_thread->registerConsumerStorage(
+        getStorageID(),
+        mysql_table_name,
+        getDataPaths().front(),
+        settings);
     materialize_thread->startSynchronization();
 }
 
@@ -86,7 +104,8 @@ void registerStorageMySQLReplica(StorageFactory & factory)
     {
         //TODO: copy some logic from StorageMySQL
         ASTs & engine_args = args.engine_args;
-        if (engine_args.size() != 5) {
+        if (engine_args.size() != 5)
+        {
             throw Exception("StorageMySQLReplica requires exactly 5 parameters"
                 "MySQLReplica("
                     "'hostname:port', "
@@ -105,6 +124,15 @@ void registerStorageMySQLReplica(StorageFactory & factory)
         std::string mysql_user_name = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         std::string mysql_user_password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
+        auto materialize_settings = std::make_shared<MaterializeMySQLSettings>();
+        if (args.storage_def->settings)
+        {
+            materialize_settings->loadFromQuery(*args.storage_def);
+        }
+
+        String disk_name = getDiskName(*args.storage_def);
+        DiskPtr disk = args.context.getDisk(disk_name);
+
         return StorageMySQLReplica::create(
             args.table_id,
             args.context,
@@ -114,7 +142,10 @@ void registerStorageMySQLReplica(StorageFactory & factory)
             mysql_database_name,
             mysql_table_name,
             mysql_user_name,
-            mysql_user_password);
+            mysql_user_password,
+            materialize_settings,
+            disk,
+            args.relative_data_path);
     });
 }
 
