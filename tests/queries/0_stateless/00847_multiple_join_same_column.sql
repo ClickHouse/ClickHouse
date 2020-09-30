@@ -39,28 +39,6 @@ left join y on y.b = s.b
 order by t.a
 format PrettyCompactNoEscapes;
 
-set multiple_joins_rewriter_version = 1;
-
-select s.a, s.a, s.b as s_b, s.b from t
-left join s on s.a = t.a
-left join y on s.b = y.b
-order by t.a
-format PrettyCompactNoEscapes;
-
-select y.a, y.a, y.b as y_b, y.b from t
-left join s on s.a = t.a
-left join y on y.b = s.b
-order by t.a
-format PrettyCompactNoEscapes;
-
-select t.a, t.a as t_a, s.a, s.a as s_a, y.a, y.a as y_a from t
-left join s on t.a = s.a
-left join y on y.b = s.b
-order by t.a
-format PrettyCompactNoEscapes;
-
-set multiple_joins_rewriter_version = 2;
-
 select s.a, s.a, s.b as s_b, s.b from t
 left join s on s.a = t.a
 left join y on s.b = y.b
