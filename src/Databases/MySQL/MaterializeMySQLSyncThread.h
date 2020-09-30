@@ -18,12 +18,19 @@
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
 #    include <Databases/MySQL/MySQLBuffer.h>
+#    include <Interpreters/StorageID.h>
 #    include <Parsers/ASTCreateQuery.h>
+#    include <Storages/IStorage_fwd.h>
 #    include <mysqlxx/Pool.h>
 #    include <mysqlxx/PoolWithFailover.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace MySQLReplicaConsumer
 {
@@ -63,6 +70,7 @@ namespace MySQLReplicaConsumer
             : Consumer(mysql_database_name_, materialize_metadata_path_, settings_)
             , database_name(database_name_)
         {
+            buffer = std::make_shared<MySQLDatabaseBuffer>(database_name_);
         }
 
         String database_name;
@@ -74,6 +82,21 @@ namespace MySQLReplicaConsumer
     };
 
     using ConsumerDatabasePtr = std::shared_ptr<ConsumerDatabase>;
+
+    struct ConsumerStorage : public Consumer {
+        ConsumerStorage(
+            const StorageID & table_id_,
+            const String & mysql_table_name_,
+            const String & mysql_database_name_,
+            const String & materialize_metadata_path_,
+            MaterializeMySQLSettingsPtr settings_)
+            : Consumer(mysql_database_name_, materialize_metadata_path_, settings_)
+        {
+            buffer = std::make_shared<MySQLStorageBuffer>(table_id_, mysql_table_name_);
+        }
+    };
+
+    using ConsumerStoragePtr = std::shared_ptr<ConsumerStorage>;
 }
 
 using namespace MySQLReplicaConsumer;
@@ -111,6 +134,12 @@ public:
         const String & database_name_,
         const String & materialize_metadata_path,
         MaterializeMySQLSettingsPtr settings_);
+
+    void registerConsumerStorage(
+        const StorageID & table_id,
+        const String & mysql_table_name,
+        const String & materialize_metadata_path,
+        MaterializeMySQLSettingsPtr settings);
 
     static bool isMySQLSyncThread();
 

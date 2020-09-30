@@ -129,6 +129,11 @@ void onEvent(
     {
         WriteRowsEvent & write_rows_event = static_cast<WriteRowsEvent &>(*receive_event);
         MySQLBufferAndSortingColumnsPtr buffer = consumer->buffer->getTableDataBuffer(write_rows_event.table, global_context);
+        if (!buffer)
+        {
+            return;
+        }
+
         size_t bytes = onWriteOrDeleteData<1>(write_rows_event.rows, buffer->first, ++consumer->materialize_metadata->data_version);
         consumer->buffer->add(buffer->first.rows(), buffer->first.bytes(), write_rows_event.rows.size(), bytes);
     }
@@ -136,6 +141,11 @@ void onEvent(
     {
         UpdateRowsEvent & update_rows_event = static_cast<UpdateRowsEvent &>(*receive_event);
         MySQLBufferAndSortingColumnsPtr buffer = consumer->buffer->getTableDataBuffer(update_rows_event.table, global_context);
+        if (!buffer)
+        {
+            return;
+        }
+
         size_t bytes = onUpdateData(update_rows_event.rows, buffer->first, ++consumer->materialize_metadata->data_version, buffer->second);
         consumer->buffer->add(buffer->first.rows(), buffer->first.bytes(), update_rows_event.rows.size(), bytes);
     }
@@ -143,6 +153,11 @@ void onEvent(
     {
         DeleteRowsEvent & delete_rows_event = static_cast<DeleteRowsEvent &>(*receive_event);
         MySQLBufferAndSortingColumnsPtr buffer = consumer->buffer->getTableDataBuffer(delete_rows_event.table, global_context);
+        if (!buffer)
+        {
+            return;
+        }
+
         size_t bytes = onWriteOrDeleteData<-1>(delete_rows_event.rows, buffer->first, ++consumer->materialize_metadata->data_version);
         consumer->buffer->add(buffer->first.rows(), buffer->first.bytes(), delete_rows_event.rows.size(), bytes);
     }

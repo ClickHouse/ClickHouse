@@ -378,6 +378,11 @@ struct ContextShared
     std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
 #endif
 
+#if USE_MYSQL
+    mutable std::mutex mysql_sync_threads_mutex;
+    mutable MySQLSyncThreadsMap mysql_sync_threads;
+#endif
+
     bool shutdown_called = false;
 
     Stopwatch uptime_watch;
@@ -2359,5 +2364,15 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
     return StorageID::createEmpty();
 }
+
+#if USE_MYSQL
+std::unique_lock<std::mutex> Context::getMySQLSyncThreadsMapLock() {
+    return std::unique_lock(shared->mysql_sync_threads_mutex);
+}
+
+MySQLSyncThreadsMap & Context::getMySQLSyncThreadsMap() {
+    return shared->mysql_sync_threads;
+}
+#endif
 
 }

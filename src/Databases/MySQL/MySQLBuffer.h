@@ -29,13 +29,13 @@ struct IMySQLBuffer
     size_t total_blocks_rows = 0;
     size_t total_blocks_bytes = 0;
 
-    std::unordered_map<String, MySQLBufferAndSortingColumnsPtr> data;
-
     void add(
         size_t block_rows,
         size_t block_bytes,
         size_t written_rows,
         size_t written_bytes);
+
+    void flushCounters();
 
     bool checkThresholds(
         size_t check_block_rows,
@@ -56,9 +56,11 @@ using IMySQLBufferPtr = std::shared_ptr<IMySQLBuffer>;
 
 struct MySQLDatabaseBuffer : public IMySQLBuffer
 {
-    String database;
+    String database_name;
 
-    MySQLDatabaseBuffer(const String & database_) : database(database_) {}
+    std::unordered_map<String, MySQLBufferAndSortingColumnsPtr> data;
+
+    MySQLDatabaseBuffer(const String & database_name_) : database_name(database_name_) {}
 
     void commit(const Context & context) override;
 
@@ -68,6 +70,30 @@ struct MySQLDatabaseBuffer : public IMySQLBuffer
 };
 
 using MySQLDatabaseBufferPtr = std::shared_ptr<MySQLDatabaseBuffer>;
+
+struct MySQLStorageBuffer : public IMySQLBuffer
+{
+    StorageID table_id;
+    String mysql_table_name;
+
+    MySQLBufferAndSortingColumnsPtr data;
+
+    MySQLStorageBuffer(
+        const StorageID & table_id_,
+        const String & mysql_table_name_)
+        : table_id(table_id_)
+        , mysql_table_name(mysql_table_name_)
+    {
+    }
+
+    void commit(const Context & context) override;
+
+    MySQLBufferAndSortingColumnsPtr getTableDataBuffer(
+        const String & table,
+        const Context & context) override;
+};
+
+using MySQLStorageBufferPtr = std::shared_ptr<MySQLStorageBuffer>;
 
 }
 

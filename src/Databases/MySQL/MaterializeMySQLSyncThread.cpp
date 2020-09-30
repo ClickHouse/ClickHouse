@@ -93,6 +93,23 @@ void MaterializeMySQLSyncThread::registerConsumerDatabase(
     has_new_consumers = true;
 }
 
+void MaterializeMySQLSyncThread::registerConsumerStorage(
+        const StorageID & table_id,
+        const String & mysql_table_name,
+        const String & materialize_metadata_path,
+        MaterializeMySQLSettingsPtr settings)
+{
+    ConsumerStoragePtr consumer = std::make_shared<ConsumerStorage>(
+        table_id,
+        mysql_table_name,
+        mysql_database_name,
+        materialize_metadata_path,
+        settings);
+    std::unique_lock<std::mutex> lock(mutex);
+    consumers.push_back(consumer);
+    has_new_consumers = true;
+}
+
 void MaterializeMySQLSyncThread::synchronization()
 {
     setThreadName(MYSQL_BACKGROUND_THREAD_NAME);
@@ -152,10 +169,7 @@ void MaterializeMySQLSyncThread::synchronization()
                 {
                     need_watch_restart = true;
 
-                    if (!consumer->buffer->data.empty())
-                    {
-                        flushBuffersData(consumer);
-                    }
+                    flushBuffersData(consumer);
                 }
             }
             lock.unlock();
@@ -285,10 +299,6 @@ bool MaterializeMySQLSyncThread::prepareConsumer(ConsumerPtr consumer)
         }
     }
 
-    if (ConsumerDatabasePtr c = std::dynamic_pointer_cast<ConsumerDatabase>(consumer)) {
-        c->buffer = std::make_shared<MySQLDatabaseBuffer>(c->database_name);
-    }
-
     max_flush_time = std::min(
         max_flush_time,
         UInt64(consumer->settings->max_flush_data_time));
@@ -346,9 +356,11 @@ MaterializeMySQLSyncThreadPtr getMySQLReplicationThread(
 {
     const auto & [host_name, port] = parseAddress(mysql_hostname_and_port, 3306);
 
+/*
     if (auto thr = global_context.mysql_replica_threads[host_name][mysql_database_name]) {
         return thr;
     }
+*/
 
     auto mysql_pool = mysqlxx::Pool(
         mysql_database_name,
@@ -365,15 +377,17 @@ MaterializeMySQLSyncThreadPtr getMySQLReplicationThread(
 
     String mysql_version = checkVariableAndGetVersion(mysql_pool.get());
 
-    global_context.mysql_replica_threads[host_name][mysql_database_name] =
+//    global_context.mysql_replica_threads[host_name][mysql_database_name] =
+    auto materialize_thread = 
         std::make_shared<MaterializeMySQLSyncThread>(
-        global_context,
-        mysql_database_name,
-        std::move(mysql_pool),
-        std::move(client),
-        mysql_version);
+            global_context,
+            mysql_database_name,
+            std::move(mysql_pool),
+            std::move(client),
+            mysql_version);
 
-    return global_context.mysql_replica_threads[host_name][mysql_database_name];
+//    return global_context.mysql_replica_threads[host_name][mysql_database_name];
+    return materialize_thread;
 }
 
 }
