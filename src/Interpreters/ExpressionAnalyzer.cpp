@@ -380,7 +380,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
                 getRootActions(left_in_operand, true, temp_actions);
 
                 if (temp_actions->getIndex().count(left_in_operand->getColumnName()) != 0)
-                    makeExplicitSet(func, temp_actions->getIndex(), true, context,
+                    makeExplicitSet(func, *temp_actions, true, context,
                         settings.size_limits_for_set, prepared_sets);
             }
         }
