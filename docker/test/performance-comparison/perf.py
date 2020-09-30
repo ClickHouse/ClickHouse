@@ -130,10 +130,10 @@ if not args.long:
             sys.exit(0)
 
 # Print report threshold for the test if it is set.
-ignored_change = 0.05
+ignored_relative_change = 0.05
 if 'max_ignored_relative_change' in root.attrib:
-    ignored_change = float(root.attrib["max_ignored_relative_change"])
-    print(f'report-threshold\t{ignored_change}')
+    ignored_relative_change = float(root.attrib["max_ignored_relative_change"])
+    print(f'report-threshold\t{ignored_relative_change}')
 
 reportStageEnd('before-connect')
 
@@ -368,9 +368,10 @@ for query_index in queries_to_run:
         continue
 
     pvalue = stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue
-    diff = statistics.median(all_server_times[1]) - statistics.median(all_server_times[0])
-    print(f'diff\t{diff}\t{pvalue}')
-    if abs(diff) < ignored_change or pvalue > 0.05:
+    median = [statistics.median(t) for t in all_server_times]
+    relative_diff = (median[1] - median[0]) / max(median)
+    print(f'diff\t{relative_diff}\t{pvalue}')
+    if abs(relative_diff) < ignored_relative_change or pvalue > 0.05:
         continue
 
     # Perform profile runs for fixed amount of time. Don't limit the number
