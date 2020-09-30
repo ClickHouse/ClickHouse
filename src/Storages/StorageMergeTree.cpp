@@ -876,17 +876,6 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
     return {};
 }
 
-bool StorageMergeTree::tryMutatePart()
-{
-    StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
-
-    auto merge_mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
-    if (!merge_mutate_entry)
-        return false;
-
-    return mutateSelectedPart(metadata_snapshot, *merge_mutate_entry);
-}
-
 bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & merge_mutate_entry)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
@@ -951,11 +940,14 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
             clearOldMutations();
         }
 
+        auto metadata_snapshot = getInMemoryMetadataPtr();
+        auto merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr);
         ///TODO: read deduplicate option from table config
-        if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
+        if (merge_entry && mergeSelectedParts(metadata_snapshot, false, *merge_entry))
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
-        if (tryMutatePart())
+        auto mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
+        if (mutate_entry && mutateSelectedPart(metadata_snapshot, *mutate_entry))
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
         return BackgroundProcessingPoolTaskResult::ERROR;
