@@ -422,6 +422,18 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
 }
 
 
+static void removeRootPath(String & path, const String & root_path)
+{
+    if (root_path.empty())
+        return;
+
+    if (path.size() <= root_path.size())
+        throw Exception("Received path is not longer than root_path", Error::ZDATAINCONSISTENCY);
+
+    path = path.substr(root_path.size());
+}
+
+
 struct ZooKeeperResponse : virtual Response
 {
     virtual ~ZooKeeperResponse() override = default;
@@ -1092,8 +1104,6 @@ void ZooKeeper::sendThread()
                     {
                         info.request->has_watch = true;
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
-                        std::lock_guard lock(watches_mutex);
-                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
                     }
 
                     if (expired)
@@ -1276,6 +1286,30 @@ void ZooKeeper::receiveEvent()
         {
             response->readImpl(*in);
             response->removeRootPath(root_path);
+        }
+
+        /// Instead of setting the watch in sendEvent, set it in receiveEvent becuase need to check the response.
+        /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
+        /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
+        if (request_info.watch)
+        {
+            bool add_watch = false;
+            /// 3 indicates the ZooKeeperExistsRequest. 
+            // For exists, we set the watch on both node exist and nonexist case.
+            // For other case like getData, we only set the watch when node exists.
+            if (request_info.request->getOpNum() == 3)
+                add_watch = (response->error == Error::ZOK || response->error == Error::ZNONODE);
+            else
+                add_watch = response->error == Error::ZOK;
+
+            if (add_watch)
+            {
+                /// The key of wathces should exclude the root_path
+                String req_path = request_info.request->getPath();
+                removeRootPath(req_path, root_path);
+                std::lock_guard lock(watches_mutex);
+                watches[req_path].emplace_back(std::move(request_info.watch));
+            }
         }
 
         int32_t actual_length = in->count() - count_before_event;

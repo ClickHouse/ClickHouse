@@ -1050,13 +1050,13 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../engines/table-engines/integrations/hdfs.md).
 
-## Arrow {data-format-arrow}
+## Arrow {#data-format-arrow}
 
 [Apache Arrow](https://arrow.apache.org/) поставляется с двумя встроенными поколоночнами форматами хранения. ClickHouse поддерживает операции чтения и записи для этих форматов.
 
 `Arrow` — это Apache Arrow's "file mode" формат. Он предназначен для произвольного доступа в памяти.
 
-## ArrowStream {data-format-arrow-stream}
+## ArrowStream {#data-format-arrow-stream}
 
 `ArrowStream` — это Apache Arrow's "stream mode" формат. Он предназначен для обработки потоков в памяти.
 

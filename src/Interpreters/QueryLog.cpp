@@ -39,6 +39,7 @@ Block QueryLogElement::createBlock()
         {std::move(query_status_datatype),                                    "type"},
         {std::make_shared<DataTypeDate>(),                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                "event_time"},
+        {std::make_shared<DataTypeDateTime64>(6),                             "event_time_microseconds"},
         {std::make_shared<DataTypeDateTime>(),                                "query_start_time"},
         {std::make_shared<DataTypeDateTime64>(6),                             "query_start_time_microseconds"},
         {std::make_shared<DataTypeUInt64>(),                                  "query_duration_ms"},
@@ -97,6 +98,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
+    columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(query_start_time);
     columns[i++]->insert(query_start_time_microseconds);
     columns[i++]->insert(query_duration_ms);
@@ -118,7 +120,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     appendClientInfo(client_info, columns, i);
 
-    columns[i++]->insert(ClickHouseRevision::get());
+    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     {
         Array threads_array;
@@ -172,7 +174,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.os_user);
     columns[i++]->insert(client_info.client_hostname);
     columns[i++]->insert(client_info.client_name);
-    columns[i++]->insert(client_info.client_revision);
+    columns[i++]->insert(client_info.client_tcp_protocol_version);
     columns[i++]->insert(client_info.client_version_major);
     columns[i++]->insert(client_info.client_version_minor);
     columns[i++]->insert(client_info.client_version_patch);
