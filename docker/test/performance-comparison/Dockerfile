@@ -44,7 +44,7 @@ COPY * /
 # downloader script as well.
 # We could also try to remount it with proper options in Sandbox task.
 # https://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt
-CMD ['numactl', '--cpunodebind=0', '--localalloc', '/entrypoint.sh']
+CMD ["numactl", "--cpunodebind=0", "--localalloc", "/entrypoint.sh"]
 
 # docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> yandex/clickhouse-performance-comparison
 
