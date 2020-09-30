@@ -128,28 +128,10 @@ public:
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
                 const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_)
-        :   context(context_),
-            set_size_limit(set_size_limit_),
-            subquery_depth(subquery_depth_),
-            source_columns(source_columns_),
-            prepared_sets(prepared_sets_),
-            subqueries_for_sets(subqueries_for_sets_),
-            no_subqueries(no_subqueries_),
-            no_makeset(no_makeset_),
-            only_consts(only_consts_),
-            no_storage_or_local(no_storage_or_local_),
-            visit_depth(0),
-            actions_stack(std::move(actions), context),
-            next_unique_suffix(actions_stack.getIndex().size() + 1)
-        {}
+                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_);
 
         /// Does result of the calculation already exists in the block.
-        bool hasColumn(const String & column_name) const
-        {
-            return actions_stack.getIndex().count(column_name) != 0;
-        }
-
+        bool hasColumn(const String & column_name) const;
         void addColumn(ColumnWithTypeAndName column)
         {
             actions_stack.addColumn(std::move(column));
