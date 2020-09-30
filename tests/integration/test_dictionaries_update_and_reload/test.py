@@ -242,18 +242,19 @@ def test_reload_after_fail_in_cache_dictionary(started_cluster):
 
     # Values are cached so we can get them.
     query("SELECT dictGet('cache_xypairs', 'y', toUInt64(1))") == "56"
+    query("SELECT dictGet('cache_xypairs', 'y', toUInt64(2))") == "0"
     assert get_last_exception("cache_xypairs") == ""
 
     # But we can't get a value from the source table which isn't cached.
     assert expected_error in query_and_get_error("SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(3))")
     assert expected_error in get_last_exception("cache_xypairs")
-    update_error = "Could not update"
-    # Will fail because of previous error and scheduled update time.
-    assert update_error in query_and_get_error("SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(3))")
 
     # Passed time should not spoil the cache.
     time.sleep(5)
     query("SELECT dictGet('cache_xypairs', 'y', toUInt64(1))") == "56"
+    query("SELECT dictGet('cache_xypairs', 'y', toUInt64(2))") == "0"
+    error = query_and_get_error("SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(3))")
+    assert expected_error in error
     assert expected_error in get_last_exception("cache_xypairs")
 
     # Create table `test.xypairs` again with changed values.
