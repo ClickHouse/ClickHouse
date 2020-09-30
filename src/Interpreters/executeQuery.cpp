@@ -205,7 +205,7 @@ inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock>
     return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
-static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time, UInt64 current_time_microseconds, ASTPtr ast)
+static void onExceptionBeforeStart(const String & query_for_logging, Context & context, UInt64 current_time_us, ASTPtr ast)
 {
     /// Exception before the query execution.
     if (auto quota = context.getQuota())
@@ -221,9 +221,9 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     // all callers to onExceptionBeforeStart upstream construct the timespec for event_time and
     // event_time_microseconds from the same timespec. So it can be assumed that both of these
     // times are equal upto the precision of a second.
-    elem.event_time = current_time;
-    elem.query_start_time = current_time;
-    elem.query_start_time_microseconds = current_time_microseconds;
+    elem.event_time = current_time_us / 1000000;
+    elem.query_start_time = current_time_us / 1000000;
+    elem.query_start_time_microseconds = current_time_us;
 
     elem.current_database = context.getCurrentDatabase();
     elem.query = query_for_logging;
@@ -252,8 +252,8 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
         span.span_id = context.getClientInfo().opentelemetry_span_id;
         span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
         span.operation_name = "query";
-        span.start_time = current_time;
-        span.finish_time = current_time;
+        span.start_time_us = current_time_us;
+        span.finish_time_us = current_time_us;
         span.duration_ns = 0;
 
         // keep values synchonized to type enum in QueryLogElement::createBlock
@@ -309,12 +309,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool has_query_tail,
     ReadBuffer * istr)
 {
-    // current_time and current_time_microseconds are both constructed from the same time point
-    // to ensure that both the times are equal upto the precision of a second.
-    const auto now = std::chrono::system_clock::now();
-
-    auto current_time = time_in_seconds(now);
-    auto current_time_microseconds = time_in_microseconds(now);
+    const auto current_time = std::chrono::system_clock::now();
 
     /// If we already executing query and it requires to execute internal query, than
     /// don't replace thread context with given (it can be temporary). Otherwise, attach context to thread.
@@ -364,7 +359,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         logQuery(query_for_logging, context, internal);
 
         if (!internal)
-            onExceptionBeforeStart(query_for_logging, context, current_time, current_time_microseconds, ast);
+            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast);
 
         throw;
     }
@@ -528,9 +523,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.type = QueryLogElementType::QUERY_START;
 
-            elem.event_time = current_time;
-            elem.query_start_time = current_time;
-            elem.query_start_time_microseconds = current_time_microseconds;
+            elem.event_time = time_in_seconds(current_time);
+            elem.query_start_time = time_in_seconds(current_time);
+            elem.query_start_time_microseconds = time_in_microseconds(current_time);
 
             elem.current_database = context.getCurrentDatabase();
             elem.query = query_for_logging;
@@ -599,7 +594,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElementType::QUERY_FINISH;
 
-                elem.event_time = time(nullptr);
+                const auto current_time = std::chrono::system_clock::now();
+
+                elem.event_time = time_in_seconds(current_time);
 
                 status_info_to_query_log(elem, info, ast);
 
@@ -660,8 +657,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     span.span_id = context.getClientInfo().opentelemetry_span_id;
                     span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
                     span.operation_name = "query";
-                    span.start_time = elem.query_start_time;
-                    span.finish_time = elem.event_time;
+                    span.start_time_us = elem.query_start_time_microseconds;
+                    span.finish_time_us = time_in_microseconds(current_time);
                     span.duration_ns = elapsed_seconds * 1000000000;
 
                     // keep values synchonized to type enum in QueryLogElement::createBlock
@@ -751,7 +748,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (query_for_logging.empty())
                 query_for_logging = prepareQueryForLogging(query, context);
 
-            onExceptionBeforeStart(query_for_logging, context, current_time, current_time_microseconds, ast);
+            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast);
         }
 
         throw;
