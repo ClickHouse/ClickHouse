@@ -369,8 +369,11 @@ for query_index in queries_to_run:
 
     pvalue = stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue
     median = [statistics.median(t) for t in all_server_times]
-    relative_diff = (median[1] - median[0]) / max(median)
-    print(f'diff\t{relative_diff}\t{pvalue}')
+    # Keep this consistent with the value used in report. Should eventually move
+    # to (median[1] - median[0]) / min(median), which is compatible with "times"
+    # difference we use in report (max(median) / min(median)).
+    relative_diff = (median[1] - median[0]) / median[0]
+    print(f'diff\t{query_index}\t{median[0]}\t{median[1]}\t{relative_diff}\t{pvalue}')
     if abs(relative_diff) < ignored_relative_change or pvalue > 0.05:
         continue
 

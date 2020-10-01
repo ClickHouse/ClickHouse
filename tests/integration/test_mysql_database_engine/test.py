@@ -124,6 +124,9 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
         clickhouse_node.query("INSERT INTO `test_database`.`test_table`(`i``d`) select number from numbers(10000)")
         assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '10000'
 
+        clickhouse_node.query("DROP DATABASE test_database")
+        assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
+
         mysql_node.query("DROP DATABASE test_database")
 
 
@@ -158,6 +161,36 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
                 "CREATE DATABASE test_database_bad_arguments ENGINE = MySQL('mysql1:3306', test_bad_arguments, root, 'clickhouse')")
         assert 'Database engine MySQL requested literal argument.' in str(exception.value)
         mysql_node.query("DROP DATABASE test_bad_arguments")
+
+
+def test_data_types_support_level_for_mysql_database_engine(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+        mysql_node.query("CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'")
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test, 'root', 'clickhouse')",
+            settings={"mysql_datatypes_support_level": "decimal,datetime64"})
+
+        assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
+        clickhouse_node.query("DETACH DATABASE test_database")
+
+        # without context settings
+        clickhouse_node.query("ATTACH DATABASE test_database")
+        assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database FORMAT TSV")
+
+        clickhouse_node.query(
+            "CREATE DATABASE test_database_1 ENGINE = MySQL('mysql1:3306', test, 'root', 'clickhouse') SETTINGS mysql_datatypes_support_level = 'decimal,datetime64'",
+            settings={"mysql_datatypes_support_level": "decimal"})
+
+        assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
+        clickhouse_node.query("DETACH DATABASE test_database_1")
+
+        # without context settings
+        clickhouse_node.query("ATTACH DATABASE test_database_1")
+        assert "SETTINGS mysql_datatypes_support_level = \\'decimal,datetime64\\'" in clickhouse_node.query("SHOW CREATE DATABASE test_database_1 FORMAT TSV")
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        clickhouse_node.query("DROP DATABASE test_database_1")
+        assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
+        mysql_node.query("DROP DATABASE test")
 
 
 decimal_values = [0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
