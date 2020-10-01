@@ -49,6 +49,7 @@ using Processors = std::vector<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;
+using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;

@@ -17,6 +17,9 @@ using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 class Context;
 class WriteBuffer;
 
+class QueryPlan;
+using QueryPlanPtr = std::unique_ptr<QueryPlan>;
+
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
 /// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimisations.
@@ -28,7 +31,7 @@ public:
     QueryPlan(QueryPlan &&);
     QueryPlan & operator=(QueryPlan &&);
 
-    void unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans);
+    void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
