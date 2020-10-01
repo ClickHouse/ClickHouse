@@ -538,6 +538,26 @@ SELECT
 └────────────────┴───────────────────┘
 ```
 
+## formatReadableTimeDelta(x) {#formatreadabletimedeltax}
+
+Accepts the time delta in seconds. Returns a time delta with (year, month, day, hour, minute, second) as a string.
+
+Example:
+
+``` sql
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS number,
+    formatReadableTimeDelta(number) AS time_delta
+```
+
+``` text
+┌─────number─┬─time_delta ─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                         │
+│      12345 │ 3 hours, 25 minutes and 45 seconds                              │
+│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
+└────────────┴─────────────────────────────────────────────────────────────────┘
+```
+
 ## least(a, b) {#leasta-b}
 
 Returns the smallest value from a and b.
