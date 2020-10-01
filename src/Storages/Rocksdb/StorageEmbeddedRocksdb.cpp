@@ -225,12 +225,12 @@ Pipe StorageEmbeddedRocksdb::read(
             ReadBufferFromString key_buffer(it->key());
             ReadBufferFromString value_buffer(it->value());
 
-            for (const auto & item : ext::enumerate(sample_block.getColumnsWithTypeAndName()))
+            for (const auto [idx, column_type] : ext::enumerate(sample_block.getColumnsWithTypeAndName()))
             {
-                if (item.second.name == primary_key)
-                    item.second.type->deserializeBinary(*columns[item.first], key_buffer);
+                if (column_type.name == primary_key)
+                    column_type.type->deserializeBinary(*columns[idx], key_buffer);
                 else
-                    item.second.type->deserializeBinary(*columns[item.first], value_buffer);
+                    column_type.type->deserializeBinary(*columns[idx], value_buffer);
             }
         }
         assert(it->status().ok());
@@ -258,12 +258,12 @@ Pipe StorageEmbeddedRocksdb::read(
                 ReadBufferFromString key_buffer(slices_keys[i]);
                 ReadBufferFromString value_buffer(values[i]);
 
-                for (const auto & item : ext::enumerate(sample_block.getColumnsWithTypeAndName()))
+                for (const auto [idx, column_type] : ext::enumerate(sample_block.getColumnsWithTypeAndName()))
                 {
-                    if (item.second.name == primary_key)
-                        item.second.type->deserializeBinary(*columns[item.first], key_buffer);
+                    if (column_type.name == primary_key)
+                        column_type.type->deserializeBinary(*columns[idx], key_buffer);
                     else
-                        item.second.type->deserializeBinary(*columns[item.first], value_buffer);
+                        column_type.type->deserializeBinary(*columns[idx], value_buffer);
                 }
             }
         }
@@ -277,10 +277,6 @@ Pipe StorageEmbeddedRocksdb::read(
 BlockOutputStreamPtr StorageEmbeddedRocksdb::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     return std::make_shared<EmbeddedRocksdbBlockOutputStream>(*this, metadata_snapshot);
-}
-
-StorageEmbeddedRocksdb::~StorageEmbeddedRocksdb()
-{
 }
 
 

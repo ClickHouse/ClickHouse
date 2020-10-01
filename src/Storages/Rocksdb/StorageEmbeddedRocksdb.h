@@ -22,8 +22,6 @@ class StorageEmbeddedRocksdb final : public ext::shared_ptr_helper<StorageEmbedd
 public:
     std::string getName() const override { return "EmbeddedRocksdb"; }
 
-    ~StorageEmbeddedRocksdb() override;
-
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
