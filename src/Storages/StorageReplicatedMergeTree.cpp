@@ -2530,6 +2530,7 @@ void StorageReplicatedMergeTree::queueProcessingTask()
 
         global_context.getBackgroundProcessingPool().scheduleOrThrow([this, selected_entry]() mutable
         {
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
             processQueueEntry(selected_entry);
         });
 

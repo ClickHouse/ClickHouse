@@ -948,6 +948,8 @@ void StorageMergeTree::mergeMutateAssigningTask()
         {
             global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, entry = *merge_entry]()
             {
+
+                CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
                 mergeSelectedParts(metadata_snapshot, false, entry);
             });
 
@@ -960,6 +962,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
         {
             global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, entry = *mutate_entry]()
             {
+                CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
                 mutateSelectedPart(metadata_snapshot, entry);
             });
             merge_assigning_task->schedule(); /// FIXME(alesap)
