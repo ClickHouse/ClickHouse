@@ -10,7 +10,6 @@ currently being supported with security updates:
 | 1.x   | :x: |
 | 18.x   | :x:                |
 | 19.x   | :x:                |
-| 19.14   | :white_check_mark: |
 | 20.1   | :x: |
 | 20.3   | :white_check_mark: |
 | 20.4   | :x: |
