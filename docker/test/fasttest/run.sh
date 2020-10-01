@@ -15,12 +15,19 @@ stage=${stage:-}
 # empty parameter.
 read -ra FASTTEST_CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
 
-
 FASTTEST_WORKSPACE=$(readlink -f "${FASTTEST_WORKSPACE:-.}")
 FASTTEST_SOURCE=$(readlink -f "${FASTTEST_SOURCE:-$FASTTEST_WORKSPACE/ch}")
 FASTTEST_BUILD=$(readlink -f "${FASTTEST_BUILD:-${BUILD:-$FASTTEST_WORKSPACE/build}}")
 FASTTEST_DATA=$(readlink -f "${FASTTEST_DATA:-$FASTTEST_WORKSPACE/db-fasttest}")
 FASTTEST_OUTPUT=$(readlink -f "${FASTTEST_OUTPUT:-$FASTTEST_WORKSPACE}")
+
+# Export these variables, so that all subsequent invocations of the script
+# use them, and not try to guess them anew, which leads to weird effects.
+export FASTTEST_WORKSPACE
+export FASTTEST_SOURCE
+export FASTTEST_BUILD
+export FASTTEST_DATA
+export FASTTEST_OUT
 
 server_pid=none
 
@@ -297,8 +304,14 @@ case "$stage" in
     # Pass control to the script from cloned sources, unless asked otherwise.
     if ! [ -v FASTTEST_LOCAL_SCRIPT ]
     then
-        # 'run' is deprecated, used for compatibility with old scripts.
+        # 'run' stage is deprecated, used for compatibility with old scripts.
         # Replace with 'clone_submodules' after Nov 1, 2020.
+        # cd and CLICKHOUSE_DIR are also a setup for old scripts, remove as well.
+        # In modern script we undo it by changing back into workspace dir right
+        # away, see below. Remove that as well.
+        cd "$FASTTEST_SOURCE"
+        CLICKHOUSE_DIR=$(pwd)
+        export CLICKHOUSE_DIR
         stage=run "$FASTTEST_SOURCE/docker/test/fasttest/run.sh"
         exit $?
     fi
@@ -308,6 +321,10 @@ case "$stage" in
     # after cloning root, starting with cloning submodules.
     ;&
 "clone_submodules")
+    # Recover after being called from the old script that changes into source directory.
+    # See the compatibility hacks in `clone_root` stage above. Remove at the same time,
+    # after Nov 1, 2020.
+    cd "$FASTTEST_WORKSPACE"
     clone_submodules | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/submodule_log.txt"
     ;&
 "run_cmake")
