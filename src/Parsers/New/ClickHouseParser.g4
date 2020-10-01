@@ -59,7 +59,7 @@ createStmt
     : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                                                                    # CreateDatabaseStmt
     | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? destinationClause? engineClause? POPULATE? subqueryClause  # CreateMaterializedViewStmt
     | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause? engineClause? subqueryClause?                               # CreateTableStmt
-    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier subqueryClause                                                                        # CreateViewStmt
+    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? subqueryClause                                                          # CreateViewStmt
     ;
 
 destinationClause: TO tableIdentifier;
@@ -160,7 +160,7 @@ selectStmt:
 withClause: WITH columnExprList;
 fromClause: FROM joinExpr FINAL?;
 sampleClause: SAMPLE ratioExpr (OFFSET ratioExpr)?;
-arrayJoinClause: LEFT? ARRAY JOIN columnExprList;
+arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 prewhereClause: PREWHERE columnExpr;
 whereClause: WHERE columnExpr;
 groupByClause: GROUP BY columnExprList (WITH TOTALS)?;
@@ -246,51 +246,51 @@ columnsExpr
     | columnExpr                       # ColumnsExprColumn
     ;
 columnExpr
-    : CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
-    | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                                # ColumnExprCast
-    | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
-    | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
-    | SUBSTRING LPAREN columnExpr FROM columnExpr (FOR columnExpr)? RPAREN           # ColumnExprSubstring
-    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
-    | identifier (LPAREN columnExprList? RPAREN)? LPAREN columnArgList? RPAREN       # ColumnExprFunction
+    : CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END          # ColumnExprCase
+    | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                                     # ColumnExprCast
+    | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                                 # ColumnExprExtract
+    | INTERVAL columnExpr INTERVAL_TYPE                                                   # ColumnExprInterval
+    | SUBSTRING LPAREN columnExpr FROM columnExpr (FOR columnExpr)? RPAREN                # ColumnExprSubstring
+    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN       # ColumnExprTrim
+    | identifier (LPAREN columnExprList? RPAREN)? LPAREN DISTINCT? columnArgList? RPAREN  # ColumnExprFunction
 
     // FIXME(ilezhankin): this part looks very ugly, maybe there is another way to express it
-    | columnExpr LBRACKET columnExpr RBRACKET                                        # ColumnExprArrayAccess
-    | columnExpr DOT INTEGER_LITERAL                                                 # ColumnExprTupleAccess
-    | unaryOp columnExpr                                                             # ColumnExprUnaryOp
-    | columnExpr ( ASTERISK                                                          // multiply
-                 | SLASH                                                             // divide
-                 | PERCENT                                                           // modulo
-                 ) columnExpr                                                        # ColumnExprPrecedence1
-    | columnExpr ( PLUS                                                              // plus
-                 | DASH                                                              // minus
-                 | CONCAT                                                            // concat
-                 ) columnExpr                                                        # ColumnExprPrecedence2
-    | columnExpr ( EQ_DOUBLE                                                         // equals
-                 | EQ_SINGLE                                                         // equals
-                 | NOT_EQ                                                            // notEquals
-                 | LE                                                                // lessOrEquals
-                 | GE                                                                // greaterOrEquals
-                 | LT                                                                // less
-                 | GT                                                                // greater
-                 | GLOBAL? NOT? IN                                                   // in, notIn, globalIn, globalNotIn
-                 ) columnExpr                                                        # ColumnExprPrecedence3
-    | columnExpr IS NOT? NULL_SQL                                                    # ColumnExprIsNull
-    | columnExpr AND columnExpr                                                      # ColumnExprAnd
-    | columnExpr ( OR                                                                // or
-                 | NOT? LIKE                                                         // like, notLike
-                 ) columnExpr                                                        # ColumnExprPrecedence4
-    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                              # ColumnExprBetween
-    | <assoc=right> columnExpr QUERY columnExpr COLON columnExpr                     # ColumnExprTernaryOp
-    | columnExpr AS? identifier                                                      # ColumnExprAlias
+    | columnExpr LBRACKET columnExpr RBRACKET                                             # ColumnExprArrayAccess
+    | columnExpr DOT INTEGER_LITERAL                                                      # ColumnExprTupleAccess
+    | unaryOp columnExpr                                                                  # ColumnExprUnaryOp
+    | columnExpr ( ASTERISK                                                               // multiply
+                 | SLASH                                                                  // divide
+                 | PERCENT                                                                // modulo
+                 ) columnExpr                                                             # ColumnExprPrecedence1
+    | columnExpr ( PLUS                                                                   // plus
+                 | DASH                                                                   // minus
+                 | CONCAT                                                                 // concat
+                 ) columnExpr                                                             # ColumnExprPrecedence2
+    | columnExpr ( EQ_DOUBLE                                                              // equals
+                 | EQ_SINGLE                                                              // equals
+                 | NOT_EQ                                                                 // notEquals
+                 | LE                                                                     // lessOrEquals
+                 | GE                                                                     // greaterOrEquals
+                 | LT                                                                     // less
+                 | GT                                                                     // greater
+                 | GLOBAL? NOT? IN                                                        // in, notIn, globalIn, globalNotIn
+                 ) columnExpr                                                             # ColumnExprPrecedence3
+    | columnExpr IS NOT? NULL_SQL                                                         # ColumnExprIsNull
+    | columnExpr AND columnExpr                                                           # ColumnExprAnd
+    | columnExpr ( OR                                                                     // or
+                 | NOT? LIKE                                                              // like, notLike
+                 ) columnExpr                                                             # ColumnExprPrecedence4
+    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                                   # ColumnExprBetween
+    | <assoc=right> columnExpr QUERY columnExpr COLON columnExpr                          # ColumnExprTernaryOp
+    | columnExpr AS? alias                                                                # ColumnExprAlias
 
-    | (tableIdentifier DOT)? ASTERISK                                                # ColumnExprAsterisk  // single-column only
-    | LPAREN selectUnionStmt RPAREN                                                  # ColumnExprSubquery  // single-column only
-    | LPAREN columnExpr RPAREN                                                       # ColumnExprParens    // single-column only
-    | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple
-    | LBRACKET columnExprList? RBRACKET                                              # ColumnExprArray
-    | columnIdentifier                                                               # ColumnExprIdentifier
-    | literal                                                                        # ColumnExprLiteral
+    | (tableIdentifier DOT)? ASTERISK                                                     # ColumnExprAsterisk  // single-column only
+    | LPAREN selectUnionStmt RPAREN                                                       # ColumnExprSubquery  // single-column only
+    | LPAREN columnExpr RPAREN                                                            # ColumnExprParens    // single-column only
+    | LPAREN columnExprList RPAREN                                                        # ColumnExprTuple
+    | LBRACKET columnExprList? RBRACKET                                                   # ColumnExprArray
+    | columnIdentifier                                                                    # ColumnExprIdentifier
+    | literal                                                                             # ColumnExprLiteral
     ;
 columnArgList: columnArgExpr (COMMA columnArgExpr)*;
 columnArgExpr: columnLambdaExpr | columnExpr;
@@ -309,13 +309,13 @@ tableExpr
     : tableIdentifier                # TableExprIdentifier
     | tableFunctionExpr              # TableExprFunction
     | LPAREN selectUnionStmt RPAREN  # TableExprSubquery
-    | tableExpr AS? identifier       # TableExprAlias
+    | tableExpr AS? alias            # TableExprAlias
     ;
 tableFunctionExpr: identifier LPAREN tableArgList? RPAREN;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr
-    : tableExpr
+    : tableIdentifier
     | literal
     ;
 
@@ -337,17 +337,18 @@ literal
     | NULL_SQL
     ;
 keyword
-    // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER, FOR, GROUP, DEST, DESCENDING, ASCENDING, FORMAT, SETTINGS
-    : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
+    // except NULL_SQL, INF, NAN_SQL
+    : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
     | CHECK | CLEAR | CLUSTER | COLLATE | COLUMN | COMMENT | CREATE | CROSS | DATABASE | DATABASES | DAY | DEDUPLICATE | DEFAULT | DELAY
-    | DELETE | DESCRIBE | DETACH | DISK | DISTINCT | DISTRIBUTED | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FETCHES | FINAL
-    | FIRST | FLUSH | FULL | FUNCTION | GLOBAL | GRANULARITY | HAVING | HOUR | ID | IF | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS
-    | JOIN | JSON_FALSE | JSON_TRUE | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH
-    | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLACE
-    | REPLICA | RIGHT | SAMPLE | SECOND | SEMI | SENDS | SET | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY
-    | THEN | TIES | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH
-    | YEAR
+    | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DISK | DISTINCT | DISTRIBUTED | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT
+    | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY | GROUP | HAVING | HOUR | ID | IF | IN
+    | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE | JSON_TRUE | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL
+    | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE
+    | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | RENAME | REPLACE | REPLICA | RIGHT | SAMPLE | SECOND | SELECT | SEMI | SENDS
+    | SET | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING
+    | TRIM | TRUNCATE | TO | TTL | TYPE | UNION | USE | USING | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
     ;
+alias: IDENTIFIER | INTERVAL_TYPE;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
 unaryOp: DASH | NOT;

@@ -44,7 +44,7 @@ ASTPtr TableIdentifier::convertToOld() const
 {
     std::vector<String> parts;
 
-    if (db) parts.push_back(db->getName());
+    if (db && !db->getName().empty()) parts.push_back(db->getName());
     parts.push_back(getName());
 
     return std::make_shared<ASTIdentifier>(std::move(parts));
@@ -84,6 +84,13 @@ namespace DB
 {
 
 using namespace AST;
+
+antlrcpp::Any ParseTreeVisitor::visitAlias(ClickHouseParser::AliasContext *ctx)
+{
+    if (ctx->IDENTIFIER()) return std::make_shared<Identifier>(ctx->IDENTIFIER()->getText());
+    if (ctx->INTERVAL_TYPE()) return std::make_shared<Identifier>(ctx->INTERVAL_TYPE()->getText());
+    __builtin_unreachable();
+}
 
 antlrcpp::Any ParseTreeVisitor::visitDatabaseIdentifier(ClickHouseParser::DatabaseIdentifierContext *ctx)
 {

@@ -41,9 +41,25 @@ SampleClause::SampleClause(PtrTo<RatioExpr> ratio_, PtrTo<RatioExpr> offset_) : 
 
 // ARRAY JOIN Clause
 
-ArrayJoinClause::ArrayJoinClause(PtrTo<ColumnExprList> expr_list, bool left_) : exprs(expr_list), left(left_)
+ArrayJoinClause::ArrayJoinClause(PtrTo<ColumnExprList> expr_list, bool left_) : INode{expr_list}, left(left_)
 {
-    (void) left; // TODO
+}
+
+ASTPtr ArrayJoinClause::convertToOld() const
+{
+    auto element = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto array_join = std::make_shared<ASTArrayJoin>();
+
+    if (left) array_join->kind = ASTArrayJoin::Kind::Left;
+    else array_join->kind = ASTArrayJoin::Kind::Inner;
+
+    array_join->expression_list = get(EXPRS)->convertToOld();
+    array_join->children.push_back(array_join->expression_list);
+
+    element->array_join = array_join;
+    element->children.push_back(element->array_join);
+
+    return element;
 }
 
 // GROUP BY Clause
@@ -154,7 +170,7 @@ ASTPtr SelectStmt::convertToOld() const
     if (has(WITH)) old_select->setExpression(ASTSelectQuery::Expression::WITH, get(WITH)->convertToOld());
     if (has(FROM)) old_select->setExpression(ASTSelectQuery::Expression::TABLES, get(FROM)->convertToOld());
     // TODO: SAMPLE
-    // TODO: ARRAY JOIN
+    if (has(ARRAY_JOIN)) old_select->tables()->children.push_back(get(ARRAY_JOIN)->convertToOld());
     if (has(PREWHERE)) old_select->setExpression(ASTSelectQuery::Expression::PREWHERE, get(PREWHERE)->convertToOld());
     if (has(WHERE)) old_select->setExpression(ASTSelectQuery::Expression::WHERE, get(WHERE)->convertToOld());
     if (has(GROUP_BY))

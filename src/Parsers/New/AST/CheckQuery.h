@@ -12,6 +12,12 @@ class CheckQuery : public Query
         explicit CheckQuery(PtrTo<TableIdentifier> identifier);
 
         ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            NAME = 0,  // TableIdentifier
+        };
 };
 
 }

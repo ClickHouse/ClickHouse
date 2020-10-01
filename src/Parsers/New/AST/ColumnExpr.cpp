@@ -168,7 +168,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnArgList(ClickHouseParser::ColumnArgLi
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprAlias(ClickHouseParser::ColumnExprAliasContext *ctx)
 {
-    return ColumnExpr::createAlias(visit(ctx->columnExpr()), visit(ctx->identifier()));
+    return ColumnExpr::createAlias(visit(ctx->columnExpr()), visit(ctx->alias()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprAnd(ClickHouseParser::ColumnExprAndContext *ctx)
@@ -248,12 +248,11 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprCase(ClickHouseParser::ColumnExpr
 antlrcpp::Any ParseTreeVisitor::visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx)
 {
     auto args = std::make_shared<ColumnExprList>();
-    auto params = std::make_shared<ColumnParamList>();
 
     args->push(visit(ctx->columnExpr()));
     args->push(ColumnExpr::createLiteral(Literal::createString(visit(ctx->columnTypeExpr()).as<PtrTo<ColumnTypeExpr>>()->toString())));
 
-    return ColumnExpr::createFunction(std::make_shared<Identifier>("cast"), params, args);
+    return ColumnExpr::createFunction(std::make_shared<Identifier>("cast"), nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnExprExtractContext *ctx)
@@ -270,9 +269,13 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnE
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *ctx)
 {
+    auto name = visit(ctx->identifier()).as<PtrTo<Identifier>>();
     auto params = ctx->columnExprList() ? visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>() : nullptr;
     auto args = ctx->columnArgList() ? visit(ctx->columnArgList()).as<PtrTo<ColumnExprList>>() : nullptr;
-    return ColumnExpr::createFunction(visit(ctx->identifier()), params, args);
+
+    if (ctx->DISTINCT()) name = std::make_shared<Identifier>(name->getName() + "Distinct");
+
+    return ColumnExpr::createFunction(name, params, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprIdentifier(ClickHouseParser::ColumnExprIdentifierContext *ctx)

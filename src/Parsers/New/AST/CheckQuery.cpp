@@ -1,6 +1,8 @@
 #include <Parsers/New/AST/CheckQuery.h>
 
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
@@ -8,16 +10,17 @@
 namespace DB::AST
 {
 
-CheckQuery::CheckQuery(PtrTo<TableIdentifier> identifier)
+CheckQuery::CheckQuery(PtrTo<TableIdentifier> identifier) : Query{identifier}
 {
-    push(identifier);
 }
 
 ASTPtr CheckQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTCheckQuery>();
 
-    // TODO
+    auto table_id = getTableIdentifier(get(NAME)->convertToOld());
+    query->database = table_id.database_name;
+    query->table = table_id.table_name;
 
     return query;
 }

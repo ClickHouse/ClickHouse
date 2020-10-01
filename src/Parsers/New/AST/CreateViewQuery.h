@@ -9,15 +9,17 @@ namespace DB::AST
 class CreateViewQuery : public DDLQuery
 {
     public:
-        CreateViewQuery(bool attach, bool if_not_exists, PtrTo<TableIdentifier> identifier, PtrTo<SelectUnionQuery> query);
+        CreateViewQuery(
+            bool attach, bool if_not_exists, PtrTo<TableIdentifier> identifier, PtrTo<SchemaClause> clause, PtrTo<SelectUnionQuery> query);
 
         ASTPtr convertToOld() const override;
 
     private:
         enum ChildIndex : UInt8
         {
-            NAME = 0,
-            SUBQUERY = 1,
+            NAME = 0,      // TableIdentifier
+            SCHEMA = 1,    // SchemaClause (optional)
+            SUBQUERY = 2,  // SelectUnionQuery
         };
 
         const bool attach, if_not_exists;

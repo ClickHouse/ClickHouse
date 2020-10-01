@@ -43,11 +43,17 @@ class SampleClause : public INode
 class ArrayJoinClause : public INode
 {
     public:
-        ArrayJoinClause(PtrTo<ColumnExprList> expr_list, bool left_);
+        ArrayJoinClause(PtrTo<ColumnExprList> expr_list, bool left);
+
+        ASTPtr convertToOld() const override;
 
     private:
-        PtrTo<ColumnExprList> exprs;
-        bool left;
+        enum ChildIndex : UInt8
+        {
+            EXPRS = 0,  // ColumnExprList
+        };
+
+        const bool left;
 };
 
 using PrewhereClause = SimpleClause<ColumnExpr>;
@@ -57,7 +63,7 @@ using WhereClause = SimpleClause<ColumnExpr>;
 class GroupByClause : public INode
 {
     public:
-        GroupByClause(PtrTo<ColumnExprList> expr_list, bool with_totals_);
+        GroupByClause(PtrTo<ColumnExprList> expr_list, bool with_totals);
 
         bool withTotals() const { return with_totals; }
 

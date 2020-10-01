@@ -1,6 +1,7 @@
 #include <Parsers/New/AST/CreateViewQuery.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/New/AST/CreateTableQuery.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/ParseTreeVisitor.h>
@@ -8,9 +9,9 @@
 
 namespace DB::AST
 {
-
-CreateViewQuery::CreateViewQuery(bool attach_, bool if_not_exists_, PtrTo<TableIdentifier> identifier, PtrTo<SelectUnionQuery> query)
-    : DDLQuery{identifier, query}, attach(attach_), if_not_exists(if_not_exists_)
+CreateViewQuery::CreateViewQuery(
+    bool attach_, bool if_not_exists_, PtrTo<TableIdentifier> identifier, PtrTo<SchemaClause> clause, PtrTo<SelectUnionQuery> query)
+    : DDLQuery{identifier, clause, query}, attach(attach_), if_not_exists(if_not_exists_)
 {
 }
 
@@ -27,7 +28,9 @@ ASTPtr CreateViewQuery::convertToOld() const
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;
+    query->is_view = true;
 
+    if (has(SCHEMA)) query->set(query->columns_list, get(SCHEMA)->convertToOld());
     query->set(query->select, get(SUBQUERY)->convertToOld());
 
     return query;
@@ -42,7 +45,9 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitCreateViewStmt(ClickHouseParser::CreateViewStmtContext *ctx)
 {
-    return std::make_shared<CreateViewQuery>(!!ctx->ATTACH(), !!ctx->IF(), visit(ctx->tableIdentifier()), visit(ctx->subqueryClause()));
+    auto schema = ctx->schemaClause() ? visit(ctx->schemaClause()).as<PtrTo<SchemaClause>>() : nullptr;
+    return std::make_shared<CreateViewQuery>(
+        !!ctx->ATTACH(), !!ctx->IF(), visit(ctx->tableIdentifier()), schema, visit(ctx->subqueryClause()));
 }
 
 }

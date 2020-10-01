@@ -298,6 +298,8 @@ public:
 
     virtual antlrcpp::Any visitKeyword(ClickHouseParser::KeywordContext *context) = 0;
 
+    virtual antlrcpp::Any visitAlias(ClickHouseParser::AliasContext *context) = 0;
+
     virtual antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *context) = 0;
 
     virtual antlrcpp::Any visitIdentifierOrNull(ClickHouseParser::IdentifierOrNullContext *context) = 0;

@@ -17,7 +17,7 @@ TableArgExpr::TableArgExpr(PtrTo<Literal> literal) : INode{literal}
 {
 }
 
-TableArgExpr::TableArgExpr(PtrTo<TableExpr> expr) : INode{expr}
+TableArgExpr::TableArgExpr(PtrTo<TableIdentifier> identifier) : INode{identifier}
 {
 }
 
@@ -131,7 +131,7 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitTableArgExpr(ClickHouseParser::TableArgExprContext *ctx)
 {
     if (ctx->literal()) return std::make_shared<TableArgExpr>(visit(ctx->literal()).as<PtrTo<Literal>>());
-    if (ctx->tableExpr()) return std::make_shared<TableArgExpr>(visit(ctx->tableExpr()).as<PtrTo<TableExpr>>());
+    if (ctx->tableIdentifier()) return std::make_shared<TableArgExpr>(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
     __builtin_unreachable();
 }
 
@@ -144,7 +144,7 @@ antlrcpp::Any ParseTreeVisitor::visitTableArgList(ClickHouseParser::TableArgList
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprAlias(ClickHouseParser::TableExprAliasContext *ctx)
 {
-    return TableExpr::createAlias(visit(ctx->tableExpr()), visit(ctx->identifier()));
+    return TableExpr::createAlias(visit(ctx->tableExpr()), visit(ctx->alias()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprFunction(ClickHouseParser::TableExprFunctionContext *ctx)
