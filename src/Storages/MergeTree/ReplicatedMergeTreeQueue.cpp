@@ -1828,6 +1828,13 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
             return false;
         }
 
+        if (!part->fingerprint.empty())
+        {
+            if (out_reason)
+                *out_reason = "Part " + part->name + " has a fingerprint";
+            return false;
+        }
+
         if (prev_virtual_parts.getContainingPart(part->info).empty())
         {
             if (out_reason)
@@ -1920,6 +1927,13 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     {
         if (out_reason)
             *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
+        return false;
+    }
+
+    if (!part->fingerprint.empty())
+    {
+        if (out_reason)
+            *out_reason = "Part " + part->name + " has a fingerprint";
         return false;
     }
 

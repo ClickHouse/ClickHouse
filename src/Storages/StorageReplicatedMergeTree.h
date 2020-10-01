@@ -545,6 +545,9 @@ private:
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, const Context & query_context);
 
+    PartitionCommandsResultInfo addFingerprintPart(const ASTPtr & ast_part_name, const String & fingerprint, const Context & query_context);
+    PartitionCommandsResultInfo removeFingerprintPart(const ASTPtr & ast_part_name, const String & fingerprint, const Context & query_context);
+
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
     bool checkFixedGranualrityInZookeeper();

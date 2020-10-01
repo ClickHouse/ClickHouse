@@ -4037,14 +4037,22 @@ Pipe StorageReplicatedMergeTree::alterPartition(
                 current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
             }
             break;
+
             case PartitionCommand::ADD_FINGERPRINT_PART:
             {
-                throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                String fingerprint = command.fingerprint;
+                if (fingerprint.empty())
+                    fingerprint = toString(UUIDHelpers::generateV4());
+
+                current_command_results = addFingerprintPart(command.partition, fingerprint, query_context);
             }
+            break;
+
             case PartitionCommand::REMOVE_FINGERPRINT_PART:
             {
-                throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                current_command_results = removeFingerprintPart(command.partition, command.fingerprint, query_context);
             }
+            break;
         }
         for (auto & command_result : current_command_results)
             command_result.command_type = command.typeToString();
@@ -5664,6 +5672,95 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
     cleanLastPartNode(partition_id);
+}
+
+PartitionCommandsResultInfo StorageReplicatedMergeTree::addFingerprintPart(const ASTPtr & ast_part_name, const String & fingerprint, const Context & query_context)
+{
+    PartitionCommandsResultInfo results;
+    String part_name = ast_part_name->as<ASTLiteral>()->value.safeGet<String>();
+
+    MutationCommands commands;
+
+    {
+        MutationCommand command;
+
+        auto ast = std::make_shared<ASTAlterCommand>();
+        ast->type = ASTAlterCommand::ADD_FINGERPRINT_PART;
+        ast->partition = ast_part_name;
+        ast->fingerprint = fingerprint;
+
+        command.type = MutationCommand::ADD_FINGERPRINT_PART;
+        command.ast = std::move(ast);
+
+        command.partition = ast_part_name;
+        command.part = true;
+        command.fingerprint = fingerprint;
+
+        commands.push_back(command);
+    }
+
+    {
+        auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+        auto part_it = data_parts_by_info.find(part_info);
+        if (part_it == data_parts_by_info.end() || (*part_it)->state != IMergeTreeDataPart::State::Committed)
+            throw Exception("Could not find part by name: " + part_name, ErrorCodes::PARTITION_DOESNT_EXIST);
+
+        /// TODO(nv): This doesn't make sense for replicated tables
+        ///     as storage might be different for different replicas.
+        if (!(*part_it)->isStoredOnDisk())
+        {
+            throw Exception(
+                "Part " + part_name + " type (" + (*part_it)->getTypeName() + ") does not support fingerprints.", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+
+    {
+        Context new_ctx = query_context;
+        auto new_settings = new_ctx.getSettings();
+        new_settings.mutations_sync = 2;
+        new_ctx.setSettings(new_settings);
+
+        mutate(commands, new_ctx);
+    }
+
+    return results;
+}
+
+PartitionCommandsResultInfo StorageReplicatedMergeTree::removeFingerprintPart(const ASTPtr & ast_part_name, const String & fingerprint, const Context & query_context)
+{
+    PartitionCommandsResultInfo results;
+    String part_name = ast_part_name->as<ASTLiteral>()->value.safeGet<String>();
+
+    MutationCommands commands;
+
+    {
+        MutationCommand command;
+
+        auto ast = std::make_shared<ASTAlterCommand>();
+        ast->type = ASTAlterCommand::REMOVE_FINGERPRINT_PART;
+        ast->partition = ast_part_name;
+        ast->fingerprint = fingerprint;
+
+        command.type = MutationCommand::REMOVE_FINGERPRINT_PART;
+        command.ast = std::move(ast);
+
+        command.partition = ast_part_name;
+        command.part = true;
+        command.fingerprint = fingerprint;
+
+        commands.push_back(command);
+    }
+
+    {
+        Context new_ctx = query_context;
+        auto new_settings = new_ctx.getSettings();
+        new_settings.mutations_sync = 2;
+        new_ctx.setSettings(new_settings);
+
+        mutate(commands, new_ctx);
+    }
+
+    return results;
 }
 
 void StorageReplicatedMergeTree::getCommitPartOps(
