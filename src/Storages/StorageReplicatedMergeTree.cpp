@@ -2401,6 +2401,7 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
         queue.pullLogsToQueue(getZooKeeper(), queue_updating_task->getWatchCallback());
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
+        queue_processing_task_handle->schedule();
     }
     catch (const Coordination::Exception & e)
     {
@@ -2506,34 +2507,40 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     });
 }
 
-BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
+void StorageReplicatedMergeTree::queueProcessingTask()
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        return BackgroundProcessingPoolTaskResult::SUCCESS;
+        queue_processing_task_handle->scheduleAfter(1000); /// FIXME(alesap)
+        return;
     }
 
-    /// This object will mark the element of the queue as running.
-    ReplicatedMergeTreeQueue::SelectedEntry selected_entry = selectQueueEntry();
+    try
+    {
+        /// This object will mark the element of the queue as running.
+        ReplicatedMergeTreeQueue::SelectedEntry selected_entry = selectQueueEntry();
 
-    LogEntryPtr & entry = selected_entry.first;
+        if (!selected_entry.first)
+        {
+            queue_processing_task_handle->scheduleAfter(500); /// FIXME(alesap)
+            return;
+        }
 
-    if (!entry)
-        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
+        global_context.getBackgroundProcessingPool().scheduleOrThrow([this, selected_entry]() mutable
+        {
+            processQueueEntry(selected_entry);
+        });
 
-    time_t prev_attempt_time = entry->last_attempt_time;
-
-    bool res = processQueueEntry(selected_entry);
-
-    /// We will go to sleep if the processing fails and if we have already processed this record recently.
-    bool need_sleep = !res && (entry->last_attempt_time - prev_attempt_time < 10);
-
-    /// If there was no exception, you do not need to sleep.
-    return need_sleep ? BackgroundProcessingPoolTaskResult::ERROR : BackgroundProcessingPoolTaskResult::SUCCESS;
+        queue_processing_task_handle->schedule();
+    }
+    catch (...)
+    {
+        queue_processing_task_handle->scheduleAfter(500); /// FIXME(alesap)
+        throw;
+    }
 }
-
 
 bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
 {
@@ -3390,9 +3397,9 @@ void StorageReplicatedMergeTree::startup()
         /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
         {
             auto lock = queue.lockQueue();
-            auto & pool = global_context.getBackgroundPool();
-            queue_task_handle = pool.createTask([this] { return queueTask(); });
-            pool.startTask(queue_task_handle);
+            auto & pool = global_context.getSchedulePool();
+            queue_processing_task_handle = pool.createTask(getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueProcessingTask)", [this] { queueProcessingTask(); });
+            queue_processing_task_handle->activateAndSchedule();
         }
 
         startBackgroundMovesIfNeeded();
@@ -3426,14 +3433,13 @@ void StorageReplicatedMergeTree::shutdown()
 
     restarting_thread.shutdown();
 
-    if (queue_task_handle)
-        global_context.getBackgroundPool().removeTask(queue_task_handle);
+    if (queue_processing_task_handle)
+        queue_processing_task_handle->deactivate();
 
     {
         /// Queue can trigger queue_task_handle itself. So we ensure that all
         /// queue processes finished and after that reset queue_task_handle.
         auto lock = queue.lockQueue();
-        queue_task_handle.reset();
 
         /// Cancel logs pulling after background task were cancelled. It's still
         /// required because we can trigger pullLogsToQueue during manual OPTIMIZE,
@@ -5774,12 +5780,12 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 
     {
         auto lock = queue.lockQueue();
-        if (!queue_task_handle)
+        if (!queue_processing_task_handle)
             return false;
 
         /// This is significant, because the execution of this task could be delayed at BackgroundPool.
         /// And we force it to be executed.
-        queue_task_handle->signalReadyToRun();
+        queue_processing_task_handle->schedule();
     }
 
     Poco::Event target_size_event;

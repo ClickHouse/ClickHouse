@@ -319,7 +319,7 @@ public:
     /** Select the next action to process.
       * merger_mutator is used only to check if the merges are not suspended.
       */
-    using SelectedEntry = std::pair<ReplicatedMergeTreeQueue::LogEntryPtr, std::unique_ptr<CurrentlyExecuting>>;
+    using SelectedEntry = std::pair<ReplicatedMergeTreeQueue::LogEntryPtr, std::shared_ptr<CurrentlyExecuting>>;
     SelectedEntry selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
 
     /** Execute `func` function to handle the action.

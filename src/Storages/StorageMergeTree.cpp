@@ -982,11 +982,9 @@ void StorageMergeTree::mergeMutateAssigningTask()
 
         merge_assigning_task->scheduleAfter(500); /// FIXME(alesap)
     }
-    catch (const Exception & e)
+    catch (...)
     {
         merge_assigning_task->scheduleAfter(500); /// FIXME(alesap)
-        if (e.code() == ErrorCodes::ABORTED)
-            LOG_INFO(log, e.message());
         throw;
     }
 }

@@ -280,7 +280,7 @@ private:
     BackgroundSchedulePool::TaskHolder mutations_updating_task;
 
     /// A task that performs actions from the queue.
-    BackgroundProcessingPool::TaskHandle queue_task_handle;
+    BackgroundSchedulePool::TaskHolder queue_processing_task_handle;
 
     /// A task which move parts to another disks/volumes
     /// Transparent for replication.
@@ -423,7 +423,7 @@ private:
 
     /** Performs actions from the queue.
       */
-    BackgroundProcessingPoolTaskResult queueTask();
+    void queueProcessingTask();
 
     /// Perform moves of parts to another disks.
     /// Local operation, doesn't interact with replicationg queue.
