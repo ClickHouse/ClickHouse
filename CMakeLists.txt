@@ -369,12 +369,6 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
-if (${ENABLE_LIBRARIES} OR ${GLIBC_COMPATIBILITY})
-    option (ENABLE_FASTMEMCPY "Enable FastMemcpy library (only internal)" ON)
-else ()
-    option (ENABLE_FASTMEMCPY "Enable FastMemcpy library (only internal)" OFF)
-endif ()
-
 if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
