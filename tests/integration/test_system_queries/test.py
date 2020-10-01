@@ -47,7 +47,7 @@ def test_SYSTEM_RELOAD_DICTIONARY(started_cluster):
     instance.query("INSERT INTO dictionary_source VALUES (1, 1)")
     assert TSV(instance.query(
         "SELECT dictGetUInt8('clickhouse_cache', 'value', toUInt64(0)), dictHas('clickhouse_cache', toUInt64(1))")) == TSV(
-        "0\t1\n")
+        "0\t0\n")
 
     instance.query("SYSTEM RELOAD DICTIONARY clickhouse_cache")
     assert TSV(instance.query(
