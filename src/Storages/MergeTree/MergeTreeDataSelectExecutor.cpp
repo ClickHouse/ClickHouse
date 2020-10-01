@@ -540,7 +540,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     if (no_data)
     {
         LOG_DEBUG(log, "Sampling yields no data.");
-        return {};
+        return std::make_unique<QueryPlan>();
     }
 
     LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
@@ -678,7 +678,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     LOG_DEBUG(log, "Selected {} parts by partition key, {} parts by primary key, {} marks by primary key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks_pk.load(std::memory_order_relaxed), sum_marks, sum_ranges);
 
     if (parts_with_ranges.empty())
-        return {};
+        return std::make_unique<QueryPlan>();
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, parts_with_ranges.size());
     ProfileEvents::increment(ProfileEvents::SelectedRanges, sum_ranges);
@@ -755,6 +755,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             settings,
             reader_settings);
     }
+
+    if (!plan)
+        return std::make_unique<QueryPlan>();
 
     if (use_sampling)
     {
