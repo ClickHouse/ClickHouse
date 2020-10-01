@@ -319,10 +319,13 @@ Pipe StorageMerge::createSources(
 
         if (has_table_virtual_column)
         {
-            pipe.addSimpleTransform([name = table_name](const Block & stream_header)
+            ColumnWithTypeAndName column;
+            column.name = "_table";
+            column.type = std::make_shared<DataTypeString>();
+            column.column = column.type->createColumnConst(0, Field(table_name));
+            pipe.addSimpleTransform([&](const Block & stream_header)
             {
-                return std::make_shared<AddingConstColumnTransform<String>>(
-                        stream_header, std::make_shared<DataTypeString>(), name, "_table");
+                return std::make_shared<AddingConstColumnTransform>(stream_header, column);
             });
         }
 

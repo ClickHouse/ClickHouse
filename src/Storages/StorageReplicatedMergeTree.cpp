@@ -3514,7 +3514,9 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
     return max_added_blocks;
 }
 
-Pipe StorageReplicatedMergeTree::read(
+
+void StorageReplicatedMergeTree::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -3531,10 +3533,25 @@ Pipe StorageReplicatedMergeTree::read(
     if (context.getSettingsRef().select_sequential_consistency)
     {
         auto max_added_blocks = getMaxAddedBlocks();
-        return reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams, &max_added_blocks);
+        query_plan = std::move(*reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams, &max_added_blocks));
+        return;
     }
 
-    return reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams);
+    query_plan = std::move(*reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams));
+}
+
+Pipe StorageReplicatedMergeTree::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
+{
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return QueryPipeline::getPipe(std::move(*plan.buildQueryPipeline()));
 }
 
 
