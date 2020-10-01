@@ -725,7 +725,8 @@ bool StorageMergeTree::merge(
     return mergeSelectedParts(metadata_snapshot, deduplicate, *merge_mutate_entry);
 }
 
-bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, const MergeMutateSelectedEntry & merge_mutate_entry) {
+bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, const MergeMutateSelectedEntry & merge_mutate_entry)
+{
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto & future_part = merge_mutate_entry.future_part;
     auto table_id = getStorageID();
