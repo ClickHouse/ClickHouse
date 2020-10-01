@@ -2401,7 +2401,8 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
         queue.pullLogsToQueue(getZooKeeper(), queue_updating_task->getWatchCallback());
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
-        queue_processing_task_handle->schedule();
+        if (queue_processing_task_handle)
+            queue_processing_task_handle->schedule();
     }
     catch (const Coordination::Exception & e)
     {
