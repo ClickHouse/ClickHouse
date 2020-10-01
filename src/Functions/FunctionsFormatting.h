@@ -278,4 +278,155 @@ private:
     }
 };
 
+
+class FunctionFormatReadableTimeDelta : public IFunction
+{
+public:
+    static constexpr auto name = "formatReadableTimeDelta";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const IDataType & type = *arguments[0];
+
+        if (!isNativeNumber(type))
+            throw Exception("Cannot format " + type.getName() + " as time delta", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    {
+        if (!(executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)
+            || executeType<Float32>(block, arguments, result)
+            || executeType<Float64>(block, arguments, result)))
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+    }
+
+private:
+    void formatReadableTimeDelta(double value, DB::WriteBuffer & out) const
+    {
+        // 60 SECONDS      = 1 MINUTE
+        // 3600 SECONDS    = 1 HOUR
+        // 86400 SECONDS   = 1 DAY
+        // 30.5 DAYS       = 1 MONTH
+        // 365 DAYS        = 1 YEAR
+
+        char sig = value<0?-1:1;
+        value *= sig;
+
+        long long int date = value / 86400;
+        double time = value - date * 86400;
+
+        long long int hours = time / 3600;
+        long long int minutes = (time - hours * 3600) / 60;
+        double seconds = time - hours * 3600 - minutes * 60;
+
+        long long int years = date / 365;
+        long long int months = (date - years * 365) / 30.5;
+        long long int days = date - years * 365 - months * 30.5;
+
+        std::vector<String> parts;
+
+        if (years)
+        {
+            parts.push_back(std::to_string(years) + (years==1?" year":" years"));
+        }
+        if (months)
+        {
+            parts.push_back(std::to_string(months) + (months==1?"month":" months"));
+        }
+        if (days)
+        {
+            parts.push_back(std::to_string(days) + (days==1?" day":" days"));
+        }
+        // Test overflow 2^64
+        // If overflow happens then hide the time
+        if (time < 9223372036854775808.0)
+        {
+            if (hours)
+            {
+                parts.push_back(std::to_string(hours) + (hours==1?" hour":" hours"));
+            }
+            if (minutes)
+            {
+                parts.push_back(std::to_string(minutes) + (minutes==1?" minute":" minutes"));
+            }
+            if (seconds)
+            {
+                std::string seconds_str = std::to_string(seconds);
+                seconds_str.erase(seconds_str.find_last_not_of('0') + 1, std::string::npos);
+                seconds_str.erase(seconds_str.find_last_not_of('.') + 1, std::string::npos);
+                parts.push_back(seconds_str + (seconds==1?" second":" seconds"));
+            }
+        }
+
+
+        String str_value;
+        for(size_t i=0; i<parts.size(); i++)
+        {
+            if(!str_value.empty())
+            {
+                if (i == parts.size()-1)
+                    str_value += " and ";
+                else
+                    str_value += ", ";
+            }
+            str_value += parts[i];
+        }
+        if (sig < 0)
+            str_value = "- " + str_value;
+        writeCString(str_value.c_str(), out);
+    }
+
+    template <typename T>
+    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
+    {
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
+        {
+            auto col_to = ColumnString::create();
+
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
+            ColumnString::Chars & data_to = col_to->getChars();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
+            size_t size = vec_from.size();
+            data_to.resize(size * 2);
+            offsets_to.resize(size);
+
+            WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                formatReadableTimeDelta(static_cast<double>(vec_from[i]), buf_to);
+                writeChar(0, buf_to);
+                offsets_to[i] = buf_to.count();
+            }
+
+            buf_to.finalize();
+            block.getByPosition(result).column = std::move(col_to);
+            return true;
+        }
+
+        return false;
+    }
+};
+
 }
