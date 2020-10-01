@@ -287,6 +287,10 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
         prev_part = &part;
     }
+    //if (data.getStorageID().table_name == "tt")
+    //{
+    //    LOG_ERROR(log, "CANDIDATE PARTS COUNT {} its size {}", parts_ranges.size(), parts_ranges[0].size());
+    //}
 
     IMergeSelector::PartsRange parts_to_merge;
 
@@ -324,8 +328,15 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         if (aggressive)
             merge_settings.base = 1;
 
+
         parts_to_merge = SimpleMergeSelector(merge_settings)
                             .select(parts_ranges, max_total_size_to_merge);
+
+        //if (data.getStorageID().table_name == "tt")
+        //{
+        //    LOG_DEBUG(log, "MAX SIZE TO MERGE {}", max_total_size_to_merge);
+        //    LOG_DEBUG(log, "SELECTED PARTS TO MERGE {}", parts_to_merge.size());
+        //}
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)

@@ -705,10 +705,8 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
         return {};
     }
 
-    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
-    auto table_id = getStorageID();
-    merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
-    return MergeMutateSelectedEntry{future_part, std::move(merging_tagger), std::move(merge_entry), {}};
+    merging_tagger = std::make_shared<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
+    return MergeMutateSelectedEntry{future_part, merging_tagger, {}};
 }
 
 bool StorageMergeTree::merge(
@@ -727,9 +725,12 @@ bool StorageMergeTree::merge(
     return mergeSelectedParts(metadata_snapshot, deduplicate, *merge_mutate_entry);
 }
 
-bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, MergeMutateSelectedEntry & merge_mutate_entry) {
+bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, const MergeMutateSelectedEntry & merge_mutate_entry) {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto & future_part = merge_mutate_entry.future_part;
+    auto table_id = getStorageID();
+    auto merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+
     Stopwatch stopwatch;
     MutableDataPartPtr new_part;
 
@@ -742,13 +743,13 @@ bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_sn
             future_part.name,
             new_part,
             future_part.parts,
-            merge_mutate_entry.merge_entry.get());
+            merge_entry.get());
     };
 
     try
     {
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, metadata_snapshot, *(merge_mutate_entry.merge_entry), table_lock_holder, time(nullptr),
+            future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr),
             merge_mutate_entry.tagger->reserved_space, deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
@@ -862,17 +863,17 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
         future_part.type = part->getType();
 
         tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true);
-        auto table_id = getStorageID();
-        MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
-        return MergeMutateSelectedEntry{future_part, std::move(tagger), std::move(merge_entry), commands};
+        return MergeMutateSelectedEntry{future_part, tagger, commands};
     }
     return {};
 }
 
-bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & merge_mutate_entry)
+bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, const MergeMutateSelectedEntry & merge_mutate_entry)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto & future_part = merge_mutate_entry.future_part;
+    auto table_id = getStorageID();
+    auto merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
     Stopwatch stopwatch;
     MutableDataPartPtr new_part;
 
@@ -885,13 +886,13 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
             future_part.name,
             new_part,
             future_part.parts,
-            merge_mutate_entry.merge_entry.get());
+            merge_entry.get());
     };
 
     try
     {
         new_part = merger_mutator.mutatePartToTemporaryPart(
-            future_part, metadata_snapshot, merge_mutate_entry.commands, *(merge_mutate_entry.merge_entry),
+            future_part, metadata_snapshot, merge_mutate_entry.commands, *merge_entry,
             time(nullptr), global_context, merge_mutate_entry.tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
@@ -922,41 +923,58 @@ void StorageMergeTree::mergeMutateAssigningTask()
 
     try
     {
+        //if (getStorageID().table_name == "tt")
+        //{
+        //    LOG_DEBUG(log, "==============================TRYING TO SELECT PARTS TO MERGE=====================");
+        //}
         /// To separate function
         /// Clear old parts. It is unnecessary to do it more than once a second.
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
+            global_context.getBackgroundProcessingPool().scheduleOrThrow([this]()
             {
-                auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-                /// All use relative_data_path which changes during rename
-                /// so execute under share lock.
-                clearOldPartsFromFilesystem();
-                clearOldTemporaryDirectories();
-                clearOldWriteAheadLogs();
-            }
-            clearOldMutations();
+                {
+                    auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+                    /// All use relative_data_path which changes during rename
+                    /// so execute under share lock.
+                    clearOldPartsFromFilesystem();
+                    clearOldTemporaryDirectories();
+                    clearOldWriteAheadLogs();
+                }
+                clearOldMutations();
+            });
         }
 
         auto metadata_snapshot = getInMemoryMetadataPtr();
-        auto merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr);
+        String not_selected;
+        std::optional<MergeMutateSelectedEntry> merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, &not_selected);
         if (merge_entry)
         {
-            global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, merge_entry]()
+            global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, entry = *merge_entry]()
             {
+                //if (getStorageID().table_name == "tt")
+                //{
+                //    LOG_DEBUG(log, "==============================MERGING SOMETHING IN  BACKGOUND=====================");
+                //}
                 ///TODO: read deduplicate option from table config
-                mergeSelectedParts(metadata_snapshot, false, *merge_entry);
+                mergeSelectedParts(metadata_snapshot, false, entry);
             });
 
             merge_assigning_task->schedule(); /// FIXME(alesap)
             return;
         }
+        //else
+        //{
+        //    if (getStorageID().table_name == "tt")
+        //        LOG_DEBUG(log, "==============================MERGE ENTRY EMPTY BECAUSE {} =====================", not_selected);
+        //}
 
-        auto mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
+        std::optional<MergeMutateSelectedEntry> mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
         if (mutate_entry)
         {
-            global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, mutate_entry]()
+            global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, entry = *mutate_entry]()
             {
-                mutateSelectedPart(metadata_snapshot, mutate_entry);
+                mutateSelectedPart(metadata_snapshot, entry);
             });
             merge_assigning_task->schedule(); /// FIXME(alesap)
             return;

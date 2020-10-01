@@ -86,6 +86,22 @@ public:
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
+    friend struct CurrentlyMergingPartsTagger;
+
+    using CurrentlyMergingPartsTaggerPtr = std::shared_ptr<CurrentlyMergingPartsTagger>;
+
+    struct MergeMutateSelectedEntry
+    {
+        FutureMergedMutatedPart future_part;
+        CurrentlyMergingPartsTaggerPtr tagger;
+        MutationCommands commands;
+    };
+
+    std::optional<MergeMutateSelectedEntry> selectPartsToMerge(const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * disable_reason);
+    bool mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, const MergeMutateSelectedEntry & entry);
+
+    std::optional<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason);
+    bool mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, const MergeMutateSelectedEntry & entry);
 
 private:
 
@@ -140,23 +156,6 @@ private:
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, const String & file_name);
 
-    friend struct CurrentlyMergingPartsTagger;
-
-    using CurrentlyMergingPartsTaggerPtr = std::unique_ptr<CurrentlyMergingPartsTagger>;
-
-    struct MergeMutateSelectedEntry
-    {
-        FutureMergedMutatedPart future_part;
-        CurrentlyMergingPartsTaggerPtr tagger;
-        MergeList::EntryPtr merge_entry;
-        MutationCommands commands;
-    };
-
-    std::optional<MergeMutateSelectedEntry> selectPartsToMerge(const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * disable_reason);
-    bool mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, MergeMutateSelectedEntry & entry);
-
-    std::optional<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason);
-    bool mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry);
 
     void mergeMutateAssigningTask();
     void mergeMutateProcessingTask(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry);
