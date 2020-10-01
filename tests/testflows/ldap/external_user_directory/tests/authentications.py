@@ -52,57 +52,92 @@ def add_user_to_ldap_and_login(self, server, user=None, ch_user=None, login=None
 
         login_and_execute_query(username=username, password=password, exitcode=exitcode, message=message)
 
+def login_with_valid_username_and_password(users, i, iterations=10):
+    """Login with valid username and password.
+    """
+    with When(f"valid users try to login #{i}"):
+        for i in range(iterations):
+            random_user = users[random.randint(0, len(users)-1)]
+            login_and_execute_query(username=random_user["cn"], password=random_user["userpassword"], steps=False)
+
+def login_with_valid_username_and_invalid_password(users, i, iterations=10):
+    """Login with valid username and invalid password.
+    """
+    with When(f"users try to login with valid username and invalid password #{i}"):
+        for i in range(iterations):
+            random_user = users[random.randint(0, len(users)-1)]
+            login_and_execute_query(username=random_user["cn"],
+                password=(random_user["userpassword"] + randomword(1)),
+                exitcode=4,
+                message=f"DB::Exception: {random_user['cn']}: Authentication failed: password is incorrect or there is no user with such name",
+                steps=False)
+
+def login_with_invalid_username_and_valid_password(users, i, iterations=10):
+    """Login with invalid username and valid password.
+    """
+    with When(f"users try to login with invalid username and valid password #{i}"):
+        for i in range(iterations):
+            random_user = dict(users[random.randint(0, len(users)-1)])
+            random_user["cn"] += randomword(1)
+            login_and_execute_query(username=random_user["cn"],
+                password=random_user["userpassword"],
+                exitcode=4,
+                message=f"DB::Exception: {random_user['cn']}: Authentication failed: password is incorrect or there is no user with such name",
+                steps=False)
+
 @TestScenario
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
 )
 def parallel_login(self, server, user_count=10, timeout=200):
-    """Check that login of valid and invalid LDAP authenticated users works in parallel."""
+    """Check that login of valid and invalid LDAP authenticated users works in parallel.
+    """
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
 
     users = [{"cn": f"parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)]
 
     with ldap_users(*users):
-        def login_with_valid_username_and_password(users, i, iterations=10):
-            with When(f"valid users try to login #{i}"):
-                for i in range(iterations):
-                    random_user = users[random.randint(0, len(users)-1)]
-                    login_and_execute_query(username=random_user["cn"], password=random_user["userpassword"], steps=False)
+        tasks = []
+        try:
+            with When("I login in parallel"):
+                p = Pool(15)
+                for i in range(25):
+                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
 
-        def login_with_valid_username_and_invalid_password(users, i, iterations=10):
-            with When(f"users try to login with valid username and invalid password #{i}"):
-                for i in range(iterations):
-                    random_user = users[random.randint(0, len(users)-1)]
-                    login_and_execute_query(username=random_user["cn"],
-                        password=(random_user["userpassword"] + randomword(1)),
-                        exitcode=4,
-                        message=f"DB::Exception: {random_user['cn']}: Authentication failed: password is incorrect or there is no user with such name",
-                        steps=False)
+        finally:
+            with Then("it should work"):
+                join(tasks, timeout)
 
-        def login_with_invalid_username_and_valid_password(users, i, iterations=10):
-            with When(f"users try to login with invalid username and valid password #{i}"):
-                for i in range(iterations):
-                    random_user = dict(users[random.randint(0, len(users)-1)])
-                    random_user["cn"] += randomword(1)
-                    login_and_execute_query(username=random_user["cn"],
-                        password=random_user["userpassword"],
-                        exitcode=4,
-                        message=f"DB::Exception: {random_user['cn']}: Authentication failed: password is incorrect or there is no user with such name",
-                        steps=False)
+@TestScenario
+@Requirements(
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_LocalOnly("1.0")
+)
+def parallel_login_of_rbac_users(self, server, user_count=10, timeout=200):
+    """Check that login of only valid and invalid local users created using RBAC
+    works in parallel when server configuration includes LDAP external user directory.
+    """
+    self.context.ldap_node = self.context.cluster.node(server)
+    user = None
 
-        with When("I login in parallel"):
-            p = Pool(15)
-            tasks = []
-            for i in range(5):
-                tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+    users = [{"cn": f"parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)]
 
-        with Then("it should work"):
-            for task in tasks:
-                task.get(timeout=timeout)
+    with rbac_users(*users):
+        tasks = []
+
+        try:
+            with When("I login in parallel"):
+                p = Pool(15)
+                for i in range(25):
+                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+        finally:
+            with Then("it should work"):
+                join(tasks, timeout)
 
 @TestScenario
 @Requirements(
