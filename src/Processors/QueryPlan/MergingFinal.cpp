@@ -90,7 +90,7 @@ void MergingFinal::transformPipeline(QueryPipeline & pipeline)
         __builtin_unreachable();
     };
 
-    if (num_outputs <= 1 || sort_description.empty())
+    if (num_output_streams <= 1 || sort_description.empty())
     {
         pipeline.addTransform(get_merging_processor());
         return;
@@ -109,25 +109,25 @@ void MergingFinal::transformPipeline(QueryPipeline & pipeline)
 
     pipeline.addSimpleTransform([&](const Block & stream_header)
     {
-        return std::make_shared<AddingSelectorTransform>(stream_header, num_outputs, key_columns);
+        return std::make_shared<AddingSelectorTransform>(stream_header, num_output_streams, key_columns);
     });
 
     pipeline.transform([&](OutputPortRawPtrs ports)
     {
         Processors processors;
         std::vector<OutputPorts::iterator> output_ports;
-        processors.reserve(ports.size() + num_outputs);
+        processors.reserve(ports.size() + num_output_streams);
         output_ports.reserve(ports.size());
 
         for (auto & port : ports)
         {
-            auto copier = std::make_shared<CopyTransform>(header, num_outputs);
+            auto copier = std::make_shared<CopyTransform>(header, num_output_streams);
             connect(*port, copier->getInputPort());
             output_ports.emplace_back(copier->getOutputs().begin());
             processors.emplace_back(std::move(copier));
         }
 
-        for (size_t i = 0; i < num_outputs; ++i)
+        for (size_t i = 0; i < num_output_streams; ++i)
         {
             auto merge = get_merging_processor();
             merge->setSelectorPosition(i);
