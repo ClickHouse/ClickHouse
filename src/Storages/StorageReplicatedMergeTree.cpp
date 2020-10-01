@@ -195,7 +195,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_path(zookeeper_path + "/replicas/" + replica_name)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
+    , merger_mutator(*this, global_context.getBackgroundProcessingPool().getMaxThreads())
     , queue(*this)
     , fetcher(*this)
     , cleanup_thread(*this)
@@ -203,6 +203,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , restarting_thread(*this)
     , allow_renaming(allow_renaming_)
 {
+    queue_processing_task_handle = global_context.getSchedulePool().createTask(
+        getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueProcessingTask)", [this] { queueProcessingTask(); });
+
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
 
@@ -217,6 +220,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     mutations_finalizing_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
+
 
     if (global_context.hasZooKeeper())
     {
@@ -3399,8 +3403,6 @@ void StorageReplicatedMergeTree::startup()
         /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
         {
             auto lock = queue.lockQueue();
-            auto & pool = global_context.getSchedulePool();
-            queue_processing_task_handle = pool.createTask(getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueProcessingTask)", [this] { queueProcessingTask(); });
             queue_processing_task_handle->activateAndSchedule();
         }
 
@@ -3437,6 +3439,7 @@ void StorageReplicatedMergeTree::shutdown()
 
     if (queue_processing_task_handle)
         queue_processing_task_handle->deactivate();
+
 
     {
         /// Queue can trigger queue_task_handle itself. So we ensure that all

@@ -340,7 +340,6 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
-    std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
     std::optional<ThreadPool> background_processing_pool;    /// TODO (alesap)
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
@@ -443,7 +442,7 @@ struct ContextShared
         external_dictionaries_loader.reset();
         external_models_loader.reset();
         buffer_flush_schedule_pool.reset();
-        background_pool.reset();
+        background_processing_pool.reset();
         background_move_pool.reset();
         schedule_pool.reset();
         distributed_schedule_pool.reset();
@@ -1380,25 +1379,6 @@ void Context::dropCaches() const
 
     if (shared->mark_cache)
         shared->mark_cache->reset();
-}
-
-BackgroundProcessingPool & Context::getBackgroundPool()
-{
-    auto lock = getLock();
-    if (!shared->background_pool)
-    {
-        BackgroundProcessingPool::PoolSettings pool_settings;
-        const auto & config = getConfigRef();
-        pool_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
-        pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
-        pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
-        pool_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_min", 10);
-        pool_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_max", 600);
-        pool_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
-        pool_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
-        shared->background_pool.emplace(settings.background_pool_size, pool_settings);
-    }
-    return *shared->background_pool;
 }
 
 ThreadPool & Context::getBackgroundProcessingPool()

@@ -69,6 +69,7 @@ public:
     size_t active() const;
 
     void setMaxThreads(size_t value);
+    size_t getMaxThreads() const;
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
 

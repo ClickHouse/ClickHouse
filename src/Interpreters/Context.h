@@ -508,7 +508,6 @@ public:
     void dropCaches() const;
 
     BackgroundSchedulePool & getBufferFlushSchedulePool();
-    BackgroundProcessingPool & getBackgroundPool();
     ThreadPool & getBackgroundProcessingPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();

@@ -73,7 +73,7 @@ StorageMergeTree::StorageMergeTree(
         attach)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
+    , merger_mutator(*this, global_context.getBackgroundProcessingPool().getMaxThreads())
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -83,6 +83,8 @@ StorageMergeTree::StorageMergeTree(
     increment.set(getMaxBlockNumber());
 
     loadMutations();
+    auto & schedule_pool = global_context.getSchedulePool();
+    merge_assigning_task = schedule_pool.createTask(getStorageID().getFullTableName() + " (StorageMergeTree::mergeMutateAssigningTask)", [this]() { mergeMutateAssigningTask(); });
 }
 
 
@@ -100,10 +102,7 @@ void StorageMergeTree::startup()
 
     try
     {
-        auto & schedule_pool = global_context.getSchedulePool();
-        merge_assigning_task = schedule_pool.createTask(getStorageID().getFullTableName() + " (StorageMergeTree::mergeAssigningTask)", [this]() { mergeMutateAssigningTask(); });
         merge_assigning_task->activateAndSchedule();
-
         startBackgroundMovesIfNeeded();
     }
     catch (...)
