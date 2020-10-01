@@ -2,8 +2,8 @@ import gzip
 import json
 import logging
 import os
+import io
 import random
-import StringIO
 import threading
 import time
 
@@ -61,19 +61,21 @@ def prepare_s3_bucket(cluster):
 
 
 def put_s3_file_content(cluster, bucket, filename, data):
-    buf = StringIO.StringIO(data)
+    buf = io.BytesIO(data)
     cluster.minio_client.put_object(bucket, filename, buf, len(data))
 
 
 # Returns content of given S3 file as string.
-def get_s3_file_content(cluster, bucket, filename):
+def get_s3_file_content(cluster, bucket, filename, decode=True):
     # type: (ClickHouseCluster, str) -> str
 
     data = cluster.minio_client.get_object(bucket, filename)
     data_str = b""
     for chunk in data.stream():
         data_str += chunk
-    return data_str.decode()
+    if decode:
+        return data_str.decode()
+    return data_str
 
 
 @pytest.fixture(scope="module")
@@ -377,9 +379,9 @@ def test_storage_s3_get_gzip(cluster):
         "Norman Ortega,33",
         ""
     ]
-    buf = StringIO.StringIO()
+    buf = io.BytesIO()
     compressed = gzip.GzipFile(fileobj=buf, mode="wb")
-    compressed.write("\n".join(data))
+    compressed.write(("\n".join(data)).encode())
     compressed.close()
     put_s3_file_content(cluster, bucket, filename, buf.getvalue())
 
@@ -459,9 +461,9 @@ def test_storage_s3_put_gzip(cluster):
 
         run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["708"]
 
-        buf = StringIO.StringIO(get_s3_file_content(cluster, bucket, filename))
+        buf = io.BytesIO(get_s3_file_content(cluster, bucket, filename, decode=False))
         f = gzip.GzipFile(fileobj=buf, mode="rb")
-        uncompressed_content = f.read()
+        uncompressed_content = f.read().decode()
         assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 708
     finally:
         run_query(instance, "DROP TABLE {}".format(name))
