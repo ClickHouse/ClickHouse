@@ -727,7 +727,7 @@ bool StorageMergeTree::merge(
 bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, const MergeMutateSelectedEntry & merge_mutate_entry)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-    auto & future_part = merge_mutate_entry.future_part;
+    const auto & future_part = merge_mutate_entry.future_part;
     auto table_id = getStorageID();
     auto merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
 
@@ -871,7 +871,7 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
 bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, const MergeMutateSelectedEntry & merge_mutate_entry)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-    auto & future_part = merge_mutate_entry.future_part;
+    const auto & future_part = merge_mutate_entry.future_part;
     auto table_id = getStorageID();
     auto merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
     Stopwatch stopwatch;
