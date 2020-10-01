@@ -42,3 +42,4 @@ PRIMARY KEY key
 
 - `primary key` must be specified, only support one primary key. The primary key will serializeBinary as rocksdb key.
 - Columns other than the primary key will be serializeBinary as rocksdb value in corresponding order.
+- Queries with key `equals` or `in` filtering will be optimized to multi keys look up from rocksdb.
