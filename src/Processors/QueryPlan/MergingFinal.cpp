@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static ITransformingStep::Traits getTraits()
 {
     return ITransformingStep::Traits
