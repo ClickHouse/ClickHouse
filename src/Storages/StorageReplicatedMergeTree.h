@@ -490,6 +490,8 @@ private:
     /// Deletes info from quorum/last_part node for particular partition_id.
     void cleanLastPartNode(const String & partition_id);
 
+    void updateLastPartNodeIfMatches(const String & partition_id, const String & old_part_name, const String & new_part_name);
+
     /// Creates new block number if block with such block_id does not exist
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,

@@ -3107,6 +3107,60 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
     }
 }
 
+void StorageReplicatedMergeTree::updateLastPartNodeIfMatches(const String & partition_id, const String & old_part_name, const String & new_part_name)
+{
+    auto zookeeper = getZooKeeper();
+
+    const String quorum_last_part_path = zookeeper_path + "/quorum/last_part";
+
+    while (true)
+    {
+        Coordination::Stat added_parts_stat;
+        String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
+
+        ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(format_version);
+
+        if (!old_added_parts.empty())
+            parts_with_quorum.fromString(old_added_parts);
+
+        if (!parts_with_quorum.added_parts.count(partition_id))
+        {
+            /// There is no information about partition at all.
+            break;
+        }
+
+        /// Part for which last quorum was reached in partition_id.
+        auto quorum_part_info = MergeTreePartInfo::fromPartName(parts_with_quorum.added_parts.at(partition_id), format_version);
+        auto old_part_info = MergeTreePartInfo::fromPartName(old_part_name, format_version);
+
+        /// Update last part for which quorum was reached.
+        if (old_part_info.contains(quorum_part_info))
+            parts_with_quorum.added_parts.emplace(partition_id, new_part_name);
+
+        /// Serialize and try update.
+        String new_added_parts = parts_with_quorum.toString();
+
+        auto code = zookeeper->trySet(quorum_last_part_path, new_added_parts, added_parts_stat.version);
+
+        if (code == Coordination::Error::ZOK)
+        {
+            break;
+        }
+        else if (code == Coordination::Error::ZNONODE)
+        {
+            /// Node is deleted. It is impossible, but it is Ok.
+            break;
+        }
+        else if (code == Coordination::Error::ZBADVERSION)
+        {
+            /// Node was updated meanwhile. We must re-read it and repeat all the actions.
+            continue;
+        }
+        else
+            throw Coordination::Exception(code, quorum_last_part_path);
+    }
+}
+
 
 bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const StorageMetadataPtr & metadata_snapshot,
     const String & source_replica_path, bool to_detached, size_t quorum)
@@ -4055,9 +4109,23 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool de
         }
     }
 
+    bool drop_entire_partition = !drop_part;
+
     /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
-    /// TODO(nv) how is this related to dropPart? Is it?
-    if (!drop_part)
+    if (drop_part)
+    {
+        auto part_info = MergeTreePartInfo::fromPartName(partition->as<ASTLiteral &>().value.safeGet<String>(), format_version);
+        auto data_parts_vec = getDataPartsVectorInPartition(DataPartState::Committed, part_info.partition_id);
+        std::sort(data_parts_vec.begin(), data_parts_vec.end(), LessDataPart());
+
+        auto prev_part = std::upper_bound(data_parts_vec.begin(), data_parts_vec.end(), part_info, LessDataPart());
+        if (prev_part != data_parts_vec.end())
+            updateLastPartNodeIfMatches(part_info.partition_id, part_info.getPartName(), (*prev_part)->info.getPartName());
+        else if (data_parts_vec.empty())
+            drop_entire_partition = true;
+    }
+
+    if (drop_entire_partition)
     {
         String partition_id = getPartitionIDFromQuery(partition, query_context);
         cleanLastPartNode(partition_id);
