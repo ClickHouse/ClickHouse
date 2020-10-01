@@ -54,7 +54,7 @@ void DataTypeLowCardinality::enumerateStreams(const StreamCallback & callback, S
     path.push_back(Substream::DictionaryKeys);
     dictionary_type->enumerateStreams(callback, path);
     path.back() = Substream::DictionaryIndexes;
-    callback(path);
+    callback(path, *this);
     path.pop_back();
 }
 
