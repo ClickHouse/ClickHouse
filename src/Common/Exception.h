@@ -39,6 +39,7 @@ public:
     const char * name() const throw() override { return "DB::Exception"; }
     const char * what() const throw() override { return message().data(); }
 
+    /// Add something to the existing message.
     template <typename ...Fmt>
     void addMessage(Fmt&&... fmt)
     {
