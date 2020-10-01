@@ -49,7 +49,8 @@ export ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_
 
 start
 
-/s3downloader --dataset-names "$DATASETS"
+# shellcheck disable=SC2086 # No quotes because I want to split it into words.
+/s3downloader --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"

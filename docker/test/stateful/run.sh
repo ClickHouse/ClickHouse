@@ -31,7 +31,8 @@ function start()
 }
 
 start
-/s3downloader --dataset-names "$DATASETS"
+# shellcheck disable=SC2086 # No quotes because I want to split it into words.
+/s3downloader --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
