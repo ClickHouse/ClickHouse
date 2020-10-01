@@ -85,6 +85,7 @@ CacheDictionary::CacheDictionary(
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
+    , default_keys{this->size}
     , rnd_engine(randomSeed())
     , update_queue(max_update_queue_size_)
     , update_pool(max_threads_for_updates)
@@ -309,14 +310,14 @@ std::string CacheDictionary::AttributeValuesForKey::dump()
 
 std::string CacheDictionary::UpdateUnit::dumpFoundIds()
 {
-    std::string ans;
+    std::ostringstream os;
     for (auto it : found_ids)
     {
-        ans += "Key: " + std::to_string(it.first) + "\n";
+        os << "Key: " << std::to_string(it.first) << "\n";
         if (it.second.found)
-            ans += it.second.dump() + "\n";
+            os << it.second.dump() << "\n";
     }
-    return ans;
+    return os.str();
 };
 
 /// returns cell_idx (always valid for replacing), 'cell is valid' flag, 'cell is outdated' flag
@@ -387,12 +388,11 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
-            {
-                std::shared_lock shared_lock(default_cache_rw_lock);
-                /// Check if the key is stored in the cache of defaults.
-                if (default_keys.find(id) != default_keys.end())
-                    continue;
-            }
+            
+            /// Check if the key is stored in the cache of defaults.
+            if (default_keys.has(id))
+                continue;
+
             const auto find_result = findCellIdx(id, now);
 
             auto insert_to_answer_routine = [&] ()
@@ -461,7 +461,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
     }
 
     /// At this point we have two situations.
-    /// There may be both types of keys: cache_expired_ids and cache_not_found_ids.
+    /// There may be both types of keys: expired and not_found.
     /// We will update them all synchronously.
 
     std::vector<Key> required_ids;
@@ -481,11 +481,8 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
             for (const auto row : cache_expired_or_not_found_ids[key])
                 out[row] = true;
         else
-        {
-            std::unique_lock unique_lock(default_cache_rw_lock);
             /// Cache this key as default.
-            default_keys.insert(key);
-        }
+            default_keys.add(key);
     }
 }
 

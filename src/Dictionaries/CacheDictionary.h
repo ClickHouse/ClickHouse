@@ -22,6 +22,8 @@
 #include "IDictionary.h"
 #include "IDictionarySource.h"
 
+#include <Common/LRUSet.h>
+
 namespace CurrentMetrics
 {
     extern const Metric CacheDictionaryUpdateQueueBatches;
@@ -346,6 +348,7 @@ private:
     std::map<std::string, size_t> attribute_index_by_name;
     mutable std::vector<Attribute> attributes;
     mutable std::vector<CellMetadata> cells;
+    mutable LRUSet<Key> default_keys;
     Attribute * hierarchical_attribute = nullptr;
     std::unique_ptr<ArenaWithFreeLists> string_arena;
 
@@ -360,21 +363,11 @@ private:
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
 
-    mutable std::unordered_set<Key> default_keys;
-
     /*
-     * Disclaimer: this comment is written not for fun.
-     *
      * How the update goes: we basically have a method like get(keys)->values. Values are cached, so sometimes we
-     * can return them from the cache. For values not in cache, we query them from the dictionary, and add to the
-     * cache. The cache is lossy, so we can't expect it to store all the keys, and we store them separately. Normally,
-     * they would be passed as a return value of get(), but for Unknown Reasons the dictionaries use a baroque
-     * interface where get() accepts two callback, one that it calls for found values, and one for not found.
-     *
-     * Now we make it even uglier by doing this from multiple threads. The missing values are retrieved from the
-     * dictionary in a background thread, and this thread calls the provided callback. So if you provide the callbacks,
-     * you MUST wait until the background update finishes, or god knows what happens. Unfortunately, we have no
-     * way to check that you did this right, so good luck.
+     * can return them from the cache. For values not in cache, we query them from the source, and add to the
+     * cache. The cache is lossy, so we can't expect it to store all the keys, and we store them separately. 
+     * So, there is a map of found keys to all its attributes.
      */
     struct UpdateUnit
     {
