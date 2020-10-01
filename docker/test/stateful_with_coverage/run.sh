@@ -72,7 +72,8 @@ function start()
 
 start
 
-if ! /s3downloader --dataset-names "$DATASETS"; then
+# shellcheck disable=SC2086 # No quotes because I want to split it into words.
+if ! /s3downloader --dataset-names $DATASETS; then
     echo "Cannot download datatsets"
     exit 1
 fi
