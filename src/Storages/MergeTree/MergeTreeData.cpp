@@ -1457,10 +1457,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         /// Some type changes for version column is allowed despite it's a part of sorting key
         if (command.type == AlterCommand::MODIFY_COLUMN && command.column_name == merging_params.version_column)
         {
-            auto new_type = command.data_type;
-            auto old_type = old_types[command.column_name];
+            const IDataType * new_type = command.data_type.get();
+            const IDataType * old_type = old_types[command.column_name];
 
-            checkVersionColumnTypesConversion(old_type, new_type.get(), command.column_name);
+            checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
 
             /// No other checks required
             continue;
