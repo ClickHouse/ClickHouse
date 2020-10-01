@@ -12,6 +12,8 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
 #include <Poco/DirectoryIterator.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -35,7 +37,7 @@ public:
     SetOrJoinBlockOutputStream(
         StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
-        const String & backup_file_name_);
+        const String & backup_file_name_, bool persistent_);
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
     void write(const Block & block) override;
@@ -50,6 +52,7 @@ private:
     WriteBufferFromFile backup_buf;
     CompressedWriteBuffer compressed_backup_buf;
     NativeBlockOutputStream backup_stream;
+    bool persistent;
 };
 
 
@@ -58,7 +61,8 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const String & backup_path_,
     const String & backup_tmp_path_,
-    const String & backup_file_name_)
+    const String & backup_file_name_,
+    bool persistent_)
     : table(table_)
     , metadata_snapshot(metadata_snapshot_)
     , backup_path(backup_path_)
@@ -67,6 +71,7 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
     , backup_buf(backup_tmp_path + backup_file_name)
     , compressed_backup_buf(backup_buf)
     , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
+    , persistent(persistent_)
 {
 }
 
@@ -76,24 +81,28 @@ void SetOrJoinBlockOutputStream::write(const Block & block)
     Block sorted_block = block.sortColumns();
 
     table.insertBlock(sorted_block);
-    backup_stream.write(sorted_block);
+    if (persistent)
+        backup_stream.write(sorted_block);
 }
 
 void SetOrJoinBlockOutputStream::writeSuffix()
 {
     table.finishInsert();
-    backup_stream.flush();
-    compressed_backup_buf.next();
-    backup_buf.next();
+    if (persistent)
+    {
+        backup_stream.flush();
+        compressed_backup_buf.next();
+        backup_buf.next();
 
-    Poco::File(backup_tmp_path + backup_file_name).renameTo(backup_path + backup_file_name);
+        Poco::File(backup_tmp_path + backup_file_name).renameTo(backup_path + backup_file_name);
+    }
 }
 
 
 BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin");
+    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistent);
 }
 
 
@@ -102,8 +111,10 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context_)
-    : IStorage(table_id_)
+    const Context & context_,
+    bool persistent_)
+    : IStorage(table_id_),
+    persistent(persistent_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -124,8 +135,9 @@ StorageSet::StorageSet(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context_)
-    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_},
+    const Context & context_,
+    bool persistent_)
+    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_, persistent_},
     set(std::make_shared<Set>(SizeLimits(), false, true))
 {
 
@@ -229,8 +241,16 @@ void registerStorageSet(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageSet::create(args.relative_data_path, args.table_id, args.columns, args.constraints, args.context);
-    });
+        bool has_settings = args.storage_def->settings;
+
+        auto set_settings = std::make_unique<SetSettings>();
+        if (has_settings)
+        {
+            set_settings->loadFromQuery(*args.storage_def);
+        }
+
+        return StorageSet::create(args.relative_data_path, args.table_id, args.columns, args.constraints, args.context, set_settings->persistent);
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
 

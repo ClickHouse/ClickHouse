@@ -185,7 +185,7 @@ def build(args):
         test.test_templates(args.website_dir)
 
     if not args.skip_docs:
-        generate_cmake_flags_files(os.path.join(os.path.dirname(__file__), '..', '..'))
+        generate_cmake_flags_files()
 
         build_docs(args)
         from github import build_releases
