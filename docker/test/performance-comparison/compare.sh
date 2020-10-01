@@ -462,7 +462,10 @@ wait
 unset IFS
 )
 
-parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+# The comparison script might be bound to one NUMA node for better test
+# stability, and the calculation runs out of memory because of this. Use
+# all nodes.
+numactl --all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
