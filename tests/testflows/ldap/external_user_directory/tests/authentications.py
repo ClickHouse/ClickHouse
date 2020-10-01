@@ -127,7 +127,6 @@ def parallel_login_of_rbac_users(self, server, user_count=10, timeout=200):
 
     with rbac_users(*users):
         tasks = []
-
         try:
             with When("I login in parallel"):
                 p = Pool(15)
@@ -509,7 +508,7 @@ def user_lookup_priority(self, server):
     }
 
     with ldap_users(*[{"cn": user["username"], "userpassword": user["password"]} for user in users.values()]):
-        with rbac_users("local"):
+        with rbac_users({"cn": "local", "userpassword": "local"}):
             with When("I try to login as 'default' user which is also defined in users.xml it should fail"):
                 login_and_execute_query(**users["default"], exitcode=exitcode, message=message.format(username="default"))
 
