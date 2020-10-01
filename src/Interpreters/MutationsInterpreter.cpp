@@ -619,19 +619,20 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 
             for (const auto & kv : stage.column_to_updated)
             {
-                actions_chain.getLastActions()->add(ExpressionAction::copyColumn(
-                        kv.second->getColumnName(), kv.first, /* can_replace = */ true));
+                actions_chain.getLastStep().actions()->addAlias(
+                        kv.second->getColumnName(), kv.first, /* can_replace = */ true);
             }
         }
 
         /// Remove all intermediate columns.
         actions_chain.addStep();
         actions_chain.getLastStep().required_output.assign(stage.output_columns.begin(), stage.output_columns.end());
+        actions_chain.getLastActions();
 
         actions_chain.finalize();
 
         /// Propagate information about columns needed as input.
-        for (const auto & column : actions_chain.steps.front()->actions()->getRequiredColumnsWithTypes())
+        for (const auto & column : actions_chain.steps.front()->getRequiredColumns())
             prepared_stages[i - 1].output_columns.insert(column.name);
     }
 
@@ -675,12 +676,12 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->getExpression(), stage.filter_column_names[i], false));
             }
             else
             {
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->getExpression()));
             }
         }
 
