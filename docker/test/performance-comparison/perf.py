@@ -18,8 +18,21 @@ import xml.etree.ElementTree as et
 from threading import Thread
 from scipy import stats
 
+
+total_start_seconds = time.perf_counter()
+stage_start_seconds = total_start_seconds
+
+def reportStageEnd(stage):
+    global stage_start_seconds, total_start_seconds
+
+    current = time.perf_counter()
+    print(f'stage\t{stage}\t{current - stage_start_seconds:.3f}\t{current - total_start_seconds:.3f}')
+    stage_start_seconds = current
+
+
 def tsv_escape(s):
     return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
+
 
 parser = argparse.ArgumentParser(description='Run performance test.')
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
@@ -29,15 +42,20 @@ parser.add_argument('--port', nargs='*', default=[9000], help="Space-separated l
 parser.add_argument('--runs', type=int, default=1, help='Number of query runs per server.')
 parser.add_argument('--max-queries', type=int, default=None, help='Test no more than this number of queries, chosen at random.')
 parser.add_argument('--queries-to-run', nargs='*', type=int, default=None, help='Space-separated list of indexes of queries to test.')
+parser.add_argument('--profile-seconds', type=int, default=0, help='For how many seconds to profile a query for which the performance has changed.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
 parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
 args = parser.parse_args()
 
+reportStageEnd('start')
+
 test_name = os.path.splitext(os.path.basename(args.file[0].name))[0]
 
 tree = et.parse(args.file[0])
 root = tree.getroot()
+
+reportStageEnd('parse')
 
 # Process query parameters
 subst_elems = root.findall('substitutions/substitution')
@@ -112,15 +130,21 @@ if not args.long:
             sys.exit(0)
 
 # Print report threshold for the test if it is set.
+ignored_relative_change = 0.05
 if 'max_ignored_relative_change' in root.attrib:
-    print(f'report-threshold\t{root.attrib["max_ignored_relative_change"]}')
+    ignored_relative_change = float(root.attrib["max_ignored_relative_change"])
+    print(f'report-threshold\t{ignored_relative_change}')
+
+reportStageEnd('before-connect')
 
 # Open connections
-servers = [{'host': host, 'port': port} for (host, port) in zip(args.host, args.port)]
+servers = [{'host': host or args.host[0], 'port': port or args.port[0]} for (host, port) in itertools.zip_longest(args.host, args.port)]
 all_connections = [clickhouse_driver.Client(**server) for server in servers]
 
-for s in servers:
-    print('server\t{}\t{}'.format(s['host'], s['port']))
+for i, s in enumerate(servers):
+    print(f'server\t{i}\t{s["host"]}\t{s["port"]}')
+
+reportStageEnd('connect')
 
 # Run drop queries, ignoring errors. Do this before all other activity, because
 # clickhouse_driver disconnects on error (this is not configurable), and the new
@@ -134,6 +158,8 @@ for conn_index, c in enumerate(all_connections):
             print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
         except:
             pass
+
+reportStageEnd('drop-1')
 
 # Apply settings.
 # If there are errors, report them and continue -- maybe a new test uses a setting
@@ -152,6 +178,8 @@ for conn_index, c in enumerate(all_connections):
         except:
             print(traceback.format_exc(), file=sys.stderr)
 
+reportStageEnd('settings')
+
 # Check tables that should exist. If they don't exist, just skip this test.
 tables = [e.text for e in root.findall('preconditions/table_exists')]
 for t in tables:
@@ -163,6 +191,8 @@ for t in tables:
             skipped_message = ' '.join(exception_message.split('\n')[:2])
             print(f'skipped\t{tsv_escape(skipped_message)}')
             sys.exit(0)
+
+reportStageEnd('preconditions')
 
 # Run create and fill queries. We will run them simultaneously for both servers,
 # to save time.
@@ -194,6 +224,9 @@ for t in threads:
 for t in threads:
     t.join()
 
+reportStageEnd('create')
+
+# By default, test all queries.
 queries_to_run = range(0, len(test_queries))
 
 if args.max_queries:
@@ -205,6 +238,7 @@ if args.queries_to_run:
     queries_to_run = args.queries_to_run
 
 # Run test queries.
+profile_total_seconds = 0
 for query_index in queries_to_run:
     q = test_queries[query_index]
     query_prefix = f'{test_name}.query{query_index}'
@@ -324,34 +358,49 @@ for query_index in queries_to_run:
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
 
-    #print(all_server_times)
-    #print(stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue)
-
     # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
-    if len(all_server_times) == 2 and stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue < 0.1:
-        run = 0
-        while True:
-            run_id = f'{query_prefix}.profile{run}'
+    if len(all_server_times) != 2:
+        continue
 
-            for conn_index, c in enumerate(this_query_connections):
-                try:
-                    res = c.execute(q, query_id = run_id, settings = {'query_profiler_real_time_period_ns': 10000000})
-                    print(f'profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
-                except Exception as e:
-                    # Add query id to the exception to make debugging easier.
-                    e.args = (run_id, *e.args)
-                    e.message = run_id + ': ' + e.message
-                    raise
+    if len(all_server_times[0]) < 3:
+        # Don't fail if for some reason there are not enough measurements.
+        continue
 
-                elapsed = c.last_query.elapsed
-                profile_seconds += elapsed
+    pvalue = stats.ttest_ind(all_server_times[0], all_server_times[1], equal_var = False).pvalue
+    median = [statistics.median(t) for t in all_server_times]
+    # Keep this consistent with the value used in report. Should eventually move
+    # to (median[1] - median[0]) / min(median), which is compatible with "times"
+    # difference we use in report (max(median) / min(median)).
+    relative_diff = (median[1] - median[0]) / median[0]
+    print(f'diff\t{query_index}\t{median[0]}\t{median[1]}\t{relative_diff}\t{pvalue}')
+    if abs(relative_diff) < ignored_relative_change or pvalue > 0.05:
+        continue
 
-            run += 1
-            # Don't spend too much time for profile runs
-            if run > args.runs or profile_seconds > 10:
-                break
-            # And don't bother with short queries
+    # Perform profile runs for fixed amount of time. Don't limit the number
+    # of runs, because we also have short queries.
+    profile_start_seconds = time.perf_counter()
+    run = 0
+    while time.perf_counter() - profile_start_seconds < args.profile_seconds:
+        run_id = f'{query_prefix}.profile{run}'
+
+        for conn_index, c in enumerate(this_query_connections):
+            try:
+                res = c.execute(q, query_id = run_id, settings = {'query_profiler_real_time_period_ns': 10000000})
+                print(f'profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
+            except Exception as e:
+                # Add query id to the exception to make debugging easier.
+                e.args = (run_id, *e.args)
+                e.message = run_id + ': ' + e.message
+                raise
+
+        run += 1
+
+    profile_total_seconds += time.perf_counter() - profile_start_seconds
+
+print(f'profile-total\t{profile_total_seconds}')
+
+reportStageEnd('run')
 
 # Run drop queries
 drop_queries = substitute_parameters(drop_query_templates)
@@ -359,3 +408,5 @@ for conn_index, c in enumerate(all_connections):
     for q in drop_queries:
         c.execute(q)
         print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
+
+reportStageEnd('drop-2')
