@@ -15,24 +15,6 @@ namespace DB
 
 class Context;
 
-struct Rocksdb
-{
-    rocksdb::DB * rocksdb;
-    explicit Rocksdb(rocksdb::DB * rocksdb_) : rocksdb{rocksdb_} {}
-    Rocksdb(const Rocksdb &) = delete;
-    Rocksdb & operator=(const Rocksdb &) = delete;
-
-    void shutdown()
-    {
-        if (rocksdb)
-        {
-           rocksdb->Close();
-           delete rocksdb;
-        }
-    }
-};
-
-
 class StorageEmbeddedRocksdb final : public ext::shared_ptr_helper<StorageEmbeddedRocksdb>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageEmbeddedRocksdb>;
@@ -55,12 +37,18 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
 protected:
-    StorageEmbeddedRocksdb(const StorageFactory::Arguments & args);
+    StorageEmbeddedRocksdb(const StorageID & table_id_,
+        const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
+        bool attach,
+        Context & context_,
+        const String & primary_key_);
 
 private:
-    using RocksdbPtr = std::shared_ptr<Rocksdb>;
-    String rocksdb_dir;
+    const String primary_key;
+    using RocksdbPtr = std::unique_ptr<rocksdb::DB>;
     RocksdbPtr rocksdb_ptr;
+    String rocksdb_dir;
     mutable std::shared_mutex rwlock;
 
     void initDb();
