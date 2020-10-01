@@ -270,6 +270,9 @@ TESTS_TO_SKIP=(
     00646_url_engine
     00974_query_profiler
 
+     # Rocksdb is not enabled by default
+    01504_rocksdb
+
     # Look at DistributedFilesToInsert, so cannot run in parallel.
     01460_DistributedFilesToInsert
 
