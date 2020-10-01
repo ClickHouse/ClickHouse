@@ -924,11 +924,6 @@ void StorageMergeTree::mergeMutateAssigningTask()
 
     try
     {
-        //if (getStorageID().table_name == "tt")
-        //{
-        //    LOG_DEBUG(log, "==============================TRYING TO SELECT PARTS TO MERGE=====================");
-        //}
-        /// To separate function
         /// Clear old parts. It is unnecessary to do it more than once a second.
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
@@ -953,22 +948,12 @@ void StorageMergeTree::mergeMutateAssigningTask()
         {
             global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, entry = *merge_entry]()
             {
-                //if (getStorageID().table_name == "tt")
-                //{
-                //    LOG_DEBUG(log, "==============================MERGING SOMETHING IN  BACKGOUND=====================");
-                //}
-                ///TODO: read deduplicate option from table config
                 mergeSelectedParts(metadata_snapshot, false, entry);
             });
 
             merge_assigning_task->schedule(); /// FIXME(alesap)
             return;
         }
-        //else
-        //{
-        //    if (getStorageID().table_name == "tt")
-        //        LOG_DEBUG(log, "==============================MERGE ENTRY EMPTY BECAUSE {} =====================", not_selected);
-        //}
 
         std::optional<MergeMutateSelectedEntry> mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
         if (mutate_entry)
