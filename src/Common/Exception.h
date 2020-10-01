@@ -39,11 +39,8 @@ public:
     const char * name() const throw() override { return "DB::Exception"; }
     const char * what() const throw() override { return message().data(); }
 
-    template <typename ...Fmt>
-    void addMessage(Fmt&&... fmt)
-    {
-        extendedMessage(fmt::format(std::forward<Fmt>(fmt)...));
-    }
+    /// Add something to the existing message.
+    void addMessage(const std::string & arg) { extendedMessage(arg); }
 
     std::string getStackTraceString() const;
 
