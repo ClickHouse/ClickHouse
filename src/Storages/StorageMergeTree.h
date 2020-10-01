@@ -160,8 +160,6 @@ private:
     void mergeMutateAssigningTask();
     void mergeMutateProcessingTask(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry);
 
-    BackgroundProcessingPoolTaskResult mergeMutateTask();
-
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;

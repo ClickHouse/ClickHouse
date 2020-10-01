@@ -2533,7 +2533,7 @@ void StorageReplicatedMergeTree::queueProcessingTask()
             return;
         }
 
-        global_context.getBackgroundProcessingPool().scheduleOrThrow([this, selected_entry]() mutable
+        global_context.getBackgroundProcessingPool().scheduleOrThrowOnError([this, selected_entry]() mutable
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
             processQueueEntry(selected_entry);
@@ -2543,8 +2543,8 @@ void StorageReplicatedMergeTree::queueProcessingTask()
     }
     catch (...)
     {
+        tryLogCurrentException(log);
         queue_processing_task_handle->scheduleAfter(500); /// FIXME(alesap)
-        throw;
     }
 }
 

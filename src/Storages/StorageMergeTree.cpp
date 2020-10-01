@@ -926,7 +926,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
         /// Clear old parts. It is unnecessary to do it more than once a second.
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
-            global_context.getBackgroundProcessingPool().scheduleOrThrow([this]()
+            global_context.getBackgroundProcessingPool().scheduleOrThrowOnError([this]()
             {
                 {
                     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
@@ -945,7 +945,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
         std::optional<MergeMutateSelectedEntry> merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, &not_selected);
         if (merge_entry)
         {
-            global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, entry = *merge_entry]()
+            global_context.getBackgroundProcessingPool().scheduleOrThrowOnError([this, metadata_snapshot, entry = *merge_entry]()
             {
 
                 CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
@@ -959,7 +959,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
         std::optional<MergeMutateSelectedEntry> mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
         if (mutate_entry)
         {
-            global_context.getBackgroundProcessingPool().scheduleOrThrow([this, metadata_snapshot, entry = *mutate_entry]()
+            global_context.getBackgroundProcessingPool().scheduleOrThrowOnError([this, metadata_snapshot, entry = *mutate_entry]()
             {
                 CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
                 mutateSelectedPart(metadata_snapshot, entry);
@@ -972,56 +972,8 @@ void StorageMergeTree::mergeMutateAssigningTask()
     }
     catch (...)
     {
+        tryLogCurrentException(log);
         merge_assigning_task->scheduleAfter(500); /// FIXME(alesap)
-        throw;
-    }
-}
-
-BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
-{
-    if (shutdown_called)
-        return BackgroundProcessingPoolTaskResult::ERROR;
-
-    if (merger_mutator.merges_blocker.isCancelled())
-        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
-
-    try
-    {
-        /// Clear old parts. It is unnecessary to do it more than once a second.
-        if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
-        {
-            {
-                auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-                /// All use relative_data_path which changes during rename
-                /// so execute under share lock.
-                clearOldPartsFromFilesystem();
-                clearOldTemporaryDirectories();
-                clearOldWriteAheadLogs();
-            }
-            clearOldMutations();
-        }
-
-        auto metadata_snapshot = getInMemoryMetadataPtr();
-        auto merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr);
-        ///TODO: read deduplicate option from table config
-        if (merge_entry && mergeSelectedParts(metadata_snapshot, false, *merge_entry))
-            return BackgroundProcessingPoolTaskResult::SUCCESS;
-
-        auto mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
-        if (mutate_entry && mutateSelectedPart(metadata_snapshot, *mutate_entry))
-            return BackgroundProcessingPoolTaskResult::SUCCESS;
-
-        return BackgroundProcessingPoolTaskResult::ERROR;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::ABORTED)
-        {
-            LOG_INFO(log, e.message());
-            return BackgroundProcessingPoolTaskResult::ERROR;
-        }
-
-        throw;
     }
 }
 
