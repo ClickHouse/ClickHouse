@@ -101,11 +101,13 @@ private:
       */
     ActiveDataPartSet virtual_parts;
 
+    /// Stat when mutations were last updated.
+    Coordination::Stat mutations_stat;
+
     /// A set of mutations loaded from ZooKeeper.
     /// mutations_by_partition is an index partition ID -> block ID -> mutation into this set.
     /// Note that mutations are updated in such a way that they are always more recent than
     /// log_pointer (see pullLogsToQueue()).
-
     struct MutationStatus
     {
         MutationStatus(const ReplicatedMergeTreeMutationEntryPtr & entry_, MergeTreeDataFormatVersion format_version_)
@@ -291,11 +293,11 @@ public:
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
-    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
+    std::pair<int32_t, int32_t> pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
-    void updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
+    int32_t updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
     /// Remove a mutation from ZooKeeper and from the local set. Returns the removed entry or nullptr
     /// if it could not be found. Called during KILL MUTATION query execution.
@@ -367,6 +369,7 @@ public:
 
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
+    bool isVirtualPart(const MergeTreePartInfo & part_info) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
     /// Locks queue's mutex.
@@ -458,12 +461,13 @@ public:
     /// mutation version (and -1 as alter version). In other case, we return biggest mutation version with
     /// smallest alter version. This required, because we have to execute alter mutations sequentially and
     /// don't glue them together. Alter is rare operation, so it shouldn't affect performance.
-    std::optional<std::pair<Int64, int>> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
+    std::optional<std::pair<Int64, int>> getDesiredMutationVersion(const MergeTreePartInfo & part_info) const;
 
     bool isMutationFinished(const ReplicatedMergeTreeMutationEntry & mutation) const;
 
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
+    int32_t getMutationsVersion() const { return mutations_version; }
 
 private:
     const ReplicatedMergeTreeQueue & queue;
@@ -478,6 +482,7 @@ private:
     String inprogress_quorum_part;
 
     int32_t merges_version = -1;
+    int32_t mutations_version = -1;
 };
 
 

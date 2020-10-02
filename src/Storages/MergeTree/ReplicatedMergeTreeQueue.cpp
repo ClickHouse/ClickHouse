@@ -57,6 +57,12 @@ bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & 
     return virtual_parts.getContainingPart(data_part->info) != data_part->name;
 }
 
+bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreePartInfo & part_info) const
+{
+    std::lock_guard lock(state_mutex);
+    return virtual_parts.getContainingPart(part_info) != part_info.getPartName();
+}
+
 bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 {
     auto queue_path = replica_path + "/queue";
@@ -441,7 +447,7 @@ bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & 
     return virtual_parts.remove(part_info);
 }
 
-int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
+std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
     if (pull_log_blocker.isCancelled())
@@ -460,7 +466,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
     /// in the queue.
     /// With this we ensure that if you read the log state L1 and then the state of mutations M1,
     /// then L1 "happened-before" M1.
-    updateMutations(zookeeper);
+    int32_t mutations_version = updateMutations(zookeeper);
 
     if (index_str.empty())
     {
@@ -588,7 +594,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
             storage.queue_task_handle->signalReadyToRun();
     }
 
-    return stat.version;
+    return std::make_pair(stat.version, mutations_version);
 }
 
 
@@ -621,11 +627,11 @@ Names getPartNamesToMutate(
 
 }
 
-void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
+int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
 
-    Strings entries_in_zk = zookeeper->getChildrenWatch(zookeeper_path + "/mutations", nullptr, watch_callback);
+    Strings entries_in_zk = zookeeper->getChildrenWatch(zookeeper_path + "/mutations", &mutations_stat, watch_callback);
     StringSet entries_in_zk_set(entries_in_zk.begin(), entries_in_zk.end());
 
     /// Compare with the local state, delete obsolete entries and determine which new entries to load.
@@ -740,6 +746,8 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
         if (some_mutations_are_probably_done)
             storage.mutations_finalizing_task->schedule();
     }
+
+    return mutations_stat.version;
 }
 
 
@@ -1749,7 +1757,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         }
     }
 
-    merges_version = queue_.pullLogsToQueue(zookeeper);
+    std::tie(merges_version, mutations_version) = queue_.pullLogsToQueue(zookeeper);
 
     Coordination::GetResponse quorum_status_response = quorum_status_future.get();
     if (quorum_status_response.error == Coordination::Error::ZOK)
@@ -1960,7 +1968,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
 }
 
 
-std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
+std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreePartInfo & part_info) const
 {
     /// Assigning mutations is easier than assigning merges because mutations appear in the same order as
     /// the order of their version numbers (see StorageReplicatedMergeTree::mutate).
@@ -1971,19 +1979,19 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
 
     /// We cannot mutate part if it's being inserted with quorum and it's not
     /// already reached.
-    if (part->name == inprogress_quorum_part)
+    if (part_info.getPartName() == inprogress_quorum_part)
         return {};
 
     std::lock_guard lock(queue.state_mutex);
 
-    if (queue.virtual_parts.getContainingPart(part->info) != part->name)
+    if (queue.virtual_parts.getContainingPart(part_info) != part_info.getPartName())
         return {};
 
-    auto in_partition = queue.mutations_by_partition.find(part->info.partition_id);
+    auto in_partition = queue.mutations_by_partition.find(part_info.partition_id);
     if (in_partition == queue.mutations_by_partition.end())
         return {};
 
-    Int64 current_version = queue.getCurrentMutationVersionImpl(part->info.partition_id, part->info.getDataVersion(), lock);
+    Int64 current_version = queue.getCurrentMutationVersionImpl(part_info.partition_id, part_info.getDataVersion(), lock);
     Int64 max_version = in_partition->second.rbegin()->first;
 
     int alter_version = -1;

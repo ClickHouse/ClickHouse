@@ -14,7 +14,8 @@ INSERT INTO mt VALUES (2);
 -- this part does not exist
 ALTER TABLE mt ADD FINGERPRINT 'my-unique-fp1' FOR PART 'all_2_42_8'; -- { serverError 257 }
 
-ALTER TABLE mt ADD FINGERPRINT 'my-unique-fp1' FOR PART 'all_1_1_0';
+ALTER TABLE mt ADD FINGERPRINT 'my-unique-fp1' FOR PART 'all_1_1_0'
+    SETTINGS mutations_sync = 2;
 
 SELECT '-- resume merges --';
 SYSTEM START MERGES;
@@ -32,7 +33,9 @@ SELECT name, fingerprint, active FROM system.parts WHERE table = 'mt' AND active
 
 SELECT '-- remove fingerprint --';
 
-ALTER TABLE mt REMOVE FINGERPRINT 'my-unique-fp1' FOR PART 'all_1_1_0_3';
+ALTER TABLE mt REMOVE FINGERPRINT 'my-unique-fp1' FOR PART 'all_1_1_0_3'
+    SETTINGS mutations_sync = 2;
+
 OPTIMIZE TABLE mt FINAL;
 SELECT name, fingerprint, active FROM system.parts WHERE table = 'mt' AND active;
 

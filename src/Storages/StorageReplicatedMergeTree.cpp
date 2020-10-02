@@ -2602,7 +2602,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     if (part->getBytesOnDisk() > max_source_part_size_for_mutation)
                         continue;
 
-                    std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
+                    std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred.getDesiredMutationVersion(part->info);
                     if (!desired_mutation_version)
                         continue;
 
@@ -4839,6 +4839,15 @@ void StorageReplicatedMergeTree::fetchPartition(
 
 void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
 {
+    mutateImpl(commands, -1, -1, query_context);
+}
+
+void StorageReplicatedMergeTree::mutateImpl(
+    const MutationCommands & commands,
+    int32_t precondition_merges_version,
+    int32_t precondition_mutations_version,
+    const Context & query_context)
+{
     /// Overview of the mutation algorithm.
     ///
     /// When the client executes a mutation, this method is called. It acquires block numbers in all
@@ -4896,6 +4905,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
     entry.source_replica = replica_name;
     entry.commands = commands;
 
+    String log_path = zookeeper_path + "/log";
     String mutations_path = zookeeper_path + "/mutations";
 
     /// Update the mutations_path node when creating the mutation and check its version to ensure that
@@ -4908,6 +4918,9 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         Coordination::Stat mutations_stat;
         zookeeper->get(mutations_path, &mutations_stat);
 
+        if (precondition_mutations_version > -1 && precondition_mutations_version != mutations_stat.version)
+            throw Coordination::Exception("New mutations were enqueued", Coordination::Error::ZBADVERSION);
+
         EphemeralLocksInAllPartitions block_number_locks(
             zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
 
@@ -4917,6 +4930,15 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         entry.create_time = time(nullptr);
 
         Coordination::Requests requests;
+
+        uint path_created_ix = 1;
+
+        if (precondition_merges_version > -1)
+        {
+            requests.emplace_back(zkutil::makeCheckRequest(log_path, precondition_merges_version));
+            path_created_ix += 1;
+        }
+
         requests.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
         requests.emplace_back(zkutil::makeCreateRequest(
             mutations_path + "/", entry.toString(), zkutil::CreateMode::PersistentSequential));
@@ -4927,7 +4949,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         if (rc == Coordination::Error::ZOK)
         {
             const String & path_created =
-                dynamic_cast<const Coordination::CreateResponse *>(responses[1].get())->path_created;
+                dynamic_cast<const Coordination::CreateResponse *>(responses[path_created_ix].get())->path_created;
             entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
             LOG_TRACE(log, "Created mutation with ID {}", entry.znode_name);
             break;
@@ -5700,6 +5722,8 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::addFingerprintPart(const
     }
 
     {
+        /// COPY & PASTE from removeFingerprintPart
+
         auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
         auto part_it = data_parts_by_info.find(part_info);
         if (part_it == data_parts_by_info.end() || (*part_it)->state != IMergeTreeDataPart::State::Committed)
@@ -5712,15 +5736,27 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::addFingerprintPart(const
             throw Exception(
                 "Part " + part_name + " type (" + (*part_it)->getTypeName() + ") does not support fingerprints.", ErrorCodes::NOT_IMPLEMENTED);
         }
-    }
 
-    {
-        Context new_ctx = query_context;
-        auto new_settings = new_ctx.getSettings();
-        new_settings.mutations_sync = 2;
-        new_ctx.setSettings(new_settings);
+        auto zookeeper = getZooKeeper();
+        auto merge_pred = queue.getMergePredicate(zookeeper);
 
-        mutate(commands, new_ctx);
+        int32_t merges_version = merge_pred.getVersion();
+        int32_t mutations_version = merge_pred.getMutationsVersion();
+
+        if (queue.isVirtualPart(part_info))
+            throw Exception(
+                "Part " + part_name + " has pending merges, try running this command for the resulting part.",
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+
+        auto next_version = merge_pred.getDesiredMutationVersion(part_info);
+        if (next_version && (*next_version).first > part_info.getDataVersion())
+        {
+            throw Exception(
+                "Part " + part_name + " has pending mutations, try again after all mutations have been executed.",
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+        }
+
+        mutateImpl(commands, merges_version, mutations_version, query_context);
     }
 
     return results;
@@ -5752,12 +5788,41 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::removeFingerprintPart(co
     }
 
     {
-        Context new_ctx = query_context;
-        auto new_settings = new_ctx.getSettings();
-        new_settings.mutations_sync = 2;
-        new_ctx.setSettings(new_settings);
+        /// COPY & PASTE from addFingerprintPart
 
-        mutate(commands, new_ctx);
+        auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+        auto part_it = data_parts_by_info.find(part_info);
+        if (part_it == data_parts_by_info.end() || (*part_it)->state != IMergeTreeDataPart::State::Committed)
+            throw Exception("Could not find part by name: " + part_name, ErrorCodes::PARTITION_DOESNT_EXIST);
+
+        /// TODO(nv): This doesn't make sense for replicated tables
+        ///     as storage might be different for different replicas.
+        if (!(*part_it)->isStoredOnDisk())
+        {
+            throw Exception(
+                "Part " + part_name + " type (" + (*part_it)->getTypeName() + ") does not support fingerprints.", ErrorCodes::NOT_IMPLEMENTED);
+        }
+
+        auto zookeeper = getZooKeeper();
+        auto merge_pred = queue.getMergePredicate(zookeeper);
+
+        int32_t merges_version = merge_pred.getVersion();
+        int32_t mutations_version = merge_pred.getMutationsVersion();
+
+        if (queue.isVirtualPart(part_info))
+            throw Exception(
+                "Part " + part_name + " has pending merges, try running this command for the resulting part.",
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+
+        auto next_version = merge_pred.getDesiredMutationVersion(part_info);
+        if (next_version && (*next_version).first > part_info.getDataVersion())
+        {
+            throw Exception(
+                "Part " + part_name + " has pending mutations, try again after all mutations have been executed.",
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+        }
+
+        mutateImpl(commands, merges_version, mutations_version, query_context);
     }
 
     return results;

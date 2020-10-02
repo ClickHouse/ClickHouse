@@ -119,6 +119,13 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
+
+    void mutateImpl(
+        const MutationCommands & commands,
+        int32_t precondition_merges_version,
+        int32_t precondition_mutations_version,
+        const Context & query_context);
+
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
