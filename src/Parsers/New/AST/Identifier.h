@@ -15,6 +15,7 @@ class Identifier : public INode
         const auto & getName() const { return name; }
 
         ASTPtr convertToOld() const override;
+        String toString() const override;
 
         virtual String getQualifiedName() const { return name; };
 

@@ -80,6 +80,22 @@ ASTPtr ColumnTypeExpr::convertToOld() const
     return func;
 }
 
+String ColumnTypeExpr::toString() const
+{
+    switch(expr_type)
+    {
+        case ExprType::SIMPLE:
+            return get(NAME)->toString();
+        case ExprType::NAMED:
+            return get(NAME)->toString() + " " + get(TYPE)->toString();
+        case ExprType::COMPLEX:
+        case ExprType::ENUM:
+        case ExprType::PARAM:
+        case ExprType::NESTED:
+            return get(NAME)->toString() + "(" + get(LIST)->toString() + ")";
+    }
+}
+
 }
 
 namespace DB

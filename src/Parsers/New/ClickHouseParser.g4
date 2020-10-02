@@ -233,10 +233,10 @@ useStmt: USE databaseIdentifier;
 
 columnTypeExpr
     : identifier                                                                             # ColumnTypeExprSimple   // UInt64
+    | identifier LPAREN identifier columnTypeExpr (COMMA identifier columnTypeExpr)* RPAREN  # ColumnTypeExprNested   // Nested
     | identifier LPAREN columnExprList RPAREN                                                # ColumnTypeExprParam    // FixedString(N)
     | identifier LPAREN enumValue (COMMA enumValue)* RPAREN                                  # ColumnTypeExprEnum     // Enum
     | identifier LPAREN columnTypeExpr (COMMA columnTypeExpr)* RPAREN                        # ColumnTypeExprComplex  // Array, Tuple
-    | identifier LPAREN identifier columnTypeExpr (COMMA identifier columnTypeExpr)* RPAREN  # ColumnTypeExprNested   // Nested
     ;
 columnExprList: columnsExpr (COMMA columnsExpr)*;
 columnsExpr

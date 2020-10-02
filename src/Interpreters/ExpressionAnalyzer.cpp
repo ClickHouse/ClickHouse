@@ -404,7 +404,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & action
         AggregateDescription aggregate;
         aggregate.column_name = node->getColumnName();
 
-        const ASTs & arguments = node->arguments->children;
+        const ASTs & arguments = node->arguments ? node->arguments->children : ASTs();
         aggregate.argument_names.resize(arguments.size());
         DataTypes types(arguments.size());
 
@@ -782,8 +782,9 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
 
     /// TODO: data.aggregates -> aggregates()
     for (const ASTFunction * node : data.aggregates)
-        for (auto & argument : node->arguments->children)
-            getRootActions(argument, only_types, step.actions());
+        if (node->arguments)
+            for (auto & argument : node->arguments->children)
+                getRootActions(argument, only_types, step.actions());
 }
 
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)

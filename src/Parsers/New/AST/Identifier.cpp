@@ -23,6 +23,11 @@ ASTPtr Identifier::convertToOld() const
     return std::make_shared<ASTIdentifier>(getQualifiedName());
 }
 
+String Identifier::toString() const
+{
+    return getQualifiedName();
+}
+
 DatabaseIdentifier::DatabaseIdentifier(PtrTo<Identifier> name) : Identifier(*name)
 {
 }

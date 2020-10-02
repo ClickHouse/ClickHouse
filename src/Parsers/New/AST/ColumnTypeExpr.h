@@ -32,6 +32,7 @@ class ColumnTypeExpr : public INode
         static PtrTo<ColumnTypeExpr> createNested(PtrTo<Identifier> identifier, PtrTo<ColumnTypeExprList> list);
 
         ASTPtr convertToOld() const override;
+        String toString() const override;
 
     private:
         enum class ExprType
