@@ -39,6 +39,7 @@ Block QueryLogElement::createBlock()
         {std::move(query_status_datatype),                                    "type"},
         {std::make_shared<DataTypeDate>(),                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                "event_time"},
+        {std::make_shared<DataTypeDateTime64>(6),                             "event_time_microseconds"},
         {std::make_shared<DataTypeDateTime>(),                                "query_start_time"},
         {std::make_shared<DataTypeDateTime64>(6),                             "query_start_time_microseconds"},
         {std::make_shared<DataTypeUInt64>(),                                  "query_duration_ms"},
@@ -97,6 +98,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
+    columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(query_start_time);
     columns[i++]->insert(query_start_time_microseconds);
     columns[i++]->insert(query_duration_ms);
