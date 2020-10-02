@@ -34,8 +34,8 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl()
 
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_)
-    : ThreadPoolImpl(max_threads_, max_threads_, max_threads_)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, bool shutdown_on_exception_)
+    : ThreadPoolImpl(max_threads_, max_threads_, max_threads_, shutdown_on_exception_)
 {
 }
 

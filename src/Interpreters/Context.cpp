@@ -1385,7 +1385,7 @@ ThreadPool & Context::getBackgroundProcessingPool()
 {
     auto lock = getLock();
     if (!shared->background_processing_pool)
-        shared->background_processing_pool.emplace(settings.background_pool_size);
+        shared->background_processing_pool.emplace(settings.background_pool_size, /* shutdown_on_exception = */ false);
     return *shared->background_processing_pool;
 }
 

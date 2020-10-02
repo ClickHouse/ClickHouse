@@ -34,7 +34,7 @@ public:
     ThreadPoolImpl();
 
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
-    explicit ThreadPoolImpl(size_t max_threads_);
+    explicit ThreadPoolImpl(size_t max_threads_, bool shutdown_on_exception_ = true);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
     ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_ = true);
