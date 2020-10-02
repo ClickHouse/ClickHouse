@@ -898,7 +898,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, cons
         {
             String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.get<String>();
             Macros::MacroExpansionInfo info;
-            info.uuid = create.uuid;
+            info.table_id.uuid = create.uuid;
             info.ignore_unknown = true;
             context.getMacros()->expand(zk_path, info);
             if (!info.expanded_uuid)
