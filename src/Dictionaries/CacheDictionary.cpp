@@ -342,7 +342,7 @@ CacheDictionary::FindResult CacheDictionary::findCellIdxForGet(const Key & id, c
         return {cell_idx, true, false};
     }
 
-    return {pos, false, false};
+    return {pos & size_overlap_mask, false, false};
 }
 
 /// Returns cell_idx such that cells[cell_idx].id = id or the oldest cell in bounds of max_coolision_length. 
@@ -405,9 +405,6 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
             const auto id = ids[row];
             const auto find_result = findCellIdxForGet(id, now);
             auto & cell = cells[find_result.cell_idx];
-
-            if (cell.isDefault())
-                continue;
 
             auto insert_to_answer_routine = [&] ()
             {
