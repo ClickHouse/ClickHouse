@@ -310,7 +310,9 @@ private:
         const bool outdated;
     };
 
-    FindResult findCellIdx(const Key & id, const time_point_t now) const;
+    FindResult findCellIdxForGet(const Key & id, const time_point_t now) const;
+
+    size_t findCellIdxForSet(const Key & id) const;
 
     template <typename AncestorType>
     void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
