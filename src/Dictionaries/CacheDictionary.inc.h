@@ -1,6 +1,8 @@
 #pragma once
-#include "CacheDictionary.h"
 
+#include <stdexcept>
+
+#include "CacheDictionary.h"
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/typeid_cast.h>
@@ -9,6 +11,7 @@
 #include <ext/map.h>
 #include <ext/range.h>
 #include <ext/size.h>
+
 
 namespace ProfileEvents
 {
@@ -61,10 +64,6 @@ void CacheDictionary::getItemsNumberImpl(
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
-            
-            /// First check if this key in the cache of default keys.
-            if (default_keys.has(id))
-                continue;
 
             /** cell should be updated if either:
                 *    1. ids do not match,
@@ -72,20 +71,24 @@ void CacheDictionary::getItemsNumberImpl(
                 *    3. explicit defaults were specified and cell was set default. */
 
             const auto find_result = findCellIdx(id, now);
+            auto & cell = cells[find_result.cell_idx];
+
+            if (cell.isDefault())
+                continue;
 
             auto update_routine = [&]()
             {
                 const auto & cell_idx = find_result.cell_idx;
-                out[row] = static_cast<OutputType>(attribute_array[cell_idx]);
+                if (!cell.isDefault())
+                    out[row] = static_cast<OutputType>(attribute_array[cell_idx]);
             };
 
             if (!find_result.valid)
             {
-
                 if (find_result.outdated)
                 {
                     /// Protection of reading very expired keys.
-                    if (isExpiredPermanently(now, cells[find_result.cell_idx].deadline))
+                    if (isExpiredPermanently(now, cell.expiresAt()))
                     {
                         cache_not_found_count++;
                         cache_expired_or_not_found_ids[id].push_back(row);
@@ -168,10 +171,7 @@ void CacheDictionary::getItemsNumberImpl(
         {
             for (const size_t row : cache_expired_or_not_found_ids[key])
                 out[row] = std::get<OutputType>(value.values[attribute_index]);
-        } else 
-        {
-            default_keys.add(key);
-        }
+        } 
     }
 }
 
@@ -198,17 +198,9 @@ void CacheDictionary::getItemsString(
         {
             const auto id = ids[row];
 
-            {
-                std::shared_lock shared_lock(default_cache_rw_lock);
-                /// Check if the key is stored in the cache of defaults.
-                if (default_keys.has(id))
-                {
-                    const auto string_ref = get_default(row);
-                    out->insertData(string_ref.data, string_ref.size);
-                }
-            }
-
             const auto find_result = findCellIdx(id, now);
+            auto & cell = cells[find_result.cell_idx];
+
             if (!find_result.valid)
             {
                 found_outdated_values = true;
@@ -217,7 +209,7 @@ void CacheDictionary::getItemsString(
             else
             {
                 const auto & cell_idx = find_result.cell_idx;
-                const auto string_ref = attribute_array[cell_idx];
+                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
                 out->insertData(string_ref.data, string_ref.size);
             }
         }
@@ -252,20 +244,20 @@ void CacheDictionary::getItemsString(
         for (const auto row : ext::range(0, ids.size()))
         {
             const auto id = ids[row];
-            /// Check if the key is stored in the cache of defaults.
-            if (default_keys.has(id))
-            {
-                const auto string_ref = get_default(row);
-                out->insertData(string_ref.data, string_ref.size);
-            }
             const auto find_result = findCellIdx(id, now);
+            const auto & cell = cells[find_result.cell_idx];
+
+            if (cell.isDefault())
+                continue;
 
             auto insert_value_routine = [&]()
             {
                 const auto & cell_idx = find_result.cell_idx;
-                const auto string_ref = attribute_array[cell_idx];
+                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
-                inside_cache[id] = String{string_ref};
+                if (!cell.isDefault())
+                    inside_cache[id] = String{string_ref};
+
                 total_length += string_ref.size + 1;
             };
 
@@ -274,7 +266,7 @@ void CacheDictionary::getItemsString(
                 if (find_result.outdated)
                 {
                     /// Protection of reading very expired keys.
-                    if (isExpiredPermanently(now, cells[find_result.cell_idx].deadline))
+                    if (isExpiredPermanently(now, cells[find_result.cell_idx].expiresAt()))
                     {
                         cache_not_found_count++;
                         cache_expired_or_not_found_ids[id].push_back(row);
@@ -374,7 +366,6 @@ void CacheDictionary::getItemsString(
                 value = std::get<String>(found_it->second.values[attribute_index]);
             else
             {
-                default_keys.add(id);
                 value = get_default(row);
             }
         }

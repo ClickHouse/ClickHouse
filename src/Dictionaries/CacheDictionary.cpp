@@ -85,7 +85,6 @@ CacheDictionary::CacheDictionary(
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
-    , default_keys{this->size}
     , rnd_engine(randomSeed())
     , update_queue(max_update_queue_size_)
     , update_pool(max_threads_for_updates)
@@ -341,15 +340,15 @@ CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const t
         if (cell.id != id)
         {
             /// maybe we already found nearest expired cell (try minimize collision_length on insert)
-            if (oldest_time > now && oldest_time > cell.deadline)
+            if (oldest_time > now && oldest_time > cell.expiresAt())
             {
-                oldest_time = cell.deadline;
+                oldest_time = cell.expiresAt();
                 oldest_id = cell_idx;
             }
             continue;
         }
 
-        if (cell.deadline < now)
+        if (cell.expiresAt() < now)
         {
             return {cell_idx, false, true};
         }
@@ -388,16 +387,15 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
-            
-            /// Check if the key is stored in the cache of defaults.
-            if (default_keys.has(id))
-                continue;
-
             const auto find_result = findCellIdx(id, now);
+            auto & cell = cells[find_result.cell_idx];
+
+            if (cell.isDefault())
+                continue;
 
             auto insert_to_answer_routine = [&] ()
             {
-                out[row] = true;
+                out[row] = !cell.isDefault();
             };
 
             if (!find_result.valid)
@@ -405,7 +403,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
                 if (find_result.outdated)
                 {
                     /// Protection of reading very expired keys.
-                    if (isExpiredPermanently(now, cells[find_result.cell_idx].deadline))
+                    if (isExpiredPermanently(now, cell.expiresAt()))
                     {
                         cache_not_found_count++;
                         cache_expired_or_not_found_ids[id].push_back(row);
@@ -480,9 +478,6 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         if (value.found)
             for (const auto row : cache_expired_or_not_found_ids[key])
                 out[row] = true;
-        else
-            /// Cache this key as default.
-            default_keys.add(key);
     }
 }
 
@@ -682,6 +677,7 @@ bool CacheDictionary::isEmptyCell(const UInt64 idx) const
 {
     return (idx != zero_cell_idx && cells[idx].id == 0) || (cells[idx].deadline == time_point_t());
 }
+
 
 PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
 {
@@ -985,17 +981,29 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                     if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
                     {
                         std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-                        cell.deadline = now + std::chrono::seconds{distribution(rnd_engine)};
+                        cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
                     }
                     else
-                        cell.deadline = std::chrono::time_point<std::chrono::system_clock>::max();
+                        cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
                 }
             }
 
             stream->readSuffix();
 
-            /// Lock just for last_exception safety
+            /// Lock for cache modification
             ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+
+            for (auto & [key, value] : update_unit_ptr->found_ids)
+            {
+                if (!value.found)
+                {
+                    auto result = findCellIdx(key, now);
+                    auto & cell = cells[result.cell_idx];
+                    cell.id = key;
+                    cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
+                    cell.setDefault();
+                } 
+            } 
 
             error_count = 0;
             last_exception = std::exception_ptr{};

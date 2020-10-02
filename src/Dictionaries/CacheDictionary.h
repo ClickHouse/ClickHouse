@@ -22,8 +22,6 @@
 #include "IDictionary.h"
 #include "IDictionarySource.h"
 
-#include <Common/LRUSet.h>
-
 namespace CurrentMetrics
 {
     extern const Metric CacheDictionaryUpdateQueueBatches;
@@ -65,22 +63,6 @@ public:
         size_t max_threads_for_updates);
 
     ~CacheDictionary() override;
-
-    using AttributeValue = std::variant<
-        UInt8, UInt16, UInt32, UInt64, UInt128,
-        Int8, Int16, Int32, Int64,
-        Decimal32, Decimal64, Decimal128,
-        Float32, Float64, String>;
-
-    struct AttributeValuesForKey
-    {
-        bool found{false};
-        std::vector<AttributeValue> values;
-
-        std::string dump();
-    };
-
-    using FoundValuesForKeys = std::unordered_map<Key, AttributeValuesForKey>;
 
     std::string getTypeName() const override { return "Cache"; }
 
@@ -222,7 +204,29 @@ private:
     {
         UInt64 id;
         time_point_t deadline;
+        bool is_default{false};
+
+        time_point_t expiresAt() const { return deadline; }
+        void setExpiresAt(const time_point_t & t) { deadline = t; is_default = false; }
+        bool isDefault() const { return is_default; }
+        void setDefault() { is_default = true; }
     };
+
+    using AttributeValue = std::variant<
+        UInt8, UInt16, UInt32, UInt64, UInt128,
+        Int8, Int16, Int32, Int64,
+        Decimal32, Decimal64, Decimal128,
+        Float32, Float64, String>;
+
+    struct AttributeValuesForKey
+    {
+        bool found{false};
+        std::vector<AttributeValue> values;
+
+        std::string dump();
+    };
+
+    using FoundValuesForKeys = std::unordered_map<Key, AttributeValuesForKey>;
 
     struct Attribute final
     {
@@ -348,7 +352,6 @@ private:
     std::map<std::string, size_t> attribute_index_by_name;
     mutable std::vector<Attribute> attributes;
     mutable std::vector<CellMetadata> cells;
-    mutable LRUSet<Key> default_keys;
     Attribute * hierarchical_attribute = nullptr;
     std::unique_ptr<ArenaWithFreeLists> string_arena;
 
