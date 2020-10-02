@@ -90,6 +90,7 @@ enum class LogsLevel
     fatal,
     error,
     warning,
+    notice,
     information,
     debug,
     trace,

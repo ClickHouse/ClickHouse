@@ -204,14 +204,14 @@ public:
 
             if (sig == Signals::StopThread)
             {
-                LOG_INFO(log, "Stop SignalListener thread");
+                LOG_NOTICE(log, "Stop SignalListener thread");
                 break;
             }
             else if (sig == SIGHUP || sig == SIGUSR1)
             {
                 LOG_DEBUG(log, "Received signal to close logs.");
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
-                LOG_INFO(log, "Opened new log file after received signal.");
+                LOG_NOTICE(log, "Opened new log file after received signal.");
             }
             else if (sig == Signals::StdTerminate)
             {
@@ -553,7 +553,7 @@ void debugIncreaseOOMScore()
         LOG_WARNING(&Poco::Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
         return;
     }
-    LOG_INFO(&Poco::Logger::root(), "Set OOM score adjustment to {}", new_score);
+    LOG_NOTICE(&Poco::Logger::root(), "Set OOM score adjustment to {}", new_score);
 }
 #else
 void debugIncreaseOOMScore() {}
@@ -780,7 +780,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
+    Poco::Logger::root().notice("Starting " + std::string{VERSION_FULL}
         + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
@@ -858,11 +858,11 @@ void BaseDaemon::handleSignal(int signal_id)
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", msan_strsignal(signal_id));
+    LOG_NOTICE(&logger(), "Received termination signal ({})", msan_strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
+        LOG_NOTICE(&logger(), "Received second signal Interrupt. Immediately terminate.");
         kill();
     }
 }
