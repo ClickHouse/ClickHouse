@@ -15,7 +15,7 @@ def check_query(clickhouse_node, query, result_set, retry_count=3, interval_seco
         if result_set == lastest_result:
             return
 
-        print lastest_result
+        print(lastest_result)
         time.sleep(interval_seconds)
 
     assert lastest_result == result_set
