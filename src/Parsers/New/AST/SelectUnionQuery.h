@@ -67,7 +67,14 @@ class GroupByClause : public INode
 
         bool withTotals() const { return with_totals; }
 
+        ASTPtr convertToOld() const override;
+
     private:
+        enum ChildIndex : UInt8
+        {
+            EXPRS = 0,  // ColumnExprList
+        };
+
         const bool with_totals;
 };
 

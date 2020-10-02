@@ -68,6 +68,11 @@ GroupByClause::GroupByClause(PtrTo<ColumnExprList> expr_list, bool with_totals_)
 {
 }
 
+ASTPtr GroupByClause::convertToOld() const
+{
+    return get(EXPRS)->convertToOld();
+}
+
 // LIMIT By Clause
 
 LimitByClause::LimitByClause(PtrTo<LimitExpr> expr, PtrTo<ColumnExprList> expr_list) : limit(expr), by(expr_list)

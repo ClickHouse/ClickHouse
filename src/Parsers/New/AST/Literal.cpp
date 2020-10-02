@@ -57,9 +57,10 @@ ASTPtr Literal::convertToOld() const
                 return Field(Null());
             case LiteralType::NUMBER:
             {
-                const auto * number = static_cast<const NumberLiteral*>(this);
+                const auto * number = this->as<NumberLiteral>();
 
-                if (auto value = number->as<UInt64>()) return Field(*value);
+                if (!number->isNegative())
+                    if (auto value = number->as<UInt64>()) return Field(*value);
                 if (auto value = number->as<Int64>()) return Field(*value);
                 if (auto value = number->as<Float64>()) return Field(*value);
 

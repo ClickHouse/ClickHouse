@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/New/AST/ColumnTypeExpr.h>
 #include <Parsers/New/AST/Identifier.h>
@@ -81,6 +82,12 @@ ASTPtr ColumnExpr::convertToOld() const
             return expr;
         }
         case ExprType::ASTERISK:
+            if (has(TABLE))
+            {
+                auto expr = std::make_shared<ASTQualifiedAsterisk>();
+                expr->children.push_back(get(TABLE)->convertToOld());
+                return expr;
+            }
             return std::make_shared<ASTAsterisk>();
         case ExprType::FUNCTION:
         {
@@ -200,8 +207,8 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprArrayAccess(ClickHouseParser::Col
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprAsterisk(ClickHouseParser::ColumnExprAsteriskContext *ctx)
 {
-    return ColumnExpr::createAsterisk(
-        ctx->tableIdentifier() ? visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>() : nullptr, true);
+    auto table = ctx->tableIdentifier() ? visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>() : nullptr;
+    return ColumnExpr::createAsterisk(table, true);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprBetween(ClickHouseParser::ColumnExprBetweenContext *ctx)
@@ -470,8 +477,8 @@ antlrcpp::Any ParseTreeVisitor::visitColumnLambdaExpr(ClickHouseParser::ColumnLa
 
 antlrcpp::Any ParseTreeVisitor::visitColumnsExprAsterisk(ClickHouseParser::ColumnsExprAsteriskContext *ctx)
 {
-    return ColumnExpr::createAsterisk(
-        ctx->tableIdentifier() ? visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>() : nullptr, false);
+    auto table = ctx->tableIdentifier() ? visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>() : nullptr;
+    return ColumnExpr::createAsterisk(table, false);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnsExprSubquery(ClickHouseParser::ColumnsExprSubqueryContext *ctx)

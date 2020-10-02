@@ -45,16 +45,19 @@ class ColumnExpr : public INode
         enum ChildIndex : UInt8
         {
             // ALIAS
-            EXPR = 0,
-            ALIAS = 1,
+            EXPR = 0,   // ColumnExpr
+            ALIAS = 1,  // Identifier
+
+            // ASTERISK
+            TABLE = 0,  // TableIdentifier (optional)
 
             // IDENTIFIER
-            IDENTIFIER = 0,
+            IDENTIFIER = 0,  // ColumnIdentifier
 
             // FUNCTION
-            NAME = 0,
-            PARAMS = 1,  // may be |nullptr|
-            ARGS = 2,    // may be |nullptr|
+            NAME = 0,    // Identifier
+            PARAMS = 1,  // ColumnParamList (optional)
+            ARGS = 2,    // ColumnExprList (optional)
 
             // LAMBDA
             LAMBDA_ARGS = 0,

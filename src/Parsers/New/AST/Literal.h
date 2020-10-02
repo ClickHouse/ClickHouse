@@ -65,6 +65,7 @@ class NumberLiteral : public Literal
         explicit NumberLiteral(const String & literal);
 
         void makeNegative() { minus = true; }
+        bool isNegative() const { return minus; }
 
         template <typename T> std::optional<T> as() const { return asNumber<T>(minus); }
 
