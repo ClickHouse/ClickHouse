@@ -63,13 +63,13 @@ def create_table(cluster, additional_settings=None):
         create_table_statement += ","
         create_table_statement += additional_settings
 
-    cluster.instances.values()[0].query(create_table_statement)
+    list(cluster.instances.values())[0].query(create_table_statement)
 
 
 @pytest.fixture(autouse=True)
 def drop_table(cluster):
     yield
-    for node in cluster.instances.values():
+    for node in list(cluster.instances.values()):
         node.query("DROP TABLE IF EXISTS s3_test")
 
     minio = cluster.minio_client
