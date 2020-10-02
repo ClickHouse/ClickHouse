@@ -54,6 +54,48 @@ def add_config(config, timeout=20, restart=False):
     :param config: configuration file description
     :param timeout: timeout, default: 20 sec
     """
+    def check_preprocessed_config_is_updated():
+        """Check that preprocessed config is updated.
+        """
+        started = time.time()
+        command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
+        while time.time() - started < timeout:
+            exitcode = node.command(command, steps=False).exitcode
+            if exitcode == 0:
+                break
+            time.sleep(1)
+        assert exitcode == 0, error()
+
+    def wait_for_config_to_be_loaded():
+        """Wait for config to be loaded.
+        """
+        if restart:
+            with When("I close terminal to the node to be restarted"):
+                bash.close()
+
+            with And("I get the current log size"):
+                logsize = \
+                    node.command("ls -s --block-size=1 /var/log/clickhouse-server/clickhouse-server.log").output.split(" ")[
+                    0].strip()
+
+            with And("I restart ClickHouse to apply the config changes"):
+                node.restart(safe=False)
+
+            with Then("I tail the log file from using previous log size as the offset"):
+                bash.prompt = bash.__class__.prompt
+                bash.open()
+                bash.send(f"tail -c +{logsize} -f /var/log/clickhouse-server/clickhouse-server.log")
+
+        with Then("I wait for config reload message in the log file"):
+            if restart:
+                bash.expect(
+                    f"ConfigReloader: Loaded config '/etc/clickhouse-server/config.xml', performed update on configuration",
+                    timeout=timeout)
+            else:
+                bash.expect(
+                    f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration",
+                    timeout=timeout)
+
     node = current().context.node
     try:
         with Given(f"{config.name}"):
@@ -70,29 +112,10 @@ def add_config(config, timeout=20, restart=False):
                     node.command(command, steps=False, exitcode=0)
 
                 with Then(f"{config.preprocessed_name} should be updated", description=f"timeout {timeout}"):
-                    started = time.time()
-                    command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
-                    while time.time() - started < timeout:
-                        exitcode = node.command(command, steps=False).exitcode
-                        if exitcode == 0:
-                            break
-                        time.sleep(1)
-                    assert exitcode == 0, error()
+                    check_preprocessed_config_is_updated()
 
-                if restart:
-                    bash.close()
-                    logsize = node.command("ls -s --block-size=1 /var/log/clickhouse-server/clickhouse-server.log").output.split(" ")[0].strip()
-                    with When("I restart ClickHouse to apply the config changes"):
-                        node.restart(safe=False)
-                    bash.prompt = bash.__class__.prompt
-                    bash.open()
-                    bash.send(f"tail -c +{logsize} -f /var/log/clickhouse-server/clickhouse-server.log")
-
-                with When("I wait for config to be loaded"):
-                    if restart:
-                        bash.expect(f"ConfigReloader: Loaded config '/etc/clickhouse-server/config.xml', performed update on configuration", timeout=timeout)
-                    else:
-                        bash.expect(f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration", timeout=timeout)
+                with And("I wait for config to be reloaded"):
+                    wait_for_config_to_be_loaded()
         yield
     finally:
         with Finally(f"I remove {config.name}"):
@@ -103,20 +126,11 @@ def add_config(config, timeout=20, restart=False):
                 with By("removing the config file", description=config.path):
                     node.command(f"rm -rf {config.path}", exitcode=0)
 
-                with Then(f"{config.preprocessed_name} should be updated"):
-                    started = time.time()
-                    command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep '{config.uid}'{' > /dev/null' if not settings.debug else ''}"
-                    while time.time() - started < timeout:
-                        exitcode = node.command(command, steps=False).exitcode
-                        if exitcode == 1:
-                            break
-                        time.sleep(1)
-                    assert exitcode == 1, error()
+                with Then(f"{config.preprocessed_name} should be updated", description=f"timeout {timeout}"):
+                    check_preprocessed_config_is_updated()
 
-                with When("I wait for config to be loaded"):
-                    started = time.time()
-                    bash.expect(f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration", timeout=timeout)
-
+                with And("I wait for config to be reloaded"):
+                    wait_for_config_to_be_loaded()
 
 def create_ldap_servers_config_content(servers, config_d_dir="/etc/clickhouse-server/config.d", config_file="ldap_servers.xml"):
     """Create LDAP servers configuration content.
@@ -288,6 +302,7 @@ def add_user_to_ldap(cn, userpassword, givenname=None, homedirectory=None, sn=No
     }
 
     lines = []
+
     for key, value in list(user.items()):
         if key.startswith("_"):
             continue

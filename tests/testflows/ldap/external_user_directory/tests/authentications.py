@@ -96,12 +96,17 @@ def parallel_login(self, server, user_count=10, timeout=200):
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
 
-    users = [{"cn": f"parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)]
+    with Given("a group of LDAP users"):
+        users = [{"cn": f"parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)]
 
     with ldap_users(*users):
         tasks = []
         try:
-            with When("I login in parallel"):
+            with When("users try to login in parallel", description="""
+                * with valid username and password
+                * with invalid username and valid password
+                * with valid username and invalid password
+                """):
                 p = Pool(15)
                 for i in range(25):
                     tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
@@ -114,9 +119,205 @@ def parallel_login(self, server, user_count=10, timeout=200):
 
 @TestScenario
 @Requirements(
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_SameUser("1.0"),
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
+)
+def parallel_login_with_the_same_user(self, server, timeout=200):
+    """Check that valid and invalid logins of the same
+    LDAP authenticated user works in parallel.
+    """
+    self.context.ldap_node = self.context.cluster.node(server)
+    user = None
+
+    with Given("only one LDAP user"):
+        users = [{"cn": f"parallel_user1", "userpassword": randomword(20)}]
+
+    with ldap_users(*users):
+        tasks = []
+        try:
+            with When("the same user tries to login in parallel", description="""
+                * with valid username and password
+                * with invalid username and valid password
+                * with valid username and invalid password
+                """):
+                p = Pool(15)
+                for i in range(25):
+                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+
+        finally:
+            with Then("it should work"):
+                join(tasks, timeout)
+
+@TestScenario
+def login_after_ldap_external_user_directory_is_removed(self, server):
+    """Check that ClickHouse stops authenticating LDAP users
+    after LDAP external user directory is removed.
+    """
+    with When("I attempt to login after LDAP external user directory is added"):
+        with ldap_external_user_directory(server="openldap2", roles=[], restart=True):
+            login_and_execute_query(username="user2", password="user2")
+
+    with When("I attempt to login after LDAP external user directory is removed"):
+        exitcode = 4
+        message = f"DB::Exception: user2: Authentication failed: password is incorrect or there is no user with such name"
+        login_and_execute_query(username="user2", password="user2", exitcode=exitcode, message=message)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_SameUser("1.0"),
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
+)
+def parallel_login_with_the_same_user_multiple_servers(self, server, timeout=200):
+    """Check that valid and invalid logins of the same
+    user defined in multiple LDAP external user directories
+    works in parallel.
+    """
+    with Given("I have two LDAP servers"):
+        entries = [
+            (["openldap1"], []),
+            (["openldap2"], [])
+        ]
+
+    with Given("I define only one LDAP user"):
+        users = [{"cn": f"parallel_user1", "userpassword": randomword(20)}]
+
+    with And("I create config file to define LDAP external user directory for each LDAP server"):
+        config = create_entries_ldap_external_user_directory_config_content(entries)
+
+    with ldap_external_user_directory(server=None, roles=None, restart=True, config=config):
+        with ldap_users(*users, node=self.context.cluster.node("openldap1")):
+            with ldap_users(*users, node=self.context.cluster.node("openldap2")):
+                tasks = []
+                try:
+                    with When("the same user tries to login in parallel", description="""
+                        * with valid username and password
+                        * with invalid username and valid password
+                        * with valid username and invalid password
+                        """):
+                        p = Pool(15)
+                        for i in range(25):
+                            tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                            tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                            tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+
+                finally:
+                    with Then("it should work"):
+                        join(tasks, timeout)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_MultipleServers("1.0"),
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
+)
+def parallel_login_with_multiple_servers(self, server, user_count=10, timeout=200):
+    """Check that login of valid and invalid LDAP authenticated users works in parallel
+    using multiple LDAP external user directories.
+    """
+    with Given("I have two LDAP servers"):
+        entries = [
+            (["openldap1"], []),
+            (["openldap2"], [])
+        ]
+
+    with And("I define a group of users to be created on each LDAP server"):
+        user_groups = {
+            "openldap1_users": [{"cn": f"openldap1_parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)],
+            "openldap2_users": [{"cn": f"openldap2_parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)]
+        }
+
+    with And("I have a list of checks that I want to run for each user group"):
+        checks = [
+            login_with_valid_username_and_password,
+            login_with_valid_username_and_invalid_password,
+            login_with_invalid_username_and_valid_password
+        ]
+
+    with And("I create config file to define LDAP external user directory for each LDAP server"):
+        config = create_entries_ldap_external_user_directory_config_content(entries)
+
+    with ldap_external_user_directory(server=None, roles=None, restart=True, config=config):
+        with ldap_users(*user_groups["openldap1_users"], node=self.context.cluster.node("openldap1")):
+            with ldap_users(*user_groups["openldap2_users"], node=self.context.cluster.node("openldap2")):
+                tasks = []
+
+                try:
+                    with When("users in each group try to login in parallel", description="""
+                        * with valid username and password
+                        * with invalid username and valid password
+                        * with valid username and invalid password
+                        """):
+                        p = Pool(15)
+                        for i in range(25):
+                            for users in user_groups.values():
+                                for check in checks:
+                                    tasks.append(p.apply_async(check, (users, i, 50,)))
+
+                finally:
+                    with Then("it should work"):
+                        join(tasks, timeout)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_LocalAndMultipleLDAP("1.0"),
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
+)
+def parallel_login_with_rbac_and_multiple_servers(self, server, user_count=10, timeout=200):
+    """Check that login of valid and invalid users works in parallel
+    using local users defined using RBAC and LDAP users authenticated using
+    multiple LDAP external user directories.
+    """
+    with Given("I have two LDAP servers"):
+        entries = [
+            (["openldap1"], []),
+            (["openldap2"], [])
+        ]
+
+    with And("I define a group of users to be created on each LDAP server"):
+        user_groups = {
+            "openldap1_users": [{"cn": f"openldap1_parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)],
+            "openldap2_users": [{"cn": f"openldap2_parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)],
+            "local_users": [{"cn": f"local_parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)]
+        }
+
+    with And("I have a list of checks that I want to run for each user group"):
+        checks = [
+            login_with_valid_username_and_password,
+            login_with_valid_username_and_invalid_password,
+            login_with_invalid_username_and_valid_password
+        ]
+
+    with And("I create config file to define LDAP external user directory for each LDAP server"):
+        config = create_entries_ldap_external_user_directory_config_content(entries)
+
+    with ldap_external_user_directory(server=None, roles=None, restart=True, config=config):
+        with ldap_users(*user_groups["openldap1_users"], node=self.context.cluster.node("openldap1")):
+            with ldap_users(*user_groups["openldap2_users"], node=self.context.cluster.node("openldap2")):
+                with rbac_users(*user_groups["local_users"]):
+                    tasks = []
+
+                    try:
+                        with When("users in each group try to login in parallel", description="""
+                            * with valid username and password
+                            * with invalid username and valid password
+                            * with valid username and invalid password
+                            """):
+                            p = Pool(15)
+                            for i in range(25):
+                                for users in user_groups.values():
+                                    for check in checks:
+                                        tasks.append(p.apply_async(check, (users, i, 50,)))
+
+                    finally:
+                        with Then("it should work"):
+                            join(tasks, timeout)
+
+@TestScenario
+@Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_LocalOnly("1.0")
 )
-def parallel_login_of_rbac_users(self, server, user_count=10, timeout=200):
+def parallel_login_with_rbac_users(self, server, user_count=10, timeout=200):
     """Check that login of only valid and invalid local users created using RBAC
     works in parallel when server configuration includes LDAP external user directory.
     """
@@ -361,8 +562,6 @@ def valid_username_and_password_invalid_server(self, server=None):
    """Check that we can't login using valid username and valid
    password but for a different server."""
    self.context.ldap_node = self.context.cluster.node("openldap1")
-
-   user = {"username": "user2", "userpassword": "user2", "server": "openldap1"}
 
    exitcode = 4
    message = f"DB::Exception: user2: Authentication failed: password is incorrect or there is no user with such name"
