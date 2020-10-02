@@ -197,7 +197,7 @@ StorageS3::StorageS3(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     Context & context_,
-    const String & compression_method_ = "")
+    const String & compression_method_)
     : IStorage(table_id_)
     , uri(uri_)
     , context_global(context_)
@@ -349,8 +349,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         Poco::URI uri (url);
         S3::URI s3_uri (uri);
 
-        String format_name = engine_args[engine_args.size() - 1]->as<ASTLiteral &>().value.safeGet<String>();
-
         String access_key_id;
         String secret_access_key;
         if (engine_args.size() >= 4)
@@ -362,12 +360,30 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         UInt64 min_upload_part_size = args.local_context.getSettingsRef().s3_min_upload_part_size;
 
         String compression_method;
+        String format_name;
         if (engine_args.size() == 3 || engine_args.size() == 5)
+        {
             compression_method = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
+            format_name = engine_args[engine_args.size() - 2]->as<ASTLiteral &>().value.safeGet<String>();
+        }
         else
+        {
             compression_method = "auto";
+            format_name = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
+        }
 
-        return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
+        return StorageS3::create(
+            s3_uri,
+            access_key_id,
+            secret_access_key,
+            args.table_id,
+            format_name,
+            min_upload_part_size,
+            args.columns,
+            args.constraints,
+            args.context,
+            compression_method
+        );
     },
     {
         .source_access_type = AccessType::S3,

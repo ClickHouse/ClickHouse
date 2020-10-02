@@ -12,6 +12,8 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
@@ -38,6 +40,32 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
 }
 
+namespace
+{
+
+void modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_result)
+{
+    if (removeJoin(select))
+    {
+        /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
+        select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+
+        /// Replace select list to remove joined columns
+        auto select_list = std::make_shared<ASTExpressionList>();
+        for (const auto & column : rewriter_result.required_source_columns)
+            select_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+
+        select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
+
+        /// TODO: keep WHERE/PREWHERE. We have to remove joined columns and their expressions but keep others.
+        select.setExpression(ASTSelectQuery::Expression::WHERE, {});
+        select.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+        select.setExpression(ASTSelectQuery::Expression::HAVING, {});
+        select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+    }
+}
+
+}
 
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
@@ -245,7 +273,8 @@ Pipe StorageMerge::createSources(
     modified_query_info.query = query_info.query->clone();
 
     /// Original query could contain JOIN but we need only the first joined table and its columns.
-    removeJoin(*modified_query_info.query->as<ASTSelectQuery>());
+    auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
+    modifySelect(modified_select, *query_info.syntax_analyzer_result);
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
 
@@ -262,7 +291,7 @@ Pipe StorageMerge::createSources(
         return pipe;
     }
 
-    auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, query_info.query);
+    auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, modified_query_info.query);
     if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
@@ -274,7 +303,7 @@ Pipe StorageMerge::createSources(
     }
     else if (processed_stage > storage_stage)
     {
-        modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_name);
+        modified_select.replaceDatabaseAndTable(source_database, table_name);
 
         /// Maximum permissible parallelism is streams_num
         modified_context->setSetting("max_threads", streams_num);

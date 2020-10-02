@@ -26,11 +26,12 @@ function start()
         fi
         timeout 120 service clickhouse-server start
         sleep 0.5
-        counter=$(($counter + 1))
+        counter=$((counter + 1))
     done
 }
 
 start
+# shellcheck disable=SC2086 # No quotes because I want to split it into words.
 /s3downloader --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
@@ -43,8 +44,8 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then
+if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test ; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 
-clickhouse-test --testname --shard --zookeeper --no-stateless "$SKIP_LIST_OPT" $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+clickhouse-test --testname --shard --zookeeper --no-stateless "$SKIP_LIST_OPT" "$ADDITIONAL_OPTIONS" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt

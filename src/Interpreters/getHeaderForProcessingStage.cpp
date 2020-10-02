@@ -12,19 +12,20 @@ namespace ErrorCodes
 }
 
 /// Rewrite original query removing joined tables from it
-void removeJoin(const ASTSelectQuery & select)
+bool removeJoin(ASTSelectQuery & select)
 {
     const auto & tables = select.tables();
     if (!tables || tables->children.size() < 2)
-        return;
+        return false;
 
     const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
     if (!joined_table.table_join)
-        return;
+        return false;
 
     /// The most simple temporary solution: leave only the first table in query.
     /// TODO: we also need to remove joined columns and related functions (taking in account aliases if any).
     tables->children.resize(1);
+    return true;
 }
 
 Block getHeaderForProcessingStage(
