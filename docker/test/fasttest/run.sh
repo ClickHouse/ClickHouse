@@ -329,7 +329,10 @@ case "$stage" in
     ;&
 "run_tests")
     run_tests
-    ;&
+    ;;
+*)
+    echo "Unknown test stage '$stage'"
+    exit 1
 esac
 
 pstree -apgT
