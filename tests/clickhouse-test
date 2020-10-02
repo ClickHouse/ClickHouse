@@ -1,5 +1,5 @@
-#!/usr/bin/env python2
-from __future__ import print_function
+#!/usr/bin/env python3
+
 import sys
 import os
 import os.path
@@ -23,7 +23,7 @@ try:
 except ImportError:
     termcolor = None
 from random import random
-import commands
+import subprocess
 import multiprocessing
 from contextlib import closing
 
@@ -99,7 +99,7 @@ def remove_control_characters(s):
     """
     def str_to_int(s, default, base=10):
         if int(s, base) < 0x10000:
-            return unichr(int(s, base))
+            return chr(int(s, base))
         return default
     s = re.sub(r"&#(\d+);?", lambda c: str_to_int(c.group(1), c.group(0)), s)
     s = re.sub(r"&#[xX]([0-9a-fA-F]+);?", lambda c: str_to_int(c.group(1), c.group(0), base=16), s)
@@ -107,9 +107,9 @@ def remove_control_characters(s):
     return s
 
 def get_db_engine(args):
-    if args.atomic_db_engine:
-        return " ENGINE=Atomic"
-    return ""
+    if args.db_engine:
+        return " ENGINE=" + args.db_engine
+    return ""   # Will use default engine
 
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
 
@@ -129,8 +129,8 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
             return ''.join(random.choice(alphabet) for _ in range(length))
         database = 'test_{suffix}'.format(suffix=random_str())
 
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE " + database + get_db_engine(args))
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args)))
 
         os.environ["CLICKHOUSE_DATABASE"] = database
 
@@ -157,8 +157,8 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         sleep(0.01)
 
     if not args.database:
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("DROP DATABASE " + database)
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create.communicate(("DROP DATABASE " + database))
 
     total_time = (datetime.now() - start_time).total_seconds()
 
@@ -166,10 +166,10 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
 
-    stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
-    stdout = unicode(stdout, errors='replace', encoding='utf-8')
-    stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
-    stderr = unicode(stderr, errors='replace', encoding='utf-8')
+    stdout = open(stdout_file, 'rb').read() if os.path.exists(stdout_file) else b''
+    stdout = str(stdout, errors='replace', encoding='utf-8')
+    stderr = open(stderr_file, 'rb').read() if os.path.exists(stderr_file) else b''
+    stderr = str(stderr, errors='replace', encoding='utf-8')
 
     return proc, stdout, stderr, total_time
 
@@ -300,8 +300,14 @@ def run_tests_array(all_tests_with_params):
                 else:
 
                     if args.testname:
-                        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-                        clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
+                        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+                        clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)))
+
+                        if clickhouse_proc.returncode != 0:
+                            failures += 1
+                            print("Server does not respond to health check")
+                            SERVER_DIED = True
+                            break
 
                     reference_file = os.path.join(suite_dir, name) + '.reference'
                     stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
@@ -336,7 +342,7 @@ def run_tests_array(all_tests_with_params):
                             print(" - return code {}".format(proc.returncode))
 
                             if stderr:
-                                print(stderr.encode('utf-8'))
+                                print(stderr)
 
                             # Stop on fatal errors like segmentation fault. They are send to client via logs.
                             if ' <Fatal> ' in stderr:
@@ -354,22 +360,22 @@ def run_tests_array(all_tests_with_params):
                             failures_chain += 1
                             print(MSG_FAIL, end='')
                             print_test_time(total_time)
-                            print(" - having stderror:\n{}".format(stderr.encode('utf-8')))
+                            print(" - having stderror:\n{}".format(stderr))
                         elif 'Exception' in stdout:
                             failures += 1
                             failures_chain += 1
                             print(MSG_FAIL, end='')
                             print_test_time(total_time)
-                            print(" - having exception:\n{}".format(stdout.encode('utf-8')))
+                            print(" - having exception:\n{}".format(stdout))
                         elif not os.path.isfile(reference_file):
                             print(MSG_UNKNOWN, end='')
                             print_test_time(total_time)
                             print(" - no reference file")
                         else:
-                            result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout = PIPE)
+                            result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout=PIPE)
 
                             if result_is_different:
-                                diff = Popen(['diff', '-U', str(args.unified), reference_file, stdout_file], stdout = PIPE).communicate()[0]
+                                diff = Popen(['diff', '-U', str(args.unified), reference_file, stdout_file], stdout=PIPE, universal_newlines=True).communicate()[0]
                                 failures += 1
                                 print(MSG_FAIL, end='')
                                 print_test_time(total_time)
@@ -413,9 +419,9 @@ def check_server_started(client, retry_count):
     sys.stdout.flush()
     while retry_count > 0:
         clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        (stdout, stderr) = clickhouse_proc.communicate("SELECT 1")
+        (stdout, stderr) = clickhouse_proc.communicate(b"SELECT 1")
 
-        if clickhouse_proc.returncode == 0 and stdout.startswith("1"):
+        if clickhouse_proc.returncode == 0 and stdout.startswith(b"1"):
             print(" OK")
             sys.stdout.flush()
             return True
@@ -456,53 +462,53 @@ class BuildFlags(object):
     DEBUG = 'debug-build'
     UNBUNDLED = 'unbundled-build'
     RELEASE = 'release-build'
-    DATABASE_ATOMIC = 'database-atomic'
+    DATABASE_ORDINARY = 'database-ordinary'
     POLYMORPHIC_PARTS = 'polymorphic-parts'
 
 
 def collect_build_flags(client):
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+    (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
     result = []
 
     if clickhouse_proc.returncode == 0:
-        if '-fsanitize=thread' in stdout:
+        if b'-fsanitize=thread' in stdout:
             result.append(BuildFlags.THREAD)
-        elif '-fsanitize=address' in stdout:
+        elif b'-fsanitize=address' in stdout:
             result.append(BuildFlags.ADDRESS)
-        elif '-fsanitize=undefined' in stdout:
+        elif b'-fsanitize=undefined' in stdout:
             result.append(BuildFlags.UNDEFINED)
-        elif '-fsanitize=memory' in stdout:
+        elif b'-fsanitize=memory' in stdout:
             result.append(BuildFlags.MEMORY)
     else:
         raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")
+    (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")
 
     if clickhouse_proc.returncode == 0:
-        if 'Debug' in stdout:
+        if b'Debug' in stdout:
             result.append(BuildFlags.DEBUG)
-        elif 'RelWithDebInfo' in stdout or 'Release' in stdout:
+        elif b'RelWithDebInfo' in stdout or b'Release' in stdout:
             result.append(BuildFlags.RELEASE)
     else:
         raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
+    (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
 
     if clickhouse_proc.returncode == 0:
-        if 'ON' in stdout or '1' in stdout:
+        if b'ON' in stdout or b'1' in stdout:
             result.append(BuildFlags.UNBUNDLED)
     else:
         raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.settings WHERE name = 'default_database_engine'")
+    (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.settings WHERE name = 'default_database_engine'")
 
     if clickhouse_proc.returncode == 0:
-        if 'Atomic' in stdout:
-            result.append(BuildFlags.DATABASE_ATOMIC)
+        if b'Ordinary' in stdout:
+            result.append(BuildFlags.DATABASE_ORDINARY)
     else:
         raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
@@ -517,11 +523,11 @@ def main(args):
 
     def is_data_present():
         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        (stdout, stderr) = clickhouse_proc.communicate("EXISTS TABLE test.hits")
+        (stdout, stderr) = clickhouse_proc.communicate(b"EXISTS TABLE test.hits")
         if clickhouse_proc.returncode != 0:
             raise CalledProcessError(clickhouse_proc.returncode, args.client, stderr)
 
-        return stdout.startswith('1')
+        return stdout.startswith(b'1')
 
     if not check_server_started(args.client, args.server_check_retries):
         raise Exception("clickhouse-server is not responding. Cannot execute 'SELECT 1' query.")
@@ -556,7 +562,7 @@ def main(args):
         stop_time = time() + args.global_time_limit
 
     if args.zookeeper is None:
-        code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
+        code, out = subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
             if int(out) > 0:
                 args.zookeeper = True
@@ -566,18 +572,18 @@ def main(args):
             args.zookeeper = False
 
     if args.shard is None:
-        code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
+        code, out = subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
         if out:
             args.shard = True
         else:
             args.shard = False
 
     if args.database and args.database != "test":
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args))
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args)))
 
-    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args))
+    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+    clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args)))
 
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
@@ -589,14 +595,14 @@ def main(args):
              return random()
 
        if -1 == item.find('_'):
-           return 99998
+           return 99998, ''
 
        prefix, suffix = item.split('_', 1)
 
        try:
            return int(prefix), suffix
        except ValueError:
-           return 99997
+           return 99997, ''
 
     total_tests_run = 0
     for suite in sorted(os.listdir(base_dir), key=sute_key_func):
@@ -644,7 +650,7 @@ def main(args):
                     return 99997
 
             all_tests = os.listdir(suite_dir)
-            all_tests = filter(lambda case: is_test_from_dir(suite_dir, case), all_tests)
+            all_tests = [case for case in all_tests if is_test_from_dir(suite_dir, case)]
             if args.test:
                 all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
             all_tests.sort(key=key_func)
@@ -664,7 +670,7 @@ def main(args):
             if jobs > run_total:
                 run_total = jobs
 
-            batch_size = len(all_tests) / jobs
+            batch_size = len(all_tests) // jobs
             all_tests_array = []
             for i in range(0, len(all_tests), batch_size):
                 all_tests_array.append((all_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir, run_total))
@@ -792,7 +798,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
     parser.add_argument('--skip-list-path', help="Path to skip-list file")
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
-    parser.add_argument('--atomic-db-engine', action='store_true', help='Create databases with Atomic engine by default')
+    parser.add_argument('--db-engine', help='Database engine name')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
