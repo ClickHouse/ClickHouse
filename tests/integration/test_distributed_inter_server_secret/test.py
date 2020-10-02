@@ -149,4 +149,28 @@ def test_user_secure_cluster(user, password):
     assert get_query_user_info(n1, id_) == [user, user]
     assert get_query_user_info(n2, id_) == [user, user]
 
+# settings in the protocol cannot be used since they will be applied to early
+# and it will not even enter execution of distributed query
+@users
+def test_per_user_settings_insecure_cluster(user, password):
+    id_ = 'query-settings-dist_insecure-' + user
+    query_with_id(n1, id_, """
+    SELECT * FROM dist_insecure
+    SETTINGS
+        prefer_localhost_replica=0,
+        max_memory_usage_for_user=100,
+        max_untracked_memory=0
+    """, user=user, password=password)
+@users
+def test_per_user_settings_secure_cluster(user, password):
+    id_ = 'query-settings-dist_secure-' + user
+    with pytest.raises(QueryRuntimeException):
+        query_with_id(n1, id_, """
+        SELECT * FROM dist_secure
+        SETTINGS
+            prefer_localhost_replica=0,
+            max_memory_usage_for_user=100,
+            max_untracked_memory=0
+        """, user=user, password=password)
+
 # TODO: check user for INSERT
