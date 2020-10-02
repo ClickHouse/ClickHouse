@@ -243,7 +243,8 @@ public:
 };
 
 template <typename T>
-class QuantileTDigest {
+class QuantileTDigest
+{
     using Value = Float32;
     using Count = Float32;
 
