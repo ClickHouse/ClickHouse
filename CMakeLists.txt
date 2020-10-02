@@ -513,12 +513,13 @@ endif ()
 macro (add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
-    # if GLIBC_COMPATIBILITY is ON, also provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
-    if (GLIBC_COMPATIBILITY)
+    # if GLIBC_COMPATIBILITY is ON and not sanitizer build, provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
+    if (GLIBC_COMPATIBILITY AND NOT SANITIZE)
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:clickhouse_memcpy>)
-    else (GLIBC_COMPATIBILITY)
+    else ()
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
+
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
         # operator::new/delete for executables (MemoryTracker stuff)
