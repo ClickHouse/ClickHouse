@@ -78,6 +78,15 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 
 template <typename Thread>
+size_t ThreadPoolImpl<Thread>::countAllJobs() const
+{
+    size_t result = 0;
+    for (const auto & job_with_count : scheduled_jobs)
+        result += job_with_count.second;
+    return result;
+}
+
+template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, const String & job_group_name, int priority, std::optional<uint64_t> wait_microseconds)
 {
@@ -96,20 +105,11 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, const String & job_grou
         else
             return false;
     };
-    auto count_jobs = [this] ()
-    {
-        size_t result = 0;
-        for (const auto & job_with_count : scheduled_jobs)
-            result += job_with_count.second;
-        std::cerr << "RESULT:" << result << std::endl;
-        return result;
-    };
 
     {
         std::unique_lock lock(mutex);
 
-        auto pred = [this, count_jobs] { return !queue_size || count_jobs() < queue_size || shutdown; };
-        std::cerr << "WAITING\n";
+        auto pred = [this] { return !queue_size || countAllJobs() < queue_size || shutdown; };
 
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
         {
@@ -119,7 +119,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, const String & job_grou
         else
             job_finished.wait(lock, pred);
 
-        std::cerr << "FINISH\n";
         if (shutdown)
             return on_error();
 
@@ -143,7 +142,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, const String & job_grou
                 /// But this condition indicate an error nevertheless and better to refuse.
 
                 jobs.pop();
-                --scheduled_jobs[job_group_name];
+                auto group_rest = --scheduled_jobs[job_group_name];
+                if (group_rest == 0)
+                    scheduled_jobs.erase(job_group_name);
                 return on_error();
             }
         }
@@ -182,13 +183,7 @@ void ThreadPoolImpl<Thread>::wait()
     {
         std::unique_lock lock(mutex);
 
-        job_finished.wait(lock, [this]
-        {
-            size_t result = 0;
-            for (const auto & job_with_count : scheduled_jobs)
-                result += job_with_count.second;
-            return result;
-        });
+        job_finished.wait(lock, [this] { return countAllJobs() == 0; });
 
         if (first_exception)
         {
@@ -207,7 +202,7 @@ void ThreadPoolImpl<Thread>::waitJobGroup(const String & job_group)
 
         job_finished.wait(lock, [this, &job_group]
         {
-            return scheduled_jobs[job_group];
+            return scheduled_jobs.count(job_group) == 0 || scheduled_jobs[job_group] == 0;
         });
 
         if (first_exception)
@@ -245,10 +240,7 @@ template <typename Thread>
 size_t ThreadPoolImpl<Thread>::active() const
 {
     std::unique_lock lock(mutex);
-    size_t result = 0;
-    for (const auto & job_with_count : scheduled_jobs)
-        result += job_with_count.second;
-    return result;
+    return countAllJobs();
 }
 
 template <typename Thread>
@@ -256,14 +248,6 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 {
     CurrentMetrics::Increment metric_all_threads(
         std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
-
-    auto count_jobs = [this] ()
-    {
-        size_t result = 0;
-        for (const auto & job_with_count : scheduled_jobs)
-            result += job_with_count.second;
-        return result;
-    };
 
     while (true)
     {
@@ -313,7 +297,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                         first_exception = std::current_exception(); // NOLINT
                     if (shutdown_on_exception)
                         shutdown = true;
-                    --scheduled_jobs[job_group_name];
+                    auto group_rest = --scheduled_jobs[job_group_name];
+                    if (group_rest == 0)
+                        scheduled_jobs.erase(job_group_name);
                 }
 
                 job_finished.notify_all();
@@ -324,10 +310,11 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
         {
             std::unique_lock lock(mutex);
-            --scheduled_jobs[job_group_name];
-            std::cerr << "JOB:" << job_group_name << "FINISHED COUNT:" << scheduled_jobs[job_group_name] << std::endl;
+            auto group_rest = --scheduled_jobs[job_group_name];
+            if (group_rest == 0)
+                scheduled_jobs.erase(job_group_name);
 
-            if (threads.size() > count_jobs() + max_free_threads)
+            if (threads.size() > countAllJobs() + max_free_threads)
             {
                 thread_it->detach();
                 threads.erase(thread_it);

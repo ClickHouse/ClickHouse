@@ -116,6 +116,8 @@ private:
     void worker(typename std::list<Thread>::iterator thread_it);
 
     void finalize();
+
+    size_t countAllJobs() const;
 };
 
 
