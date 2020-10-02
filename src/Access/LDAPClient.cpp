@@ -2,6 +2,8 @@
 #include <Common/Exception.h>
 #include <ext/scope_guard.h>
 
+#include <mutex>
+
 #include <cstring>
 
 #include <sys/time.h>
@@ -27,16 +29,13 @@ LDAPClient::~LDAPClient()
     closeConnection();
 }
 
-void LDAPClient::openConnection()
-{
-    const bool graceful_bind_failure = false;
-    diag(openConnection(graceful_bind_failure));
-}
-
 #if USE_LDAP
 
 namespace
 {
+
+    std::recursive_mutex ldap_global_mutex;
+
     auto escapeForLDAP(const String & src)
     {
         String dest;
@@ -63,10 +62,13 @@ namespace
 
         return dest;
     }
+
 }
 
 void LDAPClient::diag(const int rc)
 {
+    std::scoped_lock lock(ldap_global_mutex);
+
     if (rc != LDAP_SUCCESS)
     {
         String text;
@@ -100,8 +102,18 @@ void LDAPClient::diag(const int rc)
     }
 }
 
+void LDAPClient::openConnection()
+{
+    std::scoped_lock lock(ldap_global_mutex);
+
+    const bool graceful_bind_failure = false;
+    diag(openConnection(graceful_bind_failure));
+}
+
 int LDAPClient::openConnection(const bool graceful_bind_failure)
 {
+    std::scoped_lock lock(ldap_global_mutex);
+
     closeConnection();
 
     {
@@ -258,6 +270,8 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
 
 void LDAPClient::closeConnection() noexcept
 {
+    std::scoped_lock lock(ldap_global_mutex);
+
     if (!handle)
         return;
 
@@ -267,6 +281,8 @@ void LDAPClient::closeConnection() noexcept
 
 bool LDAPSimpleAuthClient::check()
 {
+    std::scoped_lock lock(ldap_global_mutex);
+
     if (params.user.empty())
         throw Exception("LDAP authentication of a user with an empty name is not allowed", ErrorCodes::BAD_ARGUMENTS);
 
@@ -308,6 +324,11 @@ bool LDAPSimpleAuthClient::check()
 #else // USE_LDAP
 
 void LDAPClient::diag(const int)
+{
+    throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+}
+
+void LDAPClient::openConnection()
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
