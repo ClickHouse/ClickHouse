@@ -1079,6 +1079,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto context_for_reading = context;
     context_for_reading.setSetting("max_streams_to_max_threads_ratio", 1);
     context_for_reading.setSetting("max_threads", 1);
+    /// Allow mutations to work when force_index_by_date or force_primary_key is on.
+    context_for_reading.setSetting("force_index_by_date", Field(0));
+    context_for_reading.setSetting("force_primary_key", Field(0));
 
     MutationCommands commands_for_part;
     for (const auto & command : commands)
@@ -1449,7 +1452,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
     for (const NameAndTypePair & column : source_part->getColumns())
     {
         column.type->enumerateStreams(
-            [&](const IDataType::SubstreamPath & substream_path)
+            [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
                 ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
             },
@@ -1467,7 +1470,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
-            IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+            IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
                 String stream_name = IDataType::getFileNameForStream(command.column_name, substream_path);
                 /// Delete files if they are no longer shared with another column.
@@ -1488,7 +1491,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
             String escaped_name_from = escapeForFileName(command.column_name);
             String escaped_name_to = escapeForFileName(command.rename_to);
 
-            IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+            IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
                 String stream_from = IDataType::getFileNameForStream(command.column_name, substream_path);
 
@@ -1521,7 +1524,7 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
     /// Skip updated files
     for (const auto & entry : updated_header)
     {
-        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
         {
             String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
             files_to_skip.insert(stream_name + ".bin");

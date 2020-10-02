@@ -1213,7 +1213,7 @@ public:
         const bool left_is_string = isStringOrFixedString(which_left);
         const bool right_is_string = isStringOrFixedString(which_right);
 
-        bool date_and_datetime = (left_type != right_type) &&
+        bool date_and_datetime = (which_left.idx != which_right.idx) &&
             which_left.isDateOrDateTime() && which_right.isDateOrDateTime();
 
         if (left_is_num && right_is_num && !date_and_datetime)

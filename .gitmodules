@@ -37,7 +37,7 @@
 	url = https://github.com/ClickHouse-Extras/mariadb-connector-c.git
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
-	url = https://github.com/jemalloc/jemalloc.git
+	url = https://github.com/ClickHouse-Extras/jemalloc.git
 [submodule "contrib/unixodbc"]
 	path = contrib/unixodbc
 	url = https://github.com/ClickHouse-Extras/UnixODBC.git
@@ -186,3 +186,4 @@
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
 	url = https://github.com/cyrusimap/cyrus-sasl
+	branch = cyrus-sasl-2.1

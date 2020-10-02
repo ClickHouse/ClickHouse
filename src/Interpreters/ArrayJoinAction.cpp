@@ -35,11 +35,13 @@ ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool arr
 }
 
 
-void ArrayJoinAction::prepare(Block & sample_block)
+void ArrayJoinAction::prepare(ColumnsWithTypeAndName & sample) const
 {
-    for (const auto & name : columns)
+    for (auto & current : sample)
     {
-        ColumnWithTypeAndName & current = sample_block.getByName(name);
+        if (columns.count(current.name) == 0)
+            continue;
+
         const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
         if (!array_type)
             throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);

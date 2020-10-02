@@ -822,7 +822,25 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
 
 
     if (update_unit_ptr->current_exception)
-        std::rethrow_exception(update_unit_ptr->current_exception);
+    {
+        // There might have been a single update unit for multiple callers in
+        // independent threads, and current_exception will be the same for them.
+        // Don't just rethrow it, because sharing the same exception object
+        // between multiple threads can lead to weird effects if they decide to
+        // modify it, for example, by adding some error context.
+        try
+        {
+            std::rethrow_exception(update_unit_ptr->current_exception);
+        }
+        catch (...)
+        {
+            throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                "Update failed for dictionary '{}': {}",
+                getDictionaryID().getNameForLogs(),
+                getCurrentExceptionMessage(true /*with stack trace*/,
+                    true /*check embedded stack trace*/));
+        }
+    }
 }
 
 void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const
@@ -908,7 +926,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                     else
                         cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
-                    update_unit_ptr->getPresentIdHandler()(id, cell_idx);
+                    update_unit_ptr->callPresentIdHandler(id, cell_idx);
                     /// mark corresponding id as found
                     remaining_ids[id] = 1;
                 }
@@ -970,9 +988,9 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                 if (was_default)
                     cell.setDefault();
                 if (was_default)
-                    update_unit_ptr->getAbsentIdHandler()(id, cell_idx);
+                    update_unit_ptr->callAbsentIdHandler(id, cell_idx);
                 else
-                    update_unit_ptr->getPresentIdHandler()(id, cell_idx);
+                    update_unit_ptr->callPresentIdHandler(id, cell_idx);
                 continue;
             }
             /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
@@ -1004,7 +1022,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
             setDefaultAttributeValue(attribute, cell_idx);
 
         /// inform caller that the cell has not been found
-        update_unit_ptr->getAbsentIdHandler()(id, cell_idx);
+        update_unit_ptr->callAbsentIdHandler(id, cell_idx);
     }
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);

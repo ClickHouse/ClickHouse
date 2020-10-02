@@ -919,11 +919,13 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
         {
             {
                 auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+                /// All use relative_data_path which changes during rename
+                /// so execute under share lock.
                 clearOldPartsFromFilesystem();
                 clearOldTemporaryDirectories();
+                clearOldWriteAheadLogs();
             }
             clearOldMutations();
-            clearOldWriteAheadLogs();
         }
 
         ///TODO: read deduplicate option from table config

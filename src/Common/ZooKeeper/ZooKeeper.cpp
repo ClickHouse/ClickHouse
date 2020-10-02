@@ -663,7 +663,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
-    auto callback = [state](const Coordination::ExistsResponse & response)
+    auto callback = [state](const Coordination::GetResponse & response)
     {
         state->code = int32_t(response.error);
         if (state->code)
@@ -683,8 +683,9 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
     while (!condition || !condition())
     {
-        /// NOTE: if the node doesn't exist, the watch will leak.
-        impl->exists(path, callback, watch);
+        /// Use getData insteand of exists to avoid watch leak.
+        impl->get(path, callback, watch);
+
         if (!condition)
             state->event.wait();
         else if (!state->event.tryWait(1000))
