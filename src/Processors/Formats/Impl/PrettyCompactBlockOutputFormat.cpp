@@ -72,10 +72,7 @@ void PrettyCompactBlockOutputFormat::writeHeader(
     if (format_settings.pretty.output_format_pretty_row_numbers)
     {
         /// Write left blank
-        for (size_t i = 0; i < row_number_width; ++i)
-        {
-            writeCString(" ", out);
-        }
+        writeString(String(row_number_width, ' '), out);
     }
 
     const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
@@ -129,10 +126,7 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
     if (format_settings.pretty.output_format_pretty_row_numbers)
     {
         /// Write left blank
-        for (size_t i = 0; i < row_number_width; ++i)
-        {
-            writeCString(" ", out);
-        }
+        writeString(String(row_number_width, ' '), out);
     }
 
     const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
