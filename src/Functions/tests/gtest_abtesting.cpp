@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <Functions/abtesting.h>
-#include <iostream>
-#include <stdio.h>
+
+#if !defined(ARCADIA_BUILD) && USE_STATS
+
+#   include <stdio.h>
 
 using namespace DB;
 
@@ -97,3 +99,4 @@ TEST(BayesAB, gamma)
     ASSERT_EQ(0, max);
 }
 
+#endif

@@ -4,13 +4,12 @@
 
 #if !defined(ARCADIA_BUILD) && USE_STATS
 
+#   include <iostream>
+#   include <vector>
+#   include <algorithm>
 
-#include <iostream>
-#include <vector>
-#include <algorithm>
-
-#include <common/types.h>
-#include <Common/PODArray.h>
+#   include <common/types.h>
+#   include <Common/PODArray.h>
 
 
 namespace DB
