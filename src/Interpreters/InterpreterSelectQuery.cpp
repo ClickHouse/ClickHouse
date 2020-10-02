@@ -1382,7 +1382,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             ErrorCodes::TOO_MANY_COLUMNS);
 
     /// General limit for the number of threads.
-    query_plan.setMaxThreads(settings.max_threads);
+    size_t max_threads_execute_query = settings.max_threads;
 
     /** With distributed query processing, almost no computations are done in the threads,
      *  but wait and receive data from remote servers.
@@ -1395,8 +1395,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     if (storage && storage->isRemote())
     {
         is_remote = true;
-        max_streams = settings.max_distributed_connections;
-        query_plan.setMaxThreads(max_streams);
+        max_threads_execute_query = max_streams = settings.max_distributed_connections;
     }
 
     UInt64 max_block_size = settings.max_block_size;
@@ -1421,8 +1420,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         && limit_length + limit_offset < max_block_size)
     {
         max_block_size = std::max(UInt64(1), limit_length + limit_offset);
-        max_streams = 1;
-        query_plan.setMaxThreads(max_streams);
+        max_threads_execute_query = max_streams = 1;
     }
 
     if (!max_block_size)
@@ -1528,6 +1526,8 @@ void InterpreterSelectQuery::executeFetchColumns(
     }
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
+
+    query_plan.setMaxThreads(max_threads_execute_query);
 
     /// Aliases in table declaration.
     if (processing_stage == QueryProcessingStage::FetchColumns && alias_actions)
