@@ -2541,8 +2541,9 @@ void StorageReplicatedMergeTree::queueProcessingTask()
             }
             catch (...)
             {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
             }
-        });
+        }, getStorageID().getFullTableName() + "(queueProcessingTask)");
 
         queue_processing_task_handle->schedule();
     }
@@ -3444,7 +3445,7 @@ void StorageReplicatedMergeTree::shutdown()
 
     if (queue_processing_task_handle)
         queue_processing_task_handle->deactivate();
-
+    global_context.getBackgroundProcessingPool().waitJobGroup(getStorageID().getFullTableName() + "(queueProcessingTask)");
 
     {
         /// Queue can trigger queue_task_handle itself. So we ensure that all

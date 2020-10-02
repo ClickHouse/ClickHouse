@@ -942,6 +942,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
                 }
                 catch (...)
                 {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
             });
         }
@@ -960,6 +961,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
                 }
                 catch (...)
                 {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
             });
 
@@ -979,6 +981,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
                 }
                 catch (...)
                 {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
             });
             merge_assigning_task->schedule(); /// FIXME(alesap)

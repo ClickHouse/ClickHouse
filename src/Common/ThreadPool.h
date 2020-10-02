@@ -49,6 +49,8 @@ public:
     /// if ThreadPool is a local object, it will wait for all scheduled jobs in own destructor.
     void scheduleOrThrowOnError(Job job, int priority = 0);
 
+    void scheduleOrThrowOnError(Job job, const String & job_group_name, int priority = 0);
+
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
     bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0) noexcept;
 
@@ -60,6 +62,8 @@ public:
     /// If any thread was throw an exception, first exception will be rethrown from this method,
     ///  and exception will be cleared.
     void wait();
+
+    void waitJobGroup(const String & job_group);
 
     /// Waits for all threads. Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
     /// You should not destroy object while calling schedule or wait methods from another threads.
@@ -82,7 +86,7 @@ private:
     size_t max_free_threads;
     size_t queue_size;
 
-    size_t scheduled_jobs = 0;
+    std::unordered_map<String, size_t> scheduled_jobs;
     bool shutdown = false;
     const bool shutdown_on_exception = true;
 
@@ -90,9 +94,10 @@ private:
     {
         Job job;
         int priority;
+        String job_group_name;
 
-        JobWithPriority(Job job_, int priority_)
-            : job(job_), priority(priority_) {}
+        JobWithPriority(Job job_, int priority_, const String & job_group_name_)
+            : job(job_), priority(priority_), job_group_name(job_group_name_) {}
 
         bool operator< (const JobWithPriority & rhs) const
         {
@@ -106,7 +111,7 @@ private:
 
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
+    ReturnType scheduleImpl(Job job, const String & job_group_name, int priority, std::optional<uint64_t> wait_microseconds);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
