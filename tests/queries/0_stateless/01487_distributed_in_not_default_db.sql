@@ -1,5 +1,9 @@
 CREATE DATABASE IF NOT EXISTS shard_0;
 CREATE DATABASE IF NOT EXISTS shard_1;
+CREATE DATABASE IF NOT EXISTS main;
+CREATE DATABASE IF NOT EXISTS test;
+
+USE main;
 
 DROP TABLE IF EXISTS shard_0.l;
 DROP TABLE IF EXISTS shard_1.l;
@@ -16,7 +20,12 @@ INSERT INTO t VALUES (0), (1), (2);
 
 CREATE TABLE d AS t ENGINE = Distributed(test_cluster_two_shards_different_databases, currentDatabase(), t);
 
-SELECT * FROM d WHERE value IN (SELECT l.value FROM l);
+USE test;
+DROP DATABASE test;
+
+SELECT * FROM main.d WHERE value IN (SELECT l.value FROM l) ORDER BY value;
+
+USE main;
 
 DROP TABLE IF EXISTS shard_0.l;
 DROP TABLE IF EXISTS shard_1.l;
