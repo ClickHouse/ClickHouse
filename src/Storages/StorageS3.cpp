@@ -71,7 +71,7 @@ namespace
             String name_,
             const Block & sample_block,
             const Context & context,
-            const ColumnDefaults & column_defaults,
+            const ColumnsDescription & columns,
             UInt64 max_block_size,
             const CompressionMethod compression_method,
             const std::shared_ptr<Aws::S3::S3Client> & client,
@@ -86,8 +86,8 @@ namespace
             read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
 
-            if (!column_defaults.empty())
-                reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
+            if (columns.hasDefaults())
+                reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
         }
 
         String getName() const override
@@ -312,7 +312,7 @@ Pipe StorageS3::read(
             getName(),
             metadata_snapshot->getSampleBlock(),
             context,
-            metadata_snapshot->getColumns().getDefaults(),
+            metadata_snapshot->getColumns(),
             max_block_size,
             chooseCompressionMethod(uri.endpoint, compression_method),
             client,

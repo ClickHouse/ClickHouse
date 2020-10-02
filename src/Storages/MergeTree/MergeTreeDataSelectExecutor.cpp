@@ -21,28 +21,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Context.h>
 
-/// Allow to use __uint128_t as a template parameter for boost::rational.
-// https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
-#if 0
-#if !defined(__GLIBCXX_BITSIZE_INT_N_0) && defined(__SIZEOF_INT128__)
-namespace std
-{
-    template <>
-    struct numeric_limits<__uint128_t>
-    {
-        static constexpr bool is_specialized = true;
-        static constexpr bool is_signed = false;
-        static constexpr bool is_integer = true;
-        static constexpr int radix = 2;
-        static constexpr int digits = 128;
-        static constexpr int digits10 = 38;
-        static constexpr __uint128_t min () { return 0; } // used in boost 1.65.1+
-        static constexpr __uint128_t max () { return __uint128_t(0) - 1; } // used in boost 1.68.0+
-    };
-}
-#endif
-#endif
-
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
