@@ -11,7 +11,7 @@ When you convert a value from one to another data type, you should remember that
 
 ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-## toInt(8\|16\|32\|64) {#toint8163264}
+## toInt(8\|16\|32\|64\|128\|256) {#toint8163264128256}
 
 Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
 
@@ -19,6 +19,8 @@ Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md)
 -   `toInt16(expr)` — Results in the `Int16` data type.
 -   `toInt32(expr)` — Results in the `Int32` data type.
 -   `toInt64(expr)` — Results in the `Int64` data type.
+-   `toInt128(expr)` — Results in the `Int128` data type.
+-   `toInt256(expr)` — Results in the `Int256` data type.
 
 **Parameters**
 
@@ -26,7 +28,7 @@ Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md)
 
 **Returned value**
 
-Integer value in the `Int8`, `Int16`, `Int32`, or `Int64` data type.
+Integer value in the `Int8`, `Int16`, `Int32`, `Int64`, `Int128` or `Int256` data type.
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
@@ -46,7 +48,7 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 
 ## toInt(8\|16\|32\|64)OrZero {#toint8163264orzero}
 
-It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64). If failed, returns 0.
+It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns 0.
 
 **Example**
 
