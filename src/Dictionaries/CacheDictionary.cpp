@@ -319,14 +319,34 @@ std::string CacheDictionary::UpdateUnit::dumpFoundIds()
     return os.str();
 };
 
-/// returns cell_idx (always valid for replacing), 'cell is valid' flag, 'cell is outdated' flag
+/// Returns cell_idx in handmade open addressing cache table.
 /// true  false   found and valid
-/// false true    not found (something outdated, maybe our cell)
+/// false true    found, but expired
 /// false false   not found (other id stored with valid data)
 /// true  true    impossible
-///
-/// todo: split this func to two: find_for_get and find_for_set
-CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const time_point_t now) const
+CacheDictionary::FindResult CacheDictionary::findCellIdxForGet(const Key & id, const time_point_t now) const
+{
+    auto pos = getCellIdx(id);
+    const auto stop = pos + max_collision_length;
+    for (; pos < stop; ++pos)
+    {
+        const auto cell_idx = pos & size_overlap_mask;
+        const auto & cell = cells[cell_idx];
+
+        if (cell.id != id)
+            continue;
+
+        if (cell.expiresAt() < now)
+            return {cell_idx, false, true};
+
+        return {cell_idx, true, false};
+    }
+
+    return {pos, false, false};
+}
+
+/// Returns cell_idx such that cells[cell_idx].id = id or the oldest cell in bounds of max_coolision_length. 
+size_t CacheDictionary::findCellIdxForSet(const Key & id) const
 {
     auto pos = getCellIdx(id);
     auto oldest_id = pos;
@@ -340,7 +360,7 @@ CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const t
         if (cell.id != id)
         {
             /// maybe we already found nearest expired cell (try minimize collision_length on insert)
-            if (oldest_time > now && oldest_time > cell.expiresAt())
+            if (cell.expiresAt() < oldest_time)
             {
                 oldest_time = cell.expiresAt();
                 oldest_id = cell_idx;
@@ -348,15 +368,11 @@ CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const t
             continue;
         }
 
-        if (cell.expiresAt() < now)
-        {
-            return {cell_idx, false, true};
-        }
-
-        return {cell_idx, true, false};
+        /// We found the exact place for id.
+        return cell_idx;
     }
 
-    return {oldest_id, false, false};
+    return oldest_id;
 }
 
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
@@ -387,7 +403,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
-            const auto find_result = findCellIdx(id, now);
+            const auto find_result = findCellIdxForGet(id, now);
             auto & cell = cells[find_result.cell_idx];
 
             if (cell.isDefault())
@@ -948,9 +964,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                     ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
                     const auto id = ids[i];
 
-                    const auto find_result = findCellIdx(id, now);
-                    const auto & cell_idx = find_result.cell_idx;
-
+                    const auto cell_idx = findCellIdxForSet(id);
                     auto & cell = cells[cell_idx];
 
                     auto it = map_ids.find(id);
@@ -995,8 +1009,8 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
             {
                 if (!value.found)
                 {
-                    auto result = findCellIdx(key, now);
-                    auto & cell = cells[result.cell_idx];
+                    auto cell_idx = findCellIdxForSet(key);
+                    auto & cell = cells[cell_idx];
                     cell.id = key;
                     cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
                     cell.setDefault();

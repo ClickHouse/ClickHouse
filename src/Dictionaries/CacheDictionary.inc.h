@@ -70,11 +70,8 @@ void CacheDictionary::getItemsNumberImpl(
                 *    2. cell has expired,
                 *    3. explicit defaults were specified and cell was set default. */
 
-            const auto find_result = findCellIdx(id, now);
+            const auto find_result = findCellIdxForGet(id, now);
             auto & cell = cells[find_result.cell_idx];
-
-            if (cell.isDefault())
-                continue;
 
             auto update_routine = [&]()
             {
@@ -181,7 +178,7 @@ void CacheDictionary::getItemsString(
 {
     const auto rows = ext::size(ids);
 
-    /// save on some allocations
+    /// Save on some allocations.
     out->getOffsets().reserve(rows);
 
     auto & attribute_array = std::get<ContainerPtrType<StringRef>>(attribute.arrays);
@@ -193,24 +190,34 @@ void CacheDictionary::getItemsString(
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
         const auto now = std::chrono::system_clock::now();
-        /// fetch up-to-date values, discard on fail
+        /// Fetch up-to-date values, discard on fail.
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
 
-            const auto find_result = findCellIdx(id, now);
+            const auto find_result = findCellIdxForGet(id, now);
             auto & cell = cells[find_result.cell_idx];
+
+            auto insert_routine = [&] ()
+            {
+                const auto & cell_idx = find_result.cell_idx;
+                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+                out->insertData(string_ref.data, string_ref.size);
+            };
 
             if (!find_result.valid)
             {
+                if (find_result.outdated && allow_read_expired_keys && !isExpiredPermanently(now, cell.expiresAt()))
+                {
+                    insert_routine();
+                    continue;
+                }
                 found_outdated_values = true;
                 break;
             }
             else
             {
-                const auto & cell_idx = find_result.cell_idx;
-                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
-                out->insertData(string_ref.data, string_ref.size);
+                insert_routine();
             }
         }
     }
@@ -220,6 +227,7 @@ void CacheDictionary::getItemsString(
     {
         query_count.fetch_add(rows, std::memory_order_relaxed);
         hit_count.fetch_add(rows, std::memory_order_release);
+        ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, ids.size());
         return;
     }
 
@@ -230,7 +238,7 @@ void CacheDictionary::getItemsString(
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
     std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
     /// we are going to store every string separately
-    std::unordered_map<Key, String> inside_cache;
+    std::unordered_map<Key, String> local_cache;
 
     size_t cache_not_found_count = 0;
     size_t cache_expired_count = 0;
@@ -244,19 +252,17 @@ void CacheDictionary::getItemsString(
         for (const auto row : ext::range(0, ids.size()))
         {
             const auto id = ids[row];
-            const auto find_result = findCellIdx(id, now);
-            const auto & cell = cells[find_result.cell_idx];
-
-            if (cell.isDefault())
-                continue;
+            const auto find_result = findCellIdxForGet(id, now);
+            const auto & cell_idx = find_result.cell_idx;
+            const auto & cell = cells[cell_idx];
 
             auto insert_value_routine = [&]()
             {
-                const auto & cell_idx = find_result.cell_idx;
                 const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
+                /// Do not store default, but count it in total length.
                 if (!cell.isDefault())
-                    inside_cache[id] = String{string_ref};
+                    local_cache[id] = String{string_ref};
 
                 total_length += string_ref.size + 1;
             };
@@ -265,8 +271,8 @@ void CacheDictionary::getItemsString(
             {
                 if (find_result.outdated)
                 {
-                    /// Protection of reading very expired keys.
-                    if (isExpiredPermanently(now, cells[find_result.cell_idx].expiresAt()))
+                    /// Protection of reading too expired keys.
+                    if (isExpiredPermanently(now, cell.expiresAt()))
                     {
                         cache_not_found_count++;
                         cache_expired_or_not_found_ids[id].push_back(row);
@@ -313,12 +319,29 @@ void CacheDictionary::getItemsString(
 
             tryPushToUpdateQueueOrThrow(update_unit_ptr);
 
-            /// Do not return at this point, because there some extra stuff to do at the end of this method.
+            /// Insert all found keys and defaults to output array.
+            out->getChars().reserve(total_length);
+
+            for (const auto row : ext::range(0, ext::size(ids)))
+            {
+                const auto id = ids[row];
+                StringRef value;
+
+                /// Previously we stored found keys in map.
+                const auto it = local_cache.find(id);
+                if (it != local_cache.end())
+                    value = StringRef(it->second);
+
+                value = get_default(row);
+                out->insertData(value.data, value.size);
+            }
+
+            /// Nothing to do else.
+            return;
         }
     }
 
-    /// Request new values sync.
-    /// We have request both cache_not_found_ids and cache_expired_ids.
+    /// We will request both cache_not_found_ids and cache_expired_ids sync.
     std::vector<Key> required_ids;
     required_ids.reserve(cache_not_found_count + cache_expired_count);
     std::transform(
@@ -352,22 +375,21 @@ void CacheDictionary::getItemsString(
     for (const auto row : ext::range(0, ext::size(ids)))
     {
         const auto id = ids[row];
-
         StringRef value;
 
         /// We have two maps: found in cache and found in source.
-        const auto it = inside_cache.find(id);
-        if (it != inside_cache.end())
-            value = StringRef(it->second);
+        const auto local_it = local_cache.find(id);
+        if (local_it != local_cache.end())
+            value = StringRef(local_it->second);
         else
         {
             const auto found_it = update_unit_ptr->found_ids.find(id);
-            if (found_it->second.found)
+
+            /// Previously we didn't store defaults in local cache. 
+            if (found_it != update_unit_ptr->found_ids.end() && found_it->second.found)
                 value = std::get<String>(found_it->second.values[attribute_index]);
             else
-            {
                 value = get_default(row);
-            }
         }
 
         out->insertData(value.data, value.size);
