@@ -16,6 +16,7 @@ namespace DB
 struct QueryThreadLogElement
 {
     time_t event_time{};
+    UInt64 event_time_microseconds{};
     /// When query was attached to current thread
     time_t query_start_time{};
     /// same as above but adds microsecond precision
