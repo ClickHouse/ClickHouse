@@ -6,7 +6,7 @@ import pymysql.cursors
 import pytest
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 
-import materialize_with_ddl
+from . import materialize_with_ddl
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
@@ -51,10 +51,10 @@ class MySQLNodeInstance:
         while time.time() - start < timeout:
             try:
                 self.alloc_connection()
-                print "Mysql Started"
+                print("Mysql Started")
                 return
             except Exception as ex:
-                print "Can't connect to MySQL " + str(ex)
+                print("Can't connect to MySQL " + str(ex))
                 time.sleep(0.5)
 
         subprocess.check_call(['docker-compose', 'ps', '--services', 'all'])
@@ -102,7 +102,6 @@ def test_materialize_database_dml_with_mysql_5_7(started_cluster, started_mysql_
 def test_materialize_database_dml_with_mysql_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
     materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_8_0, "mysql8_0")
-
 
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
 def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
