@@ -62,9 +62,9 @@ select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
 └─────────────────────────┴───────────────────────────┘
 ```
 
-## toInt(8\|16\|32\|64)OrNull {#toint8163264ornull}
+## toInt(8\|16\|32\|64\|128\|256)OrNull {#toint8163264128256ornull}
 
-It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64). If failed, returns NULL.
+It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns NULL.
 
 **Example**
 
@@ -78,7 +78,7 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 └─────────────────────────┴───────────────────────────┘
 ```
 
-## toUInt(8\|16\|32\|64) {#touint8163264}
+## toUInt(8\|16\|32\|64\|256) {#touint8163264256}
 
 Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
 
@@ -86,6 +86,7 @@ Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md
 -   `toUInt16(expr)` — Results in the `UInt16` data type.
 -   `toUInt32(expr)` — Results in the `UInt32` data type.
 -   `toUInt64(expr)` — Results in the `UInt64` data type.
+-   `toUInt256(expr)` — Results in the `UInt256` data type.
 
 **Parameters**
 
@@ -93,7 +94,7 @@ Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md
 
 **Returned value**
 
-Integer value in the `UInt8`, `UInt16`, `UInt32`, or `UInt64` data type.
+Integer value in the `UInt8`, `UInt16`, `UInt32`, `UInt64` or `UInt256` data type.
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
@@ -111,9 +112,9 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 └─────────────────────┴───────────────┴────────────────┴──────────────┘
 ```
 
-## toUInt(8\|16\|32\|64)OrZero {#touint8163264orzero}
+## toUInt(8\|16\|32\|64\|256)OrZero {#touint8163264256orzero}
 
-## toUInt(8\|16\|32\|64)OrNull {#touint8163264ornull}
+## toUInt(8\|16\|32\|64\|256)OrNull {#touint8163264256ornull}
 
 ## toFloat(32\|64) {#tofloat3264}
 
@@ -133,21 +134,23 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 ## toDateTimeOrNull {#todatetimeornull}
 
-## toDecimal(32\|64\|128) {#todecimal3264128}
+## toDecimal(32\|64\|128\|256) {#todecimal3264128256}
 
 Converts `value` to the [Decimal](../../sql-reference/data-types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
 
 -   `toDecimal32(value, S)`
 -   `toDecimal64(value, S)`
 -   `toDecimal128(value, S)`
+-   `toDecimal256(value, S)`
 
-## toDecimal(32\|64\|128)OrNull {#todecimal3264128ornull}
+## toDecimal(32\|64\|128\|256)OrNull {#todecimal3264128256ornull}
 
 Converts an input string to a [Nullable(Decimal(P,S))](../../sql-reference/data-types/decimal.md) data type value. This family of functions include:
 
 -   `toDecimal32OrNull(expr, S)` — Results in `Nullable(Decimal32(S))` data type.
 -   `toDecimal64OrNull(expr, S)` — Results in `Nullable(Decimal64(S))` data type.
 -   `toDecimal128OrNull(expr, S)` — Results in `Nullable(Decimal128(S))` data type.
+-   `toDecimal256OrNull(expr, S)` — Results in `Nullable(Decimal256(S))` data type.
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `NULL` value instead of an exception in the event of an input value parsing error.
 
@@ -185,13 +188,14 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 └──────┴────────────────────────────────────────────────────┘
 ```
 
-## toDecimal(32\|64\|128)OrZero {#todecimal3264128orzero}
+## toDecimal(32\|64\|128\'|256)OrZero {#todecimal3264128256orzero}
 
 Converts an input value to the [Decimal(P,S)](../../sql-reference/data-types/decimal.md) data type. This family of functions include:
 
 -   `toDecimal32OrZero( expr, S)` — Results in `Decimal32(S)` data type.
 -   `toDecimal64OrZero( expr, S)` — Results in `Decimal64(S)` data type.
 -   `toDecimal128OrZero( expr, S)` — Results in `Decimal128(S)` data type.
+-   `toDecimal256OrZero( expr, S)` — Results in `Decimal256(S)` data type.
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `0` value instead of an exception in the event of an input value parsing error.
 
