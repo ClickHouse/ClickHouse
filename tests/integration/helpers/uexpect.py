@@ -201,7 +201,8 @@ def spawn(command):
 def reader(process, out, queue, kill_event):
     while True:
         try:
-            data = os.read(out, 65536).decode(errors='replace')
+            # TODO: there are some issues with 1<<16 buffer size
+            data = os.read(out, 1<<17).decode(errors='replace')
             queue.put(data)
         except:
             if kill_event.is_set():
