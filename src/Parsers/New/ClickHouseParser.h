@@ -1065,6 +1065,7 @@ public:
     antlr4::tree::TerminalNode *JOIN();
     ColumnExprListContext *columnExprList();
     antlr4::tree::TerminalNode *LEFT();
+    antlr4::tree::TerminalNode *INNER();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
