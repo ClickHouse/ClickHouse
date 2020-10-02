@@ -69,6 +69,7 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
 
 void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr & entity)
 {
+    std::scoped_lock lock(mutex);
     auto role_ptr = typeid_cast<std::shared_ptr<const Role>>(entity);
     if (role_ptr)
     {
@@ -123,6 +124,7 @@ const char * LDAPAccessStorage::getStorageType() const
 
 String LDAPAccessStorage::getStorageParamsJSON() const
 {
+    std::scoped_lock lock(mutex);
     Poco::JSON::Object params_json;
 
     params_json.set("server", ldap_server);
@@ -137,30 +139,35 @@ String LDAPAccessStorage::getStorageParamsJSON() const
 
 std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & name) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.find(type, name);
 }
 
 
 std::vector<UUID> LDAPAccessStorage::findAllImpl(EntityType type) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.findAll(type);
 }
 
 
 bool LDAPAccessStorage::existsImpl(const UUID & id) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.exists(id);
 }
 
 
 AccessEntityPtr LDAPAccessStorage::readImpl(const UUID & id) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.read(id);
 }
 
 
 String LDAPAccessStorage::readNameImpl(const UUID & id) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.readName(id);
 }
 
@@ -179,6 +186,7 @@ UUID LDAPAccessStorage::insertImpl(const AccessEntityPtr & entity, bool)
 
 void LDAPAccessStorage::removeImpl(const UUID & id)
 {
+    std::scoped_lock lock(mutex);
     auto entity = read(id);
     throwReadonlyCannotRemove(entity->getType(), entity->getName());
 }
@@ -186,6 +194,7 @@ void LDAPAccessStorage::removeImpl(const UUID & id)
 
 void LDAPAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 {
+    std::scoped_lock lock(mutex);
     auto entity = read(id);
     throwReadonlyCannotUpdate(entity->getType(), entity->getName());
 }
@@ -193,24 +202,28 @@ void LDAPAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 
 ext::scope_guard LDAPAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.subscribeForChanges(id, handler);
 }
 
 
 ext::scope_guard LDAPAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.subscribeForChanges(type, handler);
 }
 
 
 bool LDAPAccessStorage::hasSubscriptionImpl(const UUID & id) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.hasSubscription(id);
 }
 
 
 bool LDAPAccessStorage::hasSubscriptionImpl(EntityType type) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.hasSubscription(type);
 }
 
@@ -261,7 +274,7 @@ UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & passw
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger(), "Authentication failed for user '" + user_name + "' from access storage '" + access_control_manager->getStorageName() + "'");
+        tryLogCurrentException(getLogger(), "Authentication failed for user '" + user_name + "' from access storage '" + getStorageName() + "'");
     }
     throwCannotAuthenticate(user_name);
 }
