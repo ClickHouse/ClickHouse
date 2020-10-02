@@ -865,20 +865,18 @@ void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_pt
 }
 
 
-std::vector<CacheDictionary::AttributeValue> CacheDictionary::getAttributeValuesFromBlockAtPosition(const std::vector<const IColumn *> & column_ptrs, size_t position) 
+std::vector<CacheDictionary::AttributeValue> CacheDictionary::getAttributeValuesFromBlockAtPosition(const std::vector<const IColumn *> & column_ptrs, size_t position)
 {
     std::vector<AttributeValue> answer;
     answer.reserve(column_ptrs.size());
 
-    for (size_t i = 0; i < column_ptrs.size(); ++i) 
+    for (const auto * pure_column : column_ptrs)
     {
-        const auto pure_column = column_ptrs[i];
-
 #define DISPATCH(TYPE) \
-        if (auto column = typeid_cast<const Column##TYPE *>(pure_column)) { \
+        if (const auto * column = typeid_cast<const Column##TYPE *>(pure_column)) { \
             answer.emplace_back(column->getElement(position)); \
             continue; \
-        } 
+        }
         DISPATCH(UInt8)
         DISPATCH(UInt16)
         DISPATCH(UInt32)
@@ -894,7 +892,7 @@ std::vector<CacheDictionary::AttributeValue> CacheDictionary::getAttributeValues
         DISPATCH(Float32)
         DISPATCH(Float64)
 #undef DISPATCH
-        if (auto column = typeid_cast<const ColumnString *>(pure_column)) 
+        if (const auto * column = typeid_cast<const ColumnString *>(pure_column))
         {
             answer.emplace_back(column->getDataAt(position).toString());
             continue;
@@ -1002,8 +1000,8 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                     cell.id = key;
                     cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
                     cell.setDefault();
-                } 
-            } 
+                }
+            }
 
             error_count = 0;
             last_exception = std::exception_ptr{};
@@ -1035,13 +1033,13 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                                                true /*check embedded stack trace*/));
             }
         }
-    
+
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, update_unit_ptr->requested_ids.size() - found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
     }
-    else 
+    else
     {
         /// Won't request source for keys
         throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
