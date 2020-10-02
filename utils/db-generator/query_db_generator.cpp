@@ -1,3 +1,4 @@
+#include <map>
 #include <boost/algorithm/string.hpp>
 #include <cstdlib>
 #include <iostream>

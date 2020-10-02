@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/ClickHouseRevision.h>
@@ -29,6 +30,7 @@ Block TextLogElement::createBlock()
     {
         {std::make_shared<DataTypeDate>(),                                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                                "event_time"},
+        {std::make_shared<DataTypeDateTime64>(6),                                             "event_time_microseconds"},
         {std::make_shared<DataTypeUInt32>(),                                                  "microseconds"},
 
         {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "thread_name"},
@@ -52,6 +54,7 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
+    columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(microseconds);
 
     columns[i++]->insertData(thread_name.data(), thread_name.size());

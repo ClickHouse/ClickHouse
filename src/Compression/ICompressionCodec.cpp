@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Compression/CompressionCodecMultiple.h>
 
 
 namespace DB

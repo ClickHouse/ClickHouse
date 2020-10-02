@@ -7,9 +7,11 @@ toc_title: "\u5E94\u7528CatBoost\u6A21\u578B"
 
 # 在ClickHouse中应用Catboost模型 {#applying-catboost-model-in-clickhouse}
 
-[CatBoost](https://catboost.ai) 是一个自由和开源的梯度提升库开发 [Yandex](https://yandex.com/company/) 用于机器学习。
+[CatBoost](https://catboost.ai) 是一个用于机器学习的免费开源梯度提升开发库 [Yandex](https://yandex.com/company/) 。
 
-通过此指令，您将学习如何通过从SQL运行模型推理在ClickHouse中应用预先训练好的模型。
+
+通过这篇指导，您将学会如何将预先从SQL推理出的运行模型作为训练好的模型应用到ClickHouse中去。 
+
 
 在ClickHouse中应用CatBoost模型:
 
@@ -18,18 +20,18 @@ toc_title: "\u5E94\u7528CatBoost\u6A21\u578B"
 3.  [将CatBoost集成到ClickHouse中](#integrate-catboost-into-clickhouse) （可选步骤）。
 4.  [从SQL运行模型推理](#run-model-inference).
 
-有关训练CatBoost模型的详细信息，请参阅 [培训和应用模型](https://catboost.ai/docs/features/training.html#training).
+有关训练CatBoost模型的详细信息，请参阅 [训练和使用模型](https://catboost.ai/docs/features/training.html#training).
 
 ## 先决条件 {#prerequisites}
 
-如果你没有 [Docker](https://docs.docker.com/install/) 然而，安装它。
+请先安装好 [Docker](https://docs.docker.com/install/)。
 
 !!! note "注"
     [Docker](https://www.docker.com) 是一个软件平台，允许您创建容器，将CatBoost和ClickHouse安装与系统的其余部分隔离。
 
 在应用CatBoost模型之前:
 
-**1.** 拉 [码头窗口映像](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) 从注册表:
+**1.** 从容器仓库拉取docker映像 (https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) :
 
 ``` bash
 $ docker pull yandex/tutorial-catboost-clickhouse
@@ -126,15 +128,15 @@ FROM amazon_train
 
 CatBoost集成到ClickHouse步骤:
 
-**1.** 构建评估库。
+**1.** 构建测试库文件。
 
-评估CatBoost模型的最快方法是编译 `libcatboostmodel.<so|dll|dylib>` 图书馆. 有关如何构建库的详细信息，请参阅 [CatBoost文件](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+测试CatBoost模型的最快方法是编译 `libcatboostmodel.<so|dll|dylib>` 库文件. 有关如何构建库文件的详细信息，请参阅 [CatBoost文件](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
 
-**2.** 例如，在任何地方和任何名称创建一个新目录, `data` 并将创建的库放入其中。 Docker映像已经包含了库 `data/libcatboostmodel.so`.
+**2.** 任意创建一个新目录, 如 `data` 并将创建的库文件放入其中。 Docker映像已经包含了库 `data/libcatboostmodel.so`.
 
-**3.** 例如，在任何地方和任何名称为config model创建一个新目录, `models`.
+**3.** 任意创建一个新目录来放配置模型, 如 `models`.
 
-**4.** 创建具有任意名称的模型配置文件，例如, `models/amazon_model.xml`.
+**4.** 任意创建一个模型配置文件，如 `models/amazon_model.xml`.
 
 **5.** 描述模型配置:
 
@@ -153,7 +155,7 @@ CatBoost集成到ClickHouse步骤:
 </models>
 ```
 
-**6.** 将CatBoost的路径和模型配置添加到ClickHouse配置:
+**6.** 将CatBoost库文件的路径和模型配置添加到ClickHouse配置:
 
 ``` xml
 <!-- File etc/clickhouse-server/config.d/models_config.xml. -->
@@ -161,11 +163,11 @@ CatBoost集成到ClickHouse步骤:
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
-## 4. 从SQL运行模型推理 {#run-model-inference}
+## 4. 运行从SQL推理的模型 {#run-model-inference}
 
-对于测试模型，运行ClickHouse客户端 `$ clickhouse client`.
+测试模型是否正常，运行ClickHouse客户端 `$ clickhouse client`.
 
-让我们确保模型正常工作:
+让我们确保模型能正常工作:
 
 ``` sql
 :) SELECT
@@ -182,10 +184,10 @@ CatBoost集成到ClickHouse步骤:
     ACTION AS target
 FROM amazon_train
 LIMIT 10
-```
+``` 
 
 !!! note "注"
-    功能 [模型值](../sql-reference/functions/other-functions.md#function-modelevaluate) 返回带有多类模型的每类原始预测的元组。
+    函数 [modelEvaluate](../sql-reference/functions/other-functions.md#function-modelevaluate) 返回带有多类模型的每类原始预测的元组。
 
 让我们预测一下:
 
@@ -208,7 +210,7 @@ LIMIT 10
 ```
 
 !!! note "注"
-    更多信息 [exp()](../sql-reference/functions/math-functions.md) 功能。
+    查看函数说明 [exp()](../sql-reference/functions/math-functions.md) 。
 
 让我们计算样本的LogLoss:
 
@@ -234,6 +236,6 @@ FROM
 ```
 
 !!! note "注"
-    更多信息 [avg()](../sql-reference/aggregate-functions/reference.md#agg_function-avg) 和 [日志()](../sql-reference/functions/math-functions.md) 功能。
+    查看函数说明 [avg()](../sql-reference/aggregate-functions/reference.md#agg_function-avg) 和 [log()](../sql-reference/functions/math-functions.md) 。
 
 [原始文章](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->
