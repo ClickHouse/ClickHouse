@@ -1,6 +1,7 @@
 #include <Poco/File.h>
 
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseAtomic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -47,6 +48,9 @@ BlockIO InterpreterDropQuery::execute()
     auto & drop = query_ptr->as<ASTDropQuery &>();
     if (!drop.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccessForDDLOnCluster());
+
+    if (context.getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
+        drop.no_delay = true;
 
     if (!drop.table.empty())
     {
@@ -128,6 +132,19 @@ BlockIO InterpreterDropQuery::executeToTable(
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
             database->dropTable(context, table_id.table_name, query.no_delay);
+        }
+    }
+
+    table.reset();
+    ddl_guard = {};
+    if (query.no_delay)
+    {
+        if (query.kind == ASTDropQuery::Kind::Drop)
+            DatabaseCatalog::instance().waitTableFinallyDropped(table_id.uuid);
+        else if (query.kind == ASTDropQuery::Kind::Detach)
+        {
+            if (auto * atomic = dynamic_cast<DatabaseAtomic *>(database.get()))
+                atomic->waitDetachedTableNotInUse(table_id.uuid);
         }
     }
 
