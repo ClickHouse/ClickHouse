@@ -143,6 +143,8 @@ void StorageMergeTree::shutdown()
     if (merge_assigning_task)
         merge_assigning_task->deactivate();
 
+    global_context.getBackgroundProcessingPool().waitJobGroup(getStorageID().getFullTableName() + "(queueProcessingTask)");
+
     if (moving_task_handle)
         global_context.getBackgroundMovePool().removeTask(moving_task_handle);
 
@@ -944,7 +946,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
-            });
+            }, getStorageID().getFullTableName() + "(queueProcessingTask)");
         }
 
         auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -963,7 +965,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
-            });
+            }, getStorageID().getFullTableName() + "(queueProcessingTask)");
 
             merge_assigning_task->schedule(); /// FIXME(alesap)
             return;
@@ -983,7 +985,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
-            });
+            }, getStorageID().getFullTableName() + "(queueProcessingTask)");
             merge_assigning_task->schedule(); /// FIXME(alesap)
             return;
         }
