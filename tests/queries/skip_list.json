@@ -17,6 +17,7 @@
         "00151_replace_partition_with_different_granularity",
         "00157_cache_dictionary",
         "01193_metadata_loading",
+        "01473_event_time_microseconds",
         "01474_executable_dictionary" /// informational stderr from sanitizer at start
     ],
     "address-sanitizer": [
@@ -25,6 +26,7 @@
         "memory_profiler",
         "odbc_roundtrip",
         "01103_check_cpu_instructions_at_startup",
+        "01473_event_time_microseconds",
         "01193_metadata_loading"
     ],
     "ub-sanitizer": [
@@ -33,6 +35,7 @@
         "memory_profiler",
         "01103_check_cpu_instructions_at_startup",
         "00900_orc_load",
+        "01473_event_time_microseconds",
         "01193_metadata_loading"
     ],
     "memory-sanitizer": [
@@ -43,6 +46,7 @@
         "01086_odbc_roundtrip", /// can't pass because odbc libraries are not instrumented
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
         "01114_mysql_database_engine_segfault", /// it fails in _nss_files_parse_servent while using NSS from GLibc to authenticate (need to get rid of it)
+        "01473_event_time_microseconds",
         "01193_metadata_loading"
     ],
     "debug-build": [
@@ -57,6 +61,7 @@
         "01037_polygon_dicts_",
         "hyperscan",
         "01193_metadata_loading",
+        "01473_event_time_microseconds",
         "01396_inactive_replica_cleanup_nodes"
     ],
     "unbundled-build": [
@@ -88,24 +93,10 @@
     ],
     "release-build": [
     ],
-    "database-atomic": [
-        /// Inner tables of materialized views have different names
-        "00738_lock_for_inner_table",
+    "database-ordinary": [
+        "00604_show_create_database",
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
-        /// Different database engine
-        "00604_show_create_database",
-        /// UUID must be specified in ATTACH TABLE
-        "01190_full_attach_syntax",
-        "01249_bad_arguments_for_bloom_filter",
-        /// Assumes blocking DROP
-        "01320_create_sync_race_condition",
-        /// Internal distionary name is different
-        "01225_show_create_table_from_dictionary",
-        "01224_no_superfluous_dict_reload"
-    ],
-    "polymorphic-parts": [
-        "00933_test_fix_extra_seek_on_compressed_cache",
-        "00446_clear_column_in_partition_zookeeper"
+        "00738_lock_for_inner_table"
     ]
 }

@@ -225,7 +225,7 @@ static void explainStep(
                     settings.out << "\n" << prefix << "        ";
 
                 first = false;
-                elem.dumpStructure(settings.out);
+                elem.dumpNameAndType(settings.out);
             }
         }
 
