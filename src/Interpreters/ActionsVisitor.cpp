@@ -565,14 +565,14 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
         /// The requested column is not in the block.
         /// If such a column exists in the table, then the user probably forgot to surround it with an aggregate function or add it to GROUP BY.
 
-        bool found = false;
         for (const auto & column_name_type : data.source_columns)
+        {
             if (column_name_type.name == column_name.get(ast))
-                found = true;
-
-        if (found)
-            throw Exception("Column " + backQuote(column_name.get(ast)) + " is not under aggregate function and not in GROUP BY",
+            {
+                throw Exception("Column " + backQuote(column_name.get(ast)) + " is not under aggregate function and not in GROUP BY",
                 ErrorCodes::NOT_AN_AGGREGATE);
+            }
+        }
 
         /// Special check for WITH statement alias. Add alias action to be able to use this alias.
         if (identifier.prefer_alias_to_column_name && !identifier.alias.empty())
