@@ -23,6 +23,7 @@ namespace DB
 namespace
 {
 
+/// Add all required expressions for missing columns calculation
 void addDefaultRequiredExpressionsRecursively(Block & block, const String & required_column, const ColumnsDescription & columns, ASTPtr default_expr_list_accum, NameSet & added_columns)
 {
     checkStackSize();
@@ -36,8 +37,8 @@ void addDefaultRequiredExpressionsRecursively(Block & block, const String & requ
         /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
         auto column_default_expr = column_default->expression->clone();
 
-        /// Our default may depend on columns with ALIAS as default expr which not present in block
-        /// we can easily add them from column_defaults struct
+        /// Our default may depend on columns with default expr which not present in block
+        /// we have to add them to block too
         RequiredSourceColumnsVisitor::Data columns_context;
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
@@ -49,7 +50,6 @@ void addDefaultRequiredExpressionsRecursively(Block & block, const String & requ
         for (const auto & required_column_name : required_columns_names)
             addDefaultRequiredExpressionsRecursively(block, required_column_name, columns, default_expr_list_accum, added_columns);
     }
-
 }
 
 ASTPtr defaultRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
