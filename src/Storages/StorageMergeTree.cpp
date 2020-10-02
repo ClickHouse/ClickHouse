@@ -214,14 +214,13 @@ void StorageMergeTree::drop()
     dropAllData();
 }
 
-void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder & lock)
 {
+    lock.release();
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
-
-        /// NOTE: It's assumed that this method is called under lockForAlter.
 
         auto parts_to_remove = getDataPartsVector();
         removePartsFromWorkingSet(parts_to_remove, true);
