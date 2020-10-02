@@ -1,0 +1,29 @@
+1
+2
+44
+33
+3
+4
+default	mt	0	0_1_1_0	2
+default	mt	3	3_2_2_0	1
+default	mt	4	4_3_3_0	1
+default	rmt	0	0_0_0_0	2
+3
+4
+default	mt	0	0_1_1_0	2
+default	mt	3	3_2_2_0	1
+default	mt	4	4_3_3_0	1
+default	rmt	0	0_2_2_0	2
+3
+4
+1	1
+2	2
+3
+4
+default	mt	0	0_1_1_0	2
+default	mt	3	3_2_2_0	1
+default	mt	4	4_3_3_0	1
+default	rmt	0	0_6_6_0	2
+default	rmt	0000000000	DROP COLUMN s	2020-10-02 17:46:31	['0']	[3]	['0_0_5_4294967295']	1	1		1970-01-01 03:00:00
+3
+4
