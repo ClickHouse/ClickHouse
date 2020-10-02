@@ -2469,7 +2469,6 @@ ReplicatedMergeTreeQueue::SelectedEntry StorageReplicatedMergeTree::selectQueueE
 
 bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntry & selected_entry)
 {
-
     LogEntryPtr & entry = selected_entry.first;
     return queue.processEntry([this]{ return getZooKeeper(); }, entry, [&](LogEntryPtr & entry_to_process)
     {
@@ -2542,7 +2541,6 @@ void StorageReplicatedMergeTree::queueProcessingTask()
             }
             catch (...)
             {
-                tryLogCurrentException(log);
             }
         });
 
