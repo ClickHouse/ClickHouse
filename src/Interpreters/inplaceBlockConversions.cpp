@@ -2,7 +2,6 @@
 
 #include <Core/Block.h>
 #include <Parsers/queryToString.h>
-#include <Storages/ColumnDefault.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -14,6 +13,8 @@
 #include <utility>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Common/checkStackSize.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -22,46 +23,46 @@ namespace DB
 namespace
 {
 
-ASTPtr defaultRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults)
+void addDefaultRequiredExpressionsRecursively(Block & block, const String & required_column, const ColumnsDescription & columns, ASTPtr default_expr_list_accum, NameSet & added_columns)
+{
+    checkStackSize();
+    if (block.has(required_column) || added_columns.count(required_column))
+        return;
+
+    auto column_default = columns.getDefault(required_column);
+
+    if (column_default)
+    {
+        /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
+        auto column_default_expr = column_default->expression->clone();
+
+        /// Our default may depend on columns with ALIAS as default expr which not present in block
+        /// we can easily add them from column_defaults struct
+        RequiredSourceColumnsVisitor::Data columns_context;
+        RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
+        NameSet required_columns_names = columns_context.requiredColumns();
+
+        auto cast_func = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column).type->getName()));
+        default_expr_list_accum->children.emplace_back(setAlias(cast_func, required_column));
+        added_columns.emplace(required_column);
+
+        for (const auto & required_column_name : required_columns_names)
+            addDefaultRequiredExpressionsRecursively(block, required_column_name, columns, default_expr_list_accum, added_columns);
+    }
+
+}
+
+ASTPtr defaultRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
 {
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
 
+    NameSet added_columns;
     for (const auto & column : required_columns)
-    {
-        if (block.has(column.name))
-            continue;
-
-        const auto it = column_defaults.find(column.name);
-
-        if (it != column_defaults.end())
-        {
-            /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
-            auto column_default_expr = it->second.expression->clone();
-
-            /// Our default may depend on columns with ALIAS as default expr which not present in block
-            /// we can easily add them from column_defaults struct
-            RequiredSourceColumnsVisitor::Data columns_context;
-            RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
-            NameSet required_columns_names = columns_context.requiredColumns();
-
-            for (const auto & required_column_name : required_columns_names)
-            {
-                /// If we have such default column and it's alias than we should
-                /// add it into default_expression_list
-                if (auto rit = column_defaults.find(required_column_name);
-                    rit != column_defaults.end() && rit->second.kind == ColumnDefaultKind::Alias)
-                {
-                    default_expr_list->children.emplace_back(setAlias(rit->second.expression->clone(), required_column_name));
-                }
-            }
-
-            auto cast_func = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(column.type->getName()));
-            default_expr_list->children.emplace_back(setAlias(cast_func, it->first));
-        }
-    }
+        addDefaultRequiredExpressionsRecursively(block, column.name, columns, default_expr_list, added_columns);
 
     if (default_expr_list->children.empty())
         return nullptr;
+
     return default_expr_list;
 }
 
@@ -161,13 +162,13 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
 
 void evaluateMissingDefaults(Block & block,
     const NamesAndTypesList & required_columns,
-    const ColumnDefaults & column_defaults,
+    const ColumnsDescription & columns,
     const Context & context, bool save_unneeded_columns)
 {
-    if (column_defaults.empty())
+    if (!columns.hasDefaults())
         return;
 
-    ASTPtr default_expr_list = defaultRequiredExpressions(block, required_columns, column_defaults);
+    ASTPtr default_expr_list = defaultRequiredExpressions(block, required_columns, columns);
     executeExpressionsOnBlock(block, default_expr_list, save_unneeded_columns, required_columns, context);
 }
 
