@@ -75,6 +75,8 @@ StorageMySQLReplica::StorageMySQLReplica(
     storage_metadata.setConstraints(std::move(constraints_));
     setInMemoryMetadata(storage_metadata);
 
+    disk->createDirectories(table_path);
+
     materialize_thread = getMySQLReplicationThread(
         mysql_hostname_and_port,
         mysql_database_name,
