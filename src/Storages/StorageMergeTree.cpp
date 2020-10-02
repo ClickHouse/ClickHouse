@@ -928,15 +928,22 @@ void StorageMergeTree::mergeMutateAssigningTask()
         {
             global_context.getBackgroundProcessingPool().scheduleOrThrowOnError([this]()
             {
+                try
                 {
-                    auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-                    /// All use relative_data_path which changes during rename
-                    /// so execute under share lock.
-                    clearOldPartsFromFilesystem();
-                    clearOldTemporaryDirectories();
-                    clearOldWriteAheadLogs();
+                    {
+                        auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+                        /// All use relative_data_path which changes during rename
+                        /// so execute under share lock.
+                        clearOldPartsFromFilesystem();
+                        clearOldTemporaryDirectories();
+                        clearOldWriteAheadLogs();
+                    }
+                    clearOldMutations();
                 }
-                clearOldMutations();
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                }
             });
         }
 
@@ -947,9 +954,15 @@ void StorageMergeTree::mergeMutateAssigningTask()
         {
             global_context.getBackgroundProcessingPool().scheduleOrThrowOnError([this, metadata_snapshot, entry = *merge_entry]()
             {
-
-                CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
-                mergeSelectedParts(metadata_snapshot, false, entry);
+                try
+                {
+                    CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
+                    mergeSelectedParts(metadata_snapshot, false, entry);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                }
             });
 
             merge_assigning_task->schedule(); /// FIXME(alesap)
@@ -961,8 +974,15 @@ void StorageMergeTree::mergeMutateAssigningTask()
         {
             global_context.getBackgroundProcessingPool().scheduleOrThrowOnError([this, metadata_snapshot, entry = *mutate_entry]()
             {
-                CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
-                mutateSelectedPart(metadata_snapshot, entry);
+                try
+                {
+                    CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
+                    mutateSelectedPart(metadata_snapshot, entry);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                }
             });
             merge_assigning_task->schedule(); /// FIXME(alesap)
             return;
