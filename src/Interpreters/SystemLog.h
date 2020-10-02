@@ -438,7 +438,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         ASTPtr query_ptr(insert.release());
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
-        auto insert_context = Context(context);
+        Context insert_context(context);
         insert_context.makeQueryContext();
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);

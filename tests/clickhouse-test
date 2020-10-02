@@ -303,6 +303,12 @@ def run_tests_array(all_tests_with_params):
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
                         clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
 
+                        if clickhouse_proc.returncode != 0:
+                            failures += 1
+                            print("Server does not respond to health check")
+                            SERVER_DIED = True
+                            break
+
                     reference_file = os.path.join(suite_dir, name) + '.reference'
                     stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'

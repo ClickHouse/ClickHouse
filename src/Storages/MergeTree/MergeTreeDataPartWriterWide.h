@@ -66,7 +66,7 @@ private:
     void addStreams(
         const String & name,
         const IDataType & type,
-        const CompressionCodecPtr & effective_codec,
+        const ASTPtr & effective_codec_desc,
         size_t estimated_size);
 
     SerializationStates serialization_states;
