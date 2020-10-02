@@ -56,8 +56,10 @@ def wait_kafka_is_available(max_retries=50):
             time.sleep(1)
 
 
+def producer_serializer(x):
+    return x.encode() if isinstance(x, str) else x
 def kafka_produce(topic, messages, timestamp=None):
-    producer = KafkaProducer(bootstrap_servers="localhost:9093")
+    producer = KafkaProducer(bootstrap_servers="localhost:9093", value_serializer=producer_serializer)
     for message in messages:
         producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
@@ -142,5 +144,5 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
 
 if __name__ == '__main__':
     cluster.start()
-    raw_input("Cluster created, press any key to destroy...")
+    input("Cluster created, press any key to destroy...")
     cluster.shutdown()
