@@ -14,6 +14,7 @@
 
 #include <Access/AccessFlags.h>
 
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -25,7 +26,7 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
@@ -92,7 +93,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
-    extern const int INVALID_SETTING_VALUE;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -189,7 +189,7 @@ static Context getSubqueryContext(const Context & context)
     return subquery_context;
 }
 
-static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
+static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database)
 {
     ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -201,11 +201,7 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database};
     CrossToInnerJoinVisitor(cross_to_inner).visit(query);
 
-    size_t rewriter_version = settings.multiple_joins_rewriter_version;
-    if (!rewriter_version || rewriter_version > 2)
-        throw Exception("Bad multiple_joins_rewriter_version setting value: " + settings.multiple_joins_rewriter_version.toString(),
-                        ErrorCodes::INVALID_SETTING_VALUE);
-    JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases, rewriter_version};
+    JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases};
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
@@ -249,6 +245,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
+    ApplyWithSubqueryVisitor().visit(query_ptr);
+
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
     if (!has_input && !storage)
@@ -268,7 +266,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), settings);
+        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase());
 
         joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();
@@ -618,7 +616,6 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
-    SpecialSort special_sort = context.getSettings().special_sort.value;
     for (const auto & elem : query.orderBy()->children)
     {
         String name = elem->children.front()->getColumnName();
@@ -632,10 +629,10 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
             order_descr.emplace_back(name, order_by_elem.direction,
-                order_by_elem.nulls_direction, collator, special_sort, true, fill_desc);
+                order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, special_sort);
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
     return order_descr;
@@ -925,8 +922,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 join_step->setStepDescription("JOIN");
                 query_plan.addStep(std::move(join_step));
 
-                if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
+                if (expressions.join_has_delayed_stream)
                 {
+                    auto stream = std::make_shared<LazyNonJoinedBlockInputStream>(*join, join_result_sample, settings.max_block_size);
                     auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
                     auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
                             query_plan.getCurrentDataStream(), std::move(source));
@@ -1441,16 +1439,22 @@ void InterpreterSelectQuery::executeFetchColumns(
         }
 
         StreamLocalLimits limits;
+        SizeLimits leaf_limits;
         std::shared_ptr<const EnabledQuota> quota;
+
 
         /// Set the limits and quota for reading data, the speed and time of the query.
         if (!options.ignore_limits)
+        {
             limits = getLimitsForStorage(settings, options);
+            leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, settings.max_bytes_to_read_leaf,
+                                          settings.read_overflow_mode_leaf);
+        }
 
         if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
             quota = context->getQuota();
 
-        storage->read(query_plan, table_lock, metadata_snapshot, limits, std::move(quota),
+        storage->read(query_plan, table_lock, metadata_snapshot, limits, leaf_limits, std::move(quota),
                       required_columns, query_info, context, processing_stage, max_block_size, max_streams);
     }
     else
@@ -1899,14 +1903,8 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
 
     const Settings & settings = context->getSettingsRef();
 
-    auto creating_sets = std::make_unique<CreatingSetsStep>(
-            query_plan.getCurrentDataStream(),
-            std::move(subqueries_for_sets),
-            SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
-            *context);
-
-    creating_sets->setStepDescription("Create sets for subqueries and joins");
-    query_plan.addStep(std::move(creating_sets));
+    SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), limits, *context);
 }
 
 

@@ -51,12 +51,14 @@ public:
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
-    void assertCanBeDetached(bool cleenup);
+    void assertCanBeDetached(bool cleanup);
 
     UUID tryGetTableUUID(const String & table_name) const override;
 
     void tryCreateSymlink(const String & table_name, const String & actual_data_path);
     void tryRemoveSymlink(const String & table_name);
+
+    void waitDetachedTableNotInUse(const UUID & uuid);
 
 private:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path) override;
@@ -65,7 +67,7 @@ private:
 
     void assertDetachedTableNotInUse(const UUID & uuid);
     typedef std::unordered_map<UUID, StoragePtr> DetachedTables;
-    [[nodiscard]] DetachedTables cleenupDetachedTables();
+    [[nodiscard]] DetachedTables cleanupDetachedTables();
 
     void tryCreateMetadataSymlink();
 

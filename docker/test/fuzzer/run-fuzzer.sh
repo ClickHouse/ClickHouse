@@ -48,7 +48,7 @@ function configure
     cp -av "$repo_dir"/programs/server/config* db
     cp -av "$repo_dir"/programs/server/user* db
     # TODO figure out which ones are needed
-    cp -av "$repo_dir"/tests/config/listen.xml db/config.d
+    cp -av "$repo_dir"/tests/config/config.d/listen.xml db/config.d
     cp -av "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
 }
 
@@ -58,7 +58,7 @@ function watchdog
 
     echo "Fuzzing run has timed out"
     killall clickhouse-client ||:
-    for x in {1..10}
+    for _ in {1..10}
     do
         if ! pgrep -f clickhouse-client
         then
@@ -81,6 +81,9 @@ function fuzz
     echo Server started
 
     fuzzer_exit_code=0
+    # SC2012: Use find instead of ls to better handle non-alphanumeric filenames.
+    # They are all alphanumeric.
+    # shellcheck disable=SC2012
     ./clickhouse-client --query-fuzzer-runs=1000 \
         < <(for f in $(ls ch/tests/queries/0_stateless/*.sql | sort -R); do cat "$f"; echo ';'; done) \
         > >(tail -10000 > fuzzer.log) \
