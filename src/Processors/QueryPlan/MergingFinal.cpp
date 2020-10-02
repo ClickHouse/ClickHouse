@@ -119,9 +119,9 @@ void MergingFinal::transformPipeline(QueryPipeline & pipeline)
 
     pipeline.transform([&](OutputPortRawPtrs ports)
     {
-        Processors processors;
+        Processors transforms;
         std::vector<OutputPorts::iterator> output_ports;
-        processors.reserve(ports.size() + num_output_streams);
+        transforms.reserve(ports.size() + num_output_streams);
         output_ports.reserve(ports.size());
 
         for (auto & port : ports)
@@ -129,7 +129,7 @@ void MergingFinal::transformPipeline(QueryPipeline & pipeline)
             auto copier = std::make_shared<CopyTransform>(header, num_output_streams);
             connect(*port, copier->getInputPort());
             output_ports.emplace_back(copier->getOutputs().begin());
-            processors.emplace_back(std::move(copier));
+            transforms.emplace_back(std::move(copier));
         }
 
         for (size_t i = 0; i < num_output_streams; ++i)
@@ -146,10 +146,10 @@ void MergingFinal::transformPipeline(QueryPipeline & pipeline)
                 ++input;
             }
 
-            processors.emplace_back(std::move(merge));
+            transforms.emplace_back(std::move(merge));
         }
 
-        return processors;
+        return transforms;
     });
 }
 
