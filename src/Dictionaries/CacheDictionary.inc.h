@@ -171,7 +171,7 @@ void CacheDictionary::getItemsNumberImpl(
         {
             for (const size_t row : cache_expired_or_not_found_ids[key])
                 out[row] = std::get<OutputType>(value.values[attribute_index]);
-        } 
+        }
     }
 }
 

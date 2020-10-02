@@ -118,7 +118,7 @@ public:
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
     std::exception_ptr getLastException() const override;
-    
+
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
@@ -298,7 +298,7 @@ private:
         return source_ptr;
     }
 
-    inline bool isExpiredPermanently(time_point_t now, time_point_t deadline) const 
+    inline bool isExpiredPermanently(time_point_t now, time_point_t deadline) const
     {
         return now > deadline + std::chrono::seconds(extra_lifetime_seconds);
     }
