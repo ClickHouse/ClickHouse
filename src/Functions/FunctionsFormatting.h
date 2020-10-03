@@ -383,7 +383,7 @@ private:
         aux += hours * 3600;
         long long int minutes = maximum_unit_int < 2 ? 0 : (value - aux) / 60;
         aux += minutes * 60;
-        double seconds = maximum_unit_int < 1 ? 0 : value - aux;
+        double seconds = value - aux;
 
         std::vector<String> parts;
 
@@ -429,9 +429,9 @@ private:
         }
 
         String str_value;
-        for(size_t i=0; i<parts.size(); i++)
+        for (size_t i=0; i<parts.size(); i++)
         {
-            if(!str_value.empty())
+            if (!str_value.empty())
             {
                 if (i == parts.size()-1)
                     str_value += " and ";
@@ -456,7 +456,7 @@ private:
                 maximum_unit = maximum_unit_const_col->getValue<String>();
             else
                 throw Exception(
-                    "Illegal column " + maximum_unit_const_col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                    "Illegal column " + arguments[1].get()->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
         }
 
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
