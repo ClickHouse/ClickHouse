@@ -233,6 +233,7 @@
         "01053_ssd_dictionary",
         "attach",
         "ddl_dictionaries",
+        "dictionary",
         "limit_memory",
         "live_view",
         "memory_leak",
