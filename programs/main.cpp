@@ -343,10 +343,10 @@ struct Checker
 {
     Checker()
     {
+        checkRequiredInstructions();
 #ifdef __linux__
         checkRequiredMadviseFlags();
 #endif
-        checkRequiredInstructions();
     }
 } checker;
 
