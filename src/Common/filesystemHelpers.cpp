@@ -10,13 +10,16 @@
 #include <Poco/Path.h>
 #include <Poco/Version.h>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_STATVFS;
 }
 
 
