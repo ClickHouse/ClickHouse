@@ -284,7 +284,7 @@ bool LDAPSimpleAuthClient::check()
     std::scoped_lock lock(ldap_global_mutex);
 
     if (params.user.empty())
-        throw Exception("LDAP authentication of a user with an empty name is not allowed", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("LDAP authentication of a user with empty name is not allowed", ErrorCodes::BAD_ARGUMENTS);
 
     if (params.password.empty())
         return false; // Silently reject authentication attempt if the password is empty as if it didn't match.

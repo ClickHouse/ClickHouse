@@ -29,10 +29,10 @@ LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl
 
 void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
+    std::scoped_lock lock(mutex);
+
     // TODO: switch to passing config as a ConfigurationView and remove this extra prefix once a version of Poco with proper implementation is available.
     const String prefix_str = (prefix.empty() ? "" : prefix + ".");
-
-    std::scoped_lock lock(mutex);
 
     const bool has_server = config.has(prefix_str + "server");
     const bool has_roles = config.has(prefix_str + "roles");
@@ -235,20 +235,9 @@ UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & passw
         auto id = memory_storage.find<User>(user_name);
         if (id)
         {
-            // We try to re-authenticate the existing user, and if not successful, we will remove it, since that would mean
-            // something changed and the user we authenticated previously cannot be authenticated anymore.
             auto user = memory_storage.tryRead<User>(*id);
-            try
-            {
-                if (user && isAddressAllowedImpl(*user, address) && isPasswordCorrectImpl(*user, password, external_authenticators))
-                    return *id;
-            }
-            catch (...)
-            {
-                memory_storage.remove(*id);
-                throw;
-            }
-            memory_storage.remove(*id);
+            if (user && isAddressAllowedImpl(*user, address) && isPasswordCorrectImpl(*user, password, external_authenticators))
+                return *id;
         }
         else
         {
