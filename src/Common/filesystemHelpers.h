@@ -12,10 +12,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CANNOT_STATVFS;
-}
 
 using TemporaryFile = Poco::TemporaryFile;
 
