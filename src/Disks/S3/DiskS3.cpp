@@ -36,33 +36,34 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace
+
+/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API)
+class DiskS3::AwsS3KeyKeeper : public std::list<Aws::Vector<Aws::S3::Model::ObjectIdentifier>>
 {
-    /// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API)
-    class DiskS3::AwsS3KeyKeeper : public std::list<Aws::Vector<Aws::S3::Model::ObjectIdentifier>>
-    {
-    public:
-        void addKey(const String & key);
+public:
+    void addKey(const String & key);
 
-    private:
-        /// limit for one DeleteObject request
-        /// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
-        const static size_t chunk_limit = 1000;
-    };
+private:
+    /// limit for one DeleteObject request
+    /// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+    const static size_t chunk_limit = 1000;
+};
 
-    void DiskS3::AwsS3KeyKeeper::addKey(const String & key)
-    {
-        if (empty() || back().size() >= chunk_limit)
-        { /// add one more chunk
-            push_back(value_type());
-            back().reserve(chunk_limit);
-        }
-
-        Aws::S3::Model::ObjectIdentifier obj;
-        obj.SetKey(key);
-        back().push_back(obj);
+void DiskS3::AwsS3KeyKeeper::addKey(const String & key)
+{
+    if (empty() || back().size() >= chunk_limit)
+    { /// add one more chunk
+        push_back(value_type());
+        back().reserve(chunk_limit);
     }
 
+    Aws::S3::Model::ObjectIdentifier obj;
+    obj.SetKey(key);
+    back().push_back(obj);
+}
+
+namespace
+{
     String getRandomName()
     {
         std::uniform_int_distribution<int> distribution('a', 'z');
