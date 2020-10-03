@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <cerrno>
 #include <sys/statvfs.h>
 #include <Poco/TemporaryFile.h>
 
@@ -34,8 +35,12 @@ String getFilesystemName([[maybe_unused]] const String & mount_point);
 inline struct statvfs getStatVFS(const String & path)
 {
     struct statvfs fs;
-    if (statvfs(path.c_str(), &fs) != 0)
+    while (statvfs(path.c_str(), &fs) != 0)
+    {
+        if (errno == EINTR)
+            continue;
         throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
+    }
     return fs;
 }
 
