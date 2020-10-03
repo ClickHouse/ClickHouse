@@ -5,6 +5,7 @@
 #    include <cstdio>
 #    include <mntent.h>
 #endif
+#include <cerrno>
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/Version.h>

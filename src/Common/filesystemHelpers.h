@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <memory>
 #include <string>
-#include <cerrno>
 #include <sys/statvfs.h>
 #include <Poco/TemporaryFile.h>
 
