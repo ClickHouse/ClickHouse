@@ -746,7 +746,7 @@ formatRow(format, x, y, ...)
 
 **Returned value**
 
--   A formatted string terminated with the new line symbol.
+-   A formatted string (for text formats it's usually terminated with the new line character).
 
 **Example**
 
