@@ -452,11 +452,12 @@ private:
         if (arguments.size() == 2)
         {
             const ColumnPtr & maximum_unit_column = block.getByPosition(arguments[1]).column;
-            if (const ColumnConst * maximum_unit_const_col = checkAndGetColumnConstStringOrFixedString(maximum_unit_column.get()))
+            const ColumnConst * maximum_unit_const_col = checkAndGetColumnConstStringOrFixedString(maximum_unit_column.get());
+            if (maximum_unit_const_col)
                 maximum_unit = maximum_unit_const_col->getValue<String>();
             else
                 throw Exception(
-                    "Illegal column " + arguments[1].get()->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                    "Illegal column " + maximum_unit_const_col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
         }
 
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
