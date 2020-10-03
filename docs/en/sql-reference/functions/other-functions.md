@@ -538,23 +538,48 @@ SELECT
 └────────────────┴───────────────────┘
 ```
 
-## formatReadableTimeDelta(x) {#formatreadabletimedeltax}
+## formatReadableTimeDelta {#formatreadabletimedelta}
 
 Accepts the time delta in seconds. Returns a time delta with (year, month, day, hour, minute, second) as a string.
+
+**Syntax**
+
+``` sql
+formatReadableTimeDelta(column[, maximum_unit])
+```
+
+**Parameters**
+
+-   `column` — A column with numeric time delta.
+-   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years. 
 
 Example:
 
 ``` sql
 SELECT
-    arrayJoin([100, 12345, 432546534]) AS number,
-    formatReadableTimeDelta(number) AS time_delta
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed) AS time_delta
 ```
 
 ``` text
-┌─────number─┬─time_delta ─────────────────────────────────────────────────────┐
+┌────elapsed─┬─time_delta ─────────────────────────────────────────────────────┐
 │        100 │ 1 minute and 40 seconds                                         │
 │      12345 │ 3 hours, 25 minutes and 45 seconds                              │
 │  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
+└────────────┴─────────────────────────────────────────────────────────────────┘
+```
+
+``` sql
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
+```
+
+``` text
+┌────elapsed─┬─time_delta ─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                         │
+│      12345 │ 205 minutes and 45 seconds                                      │
+│  432546534 │ 7209108 minutes and 54 seconds                                  │
 └────────────┴─────────────────────────────────────────────────────────────────┘
 ```
 
