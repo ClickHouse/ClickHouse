@@ -60,7 +60,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
     const auto get_device_id = [](const std::filesystem::path & p)
     {
         struct stat st;
-        if (stat(p.c_str(), &st))
+        if (stat(p.c_str(), &st))   /// NOTE: man stat does not list EINTR as possible error
             throwFromErrnoWithPath("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
         return st.st_dev;
     };
