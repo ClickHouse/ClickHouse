@@ -66,6 +66,18 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
+## core_dump
+
+Configures soft limit for core dump file size, one gigabyte by default.
+```xml
+<core_dump>
+    <size_limit>1073741824</size_limit>
+</core_dump> 
+```
+
+(Hard limit is configured via system tools)
+
+
 ## default\_database {#default-database}
 
 The default database.
