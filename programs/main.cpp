@@ -238,8 +238,9 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 }
 
 /// This function is safe to use in static initializers.
-void writeError(const char * data, size_t size)
+void writeError(const char * data)
 {
+    size_t size = strlen(data);
     while (size != 0)
     {
         ssize_t res = ::write(STDERR_FILENO, data, size);
@@ -272,8 +273,7 @@ void checkRequiredInstructions()
         /// Typical implementation of strlen is using SSE4.2 or AVX2.
         /// But this is not the case because it's compiler builtin and is executed at compile time.
 
-        const char * msg = "Can not set signal handler\n";
-        writeError(msg, strlen(msg));
+        writeError("Can not set signal handler\n");
         _Exit(1);
     }
 
@@ -281,12 +281,9 @@ void checkRequiredInstructions()
 
     if (sigsetjmp(jmpbuf, 1))
     {
-        const char * msg1 = "Instruction check fail. The CPU does not support ";
-        writeError(msg1, strlen(msg1));
-        const char * msg2 = instructionFailToString(fail);
-        writeError(msg2, strlen(msg2));
-        const char * msg3 = " instruction set.\n";
-        writeError(msg3, strlen(msg3));
+        writeError("Instruction check fail. The CPU does not support ");
+        writeError(instructionFailToString(fail));
+        writeError(" instruction set.\n");
         _Exit(1);
     }
 
@@ -294,13 +291,18 @@ void checkRequiredInstructions()
 
     if (sigaction(signal, &sa_old, nullptr))
     {
-        const char * msg = "Can not set signal handler\n";
-        writeError(msg, strlen(msg));
+        writeError("Can not set signal handler\n");
         _Exit(1);
     }
 }
 
-struct Checker { Checker() { checkRequiredInstructions(); } } checker;
+struct Checker
+{
+    Checker()
+    {
+        checkRequiredInstructions();
+    }
+} checker;
 
 }
 
