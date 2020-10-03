@@ -417,7 +417,7 @@ Limits total RAM usage by the ClickHouse server.
 Possible values:
 
 -   Positive integer.
--   0 — Unlimited.
+-   0 (auto).
 
 Default value: `0`.
 
