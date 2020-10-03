@@ -1491,4 +1491,40 @@ Result:
 
 ```
 
+## getSetting {#getSetting}
+
+Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings).
+
+**Syntax** 
+
+```sql
+getSetting('custom_setting');    
+```
+
+**Parameter** 
+
+-   `custom_setting` — The setting name. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   The setting current value.
+
+**Example**
+
+```sql
+SET custom_a = 123;
+SELECT getSetting('custom_a');    
+```
+
+**Result**
+
+```
+123
+```
+
+**See Also** 
+
+-   [Custom Settings](../../operations/settings/index.md#custom_settings)
+
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
