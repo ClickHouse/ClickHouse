@@ -32,16 +32,6 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path);
 #endif
 String getFilesystemName([[maybe_unused]] const String & mount_point);
 
-inline struct statvfs getStatVFS(const String & path)
-{
-    struct statvfs fs;
-    while (statvfs(path.c_str(), &fs) != 0)
-    {
-        if (errno == EINTR)
-            continue;
-        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
-    }
-    return fs;
-}
+struct statvfs getStatVFS(const String & path);
 
 }

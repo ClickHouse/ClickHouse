@@ -18,6 +18,20 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+
+struct statvfs getStatVFS(const String & path)
+{
+    struct statvfs fs;
+    while (statvfs(path.c_str(), &fs) != 0)
+    {
+        if (errno == EINTR)
+            continue;
+        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
+    }
+    return fs;
+}
+
+
 bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t data_size [[maybe_unused]])
 {
 #if POCO_VERSION >= 0x01090000
