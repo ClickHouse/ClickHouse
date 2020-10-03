@@ -1,7 +1,7 @@
 # docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -11,7 +11,7 @@ RUN apt-get update \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-11 main" >> \
+    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list
 
 # initial packages
@@ -49,15 +49,11 @@ RUN apt-get update \
         lld-11 \
         llvm-11 \
         llvm-11-dev \
-        clang-${LLVM_VERSION} \
-        clang-tidy-${LLVM_VERSION} \
-        lld-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION}-dev \
-        llvm-9-dev \
-        lld-9 \
-        clang-9 \
-        clang-tidy-9 \
+        clang-10 \
+        clang-tidy-10 \
+        lld-10 \
+        llvm-10 \
+        llvm-10-dev \
         ninja-build \
         perl \
         pkg-config \

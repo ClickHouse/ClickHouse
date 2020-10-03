@@ -33,6 +33,25 @@ def started_cluster():
         cluster.shutdown()
 
 
+def test_many_connections(started_cluster):
+    table_name = 'test_many_connections'
+    conn = get_mysql_conn()
+    create_mysql_table(conn, table_name)
+
+    node1.query('''
+CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse');
+'''.format(table_name, table_name))
+
+    node1.query("INSERT INTO {} (id, name) SELECT number, concat('name_', toString(number)) from numbers(10) ".format(table_name))
+
+    query = "SELECT count() FROM ("
+    for i in range (24):
+        query += "SELECT id FROM {t} UNION ALL "
+    query += "SELECT id FROM {t})"
+
+    assert node1.query(query.format(t=table_name)) == '250\n'
+    conn.close()
+
 def test_insert_select(started_cluster):
     table_name = 'test_insert_select'
     conn = get_mysql_conn()
@@ -160,6 +179,6 @@ def create_mysql_table(conn, tableName):
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
-        for name, instance in cluster.instances.items():
-            print name, instance.ip_address
-        raw_input("Cluster created, press any key to destroy...")
+        for name, instance in list(cluster.instances.items()):
+            print(name, instance.ip_address)
+        input("Cluster created, press any key to destroy...")
