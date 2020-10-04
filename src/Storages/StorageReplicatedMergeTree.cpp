@@ -3543,7 +3543,9 @@ void StorageReplicatedMergeTree::foreachCommittedParts(const Func & func, const 
 {
     std::optional<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock> max_added_blocks = {};
 
-    /** Synchronously go to ZooKeeper when select_sequential_consistency enabled */
+    /**
+     * Synchronously go to ZooKeeper when select_sequential_consistency enabled
+     */
     if (context.getSettingsRef().select_sequential_consistency)
     {
         max_added_blocks = getMaxAddedBlocks();
