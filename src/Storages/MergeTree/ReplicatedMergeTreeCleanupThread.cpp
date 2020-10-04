@@ -342,13 +342,25 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
+    zkutil::AsyncResponses<Coordination::GetResponse> try_get_futures;
     zkutil::AsyncResponses<Coordination::RemoveResponse> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
         String path = storage.zookeeper_path + "/blocks/" + it->node;
-        /// ALEXELEXA
-        /// should check somehow is it quorum block
-        try_remove_futures.emplace_back(path, zookeeper->asyncTryRemove(path));
+        try_get_futures.emplace_back(path, zookeeper->asyncTryGet(path));
+    }
+
+    /// Don't delete blocks that are still reaching quorum
+    for (auto & pair : try_get_futures)
+    {
+        const String & path = pair.first;
+        auto response = pair.second.get();
+        if (response.error == Coordination::Error::ZOK)
+        {
+            ReplicatedMergeTreeBlockEntry block(response.data);
+            if (!block.quorum_status)
+                try_remove_futures.emplace_back(path, zookeeper->asyncTryRemove(path));
+        }
     }
 
     for (auto & pair : try_remove_futures)

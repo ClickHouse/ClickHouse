@@ -101,7 +101,7 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
         */
 
     auto quorum_status = quorum_status_future.get();
-    if (quorum_status.error != Coordination::Error::ZNONODE)
+    if (quorum_status.error != Coordination::Error::ZNONODE && !quorum_parallel)
         throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status.data,
                         ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
 
@@ -172,6 +172,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         try
         {
+            LOG_ERROR(log, "need to send here block_id somehow");
             commitPart(zookeeper, part, block_id);
 
             /// Set a special error code if the block is duplicate
@@ -342,8 +343,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             /// Note: race condition with DROP PARTITION operation is possible. User will get "No node" exception and it is Ok.
             existing_part_name = zookeeper->get(storage.zookeeper_path + "/blocks/" + block_id);
 
+            block_entry.fromString(existing_part_name);
             /// If it exists on our replica, ignore it.
-            if (storage.getActiveContainingPart(existing_part_name))
+            if (storage.getActiveContainingPart(block_entry.part_name))
             {
                 LOG_INFO(log, "Block with ID {} already exists locally as part {}; ignoring it.", block_id, existing_part_name);
                 part->is_duplicate = true;
@@ -370,6 +372,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         }
 
         /// Information about the part.
+        LOG_INFO(log, "getCommitPartOps from ...OutputStream");
         storage.getCommitPartOps(ops, part, block_id_path, block_entry);
 
         MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.
@@ -484,9 +487,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         if (is_already_existing_part)
         {
             /// We get duplicate part without fetch
-            /// ALEXELEXA
-            /// should reset here something, after thinking in TODO
-            storage.updateQuorum(part->name, part->info.block_id);
+            storage.updateQuorum(part->name);
         }
 
         /// We are waiting for quorum to be satisfied.
@@ -511,7 +512,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 if (quorum_parallel)
                 {
                     block_entry.fromString(value);
-                    if (block_entry.part_name != part->name)
+                    // quorum_status empty if quorum reached
+                    if (block_entry.part_name != part->name || !block_entry.quorum_status)
                         break;
                 }
                 else

@@ -40,6 +40,7 @@ public:
 
     const std::array<char, 16> & getColumnsHash() const { return columns_hash; }
     const MinimalisticDataPartChecksums & getChecksums() const { return checksums; }
+    const std::optional<String> & getBlockID() const { return block_id; }
 
 private:
     ReplicatedMergeTreePartHeader(std::array<char, 16> columns_hash_, MinimalisticDataPartChecksums checksums_,

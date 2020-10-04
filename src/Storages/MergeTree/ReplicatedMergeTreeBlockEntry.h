@@ -31,10 +31,12 @@ struct ReplicatedMergeTreeBlockEntry
 
     void writeText(WriteBuffer & out) const
     {
-        out << part_name << "\n";
+        out << part_name;
 
-		if (quorum_status)
+		if (quorum_status) {
+            out << "\n";
 			quorum_status->writeText(out);
+        }
     }
 
     void readText(ReadBuffer & in)

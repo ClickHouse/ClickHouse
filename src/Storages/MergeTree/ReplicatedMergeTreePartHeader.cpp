@@ -51,7 +51,11 @@ void ReplicatedMergeTreePartHeader::read(ReadBuffer & in)
     checksums.deserializeWithoutHeader(in);
 
     if (!in.eof())
-        in >> "block_id: " >> block_id.value() >> "\n";
+    {
+        String block_id_;
+        in >> "\nblock_id: " >> block_id_;
+        block_id = block_id_;
+    }
 }
 
 ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromString(const String & str)
@@ -68,7 +72,7 @@ void ReplicatedMergeTreePartHeader::write(WriteBuffer & out) const
     out.write(columns_hash.data(), columns_hash.size());
     checksums.serializeWithoutHeader(out);
     if (block_id)
-        out << "block_id " << block_id.value() << "\n";
+        out << "\nblock_id: " << block_id.value();
 }
 
 String ReplicatedMergeTreePartHeader::toString() const
