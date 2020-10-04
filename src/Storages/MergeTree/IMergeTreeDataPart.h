@@ -60,7 +60,6 @@ public:
 
     using Type = MergeTreeDataPartType;
 
-
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
@@ -348,6 +347,8 @@ public:
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
+
+    std::optional<String> block_id;
 
 protected:
 

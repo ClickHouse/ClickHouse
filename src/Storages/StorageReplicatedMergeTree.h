@@ -486,7 +486,8 @@ private:
         const String & replica_path,
         bool to_detached,
         size_t quorum,
-        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr);
+        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
+        const std::optional<String> & block_id = std::nullopt);
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
