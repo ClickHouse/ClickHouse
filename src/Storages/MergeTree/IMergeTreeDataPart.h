@@ -60,6 +60,7 @@ public:
 
     using Type = MergeTreeDataPartType;
 
+
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
