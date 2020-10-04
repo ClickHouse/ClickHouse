@@ -425,7 +425,7 @@ UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & p
             throw;
         }
     }
-    throwCannotAuthenticate(user_name);
+    throwNotFound(EntityType::USER, user_name);
 }
 
 

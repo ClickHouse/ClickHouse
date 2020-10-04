@@ -55,6 +55,8 @@ private:
     void setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 
+    [[noreturn]] static void throwDefaultRoleNotFound(const String & role_name);
+
     mutable std::recursive_mutex mutex;
     AccessControlManager * access_control_manager = nullptr;
     String ldap_server;

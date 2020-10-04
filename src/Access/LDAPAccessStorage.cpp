@@ -230,42 +230,50 @@ bool LDAPAccessStorage::hasSubscriptionImpl(EntityType type) const
 UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
 {
     std::scoped_lock lock(mutex);
-    try
+    auto id = memory_storage.find<User>(user_name);
+    if (id)
     {
-        auto id = memory_storage.find<User>(user_name);
-        if (id)
-        {
-            auto user = memory_storage.tryRead<User>(*id);
-            if (user && isAddressAllowedImpl(*user, address) && isPasswordCorrectImpl(*user, password, external_authenticators))
-                return *id;
-        }
-        else
-        {
-            // User does not exist, so we create one, and will add it if authentication is successful.
-            auto user = std::make_shared<User>();
-            user->setName(user_name);
-            user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
-            user->authentication.setServerName(ldap_server);
+        auto user = memory_storage.read<User>(*id);
 
-            if (isAddressAllowedImpl(*user, address) && isPasswordCorrectImpl(*user, password, external_authenticators))
-            {
-                for (const auto& role_name : default_role_names)
-                {
-                    std::optional<UUID> role_id = access_control_manager->find<Role>(role_name);
-                    if (!role_id)
-                        throw Exception("One of the default roles, the role '" + role_name + "', is not found", IAccessEntity::TypeInfo::get(IAccessEntity::Type::ROLE).not_found_error_code);
-                    roles_of_interest.insert(role_id.value());
-                    user->granted_roles.grant(role_id.value());
-                }
-                return memory_storage.insert(user);
-            }
-        }
+        if (!isPasswordCorrectImpl(*user, password, external_authenticators))
+            throwInvalidPassword();
+
+        if (!isAddressAllowedImpl(*user, address))
+            throwAddressNotAllowed(address);
+
+        return *id;
     }
-    catch (...)
+    else
     {
-        tryLogCurrentException(getLogger(), "Authentication failed for user '" + user_name + "' from access storage '" + getStorageName() + "'");
+        // User does not exist, so we create one, and will add it if authentication is successful.
+        auto user = std::make_shared<User>();
+        user->setName(user_name);
+        user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
+        user->authentication.setServerName(ldap_server);
+
+        if (!isPasswordCorrectImpl(*user, password, external_authenticators))
+            throwInvalidPassword();
+
+        if (!isAddressAllowedImpl(*user, address))
+            throwAddressNotAllowed(address);
+
+        for (const auto& role_name : default_role_names)
+        {
+            std::optional<UUID> role_id = access_control_manager->find<Role>(role_name);
+            if (!role_id)
+                throwDefaultRoleNotFound(role_name);
+
+            roles_of_interest.insert(role_id.value());
+            user->granted_roles.grant(role_id.value());
+        }
+
+        return memory_storage.insert(user);
     }
-    throwCannotAuthenticate(user_name);
+}
+
+void LDAPAccessStorage::throwDefaultRoleNotFound(const String & role_name)
+{
+    throw Exception("One of the default roles, the role '" + role_name + "', is not found", IAccessEntity::TypeInfo::get(IAccessEntity::Type::ROLE).not_found_error_code);
 }
 
 }
