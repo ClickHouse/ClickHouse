@@ -1,7 +1,6 @@
 #pragma once
 
 #include <tuple>
-#include <optional>
 #include <common/types.h>
 #include <common/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
@@ -19,8 +18,6 @@ struct MergeTreePartInfo
     Int64 max_block = 0;
     UInt32 level = 0;
     Int64 mutation = 0;   /// If the part has been mutated or contains mutated parts, is equal to mutation version number.
-    std::optional<String> block_id;   /// hex if write with quorum and min_block == max_block
-/// shouldn't be here...
 
     MergeTreePartInfo() = default;
 
