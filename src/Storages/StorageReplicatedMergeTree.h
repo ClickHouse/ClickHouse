@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeBlockEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
@@ -355,7 +356,8 @@ private:
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
-    void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const String & block_id_path = "") const;
+    void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const String & block_id_path = "",
+                          ReplicatedMergeTreeBlockEntry block_entry = ReplicatedMergeTreeBlockEntry()) const;
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
@@ -489,7 +491,8 @@ private:
         const String & replica_path,
         bool to_detached,
         size_t quorum,
-        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr);
+        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
+        const std::optional<String> & block_id = std::nullopt);
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
@@ -497,7 +500,7 @@ private:
 
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
-    void updateQuorum(const String & part_name);
+    void updateQuorum(const String & part_name, const std::optional<String> & block_id = std::nullopt);
 
     /// Deletes info from quorum/last_part node for particular partition_id.
     void cleanLastPartNode(const String & partition_id);
