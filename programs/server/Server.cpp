@@ -63,6 +63,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -697,6 +698,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
         throw;
     }
     LOG_DEBUG(log, "Loaded metadata.");
+
+    try {
+        auto lock = global_context->getMySQLSyncThreadsMapLock();
+        auto & mysql_sync_threads_map = global_context->getMySQLSyncThreadsMap();
+        for (auto & [host_name, database2thread] : mysql_sync_threads_map) {
+            for (auto & [mysql_database_name, mysql_sync_thread] : database2thread) {
+                mysql_sync_thread->startSynchronization();
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception while starting MySQL replication threads");
+        throw;
+    }
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.

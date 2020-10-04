@@ -211,8 +211,13 @@ void MaterializeMySQLSyncThread::stopSynchronization()
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
+    if (is_started) {
+        return;
+    }
+
     background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
         [this]() { synchronization(); });
+    is_started = true;
 }
 
 bool MaterializeMySQLSyncThread::prepareConsumers() {
