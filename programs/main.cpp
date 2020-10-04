@@ -10,6 +10,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <tuple>
 #include <utility> /// pair
 
 #if !defined(ARCADIA_BUILD)
@@ -61,6 +62,7 @@ int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 #endif
 
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 
 namespace
 {
@@ -154,28 +156,29 @@ enum class InstructionFail
     AVX512 = 8
 };
 
-const char * instructionFailToString(InstructionFail fail)
+std::pair<const char *, size_t> instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
+#define ret(x) return std::make_pair(x, ARRAY_SIZE(x) - 1)
         case InstructionFail::NONE:
-            return "NONE";
+            ret("NONE");
         case InstructionFail::SSE3:
-            return "SSE3";
+            ret("SSE3");
         case InstructionFail::SSSE3:
-            return "SSSE3";
+            ret("SSSE3");
         case InstructionFail::SSE4_1:
-            return "SSE4.1";
+            ret("SSE4.1");
         case InstructionFail::SSE4_2:
-            return "SSE4.2";
+            ret("SSE4.2");
         case InstructionFail::POPCNT:
-            return "POPCNT";
+            ret("POPCNT");
         case InstructionFail::AVX:
-            return "AVX";
+            ret("AVX");
         case InstructionFail::AVX2:
-            return "AVX2";
+            ret("AVX2");
         case InstructionFail::AVX512:
-            return "AVX512";
+            ret("AVX512");
     }
     __builtin_unreachable();
 }
@@ -242,9 +245,8 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 }
 
 /// This function is safe to use in static initializers.
-void writeError(const char * data)
+void writeErrorLen(const char * data, size_t size)
 {
-    size_t size = strlen(data);
     while (size != 0)
     {
         ssize_t res = ::write(STDERR_FILENO, data, size);
@@ -259,6 +261,10 @@ void writeError(const char * data)
         }
     }
 }
+/// Macros to avoid using strlen(), since it may fail if SSE is not supported.
+#define writeError(data) \
+    static_assert(__builtin_constant_p(data)); \
+    writeErrorLen(data, ARRAY_SIZE(data) - 1)
 
 /// Check SSE and others instructions availability. Calls exit on fail.
 /// This function must be called as early as possible, even before main, because static initializers may use unavailable instructions.
@@ -286,7 +292,7 @@ void checkRequiredInstructions()
     if (sigsetjmp(jmpbuf, 1))
     {
         writeError("Instruction check fail. The CPU does not support ");
-        writeError(instructionFailToString(fail));
+        std::apply(writeErrorLen, instructionFailToString(fail));
         writeError(" instruction set.\n");
         _Exit(1);
     }
