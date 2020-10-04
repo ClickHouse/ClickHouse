@@ -18,29 +18,37 @@ namespace DB
   * Information about which replicas the inserted part of data appeared on,
   *  and on how many replicas it should be.
   */
-struct ReplicatedMergeTreeQuorumEntry
+struct ReplicatedMergeTreeBlockEntry
 {
-    String part_name;
-    ReplicatedMergeTreeQuorumStatusEntry status;
+	String part_name;
+	std::optional<ReplicatedMergeTreeQuorumStatusEntry> quorum_status;
 
-    ReplicatedMergeTreeQuorumEntry() {}
-    ReplicatedMergeTreeQuorumEntry(const String & str)
+    ReplicatedMergeTreeBlockEntry() {}
+    ReplicatedMergeTreeBlockEntry(const String & str)
     {
         fromString(str);
     }
 
     void writeText(WriteBuffer & out) const
     {
-        out << "version: 1\n"
-            << "part_name: " << part_name << "\n";
-        status.writeText(out);
+        out << part_name;
+
+		if (quorum_status) {
+            out << "\n";
+			quorum_status->writeText(out);
+        }
     }
 
     void readText(ReadBuffer & in)
     {
-        in >> "version: 1\n"
-            >> "part_name: " >> part_name >> "\n";
-        status.readText(in);
+		in >> part_name;
+
+		if (!in.eof())
+		{
+			in >> "\n";
+			quorum_status = ReplicatedMergeTreeQuorumStatusEntry();
+			quorum_status->readText(in);
+		}
     }
 
     String toString() const
