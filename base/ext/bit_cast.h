@@ -7,9 +7,6 @@
 
 namespace ext
 {
-    /** \brief Returns value `from` converted to type `To` while retaining bit representation.
-      *    `To` and `From` must satisfy `CopyConstructible`.
-      */
     template <typename To, typename From>
     std::decay_t<To> bit_cast(const From & from)
     {
