@@ -71,7 +71,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 
                 bool old_val = false;
                 if (storage.is_readonly.compare_exchange_strong(old_val, true))
+                {
+                    incr_readonly = true;
                     CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
+                }
 
                 partialShutdown();
             }
@@ -112,7 +115,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 
             bool old_val = true;
             if (storage.is_readonly.compare_exchange_strong(old_val, false))
+            {
+                incr_readonly = false;
                 CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+            }
 
             first_time = false;
         }
@@ -348,6 +354,13 @@ void ReplicatedMergeTreeRestartingThread::shutdown()
     need_stop = true;
     task->deactivate();
     LOG_TRACE(log, "Restarting thread finished");
+
+    // For detach table query, we should reset the ReadonlyReplica metric.
+    if (incr_readonly)
+    {
+        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+        incr_readonly = false;
+    }
 
     /// Stop other tasks.
     partialShutdown();
