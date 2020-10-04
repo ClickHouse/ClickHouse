@@ -28,7 +28,7 @@ public:
     /// We don't use synchronisation here, because elements in range [first, last] won't be modified.
     MemorySource(
         Names column_names_,
-        BlocksList::iterator first_,
+        BlocksList::const_iterator first_,
         size_t num_blocks_,
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot)
@@ -42,11 +42,7 @@ public:
     /// If called, will initialize the number of blocks at first read.
     /// It allows to read data which was inserted into memory table AFTER Storage::read was called.
     /// This hack is needed for global subqueries.
-    void delayInitialization(BlocksList * data_, std::mutex * mutex_)
-    {
-        data = data_;
-        mutex = mutex_;
-    }
+    void delayInitialization(std::shared_ptr<const BlocksList> data_) { data = data_; }
 
     String getName() const override { return "Memory"; }
 
@@ -55,13 +51,11 @@ protected:
     {
         if (data)
         {
-            std::lock_guard guard(*mutex);
             current_it = data->begin();
             num_blocks = data->size();
             is_finished = num_blocks == 0;
 
             data = nullptr;
-            mutex = nullptr;
         }
 
         if (is_finished)
@@ -90,13 +84,12 @@ protected:
     }
 private:
     Names column_names;
-    BlocksList::iterator current_it;
+    BlocksList::const_iterator current_it;
     size_t current_block_idx = 0;
     size_t num_blocks;
     bool is_finished = false;
 
-    BlocksList * data = nullptr;
-    std::mutex * mutex = nullptr;
+    std::shared_ptr<const BlocksList> data = nullptr;
 };
 
 
@@ -115,8 +108,9 @@ public:
     void write(const Block & block) override
     {
         metadata_snapshot->check(block, true);
-        std::lock_guard lock(storage.mutex);
-        storage.data.push_back(block);
+        auto new_data = std::make_unique<BlocksList>(*(storage.data.get()));
+        new_data->push_back(block);
+        storage.data.set(std::move(new_data));
     }
 private:
     StorageMemory & storage;
@@ -125,7 +119,7 @@ private:
 
 
 StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
-    : IStorage(table_id_)
+    : IStorage(table_id_), data(std::make_unique<const BlocksList>())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
@@ -145,7 +139,7 @@ Pipe StorageMemory::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    std::lock_guard lock(mutex);
+    auto current_data = data.get();
 
     if (delay_read_for_global_subqueries)
     {
@@ -157,19 +151,19 @@ Pipe StorageMemory::read(
         /// set for IN or hash table for JOIN, which can't be done concurrently.
         /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
 
-        auto source = std::make_shared<MemorySource>(column_names, data.begin(), data.size(), *this, metadata_snapshot);
-        source->delayInitialization(&data, &mutex);
+        auto source = std::make_shared<MemorySource>(column_names, current_data->begin(), current_data->size(), *this, metadata_snapshot);
+        source->delayInitialization(current_data);
         return Pipe(std::move(source));
     }
 
-    size_t size = data.size();
+    size_t size = current_data->size();
 
     if (num_streams > size)
         num_streams = size;
 
     Pipes pipes;
 
-    BlocksList::iterator it = data.begin();
+    auto it = current_data->begin();
 
     size_t offset = 0;
     for (size_t stream = 0; stream < num_streams; ++stream)
@@ -200,11 +194,10 @@ BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const Storag
 
 void StorageMemory::drop()
 {
-    std::lock_guard lock(mutex);
-    data.clear();
+    data.set(std::make_unique<BlocksList>());
 }
 
-static inline void columnUpdate(Block & old_block, const Block & new_block)
+static inline void updateBlockData(Block & old_block, const Block & new_block)
 {
     for (const auto & it : new_block)
     {
@@ -231,38 +224,37 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
     }
     in->readSuffix();
 
-    std::lock_guard lock(mutex);
-
     // all column affected
     if (interpreter->isAffectingAllColumns())
     {
-        std::swap(data, out);
+        data.set(std::make_unique<BlocksList>(out));
     }
     else
     {
-        auto data_it = data.begin();
+        auto new_data = std::make_unique<BlocksList>(*(data.get()));
+        auto data_it = new_data->begin();
         auto out_it = out.begin();
-        while (data_it != data.end() && out_it != out.end())
+        while (data_it != new_data->end() && out_it != out.end())
         {
-            columnUpdate(*data_it, *out_it);
+            updateBlockData(*data_it, *out_it);
             ++data_it;
             ++out_it;
         }
+        data.set(std::move(new_data));
     }
 }
 
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
-    std::lock_guard lock(mutex);
-    data.clear();
+    data.set(std::make_unique<BlocksList>());
 }
 
 std::optional<UInt64> StorageMemory::totalRows() const
 {
     UInt64 rows = 0;
-    std::lock_guard lock(mutex);
-    for (const auto & buffer : data)
+    auto current_data = data.get();
+    for (const auto & buffer : *current_data)
         rows += buffer.rows();
     return rows;
 }
@@ -270,8 +262,8 @@ std::optional<UInt64> StorageMemory::totalRows() const
 std::optional<UInt64> StorageMemory::totalBytes() const
 {
     UInt64 bytes = 0;
-    std::lock_guard lock(mutex);
-    for (const auto & buffer : data)
+    auto current_data = data.get();
+    for (const auto & buffer : *current_data)
         bytes += buffer.allocatedBytes();
     return bytes;
 }
