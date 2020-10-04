@@ -348,8 +348,6 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
-    std::optional<String> block_id;
-
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk

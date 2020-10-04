@@ -1177,11 +1177,12 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         {
             ops.emplace_back(zkutil::makeCreateRequest(
                 part_path, local_part_header.toString(), zkutil::CreateMode::Persistent));
-            LOG_DEBUG(log, "local_part_header.toString(): {}", local_part_header.toString());
         }
         else
         {
-            LOG_DEBUG(log, "creating empty! (2)");
+            /// ALEXELEX
+            /// is this a valid format or an old one?
+            /// should we support it for quorum parallel inserts?
             ops.emplace_back(zkutil::makeCreateRequest(
                 part_path, "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(
@@ -1770,7 +1771,6 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
             if (!entry.block_id.empty())
                 block_id = entry.block_id;
             String part_name = entry.actual_new_part_name.empty() ? entry.new_part_name : entry.actual_new_part_name;
-            LOG_ERROR(log, "if (!fetchPart(part_name, metadata_snapshot... ");
             if (!fetchPart(part_name, metadata_snapshot, zookeeper_path + "/replicas/" + replica, false, entry.quorum, nullptr, block_id))
                 return false;
         }
@@ -2124,7 +2124,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             if (interserver_scheme != address.scheme)
                 throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
-            LOG_ERROR(log, "WOW: part_desc->res_part = fetcher.fetchPart(");
             part_desc->res_part = fetcher.fetchPart(
                 metadata_snapshot, part_desc->found_new_part_name, source_replica_path,
                 address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
@@ -2156,7 +2155,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         for (PartDescriptionPtr & part_desc : final_parts)
         {
             renameTempPartAndReplace(part_desc->res_part, nullptr, &transaction);
-            LOG_INFO(log, "getCommitPartOps from Storage...::executeReplaceRange");
             getCommitPartOps(ops, part_desc->res_part);
 
             if (ops.size() > zkutil::MULTI_BATCH_SIZE)
@@ -3054,8 +3052,6 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, const st
     const String quorum_last_part_path = zookeeper_path + "/quorum/last_part";
     const String quorum_parallel_status_path = block_id ? zookeeper_path + "/blocks/" + *block_id : "";
 
-    LOG_ERROR(log, "updating quorum! {}", quorum_parallel_status_path);
-
     /// If there is no node, then all quorum INSERTs have already reached the quorum, and nothing is needed.
     String value;
     Coordination::Stat stat;
@@ -3065,18 +3061,13 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, const st
         ReplicatedMergeTreeBlockEntry block_entry;
         ReplicatedMergeTreeQuorumEntry quorum_entry;
 
-        LOG_ERROR(log, "trying to get something");
         if (zookeeper->tryGet(quorum_status_path, value, &stat))
         {
-            LOG_ERROR(log, "got /quorum/status");
-            LOG_ERROR(log, "got from /quorum/status: {}", value);
             quorum_entry.fromString(value);
             quorum_entry.status.replicas.insert(replica_name);
         }
         else if (block_id && zookeeper->tryGet(quorum_parallel_status_path, value, &stat))
         {
-            LOG_ERROR(log, "got from {}", quorum_parallel_status_path);
-            LOG_ERROR(log, "got from block: {}", value);
             block_entry.fromString(value);
             // The quorum has already been achieved
             if (!block_entry.quorum_status)
@@ -3084,24 +3075,20 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, const st
 
             is_parallel = true;
             block_entry.quorum_status->replicas.insert(replica_name);
-            LOG_ERROR(log, "block data became: {}", block_entry.toString());
             if (block_entry.quorum_status->isQuorumReached())
                 block_entry.quorum_status.reset();
-            LOG_ERROR(log, "AFTER checkReached: block data became: {}", block_entry.toString());
         }
         else
             break;
 
         if (quorum_entry.part_name != part_name && block_entry.part_name != part_name)
         {
-            LOG_ERROR(log, "another part_names {} {} {}", quorum_entry.part_name, block_entry.part_name, part_name);
             /// The quorum has already been achieved. Moreover, another INSERT with a quorum has already started.
             break;
         }
 
         if (quorum_entry.status.isQuorumReached())
         {
-            LOG_ERROR(log, "normal quorum reached");
             /// The quorum is reached. Delete the node, and update information about the last part that was successfully written with quorum.
 
             Coordination::Requests ops;
@@ -3145,15 +3132,12 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, const st
         else
         {
             Coordination::Error code;
-            LOG_ERROR(log, "else");
             if (!is_parallel)
             {
-                LOG_ERROR(log, "!is_parallel");
                 /// We update the node, registering there one more replica.
                 code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
             }
             else {
-                LOG_ERROR(log, "updating {} : {}", quorum_parallel_status_path, block_entry.toString());
                 /// Update parallel quorum. It also might be reached here.
                 code = zookeeper->trySet(quorum_parallel_status_path, block_entry.toString(), stat.version);
             }
@@ -3335,7 +3319,6 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                     + "' != '" + address.scheme + "', can't fetch part from " + address.host,
                     ErrorCodes::LOGICAL_ERROR);
 
-            LOG_ERROR(log, "WOW: return fetcher.fetchPart(");
             return fetcher.fetchPart(
                 metadata_snapshot, part_name, source_replica_path,
                 address.host, address.replication_port,
@@ -3363,10 +3346,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
               * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
               */
             if (quorum)
-            {
-                LOG_ERROR(log, "updateQuorum from Storage...::3349");
                 updateQuorum(part_name, block_id);
-            }
 
             merge_selecting_task->schedule();
 
@@ -4863,7 +4843,6 @@ void StorageReplicatedMergeTree::fetchPartition(
 
             try
             {
-                LOG_ERROR(log, "OH:fetched = fetchPart(part, ...");
                 fetched = fetchPart(part, metadata_snapshot, best_replica_path, true, 0, zookeeper);
             }
             catch (const DB::Exception & e)
@@ -5305,7 +5284,6 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
         if (result.error == Coordination::Error::ZNONODE)
             continue;
 
-        /// ALEXELEXA
         ReplicatedMergeTreeBlockEntry block(result.data);
         ReadBufferFromString buf(block.part_name);
         Int64 block_num = 0;
@@ -5456,7 +5434,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         Coordination::Requests ops;
         for (size_t i = 0; i < dst_parts.size(); ++i)
         {
-            LOG_INFO(log, "getCommitPartOps from Storage...::replacePartitionFrom");
             getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
             ephemeral_locks[i].getUnlockOps(ops);
 
@@ -5647,7 +5624,6 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         Coordination::Requests ops;
         for (size_t i = 0; i < dst_parts.size(); ++i)
         {
-            LOG_INFO(log, "getCommitPartOps from Storage...::movePartitionToTable");
             dest_table_storage->getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
             ephemeral_locks[i].getUnlockOps(ops);
 
@@ -5761,11 +5737,11 @@ void StorageReplicatedMergeTree::getCommitPartOps(
     }
     else
     {
-        /// ALEXELEXA think!
-        LOG_DEBUG(log, "creating empty!!!");
+        /// ALEXELEXA
+        /// also. should we support it?
         ops.emplace_back(zkutil::makeCreateRequest(
             replica_path + "/parts/" + part->name,
-            "", /// how it reads?
+            "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(
             replica_path + "/parts/" + part->name + "/columns",

@@ -172,7 +172,6 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         try
         {
-            LOG_ERROR(log, "need to send here block_id somehow");
             commitPart(zookeeper, part, block_id);
 
             /// Set a special error code if the block is duplicate
@@ -258,10 +257,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             part->info.min_block = block_number;
             part->info.max_block = block_number;
-
-            /// ALEXELEXA
-            /// somehow need to send this block_if to part node. TODO
-            part->info.block_id = block_id;
             part->info.level = 0;
 
             part->name = part->getNewName(part->info);
@@ -314,7 +309,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                             quorum_info.status_path,
                             quorum_entry.toString(),
                             zkutil::CreateMode::Persistent));
-
                 }
                 else
                     block_entry.quorum_status = status_entry;
@@ -372,7 +366,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         }
 
         /// Information about the part.
-        LOG_INFO(log, "getCommitPartOps from ...OutputStream");
         storage.getCommitPartOps(ops, part, block_id_path, block_entry);
 
         MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.

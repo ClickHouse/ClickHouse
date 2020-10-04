@@ -70,8 +70,6 @@ void ReplicatedMergeTreeCleanupThread::iterate()
     if (storage.is_leader)
     {
         clearOldLogs();
-        /// ALEXELEXA
-        /// may be just remove it?
         clearOldBlocks();
         clearOldMutations();
     }
