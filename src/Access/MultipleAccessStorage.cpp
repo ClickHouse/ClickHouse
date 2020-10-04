@@ -30,8 +30,8 @@ MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
 
 MultipleAccessStorage::~MultipleAccessStorage()
 {
-    auto storages = getStoragesPtr();
-    for (auto storage : *storages | boost::adaptors::reversed)
+    const auto storages = getStoragesPtr();
+    for (const auto & storage : *storages | boost::adaptors::reversed)
     {
         removeStorage(storage);
     }
