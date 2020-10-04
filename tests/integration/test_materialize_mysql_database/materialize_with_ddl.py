@@ -131,7 +131,7 @@ def storage_mysql_replica(clickhouse_node, mysql_node, service_name, mysql_datab
                          "_bool BOOLEAN) "
                      "ENGINE = InnoDB;")
 
-    clickhouse_node.query("""CREATE TABLE test_table (
+    clickhouse_node.query("""CREATE TABLE test_table_replica (
         key Int32,
         unsigned_tiny_int UInt8,
         tiny_int Int8,
@@ -170,6 +170,41 @@ def storage_mysql_replica(clickhouse_node, mysql_node, service_name, mysql_datab
         max_rows_in_buffers=1,
         max_bytes_in_buffers=1,
         max_flush_data_time=1""".format(service_name, mysql_database_name=mysql_database_name))
+
+    clickhouse_node.query("""
+    DROP TABLE IF EXISTS test_table;
+    DROP TABLE IF EXISTS test_materialized_view;
+
+    CREATE TABLE test_table (
+        key Int32,
+        unsigned_tiny_int UInt8,
+        tiny_int Int8,
+        unsigned_small_int UInt16,
+        small_int Int16,
+        unsigned_medium_int UInt32,
+        medium_int Int32,
+        unsigned_int UInt32,
+        _int Int32,
+        unsigned_integer UInt32,
+        _integer Int32,
+        unsigned_bigint UInt64,
+        _bigint Int64,
+        unsigned_float Float32,
+        _float Float32,
+        unsigned_double Float64,
+        _double Float64,
+        _varchar String,
+        _char String,
+        _date Date,
+        _datetime DateTime,
+        _timestamp DateTime,
+        _bool Int8,
+        sign Int8,
+        version UInt64
+    ) ENGINE = ReplacingMergeTree(version) ORDER BY key;
+
+    CREATE MATERIALIZED VIEW test_materialized_view TO test_table AS
+        SELECT * FROM test_table_replica;""")
 
     time.sleep(5)
 

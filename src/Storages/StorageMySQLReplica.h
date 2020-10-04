@@ -26,6 +26,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class StorageMySQLReplica final
     : public  ext::shared_ptr_helper<StorageMySQLReplica>
     , public IStorage
@@ -39,17 +44,20 @@ public:
 
     bool supportsSettings() const override { return true; }
 
+    Pipe read(
+        const Names & /*column_names*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/) override
+    {
+        throw Exception("StorageMySQLReplica is not readable", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void startup() override;
     void shutdown() override;
-
-    Pipe read(
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
 
     Strings getDataPaths() const override { return {fullPath(disk, table_path)}; }
 
@@ -68,13 +76,6 @@ protected:
         MaterializeMySQLSettingsPtr settings_,
         DiskPtr disk_,
         const String & relative_path_);
-
-public:
-    // TODO: delete this
-    /// The data itself. `list` - so that when inserted to the end, the existing iterators are not invalidated.
-    BlocksList data;
-    mutable std::mutex mutex;
-
 
 private:
     Context global_context;

@@ -11,6 +11,8 @@
 
 #include <Core/Names.h>
 #include <DataStreams/IBlockStream_fwd.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <Databases/MySQL/MySQLUtils.h>
@@ -18,6 +20,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMySQLReplica.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Parsers/ASTInsertQuery.h>
 
@@ -127,10 +130,18 @@ void MySQLStorageBuffer::commit(const Context & context)
         return;
     }
 
-    {
-        std::lock_guard<std::mutex> lock(mysql_replica_storage->mutex);
-        mysql_replica_storage->data.push_back(data->first);
-    }
+    // Create an INSERT query for streaming data to views
+    auto insert = std::make_shared<ASTInsertQuery>();
+    insert->table_id = table_id;
+
+    query_context.setSetting("input_format_skip_unknown_fields", true);
+
+    // Only insert into dependent views and expect that input blocks contain virtual columns
+    InterpreterInsertQuery interpreter(insert, query_context, false, true, true);
+    auto block_io = interpreter.execute();
+
+    auto in = std::make_shared<OneBlockInputStream>(data->first);
+    copyData(*std::static_pointer_cast<IBlockInputStream>(in), *block_io.out);
 
     data.reset();
     flushCounters();
