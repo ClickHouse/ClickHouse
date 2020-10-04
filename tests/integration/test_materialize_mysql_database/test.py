@@ -91,33 +91,39 @@ def started_mysql_8_0():
         subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes',
                                '--remove-orphans'])
 
+test_database_idx = 0
+def get_next_num():
+    global test_database_idx
+    test_database_idx += 1
+    return test_database_idx
+
 
 def test_materialize_database_dml_with_mysql_5_7(started_cluster, started_mysql_5_7):
-    materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-    materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1", "test_database{}".format(get_next_num()))
+    materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_5_7, "mysql1", "test_database{}".format(get_next_num()))
 
 
 def test_materialize_database_dml_with_mysql_8_0(started_cluster, started_mysql_8_0):
-    materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
-    materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0", "test_database{}".format(get_next_num()))
+    materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_8_0, "mysql8_0", "test_database{}".format(get_next_num()))
 
 
 
 def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_5_7):
     try:
-        materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-        materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-        materialize_with_ddl.rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+        materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1", "test_database{}".format(get_next_num()))
+        materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1", "test_database{}".format(get_next_num()))
+        materialize_with_ddl.rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1", "test_database{}".format(get_next_num()))
         materialize_with_ddl.alter_add_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7,
-                                                                              "mysql1")
+                                                                              "mysql1", "test_database{}".format(get_next_num()))
         materialize_with_ddl.alter_drop_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7,
-                                                                               "mysql1")
+                                                                               "mysql1", "test_database{}".format(get_next_num()))
         # mysql 5.7 cannot support alter rename column
-        # materialize_with_ddl.alter_rename_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+        # materialize_with_ddl.alter_rename_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1", "test_database{}".format(get_next_num()))
         materialize_with_ddl.alter_rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7,
-                                                                                "mysql1")
+                                                                                "mysql1", "test_database{}".format(get_next_num()))
         materialize_with_ddl.alter_modify_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7,
-                                                                                 "mysql1")
+                                                                                 "mysql1", "test_database{}".format(get_next_num()))
     except:
         print(clickhouse_node.query(
             "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw"))
@@ -125,27 +131,27 @@ def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_
 
 
 def test_materialize_database_ddl_with_mysql_8_0(started_cluster, started_mysql_8_0):
-    materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
-    materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
-    materialize_with_ddl.rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0", "test_database{}".format(get_next_num()))
+    materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0", "test_database{}".format(get_next_num()))
+    materialize_with_ddl.rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0", "test_database{}".format(get_next_num()))
     materialize_with_ddl.alter_add_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0,
-                                                                          "mysql8_0")
+                                                                          "mysql8_0", "test_database{}".format(get_next_num()))
     materialize_with_ddl.alter_drop_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0,
-                                                                           "mysql8_0")
+                                                                           "mysql8_0", "test_database{}".format(get_next_num()))
     materialize_with_ddl.alter_rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0,
-                                                                            "mysql8_0")
+                                                                            "mysql8_0", "test_database{}".format(get_next_num()))
     materialize_with_ddl.alter_rename_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0,
-                                                                             "mysql8_0")
+                                                                             "mysql8_0", "test_database{}".format(get_next_num()))
     materialize_with_ddl.alter_modify_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0,
-                                                                             "mysql8_0")
+                                                                             "mysql8_0", "test_database{}".format(get_next_num()))
 
 
 def test_materialize_database_ddl_with_empty_transaction_5_7(started_cluster, started_mysql_5_7):
-    materialize_with_ddl.query_event_with_empty_transaction(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.query_event_with_empty_transaction(clickhouse_node, started_mysql_5_7, "mysql1", "test_database{}".format(get_next_num()))
 
 
 def test_materialize_database_ddl_with_empty_transaction_8_0(started_cluster, started_mysql_8_0):
-    materialize_with_ddl.query_event_with_empty_transaction(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    materialize_with_ddl.query_event_with_empty_transaction(clickhouse_node, started_mysql_8_0, "mysql8_0", "test_database{}".format(get_next_num()))
 
 def test_storage_mysql_replica(started_cluster, started_mysql_5_7):
-    materialize_with_ddl.storage_mysql_replica(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.storage_mysql_replica(clickhouse_node, started_mysql_5_7, "mysql1", "test_database{}".format(get_next_num()))
