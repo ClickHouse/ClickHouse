@@ -8,8 +8,7 @@ from helpers.test_tools import assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper.xml')
-node = cluster.add_instance('node', with_zookeeper=True,
-                            user_configs=["configs/users.xml"])
+node = cluster.add_instance('node', with_zookeeper=True, user_configs=["configs/users.xml"])
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ZK_CONFIG_PATH = os.path.join(SCRIPT_DIR, 'configs/zookeeper.xml')
