@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 #include <ext/range.h>
 #include <boost/range/adaptor/map.hpp>
+#include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/find.hpp>
 
@@ -27,6 +28,14 @@ MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
 {
 }
 
+MultipleAccessStorage::~MultipleAccessStorage()
+{
+    auto storages = getStoragesPtr();
+    for (auto storage : *storages | boost::adaptors::reversed)
+    {
+        removeStorage(storage);
+    }
+}
 
 void MultipleAccessStorage::setStorages(const std::vector<StoragePtr> & storages)
 {
