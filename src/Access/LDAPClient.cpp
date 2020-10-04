@@ -106,14 +106,6 @@ void LDAPClient::openConnection()
 {
     std::scoped_lock lock(ldap_global_mutex);
 
-    const bool graceful_bind_failure = false;
-    diag(openConnection(graceful_bind_failure));
-}
-
-int LDAPClient::openConnection(const bool graceful_bind_failure)
-{
-    std::scoped_lock lock(ldap_global_mutex);
-
     closeConnection();
 
     {
@@ -244,8 +236,6 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
     if (params.enable_tls == LDAPServerParams::TLSEnable::YES_STARTTLS)
         diag(ldap_start_tls_s(handle, nullptr, nullptr));
 
-    int rc = LDAP_OTHER;
-
     switch (params.sasl_mechanism)
     {
         case LDAPServerParams::SASLMechanism::SIMPLE:
@@ -256,16 +246,15 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
             cred.bv_val = const_cast<char *>(params.password.c_str());
             cred.bv_len = params.password.size();
 
-            rc = ldap_sasl_bind_s(handle, dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
-
-            if (!graceful_bind_failure)
-                diag(rc);
+            diag(ldap_sasl_bind_s(handle, dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr));
 
             break;
         }
+        default:
+        {
+            throw Exception("Unknown SASL mechanism", ErrorCodes::LDAP_ERROR);
+        }
     }
-
-    return rc;
 }
 
 void LDAPClient::closeConnection() noexcept
@@ -286,39 +275,16 @@ bool LDAPSimpleAuthClient::check()
     if (params.user.empty())
         throw Exception("LDAP authentication of a user with empty name is not allowed", ErrorCodes::BAD_ARGUMENTS);
 
+    // Silently reject authentication attempt if the password is empty as if it didn't match.
     if (params.password.empty())
-        return false; // Silently reject authentication attempt if the password is empty as if it didn't match.
+        return false;
 
     SCOPE_EXIT({ closeConnection(); });
 
-    const bool graceful_bind_failure = true;
-    const auto rc = openConnection(graceful_bind_failure);
+    // Will throw on any error, including invalid credentials.
+    openConnection();
 
-    bool result = false;
-
-    switch (rc)
-    {
-        case LDAP_SUCCESS:
-        {
-            result = true;
-            break;
-        }
-
-        case LDAP_INVALID_CREDENTIALS:
-        {
-            result = false;
-            break;
-        }
-
-        default:
-        {
-            result = false;
-            diag(rc);
-            break;
-        }
-    }
-
-    return result;
+    return true;
 }
 
 #else // USE_LDAP
@@ -329,11 +295,6 @@ void LDAPClient::diag(const int)
 }
 
 void LDAPClient::openConnection()
-{
-    throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
-}
-
-int LDAPClient::openConnection(const bool)
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }

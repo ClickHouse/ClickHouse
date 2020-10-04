@@ -182,6 +182,8 @@ protected:
     [[noreturn]] void throwReadonlyCannotInsert(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotUpdate(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotRemove(EntityType type, const String & name) const;
+    [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
+    [[noreturn]] static void throwInvalidPassword();
     [[noreturn]] static void throwCannotAuthenticate(const String & user_name);
 
     using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;
