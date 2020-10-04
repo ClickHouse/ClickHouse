@@ -47,7 +47,6 @@ private:
     using RocksdbPtr = std::unique_ptr<rocksdb::DB>;
     RocksdbPtr rocksdb_ptr;
     String rocksdb_dir;
-    mutable std::shared_mutex rwlock;
 
     void initDb();
 };
