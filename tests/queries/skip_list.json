@@ -231,6 +231,7 @@
         "01280_ssd_complex_key_dictionary",
         "00463_long_sessions_in_http_interface",
         "01053_ssd_dictionary",
+        "01318_long_unsuccessful_mutation_zookeeper",
         "attach",
         "ddl_dictionaries",
         "dictionary",
