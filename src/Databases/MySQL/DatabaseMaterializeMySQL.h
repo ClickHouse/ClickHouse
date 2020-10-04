@@ -25,9 +25,10 @@ public:
         const String & database_name_,
         const String & metadata_path_,
         const IAST * database_engine_define_,
-        const String & mysql_database_name_,
-        mysqlxx::Pool && pool_,
-        MySQLClient && client_,
+        const String & mysql_hostname_and_port,
+        const String & mysql_database_name,
+        const String & mysql_user_name,
+        const String & mysql_user_password,
         MaterializeMySQLSettingsPtr settings_);
 
     void rethrowExceptionIfNeed() const;

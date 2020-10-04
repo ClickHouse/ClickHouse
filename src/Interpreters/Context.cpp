@@ -2366,11 +2366,11 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
 }
 
 #if USE_MYSQL
-std::unique_lock<std::mutex> Context::getMySQLSyncThreadsMapLock() {
+std::unique_lock<std::mutex> Context::getMySQLSyncThreadsMapLock() const {
     return std::unique_lock(shared->mysql_sync_threads_mutex);
 }
 
-MySQLSyncThreadsMap & Context::getMySQLSyncThreadsMap() {
+MySQLSyncThreadsMap & Context::getMySQLSyncThreadsMap() const {
     return shared->mysql_sync_threads;
 }
 #endif

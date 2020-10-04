@@ -30,9 +30,10 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
     const String & database_name_,
     const String & metadata_path_,
     const IAST * database_engine_define_,
-    const String & mysql_database_name_,
-    mysqlxx::Pool && pool_,
-    MySQLClient && client_,
+    const String & mysql_hostname_and_port,
+    const String & mysql_database_name,
+    const String & mysql_user_name,
+    const String & mysql_user_password,
     MaterializeMySQLSettingsPtr settings_)
     : IDatabase(database_name_)
     , global_context(context.getGlobalContext())
@@ -41,12 +42,12 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
     , settings(settings_)
     , log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
 {
-    materialize_thread = std::make_shared<MaterializeMySQLSyncThread>(
-        context,
-        mysql_database_name_,
-        std::move(pool_),
-        std::move(client_),
-        checkVariableAndGetVersion(pool_.get()));
+    materialize_thread = getMySQLReplicationThread(
+        mysql_hostname_and_port,
+        mysql_database_name,
+        mysql_user_name,
+        mysql_user_password,
+        context);
 }
 
 void DatabaseMaterializeMySQL::rethrowExceptionIfNeed() const

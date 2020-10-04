@@ -116,17 +116,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         try
         {
-            const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
-            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
-
             if (engine_name == "MaterializeMySQL")
             {
-                MySQLClient client(
-                    remote_host_name,
-                    remote_port,
-                    mysql_user_name,
-                    mysql_user_password);
-
                 auto materialize_mode_settings = std::make_shared<MaterializeMySQLSettings>();
 
                 if (engine_define->settings)
@@ -137,11 +128,15 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                     database_name,
                     metadata_path,
                     engine_define,
+                    host_name_and_port,
                     mysql_database_name,
-                    std::move(mysql_pool),
-                    std::move(client),
+                    mysql_user_name,
+                    mysql_user_password,
                     materialize_mode_settings);
             }
+
+            const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
+            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
 
             return std::make_shared<DatabaseConnectionMySQL>(
                 context,

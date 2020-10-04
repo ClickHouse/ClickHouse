@@ -352,15 +352,16 @@ MaterializeMySQLSyncThreadPtr getMySQLReplicationThread(
         const String & mysql_database_name,
         const String & mysql_user_name,
         const String & mysql_user_password,
-        Context & global_context)
+        const Context & context)
 {
     const auto & [host_name, port] = parseAddress(mysql_hostname_and_port, 3306);
 
-/*
-    if (auto thr = global_context.mysql_replica_threads[host_name][mysql_database_name]) {
+    auto lock = context.getMySQLSyncThreadsMapLock();
+    auto & mysql_sync_threads_map = context.getMySQLSyncThreadsMap();
+
+    if (auto thr = mysql_sync_threads_map[host_name][mysql_database_name]) {
         return thr;
     }
-*/
 
     auto mysql_pool = mysqlxx::Pool(
         mysql_database_name,
@@ -377,17 +378,14 @@ MaterializeMySQLSyncThreadPtr getMySQLReplicationThread(
 
     String mysql_version = checkVariableAndGetVersion(mysql_pool.get());
 
-//    global_context.mysql_replica_threads[host_name][mysql_database_name] =
-    auto materialize_thread = 
-        std::make_shared<MaterializeMySQLSyncThread>(
-            global_context,
+    mysql_sync_threads_map[host_name][mysql_database_name] = std::make_shared<MaterializeMySQLSyncThread>(
+            context,
             mysql_database_name,
             std::move(mysql_pool),
             std::move(client),
             mysql_version);
 
-//    return global_context.mysql_replica_threads[host_name][mysql_database_name];
-    return materialize_thread;
+    return mysql_sync_threads_map[host_name][mysql_database_name];
 }
 
 }

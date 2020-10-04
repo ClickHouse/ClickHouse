@@ -642,9 +642,9 @@ public:
     MySQLWireContext mysql;
 
 #if USE_MYSQL
-    std::unique_lock<std::mutex> getMySQLSyncThreadsMapLock();
+    std::unique_lock<std::mutex> getMySQLSyncThreadsMapLock() const;
 
-    MySQLSyncThreadsMap & getMySQLSyncThreadsMap();
+    MySQLSyncThreadsMap & getMySQLSyncThreadsMap() const;
 #endif
 
 private:

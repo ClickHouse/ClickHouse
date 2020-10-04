@@ -186,7 +186,7 @@ MaterializeMySQLSyncThreadPtr getMySQLReplicationThread(
     const String & mysql_database_name,
     const String & mysql_user_name,
     const String & mysql_user_password,
-    Context & global_context);
+    const Context & context);
 
 }
 

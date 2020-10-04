@@ -181,7 +181,7 @@ StorageMySQLReplica::StorageMySQLReplica(
         mysql_database_name,
         mysql_user_name,
         mysql_user_password,
-        global_context);
+        context_);
 }
 
 void StorageMySQLReplica::startup()
