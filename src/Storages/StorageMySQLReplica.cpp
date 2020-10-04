@@ -26,25 +26,125 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+class MemorySource : public SourceWithProgress
+{
+public:
+    /// We use range [first, last] which includes right border.
+    /// Blocks are stored in std::list which may be appended in another thread.
+    /// We don't use synchronisation here, because elements in range [first, last] won't be modified.
+    MemorySource(
+        Names column_names_,
+        BlocksList::iterator first_,
+        size_t num_blocks_,
+        const StorageMySQLReplica & storage,
+        const StorageMetadataPtr & metadata_snapshot)
+        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
+        , column_names(std::move(column_names_))
+        , current_it(first_)
+        , num_blocks(num_blocks_)
+    {
+    }
+
+    /// If called, will initialize the number of blocks at first read.
+    /// It allows to read data which was inserted into memory table AFTER Storage::read was called.
+    /// This hack is needed for global subqueries.
+    void delayInitialization(BlocksList * data_, std::mutex * mutex_)
+    {
+        data = data_;
+        mutex = mutex_;
+    }
+
+    String getName() const override { return "Memory"; }
+
+protected:
+    Chunk generate() override
+    {
+        if (data)
+        {
+            std::lock_guard guard(*mutex);
+            current_it = data->begin();
+            num_blocks = data->size();
+            is_finished = num_blocks == 0;
+
+            data = nullptr;
+            mutex = nullptr;
+        }
+
+        if (is_finished)
+        {
+            return {};
+        }
+        else
+        {
+            const Block & src = *current_it;
+            Columns columns;
+            columns.reserve(column_names.size());
+
+            /// Add only required columns to `res`.
+            for (const auto & name : column_names)
+                columns.emplace_back(src.getByName(name).column);
+
+            ++current_block_idx;
+
+            if (current_block_idx == num_blocks)
+                is_finished = true;
+            else
+                ++current_it;
+
+            return Chunk(std::move(columns), src.rows());
+        }
+    }
+private:
+    Names column_names;
+    BlocksList::iterator current_it;
+    size_t current_block_idx = 0;
+    size_t num_blocks;
+    bool is_finished = false;
+
+    BlocksList * data = nullptr;
+    std::mutex * mutex = nullptr;
+};
+
 Pipe StorageMySQLReplica::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & /*context*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    using namespace std::chrono_literals;
-    std::this_thread::sleep_for(10s);
-    return storage_internal->read(
-        column_names,
-        metadata_snapshot,
-        query_info,
-        context,
-        processed_stage,
-        max_block_size,
-        num_streams);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+
+    std::lock_guard lock(mutex);
+
+    size_t size = data.size();
+
+    if (num_streams > size)
+        num_streams = size;
+
+    Pipes pipes;
+
+    BlocksList::iterator it = data.begin();
+
+    size_t offset = 0;
+    for (size_t stream = 0; stream < num_streams; ++stream)
+    {
+        size_t next_offset = (stream + 1) * size / num_streams;
+        size_t num_blocks = next_offset - offset;
+
+        assert(num_blocks > 0);
+
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, it, num_blocks, *this, metadata_snapshot));
+
+        while (offset < next_offset)
+        {
+            ++it;
+            ++offset;
+        }
+    }
+
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 StorageMySQLReplica::StorageMySQLReplica(
@@ -62,7 +162,6 @@ StorageMySQLReplica::StorageMySQLReplica(
     DiskPtr disk_,
     const String & relative_path_)
     : IStorage(table_id_)
-    , storage_internal(StorageMemory::create(table_id_, columns_description_, constraints_))
     , global_context(context_.getGlobalContext())
     , mysql_table_name(mysql_table_name_)
     , settings(settings_)

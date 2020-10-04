@@ -7,6 +7,7 @@
 #include <Databases/MySQL/MySQLBuffer.h>
 
 #include <memory>
+#include <mutex>
 
 #include <Core/Names.h>
 #include <DataStreams/IBlockStream_fwd.h>
@@ -126,12 +127,10 @@ void MySQLStorageBuffer::commit(const Context & context)
         return;
     }
 
-    auto insert = std::make_shared<ASTInsertQuery>();
-    auto out_stream = mysql_replica_storage->storage_internal->write(
-        insert,
-        mysql_replica_storage->getInMemoryMetadataPtr(),
-        context);
-    out_stream->write(data->first);
+    {
+        std::lock_guard<std::mutex> lock(mysql_replica_storage->mutex);
+        mysql_replica_storage->data.push_back(data->first);
+    }
 
     data.reset();
     flushCounters();

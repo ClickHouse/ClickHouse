@@ -71,7 +71,10 @@ protected:
 
 public:
     // TODO: delete this
-    std::shared_ptr<StorageMemory> storage_internal;
+    /// The data itself. `list` - so that when inserted to the end, the existing iterators are not invalidated.
+    BlocksList data;
+    mutable std::mutex mutex;
+
 
 private:
     Context global_context;
