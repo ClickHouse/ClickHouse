@@ -1431,5 +1431,39 @@ SELECT randomStringUTF8(13)
 
 ```
 
+## getSetting {#getSetting}
+
+Возвращает текущее значение [пользовательской настройки](../../operations/settings/index.md#custom_settings).
+
+**Синтаксис** 
+
+```sql
+getSetting('custom_setting');    
+```
+
+**Параметр** 
+
+-   `custom_setting` — название настройки. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Текущее значение пользовательской настройки.
+
+**Пример**
+
+```sql
+SET custom_a = 123;
+SELECT getSetting('custom_a');    
+```
+
+**Результат**
+
+```
+123
+```
+
+**См. также** 
+
+-   [Пользовательские настройки](../../operations/settings/index.md#custom_settings)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->
