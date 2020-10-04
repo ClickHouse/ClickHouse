@@ -420,13 +420,17 @@ UUID IAccessStorage::login(
     const String & user_name,
     const String & password,
     const Poco::Net::IPAddress & address,
-    const ExternalAuthenticators & external_authenticators) const
+    const ExternalAuthenticators & external_authenticators,
+    bool log_and_mask_exceptions) const
 {
     try {
         return loginImpl(user_name, password, address, external_authenticators);
     }
     catch (...)
     {
+        if (!log_and_mask_exceptions)
+            throw;
+
         tryLogCurrentException(getLogger(), user_name + ": Authentication failed");
         throwCannotAuthenticate(user_name);
     }

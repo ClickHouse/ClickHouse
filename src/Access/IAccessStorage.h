@@ -144,7 +144,7 @@ public:
 
     /// Finds an user, check its password and returns the ID of the user.
     /// Throws an exception if no such user or password is incorrect.
-    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
+    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool log_and_mask_exceptions = true) const;
 
     /// Returns the ID of an user who has logged in (maybe on another node).
     /// The function assumes that the password has been already checked somehow, so we can skip checking it now.
