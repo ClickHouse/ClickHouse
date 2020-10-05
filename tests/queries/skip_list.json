@@ -235,6 +235,7 @@
         "00933_ttl_with_default",
         "01148_zookeeper_path_macros_unfolding",
         "01338_long_select_and_alter",
+        "01200_mutations_memory_consumption",
         "attach",
         "ddl_dictionaries",
         "dictionary",
