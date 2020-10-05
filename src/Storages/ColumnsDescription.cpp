@@ -378,6 +378,14 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
 }
 
 
+bool ColumnsDescription::hasDefaults() const
+{
+    for (const auto & column : columns)
+        if (column.default_desc.expression)
+            return true;
+    return false;
+}
+
 ColumnDefaults ColumnsDescription::getDefaults() const
 {
     ColumnDefaults ret;
