@@ -67,10 +67,10 @@ struct ReplicatedMergeTreeQuorumStatusEntry
         readText(in);
     }
 
-	bool isQuorumReached()
-	{
-		return required_number_of_replicas && required_number_of_replicas <= replicas.size();
-	}
+    bool isQuorumReached()
+    {
+        return required_number_of_replicas && required_number_of_replicas <= replicas.size();
+    }
 };
 
 }
