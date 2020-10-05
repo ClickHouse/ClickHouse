@@ -1182,12 +1182,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         }
         else
         {
-            /// ALEXELEX
-            /// is this a valid format or an old one?
-            /// discovered that minimalistic-format is new and is the default.
-            /// should we support old format for quorum parallel inserts?
-            /// if yes, let's use blocks/.../status ? hope no, it's too many if-else otherwise :)
-            /// but if so, how about this?
+            /// alexelex: if (local_part_header.getBlockID()) throw or skip it?
             ops.emplace_back(zkutil::makeCreateRequest(
                 part_path, "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(
@@ -5751,8 +5746,7 @@ void StorageReplicatedMergeTree::getCommitPartOps(
     }
     else
     {
-        /// ALEXELEX
-        /// also. should we support it?
+        /// alexelex: if (!block_id.empty()) throw or skip it?
         ops.emplace_back(zkutil::makeCreateRequest(
             replica_path + "/parts/" + part->name,
             "",
