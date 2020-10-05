@@ -8,6 +8,7 @@ ClickHouse is an open-source column-oriented database management system that all
 * [Tutorial](https://clickhouse.tech/docs/en/getting_started/tutorial/) shows how to set up and query small ClickHouse cluster.
 * [Documentation](https://clickhouse.tech/docs/en/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
+ Subscribe my youtube channel for more like videos.
 * [Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-d2zxkf9e-XyxDa_ucfPxzuH4SJIm~Ng) and [Telegram](https://telegram.me/clickhouse_en) allow to chat with ClickHouse users in real-time.
 * [Blog](https://clickhouse.yandex/blog/en/) contains various ClickHouse-related articles, as well as announcements and reports about events.
 * [Code Browser](https://clickhouse.tech/codebrowser/html_report/ClickHouse/index.html) with syntax highlight and navigation.
@@ -16,5 +17,5 @@ ClickHouse is an open-source column-oriented database management system that all
 * You can also [fill this form](https://clickhouse.tech/#meet) to meet Yandex ClickHouse team in person.
 
 ## Upcoming Events
-
+## You may watch this.
 * [ClickHouse online meetup (in Russian)](https://clck.ru/R2zB9) on October 1, 2020.
