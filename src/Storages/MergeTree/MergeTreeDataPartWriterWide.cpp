@@ -198,23 +198,23 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
      {
          bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
 
-         String stream_name = IDataType::getFileNameForStream(name, substream_path);
+        String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
-         /// Don't write offsets more than one time for Nested type.
-         if (is_offsets && offset_columns.count(stream_name))
-             return;
+        /// Don't write offsets more than one time for Nested type.
+        if (is_offsets && offset_columns.count(stream_name))
+            return;
 
-         Stream & stream = *column_streams[stream_name];
+        Stream & stream = *column_streams[stream_name];
 
-         /// There could already be enough data to compress into the new block.
-         if (stream.compressed.offset() >= settings.min_compress_block_size)
-             stream.compressed.next();
+        /// There could already be enough data to compress into the new block.
+        if (stream.compressed.offset() >= settings.min_compress_block_size)
+            stream.compressed.next();
 
-         writeIntBinary(stream.plain_hashing.count(), stream.marks);
-         writeIntBinary(stream.compressed.offset(), stream.marks);
-         if (settings.can_use_adaptive_granularity)
-             writeIntBinary(number_of_rows, stream.marks);
-     }, path);
+        writeIntBinary(stream.plain_hashing.count(), stream.marks);
+        writeIntBinary(stream.compressed.offset(), stream.marks);
+        if (settings.can_use_adaptive_granularity)
+            writeIntBinary(number_of_rows, stream.marks);
+    }, path);
 }
 
 size_t MergeTreeDataPartWriterWide::writeSingleGranule(
