@@ -30,7 +30,7 @@ public:
         const NamesAndTypesList & columns, const MergeTreeDataPartChecksums & full_checksums);
 
     static ReplicatedMergeTreePartHeader fromColumnsChecksumsBlockID(
-        const NamesAndTypesList & columns, const MergeTreeDataPartChecksums & full_checksums, const String & block_id_);
+        const NamesAndTypesList & columns, const MergeTreeDataPartChecksums & full_checksums, const String & block_id_name);
 
     void read(ReadBuffer & in);
     static ReplicatedMergeTreePartHeader fromString(const String & str);
