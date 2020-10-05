@@ -59,6 +59,9 @@
 #include <thread>
 #include <future>
 
+#include <Common/randomSeed.h>
+#include <pcg_random.hpp>
+#include <random>
 #include <boost/algorithm/string/join.hpp>
 
 namespace ProfileEvents
@@ -203,6 +206,15 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , restarting_thread(*this)
     , allow_renaming(allow_renaming_)
 {
+    const auto & config = global_context.getConfigRef();
+    background_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
+    background_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
+    background_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+    background_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+    background_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+    background_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+    background_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+
     queue_processing_task_handle = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueProcessingTask)", [this] { queueProcessingTask(); });
 
@@ -2517,10 +2529,11 @@ void StorageReplicatedMergeTree::queueProcessingTask()
     if (queue.actions_blocker.isCancelled())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        queue_processing_task_handle->scheduleAfter(1000); /// FIXME(alesap)
+        queue_processing_task_handle->scheduleAfter(background_settings.thread_sleep_seconds_if_nothing_to_do * 1000);
         return;
     }
 
+    pcg64 rng(randomSeed());
     try
     {
         /// This object will mark the element of the queue as running.
@@ -2528,7 +2541,7 @@ void StorageReplicatedMergeTree::queueProcessingTask()
 
         if (!selected_entry.first)
         {
-            queue_processing_task_handle->scheduleAfter(500); /// FIXME(alesap)
+            queue_processing_task_handle->scheduleAfter(background_settings.thread_sleep_seconds_if_nothing_to_do * 1000);
             return;
         }
 
@@ -2545,12 +2558,19 @@ void StorageReplicatedMergeTree::queueProcessingTask()
             }
         }, getStorageID().getFullTableName() + "(queueProcessingTask)");
 
-        queue_processing_task_handle->schedule();
+
+        auto random_add = std::uniform_real_distribution<double>(0, background_settings.thread_sleep_seconds_random_part)(rng);
+        queue_processing_task_handle->scheduleAfter(random_add * 1000);
     }
     catch (...)
     {
+        auto sleep_for = std::min(
+                        background_settings.task_sleep_seconds_when_no_work_max,
+                        background_settings.task_sleep_seconds_when_no_work_min * background_settings.task_sleep_seconds_when_no_work_multiplier)
+                    + std::uniform_real_distribution<double>(0, background_settings.task_sleep_seconds_when_no_work_random_part)(rng);
+
         tryLogCurrentException(log);
-        queue_processing_task_handle->scheduleAfter(500); /// FIXME(alesap)
+        queue_processing_task_handle->scheduleAfter(1000 * sleep_for);
     }
 }
 

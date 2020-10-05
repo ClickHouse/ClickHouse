@@ -273,6 +273,7 @@ private:
     int metadata_version = 0;
     /// Threads.
 
+    BackgroundProcessingPool::PoolSettings background_settings;
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
     BackgroundSchedulePool::TaskHolder queue_updating_task;

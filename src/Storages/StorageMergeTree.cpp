@@ -26,7 +26,9 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Processors/Pipe.h>
 #include <optional>
-
+#include <Common/randomSeed.h>
+#include <pcg_random.hpp>
+#include <random>
 
 namespace DB
 {
@@ -74,6 +76,14 @@ StorageMergeTree::StorageMergeTree(
     , writer(*this)
     , merger_mutator(*this, global_context.getBackgroundProcessingPool().getMaxThreads())
 {
+    const auto & config = global_context.getConfigRef();
+    background_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
+    background_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
+    background_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+    background_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+    background_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+    background_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+    background_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
     loadDataParts(has_force_restore_data_flag);
 
     if (!attach && !getDataParts().empty())
@@ -917,10 +927,11 @@ void StorageMergeTree::mergeMutateAssigningTask()
 
     if (merger_mutator.merges_blocker.isCancelled())
     {
-        merge_assigning_task->scheduleAfter(1000); /// FIXME(alesap)
+        merge_assigning_task->scheduleAfter(background_settings.thread_sleep_seconds_if_nothing_to_do * 1000);
         return;
     }
 
+    pcg64 rng(randomSeed());
     try
     {
         /// Clear old parts. It is unnecessary to do it more than once a second.
@@ -965,7 +976,8 @@ void StorageMergeTree::mergeMutateAssigningTask()
                 }
             }, getStorageID().getFullTableName() + "(queueProcessingTask)");
 
-            merge_assigning_task->schedule(); /// FIXME(alesap)
+            auto random_add = std::uniform_real_distribution<double>(0, background_settings.thread_sleep_seconds_random_part)(rng) * 1000;
+            merge_assigning_task->scheduleAfter(random_add);
             return;
         }
 
@@ -984,16 +996,28 @@ void StorageMergeTree::mergeMutateAssigningTask()
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
             }, getStorageID().getFullTableName() + "(queueProcessingTask)");
-            merge_assigning_task->schedule(); /// FIXME(alesap)
+
+            auto random_add = std::uniform_real_distribution<double>(0, background_settings.thread_sleep_seconds_random_part)(rng) * 1000;
+            merge_assigning_task->scheduleAfter(random_add);
             return;
         }
 
-        merge_assigning_task->scheduleAfter(500); /// FIXME(alesap)
+        auto sleep_for = std::min(
+                        background_settings.task_sleep_seconds_when_no_work_max,
+                        background_settings.task_sleep_seconds_when_no_work_min * background_settings.task_sleep_seconds_when_no_work_multiplier)
+                    + std::uniform_real_distribution<double>(0, background_settings.task_sleep_seconds_when_no_work_random_part)(rng);
+
+        merge_assigning_task->scheduleAfter(sleep_for);
     }
     catch (...)
     {
+        auto sleep_for = std::min(
+                        background_settings.task_sleep_seconds_when_no_work_max,
+                        background_settings.task_sleep_seconds_when_no_work_min * background_settings.task_sleep_seconds_when_no_work_multiplier)
+                    + std::uniform_real_distribution<double>(0, background_settings.task_sleep_seconds_when_no_work_random_part)(rng);
+
         tryLogCurrentException(log);
-        merge_assigning_task->scheduleAfter(500); /// FIXME(alesap)
+        merge_assigning_task->scheduleAfter(sleep_for * 1000);
     }
 }
 
