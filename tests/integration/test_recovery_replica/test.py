@@ -31,7 +31,7 @@ def start_cluster():
         yield cluster
 
     except Exception as ex:
-        print ex
+        print(ex)
 
     finally:
         cluster.shutdown()

@@ -13,6 +13,7 @@ ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w
 
 ## toInt(8\|16\|32\|64\|128\|256) {#toint8163264128256}
 
+
 Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
 
 -   `toInt8(expr)` — Results in the `Int8` data type.
@@ -46,7 +47,7 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 └──────────────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
-## toInt(8\|16\|32\|64)OrZero {#toint8163264orzero}
+## toInt(8\|16\|32\|64\|128\|256)OrZero {#toint8163264orzero}
 
 It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns 0.
 
@@ -188,7 +189,9 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 └──────┴────────────────────────────────────────────────────┘
 ```
 
+
 ## toDecimal(32\|64\|128\'|256)OrZero {#todecimal3264128256orzero}
+
 
 Converts an input value to the [Decimal(P,S)](../../sql-reference/data-types/decimal.md) data type. This family of functions include:
 
@@ -733,6 +736,47 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 ┌─fromUnixTimestamp64Milli(i64, 'UTC')─┐
 │              2009-02-13 23:31:31.011 │
 └──────────────────────────────────────┘
+```
+
+## formatRow {#formatrow}
+
+Converts arbitrary expressions into a string via given format. 
+
+**Syntax** 
+
+``` sql
+formatRow(format, x, y, ...)
+```
+
+**Parameters**
+
+-   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Expressions.
+
+**Returned value**
+
+-   A formatted string (for text formats it's usually terminated with the new line character).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatRow('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Result:
+
+``` text
+┌─formatRow('CSV', number, 'good')─┐
+│ 0,"good"
+                         │
+│ 1,"good"
+                         │
+│ 2,"good"
+                         │
+└──────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->
