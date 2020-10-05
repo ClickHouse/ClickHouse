@@ -262,9 +262,9 @@ void writeErrorLen(const char * data, size_t size)
     }
 }
 /// Macros to avoid using strlen(), since it may fail if SSE is not supported.
-#define writeError(data) \
+#define writeError(data) do { \
     static_assert(__builtin_constant_p(data)); \
-    writeErrorLen(data, ARRAY_SIZE(data) - 1)
+    writeErrorLen(data, ARRAY_SIZE(data) - 1) } while (false)
 
 /// Check SSE and others instructions availability. Calls exit on fail.
 /// This function must be called as early as possible, even before main, because static initializers may use unavailable instructions.
