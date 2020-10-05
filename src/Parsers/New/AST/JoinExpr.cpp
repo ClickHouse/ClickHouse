@@ -20,9 +20,9 @@ JoinConstraintClause::JoinConstraintClause(ConstraintType type_, PtrTo<ColumnExp
 }
 
 // static
-PtrTo<JoinExpr> JoinExpr::createTableExpr(PtrTo<TableExpr> expr)
+PtrTo<JoinExpr> JoinExpr::createTableExpr(PtrTo<TableExpr> expr, bool final)
 {
-    return PtrTo<JoinExpr>(new JoinExpr(JoinExpr::ExprType::TABLE, {expr}));
+    return PtrTo<JoinExpr>(new JoinExpr(JoinExpr::ExprType::TABLE, final, {expr}));
 }
 
 // static
@@ -31,7 +31,7 @@ PtrTo<JoinExpr> JoinExpr::createJoinOp(PtrTo<JoinExpr> left_expr, PtrTo<JoinExpr
     return PtrTo<JoinExpr>(new JoinExpr(ExprType::JOIN_OP, op, mode, {left_expr, right_expr, clause}));
 }
 
-JoinExpr::JoinExpr(JoinExpr::ExprType type, PtrList exprs) : INode(exprs), expr_type(type)
+JoinExpr::JoinExpr(JoinExpr::ExprType type, bool final_, PtrList exprs) : INode(exprs), expr_type(type), final(final_)
 {
 }
 
@@ -66,6 +66,7 @@ ASTPtr JoinExpr::convertToOld() const
         auto element = std::make_shared<ASTTablesInSelectQueryElement>();
         element->children.emplace_back(get(TABLE)->convertToOld());
         element->table_expression = element->children.back();
+        element->table_expression->as<ASTTableExpression>()->final = final;
 
         list->children.emplace_back(element);
     }
@@ -110,9 +111,17 @@ ASTPtr JoinExpr::convertToOld() const
             case JoinOpType::INNER:
                 element->kind = ASTTableJoin::Kind::Inner;
                 break;
+            case JoinOpType::INNER_ALL:
+                element->kind = ASTTableJoin::Kind::Inner;
+                element->strictness = ASTTableJoin::Strictness::All;
+                break;
             case JoinOpType::INNER_ANY:
                 element->kind = ASTTableJoin::Kind::Inner;
                 element->strictness = ASTTableJoin::Strictness::Any;
+                break;
+            case JoinOpType::INNER_ASOF:
+                element->kind = ASTTableJoin::Kind::Inner;
+                element->strictness = ASTTableJoin::Strictness::Asof;
                 break;
             case JoinOpType::LEFT:
                 element->kind = ASTTableJoin::Kind::Left;
@@ -212,7 +221,7 @@ antlrcpp::Any ParseTreeVisitor::visitJoinExprCrossOp(ClickHouseParser::JoinExprC
 antlrcpp::Any ParseTreeVisitor::visitJoinExprOp(ClickHouseParser::JoinExprOpContext *ctx)
 {
     auto mode = JoinExpr::JoinOpMode::DEFAULT;
-    auto op = ctx->joinOp() ? visit(ctx->joinOp()).as<JoinExpr::JoinOpType>() : JoinExpr::JoinOpType::LEFT;
+    auto op = ctx->joinOp() ? visit(ctx->joinOp()).as<JoinExpr::JoinOpType>() : JoinExpr::JoinOpType::INNER;
 
     if (ctx->GLOBAL()) mode = JoinExpr::JoinOpMode::GLOBAL;
     else if (ctx->LOCAL()) mode = JoinExpr::JoinOpMode::LOCAL;
@@ -227,7 +236,7 @@ antlrcpp::Any ParseTreeVisitor::visitJoinExprParens(ClickHouseParser::JoinExprPa
 
 antlrcpp::Any ParseTreeVisitor::visitJoinExprTable(ClickHouseParser::JoinExprTableContext *ctx)
 {
-    return JoinExpr::createTableExpr(visit(ctx->tableExpr()));
+    return JoinExpr::createTableExpr(visit(ctx->tableExpr()), !!ctx->FINAL());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinOpCross(ClickHouseParser::JoinOpCrossContext *ctx)
@@ -250,7 +259,9 @@ antlrcpp::Any ParseTreeVisitor::visitJoinOpFull(ClickHouseParser::JoinOpFullCont
 
 antlrcpp::Any ParseTreeVisitor::visitJoinOpInner(ClickHouseParser::JoinOpInnerContext *ctx)
 {
+    if (ctx->ALL()) return JoinExpr::JoinOpType::INNER_ALL;
     if (ctx->ANY()) return JoinExpr::JoinOpType::INNER_ANY;
+    if (ctx->ASOF()) return JoinExpr::JoinOpType::INNER_ASOF;
     return JoinExpr::JoinOpType::INNER;
 }
 

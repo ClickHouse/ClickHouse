@@ -329,7 +329,6 @@ void ASTAlterCommand::formatImpl(
 }
 
 
-
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const
 {

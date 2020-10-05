@@ -140,7 +140,6 @@ SRCS(
     queryToString.cpp
     QueryWithOutputSettingsPushDownVisitor.cpp
     TokenIterator.cpp
-
 )
 
 END()

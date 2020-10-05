@@ -45,6 +45,11 @@ alterTableClause
     | REPLACE partitionClause FROM tableIdentifier                           # AlterTableClauseReplace
     ;
 
+partitionClause
+    : PARTITION columnExpr         // actually we expect here any form of tuple of literals
+    | PARTITION ID STRING_LITERAL
+    ;
+
 // ANALYZE statement
 
 analyzeStmt: ANALYZE query;
@@ -128,11 +133,6 @@ dataClause
 
 optimizeStmt: OPTIMIZE TABLE tableIdentifier partitionClause? FINAL? DEDUPLICATE?;
 
-partitionClause
-    : PARTITION columnExpr // actually we expect here any form of tuple of literals
-    | PARTITION ID STRING_LITERAL
-    ;
-
 // RENAME statement
 
 renameStmt: RENAME TABLE tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)*;
@@ -158,7 +158,7 @@ selectStmt:
     ;
 
 withClause: WITH columnExprList;
-fromClause: FROM joinExpr FINAL?;
+fromClause: FROM joinExpr;
 sampleClause: SAMPLE ratioExpr (OFFSET ratioExpr)?;
 arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 prewhereClause: PREWHERE columnExpr;
@@ -171,13 +171,13 @@ limitClause: LIMIT limitExpr (WITH TIES)?;
 settingsClause: SETTINGS settingExprList;
 
 joinExpr
-    : LPAREN joinExpr RPAREN                                               # JoinExprParens
-    | joinExpr (GLOBAL|LOCAL)? joinOp? JOIN joinExpr joinConstraintClause  # JoinExprOp
-    | joinExpr joinOpCross joinExpr                                        # JoinExprCrossOp
-    | tableExpr                                                            # JoinExprTable
+    : LPAREN joinExpr RPAREN                                                 # JoinExprParens
+    | joinExpr (GLOBAL | LOCAL)? joinOp? JOIN joinExpr joinConstraintClause  # JoinExprOp
+    | joinExpr joinOpCross joinExpr                                          # JoinExprCrossOp
+    | tableExpr FINAL?                                                       # JoinExprTable
     ;
 joinOp
-    : (ANY? INNER | INNER ANY?)                                                                                  # JoinOpInner
+    : ((ALL | ANY | ASOF)? INNER | INNER (ALL | ANY | ASOF)? | (ALL | ANY | ASOF))                               # JoinOpInner
     | ((OUTER | SEMI | ANTI | ANY | ASOF)? (LEFT | RIGHT) | (LEFT | RIGHT) (OUTER | SEMI | ANTI | ANY | ASOF)?)  # JoinOpLeftRight
     | ((OUTER | ANY)? FULL | FULL (OUTER | ANY)?)                                                                # JoinOpFull
     ;
@@ -248,8 +248,8 @@ columnsExpr
 columnExpr
     : CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END          # ColumnExprCase
     | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                                     # ColumnExprCast
-    | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                                 # ColumnExprExtract
-    | INTERVAL columnExpr INTERVAL_TYPE                                                   # ColumnExprInterval
+    | EXTRACT LPAREN interval FROM columnExpr RPAREN                                      # ColumnExprExtract
+    | INTERVAL columnExpr interval                                                        # ColumnExprInterval
     | SUBSTRING LPAREN columnExpr FROM columnExpr (FOR columnExpr)? RPAREN                # ColumnExprSubstring
     | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN       # ColumnExprTrim
     | identifier (LPAREN columnExprList? RPAREN)? LPAREN DISTINCT? columnArgList? RPAREN  # ColumnExprFunction
@@ -316,6 +316,7 @@ tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr
     : tableIdentifier
+    | tableFunctionExpr
     | literal
     ;
 
@@ -336,6 +337,7 @@ literal
     | STRING_LITERAL
     | NULL_SQL
     ;
+interval: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
 keyword
     // except NULL_SQL, INF, NAN_SQL
     : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
@@ -348,8 +350,8 @@ keyword
     | SET | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING
     | TRIM | TRUNCATE | TO | TTL | TYPE | UNION | USE | USING | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
     ;
-alias: IDENTIFIER | INTERVAL_TYPE;
-identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
+alias: IDENTIFIER | interval;
+identifier: IDENTIFIER | interval | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
 unaryOp: DASH | NOT;
 enumValue: STRING_LITERAL EQ_SINGLE numberLiteral;

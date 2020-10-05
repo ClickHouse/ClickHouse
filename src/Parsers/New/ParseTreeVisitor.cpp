@@ -84,9 +84,9 @@ antlrcpp::Any ParseTreeVisitor::visitShowDatabasesStmt(ClickHouseParser::ShowDat
 
     auto system = std::make_shared<DatabaseIdentifier>(std::make_shared<Identifier>("system"));
     auto databases = std::make_shared<TableIdentifier>(system, std::make_shared<Identifier>("databases"));
-    auto system_tables = JoinExpr::createTableExpr(TableExpr::createIdentifier(databases));
+    auto system_tables = JoinExpr::createTableExpr(TableExpr::createIdentifier(databases), false);
 
-    select_stmt->setFromClause(std::make_shared<FromClause>(system_tables, false));
+    select_stmt->setFromClause(std::make_shared<FromClause>(system_tables));
 
     return PtrTo<SelectUnionQuery>(
         new SelectUnionQuery(std::make_shared<List<SelectStmt>>(std::initializer_list<PtrTo<SelectStmt>>{select_stmt})));
@@ -123,9 +123,9 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
 
     auto system = std::make_shared<DatabaseIdentifier>(std::make_shared<Identifier>("system"));
     auto tables = std::make_shared<TableIdentifier>(system, std::make_shared<Identifier>("tables"));
-    auto system_tables = JoinExpr::createTableExpr(TableExpr::createIdentifier(tables));
+    auto system_tables = JoinExpr::createTableExpr(TableExpr::createIdentifier(tables), false);
 
-    select_stmt->setFromClause(std::make_shared<FromClause>(system_tables, false));
+    select_stmt->setFromClause(std::make_shared<FromClause>(system_tables));
     select_stmt->setWhereClause(
         std::make_shared<WhereClause>(ColumnExpr::createFunction(std::make_shared<Identifier>("and"), nullptr, and_args)));
     select_stmt->setLimitClause(ctx->limitClause() ? visit(ctx->limitClause()).as<PtrTo<LimitClause>>() : nullptr);

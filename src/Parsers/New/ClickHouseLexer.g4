@@ -1,11 +1,8 @@
 lexer grammar ClickHouseLexer;
 
-// Interval types
-
-INTERVAL_TYPE: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
+// NOTE: don't forget to add new keywords to the parser rule "keyword"!
 
 // Keywords
-// NOTE: don't forget to add new keywords to the parser rule "keyword"!
 
 ADD: A D D;
 AFTER: A F T E R;

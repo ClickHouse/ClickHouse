@@ -17,9 +17,8 @@ namespace DB::AST
 
 // FROM Clause
 
-FromClause::FromClause(PtrTo<JoinExpr> expr, bool final_) : INode{expr}, final(final_)
+FromClause::FromClause(PtrTo<JoinExpr> expr) : INode{expr}
 {
-    (void) final; // TODO
 }
 
 ASTPtr FromClause::convertToOld() const
@@ -243,7 +242,7 @@ antlrcpp::Any ParseTreeVisitor::visitWithClause(ClickHouseParser::WithClauseCont
 
 antlrcpp::Any ParseTreeVisitor::visitFromClause(ClickHouseParser::FromClauseContext *ctx)
 {
-    return std::make_shared<FromClause>(visit(ctx->joinExpr()), !!ctx->FINAL());
+    return std::make_shared<FromClause>(visit(ctx->joinExpr()).as<PtrTo<JoinExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSampleClause(ClickHouseParser::SampleClauseContext *ctx)

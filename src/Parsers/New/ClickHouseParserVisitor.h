@@ -48,6 +48,8 @@ public:
 
     virtual antlrcpp::Any visitAlterTableClauseReplace(ClickHouseParser::AlterTableClauseReplaceContext *context) = 0;
 
+    virtual antlrcpp::Any visitPartitionClause(ClickHouseParser::PartitionClauseContext *context) = 0;
+
     virtual antlrcpp::Any visitAnalyzeStmt(ClickHouseParser::AnalyzeStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *context) = 0;
@@ -111,8 +113,6 @@ public:
     virtual antlrcpp::Any visitDataClauseSelect(ClickHouseParser::DataClauseSelectContext *context) = 0;
 
     virtual antlrcpp::Any visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *context) = 0;
-
-    virtual antlrcpp::Any visitPartitionClause(ClickHouseParser::PartitionClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitRenameStmt(ClickHouseParser::RenameStmtContext *context) = 0;
 
@@ -295,6 +295,8 @@ public:
     virtual antlrcpp::Any visitNumberLiteral(ClickHouseParser::NumberLiteralContext *context) = 0;
 
     virtual antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *context) = 0;
+
+    virtual antlrcpp::Any visitInterval(ClickHouseParser::IntervalContext *context) = 0;
 
     virtual antlrcpp::Any visitKeyword(ClickHouseParser::KeywordContext *context) = 0;
 

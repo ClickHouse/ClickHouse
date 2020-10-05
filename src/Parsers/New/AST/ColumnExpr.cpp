@@ -292,14 +292,22 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprIdentifier(ClickHouseParser::Colu
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprInterval(ClickHouseParser::ColumnExprIntervalContext *ctx)
 {
-    auto name = std::make_shared<Identifier>("interval");
+    PtrTo<Identifier> name;
     auto args = std::make_shared<ColumnExprList>();
-    auto params = std::make_shared<ColumnParamList>();
+
+    if (ctx->interval()->SECOND()) name = std::make_shared<Identifier>("toIntervalSecond");
+    else if (ctx->interval()->MINUTE()) name = std::make_shared<Identifier>("toIntervalMinute");
+    else if (ctx->interval()->HOUR()) name = std::make_shared<Identifier>("toIntervalHour");
+    else if (ctx->interval()->DAY()) name = std::make_shared<Identifier>("toIntervalDay");
+    else if (ctx->interval()->WEEK()) name = std::make_shared<Identifier>("toIntervalWeek");
+    else if (ctx->interval()->MONTH()) name = std::make_shared<Identifier>("toIntervalMonth");
+    else if (ctx->interval()->QUARTER()) name = std::make_shared<Identifier>("toIntervalQuarter");
+    else if (ctx->interval()->YEAR()) name = std::make_shared<Identifier>("toIntervalYear");
+    else __builtin_unreachable();
 
     args->push(visit(ctx->columnExpr()));
-    // TODO: params->append(Literal::createString(???));
 
-    return ColumnExpr::createFunction(name, params, args);
+    return ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprIsNull(ClickHouseParser::ColumnExprIsNullContext *ctx)

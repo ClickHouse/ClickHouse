@@ -3,6 +3,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/New/AST/AlterTableQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
@@ -12,8 +13,8 @@
 namespace DB::AST
 {
 
-OptimizeQuery::OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionExprList> list, bool final_, bool deduplicate_)
-    : DDLQuery{identifier, list}, final(final_), deduplicate(deduplicate_)
+OptimizeQuery::OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionClause> clause, bool final_, bool deduplicate_)
+    : DDLQuery{identifier, clause}, final(final_), deduplicate(deduplicate_)
 {
 }
 
@@ -50,40 +51,8 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *ctx)
 {
-    auto clause = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionExprList>>() : nullptr;
+    auto clause = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionClause>>() : nullptr;
     return std::make_shared<OptimizeQuery>(visit(ctx->tableIdentifier()), clause, !!ctx->FINAL(), !!ctx->DEDUPLICATE());
-}
-
-antlrcpp::Any ParseTreeVisitor::visitPartitionClause(ClickHouseParser::PartitionClauseContext *ctx)
-{
-    auto list = std::make_shared<PartitionExprList>();
-
-    if (ctx->STRING_LITERAL()) list->push(Literal::createString(ctx->STRING_LITERAL()));
-    else
-    {
-        auto tuple = visit(ctx->columnExpr()).as<PtrTo<ColumnExpr>>();
-
-        if (tuple->getType() == ColumnExpr::ExprType::FUNCTION && tuple->getFunctionName() == "tuple")
-        {
-            for (auto it = tuple->argumentsBegin(); it != tuple->argumentsEnd(); ++it)
-            {
-                auto * expr = (*it)->as<ColumnExpr>();
-
-                if (expr->getType() == ColumnExpr::ExprType::LITERAL)
-                    list->push(expr->getLiteral());
-                else
-                {
-                    // TODO: 'Expected tuple of literals as Partition Expression'.
-                }
-            }
-        }
-        else
-        {
-            // TODO: 'Expected tuple of literals as Partition Expression'.
-        }
-    }
-
-    return list;
 }
 
 }

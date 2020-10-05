@@ -297,7 +297,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth);
         }
-        else {
+        else
+        {
             ParserQuery parser(end, settings.enable_debug_queries);
 
             /// TODO: parser should fail early when max_query_size limit is reached.

@@ -93,7 +93,7 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitAlias(ClickHouseParser::AliasContext *ctx)
 {
     if (ctx->IDENTIFIER()) return std::make_shared<Identifier>(ctx->IDENTIFIER()->getText());
-    if (ctx->INTERVAL_TYPE()) return std::make_shared<Identifier>(ctx->INTERVAL_TYPE()->getText());
+    if (ctx->interval()) return std::make_shared<Identifier>(ctx->interval()->getText());
     __builtin_unreachable();
 }
 
@@ -118,7 +118,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnIdentifier(ClickHouseParser::ColumnId
 antlrcpp::Any ParseTreeVisitor::visitIdentifier(ClickHouseParser::IdentifierContext *ctx)
 {
     if (ctx->IDENTIFIER()) return std::make_shared<Identifier>(ctx->IDENTIFIER()->getText());
-    if (ctx->INTERVAL_TYPE()) return std::make_shared<Identifier>(ctx->INTERVAL_TYPE()->getText());
+    if (ctx->interval()) return std::make_shared<Identifier>(ctx->interval()->getText());
     if (ctx->keyword()) return std::make_shared<Identifier>(ctx->keyword()->getText());
     __builtin_unreachable();
 }
@@ -133,6 +133,11 @@ antlrcpp::Any ParseTreeVisitor::visitIdentifierOrNull(ClickHouseParser::Identifi
             // TODO: raise error
         }
     }
+    __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitInterval(ClickHouseParser::IntervalContext *)
+{
     __builtin_unreachable();
 }
 

@@ -9,7 +9,7 @@ namespace DB::AST
 
 class INode;
 
-template <class T>
+template <class T, char Separator = ','>
 class List;
 
 template <class T>
@@ -38,6 +38,7 @@ class LimitExpr;
 class Literal;
 class NumberLiteral;
 class OrderExpr;
+class PartitionClause;
 class Query;
 class RatioExpr;
 class SchemaClause;
@@ -62,8 +63,7 @@ using EnumValueList = List<EnumValue>;
 using JsonExprList = List<JsonExpr>;
 using JsonValueList = List<JsonValue>;
 using OrderExprList = List<OrderExpr>;
-using PartitionExprList = List<Literal>;
-using QueryList = List<Query>;
+using QueryList = List<Query, ';'>;
 using SettingExprList = List<SettingExpr>;
 using TableArgList = List<TableArgExpr>;
 using TableElementList = List<TableElementExpr>;

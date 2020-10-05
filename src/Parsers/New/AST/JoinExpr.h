@@ -29,7 +29,9 @@ class JoinExpr : public INode
         enum class JoinOpType
         {
             INNER,
+            INNER_ALL,
             INNER_ANY,
+            INNER_ASOF,
             LEFT,
             LEFT_OUTER,
             LEFT_SEMI,
@@ -54,7 +56,7 @@ class JoinExpr : public INode
             LOCAL,
         };
 
-        static PtrTo<JoinExpr> createTableExpr(PtrTo<TableExpr> expr);
+        static PtrTo<JoinExpr> createTableExpr(PtrTo<TableExpr> expr, bool final);
         static PtrTo<JoinExpr> createJoinOp(PtrTo<JoinExpr> left_expr, PtrTo<JoinExpr> right_expr, JoinOpType op, JoinOpMode mode, PtrTo<JoinConstraintClause> clause);
 
         ASTPtr convertToOld() const override;  // returns topologically sorted elements as ASTExpressionList
@@ -76,8 +78,9 @@ class JoinExpr : public INode
         ExprType expr_type;
         JoinOpType op_type = JoinOpType::INNER;
         JoinOpMode op_mode = JoinOpMode::DEFAULT;
+        bool final;
 
-        JoinExpr(ExprType type, PtrList exprs);
+        JoinExpr(ExprType type, bool final, PtrList exprs);
         JoinExpr(ExprType type, JoinOpType op, JoinOpMode mode, PtrList exprs);
 };
 

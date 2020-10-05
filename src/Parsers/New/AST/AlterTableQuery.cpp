@@ -2,7 +2,9 @@
 
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
@@ -12,6 +14,48 @@
 
 namespace DB::AST
 {
+
+PartitionClause::PartitionClause(PtrTo<Literal> id) : PartitionClause(ClauseType::ID, {id})
+{
+}
+
+PartitionClause::PartitionClause(PtrTo<List<Literal>> list) : PartitionClause(ClauseType::LIST, {list})
+{
+}
+
+PartitionClause::PartitionClause(ClauseType type, PtrList exprs) : INode(exprs), clause_type(type)
+{
+}
+
+ASTPtr PartitionClause::convertToOld() const
+{
+    auto partition = std::make_shared<ASTPartition>();
+
+    switch(clause_type)
+    {
+        case ClauseType::ID:
+            partition->id = get(ID)->as<StringLiteral>()->as<String>();
+            break;
+        case ClauseType::LIST:
+            {
+                auto tuple = std::make_shared<ASTFunction>();
+
+                tuple->name = "tuple";
+                tuple->arguments = std::make_shared<ASTExpressionList>();
+                for (const auto & child : get(LIST)->as<List<Literal> &>())
+                    tuple->arguments->children.push_back(child->convertToOld());
+                tuple->children.push_back(tuple->arguments);
+
+                partition->value = tuple;
+                partition->children.push_back(partition->value);
+                partition->fields_count = get(LIST)->as<List<Literal>>()->size();
+                partition->fields_str = get(LIST)->toString();
+            }
+            break;
+    }
+
+    return partition;
+}
 
 // static
 PtrTo<AlterTableClause> AlterTableClause::createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after)
@@ -23,13 +67,13 @@ PtrTo<AlterTableClause> AlterTableClause::createAdd(bool if_not_exists, PtrTo<Ta
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createAttach(PtrTo<PartitionExprList> list, PtrTo<TableIdentifier> identifier)
+PtrTo<AlterTableClause> AlterTableClause::createAttach(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> identifier)
 {
-    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::ATTACH, {list, identifier}));
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::ATTACH, {clause, identifier}));
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionExprList> clause)
+PtrTo<AlterTableClause> AlterTableClause::createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> clause)
 {
     PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::CLEAR, {identifier, clause}));
     query->if_exists = if_exists;
@@ -51,9 +95,9 @@ PtrTo<AlterTableClause> AlterTableClause::createDelete(PtrTo<ColumnExpr> expr)
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createDetach(PtrTo<PartitionExprList> list)
+PtrTo<AlterTableClause> AlterTableClause::createDetach(PtrTo<PartitionClause> clause)
 {
-    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::DETACH, {list}));
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::DETACH, {clause}));
 }
 
 // static
@@ -65,9 +109,9 @@ PtrTo<AlterTableClause> AlterTableClause::createDropColumn(bool if_exists, PtrTo
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createDropPartition(PtrTo<PartitionExprList> list)
+PtrTo<AlterTableClause> AlterTableClause::createDropPartition(PtrTo<PartitionClause> clause)
 {
-    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::DROP_PARTITION, {list->begin(), list->end()}));
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::DROP_PARTITION, {clause}));
 }
 
 // static
@@ -86,9 +130,9 @@ PtrTo<AlterTableClause> AlterTableClause::createOrderBy(PtrTo<ColumnExpr> expr)
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createReplace(PtrTo<PartitionExprList> list, PtrTo<TableIdentifier> identifier)
+PtrTo<AlterTableClause> AlterTableClause::createReplace(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> identifier)
 {
-    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::REPLACE, {list, identifier}));
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::REPLACE, {clause, identifier}));
 }
 
 ASTPtr AlterTableClause::convertToOld() const
@@ -107,7 +151,8 @@ ASTPtr AlterTableClause::convertToOld() const
 
         case ClauseType::ATTACH:
             command->type = ASTAlterCommand::ATTACH_PARTITION;
-            command->partition = get(PARTITION)->convertToOld(); // FIXME: make proper convertion
+            command->partition = get(PARTITION)->convertToOld();
+
             if (has(FROM))
             {
                 auto table_id = getTableIdentifier(get(FROM)->convertToOld());
@@ -300,6 +345,39 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTable
     auto list = std::make_shared<List<AlterTableClause>>();
     for (auto * clause : ctx->alterTableClause()) list->push(visit(clause));
     return std::make_shared<AlterTableQuery>(visit(ctx->tableIdentifier()), list);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitPartitionClause(ClickHouseParser::PartitionClauseContext *ctx)
+{
+    if (ctx->STRING_LITERAL())
+        return std::make_shared<PartitionClause>(Literal::createString(ctx->STRING_LITERAL()));
+
+    auto expr = visit(ctx->columnExpr()).as<PtrTo<ColumnExpr>>();
+
+    if (expr->getType() == ColumnExpr::ExprType::LITERAL)
+        return std::make_shared<PartitionClause>(PtrTo<List<Literal>>(new List<Literal>{expr->getLiteral()}));
+
+    if (expr->getType() == ColumnExpr::ExprType::FUNCTION && expr->getFunctionName() == "tuple")
+    {
+        auto list = std::make_shared<List<Literal>>();
+
+        for (auto it = expr->argumentsBegin(); it != expr->argumentsEnd(); ++it)
+        {
+            auto * literal = (*it)->as<ColumnExpr>();
+
+            if (literal->getType() == ColumnExpr::ExprType::LITERAL)
+                list->push(literal->getLiteral());
+            else
+            {
+                // TODO: 'Expected tuple of literals as Partition Expression'.
+            }
+        }
+
+        return std::make_shared<PartitionClause>(list);
+    }
+
+    // TODO: 'Expected tuple of literals as Partition Expression'.
+    __builtin_unreachable();
 }
 
 }

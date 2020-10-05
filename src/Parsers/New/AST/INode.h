@@ -42,6 +42,7 @@ class INode : public TypePromotion<INode>
 
         auto begin() const { return children.cbegin(); }
         auto end() const { return children.cend(); }
+        auto size() const { return children.size(); }
 
     private:
         PtrList children;  // any child potentially may point to |nullptr|
@@ -56,7 +57,7 @@ class INode : public TypePromotion<INode>
         virtual String dumpInfo() const { return ""; }
 };
 
-template <class T>
+template <class T, char Separator>
 class List : public INode {
     public:
         List() = default;
@@ -67,6 +68,7 @@ class List : public INode {
 
         using INode::begin;
         using INode::end;
+        using INode::size;
 
         void push(const PtrTo<T> & node) { INode::push(node); }
 
@@ -75,6 +77,16 @@ class List : public INode {
             auto list = std::make_shared<ASTExpressionList>();
             for (const auto & child : *this) list->children.emplace_back(child->convertToOld());
             return list;
+        }
+
+        String toString() const override
+        {
+            auto string = (*begin())->toString();
+
+            for (auto next = ++begin(); next != end(); ++next)
+                string += String(1, Separator) + " " + (*next)->toString();
+
+            return string;
         }
 };
 

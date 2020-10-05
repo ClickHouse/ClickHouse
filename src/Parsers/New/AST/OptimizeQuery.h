@@ -9,7 +9,7 @@ namespace DB::AST
 class OptimizeQuery : public DDLQuery
 {
     public:
-        OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionExprList> list, bool final, bool deduplicate);
+        OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionClause> partition, bool final, bool deduplicate);
 
         ASTPtr convertToOld() const override;
 
@@ -17,7 +17,7 @@ class OptimizeQuery : public DDLQuery
         enum ChildIndex : UInt8
         {
             TABLE = 0,  // TableIdentifier
-            PARTITION,  // PartitionExprList
+            PARTITION,  // PartitionClause
         };
 
         const bool final, deduplicate;

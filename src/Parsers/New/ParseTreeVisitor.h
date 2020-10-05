@@ -154,7 +154,6 @@ public:
     antlrcpp::Any visitUseStmt(ClickHouseParser::UseStmtContext * ctx) override;
 
 
-
     // aliases to SelectUnionQuery
     antlrcpp::Any visitShowDatabasesStmt(ClickHouseParser::ShowDatabasesStmtContext * ctx) override;
     antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext * ctx) override;
@@ -232,6 +231,7 @@ public:
     antlrcpp::Any visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext *ctx) override;
     antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *ctx) override;
     antlrcpp::Any visitIdentifierOrNull(ClickHouseParser::IdentifierOrNullContext *ctx) override;
+    antlrcpp::Any visitInterval(ClickHouseParser::IntervalContext * ctx) override;
     antlrcpp::Any visitKeyword(ClickHouseParser::KeywordContext *ctx) override;
     antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *ctx) override;
     antlrcpp::Any visitNumberLiteral(ClickHouseParser::NumberLiteralContext *ctx) override;

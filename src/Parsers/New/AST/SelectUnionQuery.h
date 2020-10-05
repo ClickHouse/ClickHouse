@@ -17,7 +17,7 @@ using WithClause = SimpleClause<ColumnExprList>;
 class FromClause : public INode
 {
     public:
-        FromClause(PtrTo<JoinExpr> join_expr, bool final);
+        explicit FromClause(PtrTo<JoinExpr> join_expr);
 
         ASTPtr convertToOld() const override;
 
@@ -26,8 +26,6 @@ class FromClause : public INode
         {
             EXPR = 0,  // JoinExpr
         };
-
-        const bool final;
 };
 
 class SampleClause : public INode

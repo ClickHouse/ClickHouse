@@ -87,6 +87,12 @@ class StringLiteral : public Literal
         {
             return asString<T>();
         }
+
+        template<>
+        String as() const
+        {
+            return asString<String>().value();
+        }
 };
 
 }
