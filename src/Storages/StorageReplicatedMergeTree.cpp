@@ -3142,7 +3142,8 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, const st
                 /// We update the node, registering there one more replica.
                 code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
             }
-            else {
+            else
+            {
                 /// Update parallel quorum. It also might be reached here.
                 code = zookeeper->trySet(quorum_parallel_status_path, block_entry.toString(), stat.version);
             }
