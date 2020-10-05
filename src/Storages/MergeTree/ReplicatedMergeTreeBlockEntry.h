@@ -33,7 +33,8 @@ struct ReplicatedMergeTreeBlockEntry
     {
         out << part_name;
 
-        if (quorum_status) {
+        if (quorum_status)
+        {
             out << "\n";
             quorum_status->writeText(out);
         }
