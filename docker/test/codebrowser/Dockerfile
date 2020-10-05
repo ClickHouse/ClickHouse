@@ -8,7 +8,7 @@ RUN apt-get update && apt-get --yes --allow-unauthenticated install clang-8 libl
 # also we push reports to s3, so we add index.html to subfolder urls
 # https://github.com/ClickHouse-Extras/woboq_codebrowser/commit/37e15eaf377b920acb0b48dbe82471be9203f76b
 RUN git clone https://github.com/ClickHouse-Extras/woboq_codebrowser
-RUN cd woboq_codebrowser && cmake . -DCMAKE_BUILD_TYPE=Release && make -j
+RUN cd woboq_codebrowser && cmake . -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++-8 -DCMAKE_C_COMPILER=clang-8 && make -j
 
 ENV CODEGEN=/woboq_codebrowser/generator/codebrowser_generator
 ENV CODEINDEX=/woboq_codebrowser/indexgenerator/codebrowser_indexgenerator
