@@ -515,7 +515,7 @@ macro (add_executable target)
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and not sanitizer build, provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
     # `flto=thin` used only for release build, probably this `if` should be more strict.
-    if (GLIBC_COMPATIBILITY AND NOT SANITIZE AND NOT ARCH_AMD64)
+    if (GLIBC_COMPATIBILITY AND NOT SANITIZE AND NOT ARCH_AARCH64)
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:clickhouse_memcpy>)
     else ()
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
