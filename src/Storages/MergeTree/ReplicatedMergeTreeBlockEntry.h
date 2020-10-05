@@ -20,8 +20,8 @@ namespace DB
   */
 struct ReplicatedMergeTreeBlockEntry
 {
-	String part_name;
-	std::optional<ReplicatedMergeTreeQuorumStatusEntry> quorum_status;
+    String part_name;
+    std::optional<ReplicatedMergeTreeQuorumStatusEntry> quorum_status;
 
     ReplicatedMergeTreeBlockEntry() {}
     ReplicatedMergeTreeBlockEntry(const String & str)
@@ -33,22 +33,22 @@ struct ReplicatedMergeTreeBlockEntry
     {
         out << part_name;
 
-		if (quorum_status) {
+        if (quorum_status) {
             out << "\n";
-			quorum_status->writeText(out);
+            quorum_status->writeText(out);
         }
     }
 
     void readText(ReadBuffer & in)
     {
-		in >> part_name;
+        in >> part_name;
 
-		if (!in.eof())
-		{
-			in >> "\n";
-			quorum_status = ReplicatedMergeTreeQuorumStatusEntry();
-			quorum_status->readText(in);
-		}
+        if (!in.eof())
+        {
+            in >> "\n";
+            quorum_status = ReplicatedMergeTreeQuorumStatusEntry();
+            quorum_status->readText(in);
+        }
     }
 
     String toString() const
