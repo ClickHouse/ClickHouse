@@ -37,11 +37,11 @@ ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromColumnsAndCheck
 ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromColumnsChecksumsBlockID(
     const NamesAndTypesList & columns,
     const MergeTreeDataPartChecksums & full_checksums,
-    const String & block_id_)
+    const String & block_id_name)
 {
     MinimalisticDataPartChecksums checksums;
     checksums.computeTotalChecksums(full_checksums);
-    return ReplicatedMergeTreePartHeader(getSipHash(columns.toString()), std::move(checksums), block_id_);
+    return ReplicatedMergeTreePartHeader(getSipHash(columns.toString()), std::move(checksums), block_id_name);
 }
 
 void ReplicatedMergeTreePartHeader::read(ReadBuffer & in)
@@ -52,9 +52,9 @@ void ReplicatedMergeTreePartHeader::read(ReadBuffer & in)
 
     if (!in.eof())
     {
-        String block_id_;
-        in >> "\nblock_id: " >> block_id_;
-        block_id = block_id_;
+        String new_block_id;
+        in >> "\nblock_id: " >> new_block_id;
+        block_id = new_block_id;
     }
 }
 
