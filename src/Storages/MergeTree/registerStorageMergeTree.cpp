@@ -433,7 +433,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                         ErrorCodes::NO_REPLICA_NAME_GIVEN);
             ++arg_num;
         }
-        else if (is_extended_storage_def)
+        else if (is_extended_storage_def && arg_cnt == 0)
         {
             /// Try use default values if arguments are not specified.
             /// It works for ON CLUSTER queries when database engine is Atomic and there are {shard} and {replica} in config.
