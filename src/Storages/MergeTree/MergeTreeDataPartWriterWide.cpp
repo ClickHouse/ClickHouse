@@ -167,23 +167,21 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
 
     if (!columns_list.empty())
     {
-        bool data_written = write_results[0].data_written;
-        const size_t new_next_mark = write_results[0].next_mark;
-        const size_t new_next_index_offset = write_results[0].next_index_offset;
+        /// Each column resets these values to its own size. There is a hope it is the same value.
+
+        data_written |= write_results[0].data_written;
+        next_mark = write_results[0].next_mark;
+        next_index_offset = write_results[0].next_index_offset;
 
         for (size_t i = 1; i < write_results.size(); ++i)
         {
             data_written |= write_results[i].data_written;
-            if (new_next_mark != write_results[i].next_mark
-                || new_next_index_offset != write_results[i].next_index_offset)
+            if (next_mark != write_results[i].next_mark
+                || next_index_offset != write_results[i].next_index_offset)
             {
                 throw Exception("Columns have different sizes", ErrorCodes::LOGICAL_ERROR);
             }
         }
-
-        /// Each column resets these values to its own size. There is a hope it is the same value.
-        next_mark = new_next_mark;
-        next_index_offset = new_next_index_offset;
     }
 }
 
