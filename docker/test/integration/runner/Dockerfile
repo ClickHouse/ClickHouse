@@ -16,13 +16,13 @@ RUN apt-get update \
     iproute2 \
     module-init-tools \
     cgroupfs-mount \
-    python-pip \
+    python3-pip \
     tzdata \
     libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
-    python-pika \
+    python3-pika \
     liblua5.1-dev \
     luajit \
     libssl-dev \
@@ -37,7 +37,7 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio rpm-confluent-schemaregistry grpcio grpcio-tools cassandra-driver
+RUN python3 -m pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio grpcio grpcio-tools cassandra-driver confluent-kafka avro
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 17.09.1-ce
