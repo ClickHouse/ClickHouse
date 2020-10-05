@@ -1,6 +1,8 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
+#include <boost/algorithm/string/split.hpp>
 #include <ext/scope_guard.h>
 #include <optional>
+#include <unordered_set>
 
 #include <Poco/File.h>
 
@@ -550,6 +552,31 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
         auto condition = index_helper->createIndexCondition(query_info, context);
         if (!condition->alwaysUnknownOrTrue())
             useful_indices.emplace_back(index_helper, condition);
+    }
+
+    if (settings.force_data_skipping_indices.changed)
+    {
+        std::unordered_set<std::string> useful_indices_names;
+        for (const auto & useful_index : useful_indices)
+            useful_indices_names.insert(useful_index.first->index.name);
+
+        std::vector<std::string> forced_indices;
+        boost::split(forced_indices,
+            settings.force_data_skipping_indices.toString(),
+            [](char c){ return c == ','; });
+
+        for (const auto & index_name : forced_indices)
+        {
+            if (index_name.empty())
+                continue;
+
+            if (!useful_indices_names.count(index_name))
+            {
+                throw Exception(ErrorCodes::INDEX_NOT_USED,
+                    "Index {} is not used and setting 'force_data_skipping_indices' contains it",
+                    backQuote(index_name));
+            }
+        }
     }
 
     RangesInDataParts parts_with_ranges(parts.size());
