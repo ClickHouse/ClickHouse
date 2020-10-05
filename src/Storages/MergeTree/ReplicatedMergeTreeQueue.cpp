@@ -1764,7 +1764,13 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     Strings partitions = zookeeper->getChildren(queue.replica_path + "/parts");
     for (const String & partition : partitions)
     {
-        auto header = ReplicatedMergeTreePartHeader::fromString(zookeeper->get(queue.replica_path + "/parts/" + partition));
+        auto part_str = zookeeper->get(queue.replica_path + "/parts/" + partition);
+        if (part_str.empty())
+        {
+            /// use_minimalistic_part_header_in_zookeeper
+            continue;
+        }
+        auto header = ReplicatedMergeTreePartHeader::fromString(part_str);
         if (header.getBlockID())
         {
             ReplicatedMergeTreeBlockEntry block(zookeeper->get(queue.zookeeper_path + "/blocks/" + *header.getBlockID()));
