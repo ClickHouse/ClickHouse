@@ -4,7 +4,7 @@ FROM yandex/clickhouse-test-base
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get -y install \
         tzdata \
-        python \
+        python3 \
         libreadline-dev \
         libicu-dev \
         bsdutils \
@@ -16,7 +16,8 @@ RUN apt-get update \
         odbc-postgresql \
         sqlite3 \
         curl \
-        tar
+        tar \
+        krb5-user
 RUN rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import requests
 import argparse
 
@@ -96,7 +96,7 @@ def upload_request(sha, pr, file, q_type, user, password, ca_cert, host, db):
             'X-ClickHouse-Key': password,
         }
 
-        print query;
+        print(query);
 
         res = requests.post(
             url,
@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    print(upload_request(args.sha, args.pr, args.file, args.type, args.user, args.password, args.ca_cert, args.host, args.db))
+    print((upload_request(args.sha, args.pr, args.file, args.type, args.user, args.password, args.ca_cert, args.host, args.db)))
 
 
 

@@ -183,7 +183,7 @@ class _NetworkManager:
         exit_code = self._docker_client.api.exec_inspect(handle)['ExitCode']
 
         if exit_code != 0:
-            print output
+            print(output)
             raise subprocess.CalledProcessError(exit_code, cmd)
 
         return output
