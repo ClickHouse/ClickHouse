@@ -11,7 +11,7 @@ def infinite_redirect(_path):
 @route('/<_bucket>/<_path>')
 def server(_bucket, _path):
     for name in request.headers:
-        if name == 'Authorization' and request.headers[name] == u'Bearer TOKEN':
+        if name == 'Authorization' and request.headers[name] == 'Bearer TOKEN':
             return '1, 2, 3'
     abort(403)
 
