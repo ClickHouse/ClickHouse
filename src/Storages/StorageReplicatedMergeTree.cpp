@@ -2559,8 +2559,8 @@ void StorageReplicatedMergeTree::queueProcessingTask()
         }, getStorageID().getFullTableName() + "(queueProcessingTask)");
 
 
-        auto random_add = std::uniform_real_distribution<double>(0, background_settings.thread_sleep_seconds_random_part)(rng);
-        queue_processing_task_handle->scheduleAfter(random_add * 1000);
+        /// auto random_add = std::uniform_real_distribution<double>(0, background_settings.thread_sleep_seconds_random_part)(rng);
+        queue_processing_task_handle->schedule();
     }
     catch (...)
     {

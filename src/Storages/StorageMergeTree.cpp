@@ -976,8 +976,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
                 }
             }, getStorageID().getFullTableName() + "(queueProcessingTask)");
 
-            auto random_add = std::uniform_real_distribution<double>(0, background_settings.thread_sleep_seconds_random_part)(rng) * 1000;
-            merge_assigning_task->scheduleAfter(random_add);
+            merge_assigning_task->schedule();
             return;
         }
 
@@ -997,8 +996,7 @@ void StorageMergeTree::mergeMutateAssigningTask()
                 }
             }, getStorageID().getFullTableName() + "(queueProcessingTask)");
 
-            auto random_add = std::uniform_real_distribution<double>(0, background_settings.thread_sleep_seconds_random_part)(rng) * 1000;
-            merge_assigning_task->scheduleAfter(random_add);
+            merge_assigning_task->schedule();
             return;
         }
 
