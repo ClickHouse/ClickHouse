@@ -33,12 +33,12 @@ public:
     void HandleRpcs();
 
 private:
-    using GRPC = GRPCConnection::GRPC;
+    using GRPCService = clickhouse::grpc::ClickHouse::AsyncService;
     IServer & iserver;
     Poco::Logger * log;
     std::unique_ptr<grpc::ServerCompletionQueue> notification_cq;
     std::unique_ptr<grpc::ServerCompletionQueue> new_call_cq;
-    GRPC::AsyncService grpc_service;
+    GRPCService grpc_service;
     std::unique_ptr<grpc::Server> grpc_server;
     std::string address_to_listen;
 };

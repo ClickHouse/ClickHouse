@@ -1,25 +1,18 @@
 syntax = "proto3";
 
-package GRPCConnection;
+package clickhouse.grpc;
 
-message User {
-   string user = 1;
-   string password = 2;
-   string quota = 3;
-}
-message QuerySettings {
+message QueryInfo {
    string query = 1;
    string query_id = 2;
-   bool data_stream = 4;
-   string database = 5;
-   string format = 6;
-   map<string, string> settings = 7;
-}
-message QueryRequest {
-   User user_info = 1;
-   QuerySettings query_info = 2;
-   string insert_data = 3;
-   uint64 interactive_delay = 4;
+   map<string, string> settings = 3;
+   string database = 4;
+   string input_data = 5;
+   string output_format = 6;
+   string user_name = 7;
+   string password = 8;
+   string quota = 9;
+   bool next_query_info = 10;
 }
 
 message Progress {
@@ -30,14 +23,19 @@ message Progress {
    uint64 written_bytes = 5;
 }
 
-message QueryResponse {
-   string output = 1;
-   string exception_occured = 2;
-   Progress progress = 3;
-   string totals = 4;
-   string extremes = 5;
+message Exception {
+    int32 code = 1;
+    string message = 2;
 }
 
-service GRPC {
-   rpc Query(stream QueryRequest) returns (stream QueryResponse) {}
+message Result {
+   string output = 1;
+   string totals = 2;
+   string extremes = 3;
+   Progress progress = 4;
+   Exception exception = 5;
+}
+
+service ClickHouse {
+   rpc ExecuteQuery(stream QueryInfo) returns (stream Result) {}
 }

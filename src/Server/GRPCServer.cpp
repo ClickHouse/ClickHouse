@@ -20,10 +20,11 @@
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
 
-using GRPCConnection::QueryRequest;
-using GRPCConnection::QueryResponse;
-using GRPCConnection::GRPC;
-
+using GRPCService = clickhouse::grpc::ClickHouse::AsyncService;
+using GRPCQueryInfo = clickhouse::grpc::QueryInfo;
+using GRPCResult = clickhouse::grpc::Result;
+using GRPCException = clickhouse::grpc::Exception;
+using GRPCProgress = clickhouse::grpc::Progress;
 
 namespace DB
 {
@@ -39,7 +40,7 @@ namespace
     class CommonCallData
     {
     public:
-        GRPC::AsyncService * grpc_service;
+        GRPCService * grpc_service;
         grpc::ServerCompletionQueue * notification_cq;
         grpc::ServerCompletionQueue * new_call_cq;
         grpc::ServerContext grpc_context;
@@ -49,7 +50,7 @@ namespace
         std::unique_ptr<CommonCallData> next_client;
 
         explicit CommonCallData(
-            GRPC::AsyncService * grpc_service_,
+            GRPCService * grpc_service_,
             grpc::ServerCompletionQueue * notification_cq_,
             grpc::ServerCompletionQueue * new_call_cq_,
             IServer * iserver_,
@@ -65,7 +66,7 @@ namespace
     {
     public:
         CallDataQuery(
-            GRPC::AsyncService * grpc_service_,
+            GRPCService * grpc_service_,
             grpc::ServerCompletionQueue * notification_cq_,
             grpc::ServerCompletionQueue * new_call_cq_,
             IServer * iserver_,
@@ -75,7 +76,7 @@ namespace
             details_status = SEND_TOTALS;
             status = START_QUERY;
             out = std::make_shared<WriteBufferFromGRPC>(&responder, static_cast<void *>(this), nullptr);
-            grpc_service->RequestQuery(&grpc_context, &responder, new_call_cq, notification_cq, this);
+            grpc_service->RequestExecuteQuery(&grpc_context, &responder, new_call_cq, notification_cq, this);
         }
         void parseQuery();
         void parseData();
@@ -116,9 +117,9 @@ namespace
         }
 
     private:
-        QueryRequest request;
-        QueryResponse response;
-        grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest> responder;
+        GRPCQueryInfo request;
+        GRPCResult response;
+        grpc::ServerAsyncReaderWriter<GRPCResult, GRPCQueryInfo> responder;
 
         Stopwatch progress_watch;
         Stopwatch query_watch;
@@ -180,9 +181,9 @@ namespace
             io.onException();
 
             tryLogCurrentException(log);
-            std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
-            //int exception_code = getCurrentExceptionCode(); //?
-            response.set_exception_occured(exception_message);
+            auto & grpc_exception = *response.mutable_exception();
+            grpc_exception.set_code(getCurrentExceptionCode());
+            grpc_exception.set_message(getCurrentExceptionMessage(with_stacktrace, true));
             status = FINISH_QUERY;
             responder.WriteAndFinish(response, grpc::WriteOptions(), grpc::Status(), static_cast<void *>(this));
         }
@@ -193,51 +194,50 @@ namespace
         LOG_TRACE(log, "Process query");
 
         Poco::Net::SocketAddress user_adress(parseGRPCPeer(grpc_context));
-        LOG_TRACE(log, "Request: {}", request.query_info().query());
+        LOG_TRACE(log, "Request: {}", request.query());
 
-        std::string user = request.user_info().user();
-        std::string password = request.user_info().password();
-        std::string quota_key = request.user_info().quota();
-        interactive_delay = request.interactive_delay();
+        std::string user = request.user_name();
+        std::string password = request.password();
+        std::string quota_key = request.quota();
         format_output = "Values";
         if (user.empty())
         {
             user = "default";
             password = "";
         }
-        if (interactive_delay == 0)
-            interactive_delay = INT_MAX;
         context.setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
 
 
         query_context = context;
         query_scope.emplace(*query_context);
         query_context->setUser(user, password, user_adress);
-        query_context->setCurrentQueryId(request.query_info().query_id());
+        query_context->setCurrentQueryId(request.query_id());
         if (!quota_key.empty())
             query_context->setQuotaKey(quota_key);
 
-        if (!request.query_info().format().empty())
+        if (!request.output_format().empty())
         {
-            format_output = request.query_info().format();
-            query_context->setDefaultFormat(request.query_info().format());
+            format_output = request.output_format();
+            query_context->setDefaultFormat(request.output_format());
         }
-        if (!request.query_info().database().empty())
+        if (!request.database().empty())
         {
-            if (!DatabaseCatalog::instance().isDatabaseExist(request.query_info().database()))
+            if (!DatabaseCatalog::instance().isDatabaseExist(request.database()))
             {
-                Exception e("Database " + request.query_info().database() + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+                Exception e("Database " + request.database() + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             }
-            query_context->setCurrentDatabase(request.query_info().database());
+            query_context->setCurrentDatabase(request.database());
         }
 
         SettingsChanges settings_changes;
-        for (const auto & [key, value] : request.query_info().settings())
+        for (const auto & [key, value] : request.settings())
         {
             settings_changes.push_back({key, value});
         }
         query_context->checkSettingsConstraints(settings_changes);
         query_context->applySettingsChanges(settings_changes);
+
+        interactive_delay = query_context->getSettingsRef().interactive_delay;
 
         ClientInfo & client_info = query_context->getClientInfo();
         client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
@@ -251,8 +251,8 @@ namespace
     void CallDataQuery::parseData()
     {
         LOG_TRACE(log, "ParseData");
-        const char * begin = request.query_info().query().data();
-        const char * end = begin + request.query_info().query().size();
+        const char * begin = request.query().data();
+        const char * end = begin + request.query().size();
         const Settings & settings = query_context->getSettingsRef();
 
         ParserQuery parser(end);
@@ -269,7 +269,7 @@ namespace
         io = ::DB::executeQuery(query, *query_context, false, QueryProcessingStage::Complete, true, true);
         if (io.out)
         {
-            if (!insert_query || !(insert_query->data || request.query_info().data_stream() || !request.insert_data().empty()))
+            if (!insert_query || !(insert_query->data || !request.input_data().empty() || request.next_query_info()))
             {
                 Exception e("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::NO_DATA_TO_INSERT);
             }
@@ -289,9 +289,9 @@ namespace
                 buffers.push_back(data_in_query.get());
             }
 
-            if (!request.insert_data().empty())
+            if (!request.input_data().empty())
             {
-                data_in_insert_data = std::make_shared<ReadBufferFromMemory>(request.insert_data().data(), request.insert_data().size());
+                data_in_insert_data = std::make_shared<ReadBufferFromMemory>(request.input_data().data(), request.input_data().size());
                 buffers.push_back(data_in_insert_data.get());
             }
             auto input_buffer_contacenated = std::make_unique<ConcatReadBuffer>(buffers);
@@ -309,7 +309,7 @@ namespace
             io.out->writePrefix();
             while (auto block = res_stream->read())
                 io.out->write(block);
-            if (request.query_info().data_stream())
+            if (request.next_query_info())
             {
                 status = READ_DATA;
                 responder.Read(&request, static_cast<void *>(this));
@@ -323,22 +323,26 @@ namespace
 
     void CallDataQuery::readData()
     {
-        if (request.insert_data().empty())
+        if (!request.input_data().empty())
         {
-            io.out->writeSuffix();
-            executeQuery();
-        }
-        else
-        {
-            const char * begin = request.insert_data().data();
-            const char * end = begin + request.insert_data().size();
+            const char * begin = request.input_data().data();
+            const char * end = begin + request.input_data().size();
             ReadBufferFromMemory data_in(begin, end - begin);
             auto res_stream = query_context->getInputFormat(
                 format_input, data_in, io.out->getHeader(), query_context->getSettings().max_insert_block_size);
 
             while (auto block = res_stream->read())
                 io.out->write(block);
+        }
+
+        if (request.next_query_info())
+        {
             responder.Read(&request, static_cast<void *>(this));
+        }
+        else
+        {
+            io.out->writeSuffix();
+            executeQuery();
         }
     }
 
@@ -426,7 +430,7 @@ namespace
     {
         out->setResponse([](const String & buffer)
         {
-            QueryResponse tmp_response;
+            GRPCResult tmp_response;
             tmp_response.set_output(buffer);
             return tmp_response;
         });
@@ -444,7 +448,7 @@ namespace
             auto in = std::make_unique<ReadBufferFromString>(buffer);
             ProgressValues progress_values;
             progress_values.read(*in, DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO);
-            GRPCConnection::Progress tmp_progress;
+            GRPCProgress tmp_progress;
             tmp_progress.set_read_rows(progress_values.read_rows);
             tmp_progress.set_read_bytes(progress_values.read_bytes);
             tmp_progress.set_total_rows_to_read(progress_values.total_rows_to_read);
@@ -455,8 +459,8 @@ namespace
 
         out->setResponse([&grpc_progress](const String & buffer)
         {
-            QueryResponse tmp_response;
-            auto tmp_progress = std::make_unique<GRPCConnection::Progress>(grpc_progress(buffer));
+            GRPCResult tmp_response;
+            auto tmp_progress = std::make_unique<GRPCProgress>(grpc_progress(buffer));
             tmp_response.set_allocated_progress(tmp_progress.release());
             return tmp_response;
         });
@@ -472,7 +476,7 @@ namespace
         {
             out->setResponse([](const String & buffer)
             {
-                QueryResponse tmp_response;
+                GRPCResult tmp_response;
                 tmp_response.set_totals(buffer);
                 return tmp_response;
             });
@@ -491,7 +495,7 @@ namespace
         {
             out->setResponse([](const String & buffer)
             {
-                QueryResponse tmp_response;
+                GRPCResult tmp_response;
                 tmp_response.set_extremes(buffer);
                 return tmp_response;
             });
