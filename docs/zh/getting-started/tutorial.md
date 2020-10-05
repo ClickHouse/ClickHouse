@@ -526,7 +526,7 @@ ClickHouse集群是一个同质集群。 设置步骤:
 3.  在每个实例上创建本地表
 4.  创建一个 [分布式表](../engines/table-engines/special/distributed.md)
 
-[分布式表](../engines/table-engines/special/distributed.md) 实际上是一种 “视图”，映射到ClickHouse集群的本地表。 从分布式表中执行 **SELECT** 查询会使用集群所有分片的资源。您可以为多个集群指定configs，并创建多个分布式表，为不同的集群提供视图。
+[分布式表](../engines/table-engines/special/distributed.md) 实际上是一种 “视图”，映射到ClickHouse集群的本地表。 从分布式表中执行 **SELECT** 查询会使用集群所有分片的资源。 您可以为多个集群指定configs，并创建多个分布式表，为不同的集群提供视图。
 
 具有三个分片，每个分片一个副本的集群的示例配置:
 
