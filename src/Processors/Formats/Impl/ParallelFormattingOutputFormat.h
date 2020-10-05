@@ -47,16 +47,56 @@ public:
         finishAndWait();
     }
 
-    String getName() const override final { return "ParallelFormattingOutputFormat"; }
+    String getName() const override { return "ParallelFormattingOutputFormat"; }
 
-    void flush() override final
+    void flush() override
     {
-        waitForFormattingFinished();
-        IOutputFormat::flush();
+        need_flush = true;
     }
 
 protected:
     void consume(Chunk chunk) override final
+    {
+        addChunk(std::move(chunk), ProcessingUnitType::PLAIN);
+    }
+
+    void consumeTotals(Chunk totals) override
+    {
+        addChunk(std::move(totals), ProcessingUnitType::TOTALS);
+    }
+
+    void consumeExtremes(Chunk extremes) override
+    {
+        addChunk(std::move(extremes), ProcessingUnitType::EXTREMES);
+    }
+
+    void finalize() override
+    {
+        IOutputFormat::finalized = true;
+        addChunk(Chunk{}, ProcessingUnitType::FINALIZE);
+    }
+
+private:
+
+    InternalFormatterCreator internal_formatter_creator;
+
+    enum ProcessingUnitStatus
+    {
+        READY_TO_INSERT,
+        READY_TO_FORMAT,
+        READY_TO_READ
+    };
+
+
+    enum class ProcessingUnitType
+    {
+        PLAIN,
+        TOTALS,
+        EXTREMES,
+        FINALIZE
+    };
+
+    void addChunk(Chunk chunk, ProcessingUnitType type)
     {
         const auto current_unit_number = writer_unit_number % processing_units.size();
 
@@ -75,22 +115,12 @@ protected:
         /// Resize memory without deallocate
         unit.segment.resize(0);
         unit.status = READY_TO_FORMAT;
+        unit.type = type;
 
         scheduleFormatterThreadForUnitWithNumber(current_unit_number);
 
         ++writer_unit_number;
     }
-
-private:
-
-    InternalFormatterCreator internal_formatter_creator;
-
-    enum ProcessingUnitStatus
-    {
-        READY_TO_INSERT,
-        READY_TO_FORMAT,
-        READY_TO_READ
-    };
 
     struct ProcessingUnit
     {
@@ -100,10 +130,14 @@ private:
         }
 
         std::atomic<ProcessingUnitStatus> status;
+        ProcessingUnitType type;
         Chunk chunk;
         Memory<> segment;
         size_t actual_memory_size{0};
+        
     };
+
+    std::atomic_bool need_flush{false};
 
     // There are multiple "formatters", that's why we use thread pool.
     ThreadPool pool;
@@ -190,23 +224,29 @@ private:
             {
                 const auto current_unit_number = collector_unit_number % processing_units.size();
 
-                auto &unit = processing_units[current_unit_number];
+                auto & unit = processing_units[current_unit_number];
 
                 {
                     std::unique_lock<std::mutex> lock(mutex);
                     collector_condvar.wait(lock,
-                        [&]{ return unit.status == READY_TO_READ || formatting_finished; });
+                        [&]{ return unit.status == READY_TO_READ; });
                 }
 
-                if (formatting_finished)
+                if (unit.type == ProcessingUnitType::FINALIZE)
                     break;
+
+                if (unit.type == ProcessingUnitType::TOTALS) {
+                   
+                }
 
                 assert(unit.status == READY_TO_READ);
                 assert(unit.segment.size() > 0);
 
                 /// Do main work here.
                 out.write(unit.segment.data(), unit.actual_memory_size);
-                // out.sync();
+
+                if (need_flush.exchange(false))
+                    IOutputFormat::flush();
 
                 ++collector_unit_number;
 
@@ -239,9 +279,32 @@ private:
 
             auto formatter = internal_formatter_creator(out_buffer);
 
-            formatter->consume(std::move(unit.chunk));
-            formatter->flush();
+            unit.actual_memory_size = 0;
 
+            switch (unit.type) 
+            {
+                case ProcessingUnitType::PLAIN :
+                {
+                    formatter->consume(std::move(unit.chunk));
+                    break;
+                }
+                case ProcessingUnitType::TOTALS :
+                {
+                    formatter->consumeTotals(std::move(unit.chunk));
+                    break;
+                }
+                case ProcessingUnitType::EXTREMES :
+                {
+                    formatter->consumeExtremes(std::move(unit.chunk));
+                    break;
+                }
+                case ProcessingUnitType::FINALIZE :
+                {
+                    break;
+                }
+            }
+            
+            formatter->flush();
             unit.actual_memory_size = out_buffer.getActualSize();
 
             {

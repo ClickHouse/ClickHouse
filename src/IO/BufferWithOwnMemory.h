@@ -160,9 +160,9 @@ protected:
 public:
 
     explicit BufferWithOutsideMemory(Memory<> & memory_)
-        : Base(nullptr, 0), memory(memory_)
+        : Base(memory_.data(), memory_.size()), memory(memory_)
     {
-        Base::set(memory.data(), memory.size());
+        Base::set(memory.data(), memory.size(), 0);
         Base::padded = false;
     }
 
@@ -175,8 +175,8 @@ private:
     void nextImpl() override final
     {
         const size_t prev_size = memory.size();
-        memory.resize(2 * prev_size);
-        Base::set(memory.data() + prev_size, memory.size() - prev_size);
+        memory.resize(2 * prev_size + 1);
+        Base::set(memory.data(), memory.size(), prev_size + 1);
     }
 };
 
