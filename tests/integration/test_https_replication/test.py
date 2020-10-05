@@ -75,7 +75,7 @@ def test_replication_after_partition(both_https_cluster):
     closing_pool = Pool(1)
     inserting_pool = Pool(5)
     cres = closing_pool.map_async(close, [random.randint(1, 3) for _ in range(10)])
-    ires = inserting_pool.map_async(insert_data_and_check, range(100))
+    ires = inserting_pool.map_async(insert_data_and_check, list(range(100)))
 
     cres.wait()
     ires.wait()
