@@ -4092,9 +4092,12 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
         mutation_version = queue.getCurrentMutationVersion(partition_id, right);
     }
 
-    /// REPLACE PARTITION does not decrement max_block of DROP_RANGE for unknown (probably historical) reason.
+    /// REPLACE PARTITION uses different max level and does not decrement max_block of DROP_RANGE for unknown (probably historical) reason.
+    auto max_level = std::numeric_limits<decltype(part_info.level)>::max();
     if (!for_replace_partition)
     {
+        max_level = MergeTreePartInfo::MAX_LEVEL;
+
         /// Empty partition.
         if (right == 0)
             return false;
@@ -4103,7 +4106,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
     }
 
     /// Artificial high level is chosen, to make this part "covering" all parts inside.
-    part_info = MergeTreePartInfo(partition_id, left, right, MergeTreePartInfo::MAX_LEVEL, mutation_version);
+    part_info = MergeTreePartInfo(partition_id, left, right, max_level, mutation_version);
     return true;
 }
 
@@ -5393,6 +5396,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     }
 
     /// We are almost ready to commit changes, remove fetches and merges from drop range
+    /// FIXME it's unsafe to remove queue entries before we actually commit REPLACE_RANGE to replication log
     queue.removePartProducingOpsInRange(zookeeper, drop_range, entry);
 
     /// Remove deduplication block_ids of replacing parts
