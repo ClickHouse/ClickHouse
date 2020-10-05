@@ -2528,7 +2528,6 @@ void StorageReplicatedMergeTree::queueProcessingTask()
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
         queue_processing_task_handle->scheduleAfter(background_settings.thread_sleep_seconds_if_nothing_to_do * 1000);
         return;
     }
@@ -2559,7 +2558,6 @@ void StorageReplicatedMergeTree::queueProcessingTask()
         }, getStorageID().getFullTableName() + "(queueProcessingTask)");
 
 
-        /// auto random_add = std::uniform_real_distribution<double>(0, background_settings.thread_sleep_seconds_random_part)(rng);
         queue_processing_task_handle->schedule();
     }
     catch (...)
