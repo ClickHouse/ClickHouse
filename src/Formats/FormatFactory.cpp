@@ -216,7 +216,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
     const Settings & settings = context.getSettingsRef();
     bool parallel_formatting = settings.output_format_parallel_formatting;
 
-    if (parallel_formatting)
+    if (parallel_formatting && name != "PrettyCompactMonoBlock")
     {
         const auto & output_getter = getCreators(name).output_processor_creator;
 
