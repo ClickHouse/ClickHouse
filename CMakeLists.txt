@@ -305,9 +305,9 @@ if (COMPILER_CLANG)
     # completely.
     if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # Link time optimization
-        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fexperimental-new-pass-manager -mllvm -inline-threshold=700")
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fexperimental-new-pass-manager -mllvm -inline-threshold=700")
-        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fexperimental-new-pass-manager -mllvm -inline-threshold=700")
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fexperimental-new-pass-manager -mllvm -inline-threshold=500")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fexperimental-new-pass-manager -mllvm -inline-threshold=500")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fexperimental-new-pass-manager -mllvm -inline-threshold=500")
     elseif (ENABLE_THINLTO)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
     endif ()
