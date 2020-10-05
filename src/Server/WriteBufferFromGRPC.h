@@ -11,13 +11,13 @@ namespace DB
 class WriteBufferFromGRPC : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    using QueryRequest = GRPCConnection::QueryRequest;
-    using QueryResponse = GRPCConnection::QueryResponse;
+    using GRPCQueryInfo = clickhouse::grpc::QueryInfo;
+    using GRPCResult = clickhouse::grpc::Result;
 
     WriteBufferFromGRPC(
-        grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest> * responder_,
+        grpc::ServerAsyncReaderWriter<GRPCResult, GRPCQueryInfo> * responder_,
         void * tag_,
-        std::function<QueryResponse(const String & buffer)> set_response_details_)
+        std::function<GRPCResult(const String & buffer)> set_response_details_)
         : responder(responder_), tag(tag_), set_response_details(set_response_details_)
     {
     }
@@ -26,7 +26,7 @@ public:
     bool onProgress() { return progress; }
     bool isFinished() { return finished; }
     void setFinish(bool fl) { finished = fl; }
-    void setResponse(std::function<QueryResponse(const String & buffer)> function) { set_response_details = function; }
+    void setResponse(std::function<GRPCResult(const String & buffer)> function) { set_response_details = function; }
     void finalize() override
     {
         progress = false;
@@ -35,12 +35,12 @@ public:
     }
 
 protected:
-    grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest> * responder;
+    grpc::ServerAsyncReaderWriter<GRPCResult, GRPCQueryInfo> * responder;
     void * tag;
 
     bool progress = false;
     bool finished = false;
-    std::function<QueryResponse(const String & buffer)> set_response_details;
+    std::function<GRPCResult(const String & buffer)> set_response_details;
 
 
     void nextImpl() override
