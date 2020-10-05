@@ -24,4 +24,6 @@ Fixed-length integers, with or without a sign.
 -   UInt64 - \[0 : 18446744073709551615\]
 -   UInt256 - \[0 : 115792089237316195423570985008687907853269984665640564039457584007913129639935\]
 
+UInt128 is not supported yet.
+
 [Original article](https://clickhouse.tech/docs/en/data_types/int_uint/) <!--hide-->
