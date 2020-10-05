@@ -500,6 +500,8 @@ Supported modifiers for Format:
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded ( 1-31)                  | 2          |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
+| %g       | two-digit year format, aligned to ISO 8601              | 18         |
+| %G       | four-digit year format, aligned to ISO 8601             | 2018       |
 | %H       | hour in 24h format (00-23)                              | 22         |
 | %I       | hour in 12h format (01-12)                              | 10         |
 | %j       | day of the year (001-366)                               | 002        |
