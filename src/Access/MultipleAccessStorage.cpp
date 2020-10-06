@@ -417,7 +417,7 @@ UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & p
         }
         catch (const Exception & e)
         {
-            if (e.code() == EntityTypeInfo::get(EntityType::USER).not_found_error_code)
+            if (e.code() == ErrorCodes::UNKNOWN_USER)
             {
                 /// The authentication failed because there no users with such name in the `storage`
                 /// thus we can try to search in other nested storages.
@@ -444,7 +444,7 @@ UUID MultipleAccessStorage::getIDOfLoggedUserImpl(const String & user_name) cons
         }
         catch (const Exception & e)
         {
-            if (e.code() == EntityTypeInfo::get(EntityType::USER).not_found_error_code)
+            if (e.code() == ErrorCodes::UNKNOWN_USER)
             {
                 /// The authentication failed because there no users with such name in the `storage`
                 /// thus we can try to search in other nested storages.
