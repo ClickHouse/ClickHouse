@@ -1,11 +1,20 @@
 #pragma once
 
 #include <Parsers/New/AST/DDLQuery.h>
-#include "Parsers/New/AST/fwd_decl.h"
 
 
 namespace DB::AST
 {
+
+enum class TableColumnPropertyType
+{
+    ALIAS,
+    CODEC,
+    COMMENT,
+    DEFAULT,
+    MATERIALIZED,
+    TTL,
+};
 
 class PartitionClause : public INode
 {
@@ -44,8 +53,12 @@ class AlterTableClause : public INode
         static PtrTo<AlterTableClause> createDropColumn(bool if_exists, PtrTo<Identifier> identifier);
         static PtrTo<AlterTableClause> createDropPartition(PtrTo<PartitionClause> clause);
         static PtrTo<AlterTableClause> createModify(bool if_exists, PtrTo<TableElementExpr> element);
+        static PtrTo<AlterTableClause> createRemove(bool if_exists, PtrTo<Identifier> identifier, TableColumnPropertyType type);
+        static PtrTo<AlterTableClause> createRemoveTTL();
+        static PtrTo<AlterTableClause> createRename(bool if_exists, PtrTo<Identifier> identifier, PtrTo<Identifier> to);
         static PtrTo<AlterTableClause> createOrderBy(PtrTo<ColumnExpr> expr);
         static PtrTo<AlterTableClause> createReplace(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> from);
+        static PtrTo<AlterTableClause> createTTL(PtrTo<ColumnExpr> expr);
 
         ASTPtr convertToOld() const override;
 
@@ -69,6 +82,9 @@ class AlterTableClause : public INode
 
             // DELETE
             EXPR = 0,  // ColumnExpr
+
+            // RENAME
+            TO = 1,      // Identifier
         };
 
         enum class ClauseType
@@ -83,10 +99,15 @@ class AlterTableClause : public INode
             DROP_PARTITION,
             MODIFY,
             ORDER_BY,
+            REMOVE,
+            REMOVE_TTL,
+            RENAME,
             REPLACE,
+            TTL,
         };
 
         const ClauseType clause_type;
+        TableColumnPropertyType property_type;
         union
         {
             bool if_exists;

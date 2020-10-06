@@ -42,8 +42,14 @@ alterTableClause
     | DROP partitionClause                                                   # AlterTableClauseDropPartition
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                             # AlterTableClauseModify
     | MODIFY ORDER BY columnExpr                                             # AlterTableClauseOrderBy
+    | MODIFY COLUMN (IF EXISTS)? identifier REMOVE tableColumnPropertyType   # AlterTableClauseRemove
+    | MODIFY TTL columnExpr                                                  # AlterTableClauseTTL
+    | REMOVE TTL                                                             # AlterTableClauseRemoveTTL
+    | RENAME COLUMN (IF EXISTS)? identifier TO identifier                    # AlterTableClauseRename
     | REPLACE partitionClause FROM tableIdentifier                           # AlterTableClauseReplace
     ;
+
+tableColumnPropertyType: ALIAS | CODEC | COMMENT | DEFAULT | MATERIALIZED | TTL;
 
 partitionClause
     : PARTITION columnExpr         // actually we expect here any form of tuple of literals
@@ -97,10 +103,11 @@ tableElementExpr
     // TODO: CONSTRAINT
     ;
 tableColumnDfnt
-    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? (COMMENT STRING_LITERAL)? /*TODO: codecExpr?*/ (TTL columnExpr)?
-    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr (COMMENT STRING_LITERAL)? /*TODO: codexExpr?*/ (TTL columnExpr)?
+    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? (COMMENT STRING_LITERAL)? codecExpr? (TTL columnExpr)?
+    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr (COMMENT STRING_LITERAL)? codecExpr? (TTL columnExpr)?
     ;
 tableColumnPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
+codecExpr: CODEC LPAREN identifier (LPAREN columnExprList? RPAREN)? RPAREN;
 ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)?;
 
 // DESCRIBE statement
@@ -234,7 +241,7 @@ useStmt: USE databaseIdentifier;
 columnTypeExpr
     : identifier                                                                             # ColumnTypeExprSimple   // UInt64
     | identifier LPAREN identifier columnTypeExpr (COMMA identifier columnTypeExpr)* RPAREN  # ColumnTypeExprNested   // Nested
-    | identifier LPAREN columnExprList RPAREN                                                # ColumnTypeExprParam    // FixedString(N)
+    | identifier LPAREN columnExprList? RPAREN                                                # ColumnTypeExprParam    // FixedString(N)
     | identifier LPAREN enumValue (COMMA enumValue)* RPAREN                                  # ColumnTypeExprEnum     // Enum
     | identifier LPAREN columnTypeExpr (COMMA columnTypeExpr)* RPAREN                        # ColumnTypeExprComplex  // Array, Tuple
     ;
@@ -341,14 +348,14 @@ interval: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
 keyword
     // except NULL_SQL, INF, NAN_SQL
     : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
-    | CHECK | CLEAR | CLUSTER | COLLATE | COLUMN | COMMENT | CREATE | CROSS | DATABASE | DATABASES | DAY | DEDUPLICATE | DEFAULT | DELAY
-    | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DISK | DISTINCT | DISTRIBUTED | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT
-    | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY | GROUP | HAVING | HOUR | ID | IF | IN
-    | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE | JSON_TRUE | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL
-    | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE
-    | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | RENAME | REPLACE | REPLICA | RIGHT | SAMPLE | SECOND | SELECT | SEMI | SENDS
-    | SET | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING
-    | TRIM | TRUNCATE | TO | TTL | TYPE | UNION | USE | USING | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
+    | CHECK | CLEAR | CLUSTER | CODEC | COLLATE | COLUMN | COMMENT | CREATE | CROSS | DATABASE | DATABASES | DAY | DEDUPLICATE | DEFAULT
+    | DELAY | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DISK | DISTINCT | DISTRIBUTED | DROP | ELSE | END | ENGINE | EXISTS
+    | EXTRACT | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY | GROUP | HAVING | HOUR | ID
+    | IF | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE | JSON_TRUE | KEY | LAST | LEADING | LEFT | LIKE | LIMIT
+    | LOCAL | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE
+    | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME | REPLACE | REPLICA | RIGHT | SAMPLE | SECOND | SELECT | SEMI
+    | SENDS | SET | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS
+    | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE | UNION | USE | USING | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
     ;
 alias: IDENTIFIER | interval;
 identifier: IDENTIFIER | interval | keyword;

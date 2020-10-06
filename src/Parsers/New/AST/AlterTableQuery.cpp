@@ -67,23 +67,23 @@ PtrTo<AlterTableClause> AlterTableClause::createAdd(bool if_not_exists, PtrTo<Ta
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createAttach(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> identifier)
+PtrTo<AlterTableClause> AlterTableClause::createAttach(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> from)
 {
-    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::ATTACH, {clause, identifier}));
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::ATTACH, {clause, from}));
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> clause)
+PtrTo<AlterTableClause> AlterTableClause::createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in)
 {
-    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::CLEAR, {identifier, clause}));
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::CLEAR, {identifier, in}));
     query->if_exists = if_exists;
     return query;
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> literal)
+PtrTo<AlterTableClause> AlterTableClause::createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> comment)
 {
-    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::COMMENT, {identifier, literal}));
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::COMMENT, {identifier, comment}));
     query->if_exists = if_exists;
     return query;
 }
@@ -130,9 +130,38 @@ PtrTo<AlterTableClause> AlterTableClause::createOrderBy(PtrTo<ColumnExpr> expr)
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createReplace(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> identifier)
+PtrTo<AlterTableClause> AlterTableClause::createRemove(bool if_exists, PtrTo<Identifier> identifier, TableColumnPropertyType type)
 {
-    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::REPLACE, {clause, identifier}));
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::REMOVE, {identifier}));
+    query->if_exists = if_exists;
+    query->property_type = type;
+    return query;
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createRemoveTTL()
+{
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::REMOVE_TTL, {}));
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createRename(bool if_exists, PtrTo<Identifier> identifier, PtrTo<Identifier> to)
+{
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::RENAME, {identifier, to}));
+    query->if_exists = if_exists;
+    return query;
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createReplace(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> from)
+{
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::REPLACE, {clause, from}));
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createTTL(PtrTo<ColumnExpr> expr)
+{
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::TTL, {expr}));
 }
 
 ASTPtr AlterTableClause::convertToOld() const
@@ -209,6 +238,43 @@ ASTPtr AlterTableClause::convertToOld() const
             command->col_decl = get(ELEMENT)->convertToOld();
             break;
 
+        case ClauseType::REMOVE:
+            command->type = ASTAlterCommand::MODIFY_COLUMN;
+            command->if_exists = if_exists;
+            command->col_decl = get(ELEMENT)->convertToOld();
+            switch(property_type)
+            {
+                case TableColumnPropertyType::ALIAS:
+                    command->remove_property = "ALIAS";
+                    break;
+                case TableColumnPropertyType::CODEC:
+                    command->remove_property = "CODEC";
+                    break;
+                case TableColumnPropertyType::COMMENT:
+                    command->remove_property = "COMMENT";
+                    break;
+                case TableColumnPropertyType::DEFAULT:
+                    command->remove_property = "DEFAULT";
+                    break;
+                case TableColumnPropertyType::MATERIALIZED:
+                    command->remove_property = "MATERIALIZED";
+                    break;
+                case TableColumnPropertyType::TTL:
+                    command->remove_property = "TTL";
+                    break;
+            }
+            break;
+
+        case ClauseType::REMOVE_TTL:
+            command->type = ASTAlterCommand::REMOVE_TTL;
+            break;
+
+        case ClauseType::RENAME:
+            command->type = ASTAlterCommand::RENAME_COLUMN;
+            command->column = get(COLUMN)->convertToOld();
+            command->rename_to = get(TO)->convertToOld();
+            break;
+
         case ClauseType::ORDER_BY:
             command->type = ASTAlterCommand::MODIFY_ORDER_BY;
             command->order_by = get(EXPR)->convertToOld();
@@ -223,6 +289,11 @@ ASTPtr AlterTableClause::convertToOld() const
                 command->from_database = table_id.database_name;
                 command->from_table = table_id.table_name;
             }
+            break;
+
+        case ClauseType::TTL:
+            command->type = ASTAlterCommand::MODIFY_TTL;
+            command->ttl = get(EXPR)->convertToOld();
             break;
     }
 
@@ -335,9 +406,29 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseOrderBy(ClickHouseParser::A
     return AlterTableClause::createOrderBy(visit(ctx->columnExpr()));
 }
 
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRemove(ClickHouseParser::AlterTableClauseRemoveContext *ctx)
+{
+    return AlterTableClause::createRemove(!!ctx->IF(), visit(ctx->identifier()), visit(ctx->tableColumnPropertyType()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext *)
+{
+    return AlterTableClause::createRemoveTTL();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRename(ClickHouseParser::AlterTableClauseRenameContext *ctx)
+{
+    return AlterTableClause::createRename(!!ctx->IF(), visit(ctx->identifier(0)), visit(ctx->identifier(1)));
+}
+
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseReplace(ClickHouseParser::AlterTableClauseReplaceContext *ctx)
 {
     return AlterTableClause::createReplace(visit(ctx->partitionClause()), visit(ctx->tableIdentifier()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseTTL(ClickHouseParser::AlterTableClauseTTLContext *ctx)
+{
+    return AlterTableClause::createTTL(visit(ctx->columnExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext * ctx)
@@ -345,6 +436,17 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTable
     auto list = std::make_shared<List<AlterTableClause>>();
     for (auto * clause : ctx->alterTableClause()) list->push(visit(clause));
     return std::make_shared<AlterTableQuery>(visit(ctx->tableIdentifier()), list);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableColumnPropertyType(ClickHouseParser::TableColumnPropertyTypeContext *ctx)
+{
+    if (ctx->ALIAS()) return TableColumnPropertyType::ALIAS;
+    if (ctx->CODEC()) return TableColumnPropertyType::CODEC;
+    if (ctx->COMMENT()) return TableColumnPropertyType::COMMENT;
+    if (ctx->DEFAULT()) return TableColumnPropertyType::DEFAULT;
+    if (ctx->MATERIALIZED()) return TableColumnPropertyType::MATERIALIZED;
+    if (ctx->TTL()) return TableColumnPropertyType::TTL;
+    __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitPartitionClause(ClickHouseParser::PartitionClauseContext *ctx)

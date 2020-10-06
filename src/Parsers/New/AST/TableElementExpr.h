@@ -6,6 +6,21 @@
 namespace DB::AST
 {
 
+class CodecExpr : public INode
+{
+    public:
+        CodecExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> list);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            NAME = 0,  // Identifier
+            ARGS = 1,  // ColumnExprList (optional)
+        };
+};
+
 class TableColumnPropertyExpr : public INode
 {
     public:
@@ -46,6 +61,7 @@ class TableElementExpr : public INode
             PtrTo<ColumnTypeExpr> type,
             PtrTo<TableColumnPropertyExpr> property,
             PtrTo<StringLiteral> comment,
+            PtrTo<CodecExpr> codec,
             PtrTo<ColumnExpr> ttl);
 
         static PtrTo<TableElementExpr>
@@ -62,8 +78,9 @@ class TableElementExpr : public INode
             NAME = 0,      // Identifier
             TYPE = 1,      // ColumnExprType (optional)
             PROPERTY = 2,  // TableColumnPropertyExpr
-            COMMENT = 3,   // StringLiteral
-            TTL = 4,       // ColumnExpr
+            COMMENT = 3,   // StringLiteral (optional)
+            CODEC = 4,     // CodecExpr (optional)
+            TTL = 5,       // ColumnExpr (optional)
 
             // INDEX
             EXPR = 1,         // ColumnExpr

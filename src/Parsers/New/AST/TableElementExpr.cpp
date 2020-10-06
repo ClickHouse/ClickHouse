@@ -13,6 +13,30 @@
 namespace DB::AST
 {
 
+CodecExpr::CodecExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> list) : INode{identifier, list}
+{
+}
+
+ASTPtr CodecExpr::convertToOld() const
+{
+    auto codec = std::make_shared<ASTFunction>();
+    auto func = std::make_shared<ASTFunction>();
+
+    func->name = get<Identifier>(NAME)->getName();
+    if (has(ARGS))
+    {
+        func->arguments = get(ARGS)->convertToOld();
+        func->children.push_back(func->arguments);
+    }
+
+    codec->name = "CODEC";
+    codec->arguments = std::make_shared<ASTExpressionList>();
+    codec->arguments->children.push_back(func);
+    codec->children.push_back(codec->arguments);
+
+    return codec;
+}
+
 TableColumnPropertyExpr::TableColumnPropertyExpr(PropertyType type, PtrTo<ColumnExpr> expr) : INode{expr}, property_type(type)
 {
 }
@@ -28,9 +52,10 @@ PtrTo<TableElementExpr> TableElementExpr::createColumn(
     PtrTo<ColumnTypeExpr> type,
     PtrTo<TableColumnPropertyExpr> property,
     PtrTo<StringLiteral> comment,
+    PtrTo<CodecExpr> codec,
     PtrTo<ColumnExpr> ttl)
 {
-    return PtrTo<TableElementExpr>(new TableElementExpr(ExprType::COLUMN, {name, type, property, comment, ttl}));
+    return PtrTo<TableElementExpr>(new TableElementExpr(ExprType::COLUMN, {name, type, property, comment, codec, ttl}));
 }
 
 // static
@@ -80,7 +105,11 @@ ASTPtr TableElementExpr::convertToOld() const
                 expr->comment = get(COMMENT)->convertToOld();
                 expr->children.push_back(expr->comment);
             }
-            // TODO: CODEC
+            if (has(CODEC))
+            {
+                expr->codec = get(CODEC)->convertToOld();
+                expr->children.push_back(expr->codec);
+            }
             if (has(TTL))
             {
                 expr->ttl = get(TTL)->convertToOld();
@@ -118,6 +147,29 @@ namespace DB
 
 using namespace AST;
 
+antlrcpp::Any ParseTreeVisitor::visitCodecExpr(ClickHouseParser::CodecExprContext *ctx)
+{
+    auto list = ctx->columnExprList() ? visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>() : nullptr;
+    return std::make_shared<CodecExpr>(visit(ctx->identifier()), list);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext *ctx)
+{
+    PtrTo<TableColumnPropertyExpr> property;
+    PtrTo<ColumnTypeExpr> type;
+    PtrTo<StringLiteral> comment;
+    PtrTo<CodecExpr> codec;
+    PtrTo<ColumnExpr> ttl;
+
+    if (ctx->tableColumnPropertyExpr()) property = visit(ctx->tableColumnPropertyExpr());
+    if (ctx->columnTypeExpr()) type = visit(ctx->columnTypeExpr());
+    if (ctx->STRING_LITERAL()) comment = Literal::createString(ctx->STRING_LITERAL());
+    if (ctx->codecExpr()) codec = visit(ctx->codecExpr());
+    if (ctx->TTL()) ttl = visit(ctx->columnExpr());
+
+    return TableElementExpr::createColumn(visit(ctx->nestedIdentifier()), type, property, comment, codec, ttl);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext *ctx)
 {
     TableColumnPropertyExpr::PropertyType type;
@@ -139,21 +191,6 @@ antlrcpp::Any ParseTreeVisitor::visitTableElementExprIndex(ClickHouseParser::Tab
 {
     return TableElementExpr::createIndex(
         visit(ctx->identifier()), visit(ctx->columnExpr()), visit(ctx->columnTypeExpr()), Literal::createNumber(ctx->INTEGER_LITERAL()));
-}
-
-antlrcpp::Any ParseTreeVisitor::visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext *ctx)
-{
-    PtrTo<TableColumnPropertyExpr> property;
-    PtrTo<ColumnTypeExpr> type;
-    PtrTo<StringLiteral> comment;
-    PtrTo<ColumnExpr> ttl;
-
-    if (ctx->tableColumnPropertyExpr()) property = visit(ctx->tableColumnPropertyExpr());
-    if (ctx->columnTypeExpr()) type = visit(ctx->columnTypeExpr());
-    if (ctx->STRING_LITERAL()) comment = Literal::createString(ctx->STRING_LITERAL());
-    if (ctx->TTL()) ttl = visit(ctx->columnExpr());
-
-    return TableElementExpr::createColumn(visit(ctx->nestedIdentifier()), type, property, comment, ttl);
 }
 
 }

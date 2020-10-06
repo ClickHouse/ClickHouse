@@ -15,6 +15,10 @@ class ShowCreateQuery : public Query
         ASTPtr convertToOld() const override;
 
     private:
+        enum ChildIndex : UInt8
+        {
+            IDENTIFIER = 0,  // DatabaseIdentifier or TableIdentifier
+        };
         enum class QueryType
         {
             DATABASE,
@@ -22,7 +26,7 @@ class ShowCreateQuery : public Query
         };
 
         QueryType query_type;
-        bool temporary;
+        bool temporary = false;
 
         ShowCreateQuery(QueryType type, PtrList exprs);
 };

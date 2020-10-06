@@ -73,6 +73,7 @@ ASTPtr SchemaClause::convertToOld() const
         case ClauseType::TABLE:
             return get(EXPR)->convertToOld();
     }
+    __builtin_unreachable();  // FIXME: old gcc compilers complain about reaching end of non-void function
 }
 
 String SchemaClause::dumpInfo() const
@@ -83,6 +84,7 @@ String SchemaClause::dumpInfo() const
         case ClauseType::FUNCTION: return "Function";
         case ClauseType::TABLE: return "Table";
     }
+    __builtin_unreachable();  // FIXME: old gcc compilers complain about reaching end of non-void function
 }
 
 CreateTableQuery::CreateTableQuery(

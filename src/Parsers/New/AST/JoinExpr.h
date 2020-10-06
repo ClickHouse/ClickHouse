@@ -78,7 +78,7 @@ class JoinExpr : public INode
         ExprType expr_type;
         JoinOpType op_type = JoinOpType::INNER;
         JoinOpMode op_mode = JoinOpMode::DEFAULT;
-        bool final;
+        bool final = false;
 
         JoinExpr(ExprType type, bool final, PtrList exprs);
         JoinExpr(ExprType type, JoinOpType op, JoinOpMode mode, PtrList exprs);

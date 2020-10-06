@@ -1,5 +1,7 @@
 #include <Parsers/New/AST/ShowCreateQuery.h>
 
+#include <Interpreters/StorageID.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -24,16 +26,31 @@ PtrTo<ShowCreateQuery> ShowCreateQuery::createTable(bool temporary, PtrTo<TableI
 
 ShowCreateQuery::ShowCreateQuery(QueryType type, PtrList exprs) : Query(exprs), query_type(type)
 {
-    (void) query_type, (void) temporary; // TODO
 }
 
 ASTPtr ShowCreateQuery::convertToOld() const
 {
-    auto query = std::make_shared<ASTShowCreateTableQuery>();
+    switch(query_type)
+    {
+        case QueryType::DATABASE:
+        {
+            auto query = std::make_shared<ASTShowCreateDatabaseQuery>();
+            query->database = get<DatabaseIdentifier>(IDENTIFIER)->getName();
+            return query;
+        }
+        case QueryType::TABLE:
+        {
+            auto query = std::make_shared<ASTShowCreateTableQuery>();
+            auto table_id = getTableIdentifier(get(IDENTIFIER)->convertToOld());
 
-    // TODO
+            query->database = table_id.database_name;
+            query->table = table_id.table_name;
+            query->uuid = table_id.uuid;
+            query->temporary = temporary;
 
-    return query;
+            return query;
+        }
+    }
 }
 
 }

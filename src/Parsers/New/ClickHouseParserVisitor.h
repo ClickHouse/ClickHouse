@@ -46,7 +46,17 @@ public:
 
     virtual antlrcpp::Any visitAlterTableClauseOrderBy(ClickHouseParser::AlterTableClauseOrderByContext *context) = 0;
 
+    virtual antlrcpp::Any visitAlterTableClauseRemove(ClickHouseParser::AlterTableClauseRemoveContext *context) = 0;
+
+    virtual antlrcpp::Any visitAlterTableClauseTTL(ClickHouseParser::AlterTableClauseTTLContext *context) = 0;
+
+    virtual antlrcpp::Any visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext *context) = 0;
+
+    virtual antlrcpp::Any visitAlterTableClauseRename(ClickHouseParser::AlterTableClauseRenameContext *context) = 0;
+
     virtual antlrcpp::Any visitAlterTableClauseReplace(ClickHouseParser::AlterTableClauseReplaceContext *context) = 0;
+
+    virtual antlrcpp::Any visitTableColumnPropertyType(ClickHouseParser::TableColumnPropertyTypeContext *context) = 0;
 
     virtual antlrcpp::Any visitPartitionClause(ClickHouseParser::PartitionClauseContext *context) = 0;
 
@@ -91,6 +101,8 @@ public:
     virtual antlrcpp::Any visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext *context) = 0;
 
     virtual antlrcpp::Any visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext *context) = 0;
+
+    virtual antlrcpp::Any visitCodecExpr(ClickHouseParser::CodecExprContext *context) = 0;
 
     virtual antlrcpp::Any visitTtlExpr(ClickHouseParser::TtlExprContext *context) = 0;
 

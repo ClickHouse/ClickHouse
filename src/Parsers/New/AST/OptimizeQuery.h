@@ -9,7 +9,7 @@ namespace DB::AST
 class OptimizeQuery : public DDLQuery
 {
     public:
-        OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionClause> partition, bool final, bool deduplicate);
+        OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionClause> clause, bool final, bool deduplicate);
 
         ASTPtr convertToOld() const override;
 

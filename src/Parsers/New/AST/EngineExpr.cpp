@@ -24,44 +24,39 @@ TTLClause::TTLClause(PtrTo<TTLExprList> list) : INode{list}
 {
 }
 
-EngineClause::EngineClause(PtrTo<EngineExpr> expr) : INode{expr}
+EngineClause::EngineClause(PtrTo<EngineExpr> expr) : INode(MAX_INDEX)
 {
+    set(ENGINE, expr);
 }
 
 void EngineClause::setOrderByClause(PtrTo<OrderByClause> clause)
 {
-    assert(has<EngineExpr>(ENGINE));
-    push(clause);
+    set(ORDER_BY, clause);
 }
 
 void EngineClause::setPartitionByClause(PtrTo<PartitionByClause> clause)
 {
-    assert(has<OrderByClause>(ORDER_BY));
-    push(clause);
+    set(PARTITION_BY, clause);
 }
 
 void EngineClause::setPrimaryKeyClause(PtrTo<PrimaryKeyClause> clause)
 {
-    assert(has<PartitionByClause>(PARTITION_BY));
-    push(clause);
+    set(PRIMARY_KEY, clause);
 }
 
 void EngineClause::setSampleByClause(PtrTo<SampleByClause> clause)
 {
-    assert(has<PrimaryKeyClause>(PRIMARY_KEY));
-    push(clause);
+    set(SAMPLE_BY, clause);
 }
 
 void EngineClause::setTTLClause(PtrTo<TTLClause> clause)
 {
-    assert(has<SampleByClause>(SAMPLE_BY));
-    push(clause);
+    set(TTL, clause);
 }
 
 void EngineClause::setSettingsClause(PtrTo<SettingsClause> clause)
 {
-    assert(has<TTLClause>(TTL));
-    push(clause);
+    set(SETTINGS, clause);
 }
 
 ASTPtr EngineClause::convertToOld() const

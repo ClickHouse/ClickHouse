@@ -25,8 +25,13 @@ public:
     antlrcpp::Any visitAlterTableClauseDropPartition(ClickHouseParser::AlterTableClauseDropPartitionContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseModify(ClickHouseParser::AlterTableClauseModifyContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseOrderBy(ClickHouseParser::AlterTableClauseOrderByContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseRemove(ClickHouseParser::AlterTableClauseRemoveContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseRename(ClickHouseParser::AlterTableClauseRenameContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseReplace(ClickHouseParser::AlterTableClauseReplaceContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseTTL(ClickHouseParser::AlterTableClauseTTLContext * ctx) override;
     antlrcpp::Any visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext * ctx) override;
+    antlrcpp::Any visitTableColumnPropertyType(ClickHouseParser::TableColumnPropertyTypeContext * ctx) override;
 
     // AnalyzeQuery
     antlrcpp::Any visitAnalyzeStmt(ClickHouseParser::AnalyzeStmtContext * ctx) override;
@@ -133,6 +138,7 @@ public:
     antlrcpp::Any visitSystemStmt(ClickHouseParser::SystemStmtContext * ctx) override;
 
     // TableElementExpr
+    antlrcpp::Any visitCodecExpr(ClickHouseParser::CodecExprContext * ctx) override;
     antlrcpp::Any visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext * ctx) override;
     antlrcpp::Any visitTableElementExprIndex(ClickHouseParser::TableElementExprIndexContext * ctx) override;
 

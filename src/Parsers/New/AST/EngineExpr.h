@@ -52,6 +52,8 @@ class EngineClause : public INode
             SAMPLE_BY,     // SampleByClause (optional)
             TTL,           // TTLClause (optional)
             SETTINGS,      // SettingsClause (optional)
+
+            MAX_INDEX,
         };
 };
 

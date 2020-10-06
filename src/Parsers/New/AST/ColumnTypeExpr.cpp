@@ -71,7 +71,7 @@ ASTPtr ColumnTypeExpr::convertToOld() const
     auto func = std::make_shared<ASTFunction>();
 
     func->name = get<Identifier>(NAME)->getName();
-    if (expr_type != ExprType::SIMPLE)
+    if (expr_type != ExprType::SIMPLE && has(LIST))
     {
         func->arguments = get(LIST)->convertToOld();
         func->children.push_back(func->arguments);
@@ -92,7 +92,7 @@ String ColumnTypeExpr::toString() const
         case ExprType::ENUM:
         case ExprType::PARAM:
         case ExprType::NESTED:
-            return get(NAME)->toString() + "(" + get(LIST)->toString() + ")";
+            return get(NAME)->toString() + "(" + (has(LIST) ? get(LIST)->toString() : "") + ")";
     }
 }
 
@@ -110,7 +110,8 @@ antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprSimple(ClickHouseParser::Colu
 
 antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprParam(ClickHouseParser::ColumnTypeExprParamContext *ctx)
 {
-    return ColumnTypeExpr::createParam(visit(ctx->identifier()), visit(ctx->columnExprList()));
+    auto list = ctx->columnExprList() ? visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>() : nullptr;
+    return ColumnTypeExpr::createParam(visit(ctx->identifier()), list);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprEnum(ClickHouseParser::ColumnTypeExprEnumContext *ctx)
