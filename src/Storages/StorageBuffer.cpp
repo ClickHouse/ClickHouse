@@ -237,20 +237,24 @@ void StorageBuffer::read(
                         query_plan, columns_intersection, destination_metadata_snapshot, query_info,
                         context, processed_stage, max_block_size, num_streams);
 
-                auto adding_missed = std::make_unique<AddingMissedStep>(
-                        query_plan.getCurrentDataStream(),
-                        header_after_adding_defaults,
-                        metadata_snapshot->getColumns().getDefaults(), context);
+                if (query_plan.isInitialized())
+                {
 
-                adding_missed->setStepDescription("Add columns missing in destination table");
-                query_plan.addStep(std::move(adding_missed));
+                    auto adding_missed = std::make_unique<AddingMissedStep>(
+                            query_plan.getCurrentDataStream(),
+                            header_after_adding_defaults,
+                            metadata_snapshot->getColumns().getDefaults(), context);
 
-                auto converting = std::make_unique<ConvertingStep>(
-                        query_plan.getCurrentDataStream(),
-                        header);
+                    adding_missed->setStepDescription("Add columns missing in destination table");
+                    query_plan.addStep(std::move(adding_missed));
 
-                converting->setStepDescription("Convert destination table columns to Buffer table structure");
-                query_plan.addStep(std::move(converting));
+                    auto converting = std::make_unique<ConvertingStep>(
+                            query_plan.getCurrentDataStream(),
+                            header);
+
+                    converting->setStepDescription("Convert destination table columns to Buffer table structure");
+                    query_plan.addStep(std::move(converting));
+                }
             }
         }
 
