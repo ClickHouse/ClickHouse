@@ -500,10 +500,6 @@ formatDateTime(Time, Format\[, Timezone\])
 
 Returnes time and date values according to the determined format.
 
-**Example**
-
-The example must show usage and/or a use cases. The following text contains recommended parts of an example.
-
 **Modifiers**
 
 Supported modifiers for Format:
@@ -516,10 +512,8 @@ Supported modifiers for Format:
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded ( 1-31)                  | 2          |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
-| %G       | four-digit year format, aligned to ISO 8601: where year |            |
-|          | comes firstly as the largest unit (descending notation) | 18         |
-| %g       | two-digit year format, aligned to ISO 8601, abbreviated |            |
-|          | from four-digit notation                                | 2018       |
+| %G       | four-digit year format, aligned to ISO 8601: where year comes firstly as the largest unit (descending notation) | 18         |
+| %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 2018       |
 | %H       | hour in 24h format (00-23)                              | 22         |
 | %I       | hour in 12h format (01-12)                              | 10         |
 | %j       | day of the year (001-366)                               | 002        |
@@ -541,12 +535,15 @@ Supported modifiers for Format:
 Query:
 
 ``` sql
-SELECT formatDateTime()
+SELECT formatDateTime(toDate('2010-01-04'), '%g')
 ```
 
 Result:
 
-``` text
+```
+┌─formatDateTime(toDate('2010-01-04'), '%g')─┐
+│ 10                                         │
+└────────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
