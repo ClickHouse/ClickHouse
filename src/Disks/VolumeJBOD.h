@@ -67,7 +67,7 @@ private:
     mutable std::atomic<size_t> last_used = 0;
 
     /// True if parts on this volume participate in merges according to START/STOP MERGES ON VOLUME.
-    std::atomic<std::optional<bool>> are_merges_avoided_user_override;
+    std::atomic<std::optional<bool>> are_merges_avoided_user_override{false};
 };
 
 }
