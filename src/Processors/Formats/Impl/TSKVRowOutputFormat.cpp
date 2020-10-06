@@ -49,6 +49,7 @@ void registerOutputFormatProcessorTSKV(FormatFactory & factory)
     {
         return std::make_shared<TSKVRowOutputFormat>(buf, sample, params, settings);
     });
+    factory.markOutputFormatSupportsParallelFormatting("TSKV");
 }
 
 }
