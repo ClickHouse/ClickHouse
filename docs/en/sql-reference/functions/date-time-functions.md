@@ -500,8 +500,6 @@ formatDateTime(Time, Format\[, Timezone\])
 
 Returnes time and date values according to the determined format.
 
-<!-- Type: [Type](relative/path/to/type/dscr.md#type). -->
-
 **Example**
 
 The example must show usage and/or a use cases. The following text contains recommended parts of an example.
