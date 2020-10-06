@@ -6,7 +6,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/Operators.h>
 #include <array>
-#include <optional>
 
 
 namespace DB
@@ -29,9 +28,6 @@ public:
     static ReplicatedMergeTreePartHeader fromColumnsAndChecksums(
         const NamesAndTypesList & columns, const MergeTreeDataPartChecksums & full_checksums);
 
-    static ReplicatedMergeTreePartHeader fromColumnsChecksumsBlockID(
-        const NamesAndTypesList & columns, const MergeTreeDataPartChecksums & full_checksums, const String & block_id_name);
-
     void read(ReadBuffer & in);
     static ReplicatedMergeTreePartHeader fromString(const String & str);
 
@@ -40,18 +36,15 @@ public:
 
     const std::array<char, 16> & getColumnsHash() const { return columns_hash; }
     const MinimalisticDataPartChecksums & getChecksums() const { return checksums; }
-    const std::optional<String> & getBlockID() const { return block_id; }
 
 private:
-    ReplicatedMergeTreePartHeader(std::array<char, 16> columns_hash_, MinimalisticDataPartChecksums checksums_,
-        std::optional<String> block_id_ = std::nullopt)
-        : columns_hash(std::move(columns_hash_)), checksums(std::move(checksums_)), block_id(std::move(block_id_))
+    ReplicatedMergeTreePartHeader(std::array<char, 16> columns_hash_, MinimalisticDataPartChecksums checksums_)
+        : columns_hash(std::move(columns_hash_)), checksums(std::move(checksums_))
     {
     }
 
     std::array<char, 16> columns_hash;
     MinimalisticDataPartChecksums checksums;
-    std::optional<String> block_id;
 };
 
 }
