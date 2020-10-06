@@ -23,6 +23,7 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+    DataTypePtr getSubcolumnType(const String & /* subcolumn_name */) const override { return shared_from_this(); }
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,

@@ -185,7 +185,7 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         insert_it = range.second;
     }
 
-    addSubcolumns(NameAndTypePair(column.name, column.type));
+    addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }
 
@@ -519,12 +519,13 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
     return result;
 }
 
-void ColumnsDescription::addSubcolumns(NameAndTypePair storage_column)
+void ColumnsDescription::addSubcolumns(const String & storage_name, const DataTypePtr & storage_type)
 {
-    for (const auto & subcolumn_name : storage_column.type->getSubcolumnNames())
+    for (const auto & subcolumn_name : storage_type->getSubcolumnNames())
     {
-        auto subcolumn = NameAndTypePair(storage_column.name, subcolumn_name,
-            storage_column.type, storage_column.type->getSubcolumnType(subcolumn_name));
+        std::cerr << "storage_name: " << storage_name << ", subcolumn_name: " << subcolumn_name << "\n";
+        auto subcolumn = NameAndTypePair(storage_name, subcolumn_name,
+            storage_type, storage_type->getSubcolumnType(subcolumn_name));
 
         if (has(subcolumn.name))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
