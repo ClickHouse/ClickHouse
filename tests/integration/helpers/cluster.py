@@ -1,6 +1,6 @@
 import base64
 import errno
-import httplib
+import http.client
 import logging
 import os
 import os.path as p
@@ -12,7 +12,7 @@ import socket
 import subprocess
 import time
 import traceback
-import urllib
+import urllib.parse
 
 import cassandra.cluster
 import docker
@@ -21,7 +21,7 @@ import pymongo
 import pymysql
 import requests
 import xml.dom.minidom
-from confluent.schemaregistry.client import CachedSchemaRegistryClient
+from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
 from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
@@ -41,7 +41,7 @@ SANITIZER_SIGN = "=================="
 def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
     full_path = os.path.join(path, fname)
     with open(full_path, 'w') as f:
-        for var, value in variables.items():
+        for var, value in list(variables.items()):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
@@ -76,7 +76,7 @@ def get_docker_compose_path():
         if os.path.exists(os.path.dirname('/compose/')):
             return os.path.dirname('/compose/')  # default in docker runner container
         else:
-            print("Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: {}".format(LOCAL_DOCKER_COMPOSE_DIR))
+            print(("Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: {}".format(LOCAL_DOCKER_COMPOSE_DIR)))
             return LOCAL_DOCKER_COMPOSE_DIR
 
 
@@ -91,8 +91,8 @@ class ClickHouseCluster:
 
     def __init__(self, base_path, name=None, base_config_dir=None, server_bin_path=None, client_bin_path=None,
                  odbc_bridge_bin_path=None, zookeeper_config_path=None, custom_dockerd_host=None):
-        for param in os.environ.keys():
-            print "ENV %40s %s" % (param, os.environ[param])
+        for param in list(os.environ.keys()):
+            print("ENV %40s %s" % (param, os.environ[param]))
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else ''
 
@@ -160,7 +160,7 @@ class ClickHouseCluster:
 
         self.docker_client = None
         self.is_up = False
-        print "CLUSTER INIT base_config_dir:{}".format(self.base_config_dir)
+        print("CLUSTER INIT base_config_dir:{}".format(self.base_config_dir))
 
     def get_client_cmd(self):
         cmd = self.client_bin_path
@@ -386,7 +386,7 @@ class ClickHouseCluster:
     def get_instance_ip(self, instance_name):
         docker_id = self.get_instance_docker_id(instance_name)
         handle = self.docker_client.containers.get(docker_id)
-        return handle.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
+        return list(handle.attrs['NetworkSettings']['Networks'].values())[0]['IPAddress']
 
     def get_container_id(self, instance_name):
         docker_id = self.get_instance_docker_id(instance_name)
@@ -395,22 +395,21 @@ class ClickHouseCluster:
 
     def get_container_logs(self, instance_name):
         container_id = self.get_container_id(instance_name)
-        return self.docker_client.api.logs(container_id)
+        return self.docker_client.api.logs(container_id).decode()
 
     def exec_in_container(self, container_id, cmd, detach=False, nothrow=False, **kwargs):
         exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
         output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
-        output = output.decode('utf8')
         exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
         if exit_code:
             container_info = self.docker_client.api.inspect_container(container_id)
             image_id = container_info.get('Image')
             image_info = self.docker_client.api.inspect_image(image_id)
-            print("Command failed in container {}: ".format(container_id))
+            print(("Command failed in container {}: ".format(container_id)))
             pprint.pprint(container_info)
             print("")
-            print("Container {} uses image {}: ".format(container_id, image_id))
+            print(("Container {} uses image {}: ".format(container_id, image_id)))
             pprint.pprint(image_info)
             print("")
             message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id,
@@ -419,14 +418,17 @@ class ClickHouseCluster:
                 print(message)
             else:
                 raise Exception(message)
+        if not detach:
+            return output.decode()
         return output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
-        with open(local_path, 'r') as fdata:
+        with open(local_path, "r") as fdata:
             data = fdata.read()
-            encoded_data = base64.b64encode(data)
+            encodedBytes = base64.b64encode(data.encode("utf-8"))
+            encodedStr = str(encodedBytes, "utf-8")
             self.exec_in_container(container_id,
-                                   ["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)],
+                                   ["bash", "-c", "echo {} | base64 --decode > {}".format(encodedStr, dest_path)],
                                    user='root')
 
     def wait_mysql_to_start(self, timeout=60):
@@ -435,10 +437,10 @@ class ClickHouseCluster:
             try:
                 conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
                 conn.close()
-                print "Mysql Started"
+                print("Mysql Started")
                 return
             except Exception as ex:
-                print "Can't connect to MySQL " + str(ex)
+                print("Can't connect to MySQL " + str(ex))
                 time.sleep(0.5)
 
         subprocess_call(['docker-compose', 'ps', '--services', '--all'])
@@ -451,10 +453,10 @@ class ClickHouseCluster:
                 conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
                 conn = psycopg2.connect(conn_string)
                 conn.close()
-                print "Postgres Started"
+                print("Postgres Started")
                 return
             except Exception as ex:
-                print "Can't connect to Postgres " + str(ex)
+                print("Can't connect to Postgres " + str(ex))
                 time.sleep(0.5)
 
         raise Exception("Cannot wait Postgres container")
@@ -466,10 +468,10 @@ class ClickHouseCluster:
                 for instance in ['zoo1', 'zoo2', 'zoo3']:
                     conn = self.get_kazoo_client(instance)
                     conn.get_children('/')
-                print "All instances of ZooKeeper started"
+                print("All instances of ZooKeeper started")
                 return
             except Exception as ex:
-                print "Can't connect to ZooKeeper " + str(ex)
+                print("Can't connect to ZooKeeper " + str(ex))
                 time.sleep(0.5)
 
         raise Exception("Cannot wait ZooKeeper container")
@@ -480,10 +482,10 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 hdfs_api.write_data("/somefilewithrandomname222", "1")
-                print "Connected to HDFS and SafeMode disabled! "
+                print("Connected to HDFS and SafeMode disabled! ")
                 return
             except Exception as ex:
-                print "Can't connect to HDFS " + str(ex)
+                print("Can't connect to HDFS " + str(ex))
                 time.sleep(1)
 
         raise Exception("Can't wait HDFS to start")
@@ -496,10 +498,10 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 connection.list_database_names()
-                print "Connected to Mongo dbs:", connection.list_database_names()
+                print("Connected to Mongo dbs:", connection.database_names())
                 return
             except Exception as ex:
-                print "Can't connect to Mongo " + str(ex)
+                print("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
     def wait_minio_to_start(self, timeout=30, secure=False):
@@ -519,12 +521,12 @@ class ClickHouseCluster:
 
                 minio_client.make_bucket(self.minio_bucket)
 
-                print("S3 bucket '%s' created", self.minio_bucket)
+                print(("S3 bucket '%s' created", self.minio_bucket))
 
                 self.minio_client = minio_client
                 return
             except Exception as ex:
-                print("Can't connect to Minio: %s", str(ex))
+                print(("Can't connect to Minio: %s", str(ex)))
                 time.sleep(1)
 
         raise Exception("Can't wait Minio to start")
@@ -539,7 +541,7 @@ class ClickHouseCluster:
                 print("Connected to SchemaRegistry")
                 return
             except Exception as ex:
-                print("Can't connect to SchemaRegistry: %s", str(ex))
+                print(("Can't connect to SchemaRegistry: %s", str(ex)))
                 time.sleep(1)
 
     def wait_cassandra_to_start(self, timeout=30):
@@ -555,7 +557,7 @@ class ClickHouseCluster:
                 time.sleep(1)
 
     def start(self, destroy_dirs=True):
-        print "Cluster start called. is_up={}, destroy_dirs={}".format(self.is_up, destroy_dirs)
+        print("Cluster start called. is_up={}, destroy_dirs={}".format(self.is_up, destroy_dirs))
         if self.is_up:
             return
 
@@ -571,11 +573,11 @@ class ClickHouseCluster:
 
         try:
             if destroy_dirs and p.exists(self.instances_dir):
-                print("Removing instances dir %s", self.instances_dir)
+                print(("Removing instances dir %s", self.instances_dir))
                 shutil.rmtree(self.instances_dir)
 
-            for instance in self.instances.values():
-                print('Setup directory for instance: {} destroy_dirs: {}'.format(instance.name, destroy_dirs))
+            for instance in list(self.instances.values()):
+                print(('Setup directory for instance: {} destroy_dirs: {}'.format(instance.name, destroy_dirs)))
                 instance.create_dir(destroy_dir=destroy_dirs)
 
             self.docker_client = docker.from_env(version=self.docker_api_version)
@@ -676,12 +678,12 @@ class ClickHouseCluster:
                 self.wait_cassandra_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
-            print("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd)))
+            print(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
             subprocess_check_call(clickhouse_start_cmd)
             print("ClickHouse instance created")
 
             start_deadline = time.time() + 20.0  # seconds
-            for instance in self.instances.itervalues():
+            for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
 
@@ -693,10 +695,10 @@ class ClickHouseCluster:
 
             self.is_up = True
 
-        except BaseException, e:
-            print "Failed to start cluster: "
-            print str(e)
-            print traceback.print_exc()
+        except BaseException as e:
+            print("Failed to start cluster: ")
+            print(str(e))
+            print(traceback.print_exc())
             raise
 
     def shutdown(self, kill=True):
@@ -705,7 +707,7 @@ class ClickHouseCluster:
             try:
                 subprocess.check_call(self.base_cmd + ['logs'], stdout=f)
             except Exception as e:
-                print "Unable to get logs from docker."
+                print("Unable to get logs from docker.")
             f.seek(0)
             for line in f:
                 if SANITIZER_SIGN in line:
@@ -716,18 +718,18 @@ class ClickHouseCluster:
             try:
                 subprocess_check_call(self.base_cmd + ['kill'])
             except Exception as e:
-                print "Kill command failed durung shutdown. {}".format(repr(e))
+                print("Kill command failed durung shutdown. {}".format(repr(e)))
 
         try:
             subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
         except Exception as e:
-            print "Down + remove orphans failed durung shutdown. {}".format(repr(e))
+            print("Down + remove orphans failed durung shutdown. {}".format(repr(e)))
 
         self.is_up = False
 
         self.docker_client = None
 
-        for instance in self.instances.values():
+        for instance in list(self.instances.values()):
             instance.docker_client = None
             instance.ip_address = None
             instance.client = None
@@ -769,7 +771,7 @@ class ClickHouseCluster:
                 kazoo_callback(self.get_kazoo_client(zoo_instance_name))
                 return
             except KazooException as e:
-                print repr(e)
+                print(repr(e))
                 time.sleep(sleep_for)
 
         kazoo_callback(self.get_kazoo_client(zoo_instance_name))
@@ -922,7 +924,7 @@ class ClickHouseInstance:
                     return result
                 time.sleep(sleep_time)
             except Exception as ex:
-                print "Retry {} got exception {}".format(i + 1, ex)
+                print("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)
 
         if result is not None:
@@ -954,28 +956,30 @@ class ClickHouseInstance:
 
         params["query"] = sql
 
-        auth = ""
+        auth = None
         if user and password:
-            auth = "{}:{}@".format(user, password)
+            auth = requests.auth.HTTPBasicAuth(user, password)
         elif user:
-            auth = "{}@".format(user)
+            auth = requests.auth.HTTPBasicAuth(user, '')
+        url = "http://" + self.ip_address + ":8123/?" + urllib.parse.urlencode(params)
 
-        url = "http://" + auth + self.ip_address + ":8123/?" + urllib.urlencode(params)
-
-        open_result = urllib.urlopen(url, data)
+        if data:
+            r = requests.post(url, data, auth=auth)
+        else:
+            r = requests.get(url, auth=auth)
 
         def http_code_and_message():
-            return str(open_result.getcode()) + " " + httplib.responses[
-                open_result.getcode()] + ": " + open_result.read()
+            code = r.status_code
+            return str(code) + " " + http.client.responses[code] + ": " + r.text
 
         if expect_fail_and_get_error:
-            if open_result.getcode() == 200:
-                raise Exception("ClickHouse HTTP server is expected to fail, but succeeded: " + open_result.read())
+            if r.ok:
+                raise Exception("ClickHouse HTTP server is expected to fail, but succeeded: " + r.text)
             return http_code_and_message()
         else:
-            if open_result.getcode() != 200:
+            if not r.ok:
                 raise Exception("ClickHouse HTTP server returned " + http_code_and_message())
-            return open_result.read()
+            return r.text
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_request(self, url, method='GET', params=None, data=None, headers=None):
@@ -1161,9 +1165,9 @@ class ClickHouseInstance:
 
     def _create_odbc_config_file(self):
         with open(self.odbc_ini_path.split(':')[0], 'w') as f:
-            for driver_setup in self.odbc_drivers.values():
+            for driver_setup in list(self.odbc_drivers.values()):
                 f.write("[{}]\n".format(driver_setup["DSN"]))
-                for key, value in driver_setup.items():
+                for key, value in list(driver_setup.items()):
                     if key != "DSN":
                         f.write(key + "=" + value + "\n")
 
@@ -1183,16 +1187,16 @@ class ClickHouseInstance:
         instance_config_dir = p.abspath(p.join(self.path, 'configs'))
         os.makedirs(instance_config_dir)
 
-        print "Copy common default production configuration from {}".format(self.base_config_dir)
+        print("Copy common default production configuration from {}".format(self.base_config_dir))
         shutil.copyfile(p.join(self.base_config_dir, 'config.xml'), p.join(instance_config_dir, 'config.xml'))
         shutil.copyfile(p.join(self.base_config_dir, 'users.xml'), p.join(instance_config_dir, 'users.xml'))
 
-        print "Create directory for configuration generated in this helper"
+        print("Create directory for configuration generated in this helper")
         # used by all utils with any config
         conf_d_dir = p.abspath(p.join(instance_config_dir, 'conf.d'))
         os.mkdir(conf_d_dir)
 
-        print "Create directory for common tests configuration"
+        print("Create directory for common tests configuration")
         # used by server with main config.xml
         self.config_d_dir = p.abspath(p.join(instance_config_dir, 'config.d'))
         os.mkdir(self.config_d_dir)
@@ -1201,14 +1205,14 @@ class ClickHouseInstance:
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
 
-        print "Copy common configuration from helpers"
+        print("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), self.config_d_dir)
         shutil.copy(p.join(HELPERS_DIR, '0_common_instance_users.xml'), users_d_dir)
         if len(self.custom_dictionaries_paths):
             shutil.copy(p.join(HELPERS_DIR, '0_common_enable_dictionaries.xml'), self.config_d_dir)
 
-        print "Generate and write macros file"
+        print("Generate and write macros file")
         macros = self.macros.copy()
         macros['instance'] = self.name
         with open(p.join(conf_d_dir, 'macros.xml'), 'w') as macros_config:
@@ -1222,7 +1226,7 @@ class ClickHouseInstance:
             shutil.copytree(self.kerberos_secrets_dir, p.abspath(p.join(self.path, 'secrets')))
 
         # Copy config.d configs
-        print "Copy custom test config files {} to {}".format(self.custom_main_config_paths, self.config_d_dir)
+        print("Copy custom test config files {} to {}".format(self.custom_main_config_paths, self.config_d_dir))
         for path in self.custom_main_config_paths:
             shutil.copy(path, self.config_d_dir)
 
@@ -1235,16 +1239,16 @@ class ClickHouseInstance:
             shutil.copy(path, dictionaries_dir)
 
         db_dir = p.abspath(p.join(self.path, 'database'))
-        print "Setup database dir {}".format(db_dir)
+        print("Setup database dir {}".format(db_dir))
         if self.clickhouse_path_dir is not None:
-            print "Database files taken from {}".format(self.clickhouse_path_dir)
+            print("Database files taken from {}".format(self.clickhouse_path_dir))
             shutil.copytree(self.clickhouse_path_dir, db_dir)
-            print "Database copied from {} to {}".format(self.clickhouse_path_dir, db_dir)
+            print("Database copied from {} to {}".format(self.clickhouse_path_dir, db_dir))
         else:
             os.mkdir(db_dir)
 
         logs_dir = p.abspath(p.join(self.path, 'logs'))
-        print "Setup logs dir {}".format(logs_dir)
+        print("Setup logs dir {}".format(logs_dir))
         os.mkdir(logs_dir)
 
         depends_on = []
@@ -1272,7 +1276,7 @@ class ClickHouseInstance:
 
         env_file = _create_env_file(os.path.dirname(self.docker_compose_path), self.env_variables)
 
-        print "Env {} stored in {}".format(self.env_variables, env_file)
+        print("Env {} stored in {}".format(self.env_variables, env_file))
 
         odbc_ini_path = ""
         if self.odbc_ini_path:
@@ -1284,7 +1288,7 @@ class ClickHouseInstance:
         if self.stay_alive:
             entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND
 
-        print "Entrypoint cmd: {}".format(entrypoint_cmd)
+        print("Entrypoint cmd: {}".format(entrypoint_cmd))
 
         networks = app_net = ipv4_address = ipv6_address = net_aliases = net_alias1 = ""
         if self.ipv4_address is not None or self.ipv6_address is not None or self.hostname != self.name:
