@@ -64,9 +64,9 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        auto column_defaults = metadata_snapshot->getColumns().getDefaults();
-        if (!column_defaults.empty())
-            res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, column_defaults, context);
+        const auto & columns = metadata_snapshot->getColumns();
+        if (columns.hasDefaults())
+            res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, columns, context);
     }
 }
 

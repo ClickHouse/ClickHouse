@@ -223,7 +223,7 @@ Pipes StorageBuffer::read(
                 for (auto & pipe : pipes_from_dst)
                 {
                     pipe.addSimpleTransform(std::make_shared<AddingMissedTransform>(
-                            pipe.getHeader(), header_after_adding_defaults, metadata_snapshot->getColumns().getDefaults(), context));
+                            pipe.getHeader(), header_after_adding_defaults, metadata_snapshot->getColumns(), context));
 
                     pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
                             pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
