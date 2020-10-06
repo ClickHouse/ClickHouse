@@ -53,14 +53,14 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         auto name_and_type = columns.begin();
         for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
         {
-            const auto & [name, type] = getColumnFromPart(*name_and_type);
-            auto position = data_part->getColumnPosition(name);
+            auto column_from_part = getColumnFromPart(*name_and_type);
+            auto position = data_part->getColumnPosition(column_from_part);
 
-            if (!position && typeid_cast<const DataTypeArray *>(type.get()))
+            if (!position && typeid_cast<const DataTypeArray *>(column_from_part.type.get()))
             {
                 /// If array of Nested column is missing in part,
                 /// we have to read its offsets if they exist.
-                position = findColumnForOffsets(name);
+                position = findColumnForOffsets(column_from_part.name);
                 read_only_offsets[i] = (position != std::nullopt);
             }
 
@@ -149,14 +149,14 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
             if (!res_columns[pos])
                 continue;
 
-            auto [name, type] = getColumnFromPart(*name_and_type);
+            auto column_from_part = getColumnFromPart(*name_and_type);
             auto & column = mutable_columns[pos];
 
             try
             {
                 size_t column_size_before_reading = column->size();
 
-                readData(name, *column, *type, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
+                readData(column_from_part, *column, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
 
@@ -170,7 +170,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
                     storage.reportBrokenPart(data_part->name);
 
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + name + ")");
+                e.addMessage("(while reading column " + column_from_part.name + ")");
                 throw;
             }
             catch (...)
@@ -199,9 +199,11 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 }
 
 void MergeTreeReaderCompact::readData(
-    const String & name, IColumn & column, const IDataType & type,
+    const NameAndTypePair & name_and_type, IColumn & column,
     size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
 {
+    const auto & [name, type] = name_and_type;
+
     if (!isContinuousReading(from_mark, column_position))
         seekToMark(from_mark, column_position);
 
@@ -213,14 +215,29 @@ void MergeTreeReaderCompact::readData(
         return data_buffer;
     };
 
+    IDataType::DeserializeBinaryBulkStatePtr state;
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.getter = buffer_getter;
     deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
     deserialize_settings.position_independent_encoding = true;
 
-    IDataType::DeserializeBinaryBulkStatePtr state;
-    type.deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-    type.deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
+    if (name_and_type.isSubcolumn())
+    {
+        const auto & storage_type = name_and_type.getStorageType();
+        auto temp_column = storage_type->createColumn();
+
+        storage_type->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        storage_type->deserializeBinaryBulkWithMultipleStreams(*temp_column, rows_to_read, deserialize_settings, state);
+
+        auto subcolumn = storage_type->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
+        column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
+    }
+    else
+    {
+        deserialize_settings.position_independent_encoding = true;
+        type->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        type->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
+    }
 
     /// The buffer is left in inconsistent state after reading single offsets
     if (only_offsets)

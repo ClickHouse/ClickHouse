@@ -37,7 +37,7 @@ struct NameAndTypePair;
   *
   * DataType is totally immutable object. You can always share them.
   */
-class IDataType : private boost::noncopyable
+class IDataType : private boost::noncopyable, public std::enable_shared_from_this<IDataType>
 {
 public:
     IDataType();
@@ -115,6 +115,10 @@ public:
     void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
 
+    virtual DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
+    virtual MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const;
+    std::vector<String> getSubcolumnNames() const;
+
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
 
@@ -152,6 +156,8 @@ public:
         bool position_independent_encoding = true;
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
+
+        std::vector<MutableColumnPtr> temporary_column_holders;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -229,9 +235,6 @@ public:
     /** Serialize to a protobuf. */
     virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
     virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
-
-    virtual DataTypePtr getSubcolumnType(const String & /* subcolumn_path */) const { return nullptr; }
-    virtual std::vector<String> getSubcolumnNames() const { return {}; }
 
     /** Text serialization with escaping but without quoting.
       */
@@ -450,6 +453,7 @@ public:
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & column_name, const SubstreamPath & path);
+    static String getSubcolumnNameForStream(String stream_name, const SubstreamPath & path);
 
     /// Substream path supports special compression methods like codec Delta.
     /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
@@ -463,8 +467,6 @@ private:
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
-
-    static String getFileNameForStreamImpl(String stream_name, const SubstreamPath & path);
 
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }

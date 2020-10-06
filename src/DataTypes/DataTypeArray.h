@@ -112,13 +112,17 @@ public:
     }
 
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const override;
-    std::vector<String> getSubcolumnNames() const override;
+    MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const override;
+
     String getEscapedFileName(const NameAndTypePair & column) const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
 
     /// 1 for plain array, 2 for array of arrays and so on.
     size_t getNumberOfDimensions() const;
+
+private:
+    MutableColumnPtr getSubcolumnImpl(const String & subcolumn_name, IColumn & column, size_t level) const;
 };
 
 }

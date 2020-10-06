@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/escapeForFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -31,6 +32,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -419,6 +421,14 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+String DataTypeTuple::getEscapedFileName(const NameAndTypePair & column) const
+{
+    if (column.isSubcolumn())
+        return escapeForFileName(column.getStorageName()) + "%2E" + column.getSubcolumnName();
+
+    return escapeForFileName(column.name);
+}
+
 void DataTypeTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
     for (; value_index < elems.size(); ++value_index)
@@ -531,12 +541,40 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
 
 DataTypePtr DataTypeTuple::getSubcolumnType(const String & subcolumn_name) const
 {
-    return elems[getPositionByName(subcolumn_name)];
+    for (size_t i = 0; i < names.size(); ++i)
+    {
+        if (startsWith(subcolumn_name, names[i]))
+        {
+            size_t name_length = names[i].size();
+            if (subcolumn_name.size() == name_length)
+                return elems[i];
+
+            if (subcolumn_name[name_length] == '.')
+                return elems[i]->getSubcolumnType(subcolumn_name.substr(name_length + 1));
+        }
+    }
+
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 
-std::vector<String> DataTypeTuple::getSubcolumnNames() const
+MutableColumnPtr DataTypeTuple::getSubcolumn(const String & subcolumn_name, IColumn & column) const
 {
-    return names;
+    for (size_t i = 0; i < names.size(); ++i)
+    {
+        if (startsWith(subcolumn_name, names[i]))
+        {
+            size_t name_length = names[i].size();
+            auto & subcolumn = extractElementColumn(column, i);
+
+            if (subcolumn_name.size() == name_length)
+                return subcolumn.assumeMutable();
+
+            if (subcolumn_name[name_length] == '.')
+                return elems[i]->getSubcolumn(subcolumn_name.substr(name_length + 1), subcolumn);
+        }
+    }
+
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 
 

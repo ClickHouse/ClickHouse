@@ -98,7 +98,7 @@ public:
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const override;
-    std::vector<String> getSubcolumnNames() const override;
+    MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const override;
     String getEscapedFileName(const NameAndTypePair & column) const override;
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }

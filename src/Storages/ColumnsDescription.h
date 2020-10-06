@@ -147,7 +147,7 @@ private:
     SubcolumnsContainer subcolumns;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
-    void addSubcolumns(NameAndTypePair storage_column);
+    void addSubcolumns(const String & storage_name, const DataTypePtr & storage_type);
 };
 
 /// Validate default expressions and corresponding types compatibility, i.e.
