@@ -27,6 +27,7 @@ class IInputFormat;
 class IOutputFormat;
 
 struct RowInputFormatParams;
+struct RowOutputFormatParams;
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -80,7 +81,7 @@ private:
     using OutputProcessorCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
-            WriteCallback callback,
+            const RowOutputFormatParams & params,
             const FormatSettings & settings)>;
 
     struct Creators

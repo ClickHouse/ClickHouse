@@ -39,7 +39,7 @@ public:
     ProtobufRowOutputFormat(
         WriteBuffer & out_,
         const Block & header,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSchemaInfo & format_schema,
         const bool single_message_mode_);
 

@@ -9,6 +9,15 @@
 namespace DB
 {
 
+/// Common parameters for generating blocks.
+struct RowOutputFormatParams
+{
+    using WriteCallback = std::function<void(const Columns & columns,size_t row)>;
+
+    // Callback used to indicate that another row is written.
+    WriteCallback callback;
+};
+
 class WriteBuffer;
 
 /** Output format that writes data row by row.
@@ -24,8 +33,10 @@ protected:
     void finalize() override;
 
 public:
-    IRowOutputFormat(const Block & header, WriteBuffer & out_, FormatFactory::WriteCallback callback)
-        : IOutputFormat(header, out_), types(header.getDataTypes()), write_single_row_callback(callback)
+    using Params = RowOutputFormatParams;
+
+    IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
+        : IOutputFormat(header, out_), types(header.getDataTypes()), params(params_)
     {
     }
 
@@ -59,8 +70,7 @@ private:
     bool prefix_written = false;
     bool suffix_written = false;
 
-    // Callback used to indicate that another row is written.
-    FormatFactory::WriteCallback write_single_row_callback;
+    Params params;
 
     void writePrefixIfNot()
     {

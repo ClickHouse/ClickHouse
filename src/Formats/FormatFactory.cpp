@@ -8,6 +8,7 @@
 #include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <DataStreams/NativeBlockInputStream.h>
@@ -268,10 +269,13 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     const Settings & settings = context.getSettingsRef();
     FormatSettings format_settings = getOutputFormatSetting(settings, context);
 
+    RowOutputFormatParams params;
+    params.callback = std::move(callback);
+
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    auto format = output_getter(buf, sample, std::move(callback), format_settings);
+    auto format = output_getter(buf, sample, params, format_settings);
 
     /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
     if (format_settings.enable_streaming)
