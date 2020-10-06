@@ -409,7 +409,7 @@ UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & p
     {
         try
         {
-            auto id = storage->login(user_name, password, address, external_authenticators, false);
+            auto id = storage->login(user_name, password, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
             std::lock_guard lock{mutex};
             ids_cache.set(id, storage);
             return id;
