@@ -72,7 +72,7 @@ VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
 
 DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
 {
-    size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
+    size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
     size_t index = start_from % disks.size();
     return disks[index];
 }
@@ -85,7 +85,7 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
     if (max_data_part_size != 0 && bytes > max_data_part_size)
         return {};
 
-    size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
+    size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
     size_t disks_num = disks.size();
     for (size_t i = 0; i < disks_num; ++i)
     {
