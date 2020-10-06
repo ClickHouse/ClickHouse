@@ -1433,7 +1433,7 @@ SELECT randomStringUTF8(13)
 
 ## isDecimalOverflow {#is-decimal-overflow}
 
-Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) вне его (или заданной) области значений.
+Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) вне собственной (или заданной) области значений.
 
 **Синтаксис**
 
