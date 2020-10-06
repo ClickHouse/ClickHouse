@@ -327,7 +327,6 @@ if (USE_INTERNAL_ROCKSDB_LIBRARY)
     set(WITH_TOOLS OFF)
     set(WITH_GFLAGS OFF)
     set(PORTABLE ON)
-    set(FORCE_SSE42 ON)
 
     if (SANITIZE STREQUAL "undefined")
         set(WITH_UBSAN ON)
