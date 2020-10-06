@@ -2,7 +2,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeBlockEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
@@ -228,10 +227,9 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     String quorum_str;
     if (zookeeper->tryGet(storage.zookeeper_path + "/quorum/status", quorum_str))
     {
-        ReplicatedMergeTreeQuorumEntry quorum_entry;
-        quorum_entry.status.fromString(quorum_str);
+        ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
 
-        if (!quorum_entry.status.replicas.count(storage.replica_name)
+        if (!quorum_entry.replicas.count(storage.replica_name)
             && zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
         {
             LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
@@ -240,29 +238,20 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     }
 
     Strings partitions;
-    if (zookeeper->tryGetChildren(storage.replica_path + "/parts/", partitions) == Coordination::Error::ZOK)
+    String parallel_quorum_parts_path = storage.zookeeper_path + "/quorum/parallel";
+    if (zookeeper->tryGetChildren(parallel_quorum_parts_path, partitions) == Coordination::Error::ZOK)
     {
         for (auto & partition : partitions)
         {
-            String part_str, block_str;
-            if (!zookeeper->tryGet(storage.replica_path + "/parts/" + partition, part_str))
-                continue;
-
-            auto header = ReplicatedMergeTreePartHeader::fromString(part_str);
-            if (!header.getBlockID() || !zookeeper->tryGet(storage.zookeeper_path + "/blocks/" + *header.getBlockID(), block_str))
-                continue;
-
-            ReplicatedMergeTreeBlockEntry block_entry(block_str);
-            if (block_entry.part_name != partition)
+            if (zookeeper->tryGet(parallel_quorum_parts_path + "/" + partition, quorum_str))
             {
-                LOG_WARNING(log, "partition {} contain block_id {} and block_id contain another partition {}", partition, *header.getBlockID(), block_entry.part_name);
-                continue;
-            }
-
-            if (block_entry.quorum_status && !block_entry.quorum_status->replicas.count(storage.replica_name))
-            {
-                LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", block_entry.part_name);
-                storage.updateQuorum(block_entry.part_name, header.getBlockID());
+                ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
+                if (!quorum_entry.replicas.count(storage.replica_name)
+                    && zookeeper->exists(storage.replica_path + "/parts/" + partition))
+                {
+                    LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", partition);
+                    storage.updateQuorum(partition);
+                }
             }
         }
     }
