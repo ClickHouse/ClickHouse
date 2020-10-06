@@ -12,26 +12,21 @@ namespace DB
 {
 
 ReadFromStorageStep::ReadFromStorageStep(
-    TableLockHolder table_lock_,
+    TableLockHolder table_lock,
     StorageMetadataPtr metadata_snapshot,
     StreamLocalLimits & limits,
     SizeLimits & leaf_limits,
     std::shared_ptr<const EnabledQuota> quota,
-    StoragePtr storage_,
+    StoragePtr storage,
     const Names & required_columns,
     const SelectQueryInfo & query_info,
-    std::shared_ptr<Context> context_,
+    std::shared_ptr<Context> context,
     QueryProcessingStage::Enum processing_stage,
     size_t max_block_size,
     size_t max_streams)
 {
     /// Note: we read from storage in constructor of step because we don't know real header before reading.
     /// It will be fixed when storage return QueryPlanStep itself.
-
-    /// Move arguments into stack in order to ensure order of destruction in case of exception.
-    auto context = std::move(context_);
-    auto storage = std::move(storage_);
-    auto table_lock = std::move(table_lock_);
 
     Pipe pipe = storage->read(required_columns, metadata_snapshot, query_info, *context, processing_stage, max_block_size, max_streams);
 
