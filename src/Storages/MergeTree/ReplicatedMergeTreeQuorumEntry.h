@@ -8,7 +8,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeQuorumStatusEntry.h>
 
 
 namespace DB
@@ -21,7 +20,8 @@ namespace DB
 struct ReplicatedMergeTreeQuorumEntry
 {
     String part_name;
-    ReplicatedMergeTreeQuorumStatusEntry status;
+    size_t required_number_of_replicas{};
+    std::set<String> replicas;
 
     ReplicatedMergeTreeQuorumEntry() {}
     ReplicatedMergeTreeQuorumEntry(const String & str)
@@ -32,15 +32,31 @@ struct ReplicatedMergeTreeQuorumEntry
     void writeText(WriteBuffer & out) const
     {
         out << "version: 1\n"
-            << "part_name: " << part_name << "\n";
-        status.writeText(out);
+            << "part_name: " << part_name << "\n"
+            << "required_number_of_replicas: " << required_number_of_replicas << "\n"
+            << "actual_number_of_replicas: " << replicas.size() << "\n"
+            << "replicas:\n";
+
+        for (const auto & replica : replicas)
+            out << escape << replica << "\n";
     }
 
     void readText(ReadBuffer & in)
     {
+        size_t actual_number_of_replicas = 0;
+
         in >> "version: 1\n"
-            >> "part_name: " >> part_name >> "\n";
-        status.readText(in);
+            >> "part_name: " >> part_name >> "\n"
+            >> "required_number_of_replicas: " >> required_number_of_replicas >> "\n"
+            >> "actual_number_of_replicas: " >> actual_number_of_replicas >> "\n"
+            >> "replicas:\n";
+
+        for (size_t i = 0; i < actual_number_of_replicas; ++i)
+        {
+            String replica;
+            in >> escape >> replica >> "\n";
+            replicas.insert(replica);
+        }
     }
 
     String toString() const

@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -1698,6 +1697,9 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         prev_virtual_parts = queue.virtual_parts;
     }
 
+    /// Load current quorum status.
+    auto quorum_status_future = zookeeper->asyncTryGet(queue.zookeeper_path + "/quorum/status");
+
     /// Load current inserts
     std::unordered_set<String> lock_holder_paths;
     for (const String & entry : zookeeper->getChildren(queue.zookeeper_path + "/temp"))
@@ -1749,38 +1751,15 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 
     merges_version = queue_.pullLogsToQueue(zookeeper);
 
-    /// Load current quorum status.
-    auto quorum_status_future = zookeeper->asyncTryGet(queue.zookeeper_path + "/quorum/status");
     Coordination::GetResponse quorum_status_response = quorum_status_future.get();
     if (quorum_status_response.error == Coordination::Error::ZOK)
     {
         ReplicatedMergeTreeQuorumEntry quorum_status;
         quorum_status.fromString(quorum_status_response.data);
-        inprogress_quorum_parts.insert(quorum_status.part_name);
+        inprogress_quorum_part = quorum_status.part_name;
     }
     else
-        inprogress_quorum_parts.clear();
-
-    Strings partitions = zookeeper->getChildren(queue.replica_path + "/parts");
-    for (const String & partition : partitions)
-    {
-        auto part_str = zookeeper->get(queue.replica_path + "/parts/" + partition);
-        if (part_str.empty())
-        {
-            /// use_minimalistic_part_header_in_zookeeper
-            continue;
-        }
-        auto header = ReplicatedMergeTreePartHeader::fromString(part_str);
-        if (header.getBlockID())
-        {
-            ReplicatedMergeTreeBlockEntry block(zookeeper->get(queue.zookeeper_path + "/blocks/" + *header.getBlockID()));
-            if (partition != block.part_name)
-                throw Exception("partition " + partition + " contain block_id " + *header.getBlockID() +
-                    " and block_id contain another partition " + block.part_name, ErrorCodes::LOGICAL_ERROR);
-            if (block.quorum_status)
-                inprogress_quorum_parts.insert(block.part_name);
-        }
-    }
+        inprogress_quorum_part.clear();
 }
 
 bool ReplicatedMergeTreeMergePredicate::operator()(
@@ -1842,7 +1821,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
-        if (inprogress_quorum_parts.count(part->name))
+        if (part->name == inprogress_quorum_part)
         {
             if (out_reason)
                 *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
@@ -1937,7 +1916,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
     String * out_reason) const
 {
-    if (inprogress_quorum_parts.count(part->name))
+    if (part->name == inprogress_quorum_part)
     {
         if (out_reason)
             *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
@@ -1978,7 +1957,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
 
     /// We cannot mutate part if it's being inserted with quorum and it's not
     /// already reached.
-    if (inprogress_quorum_parts.count(part->name))
+    if (part->name == inprogress_quorum_part)
         return {};
 
     std::lock_guard lock(queue.state_mutex);
