@@ -102,7 +102,7 @@ if (USE_INTERNAL_SSL_LIBRARY)
     add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
 
-if (USE_INTERNAL_LDAP_LIBRARY)
+if (ENABLE_LDAP AND USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
 
@@ -307,14 +307,3 @@ endif()
 
 add_subdirectory (fmtlib-cmake)
 
-if (USE_STATS)
-    add_subdirectory (stats-cmake)
-    add_subdirectory (gcem)
-endif()
-
-if (USE_KRB5)
-    add_subdirectory (krb5-cmake)
-    if (USE_CYRUS_SASL)
-        add_subdirectory (cyrus-sasl-cmake)
-    endif()
-endif()

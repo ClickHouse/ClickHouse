@@ -9,8 +9,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function nullIf which takes 2 arguments and returns
 /// NULL if both arguments have the same value. Otherwise it returns the
@@ -43,7 +41,7 @@ public:
         return makeNullable(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// nullIf(col1, col2) == if(col1 = col2, NULL, col1)
 
@@ -76,7 +74,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionNullIf(FunctionFactory & factory)
 {

@@ -1,4 +1,3 @@
-# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 ADDINCL (
@@ -21,20 +20,18 @@ PEERDIR(
 
 INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
 
-CFLAGS(-g0)
-
 SRCS(
     ActionLock.cpp
     AlignedBuffer.cpp
     Allocator.cpp
     checkStackSize.cpp
-    clearPasswordFromCommandLine.cpp
     ClickHouseRevision.cpp
     Config/AbstractConfigurationComparison.cpp
     Config/ConfigProcessor.cpp
     Config/configReadClient.cpp
     Config/ConfigReloader.cpp
     createHardLink.cpp
+    clearPasswordFromCommandLine.cpp
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
@@ -50,7 +47,6 @@ SRCS(
     formatIPv6.cpp
     formatReadable.cpp
     getExecutablePath.cpp
-    getMappedArea.cpp
     getMultipleKeysFromConfig.cpp
     getNumberOfPhysicalCPUCores.cpp
     hasLinuxCapability.cpp
@@ -63,7 +59,6 @@ SRCS(
     MemoryStatisticsOS.cpp
     MemoryTracker.cpp
     new_delete.cpp
-    OpenSSLHelpers.cpp
     OptimizedRegularExpression.cpp
     parseAddress.cpp
     parseGlobs.cpp
@@ -75,13 +70,11 @@ SRCS(
     QueryProfiler.cpp
     quoteString.cpp
     randomSeed.cpp
-    remapExecutable.cpp
     RemoteHostFilter.cpp
     renameat2.cpp
     RWLock.cpp
     SensitiveDataMasker.cpp
     setThreadName.cpp
-    SettingsChanges.cpp
     SharedLibrary.cpp
     ShellCommand.cpp
     StackTrace.cpp
@@ -93,21 +86,22 @@ SRCS(
     SymbolIndex.cpp
     TaskStatsInfoGetter.cpp
     TerminalSize.cpp
-    ThreadFuzzer.cpp
     thread_local_rng.cpp
-    ThreadPool.cpp
+    ThreadFuzzer.cpp
     ThreadProfileEvents.cpp
+    ThreadPool.cpp
     ThreadStatus.cpp
     TraceCollector.cpp
     UnicodeBar.cpp
     UTF8Helpers.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
+    ZooKeeper/Lock.cpp
     ZooKeeper/TestKeeper.cpp
     ZooKeeper/ZooKeeper.cpp
+    ZooKeeper/ZooKeeperHolder.cpp
     ZooKeeper/ZooKeeperImpl.cpp
     ZooKeeper/ZooKeeperNodeCache.cpp
-
 )
 
 END()

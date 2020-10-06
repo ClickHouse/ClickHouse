@@ -78,7 +78,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 列の説明では、次のいずれかの方法で既定値の式を指定できます:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 例: `URLDomain String DEFAULT domain(URL)`.
 
-既定値の式が定義されていない場合、既定値は数値の場合はゼロ、文字列の場合は空の文字列、配列の場合は空の配列、および `1970-01-01` 日付または zero unix timestamp 時間と日付のために。 Nullはサポートされていません。
+既定値の式が定義されていない場合、既定値は数値の場合はゼロ、文字列の場合は空の文字列、配列の場合は空の配列、および `0000-00-00` 日付または `0000-00-00 00:00:00` 時間と日付のために。 Nullはサポートされていません。
 
 既定の式が定義されている場合、列の型は省略可能です。 明示的に定義された型がない場合は、既定の式の型が使用されます。 例: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ タイプは ‘EventDate’ 列。
 
@@ -466,7 +466,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster
 ``` sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]

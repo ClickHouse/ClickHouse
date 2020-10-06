@@ -9,8 +9,8 @@
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/StorageMemory.h>
+#include <Functions/registerFunctions.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register_functions.h>
 
 
 using namespace DB;
@@ -42,7 +42,7 @@ private:
     explicit State()
         : context(getContext().context)
     {
-        tryRegisterFunctions();
+        registerFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
         database->attachTable("table", StorageMemory::create(StorageID("test", "table"), ColumnsDescription{columns}, ConstraintsDescription{}));
         DatabaseCatalog::instance().attachDatabase("test", database);
@@ -56,7 +56,7 @@ static void check(const std::string & query, const std::string & expected, const
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000);
     SelectQueryInfo query_info;
-    query_info.syntax_analyzer_result = TreeRewriter(context).analyzeSelect(ast, columns);
+    query_info.syntax_analyzer_result = SyntaxAnalyzer(context).analyzeSelect(ast, columns);
     query_info.query = ast;
     std::string transformed_query = transformQueryForExternalDatabase(query_info, columns, IdentifierQuotingStyle::DoubleQuotes, "test", "table", context);
 

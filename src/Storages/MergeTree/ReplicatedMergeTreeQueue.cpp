@@ -1007,7 +1007,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeData & data,
     std::lock_guard<std::mutex> & state_lock) const
 {
-    /// If our entry produce part which is already covered by
+    /// If our entry produce part which is alredy covered by
     /// some other entry which is currently executing, then we can postpone this entry.
     if (entry.type == LogEntry::MERGE_PARTS
         || entry.type == LogEntry::GET_PART
@@ -1070,34 +1070,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           * because the leader replica does not assign merges of greater size (except OPTIMIZE PARTITION and OPTIMIZE FINAL).
           */
         const auto data_settings = data.getSettings();
-        bool ignore_max_size = false;
-        if (entry.type == LogEntry::MERGE_PARTS)
-        {
-            ignore_max_size = max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool;
-
-            if (isTTLMergeType(entry.merge_type))
-            {
-                if (merger_mutator.ttl_merges_blocker.isCancelled())
-                {
-                    String reason = "Not executing log entry for part " + entry.new_part_name + " because merges with TTL are cancelled now.";
-                    LOG_DEBUG(log, reason);
-                    out_postpone_reason = reason;
-                    return false;
-                }
-                size_t total_merges_with_ttl = data.getTotalMergesWithTTLInMergeList();
-                if (total_merges_with_ttl >= data_settings->max_number_of_merges_with_ttl_in_pool)
-                {
-                    const char * format_str = "Not executing log entry for part {}"
-                        " because {} merges with TTL already executing, maximum {}.";
-                    LOG_DEBUG(log, format_str, entry.new_part_name, total_merges_with_ttl,
-                        data_settings->max_number_of_merges_with_ttl_in_pool);
-
-                    out_postpone_reason = fmt::format(format_str, entry.new_part_name, total_merges_with_ttl,
-                        data_settings->max_number_of_merges_with_ttl_in_pool);
-                    return false;
-                }
-            }
-        }
+        bool ignore_max_size = (entry.type == LogEntry::MERGE_PARTS) && (max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool);
 
         if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
         {
@@ -1293,7 +1266,7 @@ bool ReplicatedMergeTreeQueue::processEntry(
     try
     {
         /// We don't have any backoff for failed entries
-        /// we just count amount of tries for each of them.
+        /// we just count amount of tries for each ot them.
         if (func(entry))
             removeProcessedEntry(get_zookeeper(), entry);
     }
@@ -1339,26 +1312,21 @@ bool ReplicatedMergeTreeQueue::processEntry(
 }
 
 
-ReplicatedMergeTreeQueue::OperationsInQueue ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
+std::pair<size_t, size_t> ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
 {
     std::lock_guard lock(state_mutex);
 
     size_t count_merges = 0;
     size_t count_mutations = 0;
-    size_t count_merges_with_ttl = 0;
     for (const auto & entry : queue)
     {
         if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS)
-        {
             ++count_merges;
-            if (isTTLMergeType(entry->merge_type))
-                ++count_merges_with_ttl;
-        }
         else if (entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
             ++count_mutations;
     }
 
-    return OperationsInQueue{count_merges, count_mutations, count_merges_with_ttl};
+    return std::make_pair(count_merges, count_mutations);
 }
 
 
@@ -1611,43 +1579,6 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
     out_max_processed_insert_time = max_processed_insert_time;
 }
 
-
-std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids) const
-{
-
-    std::lock_guard lock(state_mutex);
-    auto current_mutation_it = mutations_by_znode.find(znode_name);
-    /// killed
-    if (current_mutation_it == mutations_by_znode.end())
-        return {};
-
-    const MutationStatus & status = current_mutation_it->second;
-    MergeTreeMutationStatus result
-    {
-        .is_done = status.is_done,
-        .latest_failed_part = status.latest_failed_part,
-        .latest_fail_time = status.latest_fail_time,
-        .latest_fail_reason = status.latest_fail_reason,
-    };
-
-    if (mutation_ids && !status.latest_fail_reason.empty())
-    {
-        const auto & latest_failed_part_info = status.latest_failed_part_info;
-        auto in_partition = mutations_by_partition.find(latest_failed_part_info.partition_id);
-        if (in_partition != mutations_by_partition.end())
-        {
-            const auto & version_to_status = in_partition->second;
-            auto begin_it = version_to_status.upper_bound(latest_failed_part_info.getDataVersion());
-            for (auto it = begin_it; it != version_to_status.end(); ++it)
-            {
-                /// All mutations with the same failure
-                if (!it->second->is_done && it->second->latest_fail_reason == status.latest_fail_reason)
-                    mutation_ids->insert(it->second->entry->znode_name);
-            }
-        }
-    }
-    return result;
-}
 
 std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const
 {
@@ -1979,7 +1910,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
         if (mutation_status->entry->isAlterMutation())
         {
             /// We want to assign mutations for part which version is bigger
-            /// than part current version. But it doesn't make sense to assign
+            /// than part current version. But it doesn't make sence to assign
             /// more fresh versions of alter-mutations if previous alter still
             /// not done because alters execute one by one in strict order.
             if (mutation_version > current_version || !mutation_status->is_done)

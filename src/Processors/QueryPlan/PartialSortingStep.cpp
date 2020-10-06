@@ -7,19 +7,13 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(size_t limit)
+static ITransformingStep::DataStreamTraits getTraits()
 {
-    return ITransformingStep::Traits
+    return ITransformingStep::DataStreamTraits
     {
-        {
             .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = false,
-        },
-        {
-            .preserves_number_of_rows = limit == 0,
-        }
     };
 }
 
@@ -28,22 +22,11 @@ PartialSortingStep::PartialSortingStep(
     SortDescription sort_description_,
     UInt64 limit_,
     SizeLimits size_limits_)
-    : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
+    : ITransformingStep(input_stream, input_stream.header, getTraits())
     , sort_description(std::move(sort_description_))
     , limit(limit_)
     , size_limits(size_limits_)
 {
-    output_stream->sort_description = sort_description;
-    output_stream->sort_mode = DataStream::SortMode::Chunk;
-}
-
-void PartialSortingStep::updateLimit(size_t limit_)
-{
-    if (limit_ && (limit == 0 || limit_ < limit))
-    {
-        limit = limit_;
-        transform_traits.preserves_number_of_rows = limit == 0;
-    }
 }
 
 void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
@@ -56,8 +39,8 @@ void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
         return std::make_shared<PartialSortingTransform>(header, sort_description, limit);
     });
 
-    StreamLocalLimits limits;
-    limits.mode = LimitsMode::LIMITS_CURRENT;
+    IBlockInputStream::LocalLimits limits;
+    limits.mode = IBlockInputStream::LIMITS_CURRENT;
     limits.size_limits = size_limits;
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
@@ -76,9 +59,6 @@ void PartialSortingStep::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Sort description: ";
     dumpSortDescription(sort_description, input_streams.front().header, settings.out);
     settings.out << '\n';
-
-    if (limit)
-        settings.out << prefix << "Limit " << limit << '\n';
 }
 
 }

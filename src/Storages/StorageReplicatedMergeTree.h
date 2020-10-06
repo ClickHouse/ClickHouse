@@ -87,7 +87,7 @@ public:
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -109,9 +109,9 @@ public:
         bool deduplicate,
         const Context & query_context) override;
 
-    void alter(const AlterCommands & commands, const Context & query_context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & query_context, TableLockHolder & table_lock_holder) override;
 
-    Pipe alterPartition(
+    void alterPartition(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         const PartitionCommands & commands,
@@ -127,8 +127,6 @@ public:
     void drop() override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
-
-    void checkTableCanBeRenamed() const override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -306,9 +304,6 @@ private:
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
 
-    /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
-    const bool allow_renaming;
-
     template <class Func>
     void foreachCommittedParts(const Func & func) const;
 
@@ -384,7 +379,7 @@ private:
     /// Do the merge or recommend to make the fetch instead of the merge
     bool tryExecuteMerge(const LogEntry & entry);
 
-    /// Execute alter of table metadata. Set replica/metadata and replica/columns
+    /// Execute alter of table metadata. Set replica/metdata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.
     /// New metadata and columns values stored in entry.
     bool executeMetadataAlter(const LogEntry & entry);
@@ -454,9 +449,9 @@ private:
         const String & merged_name,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
+        bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
-        int32_t log_version,
-        MergeType merge_type);
+        int32_t log_version);
 
     CreateMergeEntryResult createLogEntryToMutatePart(
         const IMergeTreeDataPart & part,
@@ -483,13 +478,7 @@ private:
       * If quorum != 0, then the node for tracking the quorum is updated.
       * Returns false if part is already fetching right now.
       */
-    bool fetchPart(
-        const String & part_name,
-        const StorageMetadataPtr & metadata_snapshot,
-        const String & replica_path,
-        bool to_detached,
-        size_t quorum,
-        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr);
+    bool fetchPart(const String & part_name, const StorageMetadataPtr & metadata_snapshot, const String & replica_path, bool to_detached, size_t quorum);
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
@@ -545,7 +534,7 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
-    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & query_context);
+    void attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, const Context & query_context);
@@ -576,8 +565,7 @@ protected:
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
-        bool has_force_restore_data_flag,
-        bool allow_renaming_);
+        bool has_force_restore_data_flag);
 };
 
 

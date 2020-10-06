@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool optional_table_keyword = false)
+bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
@@ -22,7 +22,6 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
     ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p;
     ParserKeyword s_no_delay("NO DELAY");
-    ParserKeyword s_sync("SYNC");
 
     ASTPtr database;
     ASTPtr table;
@@ -56,7 +55,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
         else if (s_temporary.ignore(pos, expected))
             temporary = true;
 
-        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && !optional_table_keyword))
+        if (!is_view && !is_dictionary && !s_table.ignore(pos, expected))
         {
             return false;
         }
@@ -80,7 +79,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
                 return false;
         }
 
-        if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
+        if (s_no_delay.ignore(pos, expected))
             no_delay = true;
     }
 
@@ -115,7 +114,7 @@ bool parseDetachQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 
 bool parseTruncateQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (parseDropQuery(pos, node, expected, true))
+    if (parseDropQuery(pos, node, expected))
     {
         auto * drop_query = node->as<ASTDropQuery>();
         drop_query->kind = ASTDropQuery::Kind::Truncate;

@@ -29,7 +29,7 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -82,7 +82,7 @@ protected:
         const Context & context,
         QueryProcessingStage::Enum processed_stage);
 
-    Pipe createSources(
+    Pipes createSources(
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const QueryProcessingStage::Enum & processed_stage,

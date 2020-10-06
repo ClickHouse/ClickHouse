@@ -13,13 +13,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
 
 /** globalVariable('name') - takes constant string argument and returns the value of global variable with that name.
   * It is intended for compatibility with MySQL.
@@ -58,7 +57,7 @@ public:
             return variable->second.type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();
@@ -82,7 +81,6 @@ private:
         {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}}, {"version", {std::make_shared<DataTypeString>(), "5.7.30"}}};
 };
 
-}
 
 void registerFunctionGlobalVariable(FunctionFactory & factory)
 {

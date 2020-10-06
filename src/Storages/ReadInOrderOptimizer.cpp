@@ -16,7 +16,7 @@ namespace ErrorCodes
 ReadInOrderOptimizer::ReadInOrderOptimizer(
     const ManyExpressionActions & elements_actions_,
     const SortDescription & required_sort_description_,
-    const TreeRewriterResultPtr & syntax_result)
+    const SyntaxAnalyzerResultPtr & syntax_result)
     : elements_actions(elements_actions_)
     , required_sort_description(required_sort_description_)
 {

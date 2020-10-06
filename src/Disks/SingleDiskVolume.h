@@ -22,6 +22,5 @@ public:
 };
 
 using VolumeSingleDiskPtr = std::shared_ptr<SingleDiskVolume>;
-using VolumesSingleDiskPtr = std::vector<VolumeSingleDiskPtr>;
 
 }

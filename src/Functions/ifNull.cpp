@@ -10,8 +10,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function ifNull which takes 2 arguments and returns
 /// the value of the 1st argument if it is not null. Otherwise it returns
@@ -49,7 +47,7 @@ public:
         return getLeastSupertype({removeNullable(arguments[0]), arguments[1]});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// Always null.
         if (block.getByPosition(arguments[0]).type->onlyNull())
@@ -94,7 +92,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionIfNull(FunctionFactory & factory)
 {

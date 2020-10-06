@@ -75,7 +75,7 @@ public:
         return Impl::getReturnType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         using ResultType = typename Impl::ResultType;
 

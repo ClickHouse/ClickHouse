@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/PODArray.h>
 
 #include <algorithm>
@@ -77,16 +77,16 @@ private:
 
     static std::vector<String> release(DistanceIndexQueue & queue, const std::vector<String> & prompting_strings)
     {
-        std::vector<String> answer;
-        answer.reserve(queue.size());
+        std::vector<String> ans;
+        ans.reserve(queue.size());
         while (!queue.empty())
         {
             auto top = queue.top();
             queue.pop();
-            answer.push_back(prompting_strings[top.second]);
+            ans.push_back(prompting_strings[top.second]);
         }
-        std::reverse(answer.begin(), answer.end());
-        return answer;
+        std::reverse(ans.begin(), ans.end());
+        return ans;
     }
 };
 
