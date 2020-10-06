@@ -113,12 +113,12 @@ class SimpleLayoutTester:
                 self.layout_to_dictionary[layout] = get_dict(source_, Layout(layout), self.fields)
 
     def prepare(self, cluster_):
-        for _, dictionary in self.layout_to_dictionary.items():
+        for _, dictionary in list(self.layout_to_dictionary.items()):
             dictionary.prepare_source(cluster_)
             dictionary.load_data(self.data)
 
     def execute(self, layout_name, node):
-        if not self.layout_to_dictionary.has_key(layout_name):
+        if layout_name not in self.layout_to_dictionary:
             raise RuntimeError("Source doesn't support layout: {}".format(layout_name))
 
         dct = self.layout_to_dictionary[layout_name]
@@ -170,12 +170,12 @@ class ComplexLayoutTester:
                 self.layout_to_dictionary[layout] = get_dict(source_, Layout(layout), self.fields)
 
     def prepare(self, cluster_):
-        for _, dictionary in self.layout_to_dictionary.items():
+        for _, dictionary in list(self.layout_to_dictionary.items()):
             dictionary.prepare_source(cluster_)
             dictionary.load_data(self.data)
 
     def execute(self, layout_name, node):
-        if not self.layout_to_dictionary.has_key(layout_name):
+        if layout_name not in self.layout_to_dictionary:
             raise RuntimeError("Source doesn't support layout: {}".format(layout_name))
 
         dct = self.layout_to_dictionary[layout_name]
@@ -213,13 +213,13 @@ class RangedLayoutTester:
                 self.layout_to_dictionary[layout] = get_dict(source_, Layout(layout), self.fields)
 
     def prepare(self, cluster_):
-        for _, dictionary in self.layout_to_dictionary.items():
+        for _, dictionary in list(self.layout_to_dictionary.items()):
             dictionary.prepare_source(cluster_)
             dictionary.load_data(self.data)
 
     def execute(self, layout_name, node):
 
-        if not self.layout_to_dictionary.has_key(layout_name):
+        if layout_name not in self.layout_to_dictionary:
             raise RuntimeError("Source doesn't support layout: {}".format(layout_name))
 
         dct = self.layout_to_dictionary[layout_name]

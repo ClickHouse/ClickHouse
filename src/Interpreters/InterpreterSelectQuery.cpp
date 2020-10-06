@@ -95,7 +95,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
-    extern const int INVALID_SETTING_VALUE;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -192,7 +191,7 @@ static Context getSubqueryContext(const Context & context)
     return subquery_context;
 }
 
-static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
+static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database)
 {
     ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -204,11 +203,7 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database};
     CrossToInnerJoinVisitor(cross_to_inner).visit(query);
 
-    size_t rewriter_version = settings.multiple_joins_rewriter_version;
-    if (!rewriter_version || rewriter_version > 2)
-        throw Exception("Bad multiple_joins_rewriter_version setting value: " + settings.multiple_joins_rewriter_version.toString(),
-                        ErrorCodes::INVALID_SETTING_VALUE);
-    JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases, rewriter_version};
+    JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases};
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
@@ -273,7 +268,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), settings);
+        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase());
 
         joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();

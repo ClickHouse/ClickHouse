@@ -12,10 +12,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CANNOT_STATVFS;
-}
 
 using TemporaryFile = Poco::TemporaryFile;
 
@@ -31,12 +27,6 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path);
 #endif
 String getFilesystemName([[maybe_unused]] const String & mount_point);
 
-inline struct statvfs getStatVFS(const String & path)
-{
-    struct statvfs fs;
-    if (statvfs(path.c_str(), &fs) != 0)
-        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
-    return fs;
-}
+struct statvfs getStatVFS(const String & path);
 
 }
