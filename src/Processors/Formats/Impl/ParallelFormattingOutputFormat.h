@@ -47,7 +47,7 @@ public:
 
     ~ParallelFormattingOutputFormat() override
     {
-        flush();
+        need_flush = true;
         if (!IOutputFormat::finalized) 
             finalize();
         finishAndWait();
@@ -137,13 +137,8 @@ private:
 
     struct ProcessingUnit
     {
-        explicit ProcessingUnit()
-            : status(ProcessingUnitStatus::READY_TO_INSERT)
-        {
-        }
-
-        std::atomic<ProcessingUnitStatus> status;
-        ProcessingUnitType type;
+        std::atomic<ProcessingUnitStatus> status{ProcessingUnitStatus::READY_TO_INSERT};
+        ProcessingUnitType type{ProcessingUnitType::START};
         Chunk chunk;
         Memory<> segment;
         size_t actual_memory_size{0};
