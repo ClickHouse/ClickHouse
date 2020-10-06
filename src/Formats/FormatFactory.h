@@ -100,6 +100,7 @@ private:
         InputProcessorCreator input_processor_creator;
         OutputProcessorCreator output_processor_creator;
         FileSegmentationEngine file_segmentation_engine;
+        bool supports_parallel_formatting{false};
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -139,6 +140,8 @@ public:
 
     void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
+
+    void markOutputFormatSupportsParallelFormatting(const String & name);
 
     const FormatsDictionary & getAllFormats() const
     {

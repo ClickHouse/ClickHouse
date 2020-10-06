@@ -6,6 +6,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <deque>
+#include <future>
 #include <Common/setThreadName.h>
 
 #include <atomic>
@@ -82,7 +83,6 @@ protected:
     }
 
 private:
-
     InternalFormatterCreator internal_formatter_creator;
 
     enum ProcessingUnitStatus
@@ -104,6 +104,7 @@ private:
 
     void addChunk(Chunk chunk, ProcessingUnitType type)
     {
+        // std::cout << "AddChunk of size  " << chunk.getNumRows() << std::endl;
         const auto current_unit_number = writer_unit_number % processing_units.size();
 
         auto & unit = processing_units[current_unit_number];
@@ -119,7 +120,6 @@ private:
         unit.chunk = std::move(chunk);
 
         /// Resize memory without deallocate
-        unit.segment.resize(0);
         unit.status = READY_TO_FORMAT;
         unit.type = type;
 
@@ -143,6 +143,8 @@ private:
         
     };
 
+    std::promise<bool> finalizator{}; 
+
     std::atomic_bool need_flush{false};
 
     // There are multiple "formatters", that's why we use thread pool.
@@ -165,6 +167,9 @@ private:
 
     void finishAndWait()
     {
+        std::future<bool> future_finalizator = finalizator.get_future();
+        future_finalizator.get();
+
         formatting_finished = true;
 
         {
@@ -230,6 +235,8 @@ private:
             {
                 const auto current_unit_number = collector_unit_number % processing_units.size();
 
+                // std::cout << "collecting " << current_unit_number << std::endl;
+
                 auto & unit = processing_units[current_unit_number];
 
                 {
@@ -238,12 +245,10 @@ private:
                         [&]{ return unit.status == READY_TO_READ; });
                 }
 
-                if (unit.type == ProcessingUnitType::TOTALS) {
-                   
-                }
-
                 assert(unit.status == READY_TO_READ);
                 assert(unit.segment.size() > 0);
+
+                auto copy_if_unit_type = unit.type;
 
                 /// Do main work here.
                 out.write(unit.segment.data(), unit.actual_memory_size);
@@ -259,8 +264,12 @@ private:
                     writer_condvar.notify_all();
                 }
 
-                if (unit.type == ProcessingUnitType::FINALIZE)
+                if (copy_if_unit_type == ProcessingUnitType::FINALIZE)
+                {
+                    finalizator.set_value(true);
                     break;
+                }
+                    
             }
         }
         catch (...)
@@ -280,9 +289,8 @@ private:
 
             assert(unit.status = READY_TO_FORMAT);
 
-            unit.segment.resize(DBMS_DEFAULT_BUFFER_SIZE);
+            unit.segment.resize(1);
 
-            /// TODO: Implement proper nextImpl
             BufferWithOutsideMemory<WriteBuffer> out_buffer(unit.segment);
 
             auto formatter = internal_formatter_creator(out_buffer);

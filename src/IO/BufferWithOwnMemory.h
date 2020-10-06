@@ -176,7 +176,7 @@ private:
     {
         const size_t prev_size = memory.size();
         memory.resize(2 * prev_size + 1);
-        Base::set(memory.data(), memory.size(), prev_size + 1);
+        Base::set(memory.data() + prev_size, memory.size() - prev_size, 0);
     }
 };
 

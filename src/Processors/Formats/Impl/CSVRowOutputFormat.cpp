@@ -82,6 +82,7 @@ void registerOutputFormatProcessorCSV(FormatFactory & factory)
         {
                 return std::make_shared<CSVRowOutputFormat>(buf, sample, with_names, params, format_settings);
         });
+        factory.markOutputFormatSupportsParallelFormatting(with_names ? "CSVWithNames" : "CSV");
     }
 }
 

@@ -216,7 +216,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
     const Settings & settings = context.getSettingsRef();
     bool parallel_formatting = settings.output_format_parallel_formatting;
 
-    if (parallel_formatting && name != "PrettyCompactMonoBlock")
+    if (parallel_formatting && getCreators(name).supports_parallel_formatting)
     {
         const auto & output_getter = getCreators(name).output_processor_creator;
 
@@ -350,6 +350,16 @@ void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegm
         throw Exception("FormatFactory: File segmentation engine " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(file_segmentation_engine);
 }
+
+
+void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & name)
+{
+    auto & target = dict[name].supports_parallel_formatting;
+    if (target)
+        throw Exception("FormatFactory: Output format " + name + " is already marked as supporting parallel formatting.", ErrorCodes::LOGICAL_ERROR);
+    target = true;
+}
+
 
 FormatFactory & FormatFactory::instance()
 {
