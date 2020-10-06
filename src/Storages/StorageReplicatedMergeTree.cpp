@@ -1180,7 +1180,6 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         }
         else
         {
-            /// alexelex: if (local_part_header.getBlockID()) throw or skip it?
             ops.emplace_back(zkutil::makeCreateRequest(
                 part_path, "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(
@@ -1718,14 +1717,12 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 
                     if (quorum_entry.part_name == entry.new_part_name)
                     {
-                        ops.emplace_back(zkutil::makeRemoveRequest(quorum_path, quorum_stat.version));	
+                        ops.emplace_back(zkutil::makeRemoveRequest(quorum_path, quorum_stat.version));
                         auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
 
                         if (part_info.min_block != part_info.max_block)
                             throw Exception("Logical error: log entry with quorum for part covering more than one block number",
                                 ErrorCodes::LOGICAL_ERROR);
-
-                        ops.emplace_back(zkutil::makeRemoveRequest(quorum_path, quorum_stat.version));
 
                         ops.emplace_back(zkutil::makeCreateRequest(
                             zookeeper_path + "/quorum/failed_parts/" + entry.new_part_name,
@@ -1768,9 +1765,6 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 
         try
         {
-            std::optional<String> block_id;
-            if (!entry.block_id.empty())
-                block_id = entry.block_id;
             String part_name = entry.actual_new_part_name.empty() ? entry.new_part_name : entry.actual_new_part_name;
             if (!fetchPart(part_name, metadata_snapshot, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
                 return false;
@@ -3053,9 +3047,10 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
     const String quorum_last_part_path = zookeeper_path + "/quorum/last_part";
     const String quorum_parallel_status_path = zookeeper_path + "/quorum/parallel/" + part_name;
 
-    /// If there is no node, then all quorum INSERTs have already reached the quorum, and nothing is needed.
     String value;
     Coordination::Stat stat;
+
+    /// If there is no node, then all quorum INSERTs have already reached the quorum, and nothing is needed.
     while (true)
     {
         bool quorum_parallel(false);
@@ -3070,13 +3065,14 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 
         const String quorum_status_path = quorum_parallel ? quorum_parallel_status_path : quorum_unparallel_status_path;
         quorum_entry.fromString(value);
-        quorum_entry.replicas.insert(replica_name);
 
         if (quorum_entry.part_name != part_name)
         {
             /// The quorum has already been achieved. Moreover, another INSERT with a quorum has already started.
             break;
         }
+
+        quorum_entry.replicas.insert(replica_name);
 
         if (quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
         {

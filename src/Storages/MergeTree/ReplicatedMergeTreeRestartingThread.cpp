@@ -2,7 +2,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
