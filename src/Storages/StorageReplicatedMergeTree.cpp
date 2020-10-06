@@ -1710,7 +1710,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 
                     if (zookeeper->tryGet(quorum_unparallel_path, quorum_str, &quorum_stat))
                         quorum_path = quorum_unparallel_path;
-                    else {
+                    else
+                    {
                         quorum_str = zookeeper->get(quorum_parallel_path, &quorum_stat);
                         quorum_path = quorum_parallel_path;
                     }
