@@ -55,6 +55,7 @@ The supported formats are:
 | [Null](#null)                                                                           | ✗     | ✔      |
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
+| [LineAsString](#lineasstring)                                                           | ✔     | ✔      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -1308,5 +1309,26 @@ Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `
 Limitations:
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
+
+## LineAsString {#lineasstring}
+
+This format parses a sequence of Line objects separated by newlines, spaces and/or comma. Each Line object is parsed as a whole to string.
+This format can only parse a table with single field of type String.
+
+**Example**
+
+Query:
+
+``` sql
+DROP TABLE IF EXISTS line_as_string;
+CREATE TABLE line_as_string (field String) ENGINE = Memory;
+INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
+SELECT * FROM line_as_string;
+```
+
+Result:
+
+``` text
+```
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
