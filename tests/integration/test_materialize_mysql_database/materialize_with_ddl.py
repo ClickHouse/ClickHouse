@@ -201,7 +201,7 @@ def storage_mysql_replica(clickhouse_node, mysql_node, service_name, mysql_datab
         _bool Int8,
         sign Int8,
         version UInt64
-    ) ENGINE = ReplacingMergeTree(version) ORDER BY key;
+    ) ENGINE = CollapsingMergeTree(sign) ORDER BY key;
 
     CREATE MATERIALIZED VIEW test_materialized_view TO test_table AS
         SELECT * FROM test_table_replica;""")
@@ -226,40 +226,40 @@ def storage_mysql_replica(clickhouse_node, mysql_node, service_name, mysql_datab
                 "2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
                 "varchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t2020-01-01 00:00:00\t0\t1\t3\n")
 
-#    mysql_node.query("UPDATE " + mysql_database_name + ".test_table_1 SET unsigned_tiny_int = 2 WHERE `key` = 1")
-#
-#    check_query(clickhouse_node, "SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,"
-#                                 " small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, "
-#                                 " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, "
-#                                 " _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ "
-#                                 " _bool FROM test_table ORDER BY key FORMAT TSV",
-#                "1\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
-#                "2020-01-01 00:00:00\t1\n2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
-#                "varchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t0\n")
-#
-#    # update primary key
+    mysql_node.query("UPDATE " + mysql_database_name + ".test_table_1 SET unsigned_tiny_int = 2 WHERE `key` = 1")
+
+    check_query(clickhouse_node, "SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,"
+                                 " small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, "
+                                 " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, "
+                                 " _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ "
+                                 " _bool FROM test_table FINAL ORDER BY key FORMAT TSV",
+                "1\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
+                "2020-01-01 00:00:00\t1\n2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
+                "varchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t0\n")
+
+    # update primary key - not supported yet
 #    mysql_node.query("UPDATE " + mysql_database_name + ".test_table_1 SET `key` = 3 WHERE `unsigned_tiny_int` = 2")
 #
 #    check_query(clickhouse_node, "SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,"
 #                                 " small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, "
 #                                 " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, "
 #                                 " _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ "
-#                                 " _bool FROM test_table ORDER BY key FORMAT TSV",
+#                                 " _bool/*, sign, version*/ FROM test_table FINAL ORDER BY key FORMAT TSV",
 #                "2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
 #                "varchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t0\n3\t2\t-1\t2\t-2\t3\t-3\t"
 #                "4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t1\n")
-#
-#    mysql_node.query('DELETE FROM ' + mysql_database_name + '.test_table_1 WHERE `key` = 2')
-#    check_query(clickhouse_node, "SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,"
-#                                 " small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, "
-#                                 " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, "
-#                                 " _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ "
-#                                 " _bool FROM test_table ORDER BY key FORMAT TSV",
-#                "3\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
-#                "2020-01-01 00:00:00\t1\n")
-#
+
+    mysql_node.query('DELETE FROM ' + mysql_database_name + '.test_table_1 WHERE `key` = 2')
+    check_query(clickhouse_node, "SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,"
+                                 " small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, "
+                                 " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, "
+                                 " _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ "
+                                 " _bool FROM test_table FINAL ORDER BY key FORMAT TSV",
+                "1\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
+                "2020-01-01 00:00:00\t1\n")
+
 #    mysql_node.query('DELETE FROM ' + mysql_database_name + '.test_table_1 WHERE `unsigned_tiny_int` = 2')
-#    check_query(clickhouse_node, "SELECT * FROM test_table ORDER BY key FORMAT TSV", "")
+#    check_query(clickhouse_node, "SELECT * FROM test_table FINAL ORDER BY key FORMAT TSV", "")
 
     clickhouse_node.query("DROP TABLE test_table")
     mysql_node.query("DROP DATABASE " + mysql_database_name + "")
