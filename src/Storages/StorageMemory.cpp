@@ -29,14 +29,14 @@ public:
     /// only new elements can be added to the back of the list, so our iterators remain valid
 
     MemorySource(
-        const Names & column_names_,
+        Names column_names_,
         BlocksList::const_iterator first_,
         size_t num_blocks_,
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot,
         InitializerFunc initializer_func_ = [](BlocksList::const_iterator &, size_t &) {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names(column_names_)
+        , column_names(std::move(column_names_))
         , current_it(first_)
         , num_blocks(num_blocks_)
         , initializer_func(std::move(initializer_func_))
