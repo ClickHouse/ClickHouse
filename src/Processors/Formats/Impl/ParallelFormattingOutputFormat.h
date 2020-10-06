@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <Common/ThreadPool.h>
+#include <Poco/Event.h>
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 
@@ -20,9 +21,10 @@ namespace DB
 class ParallelFormattingOutputFormat : public IOutputFormat
 {
 public:
-    /* Used to recreate formatter on every new data piece. */
+    /// Used to recreate formatter on every new data piece.
     using InternalFormatterCreator = std::function<OutputFormatPtr(WriteBuffer & buf)>;
 
+    /// Struct to simplify constructor.
     struct Params
     {
         WriteBuffer & out;
@@ -37,14 +39,17 @@ public:
         , pool(params.max_threads_for_parallel_formatting)
 
     {
+        /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
+        /// and n threads for formatting.
         processing_units.resize(params.max_threads_for_parallel_formatting + 2);
-
         collector_thread = ThreadFromGlobalPool([&] { collectorThreadFunction(); });
     }
 
     ~ParallelFormattingOutputFormat() override
     {
         flush();
+        if (!IOutputFormat::finalized) 
+            finalize();
         finishAndWait();
     }
 
@@ -80,11 +85,13 @@ protected:
     {
         IOutputFormat::finalized = true;
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE);
+        collector_finished.wait();
     }
 
 private:
     InternalFormatterCreator internal_formatter_creator;
 
+    /// Status to synchronize multiple threads.
     enum ProcessingUnitStatus
     {
         READY_TO_INSERT,
@@ -92,7 +99,7 @@ private:
         READY_TO_READ
     };
 
-
+    /// Some information about what methods to call from internal parser.
     enum class ProcessingUnitType
     {
         START,
@@ -104,22 +111,22 @@ private:
 
     void addChunk(Chunk chunk, ProcessingUnitType type)
     {
-        // std::cout << "AddChunk of size  " << chunk.getNumRows() << std::endl;
         const auto current_unit_number = writer_unit_number % processing_units.size();
-
         auto & unit = processing_units[current_unit_number];
 
         {
             std::unique_lock<std::mutex> lock(mutex);
             writer_condvar.wait(lock,
-                [&]{ return unit.status == READY_TO_INSERT || formatting_finished; });
+                [&]{ return unit.status == READY_TO_INSERT || emergency_stop; });
         }
 
+        if (emergency_stop)
+            return;
+
         assert(unit.status == READY_TO_INSERT);
-
         unit.chunk = std::move(chunk);
-
-        /// Resize memory without deallocate
+        /// Resize memory without deallocation.
+        unit.segment.resize(0);
         unit.status = READY_TO_FORMAT;
         unit.type = type;
 
@@ -140,10 +147,9 @@ private:
         Chunk chunk;
         Memory<> segment;
         size_t actual_memory_size{0};
-        
     };
 
-    std::promise<bool> finalizator{}; 
+    Poco::Event collector_finished{};
 
     std::atomic_bool need_flush{false};
 
@@ -154,10 +160,11 @@ private:
 
     std::exception_ptr background_exception = nullptr;
 
+    /// We use deque, because ProcessingUnit doesn't have move or copy constructor.
     std::deque<ProcessingUnit> processing_units;
 
     std::mutex mutex;
-    std::atomic_bool formatting_finished{false};
+    std::atomic_bool emergency_stop{false};
 
     std::atomic_size_t collector_unit_number{0};
     std::atomic_size_t writer_unit_number{0};
@@ -167,10 +174,7 @@ private:
 
     void finishAndWait()
     {
-        std::future<bool> future_finalizator = finalizator.get_future();
-        future_finalizator.get();
-
-        formatting_finished = true;
+        emergency_stop = true;
 
         {
             std::unique_lock<std::mutex> lock(mutex);
@@ -201,7 +205,7 @@ private:
         {
             background_exception = std::current_exception();
         }
-        formatting_finished = true;
+        emergency_stop = true;
         writer_condvar.notify_all();
         collector_condvar.notify_all();
     }
@@ -211,43 +215,29 @@ private:
         pool.scheduleOrThrowOnError([this, ticket_number] { formatterThreadFunction(ticket_number); });
     }
 
-    void waitForFormattingFinished()
-    {
-        ///FIXME
-        while(hasChunksToWorkWith())
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
-
-    bool hasChunksToWorkWith()
-    {
-        return writer_unit_number - collector_unit_number > 0;
-    }
-
     void collectorThreadFunction()
     {
         setThreadName("Collector");
 
         try
         {
-            while (!formatting_finished)
+            while (!emergency_stop)
             {
                 const auto current_unit_number = collector_unit_number % processing_units.size();
-
-                // std::cout << "collecting " << current_unit_number << std::endl;
-
                 auto & unit = processing_units[current_unit_number];
 
                 {
                     std::unique_lock<std::mutex> lock(mutex);
                     collector_condvar.wait(lock,
-                        [&]{ return unit.status == READY_TO_READ; });
+                        [&]{ return unit.status == READY_TO_READ || emergency_stop; });
                 }
 
-                assert(unit.status == READY_TO_READ);
-                assert(unit.segment.size() > 0);
+                if (emergency_stop)
+                    return;
 
+                assert(unit.status == READY_TO_READ);
+
+                /// Use this copy to after notification to stop the execution.
                 auto copy_if_unit_type = unit.type;
 
                 /// Do main work here.
@@ -257,19 +247,19 @@ private:
                     IOutputFormat::flush();
 
                 ++collector_unit_number;
-
+                
                 {
+                    /// Notify other threads.
                     std::lock_guard<std::mutex> lock(mutex);
                     unit.status = READY_TO_INSERT;
                     writer_condvar.notify_all();
                 }
-
+                /// We can exit only after writing last piece of to out buffer.
                 if (copy_if_unit_type == ProcessingUnitType::FINALIZE)
                 {
-                    finalizator.set_value(true);
+                    collector_finished.set();
                     break;
                 }
-                    
             }
         }
         catch (...)
@@ -286,16 +276,13 @@ private:
         try
         {
             auto & unit = processing_units[current_unit_number];
-
             assert(unit.status = READY_TO_FORMAT);
 
-            unit.segment.resize(1);
-
+            unit.segment.resize(0);
+            unit.actual_memory_size = 0;
             BufferWithOutsideMemory<WriteBuffer> out_buffer(unit.segment);
 
             auto formatter = internal_formatter_creator(out_buffer);
-
-            unit.actual_memory_size = 0;
 
             switch (unit.type) 
             {
@@ -325,7 +312,7 @@ private:
                     break;
                 }
             }
-            
+            /// Flush all the data to handmade buffer.
             formatter->flush();
             unit.actual_memory_size = out_buffer.getActualSize();
 
@@ -334,13 +321,11 @@ private:
                 unit.status = READY_TO_READ;
                 collector_condvar.notify_all();
             }
-
         }
         catch (...)
         {
             onBackgroundException();
         }
-
     }
 };
 

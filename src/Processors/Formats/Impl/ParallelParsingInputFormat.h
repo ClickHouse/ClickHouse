@@ -84,7 +84,8 @@ public:
 
         initializePrepareEndUpMap();
 
-        segmentator_thread = ThreadFromGlobalPool([this] { segmentatorThreadFunction(); });
+        segmentator_thread = ThreadFromGlobalPool(
+            &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
     }
 
     ~ParallelParsingInputFormat() override
@@ -172,14 +173,14 @@ private:
     };
 
     const InternalParserCreator internal_parser_creator;
-    // Function to segment the file. Then "parsers" will parse that segments.
+    /// Function to segment the file. Then "parsers" will parse that segments.
     FormatFactory::FileSegmentationEngine file_segmentation_engine;
     const String format_name;
     const size_t min_chunk_bytes;
 
     BlockMissingValues last_block_missing_values;
 
-    //Non-atomic because it is used in one thread.
+    /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
     size_t segmentator_ticket_number{0};
     size_t reader_ticket_number{0};
@@ -190,9 +191,9 @@ private:
 
     std::atomic<bool> parsing_finished{false};
 
-    // There are multiple "parsers", that's why we use thread pool.
+    /// There are multiple "parsers", that's why we use thread pool.
     ThreadPool pool;
-    // Reading and segmentating the file
+    /// Reading and segmentating the file
     ThreadFromGlobalPool segmentator_thread;
 
     enum ProcessingUnitStatus
@@ -223,14 +224,17 @@ private:
 
     std::exception_ptr background_exception = nullptr;
 
-    // We use deque instead of vector, because it does not require a move
-    // constructor, which is absent for atomics that are inside ProcessingUnit.
+    /// We use deque instead of vector, because it does not require a move
+    /// constructor, which is absent for atomics that are inside ProcessingUnit.
     std::deque<ProcessingUnit> processing_units;
 
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
-        pool.scheduleOrThrowOnError([this, ticket_number] { parserThreadFunction(ticket_number); });
+        pool.scheduleOrThrowOnError([this, ticket_number, group = CurrentThread::getGroup()]()
+        {
+            parserThreadFunction(group, ticket_number);
+        });
     }
 
     void finishAndWait()
@@ -256,13 +260,13 @@ private:
         }
     }
 
-    void segmentatorThreadFunction();
-    void parserThreadFunction(size_t current_ticket_number);
+    void segmentatorThreadFunction(ThreadGroupStatusPtr thread_group);
+    void parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number);
 
-    // Save/log a background exception, set termination flag, wake up all
-    // threads. This function is used by segmentator and parsed threads.
-    // readImpl() is called from the main thread, so the exception handling
-    // is different.
+    /// Save/log a background exception, set termination flag, wake up all
+    /// threads. This function is used by segmentator and parsed threads.
+    /// readImpl() is called from the main thread, so the exception handling
+    /// is different.
     void onBackgroundException();
 
     /// To store objects which will prepare and end up ReadBuffer for each format.
