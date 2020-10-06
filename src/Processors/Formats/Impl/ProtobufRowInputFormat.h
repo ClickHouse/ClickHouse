@@ -18,8 +18,8 @@ class FormatSchemaInfo;
 /** Stream designed to deserialize data from the google protobuf format.
   * One Protobuf message is parsed as one row of data.
   *
-  * Input buffer may contain single protobuf message (single_message_mode_ = true),
-  * or any number of messages (single_message_mode_ = false). In the second case
+  * Input buffer may contain single protobuf message (use_length_delimiters_ = false),
+  * or any number of messages (use_length_delimiters = true). In the second case
   * parser assumes messages are length-delimited according to documentation
   * https://github.com/protocolbuffers/protobuf/blob/master/src/google/protobuf/util/delimited_message_util.h
   * Parsing of the protobuf format requires the 'format_schema' setting to be set, e.g.
@@ -29,7 +29,7 @@ class FormatSchemaInfo;
 class ProtobufRowInputFormat : public IRowInputFormat
 {
 public:
-    ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_, const bool single_message_mode_);
+    ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_, const bool use_length_delimiters_);
     ~ProtobufRowInputFormat() override;
 
     String getName() const override { return "ProtobufRowInputFormat"; }

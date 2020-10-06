@@ -26,7 +26,7 @@ namespace DB
 /** Stream designed to serialize data in the google protobuf format.
   * Each row is written as a separated message.
   *
-  * With single_message_mode=1 it can write only single row as plain protobuf message,
+  * With use_length_delimiters=0 it can write only single row as plain protobuf message,
   * otherwise Protobuf messages are delimited according to documentation
   * https://github.com/protocolbuffers/protobuf/blob/master/src/google/protobuf/util/delimited_message_util.h
   * Serializing in the protobuf format requires the 'format_schema' setting to be set, e.g.
@@ -41,7 +41,7 @@ public:
         const Block & header,
         const RowOutputFormatParams & params,
         const FormatSchemaInfo & format_schema,
-        const bool single_message_mode_);
+        const bool use_length_delimiters_);
 
     String getName() const override { return "ProtobufRowOutputFormat"; }
 
@@ -53,6 +53,7 @@ private:
     DataTypes data_types;
     ProtobufWriter writer;
     std::vector<size_t> value_indices;
+    const bool throw_on_multiple_rows_undelimited;
 };
 
 }

@@ -9,13 +9,20 @@
 namespace DB
 {
 
-/// Common parameters for generating blocks.
 struct RowOutputFormatParams
 {
     using WriteCallback = std::function<void(const Columns & columns,size_t row)>;
 
     // Callback used to indicate that another row is written.
     WriteCallback callback;
+
+    /**
+     * some buffers (kafka / rabbit) split the rows internally using callback
+     * so we can push there formats without framing / delimiters
+     * (like ProtobufSingle). In other cases you can't write more than single row
+     * in unframed format.
+     */
+    bool ignore_no_row_delimiter = false;
 };
 
 class WriteBuffer;
@@ -26,6 +33,7 @@ class IRowOutputFormat : public IOutputFormat
 {
 protected:
     DataTypes types;
+    bool first_row = true;
 
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override;
@@ -66,7 +74,6 @@ public:
     virtual void writeLastSuffix() {}  /// Write something after resultset, totals end extremes.
 
 private:
-    bool first_row = true;
     bool prefix_written = false;
     bool suffix_written = false;
 

@@ -11,10 +11,10 @@
 namespace DB
 {
 
-ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_, const bool single_message_mode_)
+ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_, const bool use_length_delimiters_)
     : IRowInputFormat(header_, in_, params_)
     , data_types(header_.getDataTypes())
-    , reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info_), header_.getNames(), single_message_mode_)
+    , reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info_), header_.getNames(), use_length_delimiters_)
 {
 }
 
@@ -67,9 +67,9 @@ void ProtobufRowInputFormat::syncAfterError()
 
 void registerInputFormatProcessorProtobuf(FormatFactory & factory)
 {
-    for (bool single_message_mode : {false, true})
+    for (bool use_length_delimiters : {false, true})
     {
-        factory.registerInputFormatProcessor(single_message_mode ? "ProtobufSingle" : "Protobuf", [single_message_mode](
+        factory.registerInputFormatProcessor(use_length_delimiters ? "Protobuf" : "ProtobufSingle", [use_length_delimiters](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -78,7 +78,7 @@ void registerInputFormatProcessorProtobuf(FormatFactory & factory)
             return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
                 FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
                                 settings.schema.is_server, settings.schema.format_schema_path),
-                single_message_mode);
+                use_length_delimiters);
         });
     }
 }

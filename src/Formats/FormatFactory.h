@@ -108,7 +108,7 @@ public:
         ReadCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context, WriteCallback callback = {}) const;
+        const Block & sample, const Context & context, WriteCallback callback = {}, const bool ignore_no_row_delimiter = false) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
@@ -119,7 +119,7 @@ public:
         ReadCallback callback = {}) const;
 
     OutputFormatPtr getOutputFormat(
-        const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}) const;
+        const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}, const bool ignore_no_row_delimiter = false) const;
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);

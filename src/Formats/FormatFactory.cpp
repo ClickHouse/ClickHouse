@@ -203,7 +203,7 @@ BlockInputStreamPtr FormatFactory::getInput(
 
 
 BlockOutputStreamPtr FormatFactory::getOutput(
-    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const bool ignore_no_row_delimiter) const
 {
     if (!getCreators(name).output_processor_creator)
     {
@@ -221,7 +221,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(
                 output_getter(buf, sample, std::move(callback), format_settings), sample);
     }
 
-    auto format = getOutputFormat(name, buf, sample, context, std::move(callback));
+    auto format = getOutputFormat(name, buf, sample, context, std::move(callback), ignore_no_row_delimiter);
     return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
@@ -260,7 +260,7 @@ InputFormatPtr FormatFactory::getInputFormat(
 
 
 OutputFormatPtr FormatFactory::getOutputFormat(
-    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const bool ignore_no_row_delimiter) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
@@ -270,6 +270,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     FormatSettings format_settings = getOutputFormatSetting(settings, context);
 
     RowOutputFormatParams params;
+    params.ignore_no_row_delimiter = ignore_no_row_delimiter;
     params.callback = std::move(callback);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,

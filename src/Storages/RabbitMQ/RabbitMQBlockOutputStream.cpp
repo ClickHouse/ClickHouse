@@ -46,7 +46,9 @@ void RabbitMQBlockOutputStream::writePrefix()
             storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & /* columns */, size_t /* rows */)
             {
                 buffer->countRow();
-            });
+            },
+            true
+            );
 }
 
 
