@@ -25,10 +25,10 @@ static ITransformingStep::Traits getTraits()
 AddingMissedStep::AddingMissedStep(
     const DataStream & input_stream_,
     Block result_header_,
-    const ColumnDefaults & column_defaults_,
+    ColumnsDescription columns_,
     const Context & context_)
     : ITransformingStep(input_stream_, result_header_, getTraits())
-    , column_defaults(column_defaults_)
+    , columns(std::move(columns_))
     , context(context_)
 {
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
@@ -38,7 +38,7 @@ void AddingMissedStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<AddingMissedTransform>(header, output_stream->header, column_defaults, context);
+        return std::make_shared<AddingMissedTransform>(header, output_stream->header, columns, context);
     });
 }
 

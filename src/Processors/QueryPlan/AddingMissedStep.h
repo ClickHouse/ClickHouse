@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Storages/ColumnDefault.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -11,7 +11,7 @@ class AddingMissedStep : public ITransformingStep
 public:
     AddingMissedStep(const DataStream & input_stream_,
                      Block result_header_,
-                     const ColumnDefaults & column_defaults_,
+                     ColumnsDescription columns_,
                      const Context & context_);
 
     String getName() const override { return "AddingMissed"; }
@@ -19,7 +19,7 @@ public:
     void transformPipeline(QueryPipeline & pipeline) override;
 
 private:
-    ColumnDefaults column_defaults;
+    ColumnsDescription columns;
     const Context & context;
 };
 
