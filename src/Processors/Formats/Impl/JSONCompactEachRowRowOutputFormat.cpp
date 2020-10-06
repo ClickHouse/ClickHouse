@@ -68,7 +68,7 @@ void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, siz
     writeCString("]\n", out);
 }
 
-void JSONCompactEachRowRowOutputFormat::writePrefix()
+void JSONCompactEachRowRowOutputFormat::doWritePrefix()
 {
     if (with_names)
     {
