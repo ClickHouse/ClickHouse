@@ -243,7 +243,7 @@ void StorageBuffer::read(
                     auto adding_missed = std::make_unique<AddingMissedStep>(
                             query_plan.getCurrentDataStream(),
                             header_after_adding_defaults,
-                            metadata_snapshot->getColumns().getDefaults(), context);
+                            metadata_snapshot->getColumns(), context);
 
                     adding_missed->setStepDescription("Add columns missing in destination table");
                     query_plan.addStep(std::move(adding_missed));
