@@ -69,7 +69,7 @@ bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memor
     }
 
     saveUpToPosition(in, memory, pos);
-    assert(*memory.data() == '{');
+    assert(*memory.data() == '{' || memory.size() == 0);
     return loadAtPosition(in, memory, pos);
 }
 
