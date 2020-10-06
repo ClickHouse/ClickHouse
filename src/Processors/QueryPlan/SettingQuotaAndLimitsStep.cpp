@@ -30,20 +30,18 @@ SettingQuotaAndLimitsStep::SettingQuotaAndLimitsStep(
     std::shared_ptr<const EnabledQuota> quota_,
     std::shared_ptr<Context> context_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+    , context(std::move(context_))
     , storage(std::move(storage_))
     , table_lock(std::move(table_lock_))
     , limits(limits_)
     , leaf_limits(leaf_limits_)
     , quota(std::move(quota_))
-    , context(std::move(context_))
 {
 }
 
 void SettingQuotaAndLimitsStep::transformPipeline(QueryPipeline & pipeline)
 {
     /// Table lock is stored inside pipeline here.
-    pipeline.addTableLock(table_lock);
-
     pipeline.setLimits(limits);
 
     /**
@@ -59,11 +57,15 @@ void SettingQuotaAndLimitsStep::transformPipeline(QueryPipeline & pipeline)
     if (quota)
         pipeline.setQuota(quota);
 
+    /// Order of resources below is important.
     if (context)
         pipeline.addInterpreterContext(std::move(context));
 
     if (storage)
         pipeline.addStorageHolder(std::move(storage));
+
+    if (table_lock)
+        pipeline.addTableLock(std::move(table_lock));
 }
 
 }

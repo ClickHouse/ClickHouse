@@ -33,12 +33,12 @@ public:
     void transformPipeline(QueryPipeline & pipeline) override;
 
 private:
+    std::shared_ptr<Context> context;
     StoragePtr storage;
     TableLockHolder table_lock;
     StreamLocalLimits limits;
     SizeLimits leaf_limits;
     std::shared_ptr<const EnabledQuota> quota;
-    std::shared_ptr<Context> context;
 };
 
 }
