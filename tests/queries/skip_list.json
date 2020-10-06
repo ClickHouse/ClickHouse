@@ -237,6 +237,7 @@
         "01338_long_select_and_alter",
         "01200_mutations_memory_consumption",
         "00133_long_shard_memory_tracker_and_exception_safety",
+        "01280_ttl_where_group_by",
         "attach",
         "ddl_dictionaries",
         "dictionary",
