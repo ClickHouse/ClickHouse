@@ -58,7 +58,7 @@ ASTPtr SchemaClause::convertToOld() const
                         constraint_list->children.push_back(element->convertToOld());
                         break;
                     case TableElementExpr::ExprType::INDEX:
-                        constraint_list->children.push_back(element->convertToOld());
+                        index_list->children.push_back(element->convertToOld());
                         break;
                 }
             }

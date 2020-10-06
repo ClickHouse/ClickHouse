@@ -52,8 +52,8 @@ class TableElementExpr : public INode
         enum class ExprType
         {
             COLUMN,
-            INDEX,
             CONSTRAINT,
+            INDEX,
         };
 
         static PtrTo<TableElementExpr> createColumn(
@@ -63,6 +63,8 @@ class TableElementExpr : public INode
             PtrTo<StringLiteral> comment,
             PtrTo<CodecExpr> codec,
             PtrTo<ColumnExpr> ttl);
+
+        static PtrTo<TableElementExpr> createConstraint(PtrTo<Identifier> identifier, PtrTo<ColumnExpr> expr);
 
         static PtrTo<TableElementExpr>
         createIndex(PtrTo<Identifier> name, PtrTo<ColumnExpr> expr, PtrTo<ColumnTypeExpr> type, PtrTo<NumberLiteral> granularity);
@@ -81,6 +83,10 @@ class TableElementExpr : public INode
             COMMENT = 3,   // StringLiteral (optional)
             CODEC = 4,     // CodecExpr (optional)
             TTL = 5,       // ColumnExpr (optional)
+
+            // CONSTRAINT
+            // NAME = 0,
+            // EXPR = 1,
 
             // INDEX
             EXPR = 1,         // ColumnExpr

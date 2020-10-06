@@ -59,6 +59,12 @@ PtrTo<TableElementExpr> TableElementExpr::createColumn(
 }
 
 // static
+PtrTo<TableElementExpr> TableElementExpr::createConstraint(PtrTo<Identifier> identifier, PtrTo<ColumnExpr> expr)
+{
+    return PtrTo<TableElementExpr>(new TableElementExpr(ExprType::CONSTRAINT, {identifier, expr}));
+}
+
+// static
 PtrTo<TableElementExpr>
 TableElementExpr::createIndex(PtrTo<Identifier> name, PtrTo<ColumnExpr> expr, PtrTo<ColumnTypeExpr> type, PtrTo<NumberLiteral> granularity)
 {
@@ -122,7 +128,8 @@ ASTPtr TableElementExpr::convertToOld() const
         {
             auto expr = std::make_shared<ASTConstraintDeclaration>();
 
-            // TODO
+            expr->name = get<Identifier>(NAME)->getName();
+            expr->set(expr->expr, get(EXPR)->convertToOld());
 
             return expr;
         }
@@ -185,6 +192,11 @@ antlrcpp::Any ParseTreeVisitor::visitTableColumnPropertyExpr(ClickHouseParser::T
 antlrcpp::Any ParseTreeVisitor::visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext *ctx)
 {
     return visit(ctx->tableColumnDfnt());
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableElementExprConstraint(ClickHouseParser::TableElementExprConstraintContext *ctx)
+{
+    return TableElementExpr::createConstraint(visit(ctx->identifier()), visit(ctx->columnExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableElementExprIndex(ClickHouseParser::TableElementExprIndexContext *ctx)

@@ -140,6 +140,7 @@ public:
     // TableElementExpr
     antlrcpp::Any visitCodecExpr(ClickHouseParser::CodecExprContext * ctx) override;
     antlrcpp::Any visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext * ctx) override;
+    antlrcpp::Any visitTableElementExprConstraint(ClickHouseParser::TableElementExprConstraintContext * ctx) override;
     antlrcpp::Any visitTableElementExprIndex(ClickHouseParser::TableElementExprIndexContext * ctx) override;
 
     // TableExpr

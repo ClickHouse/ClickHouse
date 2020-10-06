@@ -96,6 +96,8 @@ public:
 
     virtual antlrcpp::Any visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext *context) = 0;
 
+    virtual antlrcpp::Any visitTableElementExprConstraint(ClickHouseParser::TableElementExprConstraintContext *context) = 0;
+
     virtual antlrcpp::Any visitTableElementExprIndex(ClickHouseParser::TableElementExprIndexContext *context) = 0;
 
     virtual antlrcpp::Any visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext *context) = 0;
