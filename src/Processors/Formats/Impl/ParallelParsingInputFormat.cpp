@@ -1,11 +1,21 @@
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <IO/ReadHelpers.h>
+#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
+#include <ext/scope_guard.h>
 
 namespace DB
 {
 
-void ParallelParsingInputFormat::segmentatorThreadFunction()
+void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
 {
+    SCOPE_EXIT(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
+    if (thread_group)
+        CurrentThread::attachTo(thread_group);
+
     setThreadName("Segmentator");
     try
     {
@@ -21,9 +31,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction()
             }
 
             if (parsing_finished)
-            {
                 break;
-            }
 
             assert(unit.status == READY_TO_INSERT);
 
@@ -38,9 +46,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction()
             ++segmentator_ticket_number;
 
             if (!have_more_data)
-            {
                 break;
-            }
         }
     }
     catch (...)
@@ -49,16 +55,21 @@ void ParallelParsingInputFormat::segmentatorThreadFunction()
     }
 }
 
-void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_number)
+void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
+    SCOPE_EXIT(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
+    if (thread_group)
+        CurrentThread::attachTo(thread_group);
+
     try
     {
         setThreadName("ChunkParser");
 
         const auto current_unit_number = current_ticket_number % processing_units.size();
         auto & unit = processing_units[current_unit_number];
-
-        assert(unit.segment.size() > 0);
 
         /*
          * This is kind of suspicious -- the input_process_creator contract with
