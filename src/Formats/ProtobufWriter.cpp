@@ -21,7 +21,6 @@ namespace ErrorCodes
     extern const int NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD;
     extern const int PROTOBUF_BAD_CAST;
     extern const int PROTOBUF_FIELD_NOT_REPEATED;
-    extern const int TOO_MANY_ROWS;
 }
 
 
@@ -124,16 +123,11 @@ namespace
 
 // SimpleWriter is an utility class to serialize protobufs.
 // Knows nothing about protobuf schemas, just provides useful functions to serialize data.
-ProtobufWriter::SimpleWriter::SimpleWriter(WriteBuffer & out_, const bool single_message_mode_)
+ProtobufWriter::SimpleWriter::SimpleWriter(WriteBuffer & out_, const bool use_length_delimiters_)
     : out(out_)
     , current_piece_start(0)
     , num_bytes_skipped(0)
-    , produce_length_delimiters(!single_message_mode_)
-    // normally for single_message_mode we forbid outputting more than one row
-    // (it would lead to malformed protobuf message), but Kafka/Rabbit push every row
-    // in a separate message, so it's valid case there and should be allowed.
-    , allow_several_messages(!single_message_mode_ || out.producesIsolatedRows())
-    , row_was_send(false)
+    , use_length_delimiters(use_length_delimiters_)
 {
 }
 
@@ -141,17 +135,12 @@ ProtobufWriter::SimpleWriter::~SimpleWriter() = default;
 
 void ProtobufWriter::SimpleWriter::startMessage()
 {
-    if (!allow_several_messages && row_was_send)
-    {
-        throw Exception("ProtobufSingle can output only single row at a time.", ErrorCodes::TOO_MANY_ROWS);
-    }
-    row_was_send = true;
 }
 
 void ProtobufWriter::SimpleWriter::endMessage()
 {
     pieces.emplace_back(current_piece_start, buffer.size());
-    if (produce_length_delimiters)
+    if (use_length_delimiters)
     {
         size_t size_of_message = buffer.size() - num_bytes_skipped;
         writeVarint(size_of_message, out);
@@ -845,8 +834,8 @@ std::unique_ptr<ProtobufWriter::IConverter> ProtobufWriter::createConverter<goog
 
 
 ProtobufWriter::ProtobufWriter(
-    WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names, const bool single_message_mode_)
-    : simple_writer(out, single_message_mode_)
+    WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names, const bool use_length_delimiters_)
+    : simple_writer(out, use_length_delimiters_)
 {
     std::vector<const google::protobuf::FieldDescriptor *> field_descriptors_without_match;
     root_message = ProtobufColumnMatcher::matchColumns<ColumnMatcherTraits>(column_names, message_type, field_descriptors_without_match);

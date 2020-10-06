@@ -14,6 +14,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int TOO_MANY_ROWS;
 }
 
 
@@ -22,16 +23,22 @@ ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     const Block & header,
     const RowOutputFormatParams & params,
     const FormatSchemaInfo & format_schema,
-    const bool single_message_mode_)
+    const bool use_length_delimiters_)
     : IRowOutputFormat(header, out_, params)
     , data_types(header.getDataTypes())
-    , writer(out, ProtobufSchemas::instance().getMessageTypeForFormatSchema(format_schema), header.getNames(), single_message_mode_)
+    , writer(out, ProtobufSchemas::instance().getMessageTypeForFormatSchema(format_schema), header.getNames(), use_length_delimiters_)
+    , throw_on_multiple_rows_undelimited(!use_length_delimiters_ && !params.ignore_no_row_delimiter)
 {
     value_indices.resize(header.columns());
 }
 
 void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
+    if (throw_on_multiple_rows_undelimited && !first_row)
+    {
+        throw Exception("The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.", ErrorCodes::TOO_MANY_ROWS);
+    }
+
     writer.startMessage();
     std::fill(value_indices.begin(), value_indices.end(), 0);
     size_t column_index;
@@ -44,11 +51,11 @@ void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
 
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
 {
-    for (bool single_message_mode : {false, true})
+    for (bool use_length_delimiters : {false, true})
     {
         factory.registerOutputFormatProcessor(
-            single_message_mode ? "ProtobufSingle" : "Protobuf",
-            [single_message_mode](WriteBuffer & buf,
+            use_length_delimiters ? "Protobuf" : "ProtobufSingle",
+            [use_length_delimiters](WriteBuffer & buf,
                const Block & header,
                const RowOutputFormatParams & params,
                const FormatSettings & settings)
@@ -56,7 +63,7 @@ void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
                 return std::make_shared<ProtobufRowOutputFormat>(buf, header, params,
                     FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
                                      settings.schema.is_server, settings.schema.format_schema_path),
-                                     single_message_mode);
+                                     use_length_delimiters);
             });
     }
 }
