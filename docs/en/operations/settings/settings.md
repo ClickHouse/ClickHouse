@@ -276,6 +276,10 @@ When enabled, replace empty input fields in TSV with default values. For complex
 
 Disabled by default.
 
+## input\_format\_tsv\_enum\_as\_number {#settings-input_format_tsv_enum_as_number}
+
+For TSV input format switches to parsing enum values as enum ids.
+
 ## input\_format\_null\_as\_default {#settings-input-format-null-as-default}
 
 Enables or disables using default values if input data contain `NULL`, but data type of the corresponding column in not `Nullable(T)` (for text input formats).
@@ -1106,6 +1110,10 @@ The character interpreted as a delimiter in the CSV data. By default, the delimi
 ## input\_format\_csv\_unquoted\_null\_literal\_as\_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
+
+## input\_format\_csv\_enum\_as\_number {#settings-input_format_csv_enum_as_number}
+
+For CSV input format switches to parsing enum values as enum ids.
 
 ## output\_format\_csv\_crlf\_end\_of\_line {#settings-output-format-csv-crlf-end-of-line}
 
