@@ -279,7 +279,7 @@ public:
     String getName() const override { return Name::name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
