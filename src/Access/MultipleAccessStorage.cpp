@@ -415,9 +415,9 @@ UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & p
             ids_cache.set(id, storage);
             return id;
         }
-        catch (const Exception & e)
+        catch (...)
         {
-            if (e.code() == ErrorCodes::UNKNOWN_USER)
+            if (!storage->find(EntityType::USER, user_name))
             {
                 /// The authentication failed because there no users with such name in the `storage`
                 /// thus we can try to search in other nested storages.
@@ -442,9 +442,9 @@ UUID MultipleAccessStorage::getIDOfLoggedUserImpl(const String & user_name) cons
             ids_cache.set(id, storage);
             return id;
         }
-        catch (const Exception & e)
+        catch (...)
         {
-            if (e.code() == ErrorCodes::UNKNOWN_USER)
+            if (!storage->find(EntityType::USER, user_name))
             {
                 /// The authentication failed because there no users with such name in the `storage`
                 /// thus we can try to search in other nested storages.
