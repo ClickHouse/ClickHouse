@@ -20,10 +20,10 @@ namespace ErrorCodes
 ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     WriteBuffer & out_,
     const Block & header,
-    FormatFactory::WriteCallback callback,
+    const RowOutputFormatParams & params,
     const FormatSchemaInfo & format_schema,
     const bool single_message_mode_)
-    : IRowOutputFormat(header, out_, callback)
+    : IRowOutputFormat(header, out_, params)
     , data_types(header.getDataTypes())
     , writer(out, ProtobufSchemas::instance().getMessageTypeForFormatSchema(format_schema), header.getNames(), single_message_mode_)
 {
@@ -46,15 +46,14 @@ void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
 {
     for (bool single_message_mode : {false, true})
     {
-
         factory.registerOutputFormatProcessor(
             single_message_mode ? "ProtobufSingle" : "Protobuf",
             [single_message_mode](WriteBuffer & buf,
                const Block & header,
-               FormatFactory::WriteCallback callback,
+               const RowOutputFormatParams & params,
                const FormatSettings & settings)
             {
-                return std::make_shared<ProtobufRowOutputFormat>(buf, header, std::move(callback),
+                return std::make_shared<ProtobufRowOutputFormat>(buf, header, params,
                     FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
                                      settings.schema.is_server, settings.schema.format_schema_path),
                                      single_message_mode);

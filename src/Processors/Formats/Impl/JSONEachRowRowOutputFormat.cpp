@@ -11,10 +11,10 @@ namespace DB
 JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
-    FormatFactory::WriteCallback callback,
+    const RowOutputFormatParams & params,
     const FormatSettings & settings_,
     bool yield_strings_)
-    : IRowOutputFormat(header_, out_, callback), settings(settings_), yield_strings(yield_strings_)
+    : IRowOutputFormat(header_, out_, params), settings(settings_), yield_strings(yield_strings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
@@ -71,19 +71,19 @@ void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
     factory.registerOutputFormatProcessor("JSONEachRow", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, callback, format_settings, false);
+        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params, format_settings, false);
     });
 
     factory.registerOutputFormatProcessor("JSONStringsEachRow", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, callback, format_settings, true);
+        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params, format_settings, true);
     });
 }
 

@@ -25,8 +25,8 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
         write(columns, row);
 
-        if (write_single_row_callback)
-            write_single_row_callback(columns, row);
+        if (params.callback)
+            params.callback(columns, row);
     }
 }
 
