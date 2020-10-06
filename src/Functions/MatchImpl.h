@@ -141,10 +141,7 @@ struct MatchImpl
         {
             size_t size = offsets.size();
 
-            constexpr int flags = case_insensitive ?
-                Regexps::Regexp::RE_CASELESS : 0;
-
-            auto regexp = Regexps::get<like, true>(pattern, flags);
+            auto regexp = Regexps::get<like, true, case_insensitive>(pattern);
 
             std::string required_substring;
             bool is_trivial;

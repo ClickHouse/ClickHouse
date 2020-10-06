@@ -107,6 +107,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ?
                                      FormatSettings::Pretty::Charset::ASCII :
                                      FormatSettings::Pretty::Charset::UTF8;
+    format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
@@ -368,6 +369,8 @@ void registerInputFormatProcessorArrow(FormatFactory & factory);
 void registerOutputFormatProcessorArrow(FormatFactory & factory);
 void registerInputFormatProcessorAvro(FormatFactory & factory);
 void registerOutputFormatProcessorAvro(FormatFactory & factory);
+void registerInputFormatProcessorRawBLOB(FormatFactory & factory);
+void registerOutputFormatProcessorRawBLOB(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -428,6 +431,9 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorTemplate(*this);
     registerInputFormatProcessorMsgPack(*this);
     registerOutputFormatProcessorMsgPack(*this);
+    registerInputFormatProcessorRawBLOB(*this);
+    registerOutputFormatProcessorRawBLOB(*this);
+
 #if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorORC(*this);
     registerOutputFormatProcessorORC(*this);
@@ -458,6 +464,7 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorRegexp(*this);
     registerInputFormatProcessorJSONAsString(*this);
     registerInputFormatProcessorLineAsString(*this);
+
 #if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorCapnProto(*this);
 #endif

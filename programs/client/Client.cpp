@@ -1555,9 +1555,8 @@ private:
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
 
-        const auto & column_defaults = columns_description.getDefaults();
-        if (!column_defaults.empty())
-            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
+        if (columns_description.hasDefaults())
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, context);
 
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 

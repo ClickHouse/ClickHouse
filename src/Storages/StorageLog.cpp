@@ -362,7 +362,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 {
     IDataType::SerializeBinaryBulkSettings settings;
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
         if (written_streams.count(stream_name))
@@ -382,7 +382,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
     if (serialize_states.count(name) == 0)
          type.serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
         if (written_streams.count(stream_name))
@@ -400,7 +400,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
     type.serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
         if (!written_streams.emplace(stream_name).second)
@@ -487,7 +487,7 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
         throw Exception("Duplicate column with name " + column_name + " in constructor of StorageLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
-    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path)
+    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
 
@@ -597,7 +597,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
     IDataType::SubstreamPath substream_root_path;
-    column_type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    column_type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column_name, substream_path);
