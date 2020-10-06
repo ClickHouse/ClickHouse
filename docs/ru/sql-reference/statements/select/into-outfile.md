@@ -1,6 +1,6 @@
 # Секция INTO OUTFILE  {#into-outfile-clause}
 
-Чтобы перенаправить вывод `SELECT` запроса в указанный файл на стороне клиента, добавьте к нему секцию `INTO OUTFILE filename` (где filenam — строковый литерал).
+Чтобы перенаправить вывод `SELECT` запроса в указанный файл на стороне клиента, добавьте к нему секцию `INTO OUTFILE filename` (где filename — строковый литерал).
 
 ## Детали реализации {#implementation-details}
 

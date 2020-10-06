@@ -45,6 +45,8 @@ struct FormatSettings
         UInt64 max_value_width = 10000;
         bool color = true;
 
+        bool output_format_pretty_row_numbers = false;
+
         enum class Charset
         {
             UTF8,
