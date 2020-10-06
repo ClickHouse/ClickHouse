@@ -13,32 +13,25 @@ namespace DB
 
 ReadFromStorageStep::ReadFromStorageStep(
     TableLockHolder table_lock_,
-    StorageMetadataPtr metadata_snapshot_,
-    StreamLocalLimits & limits_,
-    SizeLimits & leaf_limits_,
-    std::shared_ptr<const EnabledQuota> quota_,
+    StorageMetadataPtr metadata_snapshot,
+    StreamLocalLimits & limits,
+    SizeLimits & leaf_limits,
+    std::shared_ptr<const EnabledQuota> quota,
     StoragePtr storage_,
-    const Names & required_columns_,
-    const SelectQueryInfo & query_info_,
+    const Names & required_columns,
+    const SelectQueryInfo & query_info,
     std::shared_ptr<Context> context_,
-    QueryProcessingStage::Enum processing_stage_,
-    size_t max_block_size_,
-    size_t max_streams_)
-    : table_lock(std::move(table_lock_))
-    , metadata_snapshot(std::move(metadata_snapshot_))
-    , limits(limits_)
-    , leaf_limits(leaf_limits_)
-    , quota(std::move(quota_))
-    , storage(std::move(storage_))
-    , required_columns(required_columns_)
-    , query_info(query_info_)
-    , context(std::move(context_))
-    , processing_stage(processing_stage_)
-    , max_block_size(max_block_size_)
-    , max_streams(max_streams_)
+    QueryProcessingStage::Enum processing_stage,
+    size_t max_block_size,
+    size_t max_streams)
 {
     /// Note: we read from storage in constructor of step because we don't know real header before reading.
     /// It will be fixed when storage return QueryPlanStep itself.
+
+    /// Move arguments into stack in order to ensure order of destruction in case of exception.
+    auto context = std::move(context_);
+    auto storage = std::move(storage_);
+    auto table_lock = std::move(table_lock_);
 
     Pipe pipe = storage->read(required_columns, metadata_snapshot, query_info, *context, processing_stage, max_block_size, max_streams);
 
@@ -83,9 +76,6 @@ ReadFromStorageStep::ReadFromStorageStep(
     pipeline = std::make_unique<QueryPipeline>();
     QueryPipelineProcessorsCollector collector(*pipeline, this);
 
-    /// Table lock is stored inside pipeline here.
-    pipeline->addTableLock(table_lock);
-
     pipe.setLimits(limits);
 
     /**
@@ -103,8 +93,11 @@ ReadFromStorageStep::ReadFromStorageStep(
 
     pipeline->init(std::move(pipe));
 
+    /// Add resources to pipeline. The order is important.
+    /// Add in reverse order of destruction. Pipeline will be destroyed at the end in case of exception.
     pipeline->addInterpreterContext(std::move(context));
     pipeline->addStorageHolder(std::move(storage));
+    pipeline->addTableLock(std::move(table_lock));
 
     processors = collector.detachProcessors();
 
