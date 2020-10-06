@@ -30,6 +30,7 @@ MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
 
 MultipleAccessStorage::~MultipleAccessStorage()
 {
+    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
     const auto storages = getStoragesPtr();
     for (const auto & storage : *storages | boost::adaptors::reversed)
     {
@@ -414,9 +415,9 @@ UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & p
             ids_cache.set(id, storage);
             return id;
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            if (!storage->find(EntityType::USER, user_name))
+            if (e.code() == EntityTypeInfo::get(EntityType::USER).not_found_error_code)
             {
                 /// The authentication failed because there no users with such name in the `storage`
                 /// thus we can try to search in other nested storages.
@@ -441,9 +442,9 @@ UUID MultipleAccessStorage::getIDOfLoggedUserImpl(const String & user_name) cons
             ids_cache.set(id, storage);
             return id;
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            if (!storage->find(EntityType::USER, user_name))
+            if (e.code() == EntityTypeInfo::get(EntityType::USER).not_found_error_code)
             {
                 /// The authentication failed because there no users with such name in the `storage`
                 /// thus we can try to search in other nested storages.
