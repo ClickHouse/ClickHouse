@@ -6,6 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 NUM_REPLICAS=2
+NUM_INSERTS=5
 
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -n -q "
@@ -15,21 +16,21 @@ for i in $(seq 1 $NUM_REPLICAS); do
 done
 
 $CLICKHOUSE_CLIENT -n -q "
-    SYSTEM STOP REPLICATION QUEUES quorum2;
+    SYSTEM STOP REPLICATION QUEUES r2;
 "
 
 function thread {
     $CLICKHOUSE_CLIENT --insert_quorum 2 --insert_quorum_parallel 1 --query "INSERT INTO r1 SELECT $1"
 }
 
-for i in {1..5}; do
+for i in $(seq 1 $NUM_INSERTS); do
     thread $i &
 done
 
 
 $CLICKHOUSE_CLIENT -n -q "
     OPTIMIZE TABLE r1 FINAL;
-    SYSTEM START REPLICATION QUEUES quorum2;
+    SYSTEM START REPLICATION QUEUES r2;
 "
 
 wait

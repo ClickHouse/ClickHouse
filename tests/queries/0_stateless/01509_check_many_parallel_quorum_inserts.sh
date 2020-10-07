@@ -14,17 +14,15 @@ for i in $(seq 1 $NUM_REPLICAS); do
     "
 done
 
-$CLICKHOUSE_CLIENT -n -q "SYSTEM STOP REPLICATION QUEUES quorum2;"
-
 function thread {
-    for j in {0..9}; do
-        a=$((($1 - 1) * 10 + $j))
-        $CLICKHOUSE_CLIENT --insert_quorum 5 --insert_quorum_parallel 1 --query "INSERT INTO r$1 SELECT $a"
-    done
+    $CLICKHOUSE_CLIENT --insert_quorum 5 --insert_quorum_parallel 1 --query "INSERT INTO r$1 SELECT $2"
 }
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    thread $i &
+    for j in {0..9}; do
+        a=$((($i - 1) * 10 + $j))
+        thread $i $a &
+    done
 done
 
 wait
