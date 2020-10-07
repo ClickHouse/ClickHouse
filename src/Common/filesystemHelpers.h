@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/Exception.h>
 
 #include <filesystem>
@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_STATVFS;
+}
 
 using TemporaryFile = Poco::TemporaryFile;
 
@@ -27,6 +31,12 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path);
 #endif
 String getFilesystemName([[maybe_unused]] const String & mount_point);
 
-struct statvfs getStatVFS(const String & path);
+inline struct statvfs getStatVFS(const String & path)
+{
+    struct statvfs fs;
+    if (statvfs(path.c_str(), &fs) != 0)
+        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
+    return fs;
+}
 
 }

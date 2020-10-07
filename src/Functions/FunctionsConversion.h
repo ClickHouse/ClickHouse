@@ -2250,7 +2250,9 @@ private:
 
                 size_t nullable_pos = block.columns() - 1;
                 nullable_col = typeid_cast<const ColumnNullable *>(block.getByPosition(nullable_pos).column.get());
-                if (col && nullable_col && nullable_col->size() != col->size())
+                if (!nullable_col)
+                    throw Exception("Last column should be ColumnNullable", ErrorCodes::LOGICAL_ERROR);
+                if (col && nullable_col->size() != col->size())
                     throw Exception("ColumnNullable is not compatible with original", ErrorCodes::LOGICAL_ERROR);
             }
 

@@ -17,8 +17,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
 
 class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
@@ -92,7 +90,7 @@ private:
                 src_offset = src_offsets[i];
                 dst_offset += src_length;
 
-                if (src_length > 1 && dst_data[dst_offset - 2] != UInt8(trailing_char_str.front()))
+                if (src_length > 1 && dst_data[dst_offset - 2] != trailing_char_str.front())
                 {
                     dst_data[dst_offset - 1] = trailing_char_str.front();
                     dst_data[dst_offset] = 0;
@@ -110,8 +108,6 @@ private:
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 };
-
-}
 
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory & factory)
 {

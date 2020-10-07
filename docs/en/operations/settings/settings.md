@@ -940,8 +940,6 @@ This algorithm chooses the first replica in the set or a random replica if the f
 
 The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, the load is evenly distributed among replicas that are still available.
 
-It's possible to explicitly define what the first replica is by using the setting `load_balancing_first_offset`. This gives more control to rebalance query workloads among replicas.
-
 ### Round Robin {#load_balancing-round_robin}
 
 ``` sql
@@ -1144,9 +1142,9 @@ See also:
 
 ## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
-Write to quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
+Write to quorum timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
-Default value: 600000 milliseconds (ten minutes).
+Default value: 60 seconds.
 
 See also:
 
@@ -1817,7 +1815,7 @@ Default value: 8192.
 
 Turns on or turns off using of single dictionary for the data part.
 
-By default, the ClickHouse server monitors the size of dictionaries and if a dictionary overflows then the server starts to write the next one. To prohibit creating several dictionaries set `low_cardinality_use_single_dictionary_for_part = 1`.
+By default, ClickHouse server monitors the size of dictionaries and if a dictionary overflows then the server starts to write the next one. To prohibit creating several dictionaries set `low_cardinality_use_single_dictionary_for_part = 1`.
 
 Possible values:
 
@@ -1975,55 +1973,5 @@ Possible values:
 -   0 — No locking timeout.
 
 Default value: `120` seconds.
-
-## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
-
-Limits the width of value displayed in [Pretty](../../interfaces/formats.md#pretty) formats. If the value width exceeds the limit, the value is cut. 
-
-Possible values:
-
--   Positive integer. 
--   0 — The value is cut completely.
-
-Default value: `10000` symbols.
-
-**Examples**
-
-Query:
-```sql
-SET output_format_pretty_max_value_width = 10;
-SELECT range(number) FROM system.numbers LIMIT 10 FORMAT PrettyCompactNoEscapes;
-```
-Result:
-```text
-┌─range(number)─┐
-│ []            │
-│ [0]           │
-│ [0,1]         │
-│ [0,1,2]       │
-│ [0,1,2,3]     │
-│ [0,1,2,3,4⋯   │
-│ [0,1,2,3,4⋯   │
-│ [0,1,2,3,4⋯   │
-│ [0,1,2,3,4⋯   │
-│ [0,1,2,3,4⋯   │
-└───────────────┘
-```
-
-Query with zero width:
-```sql
-SET output_format_pretty_max_value_width = 0;
-SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
-```
-Result:
-```text
-┌─range(number)─┐
-│ ⋯             │
-│ ⋯             │
-│ ⋯             │
-│ ⋯             │
-│ ⋯             │
-└───────────────┘
-```
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

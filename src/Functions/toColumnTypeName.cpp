@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Returns name of IColumn instance.
 class FunctionToColumnTypeName : public IFunction
@@ -48,7 +46,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionToColumnTypeName(FunctionFactory & factory)
 {

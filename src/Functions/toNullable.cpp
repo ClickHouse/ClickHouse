@@ -7,8 +7,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// If value is not Nullable or NULL, wraps it to Nullable.
 class FunctionToNullable : public IFunction
@@ -41,7 +39,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionToNullable(FunctionFactory & factory)
 {

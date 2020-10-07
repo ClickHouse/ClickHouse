@@ -23,7 +23,7 @@ public:
     void write(const Block & block, const IColumn::Permutation * permutation,
         const Block & primary_key_block, const Block & skip_indexes_block) override;
 
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) override;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 
@@ -66,7 +66,7 @@ private:
     void addStreams(
         const String & name,
         const IDataType & type,
-        const ASTPtr & effective_codec_desc,
+        const CompressionCodecPtr & effective_codec,
         size_t estimated_size);
 
     SerializationStates serialization_states;
