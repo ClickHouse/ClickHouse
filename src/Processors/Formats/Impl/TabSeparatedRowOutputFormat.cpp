@@ -11,9 +11,9 @@ TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
     const Block & header_,
     bool with_names_,
     bool with_types_,
-    const RowOutputFormatParams & params,
+    const RowOutputFormatParams & params_,
     const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
+    : IRowOutputFormat(header_, out_, params_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
 }
 

@@ -10,11 +10,11 @@ namespace DB
 
 JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params,
+        const RowOutputFormatParams & params_,
         const FormatSettings & settings_,
         bool with_names_,
         bool yield_strings_)
-        : IRowOutputFormat(header_, out_, params), settings(settings_), with_names(with_names_), yield_strings(yield_strings_)
+        : IRowOutputFormat(header_, out_, params_), settings(settings_), with_names(with_names_), yield_strings(yield_strings_)
 {
             const auto & sample = getPort(PortKind::Main).getHeader();
             NamesAndTypesList columns(sample.getNamesAndTypesList());

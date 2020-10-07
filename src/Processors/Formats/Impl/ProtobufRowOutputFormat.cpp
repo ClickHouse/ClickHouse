@@ -21,13 +21,13 @@ namespace ErrorCodes
 ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     WriteBuffer & out_,
     const Block & header,
-    const RowOutputFormatParams & params,
+    const RowOutputFormatParams & params_,
     const FormatSchemaInfo & format_schema,
     const bool use_length_delimiters_)
-    : IRowOutputFormat(header, out_, params)
+    : IRowOutputFormat(header, out_, params_)
     , data_types(header.getDataTypes())
     , writer(out, ProtobufSchemas::instance().getMessageTypeForFormatSchema(format_schema), header.getNames(), use_length_delimiters_)
-    , throw_on_multiple_rows_undelimited(!use_length_delimiters_ && !params.ignore_no_row_delimiter)
+    , throw_on_multiple_rows_undelimited(!use_length_delimiters_ && !params_.ignore_no_row_delimiter)
 {
     value_indices.resize(header.columns());
 }

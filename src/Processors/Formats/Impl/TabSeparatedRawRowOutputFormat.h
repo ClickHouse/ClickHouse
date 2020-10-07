@@ -18,9 +18,9 @@ public:
         const Block & header_,
         bool with_names_,
         bool with_types_,
-        const RowOutputFormatParams & params,
+        const RowOutputFormatParams & params_,
         const FormatSettings & format_settings_)
-        : TabSeparatedRowOutputFormat(out_, header_, with_names_, with_types_, params, format_settings_)
+        : TabSeparatedRowOutputFormat(out_, header_, with_names_, with_types_, params_, format_settings_)
     {
     }
 
