@@ -7,8 +7,7 @@
 
 namespace DB
 {
-namespace
-{
+
 
 /** Returns the server time zone.
   */
@@ -43,7 +42,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionTimeZone(FunctionFactory & factory)
 {

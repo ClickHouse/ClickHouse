@@ -279,7 +279,7 @@ public:
     String getName() const override { return Name::name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -513,7 +513,7 @@ public:
             if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;
         }
-        else if (element.isBool() && is_integer_v<NumberType> && convert_bool_to_integer)
+        else if (element.isBool() && is_integral_v<NumberType> && convert_bool_to_integer)
             value = static_cast<NumberType>(element.getBool());
         else
             return false;

@@ -53,7 +53,7 @@ StorageMongoDB::StorageMongoDB(
 }
 
 
-Pipe StorageMongoDB::read(
+Pipes StorageMongoDB::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -79,8 +79,11 @@ Pipe StorageMongoDB::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<SourceFromInputStream>(
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromInputStream>(
             std::make_shared<MongoDBBlockInputStream>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size, true)));
+
+    return pipes;
 }
 
 void registerStorageMongoDB(StorageFactory & factory)

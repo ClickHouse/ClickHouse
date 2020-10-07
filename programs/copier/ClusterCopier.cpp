@@ -328,7 +328,7 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
 
 /*
  * Creates task worker node and checks maximum number of workers not to exceed the limit.
- * To achieve this we have to check version of workers_version_path node and create current_worker_path
+ * To achive this we have to check version of workers_version_path node and create current_worker_path
  * node atomically.
  * */
 
@@ -529,7 +529,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         inject_fault = value < move_fault_probability;
     }
 
-    LOG_DEBUG(log, "Try to move {} to destination table", partition_name);
+    LOG_DEBUG(log, "Try to move  {} to destionation table", partition_name);
 
     auto zookeeper = context.getZooKeeper();
 
@@ -1001,7 +1001,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log, "Some error occurred while moving pieces to destination table for partition " + partition_name);
+                    tryLogCurrentException(log, "Some error occured while moving pieces to destination table for partition " + partition_name);
                 }
             }
         }
@@ -1477,9 +1477,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     {
         auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query,
                                                                task_table.table_push, task_table.engine_push_ast);
-        auto & create = create_query_push_ast->as<ASTCreateQuery &>();
-        create.if_not_exists = true;
-        InterpreterCreateQuery::prepareOnClusterQuery(create, context, task_table.cluster_push_name);
+        create_query_push_ast->as<ASTCreateQuery &>().if_not_exists = true;
         String query = queryToString(create_query_push_ast);
 
         LOG_DEBUG(log, "Create destination tables. Query: {}", query);
@@ -1651,7 +1649,7 @@ void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeout
 
         dropAndCreateLocalTable(create_table_split_piece_ast);
 
-        /// Create auxiliary split tables for each piece
+        /// Create auxilary split tables for each piece
         for (const auto & piece_number : ext::range(0, task_table.number_of_splits))
         {
             const auto & storage_piece_split_ast = task_table.auxiliary_engine_split_asts[piece_number];

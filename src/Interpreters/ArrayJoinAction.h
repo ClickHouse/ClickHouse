@@ -12,9 +12,8 @@ class Context;
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
-class ArrayJoinAction
+struct ArrayJoinAction
 {
-public:
     NameSet columns;
     bool is_left = false;
     bool is_unaligned = false;
@@ -28,10 +27,9 @@ public:
     FunctionOverloadResolverPtr function_builder;
 
     ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, const Context & context);
-    void prepare(ColumnsWithTypeAndName & sample) const;
-    void execute(Block & block);
+    void prepare(Block & sample_block);
+    void execute(Block & block, bool dry_run);
+    void finalize(NameSet & needed_columns, NameSet & unmodified_columns, NameSet & final_columns);
 };
-
-using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
 }

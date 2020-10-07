@@ -22,9 +22,6 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-namespace
-{
-
 class FunctionGeohashesInBox : public IFunction
 {
 public:
@@ -151,7 +148,7 @@ public:
 
         if (!res_offsets.empty() && res_offsets.back() != res_strings.size())
         {
-            throw Exception("Array column size mismatch (internal logical error)" +
+            throw Exception("Arrary column size mismatch (internal logical error)" +
                             std::to_string(res_offsets.back()) + " != " + std::to_string(res_strings.size()),
                             ErrorCodes::LOGICAL_ERROR);
         }
@@ -174,8 +171,6 @@ public:
             execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
     }
 };
-
-}
 
 void registerFunctionGeohashesInBox(FunctionFactory & factory)
 {

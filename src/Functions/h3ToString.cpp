@@ -14,10 +14,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
-
 class FunctionH3ToString : public IFunction
 {
 public:
@@ -78,7 +74,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionH3ToString(FunctionFactory & factory)
 {

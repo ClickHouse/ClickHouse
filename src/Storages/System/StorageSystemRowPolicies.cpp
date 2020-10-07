@@ -130,7 +130,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, const Cont
         auto policy = access_control.tryRead<RowPolicy>(id);
         if (!policy)
             continue;
-        auto storage = access_control.findStorage(id);
+        const auto * storage = access_control.findStorage(id);
         if (!storage)
             continue;
 

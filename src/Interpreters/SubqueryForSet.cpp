@@ -8,19 +8,14 @@
 namespace DB
 {
 
-SubqueryForSet::SubqueryForSet() = default;
-SubqueryForSet::~SubqueryForSet() = default;
-SubqueryForSet::SubqueryForSet(SubqueryForSet &&) = default;
-SubqueryForSet & SubqueryForSet::operator= (SubqueryForSet &&) = default;
-
 void SubqueryForSet::makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
                                 NamesWithAliases && joined_block_aliases_)
 {
     joined_block_aliases = std::move(joined_block_aliases_);
-    source = std::make_unique<QueryPlan>();
-    interpreter->buildQueryPlan(*source);
+    source = std::make_shared<LazyBlockInputStream>(interpreter->getSampleBlock(),
+                                                    [interpreter]() mutable { return interpreter->execute().getInputStream(); });
 
-    sample_block = interpreter->getSampleBlock();
+    sample_block = source->getHeader();
     renameColumns(sample_block);
 }
 
@@ -55,10 +50,11 @@ bool SubqueryForSet::insertJoinedBlock(Block & block)
     return join->addJoinedBlock(block);
 }
 
-void SubqueryForSet::setTotals(Block totals)
+void SubqueryForSet::setTotals()
 {
-    if (join)
+    if (join && source)
     {
+        Block totals = source->getTotals();
         renameColumns(totals);
         join->setTotals(totals);
     }

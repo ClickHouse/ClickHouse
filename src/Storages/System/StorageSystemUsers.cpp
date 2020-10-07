@@ -165,7 +165,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
         if (!user)
             continue;
 
-        auto storage = access_control.findStorage(id);
+        const auto * storage = access_control.findStorage(id);
         if (!storage)
             continue;
 

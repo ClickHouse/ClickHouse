@@ -339,25 +339,9 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┘
 ```
 
-## date_trunc(datepart, time\_or\_data\[, time\_zone\]), dateTrunc(datepart, time\_or\_data\[, time\_zone\]) {#date_trunc}
-
-Truncates a date or date with time based on the specified datepart, such as
-- `second`
-- `minute`
-- `hour`
-- `day`
-- `week`
-- `month`
-- `quarter`
-- `year`
-
-```sql
-SELECT date_trunc('hour', now())
-```
-
 ## now {#now}
 
-Accepts zero or one arguments(timezone) and returns the current time at one of the moments of request execution, or current time of specific timezone at one of the moments of request execution if `timezone` argument provided.
+Accepts zero arguments and returns the current time at one of the moments of request execution.
 This function returns a constant, even if the request took a long time to complete.
 
 ## today {#today}
