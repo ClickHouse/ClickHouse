@@ -141,7 +141,7 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 }
 
 
-static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
+static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id, bool no_delay)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, global_context))
     {
@@ -150,7 +150,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
         drop_query->database = target_table_id.database_name;
         drop_query->table = target_table_id.table_name;
         drop_query->kind = kind;
-        drop_query->no_delay = true;
+        drop_query->no_delay = no_delay;
         ASTPtr ast_drop_query = drop_query;
         InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
@@ -165,14 +165,20 @@ void StorageMaterializedView::drop()
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
 
+    dropInnerTable(true);
+}
+
+void StorageMaterializedView::dropInnerTable(bool no_delay)
+{
     if (has_inner_table && tryGetTargetTable())
-        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
+        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id, no_delay);
+    has_inner_table = false;
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     if (has_inner_table)
-        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_table_id);
+        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_table_id, true);
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
