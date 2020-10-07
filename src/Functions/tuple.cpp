@@ -7,13 +7,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
 
 /** tuple(x, y, ...) is a function that allows you to group several columns
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
@@ -60,7 +59,7 @@ public:
         return std::make_shared<DataTypeTuple>(arguments);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);
@@ -75,8 +74,6 @@ public:
         block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
     }
 };
-
-}
 
 void registerFunctionTuple(FunctionFactory & factory)
 {

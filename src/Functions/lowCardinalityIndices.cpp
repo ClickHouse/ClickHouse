@@ -9,13 +9,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 class FunctionLowCardinalityIndices: public IFunction
 {
@@ -41,7 +39,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         auto arg_num = arguments[0];
         const auto & arg = block.getByPosition(arg_num);
@@ -56,7 +54,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionLowCardinalityIndices(FunctionFactory & factory)
 {

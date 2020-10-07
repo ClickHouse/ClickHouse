@@ -302,14 +302,12 @@ public:
             const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context);
+        const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
-        const MonotonicFunctionsChain & functions,
+        MonotonicFunctionsChain & functions,
         DataTypePtr current_type);
-
-    bool matchesExactContinuousRange() const;
 
 private:
     /// The expression is stored as Reverse Polish Notation.
@@ -346,10 +344,10 @@ private:
         Range range;
         size_t key_column = 0;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
-        using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
+        using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
 
-        MonotonicFunctionsChain monotonic_functions_chain;
+        mutable MonotonicFunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
     };
 
     using RPN = std::vector<RPNElement>;

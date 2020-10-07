@@ -1,5 +1,7 @@
 #include "StatusFile.h"
 
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/file.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -37,7 +39,7 @@ StatusFile::FillFunction StatusFile::write_full_info = [](WriteBuffer & out)
 {
     out << "PID: " << getpid() << "\n"
         << "Started at: " << LocalDateTime(time(nullptr)) << "\n"
-        << "Revision: " << ClickHouseRevision::getVersionRevision() << "\n";
+        << "Revision: " << ClickHouseRevision::get() << "\n";
 };
 
 

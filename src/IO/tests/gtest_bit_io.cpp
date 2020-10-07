@@ -1,13 +1,14 @@
 #include <string.h>
 #include <IO/BitHelpers.h>
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 
 #include <cmath>
+#include <iomanip>
 #include <memory>
 #include <bitset>
 #include <string>

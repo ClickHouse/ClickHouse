@@ -3,6 +3,7 @@
 #include "KeeperException.h"
 #include "TestKeeper.h"
 
+#include <random>
 #include <functional>
 #include <pcg-random/pcg_random.hpp>
 
@@ -10,6 +11,8 @@
 #include <common/find_symbols.h>
 #include <Common/randomSeed.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/PODArray.h>
+#include <Common/thread_local_rng.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/NetException.h>
@@ -198,18 +201,6 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 {
     ZooKeeperArgs args(config, config_name);
     init(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot);
-}
-
-bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
-{
-    ZooKeeperArgs args(config, config_name);
-
-    // skip reload testkeeper cause it's for test and data in memory
-    if (args.implementation == implementation && implementation == "testkeeper")
-        return false;
-
-    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot)
-        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
 }
 
 
@@ -663,7 +654,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
-    auto callback = [state](const Coordination::GetResponse & response)
+    auto callback = [state](const Coordination::ExistsResponse & response)
     {
         state->code = int32_t(response.error);
         if (state->code)
@@ -683,9 +674,8 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
     while (!condition || !condition())
     {
-        /// Use getData insteand of exists to avoid watch leak.
-        impl->get(path, callback, watch);
-
+        /// NOTE: if the node doesn't exist, the watch will leak.
+        impl->exists(path, callback, watch);
         if (!condition)
             state->event.wait();
         else if (!state->event.tryWait(1000))

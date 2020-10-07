@@ -4,7 +4,6 @@
 
 #if USE_BASE64
 #    include <Columns/ColumnConst.h>
-#    include <Common/MemorySanitizer.h>
 #    include <Columns/ColumnString.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <Functions/FunctionFactory.h>
@@ -90,7 +89,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
@@ -151,10 +150,6 @@ public:
                     }
                 }
             }
-
-            /// Base64 library is using AVX-512 with some shuffle operations.
-            /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
-            __msan_unpoison(dst_pos, outlen);
 
             source += srclen + 1;
             dst_pos += outlen + 1;

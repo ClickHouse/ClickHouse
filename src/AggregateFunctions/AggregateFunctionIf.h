@@ -109,10 +109,6 @@ public:
     {
         return nested_func->isState();
     }
-
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments,
-        const Array & params, const AggregateFunctionProperties & properties) const override;
 };
 
 }

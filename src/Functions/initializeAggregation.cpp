@@ -14,6 +14,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -22,8 +23,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
 
 class FunctionInitializeAggregation : public IFunction
 {
@@ -41,7 +40,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     mutable AggregateFunctionPtr aggregate_function;
@@ -87,7 +86,7 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
 }
 
 
-void FunctionInitializeAggregation::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+void FunctionInitializeAggregation::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
@@ -153,7 +152,6 @@ void FunctionInitializeAggregation::executeImpl(Block & block, const ColumnNumbe
     block.getByPosition(result).column = std::move(result_holder);
 }
 
-}
 
 void registerFunctionInitializeAggregation(FunctionFactory & factory)
 {

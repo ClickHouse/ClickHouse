@@ -11,7 +11,6 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
-    registerTableFunctionNull(factory);
     registerTableFunctionZeros(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
@@ -21,7 +20,6 @@ void registerTableFunctions()
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
-    registerTableFunctionCOS(factory);
 #endif
 
 #if USE_HDFS
@@ -30,8 +28,6 @@ void registerTableFunctions()
 
     registerTableFunctionODBC(factory);
     registerTableFunctionJDBC(factory);
-
-    registerTableFunctionView(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);

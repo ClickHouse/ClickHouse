@@ -25,17 +25,13 @@ class QueryPlan
 public:
     QueryPlan();
     ~QueryPlan();
-    QueryPlan(QueryPlan &&);
-    QueryPlan & operator=(QueryPlan &&);
 
-    void unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans);
+    void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans);
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
-
-    void optimize();
 
     QueryPipelinePtr buildQueryPipeline();
 
@@ -64,6 +60,7 @@ public:
 
     void addInterpreterContext(std::shared_ptr<Context> context);
 
+private:
     /// Tree node. Step and it's children.
     struct Node
     {
@@ -72,9 +69,8 @@ public:
     };
 
     using Nodes = std::list<Node>;
-
-private:
     Nodes nodes;
+
     Node * root = nullptr;
 
     void checkInitialized() const;

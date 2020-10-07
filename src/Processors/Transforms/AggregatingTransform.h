@@ -8,15 +8,6 @@
 namespace DB
 {
 
-class AggregatedArenasChunkInfo : public ChunkInfo
-{
-public:
-    Arenas arenas;
-    AggregatedArenasChunkInfo(Arenas arenas_)
-        : arenas(std::move(arenas_))
-    {}
-};
-
 class AggregatedChunkInfo : public ChunkInfo
 {
 public:

@@ -197,14 +197,13 @@ StorageS3::StorageS3(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     Context & context_,
-    const String & compression_method_)
+    const String & compression_method_ = "")
     : IStorage(table_id_)
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
-    , name(uri_.storage_name)
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
@@ -218,7 +217,7 @@ StorageS3::StorageS3(
         credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
 
     client = S3::ClientFactory::instance().create(
-        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers), context_.getRemoteHostFilter());
+        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers));
 }
 
 
@@ -284,7 +283,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
 }
 
 
-Pipe StorageS3::read(
+Pipes StorageS3::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -319,9 +318,7 @@ Pipe StorageS3::read(
             uri.bucket,
             key));
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-    narrowPipe(pipe, num_streams);
-    return pipe;
+    return narrowPipes(std::move(pipes), num_streams);
 }
 
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
@@ -332,9 +329,9 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         client, uri.bucket, uri.key);
 }
 
-void registerStorageS3Impl(const String & name, StorageFactory & factory)
+void registerStorageS3(StorageFactory & factory)
 {
-    factory.registerStorage(name, [](const StorageFactory::Arguments & args)
+    factory.registerStorage("S3", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
 
@@ -349,6 +346,8 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         Poco::URI uri (url);
         S3::URI s3_uri (uri);
 
+        String format_name = engine_args[engine_args.size() - 1]->as<ASTLiteral &>().value.safeGet<String>();
+
         String access_key_id;
         String secret_access_key;
         if (engine_args.size() >= 4)
@@ -360,44 +359,16 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         UInt64 min_upload_part_size = args.local_context.getSettingsRef().s3_min_upload_part_size;
 
         String compression_method;
-        String format_name;
         if (engine_args.size() == 3 || engine_args.size() == 5)
-        {
             compression_method = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
-            format_name = engine_args[engine_args.size() - 2]->as<ASTLiteral &>().value.safeGet<String>();
-        }
         else
-        {
             compression_method = "auto";
-            format_name = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
-        }
 
-        return StorageS3::create(
-            s3_uri,
-            access_key_id,
-            secret_access_key,
-            args.table_id,
-            format_name,
-            min_upload_part_size,
-            args.columns,
-            args.constraints,
-            args.context,
-            compression_method
-        );
+        return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     },
     {
         .source_access_type = AccessType::S3,
     });
-}
-
-void registerStorageS3(StorageFactory & factory)
-{
-    return registerStorageS3Impl("S3", factory);
-}
-
-void registerStorageCOS(StorageFactory & factory)
-{
-    return registerStorageS3Impl("COSN", factory);
 }
 
 NamesAndTypesList StorageS3::getVirtuals() const

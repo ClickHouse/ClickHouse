@@ -16,19 +16,6 @@ void trim(String & s)
     s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
 }
 
-// Uses separate replxx::Replxx instance to avoid loading them again in the
-// current context (replxx::Replxx::history_load() will re-load the history
-// from the file), since then they will overlaps with history from the current
-// session (this will make behavior compatible with other interpreters, i.e.
-// bash).
-void history_save(const String & history_file_path, const String & line)
-{
-    replxx::Replxx rx_no_overlap;
-    rx_no_overlap.history_load(history_file_path);
-    rx_no_overlap.history_add(line);
-    rx_no_overlap.history_save(history_file_path);
-}
-
 }
 
 ReplxxLineReader::ReplxxLineReader(
@@ -70,9 +57,8 @@ ReplxxLineReader::ReplxxLineReader(
 
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
-        if (auto range = suggest.getCompletions(context, context_size))
-            return Replxx::completions_t(range->first, range->second);
-        return Replxx::completions_t();
+        auto range = suggest.getCompletions(context, context_size);
+        return Replxx::completions_t(range.first, range.second);
     };
 
     rx.set_completion_callback(callback);
@@ -115,10 +101,6 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 void ReplxxLineReader::addToHistory(const String & line)
 {
     // locking history file to prevent from inconsistent concurrent changes
-    //
-    // replxx::Replxx::history_save() already has lockf(),
-    // but replxx::Replxx::history_load() does not
-    // and that is why flock() is added here.
     bool locked = false;
     if (flock(history_file_fd, LOCK_EX))
         rx.print("Lock of history file failed: %s\n", strerror(errno));
@@ -128,7 +110,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     rx.history_add(line);
 
     // flush changes to the disk
-    history_save(history_file_path, line);
+    rx.history_save(history_file_path);
 
     if (locked && 0 != flock(history_file_fd, LOCK_UN))
         rx.print("Unlock of history file failed: %s\n", strerror(errno));

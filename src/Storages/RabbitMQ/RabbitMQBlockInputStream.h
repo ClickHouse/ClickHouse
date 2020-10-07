@@ -8,7 +8,6 @@
 
 namespace DB
 {
-
 class RabbitMQBlockInputStream : public IBlockInputStream
 {
 
@@ -18,8 +17,7 @@ public:
             const StorageMetadataPtr & metadata_snapshot_,
             const Context & context_,
             const Names & columns,
-            size_t max_block_size_,
-            bool ack_in_suffix = true);
+            Poco::Logger * log_);
 
     ~RabbitMQBlockInputStream() override;
 
@@ -28,24 +26,15 @@ public:
 
     void readPrefixImpl() override;
     Block readImpl() override;
-    void readSuffixImpl() override;
-
-    bool needChannelUpdate();
-    void updateChannel();
-    bool sendAck();
 
 private:
     StorageRabbitMQ & storage;
     StorageMetadataPtr metadata_snapshot;
     Context context;
     Names column_names;
-    const size_t max_block_size;
-    bool ack_in_suffix;
-
-    bool finished = false;
-    const Block non_virtual_header;
-    Block sample_block;
-    const Block virtual_header;
+    Poco::Logger * log;
+    bool finished = false, claimed = false;
+    const Block non_virtual_header, virtual_header;
 
     ConsumerBufferPtr buffer;
 };

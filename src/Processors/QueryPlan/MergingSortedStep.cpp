@@ -6,19 +6,13 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(size_t limit)
+static ITransformingStep::DataStreamTraits getTraits()
 {
-    return ITransformingStep::Traits
+    return ITransformingStep::DataStreamTraits
     {
-        {
             .preserves_distinct_columns = true,
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
-            .preserves_sorting = false,
-        },
-        {
-            .preserves_number_of_rows = limit == 0,
-        }
     };
 }
 
@@ -27,23 +21,11 @@ MergingSortedStep::MergingSortedStep(
     SortDescription sort_description_,
     size_t max_block_size_,
     UInt64 limit_)
-    : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
+    : ITransformingStep(input_stream, input_stream.header, getTraits())
     , sort_description(std::move(sort_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
-    /// TODO: check input_stream is partially sorted (each port) by the same description.
-    output_stream->sort_description = sort_description;
-    output_stream->sort_mode = DataStream::SortMode::Stream;
-}
-
-void MergingSortedStep::updateLimit(size_t limit_)
-{
-    if (limit_ && (limit == 0 || limit_ < limit))
-    {
-        limit = limit_;
-        transform_traits.preserves_number_of_rows = limit == 0;
-    }
 }
 
 void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)
@@ -58,7 +40,9 @@ void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)
                 sort_description,
                 max_block_size, limit);
 
-        pipeline.addTransform(std::move(transform));
+        pipeline.addPipe({ std::move(transform) });
+
+        pipeline.enableQuotaForCurrentStreams();
     }
 }
 
@@ -68,9 +52,6 @@ void MergingSortedStep::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Sort description: ";
     dumpSortDescription(sort_description, input_streams.front().header, settings.out);
     settings.out << '\n';
-
-    if (limit)
-        settings.out << prefix << "Limit " << limit << '\n';
 }
 
 }

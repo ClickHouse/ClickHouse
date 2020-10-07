@@ -3,12 +3,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Access/EnabledQuota.h>
 
-namespace ProfileEvents
-{
-    extern const Event SelectedRows;
-    extern const Event SelectedBytes;
-}
-
 namespace DB
 {
 
@@ -93,12 +87,6 @@ void SourceWithProgress::progress(const Progress & value)
             }
         }
 
-        if (!leaf_limits.check(rows_to_check_limit, progress.read_bytes, "rows or bytes to read on leaf node",
-                                          ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
-        {
-            cancel();
-        }
-
         size_t total_rows = progress.total_rows_to_read;
 
         constexpr UInt64 profile_events_update_period_microseconds = 10 * 1000; // 10 milliseconds
@@ -119,9 +107,6 @@ void SourceWithProgress::progress(const Progress & value)
         if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
             quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
-
-    ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);
-    ProfileEvents::increment(ProfileEvents::SelectedBytes, value.read_bytes);
 }
 
 }

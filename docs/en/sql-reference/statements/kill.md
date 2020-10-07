@@ -1,9 +1,8 @@
 ---
 toc_priority: 48
-toc_title: KILL
 ---
 
-# KILL Statements {#kill-statements}
+## KILL Statements {#kill-statements}
 
 There are two kinds of kill statements: to kill a query and to kill a mutation
 
@@ -51,7 +50,7 @@ KILL MUTATION [ON CLUSTER cluster]
   [FORMAT format]
 ```
 
-Tries to cancel and remove [mutations](../../sql-reference/statements/alter/index.md#alter-mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
+Tries to cancel and remove [mutations](../../sql-reference/statements/alter.md#alter-mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
 
 A test query (`TEST`) only checks the user’s rights and displays a list of queries to stop.
 

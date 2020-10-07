@@ -1,6 +1,5 @@
 ---
 toc_priority: 52
-toc_title: SET ROLE
 ---
 
 # SET ROLE Statement {#set-role-statement}

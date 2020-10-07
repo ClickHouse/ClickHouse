@@ -6,6 +6,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -14,8 +15,12 @@
 #include <Common/typeid_cast.h>
 
 #include <Processors/Pipe.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/ConvertingTransform.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
+
 
 namespace DB
 {
@@ -47,7 +52,7 @@ StorageView::StorageView(
 }
 
 
-Pipe StorageView::read(
+Pipes StorageView::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -86,7 +91,9 @@ Pipe StorageView::read(
                 column_names, getVirtuals(), getStorageID()), ConvertingTransform::MatchColumnsMode::Name);
     });
 
-    return QueryPipeline::getPipe(std::move(pipeline));
+    pipes = std::move(pipeline).getPipes();
+
+    return pipes;
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
@@ -104,13 +111,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
     ASTTableExpression * table_expression = getFirstTableExpression(outer_query);
 
     if (!table_expression->database_and_table_name)
-    {
-        // If it's a view table function, add a fake db.table name.
-        if (table_expression->table_function && table_expression->table_function->as<ASTFunction>()->name == "view")
-            table_expression->database_and_table_name = std::make_shared<ASTIdentifier>("__view");
-        else
-            throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
-    }
+        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
 
     DatabaseAndTableWithAlias db_table(table_expression->database_and_table_name);
     String alias = db_table.alias.empty() ? db_table.table : db_table.alias;
