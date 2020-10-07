@@ -629,6 +629,107 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
     }
 }
 
+void ExpressionActions::executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run)
+{
+    switch (action.node->type)
+    {
+        case ActionsDAG::Type::FUNCTION:
+        {
+            ColumnNumbers arguments(argument_names.size());
+            for (size_t i = 0; i < argument_names.size(); ++i)
+                arguments[i] = block.getPositionByName(argument_names[i]);
+
+            size_t num_columns_without_result = block.columns();
+            block.insert({ nullptr, result_type, result_name});
+
+            ProfileEvents::increment(ProfileEvents::FunctionExecute);
+            if (is_function_compiled)
+                ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+            function->execute(block, arguments, num_columns_without_result, input_rows_count, dry_run);
+
+            break;
+        }
+
+        case ARRAY_JOIN:
+        {
+            auto source = block.getByName(source_name);
+            block.erase(source_name);
+            source.column = source.column->convertToFullColumnIfConst();
+
+            const ColumnArray * array = typeid_cast<const ColumnArray *>(source.column.get());
+            if (!array)
+                throw Exception("ARRAY JOIN of not array: " + source_name, ErrorCodes::TYPE_MISMATCH);
+
+            for (auto & column : block)
+                column.column = column.column->replicate(array->getOffsets());
+
+            source.column = array->getDataPtr();
+            source.type = assert_cast<const DataTypeArray &>(*source.type).getNestedType();
+            source.name = result_name;
+
+            block.insert(std::move(source));
+
+            break;
+        }
+
+        case PROJECT:
+        {
+            Block new_block;
+
+            for (const auto & elem : projection)
+            {
+                const std::string & name = elem.first;
+                const std::string & alias = elem.second;
+                ColumnWithTypeAndName column = block.getByName(name);
+                if (!alias.empty())
+                    column.name = alias;
+                new_block.insert(std::move(column));
+            }
+
+            block.swap(new_block);
+
+            break;
+        }
+
+        case ADD_ALIASES:
+        {
+            for (const auto & elem : projection)
+            {
+                const std::string & name = elem.first;
+                const std::string & alias = elem.second;
+                const ColumnWithTypeAndName & column = block.getByName(name);
+                if (!alias.empty() && !block.has(alias))
+                    block.insert({column.column, column.type, alias});
+            }
+            break;
+        }
+
+        case REMOVE_COLUMN:
+            block.erase(source_name);
+            break;
+
+        case ADD_COLUMN:
+            block.insert({ added_column->cloneResized(input_rows_count), result_type, result_name });
+            break;
+
+        case COPY_COLUMN:
+            if (can_replace && block.has(result_name))
+            {
+                auto & result = block.getByName(result_name);
+                const auto & source = block.getByName(source_name);
+                result.type = source.type;
+                result.column = source.column;
+            }
+            else
+            {
+                const auto & source_column = block.getByName(source_name);
+                block.insert({source_column.column, source_column.type, result_name});
+            }
+
+            break;
+    }
+}
+
 bool ExpressionActions::hasArrayJoin() const
 {
     for (const auto & action : actions)
