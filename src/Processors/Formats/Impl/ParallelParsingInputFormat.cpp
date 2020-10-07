@@ -79,9 +79,6 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
          */
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
 
-        if (current_ticket_number == 0)
-            prepareReadBuffer(read_buffer);
-
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
         InternalParser parser(input_format);
 
@@ -100,9 +97,6 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         // We suppose we will get at least some blocks for a non-empty buffer,
         // except at the end of file. Also see a matching assert in readImpl().
         assert(unit.is_last || !unit.chunk_ext.chunk.empty() || parsing_finished);
-
-        if (unit.is_last)
-            endUpReadBuffer(read_buffer);
 
         std::lock_guard<std::mutex> lock(mutex);
         unit.status = READY_TO_READ;
@@ -219,17 +213,5 @@ Chunk ParallelParsingInputFormat::generate()
     return res;
 }
 
-void ParallelParsingInputFormat::prepareReadBuffer(ReadBuffer & buffer)
-{
-    if (prepare_and_end_up_map.count(format_name))
-        prepare_and_end_up_map[format_name]->prepareReadBuffer(buffer);
-}
-
-
-void ParallelParsingInputFormat::endUpReadBuffer(ReadBuffer & buffer)
-{
-    if (prepare_and_end_up_map.count(format_name))
-        prepare_and_end_up_map[format_name]->endUpReadBuffer(buffer);
-}
 
 }

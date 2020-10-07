@@ -9,7 +9,6 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
-#include "IReadBufferPrepareAndEndUp.h"
 
 namespace DB
 {
@@ -81,8 +80,6 @@ public:
         // couple more units so that the segmentation thread doesn't spuriously
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
-
-        initializePrepareEndUpMap();
 
         segmentator_thread = ThreadFromGlobalPool(
             &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
@@ -268,19 +265,6 @@ private:
     /// readImpl() is called from the main thread, so the exception handling
     /// is different.
     void onBackgroundException();
-
-    /// To store objects which will prepare and end up ReadBuffer for each format.
-    std::unordered_map<String, IReadBufferPrepareAndEndUpPtr> prepare_and_end_up_map;
-
-    void initializePrepareEndUpMap()
-    {
-        /// To skip '[' and ']'.
-        prepare_and_end_up_map.insert({"JSONEachRow", std::make_shared<JSONEachRowPrepareAndEndUp>()});
-    }
-
-    void prepareReadBuffer(ReadBuffer & buffer);
-
-    void endUpReadBuffer(ReadBuffer & buffer);
 };
 
 }

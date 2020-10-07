@@ -245,14 +245,16 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
-    if (getTotalRows() && !in.eof())
+    bool is_first_row = getTotalRows() == 1;
+    if (!in.eof()) 
     {
-        if (*in.position() == ',')
+        /// There may be optional ',' (but not before the first row)
+        if (!is_first_row && *in.position() == ',')
             ++in.position();
         else if (!data_in_square_brackets && *in.position() == ';')
         {
-            /// ';' means the end of query (but it cannot be before ']')
             return allow_new_rows = false;
+            /// ';' means the end of query (but it cannot be before ']')
         }
         else if (data_in_square_brackets && *in.position() == ']')
         {
@@ -301,12 +303,31 @@ void JSONEachRowRowInputFormat::resetParser()
 
 void JSONEachRowRowInputFormat::readPrefix()
 {
-    prepare_and_end_up.prepareReadBuffer(in);
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(in);
+
+    skipWhitespaceIfAny(in);
+    if (!in.eof() && *in.position() == '[')
+    {
+        ++in.position();
+        data_in_square_brackets = true;
+    }
 }
 
 void JSONEachRowRowInputFormat::readSuffix()
 {
-    prepare_and_end_up.endUpReadBuffer(in);
+    skipWhitespaceIfAny(in);
+    if (data_in_square_brackets)
+    {
+        assertChar(']', in);
+        skipWhitespaceIfAny(in);
+    }
+    if (!in.eof() && *in.position() == ';')
+    {
+        ++in.position();
+        skipWhitespaceIfAny(in);
+    }
+    assertEOF(in);
 }
 
 
