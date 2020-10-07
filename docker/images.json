@@ -71,7 +71,7 @@
         "name": "yandex/clickhouse-codebrowser",
         "dependent": []
     },
-    "docker/test/integration/runner": {
+    "tests/integration/image": {
         "name": "yandex/clickhouse-integration-tests-runner",
         "dependent": []
     }
