@@ -264,11 +264,15 @@ public:
 
     virtual antlrcpp::Any visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *context) = 0;
 
+    virtual antlrcpp::Any visitColumnExprTimestamp(ClickHouseParser::ColumnExprTimestampContext *context) = 0;
+
     virtual antlrcpp::Any visitColumnExprAnd(ClickHouseParser::ColumnExprAndContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprTupleAccess(ClickHouseParser::ColumnExprTupleAccessContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprCase(ClickHouseParser::ColumnExprCaseContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnExprDate(ClickHouseParser::ColumnExprDateContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprIdentifier(ClickHouseParser::ColumnExprIdentifierContext *context) = 0;
 

@@ -42,6 +42,8 @@ ASTPtr parseQuery(const char * begin, const char * end, size_t, size_t)
 {
     // TODO: do not ignore |max_parser_depth|.
 
+    // TODO: we should implement either CharInputStream with on-the-fly convertion UTF-8 to UTF-32 chars and correlate |end| with offset,
+    //       or should adapt current Lexer with CommonTokenStream. Otherwise, we can't read UTF-8 strings at all.
     CharInputStream input(begin, end);
     ClickHouseLexer lexer(&input);
     CommonTokenStream tokens(&lexer);

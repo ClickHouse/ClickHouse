@@ -11,7 +11,7 @@ class ParserErrorListener : public antlr4::BaseErrorListener
 public:
     void syntaxError(
         antlr4::Recognizer * recognizer,
-        antlr4::Token * offending_symbol,
+        antlr4::Token * token,
         size_t line,
         size_t pos,
         const std::string & message,

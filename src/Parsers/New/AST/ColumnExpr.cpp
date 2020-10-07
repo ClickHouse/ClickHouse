@@ -262,6 +262,16 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprCast(ClickHouseParser::ColumnExpr
     return ColumnExpr::createFunction(std::make_shared<Identifier>("cast"), nullptr, args);
 }
 
+antlrcpp::Any ParseTreeVisitor::visitColumnExprDate(ClickHouseParser::ColumnExprDateContext *ctx)
+{
+    auto name = std::make_shared<Identifier>("toDate");
+    auto args = std::make_shared<ColumnExprList>();
+
+    args->push(ColumnExpr::createLiteral(Literal::createString(ctx->STRING_LITERAL())));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnExprExtractContext *ctx)
 {
     auto name = std::make_shared<Identifier>("extract");
@@ -431,6 +441,16 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTernaryOp(ClickHouseParser::Colum
     auto args = std::make_shared<ColumnExprList>();
 
     for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitColumnExprTimestamp(ClickHouseParser::ColumnExprTimestampContext *ctx)
+{
+    auto name = std::make_shared<Identifier>("toDateTime");
+    auto args = std::make_shared<ColumnExprList>();
+
+    args->push(ColumnExpr::createLiteral(Literal::createString(ctx->STRING_LITERAL())));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }

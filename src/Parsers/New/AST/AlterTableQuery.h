@@ -107,7 +107,7 @@ class AlterTableClause : public INode
         };
 
         const ClauseType clause_type;
-        TableColumnPropertyType property_type;
+        TableColumnPropertyType property_type = TableColumnPropertyType::ALIAS;  // default value to silence PVS-Studio
         union
         {
             bool if_exists;

@@ -199,7 +199,7 @@ ASTPtr AlterTableClause::convertToOld() const
             command->clear_column = true;
             command->detach = false;
             command->column = get(COLUMN)->convertToOld();
-            command->partition = get(IN)->convertToOld(); // FIXME: should be optional?
+            if (has(IN)) command->partition = get(IN)->convertToOld();
             break;
 
         case ClauseType::COMMENT:
@@ -368,7 +368,8 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseAttach(ClickHouseParser::Al
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseClear(ClickHouseParser::AlterTableClauseClearContext * ctx)
 {
-    return AlterTableClause::createClear(!!ctx->IF(), visit(ctx->nestedIdentifier()), visit(ctx->partitionClause()));
+    auto partition = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionClause>>() : nullptr;
+    return AlterTableClause::createClear(!!ctx->IF(), visit(ctx->nestedIdentifier()), partition);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseComment(ClickHouseParser::AlterTableClauseCommentContext * ctx)
@@ -408,7 +409,7 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseOrderBy(ClickHouseParser::A
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRemove(ClickHouseParser::AlterTableClauseRemoveContext *ctx)
 {
-    return AlterTableClause::createRemove(!!ctx->IF(), visit(ctx->identifier()), visit(ctx->tableColumnPropertyType()));
+    return AlterTableClause::createRemove(!!ctx->IF(), visit(ctx->nestedIdentifier()), visit(ctx->tableColumnPropertyType()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext *)
@@ -418,7 +419,7 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRemoveTTL(ClickHouseParser:
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRename(ClickHouseParser::AlterTableClauseRenameContext *ctx)
 {
-    return AlterTableClause::createRename(!!ctx->IF(), visit(ctx->identifier(0)), visit(ctx->identifier(1)));
+    return AlterTableClause::createRename(!!ctx->IF(), visit(ctx->nestedIdentifier(0)), visit(ctx->nestedIdentifier(1)));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseReplace(ClickHouseParser::AlterTableClauseReplaceContext *ctx)

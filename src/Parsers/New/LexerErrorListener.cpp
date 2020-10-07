@@ -1,6 +1,6 @@
-#include <Parsers/New/LexerErrorListener.h>
+#include <Common/Exception.h>
 
-#include <LexerNoViableAltException.h>
+#include <Parsers/New/LexerErrorListener.h>
 
 
 using namespace antlr4;
@@ -8,10 +8,18 @@ using namespace antlr4;
 namespace DB
 {
 
-void LexerErrorListener::syntaxError(
-    Recognizer * recognizer, Token *, size_t line, size_t pos, const std::string & message, std::exception_ptr e)
+namespace ErrorCodes
+{
+
+extern int SYNTAX_ERROR;
+
+}
+
+void LexerErrorListener::syntaxError(Recognizer *, Token *, size_t, size_t, const std::string & message, std::exception_ptr)
 {
     std::cerr << "Lexer error: " << message << std::endl;
+
+    throw DB::Exception("Can't recognize input: " + message, ErrorCodes::SYNTAX_ERROR);
 }
 
 }

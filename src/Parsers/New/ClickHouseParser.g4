@@ -32,21 +32,21 @@ alterStmt
     ;
 
 alterTableClause
-    : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER nestedIdentifier)?  # AlterTableClauseAdd
-    | ATTACH partitionClause (FROM tableIdentifier)?                         # AlterTableClauseAttach
-    | CLEAR COLUMN (IF EXISTS)? nestedIdentifier IN partitionClause          # AlterTableClauseClear
-    | COMMENT COLUMN (IF EXISTS)? nestedIdentifier STRING_LITERAL            # AlterTableClauseComment
-    | DELETE WHERE columnExpr                                                # AlterTableClauseDelete
-    | DETACH partitionClause                                                 # AlterTableClauseDetach
-    | DROP COLUMN (IF EXISTS)? nestedIdentifier                              # AlterTableClauseDropColumn
-    | DROP partitionClause                                                   # AlterTableClauseDropPartition
-    | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                             # AlterTableClauseModify
-    | MODIFY ORDER BY columnExpr                                             # AlterTableClauseOrderBy
-    | MODIFY COLUMN (IF EXISTS)? identifier REMOVE tableColumnPropertyType   # AlterTableClauseRemove
-    | MODIFY TTL columnExpr                                                  # AlterTableClauseTTL
-    | REMOVE TTL                                                             # AlterTableClauseRemoveTTL
-    | RENAME COLUMN (IF EXISTS)? identifier TO identifier                    # AlterTableClauseRename
-    | REPLACE partitionClause FROM tableIdentifier                           # AlterTableClauseReplace
+    : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER nestedIdentifier)?        # AlterTableClauseAdd
+    | ATTACH partitionClause (FROM tableIdentifier)?                               # AlterTableClauseAttach
+    | CLEAR COLUMN (IF EXISTS)? nestedIdentifier (IN partitionClause)?             # AlterTableClauseClear
+    | COMMENT COLUMN (IF EXISTS)? nestedIdentifier STRING_LITERAL                  # AlterTableClauseComment
+    | DELETE WHERE columnExpr                                                      # AlterTableClauseDelete
+    | DETACH partitionClause                                                       # AlterTableClauseDetach
+    | DROP COLUMN (IF EXISTS)? nestedIdentifier                                    # AlterTableClauseDropColumn
+    | DROP partitionClause                                                         # AlterTableClauseDropPartition
+    | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                                   # AlterTableClauseModify
+    | MODIFY ORDER BY columnExpr                                                   # AlterTableClauseOrderBy
+    | MODIFY COLUMN (IF EXISTS)? nestedIdentifier REMOVE tableColumnPropertyType   # AlterTableClauseRemove
+    | MODIFY TTL columnExpr                                                        # AlterTableClauseTTL
+    | REMOVE TTL                                                                   # AlterTableClauseRemoveTTL
+    | RENAME COLUMN (IF EXISTS)? nestedIdentifier TO nestedIdentifier              # AlterTableClauseRename
+    | REPLACE partitionClause FROM tableIdentifier                                 # AlterTableClauseReplace
     ;
 
 tableColumnPropertyType: ALIAS | CODEC | COMMENT | DEFAULT | MATERIALIZED | TTL;
@@ -170,7 +170,7 @@ sampleClause: SAMPLE ratioExpr (OFFSET ratioExpr)?;
 arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 prewhereClause: PREWHERE columnExpr;
 whereClause: WHERE columnExpr;
-groupByClause: GROUP BY columnExprList (WITH TOTALS)?;
+groupByClause: GROUP BY columnExprList (WITH TOTALS)?;  // TODO: WITH TOTALS may appear without GROUP BY expression.
 havingClause: HAVING columnExpr;
 orderByClause: ORDER BY orderExprList;
 limitByClause: LIMIT limitExpr BY columnExprList;
@@ -255,9 +255,11 @@ columnsExpr
 columnExpr
     : CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END          # ColumnExprCase
     | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                                     # ColumnExprCast
+    | DATE STRING_LITERAL                                                                 # ColumnExprDate
     | EXTRACT LPAREN interval FROM columnExpr RPAREN                                      # ColumnExprExtract
     | INTERVAL columnExpr interval                                                        # ColumnExprInterval
     | SUBSTRING LPAREN columnExpr FROM columnExpr (FOR columnExpr)? RPAREN                # ColumnExprSubstring
+    | TIMESTAMP STRING_LITERAL                                                            # ColumnExprTimestamp
     | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN       # ColumnExprTrim
     | identifier (LPAREN columnExprList? RPAREN)? LPAREN DISTINCT? columnArgList? RPAREN  # ColumnExprFunction
     | literal                                                                             # ColumnExprLiteral
@@ -348,15 +350,15 @@ interval: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
 keyword
     // except NULL_SQL, INF, NAN_SQL
     : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
-    | CHECK | CLEAR | CLUSTER | CODEC | COLLATE | COLUMN | COMMENT | CONSTRAINT | CREATE | CROSS | DATABASE | DATABASES | DAY | DEDUPLICATE
-    | DEFAULT | DELAY | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DISK | DISTINCT | DISTRIBUTED | DROP | ELSE | END | ENGINE
-    | EXISTS | EXTRACT | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY | GROUP | HAVING
-    | HOUR | ID | IF | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE | JSON_TRUE | KEY | LAST | LEADING | LEFT
-    | LIKE | LIMIT | LOCAL | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER
-    | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME | REPLACE | REPLICA | RIGHT | SAMPLE | SECOND
-    | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES
-    | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE | UNION | USE | USING | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH
-    | YEAR
+    | CHECK | CLEAR | CLUSTER | CODEC | COLLATE | COLUMN | COMMENT | CONSTRAINT | CREATE | CROSS | DATABASE | DATABASES | DATE | DAY
+    | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DISK | DISTINCT | DISTRIBUTED | DROP | ELSE | END
+    | ENGINE | EXISTS | EXTRACT | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY | GROUP
+    | HAVING | HOUR | ID | IF | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE | JSON_TRUE | KEY | LAST | LEADING
+    | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR
+    | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME | REPLACE | REPLICA | RIGHT | SAMPLE
+    | SECOND | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN
+    | TIES | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE | UNION | USE | USING | VALUES | VIEW | VOLUME | WEEK | WHEN
+    | WHERE | WITH | YEAR
     ;
 alias: IDENTIFIER | interval;
 identifier: IDENTIFIER | interval | keyword;
