@@ -193,8 +193,8 @@ public:
     ActionsDAG() = default;
     ActionsDAG(const ActionsDAG &) = delete;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
-    ActionsDAG(const NamesAndTypesList & inputs);
-    ActionsDAG(const ColumnsWithTypeAndName & inputs);
+    explicit ActionsDAG(const NamesAndTypesList & inputs);
+    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs);
 
     const Index & getIndex() const { return index; }
 
@@ -227,28 +227,44 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
   */
 class ExpressionActions
 {
+private:
+    using Node = ActionsDAG::Node;
+    using Index = ActionsDAG::Index;
+
+    struct Argument
+    {
+        size_t position;
+        bool can_remove;
+    };
+
+    using Arguments = std::vector<Argument>;
+
+    struct Action
+    {
+        Node * node;
+        Arguments arguments;
+        size_t result_position;
+    };
+
+    using Actions = std::vector<Action>;
+
+    struct ExecutionContext
+    {
+        ColumnsWithTypeAndName input_columns;
+        ColumnsWithTypeAndName columns;
+        size_t num_rows;
+    };
+
+    std::list<Node> nodes;
+    Index index;
+    Actions actions;
+
+    NamesAndTypesList required_columns;
+
 public:
-    using Actions = std::vector<ExpressionAction>;
-
-    ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_);
-
-    /// For constant columns the columns themselves can be contained in `input_columns_`.
-    ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_);
-
     ~ExpressionActions();
 
     ExpressionActions(const ExpressionActions & other) = default;
-
-    /// Add the input column.
-    /// The name of the column must not match the names of the intermediate columns that occur when evaluating the expression.
-    /// The expression must not have any PROJECT actions.
-    void addInput(const ColumnWithTypeAndName & column);
-    void addInput(const NameAndTypePair & column);
-
-    void add(const ExpressionAction & action);
-
-    /// Adds new column names to out_new_columns (formed as a result of the added action).
-    void add(const ExpressionAction & action, Names & out_new_columns);
 
     /// Adds to the beginning the removal of all extra columns.
     void prependProjectInput();
@@ -263,20 +279,11 @@ public:
     /// - Does not reorder the columns.
     /// - Does not remove "unexpected" columns (for example, added by functions).
     /// - If output_columns is empty, leaves one arbitrary column (so that the number of rows in the block is not lost).
-    void finalize(const Names & output_columns);
-
-    const Actions & getActions() const { return actions; }
+    // void finalize(const Names & output_columns);
 
     /// Get a list of input columns.
-    Names getRequiredColumns() const
-    {
-        Names names;
-        for (const auto & input : input_columns)
-            names.push_back(input.name);
-        return names;
-    }
-
-    const NamesAndTypesList & getRequiredColumnsWithTypes() const { return input_columns; }
+    Names getRequiredColumns() const;
+    const NamesAndTypesList & getRequiredColumnsWithTypes() const;
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
@@ -284,7 +291,7 @@ public:
     bool hasArrayJoin() const;
 
     /// Obtain a sample block that contains the names and types of result columns.
-    const Block & getSampleBlock() const { return sample_block; }
+    const Block & getSampleBlock() const;
 
     std::string dumpActions() const;
 
@@ -296,28 +303,7 @@ public:
     /// Call it only after subqueries for sets were executed.
     bool checkColumnIsAlwaysFalse(const String & column_name) const;
 
-    struct ActionsHash
-    {
-        UInt128 operator()(const ExpressionActions::Actions & elems) const
-        {
-            SipHash hash;
-            for (const ExpressionAction & act : elems)
-                hash.update(ExpressionAction::ActionHash{}(act));
-            UInt128 result;
-            hash.get128(result.low, result.high);
-            return result;
-        }
-    };
-
 private:
-    /// These columns have to be in input blocks (arguments of execute* methods)
-    NamesAndTypesList input_columns;
-    /// These actions will be executed on input blocks
-    Actions actions;
-    /// The example of result (output) block.
-    Block sample_block;
-    /// Columns which can't be used for constant folding.
-    NameSet names_not_for_constant_folding;
 
     Settings settings;
 #if USE_EMBEDDED_COMPILER
@@ -326,10 +312,7 @@ private:
 
     void checkLimits(Block & block) const;
 
-    void addImpl(ExpressionAction action, Names & new_names);
-
-    /// Move all arrayJoin as close as possible to the end.
-    void optimizeArrayJoin();
+    void executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run);
 };
 
 
