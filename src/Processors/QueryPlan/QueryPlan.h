@@ -20,6 +20,8 @@ class WriteBuffer;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
+class Pipe;
+
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
 /// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimisations.
@@ -41,6 +43,9 @@ public:
     void optimize();
 
     QueryPipelinePtr buildQueryPipeline();
+
+    /// If initialized, build pipeline and convert to pipe. Otherwise, return empty pipe.
+    Pipe convertToPipe();
 
     struct ExplainPlanOptions
     {
