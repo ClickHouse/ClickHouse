@@ -181,7 +181,8 @@ void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & is
 template <typename Type>
 void DataTypeEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.tsv.input_format_enum_as_number) {
+    if (settings.tsv.input_format_enum_as_number)
+    {
         FieldType x;
         readText(x, istr);
         static_cast<void>(getNameForValue(x));
@@ -210,7 +211,8 @@ void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num
 template <typename Type>
 void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    if (*istr.position() != '"') {
+    if (*istr.position() != '"')
+    {
         FieldType x;
         readText(x, istr);
         static_cast<void>(getNameForValue(x));
@@ -233,7 +235,8 @@ void DataTypeEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num
 template <typename Type>
 void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.csv.input_format_enum_as_number) {
+    if (settings.csv.input_format_enum_as_number)
+    {
         FieldType x;
         readText(x, istr);
         static_cast<void>(getNameForValue(x));
