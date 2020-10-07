@@ -953,7 +953,10 @@ void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservat
     String path_to_clone = storage.relative_data_path + "detached/";
 
     if (reserved_disk->exists(path_to_clone + relative_path))
-        throw Exception("Path " + fullPath(reserved_disk, path_to_clone + relative_path) + " already exists. Can not clone ", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    {
+        LOG_WARNING(storage.log, "Path " + fullPath(reserved_disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
+        reserved_disk->removeRecursive(path_to_clone + relative_path + '/');
+    }
     reserved_disk->createDirectory(path_to_clone);
 
     volume->getDisk()->copy(getFullRelativePath(), reserved_disk, path_to_clone);
