@@ -11,10 +11,10 @@ namespace DB
 JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
-    const RowOutputFormatParams & params,
+    const RowOutputFormatParams & params_,
     const FormatSettings & settings_,
     bool yield_strings_)
-    : IRowOutputFormat(header_, out_, params), settings(settings_), yield_strings(yield_strings_)
+    : IRowOutputFormat(header_, out_, params_), settings(settings_), yield_strings(yield_strings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();

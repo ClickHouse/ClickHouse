@@ -10,10 +10,10 @@ namespace DB
 JSONCompactRowOutputFormat::JSONCompactRowOutputFormat(
     WriteBuffer & out_,
     const Block & header,
-    const RowOutputFormatParams & params,
+    const RowOutputFormatParams & params_,
     const FormatSettings & settings_,
     bool yield_strings_)
-    : JSONRowOutputFormat(out_, header, params, settings_, yield_strings_)
+    : JSONRowOutputFormat(out_, header, params_, settings_, yield_strings_)
 {
 }
 

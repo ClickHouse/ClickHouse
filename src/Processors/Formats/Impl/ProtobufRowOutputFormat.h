@@ -39,7 +39,7 @@ public:
     ProtobufRowOutputFormat(
         WriteBuffer & out_,
         const Block & header,
-        const RowOutputFormatParams & params,
+        const RowOutputFormatParams & params_,
         const FormatSchemaInfo & format_schema,
         const bool use_length_delimiters_);
 

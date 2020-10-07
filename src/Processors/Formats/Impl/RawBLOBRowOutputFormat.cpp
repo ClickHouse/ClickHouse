@@ -9,8 +9,8 @@ namespace DB
 RawBLOBRowOutputFormat::RawBLOBRowOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
-    const RowOutputFormatParams & params)
-    : IRowOutputFormat(header_, out_, params)
+    const RowOutputFormatParams & params_)
+    : IRowOutputFormat(header_, out_, params_)
 {
 }
 
