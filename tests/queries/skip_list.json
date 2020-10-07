@@ -239,6 +239,8 @@
         "00133_long_shard_memory_tracker_and_exception_safety",
         "01280_ttl_where_group_by",
         "00505_shard_secure",
+        "01454_storagememory_data_race_challenge",
+        "00516_deduplication_after_drop_partition_zookeeper",
         "attach",
         "ddl_dictionaries",
         "dictionary",
