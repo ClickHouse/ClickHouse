@@ -715,6 +715,16 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     for (const String & produced_part_name : queue_entry->getVirtualPartNames())
                     {
                         auto part_info = MergeTreePartInfo::fromPartName(produced_part_name, format_version);
+
+                        /// Oddly enough, getVirtualPartNames() may return _virtual_ part name.
+                        /// Such parts do not exist and will never appear, so we should not add virtual parts to parts_to_do list.
+                        /// Fortunately, it's easy to distinguish virtual parts from normal parts by part level.
+                        /// See StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(...)
+                        auto max_level = MergeTreePartInfo::MAX_LEVEL;      /// DROP/DETACH PARTITION
+                        auto another_max_level = std::numeric_limits<decltype(part_info.level)>::max();    /// REPLACE/MOVE PARTITION
+                        if (part_info.level == max_level || part_info.level == another_max_level)
+                            continue;
+
                         auto it = entry->block_numbers.find(part_info.partition_id);
                         if (it != entry->block_numbers.end() && it->second > part_info.getDataVersion())
                             mutation.parts_to_do.add(produced_part_name);
