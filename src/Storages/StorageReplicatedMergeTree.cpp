@@ -3323,7 +3323,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                 /// Check if this quorum insert is parallel or not
                 if (zookeeper->exists(zookeeper_path + "/quorum/status"))
                     updateQuorum(part_name, false);
-                else if (zookeeper->exists(zookeeper_path + "/quorum/parallel/" + part_name)) 
+                else if (zookeeper->exists(zookeeper_path + "/quorum/parallel/" + part_name))
                     updateQuorum(part_name, true);
             }
 

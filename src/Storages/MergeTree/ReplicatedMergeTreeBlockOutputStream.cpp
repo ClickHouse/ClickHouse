@@ -472,7 +472,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             /// Check if this quorum insert is parallel or not
             if (zookeeper->exists(storage.zookeeper_path + "/quorum/status"))
                 storage.updateQuorum(part->name, false);
-            else if (zookeeper->exists(storage.zookeeper_path + "/quorum/parallel/" + part->name)) 
+            else if (zookeeper->exists(storage.zookeeper_path + "/quorum/parallel/" + part->name))
                 storage.updateQuorum(part->name, true);
         }
 
