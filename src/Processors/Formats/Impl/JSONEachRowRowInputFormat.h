@@ -4,7 +4,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
-#include "IReadBufferPrepareAndEndUp.h"
 
 namespace DB
 {
@@ -81,11 +80,7 @@ private:
 
     bool allow_new_rows = true;
 
-
     bool yield_strings;
-
-    /// Used when readSuffix() or readPrefix() are called.
-    JSONEachRowPrepareAndEndUp prepare_and_end_up;
 };
 
 }

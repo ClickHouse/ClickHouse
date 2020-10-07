@@ -19,6 +19,8 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Poco/URI.h>
 
+#include <IO/ReadHelpers.h>
+
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif

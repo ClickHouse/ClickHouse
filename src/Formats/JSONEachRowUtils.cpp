@@ -10,13 +10,6 @@ bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memor
 
     char * pos = in.position();
 
-    /// In case that independent JSONs are splitted by comma we skip that comma.
-    if (pos && *pos == ',')
-    {
-        ++in.position();
-        ++pos;
-    }
-
     size_t balance = 0;
     bool quotes = false;
 
@@ -69,7 +62,6 @@ bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memor
     }
 
     saveUpToPosition(in, memory, pos);
-    assert(*memory.data() == '{' || memory.size() == 0);
     return loadAtPosition(in, memory, pos);
 }
 
