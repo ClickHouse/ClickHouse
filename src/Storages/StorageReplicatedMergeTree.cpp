@@ -3551,7 +3551,7 @@ Pipe StorageReplicatedMergeTree::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return QueryPipeline::getPipe(std::move(*plan.buildQueryPipeline()));
+    return plan.convertToPipe();
 }
 
 

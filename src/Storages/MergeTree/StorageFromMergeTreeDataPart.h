@@ -33,10 +33,7 @@ public:
             std::move(*MergeTreeDataSelectExecutor(part->storage)
                       .readFromParts({part}, column_names, metadata_snapshot, query_info, context, max_block_size, num_streams));
 
-        if (!query_plan.isInitialized())
-            return {};
-
-        return QueryPipeline::getPipe(std::move(*query_plan.buildQueryPipeline()));
+        return query_plan.convertToPipe();
     }
 
 
