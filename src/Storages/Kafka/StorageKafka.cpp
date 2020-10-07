@@ -72,6 +72,31 @@ struct StorageKafkaInterceptors
                 break;
         }
 
+        /// Create ThreadStatus to track memory allocations from librdkafka threads.
+        //
+        /// And store them in a separate list (thread_statuses) to make sure that they will be destroyed,
+        /// regardless how librdkafka calls the hooks.
+        /// But this can trigger use-after-free if librdkafka will not destroy threads after rd_kafka_wait_destroyed()
+        auto thread_status = std::make_shared<ThreadStatus>();
+        std::lock_guard lock(self->thread_statuses_mutex);
+        self->thread_statuses.emplace_back(std::move(thread_status));
+
+        return RD_KAFKA_RESP_ERR_NO_ERROR;
+    }
+    static rd_kafka_resp_err_t rdKafkaOnThreadExit(rd_kafka_t *, rd_kafka_thread_type_t, const char *, void * ctx)
+    {
+        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+
+        std::lock_guard lock(self->thread_statuses_mutex);
+        const auto it = std::find_if(self->thread_statuses.begin(), self->thread_statuses.end(), [](const auto & thread_status_ptr)
+        {
+            return thread_status_ptr.get() == current_thread;
+        });
+        if (it == self->thread_statuses.end())
+            throw Exception("No thread status for this librdkafka thread.", ErrorCodes::LOGICAL_ERROR);
+
+        self->thread_statuses.erase(it);
+
         return RD_KAFKA_RESP_ERR_NO_ERROR;
     }
 
@@ -86,6 +111,10 @@ struct StorageKafkaInterceptors
             LOG_ERROR(self->log, "Cannot set on thread start interceptor due to {} error", status);
             return status;
         }
+
+        status = rd_kafka_interceptor_add_on_thread_exit(rk, "exit-thread", rdKafkaOnThreadExit, ctx);
+        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
+            LOG_ERROR(self->log, "Cannot set on thread exit interceptor due to {} error", status);
 
         return status;
     }

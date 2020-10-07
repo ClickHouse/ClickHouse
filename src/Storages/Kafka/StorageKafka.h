@@ -11,6 +11,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <mutex>
+#include <list>
 #include <atomic>
 
 namespace cppkafka
@@ -108,6 +109,10 @@ private:
     };
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
+
+    /// For memory accounting in the librdkafka threads.
+    std::mutex thread_statuses_mutex;
+    std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
