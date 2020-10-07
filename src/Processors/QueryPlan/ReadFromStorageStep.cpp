@@ -12,26 +12,16 @@ namespace DB
 {
 
 ReadFromStorageStep::ReadFromStorageStep(
-    TableLockHolder table_lock_,
-    StorageMetadataPtr & metadata_snapshot_,
-    SelectQueryOptions options_,
-    StoragePtr storage_,
-    const Names & required_columns_,
-    const SelectQueryInfo & query_info_,
-    std::shared_ptr<Context> context_,
-    QueryProcessingStage::Enum processing_stage_,
-    size_t max_block_size_,
-    size_t max_streams_)
-    : table_lock(std::move(table_lock_))
-    , metadata_snapshot(metadata_snapshot_)
-    , options(std::move(options_))
-    , storage(std::move(storage_))
-    , required_columns(required_columns_)
-    , query_info(query_info_)
-    , context(std::move(context_))
-    , processing_stage(processing_stage_)
-    , max_block_size(max_block_size_)
-    , max_streams(max_streams_)
+    TableLockHolder table_lock,
+    StorageMetadataPtr & metadata_snapshot,
+    SelectQueryOptions options,
+    StoragePtr storage,
+    const Names & required_columns,
+    const SelectQueryInfo & query_info,
+    std::shared_ptr<Context> context,
+    QueryProcessingStage::Enum processing_stage,
+    size_t max_block_size,
+    size_t max_streams)
 {
     /// Note: we read from storage in constructor of step because we don't know real header before reading.
     /// It will be fixed when storage return QueryPlanStep itself.
@@ -79,9 +69,6 @@ ReadFromStorageStep::ReadFromStorageStep(
     pipeline = std::make_unique<QueryPipeline>();
     QueryPipelineProcessorsCollector collector(*pipeline, this);
 
-    /// Table lock is stored inside pipeline here.
-    pipeline->addTableLock(table_lock);
-
     /// Set the limits and quota for reading data, the speed and time of the query.
     {
         const Settings & settings = context->getSettingsRef();
@@ -122,8 +109,11 @@ ReadFromStorageStep::ReadFromStorageStep(
 
     pipeline->init(std::move(pipe));
 
+    /// Add resources to pipeline. The order is important.
+    /// Add in reverse order of destruction. Pipeline will be destroyed at the end in case of exception.
     pipeline->addInterpreterContext(std::move(context));
     pipeline->addStorageHolder(std::move(storage));
+    pipeline->addTableLock(std::move(table_lock));
 
     processors = collector.detachProcessors();
 
