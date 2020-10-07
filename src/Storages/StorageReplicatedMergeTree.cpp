@@ -721,7 +721,10 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         throw Exception("Table was not dropped because ZooKeeper session has expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
     auto remote_replica_path = zookeeper_path + "/replicas/" + replica;
-    LOG_INFO(logger, "Removing replica {}", remote_replica_path);
+    LOG_INFO(logger, "Removing replica {}, marking it as lost", remote_replica_path);
+    /// Mark itself lost before removing, because the following recursive removal may fail
+    /// and partially dropped replica may be considered as alive one (until someone will mark it lost)
+    zookeeper->set(zookeeper_path + "/replicas/" + replica + "/is_lost", "1");
     /// It may left some garbage if replica_path subtree are concurrently modified
     zookeeper->tryRemoveRecursive(remote_replica_path);
     if (zookeeper->exists(remote_replica_path))
@@ -2392,8 +2395,8 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     size_t max_log_entry = 0;
     if (!log_entries.empty())
     {
-        String last_entry_num = std::max_element(log_entries.begin(), log_entries.end())->substr(4);
-        max_log_entry = std::stol(last_entry_num);
+        String last_entry = *std::max_element(log_entries.begin(), log_entries.end());
+        max_log_entry = parse<UInt64>(last_entry.substr(strlen("log-")));
     }
     /// log_pointer can point to future entry, which was not created yet
     ++max_log_entry;
@@ -2402,6 +2405,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     String source_replica;
     Coordination::Stat source_is_lost_stat;
     size_t future_num = 0;
+
     for (const String & source_replica_name : replicas)
     {
         if (source_replica_name == replica_name)
@@ -2411,17 +2415,27 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
         auto get_log_pointer = futures[future_num++].get();
         auto get_queue       = futures[future_num++].get();
 
-        if (get_is_lost.error == Coordination::Error::ZNONODE)
+        if (get_is_lost.error != Coordination::Error::ZOK)
         {
-            /// For compatibility with older ClickHouse versions
-            get_is_lost.stat.version = -1;
+            LOG_INFO(log, "Not cloning {}, cannot get '/is_lost': {}", Coordination::errorMessage(get_is_lost.error));
+            continue;
         }
         else if (get_is_lost.data != "0")
+        {
+            LOG_INFO(log, "Not cloning {}, it's lost");
             continue;
+        }
+
         if (get_log_pointer.error != Coordination::Error::ZOK)
+        {
+            LOG_INFO(log, "Not cloning {}, cannot get '/log_pointer': {}", Coordination::errorMessage(get_log_pointer.error));
             continue;
+        }
         if (get_queue.error != Coordination::Error::ZOK)
+        {
+            LOG_INFO(log, "Not cloning {}, cannot get '/queue': {}", Coordination::errorMessage(get_queue.error));
             continue;
+        }
 
         /// Replica is not lost and we can clone it. Let's calculate approx replication lag.
         size_t source_log_pointer = get_log_pointer.data.empty() ? 0 : parse<UInt64>(get_log_pointer.data);
@@ -2429,7 +2443,8 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
         size_t replica_queue_lag = max_log_entry - source_log_pointer;
         size_t replica_queue_size = get_queue.stat.numChildren;
         size_t replication_lag = replica_queue_lag + replica_queue_size;
-        LOG_INFO(log, "Replica {} has approximate {} queue lag and {} queue size", source_replica_name, replica_queue_lag, replica_queue_size);
+        LOG_INFO(log, "Replica {} has log pointer '{}', approximate {} queue lag and {} queue size",
+                 source_replica_name, get_log_pointer.data, replica_queue_lag, replica_queue_size);
         if (replication_lag < min_replication_lag)
         {
             source_replica = source_replica_name;
