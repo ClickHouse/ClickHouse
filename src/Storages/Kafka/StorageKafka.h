@@ -23,12 +23,16 @@ class Configuration;
 namespace DB
 {
 
+struct StorageKafkaInterceptors;
+
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
 class StorageKafka final : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageKafka>;
+    friend struct StorageKafkaInterceptors;
+
 public:
     std::string getName() const override { return "Kafka"; }
 
@@ -109,7 +113,6 @@ private:
     ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
 
     // Update Kafka configuration with values from CH user configuration.
-
     void updateConfiguration(cppkafka::Configuration & conf);
     void threadFunc(size_t idx);
 
