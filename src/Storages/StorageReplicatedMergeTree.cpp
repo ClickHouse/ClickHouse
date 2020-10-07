@@ -3040,35 +3040,22 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
 
 /** If a quorum is tracked for a part, update information about it in ZK.
   */
-void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
+void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_parallel)
 {
     auto zookeeper = getZooKeeper();
 
     /// Information on which replicas a part has been added, if the quorum has not yet been reached.
-    const String quorum_unparallel_status_path = zookeeper_path + "/quorum/status";
+    const String quorum_status_path = is_parallel ? zookeeper_path + "/quorum/parallel/" + part_name : zookeeper_path + "/quorum/status";
     /// The name of the previous part for which the quorum was reached.
     const String quorum_last_part_path = zookeeper_path + "/quorum/last_part";
-    const String quorum_parallel_status_path = zookeeper_path + "/quorum/parallel/" + part_name;
 
     String value;
     Coordination::Stat stat;
 
     /// If there is no node, then all quorum INSERTs have already reached the quorum, and nothing is needed.
-    while (true)
+    while (zookeeper->tryGet(quorum_status_path, value, &stat))
     {
-        bool quorum_parallel(false);
-        ReplicatedMergeTreeQuorumEntry quorum_entry;
-
-        if (zookeeper->tryGet(quorum_unparallel_status_path, value, &stat))
-        {}
-        else if (zookeeper->tryGet(quorum_parallel_status_path, value, &stat))
-            quorum_parallel = true;
-        else
-            break;
-
-        const String quorum_status_path = quorum_parallel ? quorum_parallel_status_path : quorum_unparallel_status_path;
-        quorum_entry.fromString(value);
-
+        ReplicatedMergeTreeQuorumEntry quorum_entry(value);
         if (quorum_entry.part_name != part_name)
         {
             /// The quorum has already been achieved. Moreover, another INSERT with a quorum has already started.
@@ -3084,7 +3071,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             Coordination::Requests ops;
             Coordination::Responses responses;
 
-            if (!quorum_parallel)
+            if (!is_parallel)
             {
                 Coordination::Stat added_parts_stat;
                 String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
@@ -3334,18 +3321,23 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
               * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
               */
             if (quorum)
-                updateQuorum(part_name);
+            {
+                /// Check if this quorum insert is parallel or not
+                if (zookeeper->exists(zookeeper_path + "/quorum/status"))
+                    updateQuorum(part_name, false);
+                else if (zookeeper->exists(zookeeper_path + "/quorum/parallel/" + part_name)) 
+                    updateQuorum(part_name, true);
+            }
 
-            /// alexelex: i'm not sure in witch order should that and merge_selecting_task->schedule() be
             /// merged parts that are still inserted with quorum. if it only contains one block, it hasn't been merged before
-            if (part_info.max_block != part_info.min_block)
+            if (part_info.level != 0 || part_info.mutation != 0)
             {
                 Strings quorum_parts = zookeeper->getChildren(zookeeper_path + "/quorum/parallel");
                 for (const String & quorum_part : quorum_parts)
                 {
                     auto quorum_part_info = MergeTreePartInfo::fromPartName(quorum_part, format_version);
                     if (part_info.contains(quorum_part_info))
-                        updateQuorum(quorum_part);
+                        updateQuorum(quorum_part, true);
                 }
             }
 
