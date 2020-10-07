@@ -2384,6 +2384,10 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
         futures.emplace_back(zookeeper->asyncTryGet(source_replica_path + "/queue"));
     }
 
+    /// Wait for results before getting log entries
+    for (auto & future : futures)
+        future.wait();
+
     Strings log_entries = zookeeper->getChildren(zookeeper_path + "/log");
     size_t max_log_entry = 0;
     if (!log_entries.empty())
@@ -2391,6 +2395,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
         String last_entry_num = std::max_element(log_entries.begin(), log_entries.end())->substr(4);
         max_log_entry = std::stol(last_entry_num);
     }
+    /// log_pointer can point to future entry, which was not created yet
     ++max_log_entry;
 
     size_t min_replication_lag = std::numeric_limits<size_t>::max();
