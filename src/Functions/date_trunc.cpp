@@ -17,8 +17,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
 
 class FunctionDateTrunc : public IFunction
 {
@@ -161,7 +159,6 @@ private:
     mutable IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
 };
 
-}
 
 void registerFunctionDateTrunc(FunctionFactory & factory)
 {

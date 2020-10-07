@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Returns size on disk for *block* (without taking into account compression).
 class FunctionBlockSerializedSize : public IFunction
@@ -62,7 +60,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionBlockSerializedSize(FunctionFactory & factory)
 {

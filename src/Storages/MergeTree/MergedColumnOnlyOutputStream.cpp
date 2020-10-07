@@ -67,15 +67,12 @@ void MergedColumnOnlyOutputStream::writeSuffix()
 }
 
 MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
-    MergeTreeData::MutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & all_checksums,
-    bool sync)
+MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->finishDataSerialization(checksums, sync);
-    writer->finishSkipIndicesSerialization(checksums, sync);
+    writer->finishDataSerialization(checksums);
+    writer->finishSkipIndicesSerialization(checksums);
 
     auto columns = new_part->getColumns();
 

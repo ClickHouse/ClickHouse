@@ -8,14 +8,13 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
 
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
   * Takes state of aggregate function. Returns result of aggregation (finalized state).
@@ -69,7 +68,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionFinalizeAggregation(FunctionFactory & factory)
 {

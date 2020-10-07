@@ -17,8 +17,6 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-namespace
-{
 
 /** Generate random string of specified length with printable ASCII characters, almost uniformly distributed.
   * First argument is length, other optional arguments are ignored and used to prevent common subexpression elimination to get different values.
@@ -109,8 +107,6 @@ public:
         block.getByPosition(result).column = std::move(col_to);
     }
 };
-
-}
 
 void registerFunctionRandomPrintableASCII(FunctionFactory & factory)
 {

@@ -1,5 +1,5 @@
 #pragma once
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
 #include <common/DateLUTImpl.h>

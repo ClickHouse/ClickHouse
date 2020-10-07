@@ -10,6 +10,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -18,8 +19,6 @@ namespace ErrorCodes
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
 }
 
-namespace
-{
 
 /// Throw an exception if the argument is non zero.
 class FunctionThrowIf : public IFunction
@@ -110,7 +109,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionThrowIf(FunctionFactory & factory)
 {

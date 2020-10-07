@@ -10,13 +10,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 /** Get scalar value of sub queries from query context via IAST::Hash.
   */
@@ -61,7 +59,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionGetScalar(FunctionFactory & factory)
 {
