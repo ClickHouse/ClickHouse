@@ -232,7 +232,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
             && zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
         {
             LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
-            storage.updateQuorum(quorum_entry.part_name);
+            storage.updateQuorum(quorum_entry.part_name, false);
         }
     }
 
@@ -249,7 +249,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
                     && zookeeper->exists(storage.replica_path + "/parts/" + partition))
                 {
                     LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", partition);
-                    storage.updateQuorum(partition);
+                    storage.updateQuorum(partition, true);
                 }
             }
         }

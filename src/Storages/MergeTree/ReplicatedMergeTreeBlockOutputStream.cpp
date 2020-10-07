@@ -77,7 +77,6 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
 {
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
-    std::future<Coordination::GetResponse> quorum_status_future = zookeeper->asyncTryGet(quorum_info.status_path);
     std::future<Coordination::GetResponse> is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
     std::future<Coordination::GetResponse> host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
 
@@ -99,9 +98,9 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
         * If the quorum is reached, then the node is deleted.
         */
 
-    auto quorum_status = quorum_status_future.get();
-    if (quorum_status.error != Coordination::Error::ZNONODE && !quorum_parallel)
-        throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status.data,
+    String quorum_status;
+    if (!quorum_parallel && zookeeper->tryGet(quorum_info.status_path, quorum_status))
+        throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status,
                         ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
 
     /// Both checks are implicitly made also later (otherwise there would be a race condition).
@@ -470,7 +469,11 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         if (is_already_existing_part)
         {
             /// We get duplicate part without fetch
-            storage.updateQuorum(part->name);
+            /// Check if this quorum insert is parallel or not
+            if (zookeeper->exists(storage.zookeeper_path + "/quorum/status"))
+                storage.updateQuorum(part->name, false);
+            else if (zookeeper->exists(storage.zookeeper_path + "/quorum/parallel/" + part->name)) 
+                storage.updateQuorum(part->name, true);
         }
 
         /// We are waiting for quorum to be satisfied.
