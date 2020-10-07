@@ -61,8 +61,7 @@ public:
     size_t maxParallelStreams() const { return max_parallel_streams; }
 
     /// Do not allow to change the table while the processors of pipe are alive.
-    /// TODO: move it to pipeline.
-    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(TableLockHolder lock) { table_locks.emplace_back(std::move(lock)); }
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
     void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
