@@ -98,5 +98,7 @@
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
         "00738_lock_for_inner_table"
+    ],
+    "polymorphic-parts": [
     ]
 }
