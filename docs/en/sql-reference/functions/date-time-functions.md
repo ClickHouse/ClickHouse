@@ -500,19 +500,18 @@ formatDateTime(Time, Format\[, Timezone\])
 
 Returnes time and date values according to the determined format.
 
-**Modifiers**
+**Replacement fields**
+These replacement fields or placeholders define pattern for the result-string.
+“Example” column shows formatting result for time `2018-01-02 22:33:44`
 
-Supported modifiers for Format:
-(“Example” column shows formatting result for time `2018-01-02 22:33:44`)
-
-| Modifier | Description                                             | Example    |
+| Placeholder | Description                                             | Example    |
 |----------|---------------------------------------------------------|------------|
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded ( 1-31)                  | 2          |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
-| %G       | four-digit year format, aligned to ISO 8601: where year comes firstly as the largest unit (descending notation) | 2018         |
+| %G       | four-digit year format of ISO week number, calculated from the week-based year defined by the ISO 8601 standard  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
 | %H       | hour in 24h format (00-23)                              | 22         |
 | %I       | hour in 12h format (01-12)                              | 10         |
@@ -531,6 +530,7 @@ Supported modifiers for Format:
 | %y       | Year, last two digits (00-99)                           | 18         |
 | %Y       | Year                                                    | 2018       |
 | %%       | a % sign                                                | %          |
+
 **Example**
 Query:
 
