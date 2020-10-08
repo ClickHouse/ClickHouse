@@ -4,7 +4,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTWithElement.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
@@ -39,10 +38,6 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
 
     /// Don't descend into subqueries in FROM section
     if (node->as<ASTTableExpression>())
-        return false;
-
-    /// Do not go to subqueries defined in with statement
-    if (node->as<ASTWithElement>())
         return false;
 
     if (node->as<ASTSelectQuery>())

@@ -116,7 +116,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         res_columns[4]->insert(column.comment);
 
         if (column.codec)
-            res_columns[5]->insert(queryToString(column.codec->as<ASTFunction>()->arguments));
+            res_columns[5]->insert(column.codec->getCodecDesc());
         else
             res_columns[5]->insertDefault();
 

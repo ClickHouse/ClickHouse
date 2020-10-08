@@ -4,10 +4,9 @@
 
 #if USE_AWS_S3
 
-#include <common/types.h>
+#include <Core/Types.h>
+#include <Interpreters/Context.h>
 #include <aws/core/Aws.h>
-#include <aws/core/client/ClientConfiguration.h>
-#include <Poco/URI.h>
 
 namespace Aws::S3
 {
@@ -16,7 +15,6 @@ namespace Aws::S3
 
 namespace DB
 {
-    class RemoteHostFilter;
     struct HttpHeader;
     using HeaderCollection = std::vector<HttpHeader>;
 }
@@ -35,23 +33,20 @@ public:
         const String & endpoint,
         bool is_virtual_hosted_style,
         const String & access_key_id,
-        const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter);
+        const String & secret_access_key);
 
     std::shared_ptr<Aws::S3::S3Client> create(
         Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
-        const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter);
+        const String & secret_access_key);
 
     std::shared_ptr<Aws::S3::S3Client> create(
         const String & endpoint,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        HeaderCollection headers,
-        const RemoteHostFilter & remote_host_filter);
+        HeaderCollection headers);
 
 private:
     ClientFactory();

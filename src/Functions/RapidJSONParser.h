@@ -5,7 +5,7 @@
 #endif
 
 #if USE_RAPIDJSON
-#    include <common/types.h>
+#    include <Core/Types.h>
 #    include <common/defines.h>
 #    include <rapidjson/document.h>
 

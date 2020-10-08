@@ -12,7 +12,9 @@
 #    include <aws/s3/S3Client.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <IO/S3/PocoHTTPClientFactory.h>
+#    include <IO/S3/PocoHTTPClientFactory.cpp>
 #    include <IO/S3/PocoHTTPClient.h>
+#    include <IO/S3/PocoHTTPClient.cpp>
 #    include <boost/algorithm/string.hpp>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
@@ -164,27 +166,25 @@ namespace S3
         const String & endpoint,
         bool is_virtual_hosted_style,
         const String & access_key_id,
-        const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter)
+        const String & secret_access_key)
     {
         Aws::Client::ClientConfiguration cfg;
 
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, remote_host_filter);
+        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key);
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
-        const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter)
+        const String & secret_access_key)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
-        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter);
+        Aws::Client::ClientConfiguration client_configuration = cfg;
 
         if (!client_configuration.endpointOverride.empty())
         {
@@ -214,11 +214,9 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        HeaderCollection headers,
-        const RemoteHostFilter & remote_host_filter)
+        HeaderCollection headers)
     {
-        PocoHTTPClientConfiguration cfg({}, remote_host_filter);
-
+        Aws::Client::ClientConfiguration cfg;
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 

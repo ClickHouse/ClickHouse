@@ -28,6 +28,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -35,8 +36,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace
-{
 
 using namespace GatherUtils;
 
@@ -45,12 +44,13 @@ using namespace GatherUtils;
   * then, else - numeric types for which there is a general type, or dates, datetimes, or strings, or arrays of these types.
   */
 
+
 template <typename A, typename B, typename ResultType>
 struct NumIfImpl
 {
     using ArrayCond = PaddedPODArray<UInt8>;
-    using ArrayA = typename ColumnVector<A>::Container;
-    using ArrayB = typename ColumnVector<B>::Container;
+    using ArrayA = PaddedPODArray<A>;
+    using ArrayB = PaddedPODArray<B>;
     using ColVecResult = ColumnVector<ResultType>;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
@@ -60,7 +60,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? bigint_cast<ResultType>(a[i]) : bigint_cast<ResultType>(b[i]);
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
         block.getByPosition(result).column = std::move(col_res);
     }
 
@@ -71,7 +71,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? bigint_cast<ResultType>(a[i]) : bigint_cast<ResultType>(b);
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
         block.getByPosition(result).column = std::move(col_res);
     }
 
@@ -82,7 +82,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? bigint_cast<ResultType>(a) : bigint_cast<ResultType>(b[i]);
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
         block.getByPosition(result).column = std::move(col_res);
     }
 
@@ -93,7 +93,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? bigint_cast<ResultType>(a) : bigint_cast<ResultType>(b);
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
         block.getByPosition(result).column = std::move(col_res);
     }
 };
@@ -103,8 +103,8 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
 {
     using ResultType = Decimal<R>;
     using ArrayCond = PaddedPODArray<UInt8>;
-    using ArrayA = typename ColumnDecimal<Decimal<A>>::Container;
-    using ArrayB = typename ColumnDecimal<Decimal<B>>::Container;
+    using ArrayA = DecimalPaddedPODArray<Decimal<A>>;
+    using ArrayB = DecimalPaddedPODArray<Decimal<B>>;
     using ColVecResult = ColumnDecimal<ResultType>;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
@@ -272,12 +272,11 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
-                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
+                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -290,12 +289,11 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
-                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
+                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -331,12 +329,11 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
-                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
+                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -349,12 +346,11 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
-                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
+                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -531,13 +527,13 @@ private:
             auto * col_res = assert_cast<ColumnArray *>(res.get());
 
             if (col_arr_then && col_arr_else)
-                conditional(GenericArraySource(*col_arr_then), GenericArraySource(*col_arr_else), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
+                conditional(GenericArraySource(*col_arr_then), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
             else if (col_arr_then && col_arr_else_const)
-                conditional(GenericArraySource(*col_arr_then), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
+                conditional(GenericArraySource(*col_arr_then), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(*col_res, rows), cond_data);
             else if (col_arr_then_const && col_arr_else)
-                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), GenericArraySource(*col_arr_else), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
+                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
             else if (col_arr_then_const && col_arr_else_const)
-                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
+                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(*col_res, rows), cond_data);
             else
                 return false;
 
@@ -776,7 +772,7 @@ private:
     {
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
         {
-            /// Nullable cannot contain Nullable
+            /// Nullable cannot contain Nullable.
             return nullable->getNestedColumnPtr();
         }
         else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*column))
@@ -1065,8 +1061,6 @@ public:
         }
     }
 };
-
-}
 
 void registerFunctionIf(FunctionFactory & factory)
 {

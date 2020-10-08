@@ -515,29 +515,6 @@ SELECT
 └────────────────┴────────────┘
 ```
 
-## formatReadableQuantity(x) {#formatreadablequantityx}
-
-Accepts the number. Returns a rounded number with a suffix (thousand, million, billion, etc.) as a string.
-
-It is useful for reading big numbers by human.
-
-Example:
-
-``` sql
-SELECT
-    arrayJoin([1024, 1234 * 1000, (4567 * 1000) * 1000, 98765432101234]) AS number,
-    formatReadableQuantity(number) AS number_for_humans
-```
-
-``` text
-┌─────────number─┬─number_for_humans─┐
-│           1024 │ 1.02 thousand     │
-│        1234000 │ 1.23 million      │
-│     4567000000 │ 4.57 billion      │
-│ 98765432101234 │ 98.77 trillion    │
-└────────────────┴───────────────────┘
-```
-
 ## least(a, b) {#leasta-b}
 
 Returns the smallest value from a and b.
@@ -938,48 +915,6 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
 │                                                  ᴺᵁᴸᴸ │
 └───────────────────────────────────────────────────────┘
-```
-
-## defaultValueOfTypeName {#defaultvalueoftypename}
-
-Outputs the default value for given type name.
-
-Does not include default values for custom columns set by the user.
-
-``` sql
-defaultValueOfTypeName(type)
-```
-
-**Parameters:**
-
--   `type` — A string representing a type name.
-
-**Returned values**
-
--   `0` for numbers.
--   Empty string for strings.
--   `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
-
-**Example**
-
-``` sql
-SELECT defaultValueOfTypeName('Int8')
-```
-
-``` text
-┌─defaultValueOfTypeName('Int8')─┐
-│                              0 │
-└────────────────────────────────┘
-```
-
-``` sql
-SELECT defaultValueOfTypeName('Nullable(Int8)')
-```
-
-``` text
-┌─defaultValueOfTypeName('Nullable(Int8)')─┐
-│                                     ᴺᵁᴸᴸ │
-└──────────────────────────────────────────┘
 ```
 
 ## replicate {#other-functions-replicate}
@@ -1478,128 +1413,17 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 Query:
 
-```sql
+```sql 
 SELECT randomStringUTF8(13)
 ```
 
 Result:
 
-```text
+```text 
 ┌─randomStringUTF8(13)─┐
 │ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛   │
 └──────────────────────┘
 
-```
-
-## getSetting {#getSetting}
-
-Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings).
-
-**Syntax** 
-
-```sql
-getSetting('custom_setting');    
-```
-
-**Parameter** 
-
--   `custom_setting` — The setting name. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   The setting current value.
-
-**Example**
-
-```sql
-SET custom_a = 123;
-SELECT getSetting('custom_a');    
-```
-
-**Result**
-
-```
-123
-```
-
-**See Also** 
-
--   [Custom Settings](../../operations/settings/index.md#custom_settings)
-
-## isDecimalOverflow {#is-decimal-overflow}
-
-Checks whether the [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) value is out of its (or specified) precision.
-
-**Syntax**
-
-``` sql
-isDecimalOverflow(d, [p])
-```
-
-**Parameters** 
-
--   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
--   `p` — precision. Optional. If omitted, the initial presicion of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
-
-**Returned values**
-
--   `1` — Decimal value has more digits then it's precision allow,
--   `0` — Decimal value satisfies the specified precision.
-
-**Example**
-
-Query:
-
-``` sql
-SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
-       isDecimalOverflow(toDecimal32(1000000000, 0)),
-       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
-       isDecimalOverflow(toDecimal32(-1000000000, 0));
-```
-
-Result:
-
-``` text
-1	1	1	1
-```
-
-## countDigits {#count-digits}
-
-Returns number of decimal digits you need to represent the value.
-
-**Syntax**
-
-``` sql
-countDigits(x)
-```
-
-**Parameters** 
-
--   `x` — [Int](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) or [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) value.
-
-**Returned value**
-
-Number of digits.
-
-Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
-
- !!! note "Note"
-    For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
-       countDigits(toDecimal64(1, 18)), countDigits(toDecimal64(-1, 18)),
-       countDigits(toDecimal128(1, 38)), countDigits(toDecimal128(-1, 38));
-```
-
-Result:
-
-``` text
-10	10	19	19	39	39
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

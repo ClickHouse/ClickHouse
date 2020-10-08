@@ -92,12 +92,6 @@ String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesLi
     return ss.str();
 }
 
-String StorageDictionary::resolvedDictionaryName() const
-{
-    if (location == Location::SameDatabaseAndNameAsDictionary)
-        return dictionary_name;
-    return DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
-}
 
 StorageDictionary::StorageDictionary(
     const StorageID & table_id_,
@@ -129,7 +123,7 @@ void StorageDictionary::checkTableCanBeDropped() const
         throw Exception("Cannot detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
 }
 
-Pipe StorageDictionary::read(
+Pipes StorageDictionary::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
@@ -138,10 +132,13 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = context.getExternalDictionariesLoader().getDictionary(resolvedDictionaryName());
+    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dictionary_name);
     auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
+    auto source = std::make_shared<SourceFromInputStream>(stream);
     /// TODO: update dictionary interface for processors.
-    return Pipe(std::make_shared<SourceFromInputStream>(stream));
+    Pipes pipes;
+    pipes.emplace_back(std::move(source));
+    return pipes;
 }
 
 
@@ -158,8 +155,7 @@ void registerStorageDictionary(StorageFactory & factory)
 
         if (!args.attach)
         {
-            auto resolved = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
-            const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(resolved);
+            const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(dictionary_name);
             const DictionaryStructure & dictionary_structure = dictionary->getStructure();
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }
