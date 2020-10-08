@@ -532,6 +532,7 @@ These replacement fields or placeholders define pattern for the result-string.
 | %%       | a % sign                                                | %          |
 
 **Example**
+
 Query:
 
 ``` sql
