@@ -218,7 +218,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
     const Settings & settings = context.getSettingsRef();
     bool parallel_formatting = settings.output_format_parallel_formatting;
 
-    if (parallel_formatting && getCreators(name).supports_parallel_formatting)
+    if (parallel_formatting && getCreators(name).supports_parallel_formatting && !settings.allow_experimental_live_view)
     {
         const auto & output_getter = getCreators(name).output_processor_creator;
 
@@ -231,12 +231,13 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
             (WriteBuffer & output) -> OutputFormatPtr
             { return output_getter(output, sample, std::move(callback), format_settings);};
 
-        /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
-//        if (format_settings.enable_streaming)
-//            format->setAutoFlush();
-
         ParallelFormattingOutputFormat::Params params{buf, sample, formatter_creator, settings.max_threads};
         auto format = std::make_shared<ParallelFormattingOutputFormat>(params);
+
+        /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
+        if (format_settings.enable_streaming)
+            format->setAutoFlush();
+
         return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
     }
 

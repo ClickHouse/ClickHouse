@@ -15,6 +15,9 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 
+#include <common/logger_useful.h>
+#include <Common/Exception.h>
+
 namespace DB
 {
 
@@ -49,7 +52,7 @@ public:
     {
         need_flush = true;
         if (!IOutputFormat::finalized) 
-            finalize();
+            std::terminate();
         finishAndWait();
     }
 
@@ -63,6 +66,12 @@ public:
     void doWritePrefix() override 
     {
         addChunk(Chunk{}, ProcessingUnitType::START);
+    }
+
+    void onCancel() override 
+    {
+        std::cout << "onCancel" << std::endl;
+        finishAndWait();
     }
 
 protected:
@@ -86,6 +95,8 @@ protected:
         IOutputFormat::finalized = true;
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE);
         collector_finished.wait();
+        if (background_exception)
+            std::rethrow_exception(background_exception);
     }
 
 private:
@@ -111,6 +122,9 @@ private:
 
     void addChunk(Chunk chunk, ProcessingUnitType type)
     {
+        if (background_exception)
+            std::rethrow_exception(background_exception);
+
         const auto current_unit_number = writer_unit_number % processing_units.size();
         auto & unit = processing_units[current_unit_number];
 
@@ -193,8 +207,6 @@ private:
 
     void onBackgroundException()
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
         std::unique_lock<std::mutex> lock(mutex);
         if (!background_exception)
         {
@@ -228,7 +240,7 @@ private:
                 }
 
                 if (emergency_stop)
-                    return;
+                    break;
 
                 assert(unit.status == READY_TO_READ);
 
@@ -238,7 +250,7 @@ private:
                 /// Do main work here.
                 out.write(unit.segment.data(), unit.actual_memory_size);
 
-                if (need_flush.exchange(false))
+                if (need_flush.exchange(false) || auto_flush)
                     IOutputFormat::flush();
 
                 ++collector_unit_number;
@@ -252,13 +264,14 @@ private:
                 /// We can exit only after writing last piece of to out buffer.
                 if (copy_if_unit_type == ProcessingUnitType::FINALIZE)
                 {
-                    collector_finished.set();
                     break;
                 }
             }
+            collector_finished.set();
         }
         catch (...)
         {
+            collector_finished.set();
             onBackgroundException();
         }
     }
