@@ -3,11 +3,15 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Disks/createVolume.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Disks/S3/DiskS3.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/FileSyncGuard.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <IO/HTTPCommon.h>
+#include <IO/createReadBufferFromFileBase.h>
+#include <IO/createWriteBufferFromFileBase.h>
 #include <ext/scope_guard.h>
 #include <Poco/File.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -34,6 +38,7 @@ namespace ErrorCodes
     extern const int INSECURE_PATH;
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int S3_ERROR;
 }
 
 namespace DataPartsExchange
@@ -45,6 +50,7 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE = 3;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION = 4;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_S3_COPY = 5;
 
 
 std::string getEndpointId(const std::string & node_id)
@@ -85,7 +91,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     }
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_S3_COPY))});
 
     ++total_sends;
     SCOPE_EXIT({--total_sends;});
@@ -118,8 +124,30 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
             sendPartFromMemory(part, out);
         else
         {
-            bool send_default_compression_file = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION;
-            sendPartFromDisk(part, out, send_default_compression_file);
+            bool try_use_s3_copy = false;
+
+            if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_S3_COPY)
+            { /// if source and destination are in the same S3 storage we try to use S3 CopyObject request first
+                int send_s3_metadata = parse<int>(params.get("send_s3_metadata", "0"));
+                if (send_s3_metadata == 1)
+                {
+                    auto disk = part->volume->getDisk();
+                    if (disk->getType() == "s3")
+                    {
+                        try_use_s3_copy = true;
+                    }
+                }
+            }
+            if (try_use_s3_copy)
+            {
+                response.addCookie({"send_s3_metadata", "1"});
+                sendPartS3Metadata(part, out);
+            }
+            else
+            {
+                bool send_default_compression_file = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION;
+                sendPartFromDisk(part, out, send_default_compression_file);
+            }
         }
     }
     catch (const NetException &)
@@ -199,6 +227,62 @@ void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuf
     part->checksums.checkEqual(data_checksums, false);
 }
 
+void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
+{
+    /// We'll take a list of files from the list of checksums.
+    MergeTreeData::DataPart::Checksums checksums = part->checksums;
+    /// Add files that are not in the checksum list.
+    auto file_names_without_checksums = part->getFileNamesWithoutChecksums();
+    for (const auto & file_name : file_names_without_checksums)
+        checksums.files[file_name] = {};
+
+    auto disk = part->volume->getDisk();
+    if (disk->getType() != "s3")
+        throw Exception("S3 disk is not S3 anymore", ErrorCodes::LOGICAL_ERROR);
+
+    String id = disk->getUniqueId(part->getFullRelativePath() + "checksums.txt");
+
+    if (id.empty())
+        throw Exception("Can't lock part on S3 storage", ErrorCodes::LOGICAL_ERROR);
+    
+    String zookeeper_node = zookeeper_path + "/zero_copy_s3/" + id + "/" + replica_name;
+
+    LOG_TRACE(log, "Set zookeeper lock {}", id);
+
+    zookeeper->createAncestors(zookeeper_node);
+    zookeeper->createIfNotExists(zookeeper_node, "lock");
+
+    writeBinary(checksums.files.size(), out);
+    for (const auto & it : checksums.files)
+    {
+        String file_name = it.first;
+
+        String metadata_file = disk->getPath() + part->getFullRelativePath() + file_name;
+
+        Poco::File metadata(metadata_file);
+
+        if (!metadata.exists())
+            throw Exception("S3 metadata '" + file_name + "' is not exists", ErrorCodes::LOGICAL_ERROR);
+        if (!metadata.isFile())
+            throw Exception("S3 metadata '" + file_name + "' is not a file", ErrorCodes::LOGICAL_ERROR);
+        UInt64 file_size = metadata.getSize();
+
+        writeStringBinary(it.first, out);
+        writeBinary(file_size, out);
+
+        auto file_in = createReadBufferFromFileBase(metadata_file, 0, 0, 0, DBMS_DEFAULT_BUFFER_SIZE);
+        HashingWriteBuffer hashing_out(out);
+        copyData(*file_in, hashing_out, blocker.getCounter());
+        if (blocker.isCancelled())
+            throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
+
+        if (hashing_out.count() != file_size)
+            throw Exception("Unexpected size of file " + metadata_file, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+
+        writePODBinary(hashing_out.getHash(), out);
+    }    
+}
+
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
     /// It is important to include PreCommitted and Outdated parts here because remote replicas cannot reliably
@@ -222,7 +306,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & password,
     const String & interserver_scheme,
     bool to_detached,
-    const String & tmp_prefix_)
+    const String & tmp_prefix_,
+    bool try_use_s3_copy)
 {
     if (blocker.isCancelled())
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
@@ -239,9 +324,28 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         {"endpoint",                getEndpointId(replica_path)},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_S3_COPY)},
         {"compress",                "false"}
     });
+
+    ReservationPtr reservationS3;
+
+    if (try_use_s3_copy)
+    {
+        /// TODO: Make a normal check for S3 Disk
+        reservationS3 = data.makeEmptyReservationOnLargestDisk();
+        auto disk = reservationS3->getDisk();
+
+        if (disk->getType() != "s3")
+        {
+            try_use_s3_copy = false;
+        }
+    }
+
+    if (try_use_s3_copy)
+    {
+        uri.addQueryParameter("send_s3_metadata", "1");
+    }
 
     Poco::Net::HTTPBasicCredentials creds{};
     if (!user.empty())
@@ -262,6 +366,40 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     };
 
     int server_protocol_version = parse<int>(in.getResponseCookie("server_protocol_version", "0"));
+
+    int send_s3 = parse<int>(in.getResponseCookie("send_s3_metadata", "0"));
+
+    if (send_s3 == 1)
+    {
+        if (server_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_S3_COPY)
+            throw Exception("Got 'send_s3_metadata' cookie with old protocol version", ErrorCodes::LOGICAL_ERROR);
+        if (!try_use_s3_copy)
+            throw Exception("Got 'send_s3_metadata' cookie when was not requested", ErrorCodes::LOGICAL_ERROR);
+        
+        size_t sum_files_size = 0;
+        readBinary(sum_files_size, in);
+        IMergeTreeDataPart::TTLInfos ttl_infos;
+        /// Skip ttl infos, not required for S3 metadata
+        String ttl_infos_string;
+        readBinary(ttl_infos_string, in);
+        String part_type = "Wide";
+        readStringBinary(part_type, in);
+        if (part_type == "InMemory")
+            throw Exception("Got 'send_s3_metadata' cookie for in-memory partition", ErrorCodes::LOGICAL_ERROR);
+
+        try
+        {
+            return downloadPartToS3(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservationS3), in);
+        }
+        catch(const Exception& e)
+        {
+            if (e.code() != ErrorCodes::S3_ERROR)
+                throw;
+            /// Try again but without S3 copy
+            return fetchPart(metadata_snapshot, part_name, replica_path, host, port, timeouts, 
+                user, password, interserver_scheme, to_detached, tmp_prefix_, false);
+        }
+    }
 
     ReservationPtr reservation;
     size_t sum_files_size = 0;
@@ -414,6 +552,96 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
     new_data_part->checksums.checkEqual(checksums, false);
+
+    return new_data_part;
+}
+
+MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
+    const String & part_name,
+    const String & replica_path,
+    bool to_detached,
+    const String & tmp_prefix_,
+    bool ,//sync,
+    const ReservationPtr reservation,
+    PooledReadWriteBufferFromHTTP & in
+    )
+{
+    auto disk = reservation->getDisk();
+    if (disk->getType() != "s3")
+        throw Exception("S3 disk is not S3 anymore", ErrorCodes::LOGICAL_ERROR);
+
+    static const String TMP_PREFIX = "tmp_fetch_";
+    String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+
+    String part_relative_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
+    String part_download_path = data.getRelativeDataPath() + part_relative_path + "/";
+
+    if (disk->exists(part_download_path))
+        throw Exception("Directory " + fullPath(disk, part_download_path) + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
+
+    disk->createDirectories(part_download_path);
+
+    size_t files;
+    readBinary(files, in);
+
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
+
+    for (size_t i = 0; i < files; ++i)
+    {
+        String file_name;
+        UInt64 file_size;
+
+        readStringBinary(file_name, in);
+        readBinary(file_size, in);
+
+        String metadata_file = disk->getPath() + new_data_part->getFullRelativePath() + file_name;
+
+        auto file_out = createWriteBufferFromFileBase(metadata_file, 0, 0, DBMS_DEFAULT_BUFFER_SIZE, -1);
+
+        HashingWriteBuffer hashing_out(*file_out);
+
+        copyData(in, hashing_out, file_size, blocker.getCounter());
+
+        if (blocker.isCancelled())
+        {
+            /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
+            /// performing a poll with a not very large timeout.
+            /// And now we check it only between read chunks (in the `copyData` function).
+            throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+        }
+
+        MergeTreeDataPartChecksum::uint128 expected_hash;
+        readPODBinary(expected_hash, in);
+
+        if (expected_hash != hashing_out.getHash())
+        {
+            throw Exception("Checksum mismatch for file " + metadata_file + " transferred from " + replica_path,
+                ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        }
+    }
+
+    assertEOF(in);
+
+    new_data_part->is_temp = true;
+    new_data_part->modification_time = time(nullptr);
+    new_data_part->loadColumnsChecksumsIndexes(true, false);
+
+
+    String id = disk->getUniqueId(new_data_part->getFullRelativePath() + "checksums.txt");
+
+    if (id.empty())
+        throw Exception("Can't lock part on S3 storage", ErrorCodes::LOGICAL_ERROR);
+    
+    String zookeeper_node = zookeeper_path + "/zero_copy_s3/" + id + "/" + replica_name;
+
+    LOG_TRACE(log, "Set zookeeper lock {}", id);
+
+    zookeeper->createAncestors(zookeeper_node);
+    zookeeper->createIfNotExists(zookeeper_node, "lock");
+
 
     return new_data_part;
 }

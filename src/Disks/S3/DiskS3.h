@@ -58,7 +58,7 @@ public:
 
     void createDirectories(const String & path) override;
 
-    void clearDirectory(const String & path) override;
+    void clearDirectory(const String & path, bool keep_s3 = false) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
 
@@ -86,9 +86,9 @@ public:
         size_t estimated_size,
         size_t aio_threshold) override;
 
-    void remove(const String & path) override;
+    void remove(const String & path, bool keep_s3 = false) override;
 
-    void removeRecursive(const String & path) override;
+    void removeRecursive(const String & path, bool keep_s3 = false) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
@@ -107,6 +107,8 @@ public:
     const String getType() const override { return "s3"; }
 
     void shutdown() override;
+
+    const String getUniqueId(const String & path) const override;
 
 private:
     bool tryReserve(UInt64 bytes);

@@ -370,6 +370,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     createNewZooKeeperNodes();
+
+    fetcher.setZooKeeper(current_zookeeper, zookeeper_path, replica_name);
 }
 
 
@@ -3364,6 +3366,7 @@ void StorageReplicatedMergeTree::startup()
         queue.initialize(getDataParts());
 
         data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
+        data_parts_exchange_endpoint->setZooKeeper(tryGetZooKeeper(), zookeeper_path, replica_name);
         global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
 
         /// In this thread replica will be activated.
@@ -5010,13 +5013,40 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     }
     parts.clear();
 
-    auto remove_parts_from_filesystem = [log=log] (const DataPartsVector & parts_to_remove)
+    auto remove_parts_from_filesystem = [log=log,&zookeeper=zookeeper,&zookeeper_path=zookeeper_path,&replica_name=replica_name] (const DataPartsVector & parts_to_remove)
     {
         for (const auto & part : parts_to_remove)
         {
             try
             {
-                part->remove();
+                bool keep_s3 = false;
+
+                auto disk = part->volume->getDisk();
+
+                if (disk->getType() == "s3")
+                {
+                    String id = disk->getUniqueId(part->getFullRelativePath() + "checksums.txt");
+
+                    if (!id.empty())
+                    {
+                        String zookeeper_part_node = zookeeper_path + "/zero_copy_s3/" + id;
+                        String zookeeper_node = zookeeper_part_node + "/" + replica_name;
+
+                        LOG_TRACE(log, "Remove zookeeper lock for {}", id);
+
+                        zookeeper->remove(zookeeper_node);
+
+                        Strings children;
+                        zookeeper->tryGetChildren(zookeeper_part_node, children);
+                        if (!children.empty())
+                        {
+                            LOG_TRACE(log, "Found zookeper locks for {}", id);
+                            keep_s3 = true;
+                        }
+                    }
+                }
+
+                part->remove(keep_s3);
             }
             catch (...)
             {

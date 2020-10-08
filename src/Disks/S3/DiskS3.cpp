@@ -535,16 +535,25 @@ void DiskS3::createDirectories(const String & path)
     Poco::File(metadata_path + path).createDirectories();
 }
 
+const String DiskS3::getUniqueId(const String & path) const
+{
+    Metadata metadata(s3_root_path, metadata_path, path);
+    String id;
+    if (!metadata.s3_objects.empty())
+        id = metadata.s3_objects[0].first;
+    return id;
+}
+
 DiskDirectoryIteratorPtr DiskS3::iterateDirectory(const String & path)
 {
     return std::make_unique<DiskS3DirectoryIterator>(metadata_path + path, path);
 }
 
-void DiskS3::clearDirectory(const String & path)
+void DiskS3::clearDirectory(const String & path, bool keep_s3)
 {
     for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
         if (isFile(it->path()))
-            remove(it->path());
+            remove(it->path(), keep_s3);
 }
 
 void DiskS3::moveFile(const String & from_path, const String & to_path)
@@ -634,7 +643,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     }
 }
 
-void DiskS3::remove(const String & path)
+void DiskS3::remove(const String & path, bool keep_s3)
 {
     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Remove file by path: {}", backQuote(metadata_path + path));
 
@@ -647,13 +656,16 @@ void DiskS3::remove(const String & path)
         if (metadata.ref_count == 0)
         {
             file.remove();
-            for (const auto & [s3_object_path, _] : metadata.s3_objects)
+            if (!keep_s3)
             {
-                /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
-                Aws::S3::Model::DeleteObjectRequest request;
-                request.SetBucket(bucket);
-                request.SetKey(s3_root_path + s3_object_path);
-                throwIfError(client->DeleteObject(request));
+                for (const auto & [s3_object_path, _] : metadata.s3_objects)
+                {
+                    /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
+                    Aws::S3::Model::DeleteObjectRequest request;
+                    request.SetBucket(bucket);
+                    request.SetKey(s3_root_path + s3_object_path);
+                    throwIfError(client->DeleteObject(request));
+                }
             }
         }
         else /// In other case decrement number of references, save metadata and delete file.
@@ -667,7 +679,7 @@ void DiskS3::remove(const String & path)
         file.remove();
 }
 
-void DiskS3::removeRecursive(const String & path)
+void DiskS3::removeRecursive(const String & path, bool keep_s3)
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
@@ -679,7 +691,7 @@ void DiskS3::removeRecursive(const String & path)
     else
     {
         for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
-            removeRecursive(it->path());
+            removeRecursive(it->path(), keep_s3);
         file.remove();
     }
 }

@@ -105,7 +105,7 @@ public:
     virtual void createDirectories(const String & path) = 0;
 
     /// Remove all files from the directory. Directories are not removed.
-    virtual void clearDirectory(const String & path) = 0;
+    virtual void clearDirectory(const String & path, bool keep_s3 = false) = 0;
 
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
@@ -153,16 +153,16 @@ public:
         size_t aio_threshold = 0) = 0;
 
     /// Remove file or directory. Throws exception if file doesn't exists or if directory is not empty.
-    virtual void remove(const String & path) = 0;
+    virtual void remove(const String & path, bool keep_s3 = false) = 0;
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
-    virtual void removeRecursive(const String & path) = 0;
+    virtual void removeRecursive(const String & path, bool keep_s3 = false) = 0;
 
     /// Remove file or directory if it exists.
-    void removeIfExists(const String & path)
+    void removeIfExists(const String & path, bool keep_s3 = false)
     {
         if (exists(path))
-            remove(path);
+            remove(path, keep_s3);
     }
 
     /// Set last modified time to file or directory at `path`.
@@ -194,6 +194,9 @@ public:
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
+
+    /// Return some uniq string for file, overrided for S3
+    virtual const String getUniqueId(const String & path) const { return path; }
 
 private:
     /// Returns executor to perform asynchronous operations.
