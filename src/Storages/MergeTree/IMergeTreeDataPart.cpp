@@ -262,7 +262,7 @@ void IMergeTreeDataPart::removeIfNeeded()
                 }
             }
 
-            remove();
+            remove(false);
 
             if (state == State::DeleteOnDestroy)
             {
@@ -809,7 +809,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
 }
 
 
-void IMergeTreeDataPart::remove() const
+void IMergeTreeDataPart::remove(bool keep_s3) const
 {
     if (!isStoredOnDisk())
         return;
@@ -839,7 +839,7 @@ void IMergeTreeDataPart::remove() const
 
         try
         {
-            volume->getDisk()->removeRecursive(to + "/");
+            volume->getDisk()->removeRecursive(to + "/", keep_s3);
         }
         catch (...)
         {
@@ -862,7 +862,7 @@ void IMergeTreeDataPart::remove() const
     if (checksums.empty())
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        volume->getDisk()->removeRecursive(to + "/");
+        volume->getDisk()->removeRecursive(to + "/", keep_s3);
     }
     else
     {
@@ -875,18 +875,18 @@ void IMergeTreeDataPart::remove() const
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                volume->getDisk()->remove(to + "/" + file);
+                volume->getDisk()->remove(to + "/" + file, keep_s3);
     #if !__clang__
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                volume->getDisk()->remove(to + "/" + file);
+                volume->getDisk()->remove(to + "/" + file, keep_s3);
 
-            volume->getDisk()->removeIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
-            volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
+            volume->getDisk()->removeIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
+            volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
 
-            volume->getDisk()->remove(to);
+            volume->getDisk()->remove(to, keep_s3);
         }
         catch (...)
         {
@@ -894,7 +894,7 @@ void IMergeTreeDataPart::remove() const
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
 
-            volume->getDisk()->removeRecursive(to + "/");
+            volume->getDisk()->removeRecursive(to + "/", keep_s3);
         }
     }
 }

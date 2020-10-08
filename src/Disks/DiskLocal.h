@@ -55,7 +55,7 @@ public:
 
     void createDirectories(const String & path) override;
 
-    void clearDirectory(const String & path) override;
+    void clearDirectory(const String & path, bool keep_s3 = false) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
@@ -87,9 +87,9 @@ public:
         size_t estimated_size,
         size_t aio_threshold) override;
 
-    void remove(const String & path) override;
+    void remove(const String & path, bool keep_s3 = false) override;
 
-    void removeRecursive(const String & path) override;
+    void removeRecursive(const String & path, bool keep_s3 = false) override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 

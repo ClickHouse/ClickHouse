@@ -124,7 +124,7 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove() const;
+    void remove(bool keep_s3 = false) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.

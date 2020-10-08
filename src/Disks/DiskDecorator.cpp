@@ -73,9 +73,9 @@ void DiskDecorator::createDirectories(const String & path)
     delegate->createDirectories(path);
 }
 
-void DiskDecorator::clearDirectory(const String & path)
+void DiskDecorator::clearDirectory(const String & path, bool keep_s3)
 {
-    delegate->clearDirectory(path);
+    delegate->clearDirectory(path, keep_s3);
 }
 
 void DiskDecorator::moveDirectory(const String & from_path, const String & to_path)
@@ -130,14 +130,14 @@ DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode, s
     return delegate->writeFile(path, buf_size, mode, estimated_size, aio_threshold);
 }
 
-void DiskDecorator::remove(const String & path)
+void DiskDecorator::remove(const String & path, bool keep_s3)
 {
-    delegate->remove(path);
+    delegate->remove(path, keep_s3);
 }
 
-void DiskDecorator::removeRecursive(const String & path)
+void DiskDecorator::removeRecursive(const String & path, bool keep_s3)
 {
-    delegate->removeRecursive(path);
+    delegate->removeRecursive(path, keep_s3);
 }
 
 void DiskDecorator::setLastModified(const String & path, const Poco::Timestamp & timestamp)

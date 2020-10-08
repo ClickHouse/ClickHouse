@@ -180,7 +180,7 @@ void DiskLocal::createDirectories(const String & path)
     Poco::File(disk_path + path).createDirectories();
 }
 
-void DiskLocal::clearDirectory(const String & path)
+void DiskLocal::clearDirectory(const String & path, bool)
 {
     std::vector<Poco::File> files;
     Poco::File(disk_path + path).list(files);
@@ -236,12 +236,12 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, size_
     return createWriteBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, buf_size, flags);
 }
 
-void DiskLocal::remove(const String & path)
+void DiskLocal::remove(const String & path, bool)
 {
     Poco::File(disk_path + path).remove(false);
 }
 
-void DiskLocal::removeRecursive(const String & path)
+void DiskLocal::removeRecursive(const String & path, bool)
 {
     Poco::File(disk_path + path).remove(true);
 }

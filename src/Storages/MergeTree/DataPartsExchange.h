@@ -9,6 +9,12 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 
 
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
+
 namespace DB
 {
 
@@ -29,16 +35,27 @@ public:
     std::string getId(const std::string & node_id) const override;
     void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) override;
 
+    void setZooKeeper(const zkutil::ZooKeeperPtr & zookeeper_, const String & zookeeper_path_, const String & replica_name_) override 
+    { 
+        zookeeper = zookeeper_;
+        zookeeper_path = zookeeper_path_;
+        replica_name = replica_name_;
+    }
+
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
     void sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
     void sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, bool send_default_compression_file);
+    void sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
 
 private:
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
     MergeTreeData & data;
     Poco::Logger * log;
+    zkutil::ZooKeeperPtr zookeeper;
+    String zookeeper_path;
+    String replica_name;
 };
 
 /** Client for getting the parts from the table *MergeTree.
@@ -63,10 +80,18 @@ public:
         const String & password,
         const String & interserver_scheme,
         bool to_detached = false,
-        const String & tmp_prefix_ = "");
+        const String & tmp_prefix_ = "",
+        bool try_use_s3_copy = true);
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
+
+    void setZooKeeper(const zkutil::ZooKeeperPtr & zookeeper_, const String & zookeeper_path_, const String & replica_name_)
+    { 
+        zookeeper = zookeeper_;
+        zookeeper_path = zookeeper_path_;
+        replica_name = replica_name_;
+    }
 
 private:
     MergeTreeData::MutableDataPartPtr downloadPartToDisk(
@@ -84,8 +109,20 @@ private:
             ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in);
 
+    MergeTreeData::MutableDataPartPtr downloadPartToS3(
+            const String & part_name,
+            const String & replica_path,
+            bool to_detached,
+            const String & tmp_prefix_,
+            bool sync,
+            const ReservationPtr reservation,
+            PooledReadWriteBufferFromHTTP & in);
+
     MergeTreeData & data;
     Poco::Logger * log;
+    zkutil::ZooKeeperPtr zookeeper;
+    String zookeeper_path;
+    String replica_name;
 };
 
 }

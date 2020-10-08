@@ -16,6 +16,12 @@
 
 namespace Poco { namespace Net { class HTTPServerResponse; } }
 
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
+
 namespace DB
 {
 
@@ -33,6 +39,8 @@ public:
     virtual std::string getId(const std::string & path) const = 0;
     virtual void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) = 0;
     virtual ~InterserverIOEndpoint() = default;
+
+    virtual void setZooKeeper(const zkutil::ZooKeeperPtr &zookeeper_, const String & zookeeper_path_, const String & replica_name_) = 0;
 
     /// You need to stop the data transfer if blocker is activated.
     ActionBlocker blocker;
