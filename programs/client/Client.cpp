@@ -1359,6 +1359,9 @@ private:
             if (with_output && with_output->settings_ast)
                 apply_query_settings(*with_output->settings_ast);
 
+            if (context.getSettingsRef().output_format_parallel_formatting)
+                need_render_progress = false;
+
             connection->forceConnected(connection_parameters.timeouts);
 
             ASTPtr input_function;
@@ -1986,7 +1989,13 @@ private:
             written_first_block = true;
         }
 
-        bool clear_progess = std_out.offset() > 0;
+        // const auto & settings = context.getSettingsRef();
+        // const auto parallel_formatting = settings.output_format_parallel_formatting;
+
+        bool clear_progess = false;
+        // if (!parallel_formatting)
+        //     clear_progess = std_out.offset() > 0;
+
         if (clear_progess)
             clearProgress();
 
