@@ -501,8 +501,7 @@ formatDateTime(Time, Format\[, Timezone\])
 Returnes time and date values according to the determined format.
 
 **Replacement fields**
-These replacement fields or placeholders define pattern for the result-string.
-“Example” column shows formatting result for time `2018-01-02 22:33:44`
+These replacement fields or placeholders define pattern for the result-string. “Example” column shows formatting result for time `2018-01-02 22:33:44`.
 
 | Placeholder | Description                                             | Example    |
 |----------|---------------------------------------------------------|------------|
@@ -511,7 +510,7 @@ These replacement fields or placeholders define pattern for the result-string.
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded ( 1-31)                  | 2          |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
-| %G       | four-digit year format of ISO week number, calculated from the week-based year defined by the ISO 8601 standard, normally useful only with %V  | 2018         |
+| %G       | four-digit year format for ISO week number, calculated from the week-based year defined by the ISO 8601 standard, normally useful only with %V  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
 | %H       | hour in 24h format (00-23)                              | 22         |
 | %I       | hour in 12h format (01-12)                              | 10         |
