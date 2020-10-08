@@ -159,7 +159,7 @@ Pipe StorageMemory::read(
             metadata_snapshot,
             /// This hack is needed for global subqueries.
             /// It allows to set up this Source for read AFTER Storage::read() has been called and just before actual reading
-            [this](BlocksList::const_iterator & current_it, size_t & num_blocks) {
+            [this, &current_data](BlocksList::const_iterator & current_it, size_t & num_blocks) {
                 std::lock_guard guard(mutex);
                 current_it = current_data->begin();
                 num_blocks = current_data->size();
