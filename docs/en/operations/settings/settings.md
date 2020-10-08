@@ -1594,7 +1594,7 @@ See also:
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
-Enables of disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
+Enables or disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
 
 Possible values:
 
@@ -2056,3 +2056,14 @@ Result:
 ```
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+
+## allow_experimental_bigint_types {#allow_experimental_bigint_types}
+
+Enables or disables integer values exceeding the range that is supported by the int data type.
+
+Possible values:
+
+-   1 — The bigint data type is enabled.
+-   0 — The bigint data type is disabled.
+
+Default value: `0`.
