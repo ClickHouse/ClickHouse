@@ -55,6 +55,7 @@ private: // IAccessStorage implementations.
 private:
     void setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
+    void checkAllDefaultRoleNamesFoundNoLock() const;
 
     [[noreturn]] static void throwDefaultRoleNotFound(const String & role_name);
 
@@ -62,7 +63,7 @@ private:
     AccessControlManager * access_control_manager = nullptr;
     String ldap_server;
     std::set<String> default_role_names;
-    mutable std::set<UUID> roles_of_interest;
+    std::map<UUID, String> roles_of_interest;
     ext::scope_guard role_change_subscription;
     mutable MemoryAccessStorage memory_storage;
 };

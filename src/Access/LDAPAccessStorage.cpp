@@ -9,6 +9,8 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <boost/range/algorithm/copy.hpp>
+#include <iterator>
 #include <sstream>
 
 
@@ -64,54 +66,66 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
             return this->processRoleChange(id, entity);
         }
     );
+
+    /// Update `roles_of_interests` with initial values.
+    for (const auto & role_name : default_role_names)
+    {
+        if (auto role_id = access_control_manager->find<Role>(role_name))
+            roles_of_interest.emplace(*role_id, role_name);
+    }
 }
 
 
 void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr & entity)
 {
     std::scoped_lock lock(mutex);
-    auto role_ptr = typeid_cast<std::shared_ptr<const Role>>(entity);
-    if (role_ptr)
-    {
-        if (default_role_names.find(role_ptr->getName()) != default_role_names.end())
-        {
-            auto update_func = [&id](const AccessEntityPtr & cached_entity) -> AccessEntityPtr
-            {
-                auto user_ptr = typeid_cast<std::shared_ptr<const User>>(cached_entity);
-                if (user_ptr && user_ptr->granted_roles.roles.find(id) == user_ptr->granted_roles.roles.end())
-                {
-                    auto clone = user_ptr->clone();
-                    auto user_clone_ptr = typeid_cast<std::shared_ptr<User>>(clone);
-                    user_clone_ptr->granted_roles.grant(id);
-                    return user_clone_ptr;
-                }
-                return cached_entity;
-            };
 
-            memory_storage.update(memory_storage.findAll<User>(), update_func);
-            roles_of_interest.insert(id);
-        }
+    /// Update `roles_of_interests`.
+    auto role = typeid_cast<std::shared_ptr<const Role>>(entity);
+    bool need_to_update_users = false;
+
+    if (role && default_role_names.contains(role->getName()))
+    {
+        /// If a role was created with one of the `default_role_names` or renamed to one of the `default_role_names`,
+        /// then set `need_to_update_users`.
+        need_to_update_users = roles_of_interest.insert_or_assign(id, role->getName()).second;
     }
     else
     {
-        if (roles_of_interest.find(id) != roles_of_interest.end())
-        {
-            auto update_func = [&id](const AccessEntityPtr & cached_entity) -> AccessEntityPtr
-            {
-                auto user_ptr = typeid_cast<std::shared_ptr<const User>>(cached_entity);
-                if (user_ptr && user_ptr->granted_roles.roles.find(id) != user_ptr->granted_roles.roles.end())
-                {
-                    auto clone = user_ptr->clone();
-                    auto user_clone_ptr = typeid_cast<std::shared_ptr<User>>(clone);
-                    user_clone_ptr->granted_roles.revoke(id);
-                    return user_clone_ptr;
-                }
-                return cached_entity;
-            };
+        /// If a role was removed or renamed to a name which isn't contained in the `default_role_names`,
+        /// then set `need_to_update_users`.
+        need_to_update_users = roles_of_interest.erase(id) > 0;
+    }
 
-            memory_storage.update(memory_storage.findAll<User>(), update_func);
-            roles_of_interest.erase(id);
-        }
+    /// Update users which have been created.
+    if (need_to_update_users)
+    {
+        auto update_func = [this] (const AccessEntityPtr & entity_) -> AccessEntityPtr
+        {
+            if (auto user = typeid_cast<std::shared_ptr<const User>>(entity_))
+            {
+                auto changed_user = typeid_cast<std::shared_ptr<User>>(user->clone());
+                auto & granted_roles = changed_user->granted_roles.roles;
+                granted_roles.clear();
+                boost::range::copy(roles_of_interest | boost::adaptors::map_keys, std::inserter(granted_roles, granted_roles.end()));
+                return changed_user;
+            }
+            return entity_;
+        };
+        memory_storage.update(memory_storage.findAll<User>(), update_func);
+    }
+}
+
+
+void LDAPAccessStorage::checkAllDefaultRoleNamesFoundNoLock() const
+{
+    boost::container::flat_set<std::string_view> role_names_of_interest;
+    boost::range::copy(roles_of_interest | boost::adaptors::map_values, std::inserter(role_names_of_interest, role_names_of_interest.end()));
+
+    for (const auto & role_name : default_role_names)
+    {
+        if (!role_names_of_interest.contains(role_name))
+            throwDefaultRoleNotFound(role_name);
     }
 }
 
@@ -257,15 +271,10 @@ UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & passw
         if (!isAddressAllowedImpl(*user, address))
             throwAddressNotAllowed(address);
 
-        for (const auto& role_name : default_role_names)
-        {
-            std::optional<UUID> role_id = access_control_manager->find<Role>(role_name);
-            if (!role_id)
-                throwDefaultRoleNotFound(role_name);
+        checkAllDefaultRoleNamesFoundNoLock();
 
-            roles_of_interest.insert(role_id.value());
-            user->granted_roles.grant(role_id.value());
-        }
+        auto & granted_roles = user->granted_roles.roles;
+        boost::range::copy(roles_of_interest | boost::adaptors::map_keys, std::inserter(granted_roles, granted_roles.end()));
 
         return memory_storage.insert(user);
     }
@@ -287,15 +296,10 @@ UUID LDAPAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
         user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
         user->authentication.setServerName(ldap_server);
 
-        for (const auto& role_name : default_role_names)
-        {
-            std::optional<UUID> role_id = access_control_manager->find<Role>(role_name);
-            if (!role_id)
-                throwDefaultRoleNotFound(role_name);
+        checkAllDefaultRoleNamesFoundNoLock();
 
-            roles_of_interest.insert(role_id.value());
-            user->granted_roles.grant(role_id.value());
-        }
+        auto & granted_roles = user->granted_roles.roles;
+        boost::range::copy(roles_of_interest | boost::adaptors::map_keys, std::inserter(granted_roles, granted_roles.end()));
 
         return memory_storage.insert(user);
     }
