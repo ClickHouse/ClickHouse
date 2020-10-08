@@ -28,7 +28,8 @@ def invalid_host(self):
     servers = {"foo": {"host": "foo", "port": "389", "enable_tls": "no"}}
     users = [{
         "server": "foo", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 20, "message": "DB::Exception: Can't contact LDAP server"
+        "exitcode": 4,
+        "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 
@@ -44,7 +45,8 @@ def empty_host(self):
     servers = {"foo": {"host": "", "port": "389", "enable_tls": "no"}}
     users = [{
         "server": "foo", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 36, "message": "DB::Exception: LDAP server 'foo' is not configured."
+        "exitcode": 4,
+        "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 
@@ -60,7 +62,8 @@ def missing_host(self):
     servers = {"foo": {"port": "389", "enable_tls": "no"}}
     users = [{
         "server": "foo", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 36, "message": "DB::Exception: LDAP server 'foo' is not configured."
+        "exitcode": 4,
+        "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 
@@ -75,7 +78,8 @@ def invalid_port(self):
     servers = {"openldap1": {"host": "openldap1", "port": "3890", "enable_tls": "no"}}
     users = [{
         "server": "openldap1", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 20, "message": "DB::Exception: Can't contact LDAP server."
+        "exitcode": 4,
+        "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 
@@ -93,7 +97,8 @@ def invalid_auth_dn_prefix(self):
     }}
     users = [{
         "server": "openldap1", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 20, "message": "DB::Exception: Invalid DN syntax: invalid DN"
+        "exitcode": 4,
+        "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 
@@ -110,7 +115,8 @@ def invalid_auth_dn_suffix(self):
     }}
     users = [{
         "server": "openldap1", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 20, "message": "DB::Exception: Invalid DN syntax: invalid DN"
+        "exitcode": 4,
+        "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 
@@ -127,7 +133,8 @@ def invalid_enable_tls_value(self):
     }}
     users = [{
         "server": "openldap1", "username": "user1", "password": "user1", "login": True,
-        "exitcode": 36, "message": "DB::Exception: LDAP server 'openldap1' is not configured"
+        "exitcode": 4,
+        "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 
@@ -148,7 +155,8 @@ def invalid_tls_require_cert_value(self):
     }}
     users = [{
         "server": "openldap2", "username": "user2", "password": "user2", "login": True,
-        "exitcode": 36, "message": "DB::Exception: LDAP server 'openldap2' is not configured"
+        "exitcode": 4,
+        "message": "DB::Exception: user2: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 
@@ -167,8 +175,8 @@ def empty_ca_cert_dir(self):
     }}
     users = [{
         "server": "openldap2", "username": "user2", "password": "user2", "login": True,
-        "exitcode": 20,
-        "message": "DB::Exception: Can't contact LDAP server: error:14000086:SSL routines::certificate verify failed (self signed certificate in certificate chain"
+        "exitcode": 4,
+        "message": "DB::Exception: user2: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 
@@ -187,8 +195,8 @@ def empty_ca_cert_file(self):
     }}
     users = [{
         "server": "openldap2", "username": "user2", "password": "user2", "login": True,
-        "exitcode": 20,
-        "message": "Received from localhost:9000. DB::Exception: Can't contact LDAP server: error:14000086:SSL routines::certificate verify failed (self signed certificate in certificate chain)"
+        "exitcode": 4,
+        "message": "DB::Exception: user2: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 
