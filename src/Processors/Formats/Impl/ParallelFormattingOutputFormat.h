@@ -52,7 +52,7 @@ public:
     {
         need_flush = true;
         if (!IOutputFormat::finalized) 
-            std::terminate();
+            finalize();
         finishAndWait();
     }
 
@@ -70,7 +70,6 @@ public:
 
     void onCancel() override 
     {
-        std::cout << "onCancel" << std::endl;
         finishAndWait();
     }
 
