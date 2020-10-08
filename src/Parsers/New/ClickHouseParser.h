@@ -74,8 +74,8 @@ public:
     RuleTableFunctionExpr = 71, RuleTableIdentifier = 72, RuleTableArgList = 73, 
     RuleTableArgExpr = 74, RuleDatabaseIdentifier = 75, RuleFloatingLiteral = 76, 
     RuleNumberLiteral = 77, RuleLiteral = 78, RuleInterval = 79, RuleKeyword = 80, 
-    RuleAlias = 81, RuleIdentifier = 82, RuleIdentifierOrNull = 83, RuleUnaryOp = 84, 
-    RuleEnumValue = 85
+    RuleKeywordForAlias = 81, RuleAlias = 82, RuleIdentifier = 83, RuleIdentifierOrNull = 84, 
+    RuleUnaryOp = 85, RuleEnumValue = 86
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -169,6 +169,7 @@ public:
   class LiteralContext;
   class IntervalContext;
   class KeywordContext;
+  class KeywordForAliasContext;
   class AliasContext;
   class IdentifierContext;
   class IdentifierOrNullContext;
@@ -551,12 +552,12 @@ public:
     SubqueryClauseContext *subqueryClause();
     antlr4::tree::TerminalNode *ATTACH();
     antlr4::tree::TerminalNode *CREATE();
+    DestinationClauseContext *destinationClause();
+    EngineClauseContext *engineClause();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
     SchemaClauseContext *schemaClause();
-    DestinationClauseContext *destinationClause();
-    EngineClauseContext *engineClause();
     antlr4::tree::TerminalNode *POPULATE();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -1383,6 +1384,7 @@ public:
     antlr4::tree::TerminalNode *RIGHT();
     antlr4::tree::TerminalNode *OUTER();
     antlr4::tree::TerminalNode *SEMI();
+    antlr4::tree::TerminalNode *ALL();
     antlr4::tree::TerminalNode *ANTI();
     antlr4::tree::TerminalNode *ANY();
     antlr4::tree::TerminalNode *ASOF();
@@ -1882,6 +1884,16 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  ColumnExprOrContext : public ColumnExprContext {
+  public:
+    ColumnExprOrContext(ColumnExprContext *ctx);
+
+    std::vector<ColumnExprContext *> columnExpr();
+    ColumnExprContext* columnExpr(size_t i);
+    antlr4::tree::TerminalNode *OR();
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  ColumnExprPrecedence1Context : public ColumnExprContext {
   public:
     ColumnExprPrecedence1Context(ColumnExprContext *ctx);
@@ -1920,19 +1932,8 @@ public:
     antlr4::tree::TerminalNode *LT();
     antlr4::tree::TerminalNode *GT();
     antlr4::tree::TerminalNode *IN();
-    antlr4::tree::TerminalNode *GLOBAL();
-    antlr4::tree::TerminalNode *NOT();
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  ColumnExprPrecedence4Context : public ColumnExprContext {
-  public:
-    ColumnExprPrecedence4Context(ColumnExprContext *ctx);
-
-    std::vector<ColumnExprContext *> columnExpr();
-    ColumnExprContext* columnExpr(size_t i);
-    antlr4::tree::TerminalNode *OR();
     antlr4::tree::TerminalNode *LIKE();
+    antlr4::tree::TerminalNode *GLOBAL();
     antlr4::tree::TerminalNode *NOT();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -2532,12 +2533,25 @@ public:
 
   KeywordContext* keyword();
 
+  class  KeywordForAliasContext : public antlr4::ParserRuleContext {
+  public:
+    KeywordForAliasContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *ID();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  KeywordForAliasContext* keywordForAlias();
+
   class  AliasContext : public antlr4::ParserRuleContext {
   public:
     AliasContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *IDENTIFIER();
     IntervalContext *interval();
+    KeywordForAliasContext *keywordForAlias();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    

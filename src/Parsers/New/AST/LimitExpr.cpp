@@ -16,8 +16,8 @@ ASTPtr LimitExpr::convertToOld() const
 {
     auto list = std::make_shared<ASTExpressionList>();
 
-    list->children.push_back(get(LIMIT)->convertToOld());
     if (has(OFFSET)) list->children.push_back(get(OFFSET)->convertToOld());
+    list->children.push_back(get(LIMIT)->convertToOld());
 
     return list;
 }
@@ -31,7 +31,7 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitLimitExpr(ClickHouseParser::LimitExprContext *ctx)
 {
-    if (ctx->OFFSET())
+    if (ctx->INTEGER_LITERAL().size() == 2)
         return std::make_shared<LimitExpr>(Literal::createNumber(ctx->INTEGER_LITERAL(0)), Literal::createNumber(ctx->INTEGER_LITERAL(1)));
     else
         return std::make_shared<LimitExpr>(Literal::createNumber(ctx->INTEGER_LITERAL(0)));

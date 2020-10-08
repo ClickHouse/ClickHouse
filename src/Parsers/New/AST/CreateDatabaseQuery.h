@@ -16,8 +16,8 @@ class CreateDatabaseQuery: public DDLQuery
     private:
         enum ChildIndex : UInt8
         {
-            NAME = 0,
-            ENGINE = 1,
+            NAME = 0,    // DatabaseIdentifier
+            ENGINE = 1,  // EngineExpr (optional)
         };
 
         const bool if_not_exists;

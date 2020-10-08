@@ -43,7 +43,8 @@ class Literal : public INode
         {
             T number;
             std::stringstream ss(String(minus ? "-" : "+") + token);
-            ss >> number;
+            if (token.size() > 2 && (token[1] == 'x' || token[1] == 'X')) ss >> std::hex >> number;
+            else ss >> number;
             if (ss.fail() || !ss.eof())
                 return {};
             return number;

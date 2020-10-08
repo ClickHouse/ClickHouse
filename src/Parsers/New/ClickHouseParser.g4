@@ -67,10 +67,10 @@ checkStmt: CHECK TABLE tableIdentifier;
 // CREATE statement
 
 createStmt
-    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                                                                    # CreateDatabaseStmt
-    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? destinationClause? engineClause? POPULATE? subqueryClause  # CreateMaterializedViewStmt
-    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause? engineClause? subqueryClause?                               # CreateTableStmt
-    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? subqueryClause                                                          # CreateViewStmt
+    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                                                                      # CreateDatabaseStmt
+    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
+    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
+    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? subqueryClause                                                            # CreateViewStmt
     ;
 
 destinationClause: TO tableIdentifier;
@@ -184,9 +184,11 @@ joinExpr
     | tableExpr FINAL?                                                       # JoinExprTable
     ;
 joinOp
-    : ((ALL | ANY | ASOF)? INNER | INNER (ALL | ANY | ASOF)? | (ALL | ANY | ASOF))                               # JoinOpInner
-    | ((OUTER | SEMI | ANTI | ANY | ASOF)? (LEFT | RIGHT) | (LEFT | RIGHT) (OUTER | SEMI | ANTI | ANY | ASOF)?)  # JoinOpLeftRight
-    | ((OUTER | ANY)? FULL | FULL (OUTER | ANY)?)                                                                # JoinOpFull
+    : ((ALL | ANY | ASOF)? INNER | INNER (ALL | ANY | ASOF)? | (ALL | ANY | ASOF))  # JoinOpInner
+    | ( (OUTER | SEMI | ALL | ANTI | ANY | ASOF)? (LEFT | RIGHT)
+      | (LEFT | RIGHT) (OUTER | SEMI | ALL | ANTI | ANY | ASOF)?
+      )                                                                             # JoinOpLeftRight
+    | ((OUTER | ANY)? FULL | FULL (OUTER | ANY)?)                                   # JoinOpFull
     ;
 joinOpCross
     : (GLOBAL|LOCAL)? CROSS JOIN
@@ -284,12 +286,11 @@ columnExpr
                  | LT                                                                     // less
                  | GT                                                                     // greater
                  | GLOBAL? NOT? IN                                                        // in, notIn, globalIn, globalNotIn
+                 | NOT? LIKE                                                              // like, notLike
                  ) columnExpr                                                             # ColumnExprPrecedence3
     | columnExpr IS NOT? NULL_SQL                                                         # ColumnExprIsNull
     | columnExpr AND columnExpr                                                           # ColumnExprAnd
-    | columnExpr ( OR                                                                     // or
-                 | NOT? LIKE                                                              // like, notLike
-                 ) columnExpr                                                             # ColumnExprPrecedence4
+    | columnExpr OR columnExpr                                                            # ColumnExprOr
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                                   # ColumnExprBetween
     | <assoc=right> columnExpr QUERY columnExpr COLON columnExpr                          # ColumnExprTernaryOp
     | columnExpr AS? alias                                                                # ColumnExprAlias
@@ -360,7 +361,10 @@ keyword
     | TIES | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE | UNION | USE | USING | VALUES | VIEW | VOLUME | WEEK | WHEN
     | WHERE | WITH | YEAR
     ;
-alias: IDENTIFIER | interval;
+keywordForAlias
+    : ID
+    ;
+alias: IDENTIFIER | interval | keywordForAlias;
 identifier: IDENTIFIER | interval | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
 unaryOp: DASH | NOT;

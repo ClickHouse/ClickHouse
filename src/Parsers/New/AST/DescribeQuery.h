@@ -16,6 +16,12 @@ class DescribeQuery : public Query
         explicit DescribeQuery(PtrTo<TableExpr> expr);
 
         ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            EXPR = 0,
+        };
 };
 
 }

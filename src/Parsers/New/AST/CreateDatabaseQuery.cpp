@@ -1,6 +1,7 @@
 #include <Parsers/New/AST/CreateDatabaseQuery.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/New/AST/EngineExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>
@@ -21,7 +22,12 @@ ASTPtr CreateDatabaseQuery::convertToOld() const
     query->if_not_exists = if_not_exists;
     query->database = get<DatabaseIdentifier>(NAME)->getName();
     // TODO: if (cluster) query->cluster = cluster->getName();
-    if (has(ENGINE)) query->set(query->storage, get(ENGINE)->convertToOld());
+    if (has(ENGINE))
+    {
+        auto engine = std::make_shared<ASTStorage>();
+        engine->set(engine->engine, get(ENGINE)->convertToOld());
+        query->set(query->storage, engine);
+    }
     // TODO: query->uuid
 
     return query;

@@ -126,6 +126,10 @@ ASTPtr JoinExpr::convertToOld() const
             case JoinOpType::LEFT:
                 element->kind = ASTTableJoin::Kind::Left;
                 break;
+            case JoinOpType::LEFT_ALL:
+                element->kind = ASTTableJoin::Kind::Left;
+                element->strictness = ASTTableJoin::Strictness::All;
+                break;
             case JoinOpType::LEFT_ANTI:
                 element->kind = ASTTableJoin::Kind::Left;
                 element->strictness = ASTTableJoin::Strictness::Anti;
@@ -152,6 +156,10 @@ ASTPtr JoinExpr::convertToOld() const
             case JoinOpType::RIGHT_ANTI:
                 element->kind = ASTTableJoin::Kind::Right;
                 element->strictness = ASTTableJoin::Strictness::Anti;
+                break;
+            case JoinOpType::RIGHT_ALL:
+                element->kind = ASTTableJoin::Kind::Right;
+                element->strictness = ASTTableJoin::Strictness::All;
                 break;
             case JoinOpType::RIGHT_ANY:
                 element->kind = ASTTableJoin::Kind::Right;
@@ -271,6 +279,7 @@ antlrcpp::Any ParseTreeVisitor::visitJoinOpLeftRight(ClickHouseParser::JoinOpLef
     {
         if (ctx->OUTER()) return JoinExpr::JoinOpType::LEFT_OUTER;
         if (ctx->SEMI()) return JoinExpr::JoinOpType::LEFT_SEMI;
+        if (ctx->ALL()) return JoinExpr::JoinOpType::LEFT_ALL;
         if (ctx->ANTI()) return JoinExpr::JoinOpType::LEFT_ANTI;
         if (ctx->ANY()) return JoinExpr::JoinOpType::LEFT_ANY;
         if (ctx->ASOF()) return JoinExpr::JoinOpType::LEFT_ASOF;
@@ -280,6 +289,7 @@ antlrcpp::Any ParseTreeVisitor::visitJoinOpLeftRight(ClickHouseParser::JoinOpLef
     {
         if (ctx->OUTER()) return JoinExpr::JoinOpType::RIGHT_OUTER;
         if (ctx->SEMI()) return JoinExpr::JoinOpType::RIGHT_SEMI;
+        if (ctx->ALL()) return JoinExpr::JoinOpType::RIGHT_ALL;
         if (ctx->ANTI()) return JoinExpr::JoinOpType::RIGHT_ANTI;
         if (ctx->ANY()) return JoinExpr::JoinOpType::RIGHT_ANY;
         if (ctx->ASOF()) return JoinExpr::JoinOpType::RIGHT_ASOF;

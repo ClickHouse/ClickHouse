@@ -16,7 +16,7 @@ ASTPtr DescribeQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTDescribeQuery>();
 
-    // TODO
+    query->table_expression = get(EXPR)->convertToOld();
 
     return query;
 }

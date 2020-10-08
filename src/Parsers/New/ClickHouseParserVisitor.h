@@ -240,13 +240,13 @@ public:
 
     virtual antlrcpp::Any visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *context) = 0;
 
+    virtual antlrcpp::Any visitColumnExprOr(ClickHouseParser::ColumnExprOrContext *context) = 0;
+
     virtual antlrcpp::Any visitColumnExprPrecedence1(ClickHouseParser::ColumnExprPrecedence1Context *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprPrecedence2(ClickHouseParser::ColumnExprPrecedence2Context *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprPrecedence3(ClickHouseParser::ColumnExprPrecedence3Context *context) = 0;
-
-    virtual antlrcpp::Any visitColumnExprPrecedence4(ClickHouseParser::ColumnExprPrecedence4Context *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprUnaryOp(ClickHouseParser::ColumnExprUnaryOpContext *context) = 0;
 
@@ -317,6 +317,8 @@ public:
     virtual antlrcpp::Any visitInterval(ClickHouseParser::IntervalContext *context) = 0;
 
     virtual antlrcpp::Any visitKeyword(ClickHouseParser::KeywordContext *context) = 0;
+
+    virtual antlrcpp::Any visitKeywordForAlias(ClickHouseParser::KeywordForAliasContext *context) = 0;
 
     virtual antlrcpp::Any visitAlias(ClickHouseParser::AliasContext *context) = 0;
 

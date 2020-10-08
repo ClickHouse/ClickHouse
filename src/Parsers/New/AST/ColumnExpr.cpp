@@ -342,6 +342,16 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprLiteral(ClickHouseParser::ColumnE
     return ColumnExpr::createLiteral(visit(ctx->literal()).as<PtrTo<Literal>>());
 }
 
+antlrcpp::Any ParseTreeVisitor::visitColumnExprOr(ClickHouseParser::ColumnExprOrContext *ctx)
+{
+    auto name = std::make_shared<Identifier>("or");
+
+    auto args = std::make_shared<ColumnExprList>();
+    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *ctx)
 {
     return visit(ctx->columnExpr());
@@ -382,6 +392,11 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprPrecedence3(ClickHouseParser::Col
     else if (ctx->GE()) name = std::make_shared<Identifier>("greaterOrEquals");
     else if (ctx->LT()) name = std::make_shared<Identifier>("less");
     else if (ctx->GT()) name = std::make_shared<Identifier>("greater");
+    else if (ctx->LIKE())
+    {
+        if (ctx->NOT()) name = std::make_shared<Identifier>("notLike");
+        else name = std::make_shared<Identifier>("like");
+    }
     else if (ctx->IN())
     {
         if (ctx->GLOBAL())
@@ -394,22 +409,6 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprPrecedence3(ClickHouseParser::Col
             if (ctx->NOT()) name = std::make_shared<Identifier>("notIn");
             else name = std::make_shared<Identifier>("in");
         }
-    }
-
-    auto args = std::make_shared<ColumnExprList>();
-    for (auto * expr : ctx->columnExpr()) args->push(visit(expr));
-
-    return ColumnExpr::createFunction(name, nullptr, args);
-}
-
-antlrcpp::Any ParseTreeVisitor::visitColumnExprPrecedence4(ClickHouseParser::ColumnExprPrecedence4Context *ctx)
-{
-    PtrTo<Identifier> name;
-    if (ctx->OR()) name = std::make_shared<Identifier>("or");
-    else if (ctx->LIKE())
-    {
-        if (ctx->NOT()) name = std::make_shared<Identifier>("notLike");
-        else name = std::make_shared<Identifier>("like");
     }
 
     auto args = std::make_shared<ColumnExprList>();

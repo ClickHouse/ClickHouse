@@ -14,6 +14,7 @@ class CreateMaterializedViewQuery : public DDLQuery
         CreateMaterializedViewQuery(
             bool attach,
             bool if_not_exists,
+            bool populate,
             PtrTo<TableIdentifier> identifier,
             PtrTo<SchemaClause> schema,
             PtrTo<DestinationClause> destination,
@@ -32,7 +33,7 @@ class CreateMaterializedViewQuery : public DDLQuery
             SUBQUERY,     // SelectUnionQuery
         };
 
-        const bool attach, if_not_exists;
+        const bool attach, if_not_exists, populate;
 };
 
 }
