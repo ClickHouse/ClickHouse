@@ -31,6 +31,7 @@ void Pool::Entry::decrementRefCount()
     if (!data)
         return;
 
+    /// We were the last user of this thread, deinitialize it
     if (data->ref_count.fetch_sub(1) == 1)
         mysql_thread_end();
 }
