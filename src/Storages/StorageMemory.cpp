@@ -139,8 +139,6 @@ Pipe StorageMemory::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    auto current_data = data.get();
-
     if (delay_read_for_global_subqueries)
     {
         /// Note: for global subquery we use single source.
@@ -153,18 +151,20 @@ Pipe StorageMemory::read(
 
         return Pipe(std::make_shared<MemorySource>(
             column_names,
-            current_data->end(),
+            data.get()->end(),
             0,
             *this,
             metadata_snapshot,
             /// This hack is needed for global subqueries.
             /// It allows to set up this Source for read AFTER Storage::read() has been called and just before actual reading
-            [this, &current_data](BlocksList::const_iterator & current_it, size_t & num_blocks) {
+            [this](BlocksList::const_iterator & current_it, size_t & num_blocks) {
                 std::lock_guard guard(mutex);
-                current_it = current_data->begin();
-                num_blocks = current_data->size();
+                current_it = data.get()->begin();
+                num_blocks = data.get()->size();
             }));
     }
+
+    auto current_data = data.get();
 
     size_t size = current_data->size();
 
@@ -205,7 +205,7 @@ BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const Storag
 void StorageMemory::drop()
 {
     std::lock_guard lock(mutex);
-	data.set(std::make_unique<BlocksList>());
+    data.set(std::make_unique<BlocksList>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
