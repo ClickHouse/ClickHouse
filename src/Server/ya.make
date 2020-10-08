@@ -9,6 +9,7 @@ PEERDIR(
 CFLAGS(-g0)
 
 SRCS(
+    CertReloader.cpp
     HTTPHandler.cpp
     HTTPHandlerFactory.cpp
     InterserverIOHTTPHandler.cpp

@@ -63,6 +63,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/CertReloader.h>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -567,6 +568,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 global_context->reloadZooKeeperIfChanged(config);
 
             global_context->updateStorageConfiguration(*config);
+            CertReloader::instance().reload(*config);
         },
         /* already_loaded = */ true);
 
@@ -970,6 +972,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
             });
 
+
             /// Interserver IO HTTP
             create_server("interserver_http_port", [&](UInt16 port)
             {
@@ -1048,6 +1051,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         if (servers.empty())
              throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
                 ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+        CertReloader::instance().init(config());
 
         global_context->enableNamedSessions();
 
