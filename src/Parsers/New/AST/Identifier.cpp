@@ -105,7 +105,6 @@ antlrcpp::Any ParseTreeVisitor::visitDatabaseIdentifier(ClickHouseParser::Databa
 
 antlrcpp::Any ParseTreeVisitor::visitTableIdentifier(ClickHouseParser::TableIdentifierContext *ctx)
 {
-    // TODO: not complete!
     auto database = ctx->databaseIdentifier() ? visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>() : nullptr;
     return std::make_shared<TableIdentifier>(database, visit(ctx->identifier()));
 }

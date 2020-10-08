@@ -1103,6 +1103,8 @@ public:
     PrewhereClauseContext *prewhereClause();
     WhereClauseContext *whereClause();
     GroupByClauseContext *groupByClause();
+    antlr4::tree::TerminalNode *WITH();
+    antlr4::tree::TerminalNode *TOTALS();
     HavingClauseContext *havingClause();
     OrderByClauseContext *orderByClause();
     LimitByClauseContext *limitByClause();
@@ -1205,8 +1207,6 @@ public:
     antlr4::tree::TerminalNode *GROUP();
     antlr4::tree::TerminalNode *BY();
     ColumnExprListContext *columnExprList();
-    antlr4::tree::TerminalNode *WITH();
-    antlr4::tree::TerminalNode *TOTALS();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
@@ -2537,6 +2537,7 @@ public:
   public:
     KeywordForAliasContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *ANY();
     antlr4::tree::TerminalNode *ID();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;

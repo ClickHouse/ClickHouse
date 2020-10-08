@@ -156,7 +156,7 @@ selectStmt:
     arrayJoinClause?
     prewhereClause?
     whereClause?
-    groupByClause?
+    groupByClause? (WITH TOTALS)?
     havingClause?
     orderByClause?
     limitByClause?
@@ -170,7 +170,7 @@ sampleClause: SAMPLE ratioExpr (OFFSET ratioExpr)?;
 arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 prewhereClause: PREWHERE columnExpr;
 whereClause: WHERE columnExpr;
-groupByClause: GROUP BY columnExprList (WITH TOTALS)?;  // TODO: WITH TOTALS may appear without GROUP BY expression.
+groupByClause: GROUP BY columnExprList;
 havingClause: HAVING columnExpr;
 orderByClause: ORDER BY orderExprList;
 limitByClause: LIMIT limitExpr BY columnExprList;
@@ -178,10 +178,10 @@ limitClause: LIMIT limitExpr (WITH TIES)?;
 settingsClause: SETTINGS settingExprList;
 
 joinExpr
-    : LPAREN joinExpr RPAREN                                                 # JoinExprParens
-    | joinExpr (GLOBAL | LOCAL)? joinOp? JOIN joinExpr joinConstraintClause  # JoinExprOp
+    : joinExpr (GLOBAL | LOCAL)? joinOp? JOIN joinExpr joinConstraintClause  # JoinExprOp
     | joinExpr joinOpCross joinExpr                                          # JoinExprCrossOp
     | tableExpr FINAL?                                                       # JoinExprTable
+    | LPAREN joinExpr RPAREN                                                 # JoinExprParens
     ;
 joinOp
     : ((ALL | ANY | ASOF)? INNER | INNER (ALL | ANY | ASOF)? | (ALL | ANY | ASOF))  # JoinOpInner
@@ -362,7 +362,7 @@ keyword
     | WHERE | WITH | YEAR
     ;
 keywordForAlias
-    : ID
+    : ANY | ID
     ;
 alias: IDENTIFIER | interval | keywordForAlias;
 identifier: IDENTIFIER | interval | keyword;

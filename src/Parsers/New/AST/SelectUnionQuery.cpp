@@ -61,17 +61,6 @@ ASTPtr ArrayJoinClause::convertToOld() const
     return element;
 }
 
-// GROUP BY Clause
-
-GroupByClause::GroupByClause(PtrTo<ColumnExprList> expr_list, bool with_totals_) : INode{expr_list}, with_totals(with_totals_)
-{
-}
-
-ASTPtr GroupByClause::convertToOld() const
-{
-    return get(EXPRS)->convertToOld();
-}
-
 // LIMIT By Clause
 
 LimitByClause::LimitByClause(PtrTo<LimitExpr> expr, PtrTo<ColumnExprList> expr_list) : limit(expr), by(expr_list)
@@ -99,7 +88,8 @@ ASTPtr SettingsClause::convertToOld() const
 
 // SELECT Statement
 
-SelectStmt::SelectStmt(bool distinct_, PtrTo<ColumnExprList> expr_list) : INode(MAX_INDEX), distinct(distinct_)
+SelectStmt::SelectStmt(bool distinct_, bool with_totals_, PtrTo<ColumnExprList> expr_list)
+    : INode(MAX_INDEX), distinct(distinct_), with_totals(with_totals_)
 {
     set(COLUMNS, expr_list);
 }
@@ -170,6 +160,7 @@ ASTPtr SelectStmt::convertToOld() const
 
     old_select->setExpression(ASTSelectQuery::Expression::SELECT, get(COLUMNS)->convertToOld());
     old_select->distinct = distinct;
+    old_select->group_by_with_totals = with_totals;
 
     if (has(WITH)) old_select->setExpression(ASTSelectQuery::Expression::WITH, get(WITH)->convertToOld());
     if (has(FROM)) old_select->setExpression(ASTSelectQuery::Expression::TABLES, get(FROM)->convertToOld());
@@ -177,11 +168,7 @@ ASTPtr SelectStmt::convertToOld() const
     if (has(ARRAY_JOIN)) old_select->tables()->children.push_back(get(ARRAY_JOIN)->convertToOld());
     if (has(PREWHERE)) old_select->setExpression(ASTSelectQuery::Expression::PREWHERE, get(PREWHERE)->convertToOld());
     if (has(WHERE)) old_select->setExpression(ASTSelectQuery::Expression::WHERE, get(WHERE)->convertToOld());
-    if (has(GROUP_BY))
-    {
-        old_select->setExpression(ASTSelectQuery::Expression::GROUP_BY, get(GROUP_BY)->convertToOld());
-        old_select->group_by_with_totals = get<GroupByClause>(GROUP_BY)->withTotals();
-    }
+    if (has(GROUP_BY)) old_select->setExpression(ASTSelectQuery::Expression::GROUP_BY, get(GROUP_BY)->convertToOld());
     if (has(HAVING)) old_select->setExpression(ASTSelectQuery::Expression::HAVING, get(HAVING)->convertToOld());
     if (has(ORDER_BY)) old_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, get(ORDER_BY)->convertToOld());
     // TODO: LIMIT BY
@@ -268,7 +255,7 @@ antlrcpp::Any ParseTreeVisitor::visitWhereClause(ClickHouseParser::WhereClauseCo
 
 antlrcpp::Any ParseTreeVisitor::visitGroupByClause(ClickHouseParser::GroupByClauseContext *ctx)
 {
-    return std::make_shared<GroupByClause>(visit(ctx->columnExprList()), !!ctx->TOTALS());
+    return std::make_shared<GroupByClause>(visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitHavingClause(ClickHouseParser::HavingClauseContext *ctx)
@@ -298,7 +285,7 @@ antlrcpp::Any ParseTreeVisitor::visitSettingsClause(ClickHouseParser::SettingsCl
 
 antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)
 {
-    auto select_stmt = std::make_shared<SelectStmt>(!!ctx->DISTINCT(), visit(ctx->columnExprList()));
+    auto select_stmt = std::make_shared<SelectStmt>(!!ctx->DISTINCT(), !!ctx->WITH(), visit(ctx->columnExprList()));
 
     if (ctx->withClause()) select_stmt->setWithClause(visit(ctx->withClause()));
     if (ctx->fromClause()) select_stmt->setFromClause(visit(ctx->fromClause()));

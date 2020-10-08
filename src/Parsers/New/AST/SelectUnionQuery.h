@@ -58,23 +58,7 @@ using PrewhereClause = SimpleClause<ColumnExpr>;
 
 using WhereClause = SimpleClause<ColumnExpr>;
 
-class GroupByClause : public INode
-{
-    public:
-        GroupByClause(PtrTo<ColumnExprList> expr_list, bool with_totals);
-
-        bool withTotals() const { return with_totals; }
-
-        ASTPtr convertToOld() const override;
-
-    private:
-        enum ChildIndex : UInt8
-        {
-            EXPRS = 0,  // ColumnExprList
-        };
-
-        const bool with_totals;
-};
+using GroupByClause = SimpleClause<ColumnExprList>;
 
 using HavingClause = SimpleClause<ColumnExpr>;
 
@@ -109,7 +93,7 @@ class SettingsClause : public INode
 class SelectStmt : public INode
 {
     public:
-        SelectStmt(bool distinct_, PtrTo<ColumnExprList> expr_list);
+        SelectStmt(bool distinct_, bool with_totals_, PtrTo<ColumnExprList> expr_list);
 
         void setWithClause(PtrTo<WithClause> clause);
         void setFromClause(PtrTo<FromClause> clause);
@@ -146,7 +130,7 @@ class SelectStmt : public INode
             MAX_INDEX,
         };
 
-        const bool distinct;
+        const bool distinct, with_totals;
 };
 
 class SelectUnionQuery : public Query
