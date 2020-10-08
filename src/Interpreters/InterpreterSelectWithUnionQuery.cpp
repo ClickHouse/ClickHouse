@@ -1,7 +1,6 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Columns/getLeastSuperColumn.h>
@@ -38,9 +37,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
     if (!num_selects)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
-
-    if (context->getSettingsRef().with_global)
-        ApplyWithGlobalVisitor().visit(query_ptr);
 
     /// Initialize interpreters for each SELECT query.
     /// Note that we pass 'required_result_column_names' to first SELECT.
