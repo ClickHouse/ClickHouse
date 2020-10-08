@@ -105,6 +105,17 @@ NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
     return nested_storage->getVirtuals();
 }
 
+IStorage::ColumnSizeByName StorageMaterializeMySQL::getColumnSizes() const
+{
+    auto sizes = nested_storage->getColumnSizes();
+    auto nested_header = nested_storage->getInMemoryMetadataPtr()->getSampleBlock();
+    String sign_column_name = nested_header.getByPosition(nested_header.columns() - 2).name;
+    String version_column_name = nested_header.getByPosition(nested_header.columns() - 1).name;
+    sizes.erase(sign_column_name);
+    sizes.erase(version_column_name);
+    return sizes;
+}
+
 }
 
 #endif
