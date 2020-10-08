@@ -20,6 +20,7 @@ toc_title: Client Libraries
     -   [simpod/clickhouse-client](https://packagist.org/packages/simpod/clickhouse-client)
     -   [seva-code/php-click-house-client](https://packagist.org/packages/seva-code/php-click-house-client)
     -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
+    -   [one-ck](https://github.com/lizhichao/one-ck)
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
