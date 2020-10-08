@@ -42,7 +42,11 @@ void CertReloader::reload(const Poco::Util::AbstractConfiguration & config)
     const auto cert_file_ = config.getString("openSSL.server.certificateFile", "");
     const auto key_file_ = config.getString("openSSL.server.privateKeyFile", "");
 
-    if (setKeyFile(key_file_) || setCertFile(cert_file_))
+    bool changed = false;
+    changed |= setKeyFile(key_file_);
+    changed |= setCertFile(cert_file_);
+
+    if (changed)
     {
         LOG_INFO(log, "Reloading cert({}), key({})", cert_file, key_file);
         {
