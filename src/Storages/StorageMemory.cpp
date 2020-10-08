@@ -22,74 +22,64 @@ namespace ErrorCodes
 
 class MemorySource : public SourceWithProgress
 {
+    using InitializerFunc = std::function<void(BlocksList::const_iterator &, size_t &)>;
 public:
-    /// We use range [first, last] which includes right border.
     /// Blocks are stored in std::list which may be appended in another thread.
-    /// We don't use synchronisation here, because elements in range [first, last] won't be modified.
+    /// We use pointer to the beginning of the list and its current size.
+    /// We don't need synchronisation in this reader, because while we hold SharedLock on storage,
+    /// only new elements can be added to the back of the list, so our iterators remain valid
+
     MemorySource(
         Names column_names_,
         BlocksList::const_iterator first_,
         size_t num_blocks_,
         const StorageMemory & storage,
-        const StorageMetadataPtr & metadata_snapshot)
+        const StorageMetadataPtr & metadata_snapshot,
+        InitializerFunc initializer_func_ = [](BlocksList::const_iterator &, size_t &) {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
         , column_names(std::move(column_names_))
         , current_it(first_)
         , num_blocks(num_blocks_)
+        , initializer_func(std::move(initializer_func_))
     {
     }
-
-    /// If called, will initialize the number of blocks at first read.
-    /// It allows to read data which was inserted into memory table AFTER Storage::read was called.
-    /// This hack is needed for global subqueries.
-    void delayInitialization(std::shared_ptr<const BlocksList> data_) { data = data_; }
 
     String getName() const override { return "Memory"; }
 
 protected:
     Chunk generate() override
     {
-        if (data)
+        if (!postponed_init_done)
         {
-            current_it = data->begin();
-            num_blocks = data->size();
-            is_finished = num_blocks == 0;
-
-            data = nullptr;
+            initializer_func(current_it, num_blocks);
+            postponed_init_done = true;
         }
 
-        if (is_finished)
-        {
+        if (current_block_idx == num_blocks)
             return {};
-        }
-        else
-        {
-            const Block & src = *current_it;
-            Columns columns;
-            columns.reserve(column_names.size());
 
-            /// Add only required columns to `res`.
-            for (const auto & name : column_names)
-                columns.emplace_back(src.getByName(name).column);
+        const Block & src = *current_it;
+        Columns columns;
+        columns.reserve(column_names.size());
 
-            ++current_block_idx;
+        /// Add only required columns to `res`.
+        for (const auto & name : column_names)
+            columns.push_back(src.getByName(name).column);
 
-            if (current_block_idx == num_blocks)
-                is_finished = true;
-            else
-                ++current_it;
+        if (++current_block_idx < num_blocks)
+            ++current_it;
 
-            return Chunk(std::move(columns), src.rows());
-        }
+        return Chunk(std::move(columns), src.rows());
     }
-private:
-    Names column_names;
-    BlocksList::const_iterator current_it;
-    size_t current_block_idx = 0;
-    size_t num_blocks;
-    bool is_finished = false;
 
-    std::shared_ptr<const BlocksList> data = nullptr;
+private:
+    const Names column_names;
+    BlocksList::const_iterator current_it;
+    size_t num_blocks;
+    size_t current_block_idx = 0;
+
+    bool postponed_init_done = false;
+    InitializerFunc initializer_func;
 };
 
 
@@ -107,10 +97,20 @@ public:
 
     void write(const Block & block) override
     {
+        const auto size_bytes_diff = block.allocatedBytes();
+        const auto size_rows_diff = block.rows();
+
         metadata_snapshot->check(block, true);
-        auto new_data = std::make_unique<BlocksList>(*(storage.data.get()));
-        new_data->push_back(block);
-        storage.data.set(std::move(new_data));
+        {
+            std::lock_guard lock(storage.mutex);
+            auto new_data = std::make_unique<BlocksList>(*(storage.data.get()));
+            new_data->push_back(block);
+            storage.data.set(std::move(new_data));
+
+            storage.total_size_bytes.fetch_add(size_bytes_diff, std::memory_order_relaxed);
+            storage.total_size_rows.fetch_add(size_rows_diff, std::memory_order_relaxed);
+        }
+
     }
 private:
     StorageMemory & storage;
@@ -151,9 +151,19 @@ Pipe StorageMemory::read(
         /// set for IN or hash table for JOIN, which can't be done concurrently.
         /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
 
-        auto source = std::make_shared<MemorySource>(column_names, current_data->begin(), current_data->size(), *this, metadata_snapshot);
-        source->delayInitialization(current_data);
-        return Pipe(std::move(source));
+        return Pipe(std::make_shared<MemorySource>(
+            column_names,
+            current_data->end(),
+            0,
+            *this,
+            metadata_snapshot,
+            /// This hack is needed for global subqueries.
+            /// It allows to set up this Source for read AFTER Storage::read() has been called and just before actual reading
+            [this](BlocksList::const_iterator & current_it, size_t & num_blocks) {
+                std::lock_guard guard(mutex);
+                current_it = current_data->begin();
+                num_blocks = current_data->size();
+            }));
     }
 
     size_t size = current_data->size();
@@ -163,7 +173,7 @@ Pipe StorageMemory::read(
 
     Pipes pipes;
 
-    auto it = current_data->begin();
+    BlocksList::const_iterator it = current_data->begin();
 
     size_t offset = 0;
     for (size_t stream = 0; stream < num_streams; ++stream)
@@ -194,7 +204,10 @@ BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const Storag
 
 void StorageMemory::drop()
 {
-    data.set(std::make_unique<BlocksList>());
+    std::lock_guard lock(mutex);
+	data.set(std::make_unique<BlocksList>());
+    total_size_bytes.store(0, std::memory_order_relaxed);
+    total_size_rows.store(0, std::memory_order_relaxed);
 }
 
 static inline void updateBlockData(Block & old_block, const Block & new_block)
@@ -209,6 +222,7 @@ static inline void updateBlockData(Block & old_block, const Block & new_block)
 
 void StorageMemory::mutate(const MutationCommands & commands, const Context & context)
 {
+    std::lock_guard lock(mutex);
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
@@ -227,7 +241,16 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
     // all column affected
     if (interpreter->isAffectingAllColumns())
     {
+        size_t rows = 0;
+        size_t bytes = 0;
+        for (const auto & buffer : out)
+        {
+            rows += buffer.rows();
+            bytes += buffer.bytes();
+        }
         data.set(std::make_unique<BlocksList>(out));
+        total_size_bytes.store(rows, std::memory_order_relaxed);
+        total_size_rows.store(bytes, std::memory_order_relaxed);
     }
     else
     {
@@ -240,32 +263,41 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
             ++data_it;
             ++out_it;
         }
+        size_t rows = 0;
+        size_t bytes = 0;
+        for (const auto & buffer : *new_data)
+        {
+            rows += buffer.rows();
+            bytes += buffer.bytes();
+        }
+        total_size_bytes.store(rows, std::memory_order_relaxed);
+        total_size_rows.store(bytes, std::memory_order_relaxed);
         data.set(std::move(new_data));
     }
 }
 
+
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
+    std::lock_guard lock(mutex);
     data.set(std::make_unique<BlocksList>());
+    total_size_bytes.store(0, std::memory_order_relaxed);
+    total_size_rows.store(0, std::memory_order_relaxed);
 }
+
 
 std::optional<UInt64> StorageMemory::totalRows() const
 {
-    UInt64 rows = 0;
-    auto current_data = data.get();
-    for (const auto & buffer : *current_data)
-        rows += buffer.rows();
-    return rows;
+    /// All modifications of these counters are done under mutex which automatically guarantees synchronization/consistency
+    /// When run concurrently we are fine with any value: "before" or "after"
+    return total_size_rows.load(std::memory_order_relaxed);
 }
+
 
 std::optional<UInt64> StorageMemory::totalBytes() const
 {
-    UInt64 bytes = 0;
-    auto current_data = data.get();
-    for (const auto & buffer : *current_data)
-        bytes += buffer.allocatedBytes();
-    return bytes;
+    return total_size_bytes.load(std::memory_order_relaxed);
 }
 
 
