@@ -501,7 +501,7 @@ formatDateTime(Time, Format\[, Timezone\])
 Returnes time and date values according to the determined format.
 
 **Replacement fields**
-These replacement fields or placeholders define pattern for the result-string. “Example” column shows formatting result for time `2018-01-02 22:33:44`.
+Using replacement fields, you can define a pattern for the resulting string. “Example” column shows formatting result for `2018-01-02 22:33:44`.
 
 | Placeholder | Description                                             | Example    |
 |----------|---------------------------------------------------------|------------|
