@@ -246,7 +246,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
-    if (context->getSettingsRef().with_global)
+    if (context->getSettingsRef().enable_global_with_statement)
         ApplyWithAliasVisitor().visit(query_ptr);
     ApplyWithSubqueryVisitor().visit(query_ptr);
 
