@@ -312,7 +312,7 @@ def add_errors_explained():
 
 
 if args.report == 'main':
-    print(header_template.format())
+    print((header_template.format()))
 
     add_tested_commits()
 
@@ -571,14 +571,14 @@ if args.report == 'main':
         status = 'failure'
         message = 'Errors while building the report.'
 
-    print("""
+    print(("""
     <!--status: {status}-->
     <!--message: {message}-->
-    """.format(status=status, message=message))
+    """.format(status=status, message=message)))
 
 elif args.report == 'all-queries':
 
-    print(header_template.format())
+    print((header_template.format()))
 
     add_tested_commits()
 

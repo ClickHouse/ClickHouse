@@ -62,5 +62,5 @@ Description: debugging symbols for clickhouse-common-static
 Package: clickhouse-test
 Priority: optional
 Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, python-requests, curl, perl, sudo, openssl, netcat-openbsd, telnet, brotli, bsdutils
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python3, python3-lxml, python3-termcolor, python3-requests, curl, perl, sudo, openssl, netcat-openbsd, telnet, brotli, bsdutils
 Description: ClickHouse tests
