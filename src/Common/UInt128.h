@@ -67,6 +67,11 @@ struct UInt128
     bool inline operator <= (const Int128 rhs) const { return *this <= UInt128(rhs, rhs >> 64) && rhs >= 0; }
     bool inline operator <  (const Int128 rhs) const { return *this <  UInt128(rhs, rhs >> 64) && rhs >= 0; }
 
+    bool inline operator >  (const Int256 rhs) const { return (rhs < 0) || ((Int256(high) << 64) + low) > rhs; }
+    bool inline operator >  (const UInt256 rhs) const { return ((UInt256(high) << 64) + low) > rhs; }
+    bool inline operator <  (const Int256 rhs) const { return (rhs >= 0) && ((Int256(high) << 64) + low) < rhs; }
+    bool inline operator <  (const UInt256 rhs) const { return ((UInt256(high) << 64) + low) < rhs; }
+
     template <typename T> bool inline operator== (const T rhs) const { return *this == UInt128(rhs); }
     template <typename T> bool inline operator!= (const T rhs) const { return *this != UInt128(rhs); }
     template <typename T> bool inline operator>= (const T rhs) const { return *this >= UInt128(rhs); }
@@ -173,7 +178,7 @@ struct DummyUInt256
 #pragma GCC diagnostic pop
 #endif
 
-    DummyUInt256 & operator= (const UInt64 rhs) { a = rhs; b = 0; c = 0; d = 0; return *this; }
+    DummyUInt256 & operator = (const UInt64 rhs) { a = rhs; b = 0; c = 0; d = 0; return *this; }
 };
 
 struct UInt256Hash

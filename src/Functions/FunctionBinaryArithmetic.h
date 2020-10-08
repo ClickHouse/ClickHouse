@@ -361,12 +361,8 @@ private:
                 return apply(a.value, b);
             else if constexpr (IsDecimalNumber<U>)
                 return apply(a, b.value);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return apply(UInt16(a), b);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return apply(a, UInt16(b));
             else
-                return applyNative(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b));
+                return applyNative(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b));
         }
         else
             return applyNative(a, b);
@@ -381,12 +377,8 @@ private:
                 return applyScaled<scale_left>(a.value, b, scale);
             else if constexpr (IsDecimalNumber<U>)
                 return applyScaled<scale_left>(a, b.value, scale);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return applyScaled<scale_left>(UInt16(a), b, scale);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return applyScaled<scale_left>(a, UInt16(b), scale);
             else
-                return applyNativeScaled<scale_left>(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
+                return applyNativeScaled<scale_left>(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b), scale);
         }
         else
             return applyNativeScaled<scale_left>(a, b, scale);
@@ -401,12 +393,8 @@ private:
                 return applyScaledDiv(a.value, b, scale);
             else if constexpr (IsDecimalNumber<U>)
                 return applyScaledDiv(a, b.value, scale);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return applyScaledDiv(UInt16(a), b, scale);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return applyScaledDiv(a, UInt16(b), scale);
             else
-                return applyNativeScaledDiv(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
+                return applyNativeScaledDiv(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b), scale);
         }
         else
             return applyNativeScaledDiv(a, b, scale);
@@ -591,6 +579,11 @@ public:
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
+    static constexpr const bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
+    static constexpr const bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>> ||
+                                            std::is_same_v<Op<UInt8, UInt8>, DivideIntegralImpl<UInt8, UInt8>> ||
+                                            std::is_same_v<Op<UInt8, UInt8>, DivideIntegralOrZeroImpl<UInt8, UInt8>>;
+
     const Context & context;
     bool check_decimal_overflow = true;
 
@@ -889,7 +882,7 @@ public:
                     return false;
                 else if constexpr (std::is_same_v<LeftDataType, RightDataType>)
                 {
-                   if (left.getN() == right.getN())
+                    if (left.getN() == right.getN())
                     {
                         type_res = std::make_shared<LeftDataType>(left.getN());
                         return true;
@@ -903,12 +896,8 @@ public:
                 {
                     if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
-                        constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
-                        constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>> ||
-                                                   std::is_same_v<Op<UInt8, UInt8>, DivideIntegralImpl<UInt8, UInt8>> ||
-                                                   std::is_same_v<Op<UInt8, UInt8>, DivideIntegralOrZeroImpl<UInt8, UInt8>>;
+                        ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
 
-                        ResultDataType result_type = decimalResultType(left, right, is_multiply, is_division);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
                     else if constexpr (IsDataTypeDecimal<LeftDataType>)
@@ -932,7 +921,7 @@ public:
                         type_res = std::make_shared<ResultDataType>();
                     return true;
                 }
-           }
+            }
             return false;
         });
         if (!valid)
@@ -1028,10 +1017,6 @@ public:
         if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
         {
             constexpr bool result_is_decimal = IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>;
-            constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
-            constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>> ||
-                                            std::is_same_v<Op<UInt8, UInt8>, DivideIntegralImpl<UInt8, UInt8>> ||
-                                            std::is_same_v<Op<UInt8, UInt8>, DivideIntegralOrZeroImpl<UInt8, UInt8>>;
 
             using T0 = typename LeftDataType::FieldType;
             using T1 = typename RightDataType::FieldType;
@@ -1054,7 +1039,8 @@ public:
                     /// the only case with a non-vector result
                     if constexpr (result_is_decimal)
                     {
-                        ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                        ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
+
                         typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                         typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                         if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
@@ -1079,7 +1065,7 @@ public:
             typename ColVecResult::MutablePtr col_res = nullptr;
             if constexpr (result_is_decimal)
             {
-                ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
                 col_res = ColVecResult::create(0, type.getScale());
             }
             else
@@ -1094,7 +1080,7 @@ public:
                 {
                     if constexpr (result_is_decimal)
                     {
-                        ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                        ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
 
                         typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                         typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
@@ -1114,12 +1100,13 @@ public:
             {
                 if constexpr (result_is_decimal)
                 {
-                    ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                    ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
 
                     typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                     typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                     if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                         scale_a = right.getScaleMultiplier();
+
                     if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                     {
                         OpImpl::vectorVector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b,
