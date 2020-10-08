@@ -94,6 +94,8 @@ private:
     /// MultiVersion data storage, so that we can copy the list of blocks to readers.
     MultiVersion<BlocksList> data;
 
+    mutable std::mutex mutex;
+
     bool delay_read_for_global_subqueries = false;
 
     std::atomic<size_t> total_size_bytes = 0;
