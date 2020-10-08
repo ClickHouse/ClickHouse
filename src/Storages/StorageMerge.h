@@ -66,6 +66,7 @@ private:
     DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
 
     NamesAndTypesList getVirtuals() const override;
+    ColumnSizeByName getColumnSizes() const override;
 
 protected:
     StorageMerge(
