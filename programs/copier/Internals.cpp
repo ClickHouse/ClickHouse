@@ -215,20 +215,31 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     return primary_key_columns;
 }
 
-bool isReplicatedTableEngine(const ASTPtr & storage_ast)
+String extractReplicatedTableZookeeperPath(const ASTPtr & storage_ast)
 {
+    String storage_str = queryToString(storage_ast);
+
     const auto & storage = storage_ast->as<ASTStorage &>();
     const auto & engine = storage.engine->as<ASTFunction &>();
 
     if (!endsWith(engine.name, "MergeTree"))
     {
-        String storage_str = queryToString(storage_ast);
         throw Exception(
                 "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
                 ErrorCodes::BAD_ARGUMENTS);
     }
 
-    return startsWith(engine.name, "Replicated");
+    if (!startsWith(engine.name, "Replicated"))
+    {
+        return "";
+    }
+
+    auto replicated_table_arguments = engine.arguments->children;
+
+    auto zk_table_path_ast = replicated_table_arguments[0]->as<ASTLiteral &>();
+    auto zk_table_path_string = zk_table_path_ast.value.safeGet<String>();
+
+    return zk_table_path_string;
 }
 
 ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random)

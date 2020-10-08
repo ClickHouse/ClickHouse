@@ -599,6 +599,7 @@ static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependen
             case ExpressionAction::ADD_COLUMN:
             case ExpressionAction::COPY_COLUMN:
             case ExpressionAction::ARRAY_JOIN:
+            case ExpressionAction::JOIN:
             {
                 Names columns = actions[i].getNeededColumns();
                 for (const auto & column : columns)

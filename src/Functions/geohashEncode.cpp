@@ -20,9 +20,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-namespace
-{
-
 // geohashEncode(lon float32/64, lat float32/64, length UInt8) => string
 class FunctionGeohashEncode : public IFunction
 {
@@ -130,7 +127,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionGeohashEncode(FunctionFactory & factory)
 {
