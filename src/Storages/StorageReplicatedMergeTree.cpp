@@ -1416,11 +1416,11 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         ttl_infos.update(part_ptr->ttl_infos);
         max_volume_index = std::max(max_volume_index, getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
     }
-    ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
-            ttl_infos, time(nullptr), max_volume_index);
-
     auto table_lock = lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
+
     StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
+    ReservationPtr reserved_space = reserveSpacePreferringTTLRules(
+        metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
 
     FutureMergedMutatedPart future_merged_part(parts, entry.new_part_type);
     if (future_merged_part.name != entry.new_part_name)
@@ -4065,6 +4065,7 @@ Pipe StorageReplicatedMergeTree::alterPartition(
 
 
 /// If new version returns ordinary name, else returns part name containing the first and last month of the month
+/// NOTE: use it in pair with getFakePartCoveringAllPartsInPartition(...)
 static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info)
 {
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -4080,7 +4081,7 @@ static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version,
     return part_info.getPartName();
 }
 
-bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info)
+bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info, bool for_replace_partition)
 {
     /// Even if there is no data in the partition, you still need to mark the range for deletion.
     /// - Because before executing DETACH, tasks for downloading parts to this partition can be executed.
@@ -4103,14 +4104,21 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
         mutation_version = queue.getCurrentMutationVersion(partition_id, right);
     }
 
-    /// Empty partition.
-    if (right == 0)
-        return false;
+    /// REPLACE PARTITION uses different max level and does not decrement max_block of DROP_RANGE for unknown (probably historical) reason.
+    auto max_level = std::numeric_limits<decltype(part_info.level)>::max();
+    if (!for_replace_partition)
+    {
+        max_level = MergeTreePartInfo::MAX_LEVEL;
 
-    --right;
+        /// Empty partition.
+        if (right == 0)
+            return false;
+
+        --right;
+    }
 
     /// Artificial high level is chosen, to make this part "covering" all parts inside.
-    part_info = MergeTreePartInfo(partition_id, left, right, MergeTreePartInfo::MAX_LEVEL, mutation_version);
+    part_info = MergeTreePartInfo(partition_id, left, right, max_level, mutation_version);
     return true;
 }
 
@@ -5317,11 +5325,11 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     /// Firstly, generate last block number and compute drop_range
     /// NOTE: Even if we make ATTACH PARTITION instead of REPLACE PARTITION drop_range will not be empty, it will contain a block.
     /// So, such case has special meaning, if drop_range contains only one block it means that nothing to drop.
+    /// TODO why not to add normal DROP_RANGE entry to replication queue if `replace` is true?
     MergeTreePartInfo drop_range;
-    drop_range.partition_id = partition_id;
-    drop_range.max_block = allocateBlockNumber(partition_id, zookeeper)->getNumber();
-    drop_range.min_block = replace ? 0 : drop_range.max_block;
-    drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
+    getFakePartCoveringAllPartsInPartition(partition_id, drop_range, true);
+    if (!replace)
+        drop_range.min_block = drop_range.max_block;
 
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
 
@@ -5400,6 +5408,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     }
 
     /// We are almost ready to commit changes, remove fetches and merges from drop range
+    /// FIXME it's unsafe to remove queue entries before we actually commit REPLACE_RANGE to replication log
     queue.removePartProducingOpsInRange(zookeeper, drop_range, entry);
 
     /// Remove deduplication block_ids of replacing parts
@@ -5514,11 +5523,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     /// A range for log entry to remove parts from the source table (myself).
 
     MergeTreePartInfo drop_range;
-    drop_range.partition_id = partition_id;
-    drop_range.max_block = allocateBlockNumber(partition_id, zookeeper)->getNumber();
-    drop_range.min_block = 0;
-    drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
-
+    getFakePartCoveringAllPartsInPartition(partition_id, drop_range, true);
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
 
     if (drop_range.getBlocksCount() > 1)
@@ -5573,6 +5578,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         drop_range_dest.max_block = drop_range.max_block;
         drop_range_dest.min_block = drop_range.max_block;
         drop_range_dest.level = drop_range.level;
+        drop_range_dest.mutation = drop_range.mutation;
 
         entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
         entry.source_replica = dest_table_storage->replica_name;
