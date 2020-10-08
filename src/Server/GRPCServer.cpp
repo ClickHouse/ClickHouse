@@ -510,25 +510,35 @@ namespace
 }
 
 
-GRPCServer::GRPCServer(std::string address_to_listen_, IServer & server_) : iserver(server_), log(&Poco::Logger::get("GRPCHandler"))
+GRPCServer::GRPCServer(IServer & iserver_, Poco::ThreadPool & thread_pool_, const Poco::Net::SocketAddress & address_to_listen_)
+    : iserver(iserver_), thread_pool(thread_pool_), address_to_listen(address_to_listen_), log(&Poco::Logger::get("GRPCServer"))
+{}
+
+GRPCServer::~GRPCServer() = default;
+
+void GRPCServer::start()
 {
     grpc::ServerBuilder builder;
-    builder.AddListeningPort(address_to_listen_, grpc::InsecureServerCredentials());
+    builder.AddListeningPort(address_to_listen.toString(), grpc::InsecureServerCredentials());
     //keepalive pings default values
     builder.RegisterService(&grpc_service);
     builder.SetMaxReceiveMessageSize(INT_MAX);
     notification_cq = builder.AddCompletionQueue();
     new_call_cq = builder.AddCompletionQueue();
     grpc_server = builder.BuildAndStart();
+    thread_pool.start(*this);
 }
-
-GRPCServer::~GRPCServer() = default;
 
 void GRPCServer::stop()
 {
     grpc_server->Shutdown();
     notification_cq->Shutdown();
     new_call_cq->Shutdown();
+}
+
+size_t GRPCServer::currentConnections() const
+{
+    return 0; //TODO
 }
 
 void GRPCServer::run()
