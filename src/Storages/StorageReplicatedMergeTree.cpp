@@ -3323,10 +3323,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             if (quorum)
             {
                 /// Check if this quorum insert is parallel or not
-                if (zookeeper->exists(zookeeper_path + "/quorum/status"))
-                    updateQuorum(part_name, false);
-                else if (zookeeper->exists(zookeeper_path + "/quorum/parallel/" + part_name))
+                if (zookeeper->exists(zookeeper_path + "/quorum/parallel/" + part_name))
                     updateQuorum(part_name, true);
+                else if (zookeeper->exists(zookeeper_path + "/quorum/status"))
+                    updateQuorum(part_name, false);
             }
 
             /// merged parts that are still inserted with quorum. if it only contains one block, it hasn't been merged before
