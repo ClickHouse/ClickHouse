@@ -513,7 +513,7 @@ Supported modifiers for Format:
 | %e       | day of the month, space-padded ( 1-31)                  | 2          |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
 | %G       | four-digit year format, aligned to ISO 8601: where year comes firstly as the largest unit (descending notation) | 2018         |
-| %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 2018       |
+| %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
 | %H       | hour in 24h format (00-23)                              | 22         |
 | %I       | hour in 12h format (01-12)                              | 10         |
 | %j       | day of the year (001-366)                               | 002        |
