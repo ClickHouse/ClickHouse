@@ -558,7 +558,7 @@ private:
     template <typename S>
     void writeDecimal(const Decimal<S> & decimal, UInt32 scale)
     {
-        castNumericAndWriteField(DecimalUtils::convertTo<ToType>(decimal, scale));
+        castNumericAndWriteField(convertFromDecimal<DataTypeDecimal<Decimal<S>>, DataTypeNumber<ToType>>(decimal.value, scale));
     }
 
     void writeField(ToType value)

@@ -13,10 +13,8 @@ namespace DB
 
 ReadFromStorageStep::ReadFromStorageStep(
     TableLockHolder table_lock,
-    StorageMetadataPtr metadata_snapshot,
-    StreamLocalLimits & limits,
-    SizeLimits & leaf_limits,
-    std::shared_ptr<const EnabledQuota> quota,
+    StorageMetadataPtr & metadata_snapshot,
+    SelectQueryOptions options,
     StoragePtr storage,
     const Names & required_columns,
     const SelectQueryInfo & query_info,
@@ -71,20 +69,43 @@ ReadFromStorageStep::ReadFromStorageStep(
     pipeline = std::make_unique<QueryPipeline>();
     QueryPipelineProcessorsCollector collector(*pipeline, this);
 
-    pipe.setLimits(limits);
+    /// Set the limits and quota for reading data, the speed and time of the query.
+    {
+        const Settings & settings = context->getSettingsRef();
 
-    /**
-      * Leaf size limits should be applied only for local processing of distributed queries.
-      * Such limits allow to control the read stage on leaf nodes and exclude the merging stage.
-      * Consider the case when distributed query needs to read from multiple shards. Then leaf
-      * limits will be applied on the shards only (including the root node) but will be ignored
-      * on the results merging stage.
-      */
-    if (!storage->isRemote())
-        pipe.setLeafLimits(leaf_limits);
+        IBlockInputStream::LocalLimits limits;
+        limits.mode = IBlockInputStream::LIMITS_TOTAL;
+        limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
+        limits.speed_limits.max_execution_time = settings.max_execution_time;
+        limits.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-    if (quota)
-        pipe.setQuota(quota);
+        /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
+          *  because the initiating server has a summary of the execution of the request on all servers.
+          *
+          * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
+          *  additionally on each remote server, because these limits are checked per block of data processed,
+          *  and remote servers may process way more blocks of data than are received by initiator.
+          *
+          * The limits to throttle maximum execution speed is also checked on all servers.
+          */
+        if (options.to_stage == QueryProcessingStage::Complete)
+        {
+            limits.speed_limits.min_execution_rps = settings.min_execution_speed;
+            limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
+        }
+
+        limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+        limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
+        limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+
+        auto quota = context->getQuota();
+
+        if (!options.ignore_limits)
+            pipe.setLimits(limits);
+
+        if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
+            pipe.setQuota(quota);
+    }
 
     pipeline->init(std::move(pipe));
 
