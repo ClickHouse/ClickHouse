@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 class MemorySource : public SourceWithProgress
 {
-    using InitializerFunc = std::function<void(BlocksList::const_iterator &, size_t &)>;
+    using InitializerFunc = std::function<void(BlocksList::const_iterator &, size_t &, std::shared_ptr<const BlocksList> &)>;
 public:
     /// Blocks are stored in std::list which may be appended in another thread.
     /// We use pointer to the beginning of the list and its current size.
@@ -35,11 +35,13 @@ public:
         size_t num_blocks_,
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot,
-        InitializerFunc initializer_func_ = [](BlocksList::const_iterator &, size_t &) {})
+        std::shared_ptr<const BlocksList> data_,
+        InitializerFunc initializer_func_ = [](BlocksList::const_iterator &, size_t &, std::shared_ptr<const BlocksList> &) {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
         , column_names(std::move(column_names_))
         , current_it(first_)
         , num_blocks(num_blocks_)
+        , data(data_)
         , initializer_func(std::move(initializer_func_))
     {
     }
@@ -51,7 +53,7 @@ protected:
     {
         if (!postponed_init_done)
         {
-            initializer_func(current_it, num_blocks);
+            initializer_func(current_it, num_blocks, data);
             postponed_init_done = true;
         }
 
@@ -78,6 +80,7 @@ private:
     size_t num_blocks;
     size_t current_block_idx = 0;
 
+    std::shared_ptr<const BlocksList> data;
     bool postponed_init_done = false;
     InitializerFunc initializer_func;
 };
@@ -155,13 +158,12 @@ Pipe StorageMemory::read(
             0,
             *this,
             metadata_snapshot,
-            /// This hack is needed for global subqueries.
-            /// It allows to set up this Source for read AFTER Storage::read() has been called and just before actual reading
-            [this](BlocksList::const_iterator & current_it, size_t & num_blocks)
+            data.get(),
+            [this](BlocksList::const_iterator & current_it, size_t & num_blocks, std::shared_ptr<const BlocksList> & current_data)
             {
-                std::lock_guard guard(mutex);
-                current_it = data.get()->begin();
-                num_blocks = data.get()->size();
+                current_data = data.get();
+                current_it = current_data->begin();
+                num_blocks = current_data->size();
             }));
     }
 
@@ -184,7 +186,7 @@ Pipe StorageMemory::read(
 
         assert(num_blocks > 0);
 
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, it, num_blocks, *this, metadata_snapshot));
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, it, num_blocks, *this, metadata_snapshot, current_data));
 
         while (offset < next_offset)
         {
