@@ -64,6 +64,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProtocolServerAdapter.h>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -811,7 +812,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         http_params->setTimeout(settings.http_receive_timeout);
         http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-        std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
+        std::vector<ProtocolServerAdapter> servers;
 
         std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -822,29 +823,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             listen_hosts.emplace_back("127.0.0.1");
             listen_try = true;
         }
-
-#if USE_GRPC
-        std::vector<std::unique_ptr<GRPCServer>> grpc_servers;
-        auto start_grpc_servers = [&]
-        {
-            for (auto & server : grpc_servers)
-            {
-                if (server)
-                    server_pool.start(*server);
-            }
-        };
-        auto stop_grpc_servers = [&]
-        {
-            for (auto & server : grpc_servers)
-            {
-                if (server)
-                    server->stop();
-            }
-        };
-#else
-        auto start_grpc_servers = []{};
-        auto stop_grpc_servers = []{};
-#endif
 
         auto make_socket_address = [&](const std::string & host, UInt16 port)
         {
@@ -1067,7 +1045,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             create_server("grpc_port", [&](UInt16 port)
             {
                 Poco::Net::SocketAddress server_address(listen_host, port);
-                grpc_servers.emplace_back(new GRPCServer(server_address.toString(), *this));
+                servers.emplace_back(std::make_unique<GRPCServer>(*this, server_pool, make_socket_address(listen_host, port)));
                 LOG_INFO(log, "Listening for gRPC protocol: " + server_address.toString());
             });
 #endif
@@ -1093,9 +1071,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->enableNamedSessions();
 
         for (auto & server : servers)
-            server->start();
-
-        start_grpc_servers();
+            server.start();
 
         {
             String level_str = config().getString("text_log.level", "");
@@ -1127,11 +1103,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             int current_connections = 0;
             for (auto & server : servers)
             {
-                server->stop();
-                current_connections += server->currentConnections();
+                server.stop();
+                current_connections += server.currentConnections();
             }
-
-            stop_grpc_servers();
 
             if (current_connections)
                 LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
@@ -1150,7 +1124,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
                     current_connections = 0;
                     for (auto & server : servers)
-                        current_connections += server->currentConnections();
+                        current_connections += server.currentConnections();
                     if (!current_connections)
                         break;
                     sleep_current_ms += sleep_one_ms;
