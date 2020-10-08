@@ -724,7 +724,7 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
     LOG_INFO(logger, "Removing replica {}, marking it as lost", remote_replica_path);
     /// Mark itself lost before removing, because the following recursive removal may fail
     /// and partially dropped replica may be considered as alive one (until someone will mark it lost)
-    zookeeper->set(zookeeper_path + "/replicas/" + replica + "/is_lost", "1");
+    zookeeper->trySet(zookeeper_path + "/replicas/" + replica + "/is_lost", "1");
     /// It may left some garbage if replica_path subtree are concurrently modified
     zookeeper->tryRemoveRecursive(remote_replica_path);
     if (zookeeper->exists(remote_replica_path))
