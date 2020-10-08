@@ -55,7 +55,7 @@ The supported formats are:
 | [Null](#null)                                                                           | ✗     | ✔      |
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
-| [LineAsString](#lineasstring)                                                           | ✔     | ✔      |
+| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -1312,8 +1312,7 @@ Limitations:
 
 ## LineAsString {#lineasstring}
 
-This format parses a sequence of Line objects separated by newlines, spaces and/or comma. Each Line object is parsed as a whole to string.
-This format can only parse a table with single field of type String.
+This format parses a sequence of line objects separated by newlines, spaces and/or comma and interprets every line of input data as a single value. This format can only parse a table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted.
 
 **Example**
 
@@ -1329,6 +1328,9 @@ SELECT * FROM line_as_string;
 Result:
 
 ``` text
+┌─field─────────────────────────────────────────────┐
+│ "I love apple", "I love banana", "I love orange"; │
+└───────────────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
