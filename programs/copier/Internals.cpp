@@ -171,10 +171,10 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
 /// Wraps only identifiers with backticks. 
 std::string wrapIdentifiersWithBackticks(const ASTPtr & root)
 {
-    if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(root)) 
+    if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(root))
         return backQuote(identifier->name);
 
-    if (auto function = std::dynamic_pointer_cast<ASTFunction>(root)) 
+    if (auto function = std::dynamic_pointer_cast<ASTFunction>(root))
         return function->name + '(' + wrapIdentifiersWithBackticks(function->arguments) + ')';
 
     if (auto expression_list = std::dynamic_pointer_cast<ASTExpressionList>(root))
