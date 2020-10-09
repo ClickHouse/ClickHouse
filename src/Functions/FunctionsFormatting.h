@@ -353,7 +353,7 @@ private:
         // 2635200 SECONDS  = 30.5 DAYS = 1 MONTH
         // 31536000 SECONDS = 365 DAYS  = 1 YEAR
 
-        int8_t sig = value<0?-1:1;
+        int8_t sig = value < 0 ? -1 : 1;
         int maximum_unit_int = 6;
 
         if (maximum_unit == "seconds")
@@ -401,23 +401,23 @@ private:
         {
             if (years)
             {
-                parts.push_back(std::to_string(years) + (years==1?" year":" years"));
+                parts.push_back(std::to_string(years) + (years == 1 ? " year" : " years"));
             }
             if (months)
             {
-                parts.push_back(std::to_string(months) + (months==1?"month":" months"));
+                parts.push_back(std::to_string(months) + (months == 1 ? "month" : " months"));
             }
             if (days)
             {
-                parts.push_back(std::to_string(days) + (days==1?" day":" days"));
+                parts.push_back(std::to_string(days) + (days == 1 ? " day" : " days"));
             }
             if (hours)
             {
-                parts.push_back(std::to_string(hours) + (hours==1?" hour":" hours"));
+                parts.push_back(std::to_string(hours) + (hours == 1 ? " hour" : " hours"));
             }
             if (minutes)
             {
-                parts.push_back(std::to_string(minutes) + (minutes==1?" minute":" minutes"));
+                parts.push_back(std::to_string(minutes) + (minutes == 1 ? " minute" : " minutes"));
             }
             if (seconds)
             {
@@ -429,11 +429,11 @@ private:
         }
 
         String str_value;
-        for (size_t i=0; i<parts.size(); i++)
+        for (size_t i = 0, parts_size = parts.size(); i < parts_size; ++i)
         {
             if (!str_value.empty())
             {
-                if (i == parts.size()-1)
+                if (i == parts.size() - 1)
                     str_value += " and ";
                 else
                     str_value += ", ";
@@ -442,6 +442,7 @@ private:
         }
         if (sig < 0)
             str_value = "- " + str_value;
+
         writeCString(str_value.c_str(), out);
     }
 
