@@ -81,7 +81,7 @@ public:
             {temp_block[arguments[0]]});
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {temp_block[is_not_null_pos], temp_block[assume_not_null_pos], temp_block[arguments[1]]});
+            {temp_block[is_not_null_pos], temp_block[assume_not_null_pos], temp_block[arguments[1]]}); //-V557
 
         is_not_null->execute(temp_block, {arguments[0]}, is_not_null_pos, input_rows_count);
         assume_not_null->execute(temp_block, {arguments[0]}, assume_not_null_pos, input_rows_count);
