@@ -5111,33 +5111,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
         {
             try
             {
-                bool keep_s3 = false;
-
-                auto disk = part->volume->getDisk();
-
-                if (disk->getType() == "s3")
-                {
-                    String id = disk->getUniqueId(part->getFullRelativePath() + "checksums.txt");
-
-                    if (!id.empty())
-                    {
-                        String zookeeper_part_node = zookeeper_path + "/zero_copy_s3/" + id;
-                        String zookeeper_node = zookeeper_part_node + "/" + replica_name;
-
-                        LOG_TRACE(log, "Remove zookeeper lock for {}", id);
-
-                        zookeeper->remove(zookeeper_node);
-
-                        Strings children;
-                        zookeeper->tryGetChildren(zookeeper_part_node, children);
-                        if (!children.empty())
-                        {
-                            LOG_TRACE(log, "Found zookeper locks for {}", id);
-                            keep_s3 = true;
-                        }
-                    }
-                }
-
+                bool keep_s3 = !part->unlockSharedData(zookeeper_path, replica_name, zookeeper);
                 part->remove(keep_s3);
             }
             catch (...)

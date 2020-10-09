@@ -7,7 +7,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/FileSyncGuard.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <IO/HTTPCommon.h>
 #include <IO/createReadBufferFromFileBase.h>
@@ -240,17 +239,7 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
     if (disk->getType() != "s3")
         throw Exception("S3 disk is not S3 anymore", ErrorCodes::LOGICAL_ERROR);
 
-    String id = disk->getUniqueId(part->getFullRelativePath() + "checksums.txt");
-
-    if (id.empty())
-        throw Exception("Can't lock part on S3 storage", ErrorCodes::LOGICAL_ERROR);
-    
-    String zookeeper_node = zookeeper_path + "/zero_copy_s3/" + id + "/" + replica_name;
-
-    LOG_TRACE(log, "Set zookeeper lock {}", id);
-
-    zookeeper->createAncestors(zookeeper_node);
-    zookeeper->createIfNotExists(zookeeper_node, "lock");
+    part->lockSharedData(zookeeper_path, replica_name, zookeeper);
 
     writeBinary(checksums.files.size(), out);
     for (const auto & it : checksums.files)
@@ -629,19 +618,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
 
-
-    String id = disk->getUniqueId(new_data_part->getFullRelativePath() + "checksums.txt");
-
-    if (id.empty())
-        throw Exception("Can't lock part on S3 storage", ErrorCodes::LOGICAL_ERROR);
-    
-    String zookeeper_node = zookeeper_path + "/zero_copy_s3/" + id + "/" + replica_name;
-
-    LOG_TRACE(log, "Set zookeeper lock {}", id);
-
-    zookeeper->createAncestors(zookeeper_node);
-    zookeeper->createIfNotExists(zookeeper_node, "lock");
-
+    new_data_part->lockSharedData(zookeeper_path, replica_name, zookeeper);
 
     return new_data_part;
 }
