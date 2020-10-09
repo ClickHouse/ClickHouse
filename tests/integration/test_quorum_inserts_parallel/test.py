@@ -57,7 +57,6 @@ def test_parallel_quorum_actually_parallel(started_cluster):
 
 
 def test_parallel_quorum_actually_quorum(started_cluster):
-    settings = {"insert_quorum": "3", "insert_quorum_parallel": "1", "insert_quorum_timeout": "3000"}
     for i, node in enumerate([node1, node2, node3]):
         node.query("CREATE TABLE q (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/q', '{num}') ORDER BY tuple()".format(num=i))
 
@@ -65,7 +64,7 @@ def test_parallel_quorum_actually_quorum(started_cluster):
         pm.partition_instances(node2, node1, port=9009)
         pm.partition_instances(node2, node3, port=9009)
         with pytest.raises(QueryRuntimeException):
-            node1.query("INSERT INTO q VALUES(1, 'Hello')", settings=settings)
+            node1.query("INSERT INTO q VALUES(1, 'Hello')", settings={"insert_quorum": "3", "insert_quorum_parallel": "1", "insert_quorum_timeout": "3000"})
 
         assert_eq_with_retry(node1, "SELECT COUNT() FROM q", "1")
         assert_eq_with_retry(node2, "SELECT COUNT() FROM q", "0")
@@ -81,14 +80,21 @@ def test_parallel_quorum_actually_quorum(started_cluster):
             node.query("INSERT INTO q VALUES(3, 'Hi')", settings=settings)
 
         p = Pool(2)
-        res = p.apply_async(insert_value_to_node, (node1, {"insert_quorum": "3", "insert_quorum_parallel": "1", "insert_quorum_timeout": "10000"}))
-        insert_value_to_node(node2, {})
+        res = p.apply_async(insert_value_to_node, (node1, {"insert_quorum": "3", "insert_quorum_parallel": "1", "insert_quorum_timeout": "60000"}))
+
+        assert_eq_with_retry(node1, "SELECT COUNT() FROM system.parts WHERE table == 'q' and active == 1", "3")
+        assert_eq_with_retry(node3, "SELECT COUNT() FROM system.parts WHERE table == 'q' and active == 1", "3")
+        assert_eq_with_retry(node2, "SELECT COUNT() FROM system.parts WHERE table == 'q' and active == 1", "0")
+
+        # Insert to the second to satisfy quorum
+        insert_value_to_node(node2, {"insert_quorum": "3", "insert_quorum_parallel": "1"})
+
+        res.get()
 
         assert_eq_with_retry(node1, "SELECT COUNT() FROM q", "3")
         assert_eq_with_retry(node2, "SELECT COUNT() FROM q", "1")
         assert_eq_with_retry(node3, "SELECT COUNT() FROM q", "3")
 
-        res.get()
         p.close()
         p.join()
 
