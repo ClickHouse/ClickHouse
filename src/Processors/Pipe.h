@@ -101,7 +101,7 @@ public:
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
 
     /// Do not allow to change the table while the processors of pipe are alive.
-    void addTableLock(const TableLockHolder & lock) { holder.table_locks.push_back(lock); }
+    void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
     void addInterpreterContext(std::shared_ptr<Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }

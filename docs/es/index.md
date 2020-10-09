@@ -1,15 +1,15 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated: false
+machine_translated_rev: 
 toc_priority: 0
-toc_title: "Descripci\xF3n"
+toc_title: "Descripción"
 ---
 
 # ¿Qué es ClickHouse? {#what-is-clickhouse}
 
-ClickHouse es un sistema de gestión de bases de datos orientado a columnas (DBMS) para el procesamiento analítico en línea de consultas (OLAP).
+ClickHouse es un sistema de gestión de bases de datos (DBMS), orientado a columnas, para el procesamiento analítico de consultas en línea (OLAP).
 
-En un “normal” DBMS orientado a filas, los datos se almacenan en este orden:
+En un DBMS “normal”, orientado a filas, los datos se almacenan en este orden:
 
 | Fila | Argumento   | JavaEnable | Titular                   | GoodEvent | EventTime           |
 |------|-------------|------------|---------------------------|-----------|---------------------|
@@ -36,7 +36,7 @@ Estos ejemplos solo muestran el orden en el que se organizan los datos. Los valo
 
 Ejemplos de un DBMS orientado a columnas: Vertica, Paraccel (Actian Matrix y Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise y Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid y kdb+.
 
-Different orders for storing data are better suited to different scenarios. The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they are; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
+Los diferentes modos de ordenar los datos al guardarlos se adecúan mejor a diferentes escenarios. El escenario de acceso a los datos se refiere a qué consultas se hacen, con qué frecuencia y en qué proporción; cuántos datos se leen para cada tipo de consulta - filas, columnas y bytes; la relación entre lectura y actualización de datos; el tamaño de trabajo de los datos y qué tan localmente son usados; si se usan transacciones y qué tan aisladas están;requerimientos de replicación de los datos y de integridad lógica, requerimientos de latencia y caudal (throughput) para cada tipo de consulta, y cosas por el estilo.
 
 Cuanto mayor sea la carga en el sistema, más importante es personalizar el sistema configurado para que coincida con los requisitos del escenario de uso, y más fino será esta personalización. No existe un sistema que sea igualmente adecuado para escenarios significativamente diferentes. Si un sistema es adaptable a un amplio conjunto de escenarios, bajo una carga alta, el sistema manejará todos los escenarios igualmente mal, o funcionará bien para solo uno o algunos de los escenarios posibles.
 

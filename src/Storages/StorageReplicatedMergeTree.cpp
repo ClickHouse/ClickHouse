@@ -178,7 +178,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
-    bool has_force_restore_data_flag)
+    bool has_force_restore_data_flag,
+    bool allow_renaming_)
     : MergeTreeData(table_id_,
                     relative_data_path_,
                     metadata_,
@@ -200,6 +201,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , cleanup_thread(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
+    , allow_renaming(allow_renaming_)
 {
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
@@ -719,7 +721,10 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         throw Exception("Table was not dropped because ZooKeeper session has expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
     auto remote_replica_path = zookeeper_path + "/replicas/" + replica;
-    LOG_INFO(logger, "Removing replica {}", remote_replica_path);
+    LOG_INFO(logger, "Removing replica {}, marking it as lost", remote_replica_path);
+    /// Mark itself lost before removing, because the following recursive removal may fail
+    /// and partially dropped replica may be considered as alive one (until someone will mark it lost)
+    zookeeper->trySet(zookeeper_path + "/replicas/" + replica + "/is_lost", "1");
     /// It may left some garbage if replica_path subtree are concurrently modified
     zookeeper->tryRemoveRecursive(remote_replica_path);
     if (zookeeper->exists(remote_replica_path))
@@ -1414,11 +1419,11 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         ttl_infos.update(part_ptr->ttl_infos);
         max_volume_index = std::max(max_volume_index, getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
     }
-    ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
-            ttl_infos, time(nullptr), max_volume_index);
-
     auto table_lock = lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
+
     StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
+    ReservationPtr reserved_space = reserveSpacePreferringTTLRules(
+        metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
 
     FutureMergedMutatedPart future_merged_part(parts, entry.new_part_type);
     if (future_merged_part.name != entry.new_part_name)
@@ -1448,7 +1453,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     {
         part = merger_mutator.mergePartsToTemporaryPart(
             future_merged_part, metadata_snapshot, *merge_entry,
-            table_lock, entry.create_time, reserved_space, entry.deduplicate);
+            table_lock, entry.create_time, global_context, reserved_space, entry.deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
 
@@ -2180,8 +2185,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
 void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper)
 {
-    LOG_INFO(log, "Will mimic {}", source_replica);
-
     String source_path = zookeeper_path + "/replicas/" + source_replica;
 
     /** TODO: it will be deleted! (It is only to support old version of CH server).
@@ -2307,6 +2310,17 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             LOG_WARNING(log, "Source replica does not have part {}. Removing it from working set.", part->name);
         }
     }
+
+    if (getSettings()->detach_old_local_parts_when_cloning_replica)
+    {
+        auto metadata_snapshot = getInMemoryMetadataPtr();
+        for (const auto & part : parts_to_remove_from_working_set)
+        {
+            LOG_INFO(log, "Detaching {}", part->relative_path);
+            part->makeCloneInDetached("clone", metadata_snapshot);
+        }
+    }
+
     removePartsFromWorkingSet(parts_to_remove_from_working_set, true);
 
     for (const String & name : active_parts)
@@ -2334,46 +2348,118 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
 void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper)
 {
+    Coordination::Stat is_lost_stat;
+    bool is_new_replica = true;
     String res;
-    if (zookeeper->tryGet(replica_path + "/is_lost", res))
+    if (zookeeper->tryGet(replica_path + "/is_lost", res, &is_lost_stat))
     {
         if (res == "0")
             return;
+        if (is_lost_stat.version)
+            is_new_replica = false;
     }
     else
     {
         /// Replica was created by old version of CH, so me must create "/is_lost".
         /// Note that in old version of CH there was no "lost" replicas possible.
+        /// TODO is_lost node should always exist since v18.12, maybe we can replace `tryGet` with `get` and remove old code?
         zookeeper->create(replica_path + "/is_lost", "0", zkutil::CreateMode::Persistent);
         return;
     }
 
     /// is_lost is "1": it means that we are in repair mode.
-
-    String source_replica;
-    Coordination::Stat source_is_lost_stat;
-    source_is_lost_stat.version = -1;
-
-    for (const String & source_replica_name : zookeeper->getChildren(zookeeper_path + "/replicas"))
+    /// Try choose source replica to clone.
+    /// Source replica must not be lost and should have minimal queue size and maximal log pointer.
+    Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+    std::vector<zkutil::ZooKeeper::FutureGet> futures;
+    for (const String & source_replica_name : replicas)
     {
+        /// Do not clone from myself.
+        if (source_replica_name == replica_name)
+            continue;
+
         String source_replica_path = zookeeper_path + "/replicas/" + source_replica_name;
 
-        /// Do not clone from myself.
-        if (source_replica_path != replica_path)
+        /// Obviously the following get operations are not atomic, but it's ok to choose good enough replica, not the best one.
+        /// NOTE: We may count some entries twice if log_pointer is moved.
+        futures.emplace_back(zookeeper->asyncTryGet(source_replica_path + "/is_lost"));
+        futures.emplace_back(zookeeper->asyncTryGet(source_replica_path + "/log_pointer"));
+        futures.emplace_back(zookeeper->asyncTryGet(source_replica_path + "/queue"));
+    }
+
+    /// Wait for results before getting log entries
+    for (auto & future : futures)
+        future.wait();
+
+    Strings log_entries = zookeeper->getChildren(zookeeper_path + "/log");
+    size_t max_log_entry = 0;
+    if (!log_entries.empty())
+    {
+        String last_entry = *std::max_element(log_entries.begin(), log_entries.end());
+        max_log_entry = parse<UInt64>(last_entry.substr(strlen("log-")));
+    }
+    /// log_pointer can point to future entry, which was not created yet
+    ++max_log_entry;
+
+    size_t min_replication_lag = std::numeric_limits<size_t>::max();
+    String source_replica;
+    Coordination::Stat source_is_lost_stat;
+    size_t future_num = 0;
+
+    for (const String & source_replica_name : replicas)
+    {
+        if (source_replica_name == replica_name)
+            continue;
+
+        auto get_is_lost     = futures[future_num++].get();
+        auto get_log_pointer = futures[future_num++].get();
+        auto get_queue       = futures[future_num++].get();
+
+        if (get_is_lost.error != Coordination::Error::ZOK)
         {
-            /// Do not clone from lost replicas.
-            String source_replica_is_lost_value;
-            if (!zookeeper->tryGet(source_replica_path + "/is_lost", source_replica_is_lost_value, &source_is_lost_stat)
-                || source_replica_is_lost_value == "0")
-            {
-                source_replica = source_replica_name;
-                break;
-            }
+            LOG_INFO(log, "Not cloning {}, cannot get '/is_lost': {}", Coordination::errorMessage(get_is_lost.error));
+            continue;
+        }
+        else if (get_is_lost.data != "0")
+        {
+            LOG_INFO(log, "Not cloning {}, it's lost");
+            continue;
+        }
+
+        if (get_log_pointer.error != Coordination::Error::ZOK)
+        {
+            LOG_INFO(log, "Not cloning {}, cannot get '/log_pointer': {}", Coordination::errorMessage(get_log_pointer.error));
+            continue;
+        }
+        if (get_queue.error != Coordination::Error::ZOK)
+        {
+            LOG_INFO(log, "Not cloning {}, cannot get '/queue': {}", Coordination::errorMessage(get_queue.error));
+            continue;
+        }
+
+        /// Replica is not lost and we can clone it. Let's calculate approx replication lag.
+        size_t source_log_pointer = get_log_pointer.data.empty() ? 0 : parse<UInt64>(get_log_pointer.data);
+        assert(source_log_pointer <= max_log_entry);
+        size_t replica_queue_lag = max_log_entry - source_log_pointer;
+        size_t replica_queue_size = get_queue.stat.numChildren;
+        size_t replication_lag = replica_queue_lag + replica_queue_size;
+        LOG_INFO(log, "Replica {} has log pointer '{}', approximate {} queue lag and {} queue size",
+                 source_replica_name, get_log_pointer.data, replica_queue_lag, replica_queue_size);
+        if (replication_lag < min_replication_lag)
+        {
+            source_replica = source_replica_name;
+            source_is_lost_stat = get_is_lost.stat;
+            min_replication_lag = replication_lag;
         }
     }
 
     if (source_replica.empty())
         throw Exception("All replicas are lost", ErrorCodes::ALL_REPLICAS_LOST);
+
+    if (is_new_replica)
+        LOG_INFO(log, "Will mimic {}", source_replica);
+    else
+        LOG_WARNING(log, "Will mimic {}", source_replica);
 
     /// Clear obsolete queue that we no longer need.
     zookeeper->removeChildren(replica_path + "/queue");
@@ -4051,6 +4137,7 @@ Pipe StorageReplicatedMergeTree::alterPartition(
 
 
 /// If new version returns ordinary name, else returns part name containing the first and last month of the month
+/// NOTE: use it in pair with getFakePartCoveringAllPartsInPartition(...)
 static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info)
 {
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -4066,7 +4153,7 @@ static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version,
     return part_info.getPartName();
 }
 
-bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info)
+bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info, bool for_replace_partition)
 {
     /// Even if there is no data in the partition, you still need to mark the range for deletion.
     /// - Because before executing DETACH, tasks for downloading parts to this partition can be executed.
@@ -4089,14 +4176,21 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
         mutation_version = queue.getCurrentMutationVersion(partition_id, right);
     }
 
-    /// Empty partition.
-    if (right == 0)
-        return false;
+    /// REPLACE PARTITION uses different max level and does not decrement max_block of DROP_RANGE for unknown (probably historical) reason.
+    auto max_level = std::numeric_limits<decltype(part_info.level)>::max();
+    if (!for_replace_partition)
+    {
+        max_level = MergeTreePartInfo::MAX_LEVEL;
 
-    --right;
+        /// Empty partition.
+        if (right == 0)
+            return false;
+
+        --right;
+    }
 
     /// Artificial high level is chosen, to make this part "covering" all parts inside.
-    part_info = MergeTreePartInfo(partition_id, left, right, MergeTreePartInfo::MAX_LEVEL, mutation_version);
+    part_info = MergeTreePartInfo(partition_id, left, right, max_level, mutation_version);
     return true;
 }
 
@@ -4187,8 +4281,17 @@ void StorageReplicatedMergeTree::checkTableCanBeDropped() const
     global_context.checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 
+void StorageReplicatedMergeTree::checkTableCanBeRenamed() const
+{
+    if (!allow_renaming)
+        throw Exception("Cannot rename Replicated table, because zookeeper_path contains implicit 'database' or 'table' macro. "
+                        "We cannot rename path in ZooKeeper, so path may become inconsistent with table name. If you really want to rename table, "
+                        "you should edit metadata file first and restart server or reattach the table.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 void StorageReplicatedMergeTree::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
+    checkTableCanBeRenamed();
     MergeTreeData::rename(new_path_to_table_data, new_table_id);
 
     /// Update table name in zookeeper
@@ -5294,11 +5397,11 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     /// Firstly, generate last block number and compute drop_range
     /// NOTE: Even if we make ATTACH PARTITION instead of REPLACE PARTITION drop_range will not be empty, it will contain a block.
     /// So, such case has special meaning, if drop_range contains only one block it means that nothing to drop.
+    /// TODO why not to add normal DROP_RANGE entry to replication queue if `replace` is true?
     MergeTreePartInfo drop_range;
-    drop_range.partition_id = partition_id;
-    drop_range.max_block = allocateBlockNumber(partition_id, zookeeper)->getNumber();
-    drop_range.min_block = replace ? 0 : drop_range.max_block;
-    drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
+    getFakePartCoveringAllPartsInPartition(partition_id, drop_range, true);
+    if (!replace)
+        drop_range.min_block = drop_range.max_block;
 
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
 
@@ -5377,6 +5480,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     }
 
     /// We are almost ready to commit changes, remove fetches and merges from drop range
+    /// FIXME it's unsafe to remove queue entries before we actually commit REPLACE_RANGE to replication log
     queue.removePartProducingOpsInRange(zookeeper, drop_range, entry);
 
     /// Remove deduplication block_ids of replacing parts
@@ -5491,11 +5595,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     /// A range for log entry to remove parts from the source table (myself).
 
     MergeTreePartInfo drop_range;
-    drop_range.partition_id = partition_id;
-    drop_range.max_block = allocateBlockNumber(partition_id, zookeeper)->getNumber();
-    drop_range.min_block = 0;
-    drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
-
+    getFakePartCoveringAllPartsInPartition(partition_id, drop_range, true);
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
 
     if (drop_range.getBlocksCount() > 1)
@@ -5550,6 +5650,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         drop_range_dest.max_block = drop_range.max_block;
         drop_range_dest.min_block = drop_range.max_block;
         drop_range_dest.level = drop_range.level;
+        drop_range_dest.mutation = drop_range.mutation;
 
         entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
         entry.source_replica = dest_table_storage->replica_name;
