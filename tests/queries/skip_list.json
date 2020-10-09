@@ -247,6 +247,7 @@
         "00505_shard_secure",
         "01454_storagememory_data_race_challenge",
         "00516_deduplication_after_drop_partition_zookeeper",
+        "01465_ttl_recompression",
         "attach",
         "ddl_dictionaries",
         "dictionary",
