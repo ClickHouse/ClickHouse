@@ -294,7 +294,12 @@ struct CurrentlyMergingPartsTagger
     StorageMergeTree & storage;
 
 public:
-    CurrentlyMergingPartsTagger(FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
+    CurrentlyMergingPartsTagger(
+        FutureMergedMutatedPart & future_part_,
+        size_t total_size,
+        StorageMergeTree & storage_,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool is_mutation)
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
@@ -312,7 +317,7 @@ public:
                 max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
             }
 
-            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr), max_volume_index);
+            reserved_space = storage.tryReserveSpacePreferringTTLRules(metadata_snapshot, total_size, ttl_infos, time(nullptr), max_volume_index);
         }
         if (!reserved_space)
         {
@@ -759,8 +764,8 @@ bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_sn
     try
     {
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr),
-            merge_mutate_entry.tagger->reserved_space, deduplicate);
+            future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr), global_context,
+            merging_tagger->reserved_space, deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         write_part_log({});
@@ -862,6 +867,8 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
 
             current_ast_elements += commands_size;
             commands.insert(commands.end(), it->second.commands.begin(), it->second.commands.end());
+            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
+            break;
         }
 
         auto new_part_info = part->info;
