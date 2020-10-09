@@ -151,6 +151,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
         drop_query->table = target_table_id.table_name;
         drop_query->kind = kind;
         drop_query->no_delay = no_delay;
+        drop_query->if_exists = true;
         ASTPtr ast_drop_query = drop_query;
         InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
@@ -172,7 +173,6 @@ void StorageMaterializedView::dropInnerTable(bool no_delay)
 {
     if (has_inner_table && tryGetTargetTable())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id, no_delay);
-    has_inner_table = false;
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
