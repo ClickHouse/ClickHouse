@@ -94,7 +94,7 @@ public:
             Impl<JSONParser> impl;
 
             /// prepare() does Impl-specific preparation before handling each row.
-            if constexpr (has_member_function_prepare<void (Impl<JSONParser>::*)(const char *, const Block &, const ColumnNumbers &, size_t)>::value)
+            if constexpr (has_member_function_prepare<void (Impl<JSONParser>::*)(const char *, const FunctionArguments &, const ColumnNumbers &, size_t)>::value)
                 impl.prepare(Name::name, block, arguments, result_pos);
 
             using Element = typename JSONParser::Element;
