@@ -51,14 +51,14 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
 }
 
 
-static Block createBlockWithNestedColumnsImpl(const Block & block, const std::unordered_set<size_t> & args)
+static ColumnsWithTypeAndName createBlockWithNestedColumnsImpl(const ColumnsWithTypeAndName & columns, const std::unordered_set<size_t> & args)
 {
-    Block res;
-    size_t columns = block.columns();
+    ColumnsWithTypeAndName res;
+    size_t num_columns = columns.size();
 
-    for (size_t i = 0; i < columns; ++i)
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & col = block.getByPosition(i);
+        const auto & col = columns[i];
 
         if (args.count(i) && col.type->isNullable())
         {
@@ -66,40 +66,40 @@ static Block createBlockWithNestedColumnsImpl(const Block & block, const std::un
 
             if (!col.column)
             {
-                res.insert({nullptr, nested_type, col.name});
+                res.emplace_back(ColumnWithTypeAndName{nullptr, nested_type, col.name});
             }
             else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col.column))
             {
                 const auto & nested_col = nullable->getNestedColumnPtr();
-                res.insert({nested_col, nested_type, col.name});
+                res.emplace_back(ColumnWithTypeAndName{nested_col, nested_type, col.name});
             }
             else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
             {
                 const auto & nested_col = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn())->getNestedColumnPtr();
-                res.insert({ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
+                res.emplace_back(ColumnWithTypeAndName{ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
             }
             else
                 throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
         }
         else
-            res.insert(col);
+            res.emplace_back(col);
     }
 
     return res;
 }
 
 
-Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args)
+ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns, const ColumnNumbers & args)
 {
     std::unordered_set<size_t> args_set(args.begin(), args.end());
-    return createBlockWithNestedColumnsImpl(block, args_set);
+    return createBlockWithNestedColumnsImpl(columns, args_set);
 }
 
-Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result)
+ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns, const ColumnNumbers & args, size_t result)
 {
     std::unordered_set<size_t> args_set(args.begin(), args.end());
     args_set.insert(result);
-    return createBlockWithNestedColumnsImpl(block, args_set);
+    return createBlockWithNestedColumnsImpl(columns, args_set);
 }
 
 void validateArgumentType(const IFunction & func, const DataTypes & arguments,

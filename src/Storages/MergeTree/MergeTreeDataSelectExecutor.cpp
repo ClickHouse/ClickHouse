@@ -1381,13 +1381,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     if (key_condition.hasMonotonicFunctionsChain())
     {
-        auto index_block = std::make_shared<Block>();
+        auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
         for (size_t i = 0; i < used_key_size; ++i)
-            index_block->insert({index[i], primary_key.data_types[i], primary_key.column_names[i]});
+            index_columns->emplace_back(ColumnWithTypeAndName{index[i], primary_key.data_types[i], primary_key.column_names[i]});
 
-        create_field_ref = [index_block](size_t row, size_t column, FieldRef & field)
+        create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
-            field = {index_block.get(), row, column};
+            field = {index_columns.get(), row, column};
         };
     }
     else

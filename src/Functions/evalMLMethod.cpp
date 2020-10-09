@@ -78,7 +78,7 @@ public:
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = agg_function->predictValues(block, arguments, context);
+        block.getByPosition(result).column = agg_function->predictValues(block.data, arguments, context);
     }
 
     const Context & context;
