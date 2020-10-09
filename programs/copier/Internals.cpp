@@ -168,6 +168,24 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
     throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 }
 
+/// Support only one argument functions
+std::string wrapColumnNameWithBackticks(const ASTPtr & root)
+{
+    if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(root)) 
+        return backQuote(identifier->name);
+
+    if (root->children.size() != 1)
+        throw Exception("Many children is not supported.", ErrorCodes::BAD_ARGUMENTS);
+
+    if (auto function = std::dynamic_pointer_cast<ASTFunction>(root)) 
+        return function->name + '(' + wrapColumnNameWithBackticks(function->arguments) + ')';
+
+    if (auto expression_list = std::dynamic_pointer_cast<ASTExpressionList>(root)) 
+        return wrapColumnNameWithBackticks(expression_list->children[0]);
+
+    throw Exception("Primary key could be represented only as columns or functions from columns.", ErrorCodes::BAD_ARGUMENTS);
+}
+
 
 Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
 {
@@ -193,6 +211,7 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
+        /// Column name could be represented as a f_1(f_2(...f_n(column_name)))
         String sorting_key_column = sorting_key_expr_list->children[i]->getColumnName();
 
         if (i < primary_key_size)
@@ -206,7 +225,8 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
-            primary_key_columns.push_back(pk_column);
+            /// We want to wrap column name into backticks.
+            primary_key_columns.push_back(wrapColumnNameWithBackticks(primary_key_expr_list->children[i]));
         }
     }
 
