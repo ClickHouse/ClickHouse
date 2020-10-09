@@ -22,6 +22,12 @@
 
 #include <shared_mutex>
 
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
+
 namespace DB
 {
 
@@ -348,6 +354,14 @@ public:
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
+
+    /// Lock part in zookeeper for use common S3 data in several nodes
+    void lockSharedData(const String & zookeeper_path, const String & replica_name, zkutil::ZooKeeperPtr zookeeper) const;
+    
+    /// Unlock common S3 data part in zookeeper
+    /// Return true if data unlocked
+    /// Return false if data is still used by another node
+    bool unlockSharedData(const String & zookeeper_path, const String & replica_name, zkutil::ZooKeeperPtr zookeeper) const;
 
 protected:
 

@@ -12,6 +12,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/FileSyncGuard.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -1079,6 +1080,56 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     return true;
 }
 
+void IMergeTreeDataPart::lockSharedData(const String & zookeeper_path, const String & replica_name, zkutil::ZooKeeperPtr zookeeper) const
+{
+    auto disk = volume->getDisk();
+
+    if (disk->getType() != "s3")
+        return;
+
+    String id = disk->getUniqueId(getFullRelativePath() + "checksums.txt");
+
+    if (id.empty())
+        throw Exception("Can't lock part on S3 storage", ErrorCodes::LOGICAL_ERROR);
+    
+    String zookeeper_node = zookeeper_path + "/zero_copy_s3/" + id + "/" + replica_name;
+
+    LOG_TRACE(storage.log, "Set zookeeper lock {}", id);
+
+    zookeeper->createAncestors(zookeeper_node);
+    zookeeper->createIfNotExists(zookeeper_node, "lock");
+}
+
+bool IMergeTreeDataPart::unlockSharedData(const String & zookeeper_path, const String & replica_name, zkutil::ZooKeeperPtr zookeeper) const
+{
+    auto disk = volume->getDisk();
+
+    if (disk->getType() != "s3")
+        return true;
+
+    String id = disk->getUniqueId(getFullRelativePath() + "checksums.txt");
+
+    if (id.empty())
+        return true;
+
+    String zookeeper_part_node = zookeeper_path + "/zero_copy_s3/" + id;
+    String zookeeper_node = zookeeper_part_node + "/" + replica_name;
+
+    LOG_TRACE(storage.log, "Remove zookeeper lock for {}", id);
+
+    zookeeper->remove(zookeeper_node);
+
+    Strings children;
+    zookeeper->tryGetChildren(zookeeper_part_node, children);
+
+    if (!children.empty())
+    {
+        LOG_TRACE(storage.log, "Found zookeper locks for {}", id);
+    }
+
+    return children.empty();
+}
+
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::COMPACT);
@@ -1095,3 +1146,4 @@ bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
 }
 
 }
+
