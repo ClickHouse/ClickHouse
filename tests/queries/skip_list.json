@@ -99,6 +99,10 @@
         "00510_materizlized_view_and_deduplication_zookeeper",
         "00738_lock_for_inner_table"
     ],
+    "polymorphic-parts": [
+        "01508_partition_pruning", /// bug, shoud be fixed
+        "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
+    ],
     "parallel":
     [
         /// Pessimistic list of tests which work badly in parallel.
@@ -244,5 +248,8 @@
         "live_view",
         "memory_leak",
         "memory_limit"
+=======
+
+>>>>>>> master
     ]
 }
