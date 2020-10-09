@@ -630,7 +630,7 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(Int64(increment.value.load()), current_mutations_by_version.rbegin()->first);
 }
 
-std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(const StorageMetadataPtr &, bool aggressive, const String & partition_id, bool final, String * out_disable_reason)
+std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * out_disable_reason)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     std::unique_lock lock(currently_processing_in_background_mutex);
@@ -719,7 +719,7 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
         return {};
     }
 
-    merging_tagger = std::make_shared<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
+    merging_tagger = std::make_shared<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, metadata_snapshot, false);
     return MergeMutateSelectedEntry{future_part, merging_tagger, {}};
 }
 
@@ -765,7 +765,7 @@ bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_sn
     {
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr), global_context,
-            merging_tagger->reserved_space, deduplicate);
+            merge_mutate_entry.tagger->reserved_space, deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         write_part_log({});
@@ -867,8 +867,6 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
 
             current_ast_elements += commands_size;
             commands.insert(commands.end(), it->second.commands.begin(), it->second.commands.end());
-            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
-            break;
         }
 
         auto new_part_info = part->info;
@@ -879,7 +877,7 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
         future_part.name = part->getNewName(new_part_info);
         future_part.type = part->getType();
 
-        tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true);
+        tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
         return MergeMutateSelectedEntry{future_part, tagger, commands};
     }
     return {};
