@@ -229,27 +229,27 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
         ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
 
         if (!quorum_entry.replicas.count(storage.replica_name)
-            && zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
+            && storage.getActiveContainingPart(quorum_entry.part_name))
         {
             LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
             storage.updateQuorum(quorum_entry.part_name, false);
         }
     }
 
-    Strings partitions;
+    Strings part_names;
     String parallel_quorum_parts_path = storage.zookeeper_path + "/quorum/parallel";
-    if (zookeeper->tryGetChildren(parallel_quorum_parts_path, partitions) == Coordination::Error::ZOK)
+    if (zookeeper->tryGetChildren(parallel_quorum_parts_path, part_names) == Coordination::Error::ZOK)
     {
-        for (auto & partition : partitions)
+        for (auto & part_name : part_names)
         {
-            if (zookeeper->tryGet(parallel_quorum_parts_path + "/" + partition, quorum_str))
+            if (zookeeper->tryGet(parallel_quorum_parts_path + "/" + part_name, quorum_str))
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
                 if (!quorum_entry.replicas.count(storage.replica_name)
-                    && zookeeper->exists(storage.replica_path + "/parts/" + partition))
+                    && storage.getActiveContainingPart(part_name))
                 {
-                    LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", partition);
-                    storage.updateQuorum(partition, true);
+                    LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", part_name);
+                    storage.updateQuorum(part_name, true);
                 }
             }
         }

@@ -3045,7 +3045,9 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
     auto zookeeper = getZooKeeper();
 
     /// Information on which replicas a part has been added, if the quorum has not yet been reached.
-    const String quorum_status_path = is_parallel ? zookeeper_path + "/quorum/parallel/" + part_name : zookeeper_path + "/quorum/status";
+    String quorum_status_path = zookeeper_path + "/quorum/status";
+    if (is_parallel)
+        quorum_status_path = zookeeper_path + "/quorum/parallel/" + part_name;
     /// The name of the previous part for which the quorum was reached.
     const String quorum_last_part_path = zookeeper_path + "/quorum/last_part";
 
