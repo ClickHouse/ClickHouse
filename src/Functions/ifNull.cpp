@@ -67,27 +67,27 @@ public:
 
         /// ifNull(col1, col2) == if(isNotNull(col1), assumeNotNull(col1), col2)
 
-        Block temp_block = block;
+        ColumnsWithTypeAndName temp_block = block.data;
 
-        size_t is_not_null_pos = temp_block.columns();
-        temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
-        size_t assume_not_null_pos = temp_block.columns();
-        temp_block.insert({nullptr, removeNullable(block.getByPosition(arguments[0]).type), ""});
+        size_t is_not_null_pos = temp_block.size();
+        temp_block.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});
+        size_t assume_not_null_pos = temp_block.size();
+        temp_block.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(block.getByPosition(arguments[0]).type), ""});
 
         auto is_not_null = FunctionFactory::instance().get("isNotNull", context)->build(
-            {temp_block.getByPosition(arguments[0])});
+            {temp_block[arguments[0]]});
 
         auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context)->build(
-            {temp_block.getByPosition(arguments[0])});
+            {temp_block[arguments[0]]});
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {temp_block.getByPosition(is_not_null_pos), temp_block.getByPosition(assume_not_null_pos), temp_block.getByPosition(arguments[1])});
+            {temp_block[is_not_null_pos], temp_block[assume_not_null_pos], temp_block[arguments[1]]});
 
         is_not_null->execute(temp_block, {arguments[0]}, is_not_null_pos, input_rows_count);
         assume_not_null->execute(temp_block, {arguments[0]}, assume_not_null_pos, input_rows_count);
         func_if->execute(temp_block, {is_not_null_pos, assume_not_null_pos, arguments[1]}, result, input_rows_count);
 
-        block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
+        block.getByPosition(result).column = std::move(temp_block[result].column);
     }
 
 private:
