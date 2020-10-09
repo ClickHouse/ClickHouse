@@ -246,9 +246,9 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
                 if (!quorum_entry.replicas.count(storage.replica_name)
-                    && storage.getActiveContainingPart(part_name)))
+                    && storage.getActiveContainingPart(part_name))
                 {
-                    LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", partition);
+                    LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", part_name);
                     storage.updateQuorum(part_name, true);
                 }
             }
