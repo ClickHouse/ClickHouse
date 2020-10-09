@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # encoding: utf-8
 
 import re
@@ -126,7 +126,7 @@ def create_cases(case_sensitive_func, case_insensitive_func, table_row_template,
 def main():
 
     def query(x):
-        print x
+        print(x)
 
     CONST_QUERY = Template("""SELECT ${func}('${haystack}', '${needle}'), ' expecting ', ${match};""")
     TABLE_QUERY = Template("""WITH '${needle}' as n

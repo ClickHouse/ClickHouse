@@ -31,6 +31,7 @@ if (COMPILER_CLANG)
     add_warning(pedantic)
     no_warning(vla-extension)
     no_warning(zero-length-array)
+    no_warning(c11-extensions)
 
     add_warning(comma)
     add_warning(conditional-uninitialized)
