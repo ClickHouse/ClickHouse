@@ -353,7 +353,7 @@ private:
         // 2635200 SECONDS  = 30.5 DAYS = 1 MONTH
         // 31536000 SECONDS = 365 DAYS  = 1 YEAR
 
-        char sig = value<0?-1:1;
+        int8_t sig = value<0?-1:1;
         int maximum_unit_int = 6;
 
         if (maximum_unit == "seconds")
