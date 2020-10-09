@@ -102,7 +102,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -134,7 +134,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10-darwin",
+            "compiler": "clang-11-darwin",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -144,7 +144,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10-aarch64",
+            "compiler": "clang-11-aarch64",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -154,7 +154,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10-freebsd",
+            "compiler": "clang-11-freebsd",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",

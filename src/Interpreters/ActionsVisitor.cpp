@@ -74,7 +74,7 @@ static size_t getTypeDepth(const DataTypePtr & type)
 }
 
 template<typename Collection>
-static Block createBlockFromCollection(const Collection & collection, const DataTypes & types, const Context & context)
+static Block createBlockFromCollection(const Collection & collection, const DataTypes & types, bool transform_null_in)
 {
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
@@ -87,7 +87,8 @@ static Block createBlockFromCollection(const Collection & collection, const Data
         if (columns_num == 1)
         {
             auto field = convertFieldToType(value, *types[0]);
-            if (!field.isNull() || context.getSettingsRef().transform_null_in)
+            bool need_insert_null = transform_null_in && types[0]->isNullable();
+            if (!field.isNull() || need_insert_null)
                 columns[0]->insert(std::move(field));
         }
         else
@@ -110,7 +111,8 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             for (; i < tuple_size; ++i)
             {
                 tuple_values[i] = convertFieldToType(tuple[i], *types[i]);
-                if (tuple_values[i].isNull() && !context.getSettingsRef().transform_null_in)
+                bool need_insert_null = transform_null_in && types[i]->isNullable();
+                if (tuple_values[i].isNull() && !need_insert_null)
                     break;
             }
 
@@ -155,6 +157,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
     DataTypePtr tuple_type;
     Row tuple_values;
     const auto & list = node->as<ASTExpressionList &>();
+    bool transform_null_in = context.getSettingsRef().transform_null_in;
     for (const auto & elem : list.children)
     {
         if (num_columns == 1)
@@ -162,8 +165,9 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
             /// One column at the left of IN.
 
             Field value = extractValueFromNode(elem, *types[0], context);
+            bool need_insert_null = transform_null_in && types[0]->isNullable();
 
-            if (!value.isNull() || context.getSettingsRef().transform_null_in)
+            if (!value.isNull() || need_insert_null)
                 columns[0]->insert(value);
         }
         else if (elem->as<ASTFunction>() || elem->as<ASTLiteral>())
@@ -217,9 +221,11 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
                 Field value = tuple ? convertFieldToType((*tuple)[i], *types[i])
                                     : extractValueFromNode(func->arguments->children[i], *types[i], context);
 
+                bool need_insert_null = transform_null_in && types[i]->isNullable();
+
                 /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value,
                 ///  then the entire tuple too.
-                if (value.isNull() && !context.getSettings().transform_null_in)
+                if (value.isNull() && !need_insert_null)
                     break;
 
                 tuple_values[i] = value;
@@ -254,20 +260,22 @@ Block createBlockForSet(
     };
 
     Block block;
+    bool tranform_null_in = context.getSettingsRef().transform_null_in;
+
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
     if (left_type_depth == right_type_depth)
     {
         Array array{right_arg_value};
-        block = createBlockFromCollection(array, set_element_types, context);
+        block = createBlockFromCollection(array, set_element_types, tranform_null_in);
     }
     /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
     else if (left_type_depth + 1 == right_type_depth)
     {
         auto type_index = right_arg_type->getTypeId();
         if (type_index == TypeIndex::Tuple)
-            block = createBlockFromCollection(DB::get<const Tuple &>(right_arg_value), set_element_types, context);
+            block = createBlockFromCollection(DB::get<const Tuple &>(right_arg_value), set_element_types, tranform_null_in);
         else if (type_index == TypeIndex::Array)
-            block = createBlockFromCollection(DB::get<const Array &>(right_arg_value), set_element_types, context);
+            block = createBlockFromCollection(DB::get<const Array &>(right_arg_value), set_element_types, tranform_null_in);
         else
             throw_unsupported_type(right_arg_type);
     }

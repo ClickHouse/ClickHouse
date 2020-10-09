@@ -229,6 +229,8 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     marks.next();
     addToChecksums(checksums);
 
+    plain_file->finalize();
+    marks_file->finalize();
     if (sync)
     {
         plain_file->sync();
