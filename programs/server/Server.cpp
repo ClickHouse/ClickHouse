@@ -267,12 +267,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerDictionaries();
     registerDisks();
 
-#if !defined(ARCADIA_BUILD)
-#if USE_OPENCL
-    BitonicSort::getInstance().configure();
-#endif
-#endif
-
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
@@ -534,7 +528,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     if (config().has("macros"))
-        global_context->setMacros(std::make_unique<Macros>(config(), "macros"));
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
@@ -559,7 +553,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             //setTextLog(global_context->getTextLog());
             //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
-            global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+            global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
