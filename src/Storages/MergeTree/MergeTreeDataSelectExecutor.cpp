@@ -1,6 +1,7 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
 #include <ext/scope_guard.h>
 #include <optional>
+#include <unordered_set>
 
 #include <Poco/File.h>
 
@@ -18,30 +19,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Context.h>
-
-/// Allow to use __uint128_t as a template parameter for boost::rational.
-// https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
-#if 0
-#if !defined(__GLIBCXX_BITSIZE_INT_N_0) && defined(__SIZEOF_INT128__)
-namespace std
-{
-    template <>
-    struct numeric_limits<__uint128_t>
-    {
-        static constexpr bool is_specialized = true;
-        static constexpr bool is_signed = false;
-        static constexpr bool is_integer = true;
-        static constexpr int radix = 2;
-        static constexpr int digits = 128;
-        static constexpr int digits10 = 38;
-        static constexpr __uint128_t min () { return 0; } // used in boost 1.65.1+
-        static constexpr __uint128_t max () { return __uint128_t(0) - 1; } // used in boost 1.68.0+
-    };
-}
-#endif
-#endif
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -81,6 +61,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_MANY_ROWS;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 
@@ -572,6 +553,38 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
         auto condition = index_helper->createIndexCondition(query_info, context);
         if (!condition->alwaysUnknownOrTrue())
             useful_indices.emplace_back(index_helper, condition);
+    }
+
+    if (settings.force_data_skipping_indices.changed)
+    {
+        const auto & indices = settings.force_data_skipping_indices.toString();
+
+        Strings forced_indices;
+        {
+            Tokens tokens(&indices[0], &indices[indices.size()], settings.max_query_size);
+            IParser::Pos pos(tokens, settings.max_parser_depth);
+            Expected expected;
+            if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
+                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
+                    "Cannot parse force_data_skipping_indices ('{}')", indices);
+        }
+
+        if (forced_indices.empty())
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices);
+
+        std::unordered_set<std::string> useful_indices_names;
+        for (const auto & useful_index : useful_indices)
+            useful_indices_names.insert(useful_index.first->index.name);
+
+        for (const auto & index_name : forced_indices)
+        {
+            if (!useful_indices_names.count(index_name))
+            {
+                throw Exception(ErrorCodes::INDEX_NOT_USED,
+                    "Index {} is not used and setting 'force_data_skipping_indices' contains it",
+                    backQuote(index_name));
+            }
+        }
     }
 
     RangesInDataParts parts_with_ranges(parts.size());
