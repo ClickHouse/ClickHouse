@@ -3,7 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 
-#include <thread>
+#include <common/getThreadId.h>
 
 namespace DB
 {
@@ -21,11 +21,10 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt64>(); }
 
-        void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t) const override
+        void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
         {
-            UInt64 current_tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
-
-            block.getByPosition(result).column = DataTypeUInt64().createColumnConst(1, current_tid);
+            auto current_tid = getThreadId();
+            block.getByPosition(result).column = DataTypeUInt64().createColumnConst(input_rows_count, current_tid);
         }
     };
 
