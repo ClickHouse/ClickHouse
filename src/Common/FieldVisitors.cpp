@@ -93,6 +93,22 @@ String FieldVisitorDump::operator() (const Tuple & x) const
     return wb.str();
 }
 
+String FieldVisitorDump::operator() (const Map & x) const
+{
+    WriteBufferFromOwnString wb;
+
+    wb << "Map_(";
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ')';
+
+    return wb.str();
+}
+
 String FieldVisitorDump::operator() (const AggregateFunctionStateData & x) const
 {
     WriteBufferFromOwnString wb;
@@ -176,6 +192,21 @@ String FieldVisitorToString::operator() (const Tuple & x) const
     return wb.str();
 }
 
+String FieldVisitorToString::operator() (const Map & x) const
+{
+    WriteBufferFromOwnString wb;
+
+    wb << '(';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ')';
+
+    return wb.str();
+}
 
 FieldVisitorHash::FieldVisitorHash(SipHash & hash_) : hash(hash_) {}
 
@@ -231,6 +262,16 @@ void FieldVisitorHash::operator() (const String & x) const
 void FieldVisitorHash::operator() (const Tuple & x) const
 {
     UInt8 type = Field::Types::Tuple;
+    hash.update(type);
+    hash.update(x.size());
+
+    for (const auto & elem : x)
+        applyVisitor(*this, elem);
+}
+
+void FieldVisitorHash::operator() (const Map & x) const
+{
+    UInt8 type = Field::Types::Map;
     hash.update(type);
     hash.update(x.size());
 

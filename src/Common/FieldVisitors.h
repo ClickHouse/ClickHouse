@@ -76,6 +76,7 @@ public:
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
     String operator() (const Tuple & x) const;
+    String operator() (const Map & x) const;
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
@@ -100,6 +101,7 @@ public:
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
     String operator() (const Tuple & x) const;
+    String operator() (const Map & x) const;
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
@@ -134,6 +136,11 @@ public:
     T operator() (const Tuple &) const
     {
         throw Exception("Cannot convert Tuple to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
+
+    T operator() (const Map &) const
+    {
+        throw Exception("Cannot convert Map to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const UInt64 & x) const { return T(x); }
@@ -212,6 +219,7 @@ public:
     void operator() (const String & x) const;
     void operator() (const Array & x) const;
     void operator() (const Tuple & x) const;
+    void operator() (const Map & x) const;
     void operator() (const DecimalField<Decimal32> & x) const;
     void operator() (const DecimalField<Decimal64> & x) const;
     void operator() (const DecimalField<Decimal128> & x) const;
@@ -254,6 +262,7 @@ public:
     bool operator() (String &) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Array &) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Tuple &) const { throw Exception("Cannot sum Tuples", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (Map &) const { throw Exception("Cannot sum Maps", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (UInt128 &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
