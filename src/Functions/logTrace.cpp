@@ -5,7 +5,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
-#include <Functions/castTypeToEither.h>
 
 #include <common/logger_useful.h>
 
