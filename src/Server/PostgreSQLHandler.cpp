@@ -68,7 +68,7 @@ void PostgreSQLHandler::run()
                     processQuery();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE:
-                    LOG_INFO(log, "Client closed the connection");
+                    LOG_DEBUG(log, "Client closed the connection");
                     return;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::PARSE:
                 case PostgreSQLProtocol::Messaging::FrontMessageType::BIND:
@@ -112,7 +112,7 @@ bool PostgreSQLHandler::startup()
 
     if (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info) == PostgreSQLProtocol::Messaging::FrontMessageType::CANCEL_REQUEST)
     {
-        LOG_INFO(log, "Client issued request canceling");
+        LOG_DEBUG(log, "Client issued request canceling");
         cancelRequest();
         return false;
     }
@@ -145,7 +145,7 @@ bool PostgreSQLHandler::startup()
     message_transport->send(
         PostgreSQLProtocol::Messaging::BackendKeyData(connection_id, secret_key), true);
 
-    LOG_INFO(log, "Successfully finished Startup stage");
+    LOG_DEBUG(log, "Successfully finished Startup stage");
     return true;
 }
 
@@ -158,14 +158,14 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
     switch (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info))
     {
         case PostgreSQLProtocol::Messaging::FrontMessageType::SSL_REQUEST:
-            LOG_INFO(log, "Client requested SSL");
+            LOG_DEBUG(log, "Client requested SSL");
             if (ssl_enabled)
                 makeSecureConnectionSSL();
             else
                 message_transport->send('N', true);
             break;
         case PostgreSQLProtocol::Messaging::FrontMessageType::GSSENC_REQUEST:
-            LOG_INFO(log, "Client requested GSSENC");
+            LOG_DEBUG(log, "Client requested GSSENC");
             message_transport->send('N', true);
             break;
         default:
@@ -240,7 +240,7 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
         throw;
     }
 
-    LOG_INFO(log, "Successfully received Startup message");
+    LOG_DEBUG(log, "Successfully received Startup message");
     return message;
 }
 
