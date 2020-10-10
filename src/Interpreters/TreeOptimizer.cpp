@@ -140,7 +140,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
             }
-            else if (!function_factory.get(function->name, context)->isInjective(Block{}))
+            else if (!function_factory.get(function->name, context)->isInjective({}))
             {
                 ++i;
                 continue;
