@@ -16,7 +16,6 @@ limitations under the License. */
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/LiveView/StorageLiveView.h>
 
