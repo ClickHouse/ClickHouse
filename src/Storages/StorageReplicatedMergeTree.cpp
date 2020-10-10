@@ -47,7 +47,6 @@
 #include <Interpreters/Context.h>
 
 #include <DataStreams/RemoteBlockInputStream.h>
-#include <DataStreams/NullBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 
 #include <Poco/DirectoryIterator.h>
