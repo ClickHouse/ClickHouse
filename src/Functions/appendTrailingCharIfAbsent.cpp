@@ -57,8 +57,8 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const auto & column = block.getByPosition(arguments[0]).column;
-        const auto & column_char = block.getByPosition(arguments[1]).column;
+        const auto & column = block[arguments[0]].column;
+        const auto & column_char = block[arguments[1]].column;
 
         if (!checkColumnConst<ColumnString>(column_char.get()))
             throw Exception{"Second argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
@@ -103,10 +103,10 @@ private:
             }
 
             dst_data.resize_assume_reserved(dst_offset);
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
         }
         else
-            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+            throw Exception{"Illegal column " + block[arguments[0]].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 };

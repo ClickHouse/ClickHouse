@@ -66,7 +66,7 @@ public:
             || executeType<Int16>(block, arguments, result)
             || executeType<Int32>(block, arguments, result)
             || executeType<Int64>(block, arguments, result)))
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -94,7 +94,7 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block[arguments[0]].column.get()))
         {
             auto col_to = ColumnString::create();
 
@@ -115,7 +115,7 @@ private:
             }
 
             buf_to.finalize();
-            block.getByPosition(result).column = std::move(col_to);
+            block[result].column = std::move(col_to);
         }
         else
         {
@@ -164,7 +164,7 @@ public:
             || executeType<Int64>(block, arguments, result)
             || executeType<Float32>(block, arguments, result)
             || executeType<Float64>(block, arguments, result)))
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -173,7 +173,7 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block[arguments[0]].column.get()))
         {
             auto col_to = ColumnString::create();
 
@@ -194,7 +194,7 @@ private:
             }
 
             buf_to.finalize();
-            block.getByPosition(result).column = std::move(col_to);
+            block[result].column = std::move(col_to);
             return true;
         }
 
@@ -240,7 +240,7 @@ public:
             || executeType<Int64>(block, arguments, result)
             || executeType<Float32>(block, arguments, result)
             || executeType<Float64>(block, arguments, result)))
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -249,7 +249,7 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block[arguments[0]].column.get()))
         {
             auto col_to = ColumnString::create();
 
@@ -270,7 +270,7 @@ private:
             }
 
             buf_to.finalize();
-            block.getByPosition(result).column = std::move(col_to);
+            block[result].column = std::move(col_to);
             return true;
         }
 

@@ -581,7 +581,7 @@ private:
             vec_res.resize(col_left->getData().size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::vectorVector(col_left->getData(), col_right->getData(), vec_res);
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
             return true;
         }
         else if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
@@ -592,7 +592,7 @@ private:
             vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::vectorConstant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
             return true;
         }
 
@@ -610,7 +610,7 @@ private:
             vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constantVector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
             return true;
         }
         else if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
@@ -618,7 +618,7 @@ private:
             UInt8 res = 0;
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constantConstant(col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), res);
 
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
+            block[result].column = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
             return true;
         }
 
@@ -763,7 +763,7 @@ private:
             if (!res)
                 return false;
 
-            block.getByPosition(result).column = ColumnConst::create(block.getByPosition(result).column, c0_const->size());
+            block[result].column = ColumnConst::create(block[result].column, c0_const->size());
             return true;
         }
         else
@@ -818,7 +818,7 @@ private:
                     + " of arguments of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
 
-            block.getByPosition(result).column = std::move(c_res);
+            block[result].column = std::move(c_res);
             return true;
         }
     }
@@ -846,7 +846,7 @@ private:
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())
         {
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+            block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
         else
         {
@@ -856,13 +856,13 @@ private:
             {
                 { left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, "" },
                 { !left_const ? column_converted : col_right_untyped->getPtr(), type_to_compare, "" },
-                block.getByPosition(result)
+                block[result]
             };
 
             FunctionArguments tmp_block(tmp_block_columns);
             executeImpl(tmp_block, {0, 1}, 2, input_rows_count);
 
-            block.getByPosition(result).column = std::move(tmp_block.getByPosition(2).column);
+            block[result].column = std::move(tmp_block[2].column);
         }
 
         return true;
@@ -893,7 +893,7 @@ private:
         if (tuple_size != typeid_cast<const DataTypeTuple &>(*c1.type).getElements().size())
             throw Exception("Cannot compare tuples of different sizes.", ErrorCodes::BAD_ARGUMENTS);
 
-        auto & res = block.getByPosition(result);
+        auto & res = block[result];
         if (res.type->onlyNull())
         {
             res.column = res.type->createColumnConstWithDefaultValue(input_rows_count);
@@ -967,7 +967,7 @@ private:
         if (tuple_size == 1)
         {
             /// Do not call AND for single-element tuple.
-            block.getByPosition(result).column = tmp_block[2].column;
+            block[result].column = tmp_block[2].column;
             return;
         }
 
@@ -981,7 +981,7 @@ private:
         tmp_block.emplace_back(ColumnWithTypeAndName{ nullptr, impl->getReturnType(), "" });
 
         impl->execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
-        block.getByPosition(result).column = tmp_block[tuple_size * 3].column;
+        block[result].column = tmp_block[tuple_size * 3].column;
     }
 
     void executeTupleLessGreaterImpl(
@@ -1064,7 +1064,7 @@ private:
 
         }
 
-        block.getByPosition(result).column = tmp_block[tmp_block.size() - 1].column;
+        block[result].column = tmp_block[tmp_block.size() - 1].column;
     }
 
     void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1) const
@@ -1076,7 +1076,7 @@ private:
         {
             UInt8 res = 0;
             GenericComparisonImpl<Op<int, int>>::constantConstant(*c0, *c1, res);
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(c0->size(), toField(res));
+            block[result].column = DataTypeUInt8().createColumnConst(c0->size(), toField(res));
         }
         else
         {
@@ -1091,7 +1091,7 @@ private:
             else
                 GenericComparisonImpl<Op<int, int>>::vectorVector(*c0, *c1, vec_res);
 
-            block.getByPosition(result).column = std::move(c_res);
+            block[result].column = std::move(c_res);
         }
     }
 
@@ -1176,8 +1176,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
-        const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
+        const auto & col_with_type_and_name_left = block[arguments[0]];
+        const auto & col_with_type_and_name_right = block[arguments[1]];
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
         const IColumn * col_right_untyped = col_with_type_and_name_right.column.get();
 
@@ -1195,12 +1195,12 @@ public:
                 || IsOperation<Op>::less_or_equals
                 || IsOperation<Op>::greater_or_equals)
             {
-                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
+                block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
                 return;
             }
             else
             {
-                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+                block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
                 return;
             }
         }

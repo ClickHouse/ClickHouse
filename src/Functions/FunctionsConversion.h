@@ -104,7 +104,7 @@ struct ConvertImpl
     static void NO_SANITIZE_UNDEFINED execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/,
                         Additions additions [[maybe_unused]] = Additions())
     {
-        const ColumnWithTypeAndName & named_from = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & named_from = block[arguments[0]];
 
         using ColVecFrom = typename FromDataType::ColumnType;
         using ColVecTo = typename ToDataType::ColumnType;
@@ -161,7 +161,7 @@ struct ConvertImpl
                     vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
             }
 
-            block.getByPosition(result).column = std::move(col_to);
+            block[result].column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
@@ -443,7 +443,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
 {
     static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
-        block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
+        block[result].column = block[arguments[0]].column;
     }
 };
 
@@ -456,7 +456,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
     static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
-        const auto & col_with_type_and_name = block.getByPosition(arguments[0]);
+        const auto & col_with_type_and_name = block[arguments[0]];
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
         const DateLUTImpl * time_zone = nullptr;
@@ -495,10 +495,10 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
             }
 
             write_buffer.finalize();
-            block.getByPosition(result).column = std::move(col_to);
+            block[result].column = std::move(col_to);
         }
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -510,7 +510,7 @@ struct ConvertImplGenericToString
 {
     static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result)
     {
-        const auto & col_with_type_and_name = block.getByPosition(arguments[0]);
+        const auto & col_with_type_and_name = block[arguments[0]];
         const IDataType & type = *col_with_type_and_name.type;
         const IColumn & col_from = *col_with_type_and_name.column;
 
@@ -535,7 +535,7 @@ struct ConvertImplGenericToString
         }
 
         write_buffer.finalize();
-        block.getByPosition(result).column = std::move(col_to);
+        block[result].column = std::move(col_to);
     }
 };
 
@@ -607,7 +607,7 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
   */
 [[noreturn]] inline void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, FunctionArguments & block, size_t result)
 {
-    const IDataType & to_type = *block.getByPosition(result).type;
+    const IDataType & to_type = *block[result].type;
 
     WriteBufferFromOwnString message_buf;
     message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
@@ -681,7 +681,7 @@ struct ConvertThroughParsing
         /// For conversion to DateTime type, second argument with time zone could be specified.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || to_datetime64)
         {
-            const auto result_type = removeNullable(block.getByPosition(result).type);
+            const auto result_type = removeNullable(block[result].type);
             // Time zone is already figured out during result type resolution, no need to do it here.
             if (const auto dt_col = checkAndGetDataType<ToDataType>(result_type.get()))
                 local_time_zone = &dt_col->getTimeZone();
@@ -694,7 +694,7 @@ struct ConvertThroughParsing
                 utc_time_zone = &DateLUT::instance("UTC");
         }
 
-        const IColumn * col_from = block.getByPosition(arguments[0]).column.get();
+        const IColumn * col_from = block[arguments[0]].column.get();
         const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(col_from);
         const ColumnFixedString * col_from_fixed_string = checkAndGetColumn<ColumnFixedString>(col_from);
 
@@ -847,9 +847,9 @@ struct ConvertThroughParsing
         }
 
         if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
-            block.getByPosition(result).column = ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+            block[result].column = ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
         else
-            block.getByPosition(result).column = std::move(col_to);
+            block[result].column = std::move(col_to);
     }
 };
 
@@ -867,10 +867,10 @@ struct ConvertImplGenericFromString
 {
     static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result)
     {
-        const IColumn & col_from = *block.getByPosition(arguments[0]).column;
+        const IColumn & col_from = *block[arguments[0]].column;
         size_t size = col_from.size();
 
-        const IDataType & data_type_to = *block.getByPosition(result).type;
+        const IDataType & data_type_to = *block[result].type;
 
         if (const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(&col_from))
         {
@@ -897,10 +897,10 @@ struct ConvertImplGenericFromString
                 current_offset = offsets[i];
             }
 
-            block.getByPosition(result).column = std::move(res);
+            block[result].column = std::move(res);
         }
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                     + " of first argument of conversion function from string",
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -922,7 +922,7 @@ struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name>
 {
     static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
-        block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
+        block[result].column = block[arguments[0]].column;
     }
 };
 
@@ -935,7 +935,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 {
     static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
-        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block[arguments[0]].column.get()))
         {
             auto col_to = ColumnString::create();
 
@@ -964,10 +964,10 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
             }
 
             data_to.resize(offset_to);
-            block.getByPosition(result).column = std::move(col_to);
+            block[result].column = std::move(col_to);
         }
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -1144,8 +1144,8 @@ public:
             if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
             {
                 e.addMessage("Cannot parse "
-                    + block.getByPosition(result).type->getName() + " from "
-                    + block.getByPosition(arguments[0]).type->getName()
+                    + block[result].type->getName() + " from "
+                    + block[arguments[0]].type->getName()
                     + ", because value is too short");
             }
             else if (e.code() == ErrorCodes::CANNOT_PARSE_NUMBER
@@ -1158,8 +1158,8 @@ public:
                 || e.code() == ErrorCodes::CANNOT_PARSE_UUID)
             {
                 e.addMessage("Cannot parse "
-                    + block.getByPosition(result).type->getName() + " from "
-                    + block.getByPosition(arguments[0]).type->getName());
+                    + block[result].type->getName() + " from "
+                    + block[arguments[0]].type->getName());
             }
 
             throw;
@@ -1183,7 +1183,7 @@ private:
             throw Exception{"Function " + getName() + " expects at least 1 arguments",
                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = block[arguments[0]].type.get();
 
         auto call = [&](const auto & types) -> bool
         {
@@ -1206,14 +1206,14 @@ private:
                         ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
                 }
 
-                const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
+                const ColumnWithTypeAndName & scale_column = block[arguments[1]];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
                 ConvertImpl<LeftDataType, RightDataType, Name>::execute(block, arguments, result, input_rows_count, scale);
             }
             else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
-                const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(block.getByPosition(arguments[0]).type.get());
+                const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(block[arguments[0]].type.get());
                 ConvertImpl<LeftDataType, RightDataType, Name>::execute(block, arguments, result, input_rows_count, dt64->getScale());
             }
             else if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
@@ -1244,13 +1244,13 @@ private:
         if (isDateTime64<Name, ToDataType>(block.getColumnsWithTypeAndName(), arguments))
         {
             /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
-            const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
+            const ColumnWithTypeAndName & scale_column = block[arguments[1]];
             UInt32 scale = extractToDecimalScale(scale_column);
 
             if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
             {
                 if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call))
-                    throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+                    throw Exception("Illegal type " + block[arguments[0]].type->getName() + " of argument of function " + getName(),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 return;
@@ -1266,7 +1266,7 @@ private:
                 ConvertImplGenericToString::execute(block, arguments, result);
             }
             else
-                throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+                throw Exception("Illegal type " + block[arguments[0]].type->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
@@ -1396,7 +1396,7 @@ public:
     template <typename ConvertToDataType>
     bool executeInternal(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, UInt32 scale = 0) const
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = block[arguments[0]].type.get();
 
         if (checkAndGetDataType<DataTypeString>(from_type))
         {
@@ -1420,7 +1420,7 @@ public:
 
         if constexpr (to_decimal)
             ok = executeInternal<ToDataType>(block, arguments, result, input_rows_count,
-                assert_cast<const ToDataType &>(*removeNullable(block.getByPosition(result).type)).getScale());
+                assert_cast<const ToDataType &>(*removeNullable(block[result].type)).getScale());
         else
         {
             if (isDateTime64<Name, ToDataType>(block.getColumnsWithTypeAndName(), arguments))
@@ -1443,7 +1443,7 @@ public:
         }
 
         if (!ok)
-            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
+            throw Exception("Illegal type " + block[arguments[0]].type->getName() + " of argument of function " + getName()
                 + ". Only String or FixedString argument is accepted for try-conversion function."
                 + " For other arguments, use function without 'orZero' or 'orNull'.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -2088,7 +2088,7 @@ private:
         return [nested_function, from_nested_type, to_nested_type](
             Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
-            const auto & array_arg = block.getByPosition(arguments.front());
+            const auto & array_arg = block[arguments.front()];
 
             if (const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(array_arg.column.get()))
             {
@@ -2104,7 +2104,7 @@ private:
                 nested_function(nested_block, {0}, 1, nested_block_columns.front().column->size());
 
                 /// set converted nested column to result
-                block.getByPosition(result).column = ColumnArray::create(nested_block.getByPosition(1).column, col_array->getOffsetsPtr());
+                block[result].column = ColumnArray::create(nested_block[1].column, col_array->getOffsetsPtr());
             }
             else
                 throw Exception{"Illegal column " + array_arg.column->getName() + " for function CAST AS Array", ErrorCodes::LOGICAL_ERROR};
@@ -2143,7 +2143,7 @@ private:
         return [element_wrappers, from_element_types, to_element_types]
             (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
-            const auto col = block.getByPosition(arguments.front()).column.get();
+            const auto col = block[arguments.front()].column.get();
 
             /// copy tuple elements to a separate block
             ColumnsWithTypeAndName element_block_columns;
@@ -2171,9 +2171,9 @@ private:
 
             Columns converted_columns(tuple_size);
             for (size_t i = 0; i < tuple_size; ++i)
-                converted_columns[i] = element_block.getByPosition(tuple_size + i).column;
+                converted_columns[i] = element_block[tuple_size + i].column;
 
-            block.getByPosition(result).column = ColumnTuple::create(converted_columns);
+            block[result].column = ColumnTuple::create(converted_columns);
         };
     }
 
@@ -2239,9 +2239,9 @@ private:
         const char * function_name = name;
         return [function_name, source_is_nullable] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
-            const auto first_col = block.getByPosition(arguments.front()).column.get();
+            const auto first_col = block[arguments.front()].column.get();
 
-            auto & col_with_type_and_name = block.getByPosition(result);
+            auto & col_with_type_and_name = block[result];
             const auto & result_type = typeid_cast<const EnumType &>(*col_with_type_and_name.type);
 
             const ColumnStringType * col = typeid_cast<const ColumnStringType *>(first_col);
@@ -2252,7 +2252,7 @@ private:
                     throw Exception("Not enough columns", ErrorCodes::LOGICAL_ERROR);
 
                 size_t nullable_pos = block.columns() - 1;
-                nullable_col = typeid_cast<const ColumnNullable *>(block.getByPosition(nullable_pos).column.get());
+                nullable_col = typeid_cast<const ColumnNullable *>(block[nullable_pos].column.get());
                 if (col && nullable_col && nullable_col->size() != col->size())
                     throw Exception("ColumnNullable is not compatible with original", ErrorCodes::LOGICAL_ERROR);
             }
@@ -2291,7 +2291,7 @@ private:
     {
         return [] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
-            block.getByPosition(result).column = block.getByPosition(arguments.front()).column;
+            block[result].column = block[arguments.front()].column;
         };
     }
 
@@ -2301,7 +2301,7 @@ private:
         return [res] (Block & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
         {
             /// Column of Nothing type is trivially convertible to any other column
-            block.getByPosition(result).column = res->cloneResized(input_rows_count)->convertToFullColumnIfConst();
+            block[result].column = res->cloneResized(input_rows_count)->convertToFullColumnIfConst();
         };
     }
 
@@ -2319,7 +2319,7 @@ private:
 
             return [](Block & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
             {
-                auto & res = block.getByPosition(result);
+                auto & res = block[result];
                 res.column = res.type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
             };
         }
@@ -2337,8 +2337,8 @@ private:
         return [wrapper, from_low_cardinality, to_low_cardinality, skip_not_null_check]
                 (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
-            auto & arg = block.getByPosition(arguments[0]);
-            auto & res = block.getByPosition(result);
+            auto & arg = block[arguments[0]];
+            auto & res = block[result];
 
             ColumnPtr res_indexes;
             /// For some types default can't be casted (for example, String to Int). In that case convert column to full.
@@ -2420,7 +2420,7 @@ private:
                 (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
                 /// Create a temporary block on which to perform the operation.
-                auto & res = block.getByPosition(result);
+                auto & res = block[result];
                 const auto & ret_type = res.type;
                 const auto & nullable_type = static_cast<const DataTypeNullable &>(*ret_type);
                 const auto & nested_type = nullable_type.getNestedType();
@@ -2438,7 +2438,7 @@ private:
                 {
                     if (arguments.size() != 1)
                         throw Exception("Invalid number of arguments", ErrorCodes::LOGICAL_ERROR);
-                    tmp_block_columns.emplace_back(block.getByPosition(arguments.front()));
+                    tmp_block_columns.emplace_back(block[arguments.front()]);
                 }
 
                 FunctionArguments tmp_block(tmp_block_columns);
@@ -2446,14 +2446,14 @@ private:
                 /// Perform the requested conversion.
                 wrapper(tmp_block, arguments, tmp_res_index, input_rows_count);
 
-                const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
+                const auto & tmp_res = tmp_block[tmp_res_index];
 
                 /// May happen in fuzzy tests. For debug purpose.
                 if (!tmp_res.column)
-                    throw Exception("Couldn't convert " + block.getByPosition(arguments[0]).type->getName() + " to "
+                    throw Exception("Couldn't convert " + block[arguments[0]].type->getName() + " to "
                                     + nested_type->getName() + " in " + " prepareRemoveNullable wrapper.", ErrorCodes::LOGICAL_ERROR);
 
-                res.column = wrapInNullable(tmp_res.column, {block.getByPosition(arguments[0]), tmp_res}, {0}, 1, input_rows_count);
+                res.column = wrapInNullable(tmp_res.column, {block[arguments[0]], tmp_res}, {0}, 1, input_rows_count);
             };
         }
         else if (source_is_nullable)
@@ -2469,7 +2469,7 @@ private:
                 /// In that case, correctness will be checked beforehand.
                 if (!skip_not_null_check)
                 {
-                    const auto & col = block.getByPosition(arguments[0]).column;
+                    const auto & col = block[arguments[0]].column;
                     const auto & nullable_col = assert_cast<const ColumnNullable &>(*col);
                     const auto & null_map = nullable_col.getNullMapData();
 
@@ -2480,7 +2480,7 @@ private:
 
                 FunctionArguments tmp_block(tmp_block_columns);
                 wrapper(tmp_block, arguments, result, input_rows_count);
-                block.getByPosition(result).column = tmp_block.getByPosition(result).column;
+                block[result].column = tmp_block[result].column;
             };
         }
         else

@@ -143,7 +143,7 @@ public:
             to_start_of_interval->execute(temp_block, {arguments[1], interval_pos, arguments[2]}, result, input_rows_count);
         }
 
-        block.getByPosition(result).column = std::move(temp_block[result].column);
+        block[result].column = std::move(temp_block[result].column);
     }
 
     bool hasInformationAboutMonotonicity() const override

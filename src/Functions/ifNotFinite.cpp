@@ -57,7 +57,7 @@ public:
 
         func_if->execute(temp_block, {is_finite_pos, arguments[0], arguments[1]}, result, input_rows_count);
 
-        block.getByPosition(result).column = std::move(temp_block[result].column);
+        block[result].column = std::move(temp_block[result].column);
     }
 
 private:

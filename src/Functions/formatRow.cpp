@@ -56,7 +56,7 @@ public:
         offsets.resize(input_rows_count);
         DB::Block arg_block;
         for (auto i = 1u; i < arguments.size(); ++i)
-            arg_block.insert(block.getByPosition(arguments[i]));
+            arg_block.insert(block[arguments[i]]);
         materializeBlockInplace(arg_block);
         auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_block, context, [&](const Columns &, size_t row)
         {
@@ -71,7 +71,7 @@ public:
             offsets[row] = buffer.count();
         });
         out->write(arg_block);
-        block.getByPosition(result).column = std::move(col_str);
+        block[result].column = std::move(col_str);
     }
 
 private:

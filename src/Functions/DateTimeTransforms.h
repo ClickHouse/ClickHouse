@@ -689,19 +689,19 @@ struct DateTimeTransformImpl
 
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block.data, arguments, 1, 0);
 
-        const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
+        const ColumnPtr source_col = block[arguments[0]].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
-            auto mutable_result_col = block.getByPosition(result).type->createColumn();
+            auto mutable_result_col = block[result].type->createColumn();
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
             Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
 
-            block.getByPosition(result).column = std::move(mutable_result_col);
+            block[result].column = std::move(mutable_result_col);
         }
         else
         {
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                 + " of first argument of function " + Transform::name,
                 ErrorCodes::ILLEGAL_COLUMN);
         }

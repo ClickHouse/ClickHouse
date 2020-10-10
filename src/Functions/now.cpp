@@ -31,7 +31,7 @@ public:
 
     void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = DataTypeDateTime().createColumnConst(
+        block[result].column = DataTypeDateTime().createColumnConst(
                 input_rows_count,
                 static_cast<UInt64>(time_value));
     }

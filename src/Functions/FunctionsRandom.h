@@ -83,7 +83,7 @@ public:
         vec_to.resize(size);
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
-        block.getByPosition(result).column = std::move(col_to);
+        block[result].column = std::move(col_to);
     }
 };
 

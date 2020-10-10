@@ -92,12 +92,12 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
+        const ColumnPtr column_string = block[arguments[0]].column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
 
         if (!input)
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                "Illegal column " + block[arguments[0]].column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();
@@ -165,7 +165,7 @@ public:
 
         dst_data.resize(dst_pos - dst);
 
-        block.getByPosition(result).column = std::move(dst_column);
+        block[result].column = std::move(dst_column);
     }
 };
 }

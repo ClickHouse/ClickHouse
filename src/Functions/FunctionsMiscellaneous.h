@@ -40,14 +40,14 @@ public:
         DB::Block expr_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const auto & argument = block.getByPosition(arguments[i]);
+            const auto & argument = block[arguments[i]];
             /// Replace column name with value from argument_names.
             expr_block.insert({argument.column, argument.type, signature->argument_names[i]});
         }
 
         expression_actions->execute(expr_block);
 
-        block.getByPosition(result).column = expr_block.getByName(signature->return_name).column;
+        block[result].column = expr_block.getByName(signature->return_name).column;
     }
 
 bool useDefaultImplementationForNulls() const override { return false; }
@@ -140,12 +140,12 @@ public:
         }
 
         for (const auto & argument : arguments)
-            columns.push_back(block.getByPosition(argument));
+            columns.push_back(block[argument]);
 
         auto function = std::make_unique<FunctionExpression>(expression_actions, types, names,
                                                              capture->return_type, capture->return_name);
         auto function_adaptor = std::make_shared<FunctionBaseAdaptor>(std::move(function));
-        block.getByPosition(result).column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns);
+        block[result].column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns);
     }
 
 private:

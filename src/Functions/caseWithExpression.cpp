@@ -74,14 +74,14 @@ public:
             if (i % 2)
             {
                 src_array_args.push_back(args[i]);
-                src_array_elems.push_back(block.getByPosition(args[i]));
-                src_array_types.push_back(block.getByPosition(args[i]).type);
+                src_array_elems.push_back(block[args[i]]);
+                src_array_types.push_back(block[args[i]].type);
             }
             else
             {
                 dst_array_args.push_back(args[i]);
-                dst_array_elems.push_back(block.getByPosition(args[i]));
-                dst_array_types.push_back(block.getByPosition(args[i]).type);
+                dst_array_elems.push_back(block[args[i]]);
+                dst_array_types.push_back(block[args[i]].type);
             }
         }
 
@@ -108,7 +108,7 @@ public:
             ->execute(temp_block_columns, transform_args, result, input_rows_count);
 
         /// Put the result into the original block.
-        block.getByPosition(result).column = std::move(temp_block_columns[result].column);
+        block[result].column = std::move(temp_block_columns[result].column);
     }
 
 private:

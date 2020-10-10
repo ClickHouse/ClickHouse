@@ -30,36 +30,13 @@ class FunctionArguments
 public:
     explicit FunctionArguments(ColumnsWithTypeAndName & arguments) : data(arguments) {}
 
-    const ColumnWithTypeAndName & getByPosition(size_t position) const { return data[position]; }
-    ColumnWithTypeAndName & getByPosition(size_t position) { return data[position]; }
-
-    ColumnWithTypeAndName & safeGetByPosition(size_t position)
-    {
-        checkPosition(position);
-        return data[position];
-    }
-    const ColumnWithTypeAndName & safeGetByPosition(size_t position) const
-    {
-        checkPosition(position);
-        return data[position];
-    }
+    ColumnWithTypeAndName & operator[] (size_t position) { return data[position]; }
+    const ColumnWithTypeAndName & operator[] (size_t position) const { return data[position]; }
 
     size_t columns() const { return data.size(); }
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const { return data; }
 
     ColumnsWithTypeAndName & data;
-
-private:
-    void checkPosition(size_t position) const
-    {
-        if (data.empty())
-            throw Exception("Arguments are empty", ErrorCodes::POSITION_OUT_OF_BOUND);
-
-        if (position >= data.size())
-            throw Exception("Position " + std::to_string(position)
-                            + " is out of bound in FunctionArguments::safeGetByPosition(), max position = "
-                            + std::to_string(data.size() - 1), ErrorCodes::POSITION_OUT_OF_BOUND);
-    }
 };
 
 /// Cache for functions result if it was executed on low cardinality column.
