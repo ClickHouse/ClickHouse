@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <optional>
 #include <mutex>
 
 #include <ext/shared_ptr_helper.h>
@@ -92,6 +94,9 @@ private:
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
+
+    std::atomic<size_t> total_size_bytes = 0;
+    std::atomic<size_t> total_size_rows = 0;
 
 protected:
     StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
