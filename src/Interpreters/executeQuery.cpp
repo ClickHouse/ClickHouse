@@ -64,6 +64,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INTO_OUTFILE_NOT_ALLOWED;
+    extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
 }
 
@@ -804,8 +805,7 @@ void executeQuery(
             InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context, nullptr);
             copyData(in, *streams.out);
         }
-
-        if (streams.in)
+        else if (streams.in)
         {
             /// FIXME: try to prettify this cast using `as<>()`
             const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
@@ -847,8 +847,7 @@ void executeQuery(
 
             copyData(*streams.in, *out, [](){ return false; }, [&out](const Block &) { out->flush(); });
         }
-
-        if (pipeline.initialized())
+        else if (pipeline.initialized())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
@@ -907,6 +906,8 @@ void executeQuery(
                 executor->execute(pipeline.getNumThreads());
             }
         }
+        else
+            throw Exception("BlockIO is empty", ErrorCodes::LOGICAL_ERROR);
     }
     catch (...)
     {

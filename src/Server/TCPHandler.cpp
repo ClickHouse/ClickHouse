@@ -253,16 +253,15 @@ void TCPHandler::runImpl()
             /// Processing Query
             state.io = executeQuery(state.query, *query_context, false, state.stage, may_have_embedded_data);
 
-            if (state.io.out)
-                state.need_receive_data_for_insert = true;
-
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            /// Does the request require receive data from client?
-            if (state.need_receive_data_for_insert)
+            if (state.io.out)
+            {
+                state.need_receive_data_for_insert = true;
                 processInsertQuery(connection_settings);
-            else if (state.need_receive_data_for_input)
+            }
+            else if (state.need_receive_data_for_input) // It implies pipeline execution
             {
                 /// It is special case for input(), all works for reading data from client will be done in callbacks.
                 auto executor = state.io.pipeline.execute();
@@ -271,8 +270,10 @@ void TCPHandler::runImpl()
             }
             else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors();
-            else
+            else if (state.io.in)
                 processOrdinaryQuery();
+            else
+                throw Exception("BlockIO is empty", ErrorCodes::LOGICAL_ERROR);
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
