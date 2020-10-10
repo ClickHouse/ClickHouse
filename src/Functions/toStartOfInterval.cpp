@@ -230,7 +230,7 @@ public:
     {
         const auto & time_column = block.getByPosition(arguments[0]);
         const auto & interval_column = block.getByPosition(arguments[1]);
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block.data, arguments, 2, 0);
         auto result_column = dispatchForColumns(time_column, interval_column, time_zone);
         block.getByPosition(result).column = std::move(result_column);
     }

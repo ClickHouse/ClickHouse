@@ -37,7 +37,7 @@ public:
 
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        Block expr_block;
+        DB::Block expr_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const auto & argument = block.getByPosition(arguments[i]);
