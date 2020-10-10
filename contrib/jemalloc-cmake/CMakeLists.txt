@@ -36,7 +36,9 @@ if (NOT USE_INTERNAL_JEMALLOC_LIBRARY)
         set(THREADS_PREFER_PTHREAD_FLAG ON)
         find_package(Threads)
 
-        set (CMAKE_REQUIRED_LIBRARIES ${LIBRARY_JEMALLOC} Threads::Threads "dl")
+        set(JEMALLOC_LIBRARIES ${LIBRARY_JEMALLOC} Threads::Threads dl)
+
+        set (CMAKE_REQUIRED_LIBRARIES ${JEMALLOC_LIBRARIES})
         set (CMAKE_REQUIRED_INCLUDES ${INCLUDE_JEMALLOC})
         check_cxx_source_compiles (
             "
@@ -50,10 +52,9 @@ if (NOT USE_INTERNAL_JEMALLOC_LIBRARY)
         )
 
         if (EXTERNAL_JEMALLOC_LIBRARY_WORKS)
-            add_library (jemalloc STATIC IMPORTED)
-            set_property (TARGET jemalloc PROPERTY IMPORTED_LOCATION ${LIBRARY_JEMALLOC})
+            add_library (jemalloc INTERFACE)
+            set_property (TARGET jemalloc PROPERTY INTERFACE_LINK_LIBRARIES ${JEMALLOC_LIBRARIES})
             set_property (TARGET jemalloc PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_JEMALLOC})
-            set_property (TARGET jemalloc PROPERTY INTERFACE_LINK_LIBRARIES Threads::Threads dl)
         else()
             message (${RECONFIGURE_MESSAGE_LEVEL} "External jemalloc is unusable: ${LIBRARY_JEMALLOC} ${INCLUDE_JEMALLOC}")
         endif ()
