@@ -1117,7 +1117,7 @@ $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT OR
 
 ## LineAsString {#lineasstring}
 
- Формат парсит последовательность строковых объектов, разделенных новыми строками, пробелами и/или запятыми, и интерпретирует каждую строку входных данных как одно значение. Формат может парсить только таблицу с единственным столбцом типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](../sql-reference/statements/create/table.md#default) или [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), либо отсутствовать.
+ Формат парсит последовательность строковых объектов, разделенных символом новой строки, и интерпретирует каждую строку входных данных как одно значение. Формат может парсить только таблицу с единственным столбцом типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](../sql-reference/statements/create/table.md#default) или [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), либо отсутствовать.
 
 **Пример**
 

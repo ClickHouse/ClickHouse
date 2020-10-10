@@ -1312,7 +1312,7 @@ Limitations:
 
 ## LineAsString {#lineasstring}
 
-This format parses a sequence of line objects separated by newlines, spaces and/or comma and interprets every line of input data as a single value. This format can only parse a table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted.
+This format parses a sequence of line objects separated by newlines and interprets every line of input data as a single value. This format can only parse a table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to  [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted.
 
 **Example**
 
