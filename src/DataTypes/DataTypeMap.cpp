@@ -49,11 +49,8 @@ DataTypeMap::DataTypeMap(const DataTypes & elems_)
 std::string DataTypeMap::doGetName() const
 {
     WriteBufferFromOwnString s;
-    s << "Map(" 
-        << (typeid_cast<const DataTypeArray *>(keys.get()))->getNestedType()->getName()
-	<< ","
-	<< typeid_cast<const DataTypeArray *>(values.get())->getNestedType()->getName() 
-	<< ")";
+    s << "Map(" << (typeid_cast<const DataTypeArray *>(keys.get()))->getNestedType()->getName()
+        << "," << (typeid_cast<const DataTypeArray *>(values.get()))->getNestedType()->getName() << ")";
 
     return s.str();
 }
@@ -380,11 +377,9 @@ static DataTypePtr create(const ASTPtr & arguments)
     for (const ASTPtr & child : arguments->children)
     {
         if (child->as<ASTNameTypePair>())
-        {
             throw Exception("Map arguments only support type", ErrorCodes::BAD_ARGUMENTS);
-        }
         else
-	        nested_types.emplace_back(DataTypeFactory::instance().get(child));
+            nested_types.emplace_back(DataTypeFactory::instance().get(child));
     }
 
     return std::make_shared<DataTypeMap>(nested_types);

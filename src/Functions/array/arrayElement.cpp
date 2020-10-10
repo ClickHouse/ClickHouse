@@ -735,7 +735,7 @@ static bool getMappedKey(const ColumnArray * col_keys_untyped, Field & index, co
     const ColumnArray::Offsets & offsets = col_keys_untyped->getOffsets();
     size_t rows = offsets.size();
 
-    switch(key_type)
+    switch (key_type)
     {
         case TypeIndex::String:
         {
@@ -767,7 +767,7 @@ static bool getMappedValue(const ColumnArray * col_values_untyped, std::vector<i
     const ColumnArray::Offsets & offsets = col_values_untyped->getOffsets();
     size_t rows = offsets.size();
 
-    switch(value_type)
+    switch (value_type)
     {
         case TypeIndex::String:
         {
@@ -826,7 +826,7 @@ bool FunctionArrayElement::executeMap(Block & block, const ColumnNumbers & argum
         if (!getMappedKey(col_keys_untyped, index, key_type->getTypeId(), matchedIdx))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "key type unmatched, we need type '{}' failed", key_type->getName());
 
-        if(!getMappedValue(col_values_untyped, matchedIdx, value_type->getTypeId(), col_res_untyped.get()))
+        if (!getMappedValue(col_values_untyped, matchedIdx, value_type->getTypeId(), col_res_untyped.get()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "value type unmatched, we need type '{}' failed", value_type->getName());
     }
     block.getByPosition(result).column = std::move(col_res_untyped);
