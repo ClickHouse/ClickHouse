@@ -119,7 +119,7 @@ ASTTableIdentifier::ASTTableIdentifier(const String & database, const String & t
 
 StorageID ASTTableIdentifier::getStorageId() const
 {
-    assert(name_parts.size() > 1);
+    assert(!name_parts.empty());
 
     return {name_parts.size() == 2 ? name_parts[0] : "", name_parts.back(), uuid};
 }

@@ -111,7 +111,7 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
 
     registerDataType(name, [name, creator](const ASTPtr & ast)
     {
-        if (ast)
+        if (ast && !ast->children.empty())
             throw Exception("Data type " + name + " cannot have arguments", ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS);
         return creator();
     }, case_sensitiveness);
