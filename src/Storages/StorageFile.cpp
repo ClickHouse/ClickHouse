@@ -17,7 +17,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
-#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
