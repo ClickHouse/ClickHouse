@@ -41,6 +41,7 @@ void registerFunctionsUnixTimestamp64(FunctionFactory & factory);
 void registerFunctionBayesAB(FunctionFactory &);
 #endif
 void registerFunctionTid(FunctionFactory & factory);
+void registerFunctionLogTrace(FunctionFactory & factory);
 
 
 void registerFunctions()
@@ -87,6 +88,7 @@ void registerFunctions()
     registerFunctionBayesAB(factory);
 #endif
     registerFunctionTid(factory);
+    registerFunctionLogTrace(factory);
 }
 
 }
