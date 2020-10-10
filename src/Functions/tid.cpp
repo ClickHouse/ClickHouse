@@ -8,10 +8,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-}
-
 namespace
 {
     class FunctionTid : public IFunction
