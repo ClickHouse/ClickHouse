@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
