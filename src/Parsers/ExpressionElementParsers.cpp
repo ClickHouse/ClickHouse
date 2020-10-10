@@ -1075,8 +1075,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             {
                 ++pos;
             }
-            else if (pos->type == TokenType::Colon &&
-	        std::is_same_v<Collection, Map> && arr.size() % 2 == 1)
+            else if (pos->type == TokenType::Colon && std::is_same_v<Collection, Map> && arr.size() % 2 == 1)
             {
                 ++pos;
             }
