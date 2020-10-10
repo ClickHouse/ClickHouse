@@ -516,9 +516,9 @@ void FunctionAnyArityLogical<Impl, Name>::executeImpl(
 {
     ColumnRawPtrs args_in;
     for (const auto arg_index : arguments)
-        args_in.push_back(block.getByPosition(arg_index).column.get());
+        args_in.push_back(block[arg_index].column.get());
 
-    auto & result_info = block.getByPosition(result_index);
+    auto & result_info = block[result_index];
     if (result_info.type->isNullable())
         executeForTernaryLogicImpl<Impl>(std::move(args_in), result_info, input_rows_count);
     else
@@ -556,7 +556,7 @@ DataTypePtr FunctionUnaryLogical<Impl, Name>::getReturnTypeImpl(const DataTypes 
 template <template <typename> class Impl, typename T>
 bool functionUnaryExecuteType(FunctionArguments & block, const ColumnNumbers & arguments, size_t result)
 {
-    if (auto col = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
+    if (auto col = checkAndGetColumn<ColumnVector<T>>(block[arguments[0]].column.get()))
     {
         auto col_res = ColumnUInt8::create();
 
@@ -564,7 +564,7 @@ bool functionUnaryExecuteType(FunctionArguments & block, const ColumnNumbers & a
         vec_res.resize(col->getData().size());
         UnaryOperationImpl<T, Impl<T>>::vector(col->getData(), vec_res);
 
-        block.getByPosition(result).column = std::move(col_res);
+        block[result].column = std::move(col_res);
         return true;
     }
 
@@ -584,7 +584,7 @@ void FunctionUnaryLogical<Impl, Name>::executeImpl(Block & block, const ColumnNu
         || functionUnaryExecuteType<Impl, Int64>(block, arguments, result)
         || functionUnaryExecuteType<Impl, Float32>(block, arguments, result)
         || functionUnaryExecuteType<Impl, Float64>(block, arguments, result)))
-       throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+       throw Exception("Illegal column " + block[arguments[0]].column->getName()
             + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 }

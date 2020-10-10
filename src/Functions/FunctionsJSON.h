@@ -57,13 +57,13 @@ public:
     public:
         static void run(FunctionArguments & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count)
         {
-            MutableColumnPtr to{block.getByPosition(result_pos).type->createColumn()};
+            MutableColumnPtr to{block[result_pos].type->createColumn()};
             to->reserve(input_rows_count);
 
             if (arguments.size() < 1)
                 throw Exception{"Function " + String(Name::name) + " requires at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-            const auto & first_column = block.getByPosition(arguments[0]);
+            const auto & first_column = block[arguments[0]];
             if (!isString(first_column.type))
                 throw Exception{"The first argument of function " + String(Name::name) + " should be a string containing JSON, illegal type: " + first_column.type->getName(),
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -131,7 +131,7 @@ public:
                 if (!added_to_column)
                     to->insertDefault();
             }
-            block.getByPosition(result_pos).column = std::move(to);
+            block[result_pos].column = std::move(to);
         }
     };
 
@@ -196,14 +196,14 @@ private:
                 }
                 case MoveType::Index:
                 {
-                    Int64 index = (*block.getByPosition(arguments[j + 1]).column)[row].get<Int64>();
+                    Int64 index = (*block[arguments[j + 1]].column)[row].get<Int64>();
                     if (!moveToElementByIndex<JSONParser>(res_element, index, key))
                         return false;
                     break;
                 }
                 case MoveType::Key:
                 {
-                    key = std::string_view{(*block.getByPosition(arguments[j + 1]).column).getDataAt(row)};
+                    key = std::string_view{(*block[arguments[j + 1]].column).getDataAt(row)};
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
@@ -913,7 +913,7 @@ public:
 
     void prepare(const char * function_name, const FunctionArguments & block, const ColumnNumbers &, size_t result_pos)
     {
-        extract_tree = JSONExtractTree<JSONParser>::build(function_name, block.getByPosition(result_pos).type);
+        extract_tree = JSONExtractTree<JSONParser>::build(function_name, block[result_pos].type);
     }
 
     bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
@@ -954,7 +954,7 @@ public:
 
     void prepare(const char * function_name, const FunctionArguments & block, const ColumnNumbers &, size_t result_pos)
     {
-        const auto & result_type = block.getByPosition(result_pos).type;
+        const auto & result_type = block[result_pos].type;
         const auto tuple_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
         const auto value_type = typeid_cast<const DataTypeTuple *>(tuple_type.get())->getElements()[1];
         extract_tree = JSONExtractTree<JSONParser>::build(function_name, value_type);

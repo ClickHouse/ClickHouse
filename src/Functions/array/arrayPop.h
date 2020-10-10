@@ -40,15 +40,15 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto & return_type = block.getByPosition(result).type;
+        const auto & return_type = block[result].type;
 
         if (return_type->onlyNull())
         {
-            block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
+            block[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
 
-        const auto & array_column = block.getByPosition(arguments[0]).column;
+        const auto & array_column = block[arguments[0]].column;
 
         std::unique_ptr<GatherUtils::IArraySource> source;
 
@@ -66,7 +66,7 @@ public:
         else
             sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, 0, -1);
 
-        block.getByPosition(result).column = std::move(sink);
+        block[result].column = std::move(sink);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

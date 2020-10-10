@@ -397,7 +397,7 @@ public:
       */
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        ColumnPtr& ptr = block.getByPosition(arguments[0]).column;
+        ColumnPtr& ptr = block[arguments[0]].column;
 
         /**
          * The columns here have two general cases, either being Array(T) or Const(Array(T)).
@@ -410,7 +410,7 @@ public:
         if (col_array)
             nullable = checkAndGetColumn<ColumnNullable>(col_array->getData());
 
-        auto & arg_column = block.getByPosition(arguments[1]).column;
+        auto & arg_column = block[arguments[1]].column;
         const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(*arg_column);
 
         if (!nullable && !arg_nullable)
@@ -423,7 +423,7 @@ public:
              * {0, 1, 2, 3, 4}
              * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
              */
-            ColumnsWithTypeAndName source_block = { {}, {}, {}, {}, {nullptr, block.getByPosition(result).type, ""} };
+            ColumnsWithTypeAndName source_block = { {}, {}, {}, {}, {nullptr, block[result].type, ""} };
 
             if (nullable)
             {
@@ -435,7 +435,7 @@ public:
                 data.type = std::make_shared<DataTypeArray>(
                     static_cast<const DataTypeNullable &>(
                         *static_cast<const DataTypeArray &>(
-                            *block.getByPosition(arguments[0]).type
+                            *block[arguments[0]].type
                         ).getNestedType()
                     ).getNestedType());
 
@@ -447,7 +447,7 @@ public:
             else
             {
                 auto & data = source_block[0];
-                data = block.getByPosition(arguments[0]);
+                data = block[arguments[0]];
             }
 
             if (arg_nullable)
@@ -456,7 +456,7 @@ public:
                 arg.column = arg_nullable->getNestedColumnPtr();
                 arg.type =
                     static_cast<const DataTypeNullable &>(
-                        *block.getByPosition(arguments[1]).type
+                        *block[arguments[1]].type
                     ).getNestedType();
 
                 auto & null_map = source_block[3];
@@ -466,7 +466,7 @@ public:
             else
             {
                 auto & arg = source_block[1];
-                arg = block.getByPosition(arguments[1]);
+                arg = block[arguments[1]];
             }
 
             /// Now perform the function.
@@ -475,7 +475,7 @@ public:
 
             /// Move the result to its final position.
             const ColumnWithTypeAndName & source_col = source_block[4];
-            ColumnWithTypeAndName & dest_col = block.getByPosition(result);
+            ColumnWithTypeAndName & dest_col = block[result];
             dest_col.column = std::move(source_col.column);
         }
     }
@@ -497,7 +497,7 @@ private:
         NullMaps maps;
         ResultColumnPtr result { ResultColumnType::create() };
 
-        inline void move_result() { block.getByPosition(result_pos).column = std::move(result); }
+        inline void move_result() { block[result_pos].column = std::move(result); }
     };
 
     static inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
@@ -581,7 +581,7 @@ private:
 
     void executeOnNonNullable(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        if (const auto* const left_arr = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
+        if (const auto* const left_arr = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get()))
         {
             if (checkAndGetColumn<ColumnLowCardinality>(&left_arr->getData()))
             {
@@ -622,10 +622,10 @@ private:
         const NullMap * null_map_data = nullptr;
         const NullMap * null_map_item = nullptr;
 
-        if (const auto & data_map = block.getByPosition(arguments[2]).column; data_map)
+        if (const auto & data_map = block[arguments[2]].column; data_map)
             null_map_data = &assert_cast<const ColumnUInt8 &>(*data_map).getData();
 
-        if (const auto & item_map = block.getByPosition(arguments[3]).column; item_map)
+        if (const auto & item_map = block[arguments[3]].column; item_map)
             null_map_item = &assert_cast<const ColumnUInt8 &>(*item_map).getData();
 
         return {null_map_data, null_map_item};
@@ -639,12 +639,12 @@ private:
     template <class ...Integral>
     static inline bool executeIntegral(Block & block, const ColumnNumbers & arguments, size_t result_pos)
     {
-        const ColumnArray * const left = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+        const ColumnArray * const left = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get());
 
         if (!left)
             return false;
 
-        const IColumn& right = *block.getByPosition(arguments[1]).column.get();
+        const IColumn& right = *block[arguments[1]].column.get();
 
         ExecutionData data = {
             left->getData(),
@@ -730,7 +730,7 @@ private:
     static bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnArray * const col_array = checkAndGetColumn<ColumnArray>(
-                block.getByPosition(arguments[0]).column.get());
+                block[arguments[0]].column.get());
 
         if (!col_array)
             return false;
@@ -742,7 +742,7 @@ private:
 
         const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
 
-        const IColumn& col_arg = *block.getByPosition(arguments[1]).column.get();
+        const IColumn& col_arg = *block[arguments[1]].column.get();
 
         if (const ColumnConst * const col_arg_const = checkAndGetColumn<ColumnConst>(col_arg))
         {
@@ -759,11 +759,11 @@ private:
                 && different_inner_types;
 
             const DataTypeArray * const array_type = checkAndGetDataType<DataTypeArray>(
-                    block.getByPosition(arguments[0]).type.get());
+                    block[arguments[0]].type.get());
             const DataTypePtr target_type_ptr = recursiveRemoveLowCardinality(array_type->getNestedType());
 
             const ColumnPtr col_arg_cloned = use_cloned_arg
-                ? castColumn(block.getByPosition(arguments[1]), target_type_ptr)
+                ? castColumn(block[arguments[1]], target_type_ptr)
                 : col_arg_const->getPtr();
 
             const StringRef elem = col_arg_cloned->getDataAt(0);
@@ -782,7 +782,7 @@ private:
 
                     data.resize_fill(offsets_size);
 
-                    block.getByPosition(result).column = std::move(col_result);
+                    block[result].column = std::move(col_result);
                     return true;
                 }
             }
@@ -795,7 +795,7 @@ private:
                 null_map_data,
                 null_map_item);
 
-            block.getByPosition(result).column = std::move(col_result);
+            block[result].column = std::move(col_result);
             return true;
         }
         else if (col_lc->nestedIsNullable()) // LC(Nullable(T)) and U
@@ -871,7 +871,7 @@ private:
 
     static bool executeString(Block & block, const ColumnNumbers & arguments, size_t result_pos)
     {
-        const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get());
 
         if (!array)
             return false;
@@ -881,7 +881,7 @@ private:
         if (!left)
             return false;
 
-        const IColumn & right = *block.getByPosition(arguments[1]).column.get();
+        const IColumn & right = *block[arguments[1]].column.get();
 
         ExecutionData data = {
             *left, right, array->getOffsets(),
@@ -957,14 +957,14 @@ private:
     static bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(
-                block.getByPosition(arguments[0]).column.get());
+                block[arguments[0]].column.get());
 
         if (!col_array)
             return false;
 
         Array arr = col_array->getValue<Array>();
 
-        const IColumn * item_arg = block.getByPosition(arguments[1]).column.get();
+        const IColumn * item_arg = block[arguments[1]].column.get();
 
         if (isColumnConst(*item_arg))
         {
@@ -982,7 +982,7 @@ private:
                     break;
             }
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
+            block[result].column = block[result].type->createColumnConst(
                 item_arg->size(), static_cast<ResultType>(current));
         }
         else
@@ -991,7 +991,7 @@ private:
             const NullMap * null_map = nullptr;
 
             if (arguments.size() > 2)
-                if (const auto & col = block.getByPosition(arguments[3]).column; col)
+                if (const auto & col = block[arguments[3]].column; col)
                     null_map = &assert_cast<const ColumnUInt8 &>(*col).getData();
 
             const size_t size = item_arg->size();
@@ -1025,7 +1025,7 @@ private:
                 }
             }
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
         }
 
         return true;
@@ -1033,13 +1033,13 @@ private:
 
     static bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const ColumnArray * col = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+        const ColumnArray * col = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get());
 
         if (!col)
             return false;
 
         const IColumn & col_nested = col->getData();
-        const IColumn & item_arg = *block.getByPosition(arguments[1]).column;
+        const IColumn & item_arg = *block[arguments[1]].column;
 
         auto col_res = ResultColumnType::create();
 
@@ -1067,7 +1067,7 @@ private:
                 null_map_data,
                 null_map_item);
 
-        block.getByPosition(result).column = std::move(col_res);
+        block[result].column = std::move(col_res);
         return true;
     }
 };

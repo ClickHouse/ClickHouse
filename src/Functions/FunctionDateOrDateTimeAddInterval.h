@@ -314,14 +314,14 @@ struct DateTimeAddIntervalImpl
 
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block.data, arguments, 2, 0);
 
-        const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
+        const ColumnPtr source_col = block[arguments[0]].column;
 
-        auto result_col = block.getByPosition(result).type->createColumn();
+        auto result_col = block[result].type->createColumn();
         auto col_to = assert_cast<ToColumnType *>(result_col.get());
 
         if (const auto * sources = checkAndGetColumn<FromColumnType>(source_col.get()))
         {
-            const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
+            const IColumn & delta_column = *block[arguments[1]].column;
 
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
                 op.vectorConstant(sources->getData(), col_to->getData(), delta_const_column->getInt(0), time_zone);
@@ -333,16 +333,16 @@ struct DateTimeAddIntervalImpl
             op.constantVector(
                 sources_const->template getValue<FromValueType>(),
                 col_to->getData(),
-                *block.getByPosition(arguments[1]).column, time_zone);
+                *block[arguments[1]].column, time_zone);
         }
         else
         {
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                 + " of first argument of function " + Transform::name,
                 ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        block.getByPosition(result).column = std::move(result_col);
+        block[result].column = std::move(result_col);
     }
 };
 
@@ -464,7 +464,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = block[arguments[0]].type.get();
         WhichDataType which(from_type);
 
         if (which.isDate())
@@ -483,7 +483,7 @@ public:
                 Transform{datetime64_type->getScale()}, block, arguments, result);
         }
         else
-            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of first argument of function " + getName(),
+            throw Exception("Illegal type " + block[arguments[0]].type->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };

@@ -84,12 +84,12 @@ public:
     {
         if constexpr (ignore_set)
         {
-            block.getByPosition(result).column = ColumnUInt8::create(input_rows_count, 0u);
+            block[result].column = ColumnUInt8::create(input_rows_count, 0u);
             return;
         }
 
         /// Second argument must be ColumnSet.
-        ColumnPtr column_set_ptr = block.getByPosition(arguments[1]).column;
+        ColumnPtr column_set_ptr = block[arguments[1]].column;
         const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
             column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
@@ -100,7 +100,7 @@ public:
         DB::Block block_of_key_columns;
 
         /// First argument may be a tuple or a single column.
-        const ColumnWithTypeAndName & left_arg = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & left_arg = block[arguments[0]];
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
         const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(left_arg.column.get());
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
@@ -125,7 +125,7 @@ public:
         else
             block_of_key_columns.insert(left_arg);
 
-        block.getByPosition(result).column = set->execute(block_of_key_columns, negative);
+        block[result].column = set->execute(block_of_key_columns, negative);
     }
 };
 

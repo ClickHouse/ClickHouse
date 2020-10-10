@@ -97,7 +97,7 @@ public:
         filtered_args.reserve(arguments.size());
         for (const auto & arg : arguments)
         {
-            const auto & type = block.getByPosition(arg).type;
+            const auto & type = block[arg].type;
 
             if (type->onlyNull())
                 continue;
@@ -129,7 +129,7 @@ public:
             {
                 temp_block_columns.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});
                 is_not_null->build({temp_block_columns[filtered_args[i]]})->execute(temp_block_columns, {filtered_args[i]}, res_pos, input_rows_count);
-                temp_block_columns.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(block.getByPosition(filtered_args[i]).type), ""});
+                temp_block_columns.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(block[filtered_args[i]].type), ""});
                 assume_not_null->build({temp_block_columns[filtered_args[i]]})->execute(temp_block_columns, {filtered_args[i]}, res_pos + 1, input_rows_count);
 
                 multi_if_args.push_back(res_pos);
@@ -140,13 +140,13 @@ public:
         /// If all arguments appeared to be NULL.
         if (multi_if_args.empty())
         {
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(input_rows_count);
+            block[result].column = block[result].type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
 
         if (multi_if_args.size() == 1)
         {
-            block.getByPosition(result).column = block.getByPosition(multi_if_args.front()).column;
+            block[result].column = block[multi_if_args.front()].column;
             return;
         }
 
@@ -160,7 +160,7 @@ public:
         ColumnPtr res = std::move(temp_block_columns[result].column);
 
         /// if last argument is not nullable, result should be also not nullable
-        if (!block.getByPosition(multi_if_args.back()).column->isNullable() && res->isNullable())
+        if (!block[multi_if_args.back()].column->isNullable() && res->isNullable())
         {
             if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(*res))
                 res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn())->getNestedColumnPtr();
@@ -170,7 +170,7 @@ public:
                 res = checkAndGetColumn<ColumnNullable>(*res)->getNestedColumnPtr();
         }
 
-        block.getByPosition(result).column = std::move(res);
+        block[result].column = std::move(res);
     }
 
 private:

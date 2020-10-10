@@ -47,7 +47,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const auto in = block.getByPosition(arguments.front()).column.get();
+        const auto in = block[arguments.front()].column.get();
 
         if (   !execute<UInt8>(block, in, result)
             && !execute<UInt16>(block, in, result)
@@ -77,7 +77,7 @@ public:
             for (const auto i : ext::range(0, size))
                 out_data[i] = Impl::execute(in_data[i]);
 
-            block.getByPosition(result).column = std::move(out);
+            block[result].column = std::move(out);
             return true;
         }
 
