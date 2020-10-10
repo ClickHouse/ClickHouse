@@ -22,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
-    extern const int POSITION_OUT_OF_BOUND;
 }
 
 class FunctionArguments
