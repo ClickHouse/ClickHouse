@@ -1,7 +1,5 @@
 #include <Storages/StorageDistributed.h>
 
-#include <DataStreams/OneBlockInputStream.h>
-
 #include <Databases/IDatabase.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/DiskLocal.h>

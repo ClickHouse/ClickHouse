@@ -729,7 +729,7 @@ class FunctionBinaryArithmetic : public IFunction
                 {new_block.getByPosition(new_arguments[0]), new_block.getByPosition(new_arguments[1])};
         auto function = function_builder->build(new_arguments_with_type_and_name);
 
-        function->execute(new_block, new_arguments, result, input_rows_count);
+        function->execute(new_block.data, new_arguments, result, input_rows_count);
         block.getByPosition(result).column = new_block.getByPosition(result).column;
     }
 
@@ -872,7 +872,7 @@ public:
                                       col_right->getChars().data(),
                                       out_chars.data(),
                                       out_chars.size());
-                block.getByPosition(result).column = ColumnConst::create(std::move(col_res), block.rows());
+                block.getByPosition(result).column = ColumnConst::create(std::move(col_res), col_left_raw->size());
                 return true;
             }
         }
@@ -988,7 +988,7 @@ public:
 
                 col_res = ColVecResult::create(0, type.getScale());
                 auto & vec_res = col_res->getData();
-                vec_res.resize(block.rows());
+                vec_res.resize(col_left_raw->size());
 
                 if (col_left && col_right)
                 {
@@ -1032,7 +1032,7 @@ public:
 
                 col_res = ColVecResult::create();
                 auto & vec_res = col_res->getData();
-                vec_res.resize(block.rows());
+                vec_res.resize(col_left_raw->size());
 
                 if (col_left && col_right)
                 {
@@ -1171,6 +1171,7 @@ class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op
 public:
     using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>;
     using Monotonicity = typename Base::Monotonicity;
+    using Block = typename Base::Block;
 
     static FunctionPtr create(
         const ColumnWithTypeAndName & left_,
@@ -1194,21 +1195,25 @@ public:
     {
         if (left.column && isColumnConst(*left.column) && arguments.size() == 1)
         {
-            Block block_with_constant
+            ColumnsWithTypeAndName block_with_constant
                 = {{left.column->cloneResized(input_rows_count), left.type, left.name},
                    block.getByPosition(arguments[0]),
                    block.getByPosition(result)};
-            Base::executeImpl(block_with_constant, {0, 1}, 2, input_rows_count);
-            block.getByPosition(result) = block_with_constant.getByPosition(2);
+
+            FunctionArguments args(block_with_constant);
+            Base::executeImpl(args, {0, 1}, 2, input_rows_count);
+            block.getByPosition(result) = block_with_constant[2];
         }
         else if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
         {
-            Block block_with_constant
+            ColumnsWithTypeAndName block_with_constant
                 = {block.getByPosition(arguments[0]),
                    {right.column->cloneResized(input_rows_count), right.type, right.name},
                    block.getByPosition(result)};
-            Base::executeImpl(block_with_constant, {0, 1}, 2, input_rows_count);
-            block.getByPosition(result) = block_with_constant.getByPosition(2);
+
+            FunctionArguments args(block_with_constant);
+            Base::executeImpl(args, {0, 1}, 2, input_rows_count);
+            block.getByPosition(result) = block_with_constant[2];
         }
         else
             Base::executeImpl(block, arguments, result, input_rows_count);
@@ -1242,13 +1247,15 @@ public:
             {
                 auto transform = [&](const Field & point)
                 {
-                    Block block_with_constant
+                    ColumnsWithTypeAndName block_with_constant
                         = {{left.column->cloneResized(1), left.type, left.name},
                            {right.type->createColumnConst(1, point), right.type, right.name},
                            {nullptr, return_type, ""}};
-                    Base::executeImpl(block_with_constant, {0, 1}, 2, 1);
+                    FunctionArguments args(block_with_constant);
+
+                    Base::executeImpl(args, {0, 1}, 2, 1);
                     Field point_transformed;
-                    block_with_constant.getByPosition(2).column->get(0, point_transformed);
+                    block_with_constant[2].column->get(0, point_transformed);
                     return point_transformed;
                 };
                 transform(left_point);
@@ -1277,13 +1284,15 @@ public:
             {
                 auto transform = [&](const Field & point)
                 {
-                    Block block_with_constant
+                    ColumnsWithTypeAndName block_with_constant
                         = {{left.type->createColumnConst(1, point), left.type, left.name},
                            {right.column->cloneResized(1), right.type, right.name},
                            {nullptr, return_type, ""}};
-                    Base::executeImpl(block_with_constant, {0, 1}, 2, 1);
+
+                    FunctionArguments args(block_with_constant);
+                    Base::executeImpl(args, {0, 1}, 2, 1);
                     Field point_transformed;
-                    block_with_constant.getByPosition(2).column->get(0, point_transformed);
+                    block_with_constant[2].column->get(0, point_transformed);
                     return point_transformed;
                 };
 

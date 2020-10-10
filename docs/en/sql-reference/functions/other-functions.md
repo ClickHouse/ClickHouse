@@ -1495,13 +1495,13 @@ Result:
 
 Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings).
 
-**Syntax** 
+**Syntax**
 
 ```sql
-getSetting('custom_setting');    
+getSetting('custom_setting');
 ```
 
-**Parameter** 
+**Parameter**
 
 -   `custom_setting` — The setting name. [String](../../sql-reference/data-types/string.md).
 
@@ -1513,7 +1513,7 @@ getSetting('custom_setting');
 
 ```sql
 SET custom_a = 123;
-SELECT getSetting('custom_a');    
+SELECT getSetting('custom_a');
 ```
 
 **Result**
@@ -1522,13 +1522,13 @@ SELECT getSetting('custom_a');
 123
 ```
 
-**See Also** 
+**See Also**
 
 -   [Custom Settings](../../operations/settings/index.md#custom_settings)
 
 ## isDecimalOverflow {#is-decimal-overflow}
 
-Checks whether the [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) value is out of its (or specified) precision.
+Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is out of its (or specified) precision.
 
 **Syntax**
 
@@ -1536,10 +1536,10 @@ Checks whether the [Decimal](../../sql-reference/data-types/decimal.md#decimalp-
 isDecimalOverflow(d, [p])
 ```
 
-**Parameters** 
+**Parameters**
 
--   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
--   `p` — precision. Optional. If omitted, the initial presicion of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
+-   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
+-   `p` — precision. Optional. If omitted, the initial presicion of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Returned values**
 
@@ -1573,9 +1573,9 @@ Returns number of decimal digits you need to represent the value.
 countDigits(x)
 ```
 
-**Parameters** 
+**Parameters**
 
--   `x` — [Int](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) or [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) value.
+-   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
 
 **Returned value**
 

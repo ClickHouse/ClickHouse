@@ -73,19 +73,10 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric BackgroundMovePoolTask;
-    extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
-
     extern const Metric BackgroundSchedulePoolTask;
-    extern const Metric MemoryTrackingInBackgroundSchedulePool;
-
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
-    extern const Metric MemoryTrackingInBackgroundBufferFlushSchedulePool;
-
     extern const Metric BackgroundDistributedSchedulePoolTask;
-    extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
-
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
-    extern const Metric MemoryTrackingInBackgroundMessageBrokerSchedulePool;
 }
 
 
@@ -1415,7 +1406,6 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
         pool_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
         pool_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
         pool_settings.tasks_metric = CurrentMetrics::BackgroundMovePoolTask;
-        pool_settings.memory_metric = CurrentMetrics::MemoryTrackingInBackgroundMoveProcessingPool;
         shared->background_move_pool.emplace(settings.background_move_pool_size, pool_settings, "BackgroundMovePool", "BgMoveProcPool");
     }
     return *shared->background_move_pool;
@@ -1428,7 +1418,6 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
         shared->buffer_flush_schedule_pool.emplace(
             settings.background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
-            CurrentMetrics::MemoryTrackingInBackgroundBufferFlushSchedulePool,
             "BgBufSchPool");
     return *shared->buffer_flush_schedule_pool;
 }
@@ -1440,7 +1429,6 @@ BackgroundSchedulePool & Context::getSchedulePool()
         shared->schedule_pool.emplace(
             settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
-            CurrentMetrics::MemoryTrackingInBackgroundSchedulePool,
             "BgSchPool");
     return *shared->schedule_pool;
 }
@@ -1452,7 +1440,6 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
         shared->distributed_schedule_pool.emplace(
             settings.background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
-            CurrentMetrics::MemoryTrackingInBackgroundDistributedSchedulePool,
             "BgDistSchPool");
     return *shared->distributed_schedule_pool;
 }
@@ -1464,7 +1451,6 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool()
         shared->message_broker_schedule_pool.emplace(
             settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
-            CurrentMetrics::MemoryTrackingInBackgroundMessageBrokerSchedulePool,
             "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
 }
