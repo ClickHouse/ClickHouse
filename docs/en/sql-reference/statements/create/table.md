@@ -138,8 +138,8 @@ ENGINE = <Engine>
 ...
 ```
 
-If the `Default` codec is specified explicitly, the default compression replaced with current default codec which may dependend on different settings (and properties of data) in runtime. In this case, the default compression is set in the CODEC definition:
-`value UInt64 CODEC(Default)` - the same as lack of codec specification.
+The `Default` codec can be specified to reference default compression which may dependend on different settings (and properties of data) in runtime. 
+Example: `value UInt64 CODEC(Default)` - the same as lack of codec specification.
 
 Also you can remove current CODEC from the column and use default compression from config.xml:
 
@@ -147,7 +147,9 @@ Also you can remove current CODEC from the column and use default compression fr
 ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
-Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`. To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article. One thing to note is that codec can't be applied for ALIAS column type. 
+Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
+
+To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article. One thing to note is that codec can't be applied for ALIAS column type. 
 
 !!! warning "Warning"
     You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
