@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>

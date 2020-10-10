@@ -1,3 +1,4 @@
+#pragma once
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunctionImpl.h>

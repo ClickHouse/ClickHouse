@@ -1,3 +1,4 @@
+#pragma once
 #include <common/DateLUTImpl.h>
 
 #include <DataTypes/DataTypeDate.h>
