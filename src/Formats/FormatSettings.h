@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -44,6 +44,8 @@ struct FormatSettings
         UInt64 max_column_pad_width = 250;
         UInt64 max_value_width = 10000;
         bool color = true;
+
+        bool output_format_pretty_row_numbers = false;
 
         enum class Charset
         {

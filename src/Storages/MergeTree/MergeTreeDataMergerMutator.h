@@ -6,6 +6,7 @@
 #include <functional>
 #include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeType.h>
 
 
@@ -113,6 +114,7 @@ public:
         MergeListEntry & merge_entry,
         TableLockHolder & table_lock_holder,
         time_t time_of_merge,
+        const Context & context,
         const ReservationPtr & space_reservation,
         bool deduplicate);
 
@@ -196,7 +198,8 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values) const;
+        bool need_remove_expired_values,
+        bool need_sync) const;
 
     /// Mutate some columns of source part with mutation_stream
     void mutateSomePartColumns(
@@ -209,7 +212,8 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values) const;
+        bool need_remove_expired_values,
+        bool need_sync) const;
 
     /// Initialize and write to disk new part fields like checksums, columns,
     /// etc.
@@ -225,12 +229,6 @@ public :
       */
     ActionBlocker merges_blocker;
     ActionBlocker ttl_merges_blocker;
-
-    enum class MergeAlgorithm
-    {
-        Horizontal, /// per-row merge of all columns
-        Vertical    /// per-row merge of PK and secondary indices columns, per-column gather for non-PK columns
-    };
 
 private:
 

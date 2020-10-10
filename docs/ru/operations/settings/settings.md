@@ -484,7 +484,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 См. также:
 
--   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
+-   [JOIN strictness](../../sql-reference/statements/select/join.md#join-settings)
 
 ## max\_block\_size {#setting-max_block_size}
 
@@ -1616,6 +1616,63 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   [Обработка значения NULL в операторе IN](../../sql-reference/operators/in.md#in-null-processing)
 
+## low\_cardinality\_max\_dictionary\_size {#low_cardinality_max_dictionary_size}
+
+Задает максимальный размер общего глобального словаря (в строках) для типа данных `LowCardinality`, который может быть записан в файловую систему хранилища. Настройка предотвращает проблемы с оперативной памятью в случае неограниченного увеличения словаря. Все данные, которые не могут быть закодированы из-за ограничения максимального размера словаря, ClickHouse записывает обычным способом.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 8192.
+
+## low\_cardinality\_use\_single\_dictionary\_for\_part {#low_cardinality_use_single_dictionary_for_part}
+
+Включает или выключает использование единого словаря для куска (парта).
+
+По умолчанию сервер ClickHouse следит за размером словарей, и если словарь переполняется, сервер создает следующий. Чтобы запретить создание нескольких словарей, задайте настройку `low_cardinality_use_single_dictionary_for_part = 1`.
+
+Допустимые значения:
+
+-   1 — Создание нескольких словарей для частей данных запрещено.
+-   0 — Создание нескольких словарей для частей данных не запрещено.
+
+Значение по умолчанию: 0.
+
+## low\_cardinality\_allow\_in\_native\_format {#low_cardinality_allow_in_native_format}
+
+Разрешает или запрещает использование типа данных `LowCardinality` с форматом данных [Native](../../interfaces/formats.md#native).
+
+Если использование типа `LowCardinality` ограничено, сервер CLickHouse преобразует столбцы `LowCardinality` в обычные столбцы для запросов `SELECT`, а обычные столбцы - в столбцы `LowCardinality` для запросов `INSERT`.
+
+В основном настройка используется для сторонних клиентов, не поддерживающих тип данных `LowCardinality`.
+
+Допустимые значения:
+
+-   1 — Использование `LowCardinality` не ограничено.
+-   0 — Использование `LowCardinality` ограничено.
+
+Значение по умолчанию: 1.
+
+## allow\_suspicious\_low\_cardinality\_types {#allow_suspicious_low_cardinality_types}
+
+Разрешает или запрещает использование типа данных `LowCardinality` с типами данных с фиксированным размером 8 байт или меньше: числовые типы данных и `FixedString (8_bytes_or_less)`.
+
+Для небольших фиксированных значений использование `LowCardinality` обычно неэффективно, поскольку ClickHouse хранит числовой индекс для каждой строки. В результате:
+
+-   Используется больше дискового пространства.
+-   Потребление ОЗУ увеличивается, в зависимости от размера словаря.
+-   Некоторые функции работают медленнее из-за дополнительных операций кодирования.
+
+Время слияния в таблицах на движке [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) также может увеличиться по описанным выше причинам.
+
+Допустимые значения:
+
+-   1 — Использование `LowCardinality` не ограничено.
+-   0 — Использование `LowCardinality` ограничено.
+
+Значение по умолчанию: 0.
+
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
 Задает количество потоков для выполнения фонового сброса данных в таблицах с движком [Buffer](../../engines/table-engines/special/buffer.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
@@ -1755,6 +1812,60 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   [Секции и настройки запроса CREATE TABLE](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) (настройка `merge_with_ttl_timeout`)
 -   [Table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
+
+## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
+
+Ограничивает длину значения, выводимого в формате [Pretty](../../interfaces/formats.md#pretty). Если значение длиннее указанного количества символов, оно обрезается. 
+
+Возможные значения:
+
+-   Положительное целое число. 
+-   0 — значение обрезается полностью.
+
+Значение по умолчанию: `10000` символов.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SET output_format_pretty_max_value_width = 10;
+SELECT range(number) FROM system.numbers LIMIT 10 FORMAT PrettyCompactNoEscapes;
+```
+Результат:
+
+```text
+┌─range(number)─┐
+│ []            │
+│ [0]           │
+│ [0,1]         │
+│ [0,1,2]       │
+│ [0,1,2,3]     │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+└───────────────┘
+```
+
+Запрос, где длина выводимого значения ограничена 0 символов:
+
+```sql
+SET output_format_pretty_max_value_width = 0;
+SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
+```
+Результат:
+
+```text
+┌─range(number)─┐
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+└───────────────┘
+```
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 

@@ -20,8 +20,10 @@ SRCS(
     getStructureOfRemoteTable.cpp
     IndicesDescription.cpp
     IStorage.cpp
+    JoinSettings.cpp
     KeyDescription.cpp
     LiveView/StorageLiveView.cpp
+    LiveView/TemporaryLiveViewCleaner.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
     MergeTree/BackgroundProcessingPool.cpp
@@ -36,6 +38,7 @@ SRCS(
     MergeTree/KeyCondition.cpp
     MergeTree/LevelMergeSelector.cpp
     MergeTree/localBackup.cpp
+    MergeTree/MergeAlgorithm.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
     MergeTree/MergeList.cpp
@@ -106,6 +109,7 @@ SRCS(
     ReadInOrderOptimizer.cpp
     registerStorages.cpp
     SelectQueryDescription.cpp
+    SetSettings.cpp
     StorageBuffer.cpp
     StorageDictionary.cpp
     StorageDistributed.cpp

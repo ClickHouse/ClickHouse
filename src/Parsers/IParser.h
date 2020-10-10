@@ -4,7 +4,7 @@
 #include <memory>
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>

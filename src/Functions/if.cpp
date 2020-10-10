@@ -52,6 +52,7 @@ struct NumIfImpl
     using ArrayA = typename ColumnVector<A>::Container;
     using ArrayB = typename ColumnVector<B>::Container;
     using ColVecResult = ColumnVector<ResultType>;
+    using Block = FunctionArguments;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
     {
@@ -106,6 +107,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     using ArrayA = typename ColumnDecimal<Decimal<A>>::Container;
     using ArrayB = typename ColumnDecimal<Decimal<B>>::Container;
     using ColVecResult = ColumnDecimal<ResultType>;
+    using Block = FunctionArguments;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
     {
@@ -272,11 +274,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -289,11 +292,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -329,11 +333,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -346,11 +351,12 @@ private:
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
+                auto & arr_res = assert_cast<ColumnArray &>(*res);
 
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(arr_res.getData(), arr_res.getOffsets(), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -527,13 +533,13 @@ private:
             auto * col_res = assert_cast<ColumnArray *>(res.get());
 
             if (col_arr_then && col_arr_else)
-                conditional(GenericArraySource(*col_arr_then), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
+                conditional(GenericArraySource(*col_arr_then), GenericArraySource(*col_arr_else), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
             else if (col_arr_then && col_arr_else_const)
-                conditional(GenericArraySource(*col_arr_then), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(*col_res, rows), cond_data);
+                conditional(GenericArraySource(*col_arr_then), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
             else if (col_arr_then_const && col_arr_else)
-                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
+                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), GenericArraySource(*col_arr_else), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
             else if (col_arr_then_const && col_arr_else_const)
-                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(*col_res, rows), cond_data);
+                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
             else
                 return false;
 
@@ -571,27 +577,28 @@ private:
         const DataTypeTuple & type1 = static_cast<const DataTypeTuple &>(*arg1.type);
         const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
 
-        Block temporary_block;
-        temporary_block.insert(block.getByPosition(arguments[0]));
+        ColumnsWithTypeAndName temporary_block;
+        temporary_block.emplace_back(block.getByPosition(arguments[0]));
 
         size_t tuple_size = type1.getElements().size();
         Columns tuple_columns(tuple_size);
 
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            temporary_block.insert({nullptr,
+            temporary_block.emplace_back(ColumnWithTypeAndName{nullptr,
                 getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
                 {}});
 
-            temporary_block.insert({col1_contents[i], type1.getElements()[i], {}});
-            temporary_block.insert({col2_contents[i], type2.getElements()[i], {}});
+            temporary_block.emplace_back(ColumnWithTypeAndName{col1_contents[i], type1.getElements()[i], {}});
+            temporary_block.emplace_back(ColumnWithTypeAndName{col2_contents[i], type2.getElements()[i], {}});
 
             /// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
-            executeImpl(temporary_block, {0, i + 2, i + 3}, i + 1, input_rows_count);
-            temporary_block.erase(i + 3);
-            temporary_block.erase(i + 2);
+            FunctionArguments args(temporary_block);
+            executeImpl(args, {0, i + 2, i + 3}, i + 1, input_rows_count);
+            temporary_block.erase(temporary_block.begin() + (i + 3));
+            temporary_block.erase(temporary_block.begin() + (i + 2));
 
-            tuple_columns[i] = temporary_block.getByPosition(i + 1).column;
+            tuple_columns[i] = temporary_block[i + 1].column;
         }
 
         /// temporary_block is: cond, res_0, res_1, res_2...
@@ -604,7 +611,6 @@ private:
         const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         /// Convert both columns to the common type (if needed).
-
         const ColumnWithTypeAndName & arg1 = block.getByPosition(arguments[1]);
         const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[2]);
 
@@ -733,7 +739,7 @@ private:
                 throw Exception("Illegal column " + arg_cond.column->getName() + " of " + getName() + " condition",
                                 ErrorCodes::ILLEGAL_COLUMN);
 
-            Block temporary_block
+            ColumnsWithTypeAndName temporary_block
             {
                 { new_cond_column, removeNullable(arg_cond.type), arg_cond.name },
                 column1,
@@ -741,9 +747,10 @@ private:
                 result_column
             };
 
-            executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
+            FunctionArguments args(temporary_block);
+            executeImpl(args, {0, 1, 2}, 3, new_cond_column->size());
 
-            result_column.column = std::move(temporary_block.getByPosition(3).column);
+            result_column.column = std::move(temporary_block[3].column);
             return true;
         }
 
@@ -765,10 +772,22 @@ private:
         return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
     }
 
-    static ColumnPtr getNestedColumn(const ColumnPtr & column)
+    /// Return nested column recursively removing Nullable, examples:
+    /// Nullable(size = 1, Int32(size = 1), UInt8(size = 1)) -> Int32(size = 1)
+    /// Const(size = 0, Nullable(size = 1, Int32(size = 1), UInt8(size = 1))) ->
+    /// Const(size = 0, Int32(size = 1))
+    static ColumnPtr recursiveGetNestedColumnWithoutNullable(const ColumnPtr & column)
     {
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
+        {
+            /// Nullable cannot contain Nullable
             return nullable->getNestedColumnPtr();
+        }
+        else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*column))
+        {
+            /// Save Constant, but remove Nullable
+            return ColumnConst::create(recursiveGetNestedColumnWithoutNullable(column_const->getDataColumnPtr()), column->size());
+        }
 
         return column;
     }
@@ -790,7 +809,7 @@ private:
         ColumnPtr result_null_mask;
 
         {
-            Block temporary_block(
+            ColumnsWithTypeAndName temporary_block(
             {
                 arg_cond,
                 {
@@ -814,24 +833,25 @@ private:
                 }
             });
 
-            executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
+            FunctionArguments args(temporary_block);
+            executeImpl(args, {0, 1, 2}, 3, input_rows_count);
 
-            result_null_mask = temporary_block.getByPosition(3).column;
+            result_null_mask = temporary_block[3].column;
         }
 
         ColumnPtr result_nested_column;
 
         {
-            Block temporary_block(
+            ColumnsWithTypeAndName temporary_block(
             {
                 arg_cond,
                 {
-                    getNestedColumn(arg_then.column),
+                    recursiveGetNestedColumnWithoutNullable(arg_then.column),
                     removeNullable(arg_then.type),
                     ""
                 },
                 {
-                    getNestedColumn(arg_else.column),
+                    recursiveGetNestedColumnWithoutNullable(arg_else.column),
                     removeNullable(arg_else.type),
                     ""
                 },
@@ -842,9 +862,10 @@ private:
                 }
             });
 
-            executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
+            FunctionArguments args(temporary_block);
+            executeImpl(args, {0, 1, 2}, 3, temporary_block.front().column->size());
 
-            result_nested_column = temporary_block.getByPosition(3).column;
+            result_nested_column = temporary_block[3].column;
         }
 
         block.getByPosition(result).column = ColumnNullable::create(

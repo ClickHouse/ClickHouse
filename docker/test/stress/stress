@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from multiprocessing import cpu_count
 from subprocess import Popen, check_call
@@ -28,8 +28,8 @@ def get_options(i):
     options = ""
     if 0 < i:
         options += " --order=random"
-    if i == 1:
-        options += " --atomic-db-engine"
+    if i % 2 == 1:
+        options += " --db-engine=Ordinary"
     return options
 
 
