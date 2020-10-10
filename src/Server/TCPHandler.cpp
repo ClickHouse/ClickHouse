@@ -266,14 +266,13 @@ void TCPHandler::runImpl()
                 /// It is special case for input(), all works for reading data from client will be done in callbacks.
                 auto executor = state.io.pipeline.execute();
                 executor->execute(state.io.pipeline.getNumThreads());
-                state.io.onFinish();
             }
             else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors();
             else if (state.io.in)
                 processOrdinaryQuery();
-            else
-                throw Exception("BlockIO is empty", ErrorCodes::LOGICAL_ERROR);
+
+            state.io.onFinish();
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
@@ -510,7 +509,6 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
     readData(connection_settings);
     state.io.out->writeSuffix();
-    state.io.onFinish();
 }
 
 
@@ -571,8 +569,6 @@ void TCPHandler::processOrdinaryQuery()
 
         sendData({});
     }
-
-    state.io.onFinish();
 
     sendProgress();
 }
@@ -638,8 +634,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
 
         sendData({});
     }
-
-    state.io.onFinish();
 
     sendProgress();
 }

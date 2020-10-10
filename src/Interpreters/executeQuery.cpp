@@ -64,7 +64,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INTO_OUTFILE_NOT_ALLOWED;
-    extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
 }
 
@@ -906,8 +905,6 @@ void executeQuery(
                 executor->execute(pipeline.getNumThreads());
             }
         }
-        else
-            throw Exception("BlockIO is empty", ErrorCodes::LOGICAL_ERROR);
     }
     catch (...)
     {
