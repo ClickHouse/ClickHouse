@@ -13,8 +13,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int SYNTAX_ERROR;
+
+extern const int UNEXPECTED_AST_STRUCTURE;
+
 }
 
 
