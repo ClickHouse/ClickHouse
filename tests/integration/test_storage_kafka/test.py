@@ -1454,8 +1454,15 @@ def test_kafka_virtual_columns2(kafka_cluster):
     assert TSV(result) == TSV(expected)
 
 
-@pytest.mark.timeout(240)
+@pytest.mark.timeout(120)
 def test_kafka_produce_key_timestamp(kafka_cluster):
+
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+
+    topic_list = []
+    topic_list.append(NewTopic(name="insert3", num_partitions=1, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
