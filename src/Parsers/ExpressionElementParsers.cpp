@@ -1075,6 +1075,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             {
                 ++pos;
             }
+            else if (pos->type == TokenType::Colon &&
+	        std::is_same_v<Collection, Map> && arr.size() % 2 == 1)
+            {
+                ++pos;
+            }
             else
             {
                 expected.add(pos, "comma or closing bracket");
@@ -1095,6 +1100,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
 
 template bool ParserCollectionOfLiterals<Array>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 template bool ParserCollectionOfLiterals<Tuple>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+template bool ParserCollectionOfLiterals<Map>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1472,6 +1478,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 {
     return ParserSubquery().parse(pos, node, expected)
         || ParserTupleOfLiterals().parse(pos, node, expected)
+        || ParserMapOfLiterals().parse(pos, node, expected)
         || ParserParenthesisExpression().parse(pos, node, expected)
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)

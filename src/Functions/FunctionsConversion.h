@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -32,6 +33,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
@@ -2175,6 +2177,31 @@ private:
         };
     }
 
+    WrapperType createMapWrapper(const DataTypePtr & from_type_untyped, const DataTypeMap * to_type) const
+    {
+        const auto from_type = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
+        if (!from_type)
+            throw Exception{"CAST AS Map can only be performed between tuple types or from String.\nLeft type: "
+                + from_type_untyped->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+
+        if (from_type->getElements().size() != to_type->getElements().size())
+            throw Exception{"CAST AS Map can only be performed between tuple types with the same number of elements or from String.\n"
+                "Left type: " + from_type->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+
+        return []
+            (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+        {
+            const auto col = block.getByPosition(arguments.front()).column.get();
+            const ColumnMap & column_map = typeid_cast<const ColumnMap &>(*col);
+
+            Columns converted_columns(2);
+            converted_columns[0] = column_map.getColumns()[0];
+            converted_columns[1] = column_map.getColumns()[1];
+
+            block.getByPosition(result).column = ColumnMap::create(converted_columns);
+        };
+    }
+
     template <typename FieldType>
     WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type, bool source_is_nullable) const
     {
@@ -2561,6 +2588,8 @@ private:
                 return createArrayWrapper(from_type, checkAndGetDataType<DataTypeArray>(to_type.get()));
             case TypeIndex::Tuple:
                 return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
+            case TypeIndex::Map:
+                return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
 
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
