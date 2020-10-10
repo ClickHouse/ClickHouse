@@ -36,7 +36,7 @@ namespace
             return std::make_shared<DataTypeUInt8>();
         }
 
-        void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+        void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
         {
             String message;
             if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
@@ -45,10 +45,10 @@ namespace
                 throw Exception(
                     "First argument for function " + getName() + " must be Constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            static auto * log = &Poco::Logger::get("logTrace");
+            static auto * log = &Poco::Logger::get("FunctionLogTrace");
             LOG_TRACE(log, message);
 
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(1, 0);
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0);
         }
     };
 
