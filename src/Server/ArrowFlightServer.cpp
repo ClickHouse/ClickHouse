@@ -1,6 +1,8 @@
 #include "ArrowFlightServer.h"
 #include <arrow/flight/test_util.h> // FIXME: Remove it before merge
 
+#include <memory>
+
 namespace
 {
 
@@ -82,7 +84,7 @@ arrow::Status ArrowFlightServer::ListFlights(
     std::unique_ptr<arrow::flight::FlightListing> * listings)
 {
     std::vector<arrow::flight::FlightInfo> flights = arrow::flight::ExampleFlightInfo();
-    if (criteria && criteria->expression != "") {
+    if (criteria && !criteria->expression.empty()) {
         // For test purposes, if we get criteria, return no results
         flights.clear();
     }
@@ -105,7 +107,7 @@ arrow::Status ArrowFlightServer::GetFlightInfo(
 
     for (const auto& info : flights) {
         if (info.descriptor().Equals(request)) {
-            *out_info = std::unique_ptr<arrow::flight::FlightInfo>(new arrow::flight::FlightInfo(info));
+            *out_info = std::make_unique<arrow::flight::FlightInfo>(info);
             return arrow::Status::OK();
         }
     }
@@ -121,8 +123,7 @@ arrow::Status ArrowFlightServer::GetSchema(
 
     for (const auto& info : flights) {
         if (info.descriptor().Equals(request)) {
-            *schema =
-                std::unique_ptr<arrow::flight::SchemaResult>(new arrow::flight::SchemaResult(info.serialized_schema()));
+            *schema = std::make_unique<arrow::flight::SchemaResult>(info.serialized_schema());
             return arrow::Status::OK();
         }
     }
