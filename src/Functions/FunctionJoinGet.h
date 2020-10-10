@@ -1,6 +1,7 @@
 #include <Functions/IFunctionImpl.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ template <bool or_null>
 class ExecutableFunctionJoinGet final : public IExecutableFunctionImpl
 {
 public:
-    ExecutableFunctionJoinGet(HashJoinPtr join_, const Block & result_block_)
+    ExecutableFunctionJoinGet(HashJoinPtr join_, const DB::Block & result_block_)
         : join(std::move(join_)), result_block(result_block_) {}
 
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
@@ -28,7 +29,7 @@ public:
 
 private:
     HashJoinPtr join;
-    Block result_block;
+    DB::Block result_block;
 };
 
 template <bool or_null>

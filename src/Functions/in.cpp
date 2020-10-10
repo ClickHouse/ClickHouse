@@ -97,7 +97,7 @@ public:
             throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        Block block_of_key_columns;
+        DB::Block block_of_key_columns;
 
         /// First argument may be a tuple or a single column.
         const ColumnWithTypeAndName & left_arg = block.getByPosition(arguments[0]);

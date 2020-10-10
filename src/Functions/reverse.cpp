@@ -72,7 +72,7 @@ public:
         return 1;
     }
 
-    bool isInjective(const Block &) const override
+    bool isInjective(const ColumnsWithTypeAndName &) const override
     {
         return true;
     }

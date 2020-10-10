@@ -117,7 +117,7 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const Block &) const override { return is_injective; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

@@ -53,7 +53,7 @@ namespace
 {
     namespace FunctionEmptyArrayToSingleImpl
     {
-        bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+        bool executeConst(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
         {
             if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
             {
