@@ -218,6 +218,7 @@ private:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
+    /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
     std::vector<std::pair<String, String>> query_id_formats;
 
     void initialize(Poco::Util::Application & self) override
