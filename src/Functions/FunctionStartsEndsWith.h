@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
