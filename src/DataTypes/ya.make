@@ -41,6 +41,7 @@ SRCS(
     IDataType.cpp
     NestedUtils.cpp
     registerDataTypeDateTime.cpp
+    DataTypeMap.cpp
 
 )
 
