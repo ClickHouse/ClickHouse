@@ -21,6 +21,18 @@ namespace ErrorCodes
 namespace
 {
 
+/** Prints amount of seconds in form of:
+  * "1 year, 2 months, 12 days, 3 hours, 1 minute and 33 seconds".
+  * Maximum unit can be specified as a second argument: for example, you can specify "days",
+  * and it will avoid using years and months.
+  *
+  * The length of years and months (and even days in presence of time adjustments) are rough:
+  * year is just 365 days, month is 30.5 days, day is 86400 seconds.
+  *
+  * You may think that the choice of constants and the whole purpose of this function is very ignorant...
+  * And you're right. But actually it's made similar to a random Python library from the internet:
+  * https://github.com/jmoiron/humanize/blob/b37dc30ba61c2446eecb1a9d3e9ac8c9adf00f03/src/humanize/time.py#L462
+  */
 class FunctionFormatReadableTimeDelta : public IFunction
 {
 public:
@@ -89,6 +101,8 @@ public:
         }
 
         Unit max_unit;
+
+        /// Default means "use all available units".
         if (maximum_unit_str.size == 0 || maximum_unit_str == "years")
             max_unit = Years;
         else if (maximum_unit_str == "months")
@@ -117,7 +131,9 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            /// Virtual call is Ok (neglible comparing to the rest of calculations).
             Float64 value = block.getByPosition(arguments[0]).column->getFloat64(i);
+
             bool is_negative = value < 0;
             if (is_negative)
             {
@@ -125,9 +141,10 @@ public:
                 value = -value;
             }
 
+            /// To output separators between parts: ", " and " and ".
             bool has_output = false;
 
-            switch (max_unit)
+            switch (max_unit) /// A kind of Duff Device.
             {
                 case Years:     processUnit(365 * 24 * 3600, " year", 5, value, buf_to, has_output); [[fallthrough]];
                 case Months:    processUnit(30.5 * 24 * 3600, " month", 6, value, buf_to, has_output); [[fallthrough]];
@@ -151,6 +168,7 @@ public:
     {
         if (unlikely(value + 1.0 == value))
         {
+            /// The case when value is too large so exact representation for subsequent smaller units is not possible.
             writeText(std::floor(value / unit_size), buf_to);
             buf_to.write(unit_name, unit_name_size);
             writeChar('s', buf_to);
@@ -163,14 +181,17 @@ public:
 
         if (!num_units)
         {
+            /// Zero units, no need to print. But if it's the last (seconds) and the only unit, print "0 seconds" nevertheless.
             if (unit_size > 1 || has_output)
                 return;
         }
 
+        /// Remaining value to print on next iteration.
         value -= num_units * unit_size;
 
         if (has_output)
         {
+            /// Need delimiter between values. The last delimiter is " and ", all previous are comma.
             if (value < 1)
                 writeCString(" and ", buf_to);
             else
@@ -178,7 +199,9 @@ public:
         }
 
         writeText(num_units, buf_to);
-        buf_to.write(unit_name, unit_name_size);
+        buf_to.write(unit_name, unit_name_size); /// If we just leave strlen(unit_name) here, clang-11 fails to make it compile-time.
+
+        /// How to pronounce: unit vs. units.
         if (num_units != 1)
             writeChar('s', buf_to);
 
