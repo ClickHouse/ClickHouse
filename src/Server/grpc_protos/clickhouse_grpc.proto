@@ -40,4 +40,4 @@ message QueryResponse {
 
 service GRPC {
    rpc Query(stream QueryRequest) returns (stream QueryResponse) {}
-} 
+}

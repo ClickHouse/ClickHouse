@@ -2,26 +2,45 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include "GrpcConnection.grpc.pb.h"
+#include <common/types.h>
 #include <grpc++/server.h>
-
-using GRPCConnection::QueryRequest;
-using GRPCConnection::QueryResponse;
-using GRPCConnection::GRPC;
+#include "clickhouse_grpc.grpc.pb.h"
 
 namespace DB
 {
-
 class WriteBufferFromGRPC : public BufferWithOwnMemory<WriteBuffer>
 {
-protected:
+public:
+    using QueryRequest = GRPCConnection::QueryRequest;
+    using QueryResponse = GRPCConnection::QueryResponse;
 
-    grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest>* responder;
-    void* tag;
+    WriteBufferFromGRPC(
+        grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest> * responder_,
+        void * tag_,
+        std::function<QueryResponse(const String & buffer)> set_response_details_)
+        : responder(responder_), tag(tag_), set_response_details(set_response_details_)
+    {
+    }
+
+    ~WriteBufferFromGRPC() override {}
+    bool onProgress() { return progress; }
+    bool isFinished() { return finished; }
+    void setFinish(bool fl) { finished = fl; }
+    void setResponse(std::function<QueryResponse(const String & buffer)> function) { set_response_details = function; }
+    void finalize() override
+    {
+        progress = false;
+        finished = true;
+        responder->Finish(grpc::Status(), tag);
+    }
+
+protected:
+    grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest> * responder;
+    void * tag;
 
     bool progress = false;
     bool finished = false;
-    std::function<QueryResponse(const String& buffer)> setResposeDetails;
+    std::function<QueryResponse(const String & buffer)> set_response_details;
 
 
     void nextImpl() override
@@ -29,38 +48,8 @@ protected:
         progress = true;
 
         String buffer(working_buffer.begin(), working_buffer.begin() + offset());
-        auto response = setResposeDetails(buffer);
+        auto response = set_response_details(buffer);
         responder->Write(response, tag);
     }
-
-public:
-    WriteBufferFromGRPC(grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest>* responder_, void* tag_, std::function<QueryResponse(const String& buffer)> setResposeDetails_)
-    : responder(responder_), tag(tag_), setResposeDetails(setResposeDetails_)
-    {}
-
-    ~WriteBufferFromGRPC() override {}
-    bool onProgress()
-    {
-        return progress;
-    }
-    bool isFinished()
-    {
-        return finished;
-    }
-    void setFinish(bool fl)
-    {
-        finished = fl;
-    }
-    void setResponse(std::function<QueryResponse(const String& buffer)> function)
-    {
-        setResposeDetails = function;
-    }
-    void finalize() override
-    {
-        progress = false;
-        finished = true;
-        responder->Finish(grpc::Status(), tag);
-    }
 };
-
 }

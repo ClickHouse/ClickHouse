@@ -10,6 +10,7 @@ PEERDIR(
 
 
 SRCS(
+    GRPCServer.cpp
     HTTPHandler.cpp
     HTTPHandlerFactory.cpp
     InterserverIOHTTPHandler.cpp

@@ -112,7 +112,7 @@ add_subdirectory (obfuscator)
 add_subdirectory (install)
 add_subdirectory (git-import)
 
-add_subdirectory (grpc-client)
+#add_subdirectory (grpc-client)
 
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
