@@ -47,7 +47,7 @@ public:
     {
         /// nullIf(col1, col2) == if(col1 = col2, NULL, col1)
 
-        ColumnsWithTypeAndName temp_block = block.data;
+        ColumnsWithTypeAndName temp_block = block;
 
         auto equals_func = FunctionFactory::instance().get("equals", context)->build(
             {temp_block[arguments[0]], temp_block[arguments[1]]});

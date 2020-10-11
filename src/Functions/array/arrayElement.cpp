@@ -835,7 +835,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         perform(source_columns, {0, 1}, 2, builder, input_rows_count);
 
         /// Store the result.
-        const ColumnWithTypeAndName & source_col = source_block[2];
+        const ColumnWithTypeAndName & source_col = source_columns[2];
         ColumnWithTypeAndName & dest_col = block[result];
         dest_col.column = ColumnNullable::create(source_col.column, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
     }

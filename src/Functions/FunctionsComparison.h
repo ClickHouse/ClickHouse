@@ -688,9 +688,9 @@ private:
             using RightDataType = typename Types::RightType;
 
             if (check_decimal_overflow)
-                DecimalComparison<LeftDataType, RightDataType, Op, true>(block.data, result, col_left, col_right);
+                DecimalComparison<LeftDataType, RightDataType, Op, true>(block, result, col_left, col_right);
             else
-                DecimalComparison<LeftDataType, RightDataType, Op, false>(block.data, result, col_left, col_right);
+                DecimalComparison<LeftDataType, RightDataType, Op, false>(block, result, col_left, col_right);
             return true;
         };
 
@@ -861,7 +861,7 @@ private:
 
             executeImpl(tmp_block_columns, {0, 1}, 2, input_rows_count);
 
-            block[result].column = std::move(tmp_block[2].column);
+            block[result].column = std::move(tmp_block_columns[2].column);
         }
 
         return true;
