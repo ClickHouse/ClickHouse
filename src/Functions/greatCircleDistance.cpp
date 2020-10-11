@@ -261,17 +261,17 @@ private:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        const IColumn & col_lon1 = *block.getByPosition(arguments[0]).column;
-        const IColumn & col_lat1 = *block.getByPosition(arguments[1]).column;
-        const IColumn & col_lon2 = *block.getByPosition(arguments[2]).column;
-        const IColumn & col_lat2 = *block.getByPosition(arguments[3]).column;
+        const IColumn & col_lon1 = *block[arguments[0]].column;
+        const IColumn & col_lat1 = *block[arguments[1]].column;
+        const IColumn & col_lon2 = *block[arguments[2]].column;
+        const IColumn & col_lat2 = *block[arguments[3]].column;
 
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             dst_data[row_num] = distance<method>(
                 col_lon1.getFloat32(row_num), col_lat1.getFloat32(row_num),
                 col_lon2.getFloat32(row_num), col_lat2.getFloat32(row_num));
 
-        block.getByPosition(result).column = std::move(dst);
+        block[result].column = std::move(dst);
     }
 };
 
@@ -296,7 +296,7 @@ public:
     #endif
     }
 
-    void executeImpl(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         selector.selectAndExecute(block, arguments, result, input_rows_count);
     }

@@ -220,7 +220,7 @@ public:
     {
         if (input_rows_count == 0)
         {
-            block.getByPosition(result).column = ColumnString::create();
+            block[result].column = ColumnString::create();
             return;
         }
 
@@ -229,7 +229,7 @@ public:
         String dist;
         bool higher_is_better;
 
-        if (const ColumnConst * col_dist = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnConst * col_dist = checkAndGetColumnConst<ColumnString>(block[arguments[0]].column.get()))
         {
             dist = col_dist->getDataAt(0).data;
             dist = Poco::toLower(dist);
@@ -239,12 +239,12 @@ public:
         else
             throw Exception("First argument for function " + getName() + " must be Constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (const ColumnConst * col_higher_is_better = checkAndGetColumnConst<ColumnUInt8>(block.getByPosition(arguments[1]).column.get()))
+        if (const ColumnConst * col_higher_is_better = checkAndGetColumnConst<ColumnUInt8>(block[arguments[1]].column.get()))
             higher_is_better = col_higher_is_better->getBool(0);
         else
             throw Exception("Second argument for function " + getName() + " must be Constatnt boolean", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[2]).column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block[arguments[2]].column.get()))
         {
             if (!col_const_arr)
                 throw Exception("Third argument for function " + getName() + " must be Array of constant strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -259,7 +259,7 @@ public:
             }
         }
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[3]).column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block[arguments[3]].column.get()))
         {
             if (!col_const_arr)
                 throw Exception("Forth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -267,7 +267,7 @@ public:
                 throw Exception("Forth and fifth Argument for function " + getName() + " must be Array of constant Numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[4]).column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block[arguments[4]].column.get()))
         {
             if (!col_const_arr)
                 throw Exception("Fifth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -294,7 +294,7 @@ public:
         auto dst = ColumnString::create();
         std::string result_str = convertToJson(variant_names, variants);
         dst->insertData(result_str.c_str(), result_str.length());
-        block.getByPosition(result).column = std::move(dst);
+        block[result].column = std::move(dst);
     }
 };
 
