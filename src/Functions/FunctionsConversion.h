@@ -2234,7 +2234,7 @@ private:
     }
 
     template <typename ColumnStringType, typename EnumType>
-    WrapperType createStringToEnumWrapper(bool source_is_nullable) const
+    WrapperType createStringToEnumWrapper(ssize_t source_is_nullable) const
     {
         const char * function_name = name;
         return [function_name, source_is_nullable] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
@@ -2248,10 +2248,10 @@ private:
             const ColumnNullable * nullable_col = nullptr;
             if (source_is_nullable)
             {
-                if (block.columns() <= arguments.front() + 1)
+                if (block.size() <= arguments.front() + 1)
                     throw Exception("Not enough columns", ErrorCodes::LOGICAL_ERROR);
 
-                size_t nullable_pos = block.columns() - 1;
+                size_t nullable_pos = block.size() - 1;
                 nullable_col = typeid_cast<const ColumnNullable *>(block[nullable_pos].column.get());
                 if (col && nullable_col && nullable_col->size() != col->size())
                     throw Exception("ColumnNullable is not compatible with original", ErrorCodes::LOGICAL_ERROR);
@@ -2431,7 +2431,7 @@ private:
                 else
                     tmp_block_columns = block.data;
 
-                size_t tmp_res_index = block.columns();
+                size_t tmp_res_index = block.size();
                 tmp_block_columns.emplace_back(ColumnWithTypeAndName {nullptr, nested_type, ""});
                 /// Add original ColumnNullable for createStringToEnumWrapper()
                 if (source_is_nullable)

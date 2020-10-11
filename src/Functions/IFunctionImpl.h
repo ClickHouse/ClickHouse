@@ -32,7 +32,7 @@ public:
     ColumnWithTypeAndName & operator[] (size_t position) { return data[position]; }
     const ColumnWithTypeAndName & operator[] (size_t position) const { return data[position]; }
 
-    size_t columns() const { return data.size(); }
+    size_t size() const { return data.size(); }
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const { return data; }
 
     ColumnsWithTypeAndName & data;
