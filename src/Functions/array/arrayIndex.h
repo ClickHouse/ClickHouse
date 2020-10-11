@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -423,13 +424,13 @@ public:
              * {0, 1, 2, 3, 4}
              * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
              */
-            Block source_block = { {}, {}, {}, {}, {nullptr, block.getByPosition(result).type, ""} };
+            ColumnsWithTypeAndName source_block = { {}, {}, {}, {}, {nullptr, block.getByPosition(result).type, ""} };
 
             if (nullable)
             {
                 const auto & nested_col = nullable->getNestedColumnPtr();
 
-                auto & data = source_block.getByPosition(0);
+                auto & data = source_block[0];
 
                 data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
                 data.type = std::make_shared<DataTypeArray>(
@@ -439,41 +440,42 @@ public:
                         ).getNestedType()
                     ).getNestedType());
 
-                auto & null_map = source_block.getByPosition(2);
+                auto & null_map = source_block[2];
 
                 null_map.column = nullable->getNullMapColumnPtr();
                 null_map.type = std::make_shared<DataTypeUInt8>();
             }
             else
             {
-                auto & data = source_block.getByPosition(0);
+                auto & data = source_block[0];
                 data = block.getByPosition(arguments[0]);
             }
 
             if (arg_nullable)
             {
-                auto & arg = source_block.getByPosition(1);
+                auto & arg = source_block[1];
                 arg.column = arg_nullable->getNestedColumnPtr();
                 arg.type =
                     static_cast<const DataTypeNullable &>(
                         *block.getByPosition(arguments[1]).type
                     ).getNestedType();
 
-                auto & null_map = source_block.getByPosition(3);
+                auto & null_map = source_block[3];
                 null_map.column = arg_nullable->getNullMapColumnPtr();
                 null_map.type = std::make_shared<DataTypeUInt8>();
             }
             else
             {
-                auto & arg = source_block.getByPosition(1);
+                auto & arg = source_block[1];
                 arg = block.getByPosition(arguments[1]);
             }
 
             /// Now perform the function.
-            executeOnNonNullable(source_block, {0, 1, 2, 3}, 4);
+            FunctionArguments source_block_args(source_block);
+            executeOnNonNullable(source_block_args, {0, 1, 2, 3}, 4);
 
             /// Move the result to its final position.
-            const ColumnWithTypeAndName & source_col = source_block.getByPosition(4);
+            const ColumnWithTypeAndName & source_col = source_block[4];
             ColumnWithTypeAndName & dest_col = block.getByPosition(result);
             dest_col.column = std::move(source_col.column);
         }

@@ -401,7 +401,7 @@ void TCPHandler::runImpl()
 
         watch.stop();
 
-        LOG_INFO(log, "Processed in {} sec.", watch.elapsedSeconds());
+        LOG_DEBUG(log, "Processed in {} sec.", watch.elapsedSeconds());
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
@@ -1310,7 +1310,7 @@ void TCPHandler::run()
     {
         runImpl();
 
-        LOG_INFO(log, "Done processing connection.");
+        LOG_DEBUG(log, "Done processing connection.");
     }
     catch (Poco::Exception & e)
     {

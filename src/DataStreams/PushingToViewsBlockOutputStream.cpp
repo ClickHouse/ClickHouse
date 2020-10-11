@@ -1,6 +1,7 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>

@@ -25,7 +25,7 @@ static bool removeInjectiveFunction(ASTPtr & ast, const Context & context, const
     if (func->arguments->children.size() != 1)
         return false;
 
-    if (!function_factory.get(func->name, context)->isInjective(Block{}))
+    if (!function_factory.get(func->name, context)->isInjective({}))
         return false;
 
     ast = func->arguments->children[0];
