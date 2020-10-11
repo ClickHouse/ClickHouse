@@ -52,7 +52,7 @@ struct NumIfImpl
     using ArrayA = typename ColumnVector<A>::Container;
     using ArrayB = typename ColumnVector<B>::Container;
     using ColVecResult = ColumnVector<ResultType>;
-    using Block = FunctionArguments;
+    using Block = ColumnsWithTypeAndName;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
     {
@@ -107,7 +107,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     using ArrayA = typename ColumnDecimal<Decimal<A>>::Container;
     using ArrayB = typename ColumnDecimal<Decimal<B>>::Container;
     using ColVecResult = ColumnDecimal<ResultType>;
-    using Block = FunctionArguments;
+    using Block = ColumnsWithTypeAndName;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
     {
@@ -593,8 +593,7 @@ private:
             temporary_block.emplace_back(ColumnWithTypeAndName{col2_contents[i], type2.getElements()[i], {}});
 
             /// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
-            FunctionArguments args(temporary_block);
-            executeImpl(args, {0, i + 2, i + 3}, i + 1, input_rows_count);
+            executeImpl(temporary_block, {0, i + 2, i + 3}, i + 1, input_rows_count);
             temporary_block.erase(temporary_block.begin() + (i + 3));
             temporary_block.erase(temporary_block.begin() + (i + 2));
 
@@ -747,8 +746,7 @@ private:
                 result_column
             };
 
-            FunctionArguments args(temporary_block);
-            executeImpl(args, {0, 1, 2}, 3, new_cond_column->size());
+            executeImpl(temporary_block, {0, 1, 2}, 3, new_cond_column->size());
 
             result_column.column = std::move(temporary_block[3].column);
             return true;
@@ -833,8 +831,7 @@ private:
                 }
             });
 
-            FunctionArguments args(temporary_block);
-            executeImpl(args, {0, 1, 2}, 3, input_rows_count);
+            executeImpl(temporary_block, {0, 1, 2}, 3, input_rows_count);
 
             result_null_mask = temporary_block[3].column;
         }
@@ -862,8 +859,7 @@ private:
                 }
             });
 
-            FunctionArguments args(temporary_block);
-            executeImpl(args, {0, 1, 2}, 3, temporary_block.front().column->size());
+            executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.front().column->size());
 
             result_nested_column = temporary_block[3].column;
         }

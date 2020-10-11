@@ -24,20 +24,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class FunctionArguments
-{
-public:
-    explicit FunctionArguments(ColumnsWithTypeAndName & arguments) : data(arguments) {}
-
-    ColumnWithTypeAndName & operator[] (size_t position) { return data[position]; }
-    const ColumnWithTypeAndName & operator[] (size_t position) const { return data[position]; }
-
-    size_t size() const { return data.size(); }
-    const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const { return data; }
-
-    ColumnsWithTypeAndName & data;
-};
-
 /// Cache for functions result if it was executed on low cardinality column.
 class ExecutableFunctionLowCardinalityResultCache;
 using ExecutableFunctionLowCardinalityResultCachePtr = std::shared_ptr<ExecutableFunctionLowCardinalityResultCache>;
@@ -45,7 +31,7 @@ using ExecutableFunctionLowCardinalityResultCachePtr = std::shared_ptr<Executabl
 class IExecutableFunctionImpl
 {
 public:
-    using Block = FunctionArguments;
+    using Block = ColumnsWithTypeAndName;
 
     virtual ~IExecutableFunctionImpl() = default;
 
@@ -98,7 +84,7 @@ using ExecutableFunctionImplPtr = std::unique_ptr<IExecutableFunctionImpl>;
 class IFunctionBaseImpl
 {
 public:
-    using Block = FunctionArguments;
+    using Block = ColumnsWithTypeAndName;
 
     virtual ~IFunctionBaseImpl() = default;
 
@@ -143,7 +129,7 @@ using FunctionBaseImplPtr = std::unique_ptr<IFunctionBaseImpl>;
 class IFunctionOverloadResolverImpl
 {
 public:
-    using Block = FunctionArguments;
+    using Block = ColumnsWithTypeAndName;
 
     virtual ~IFunctionOverloadResolverImpl() = default;
 
@@ -211,7 +197,7 @@ using FunctionOverloadResolverImplPtr = std::unique_ptr<IFunctionOverloadResolve
 class IFunction
 {
 public:
-    using Block = FunctionArguments;
+    using Block = ColumnsWithTypeAndName;
 
     virtual ~IFunction() = default;
 

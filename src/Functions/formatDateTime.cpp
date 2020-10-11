@@ -416,10 +416,10 @@ public:
         const DateLUTImpl * time_zone_tmp = nullptr;
         if (castType(block[arguments[0]].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
         {
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block.data, arguments, 2, 0);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
         }
         else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block.data, arguments, 2, 0);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
         else
             time_zone_tmp = &DateLUT::instance();
 

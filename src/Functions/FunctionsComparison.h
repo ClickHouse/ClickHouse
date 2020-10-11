@@ -859,8 +859,7 @@ private:
                 block[result]
             };
 
-            FunctionArguments tmp_block(tmp_block_columns);
-            executeImpl(tmp_block, {0, 1}, 2, input_rows_count);
+            executeImpl(tmp_block_columns, {0, 1}, 2, input_rows_count);
 
             block[result].column = std::move(tmp_block[2].column);
         }

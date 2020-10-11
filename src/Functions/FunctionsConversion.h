@@ -101,7 +101,7 @@ struct ConvertImpl
     using ToFieldType = typename ToDataType::FieldType;
 
     template <typename Additions = void *>
-    static void NO_SANITIZE_UNDEFINED execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/,
+    static void NO_SANITIZE_UNDEFINED execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/,
                         Additions additions [[maybe_unused]] = Additions())
     {
         const ColumnWithTypeAndName & named_from = block[arguments[0]];
@@ -441,7 +441,7 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
 template <typename FieldType, typename Name>
 struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
 {
-    static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+    static void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
         block[result].column = block[arguments[0]].column;
     }
@@ -454,7 +454,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
     using FromFieldType = typename FromDataType::FieldType;
     using ColVecType = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
 
-    static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+    static void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
         const auto & col_with_type_and_name = block[arguments[0]];
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
@@ -463,7 +463,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
         /// For argument of DateTime type, second argument with time zone could be specified.
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
-            time_zone = &extractTimeZoneFromFunctionArguments(block.data, arguments, 1, 0);
+            time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
         if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
         {
@@ -508,7 +508,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 /// Generic conversion of any type to String.
 struct ConvertImplGenericToString
 {
-    static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result)
+    static void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result)
     {
         const auto & col_with_type_and_name = block[arguments[0]];
         const IDataType & type = *col_with_type_and_name.type;
@@ -605,7 +605,7 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
 
 /** Throw exception with verbose message when string value is not parsed completely.
   */
-[[noreturn]] inline void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, FunctionArguments & block, size_t result)
+[[noreturn]] inline void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, ColumnsWithTypeAndName & block, size_t result)
 {
     const IDataType & to_type = *block[result].type;
 
@@ -670,7 +670,7 @@ struct ConvertThroughParsing
     }
 
     template <typename Additions = void *>
-    static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count,
+    static void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count,
                         Additions additions [[maybe_unused]] = Additions())
     {
         using ColVecTo = typename ToDataType::ColumnType;
@@ -687,7 +687,7 @@ struct ConvertThroughParsing
                 local_time_zone = &dt_col->getTimeZone();
             else
             {
-                local_time_zone = &extractTimeZoneFromFunctionArguments(block.data, arguments, 1, 0);
+                local_time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
             }
 
             if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort || parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
@@ -865,7 +865,7 @@ struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedStr
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple.
 struct ConvertImplGenericFromString
 {
-    static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result)
+    static void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result)
     {
         const IColumn & col_from = *block[arguments[0]].column;
         size_t size = col_from.size();
@@ -920,7 +920,7 @@ struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp>
 template <typename T, typename Name>
 struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name>
 {
-    static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+    static void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
         block[result].column = block[arguments[0]].column;
     }
@@ -933,7 +933,7 @@ struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name>
 template <typename Name>
 struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 {
-    static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+    static void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
         if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block[arguments[0]].column.get()))
         {
@@ -1241,7 +1241,7 @@ private:
             return true;
         };
 
-        if (isDateTime64<Name, ToDataType>(block.getColumnsWithTypeAndName(), arguments))
+        if (isDateTime64<Name, ToDataType>(block, arguments))
         {
             /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
             const ColumnWithTypeAndName & scale_column = block[arguments[1]];
@@ -1423,11 +1423,11 @@ public:
                 assert_cast<const ToDataType &>(*removeNullable(block[result].type)).getScale());
         else
         {
-            if (isDateTime64<Name, ToDataType>(block.getColumnsWithTypeAndName(), arguments))
+            if (isDateTime64<Name, ToDataType>(block, arguments))
             {
                 UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
                 if (arguments.size() > 1)
-                    scale = extractToDecimalScale(block.getColumnsWithTypeAndName()[arguments[1]]);
+                    scale = extractToDecimalScale(block[arguments[1]]);
 
                 if (scale == 0)
                     ok = executeInternal<DataTypeDateTime>(block, arguments, result, input_rows_count);
@@ -1952,7 +1952,7 @@ private:
 
         return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
-            function_adaptor->execute(block.data, arguments, result, input_rows_count);
+            function_adaptor->execute(block, arguments, result, input_rows_count);
         };
     }
 
@@ -1966,7 +1966,7 @@ private:
 
         return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
-            function_adaptor->execute(block.data, arguments, result, input_rows_count);
+            function_adaptor->execute(block, arguments, result, input_rows_count);
         };
     }
 
@@ -1994,7 +1994,7 @@ private:
 
         return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
-            function_adaptor->execute(block.data, arguments, result, input_rows_count);
+            function_adaptor->execute(block, arguments, result, input_rows_count);
         };
     }
 
@@ -2162,16 +2162,14 @@ private:
             /// insert column for converted tuple
             element_block_columns.emplace_back(ColumnWithTypeAndName{ nullptr, std::make_shared<DataTypeTuple>(to_element_types), "" });
 
-            FunctionArguments element_block(element_block_columns);
-
             /// invoke conversion for each element
             for (const auto idx_element_wrapper : ext::enumerate(element_wrappers))
-                idx_element_wrapper.second(element_block, { idx_element_wrapper.first },
+                idx_element_wrapper.second(element_block_columns, { idx_element_wrapper.first },
                     tuple_size + idx_element_wrapper.first, input_rows_count);
 
             Columns converted_columns(tuple_size);
             for (size_t i = 0; i < tuple_size; ++i)
-                converted_columns[i] = element_block[tuple_size + i].column;
+                converted_columns[i] = element_block_columns[tuple_size + i].column;
 
             block[result].column = ColumnTuple::create(converted_columns);
         };
@@ -2200,7 +2198,7 @@ private:
 
             return [func_or_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
-                func_or_adaptor->execute(block.data, arguments, result, input_rows_count);
+                func_or_adaptor->execute(block, arguments, result, input_rows_count);
             };
         }
         else
@@ -2427,9 +2425,9 @@ private:
 
                 ColumnsWithTypeAndName tmp_block_columns;
                 if (source_is_nullable)
-                    tmp_block_columns = createBlockWithNestedColumns(block.data, arguments);
+                    tmp_block_columns = createBlockWithNestedColumns(block, arguments);
                 else
-                    tmp_block_columns = block.data;
+                    tmp_block_columns = block;
 
                 size_t tmp_res_index = block.size();
                 tmp_block_columns.emplace_back(ColumnWithTypeAndName {nullptr, nested_type, ""});
@@ -2441,12 +2439,10 @@ private:
                     tmp_block_columns.emplace_back(block[arguments.front()]);
                 }
 
-                FunctionArguments tmp_block(tmp_block_columns);
-
                 /// Perform the requested conversion.
-                wrapper(tmp_block, arguments, tmp_res_index, input_rows_count);
+                wrapper(tmp_block_columns, arguments, tmp_res_index, input_rows_count);
 
-                const auto & tmp_res = tmp_block[tmp_res_index];
+                const auto & tmp_res = tmp_block_columns[tmp_res_index];
 
                 /// May happen in fuzzy tests. For debug purpose.
                 if (!tmp_res.column)
@@ -2462,7 +2458,7 @@ private:
 
             return [wrapper, skip_not_null_check] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
-                auto tmp_block_columns = createBlockWithNestedColumns(block.data, arguments, result);
+                auto tmp_block_columns = createBlockWithNestedColumns(block, arguments, result);
 
                 /// Check that all values are not-NULL.
                 /// Check can be skipped in case if LowCardinality dictionary is transformed.
@@ -2478,9 +2474,8 @@ private:
                                         ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
                 }
 
-                FunctionArguments tmp_block(tmp_block_columns);
-                wrapper(tmp_block, arguments, result, input_rows_count);
-                block[result].column = tmp_block[result].column;
+                wrapper(tmp_block_columns, arguments, result, input_rows_count);
+                block[result].column = tmp_block_columns[result].column;
             };
         }
         else

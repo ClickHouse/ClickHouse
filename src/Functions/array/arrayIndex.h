@@ -470,8 +470,7 @@ public:
             }
 
             /// Now perform the function.
-            FunctionArguments source_block_args(source_block);
-            executeOnNonNullable(source_block_args, {0, 1, 2, 3}, 4);
+            executeOnNonNullable(source_block, {0, 1, 2, 3}, 4);
 
             /// Move the result to its final position.
             const ColumnWithTypeAndName & source_col = source_block[4];
