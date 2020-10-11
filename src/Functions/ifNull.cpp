@@ -67,7 +67,7 @@ public:
 
         /// ifNull(col1, col2) == if(isNotNull(col1), assumeNotNull(col1), col2)
 
-        ColumnsWithTypeAndName temp_block = block.data;
+        ColumnsWithTypeAndName temp_block = block;
 
         size_t is_not_null_pos = temp_block.size();
         temp_block.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});

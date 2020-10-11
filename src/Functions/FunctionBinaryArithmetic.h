@@ -729,7 +729,7 @@ class FunctionBinaryArithmetic : public IFunction
                 {new_block[new_arguments[0]], new_block[new_arguments[1]]};
         auto function = function_builder->build(new_arguments_with_type_and_name);
 
-        function->execute(new_block.data, new_arguments, result, input_rows_count);
+        function->execute(new_block, new_arguments, result, input_rows_count);
         block[result].column = new_block[result].column;
     }
 

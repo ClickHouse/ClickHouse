@@ -43,7 +43,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName temp_block = block.data;
+        ColumnsWithTypeAndName temp_block = block;
 
         auto is_finite = FunctionFactory::instance().get("isFinite", context)->build({temp_block[arguments[0]]});
 

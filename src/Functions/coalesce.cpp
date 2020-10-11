@@ -114,7 +114,7 @@ public:
 
         ColumnNumbers multi_if_args;
 
-        ColumnsWithTypeAndName temp_block_columns = block.data;
+        ColumnsWithTypeAndName temp_block_columns = block;
 
         for (size_t i = 0; i < filtered_args.size(); ++i)
         {
