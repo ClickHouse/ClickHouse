@@ -191,28 +191,28 @@ private:
     {
         /// Materialize the input column and compute the function as usual.
 
-        Block tmp_block;
+        ColumnsWithTypeAndName tmp_block;
         ColumnNumbers tmp_arguments;
 
-        tmp_block.insert(block.getByPosition(arguments[0]));
-        tmp_block.getByPosition(0).column = tmp_block.getByPosition(0).column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
+        tmp_block.emplace_back(block.getByPosition(arguments[0]));
+        tmp_block[0].column = tmp_block[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
         tmp_arguments.push_back(0);
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            tmp_block.insert(block.getByPosition(arguments[i]));
+            tmp_block.emplace_back(block.getByPosition(arguments[i]));
             tmp_arguments.push_back(i);
         }
 
         auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
-                    .build(tmp_block.getColumnsWithTypeAndName());
+                    .build(tmp_block);
 
-        tmp_block.insert(block.getByPosition(result));
+        tmp_block.emplace_back(block.getByPosition(result));
         size_t tmp_result = arguments.size();
 
         impl->execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
 
-        block.getByPosition(result).column = tmp_block.getByPosition(tmp_result).column;
+        block.getByPosition(result).column = tmp_block[tmp_result].column;
     }
 
     template <typename T>

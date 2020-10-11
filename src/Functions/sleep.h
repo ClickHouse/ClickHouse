@@ -1,3 +1,4 @@
+#pragma once
 #include <unistd.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>

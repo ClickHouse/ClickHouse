@@ -97,8 +97,8 @@ public:
         size_t rows = input_rows_count;
         auto res = ColumnInt64::create(rows);
 
-        const DateLUTImpl & timezone_x = extractTimeZoneFromFunctionArguments(block, arguments, 3, 1);
-        const DateLUTImpl & timezone_y = extractTimeZoneFromFunctionArguments(block, arguments, 3, 2);
+        const DateLUTImpl & timezone_x = extractTimeZoneFromFunctionArguments(block.data, arguments, 3, 1);
+        const DateLUTImpl & timezone_y = extractTimeZoneFromFunctionArguments(block.data, arguments, 3, 2);
 
         if (unit == "year" || unit == "yy" || unit == "yyyy")
             dispatchForColumns<ToRelativeYearNumImpl>(x, y, timezone_x, timezone_y, res->getData());

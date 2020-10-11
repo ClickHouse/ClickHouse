@@ -50,7 +50,7 @@ public:
         return std::make_unique<ExecutableFunctionToTypeName>();
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block &, const ColumnNumbers &) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &, const ColumnNumbers &) const override
     {
         return DataTypeString().createColumnConst(1, argument_types.at(0)->getName());
     }

@@ -1,3 +1,4 @@
+#pragma once
 #include <common/DateLUTImpl.h>
 
 #include <DataTypes/DataTypeDate.h>
@@ -304,7 +305,7 @@ private:
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeAddIntervalImpl
 {
-    static void execute(Transform transform, Block & block, const ColumnNumbers & arguments, size_t result)
+    static void execute(Transform transform, FunctionArguments & block, const ColumnNumbers & arguments, size_t result)
     {
         using FromValueType = typename FromDataType::FieldType;
         using FromColumnType = typename FromDataType::ColumnType;
@@ -312,7 +313,7 @@ struct DateTimeAddIntervalImpl
 
         auto op = Adder<Transform>{std::move(transform)};
 
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block.data, arguments, 2, 0);
 
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
 
