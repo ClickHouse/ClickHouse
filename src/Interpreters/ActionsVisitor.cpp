@@ -15,8 +15,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/FieldToDataType.h>
 
-#include <DataStreams/LazyBlockInputStream.h>
-
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 

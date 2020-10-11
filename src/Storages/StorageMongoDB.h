@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <ext/shared_ptr_helper.h>

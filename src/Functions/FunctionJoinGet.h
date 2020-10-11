@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
