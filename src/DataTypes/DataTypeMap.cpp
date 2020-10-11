@@ -29,9 +29,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int EMPTY_DATA_PASSED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int DUPLICATE_COLUMN;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 
