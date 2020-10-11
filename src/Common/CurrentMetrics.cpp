@@ -25,6 +25,7 @@
     M(HTTPConnection, "Number of connections to HTTP server") \
     M(InterserverConnection, "Number of connections from other replicas to fetch parts") \
     M(PostgreSQLConnection, "Number of client connections using PostgreSQL protocol") \
+    M(ArrowFlightConnection, "Number of client connections using Arrow Flight protocol") \
     M(OpenFileForRead, "Number of files open for reading") \
     M(OpenFileForWrite, "Number of files open for writing") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
