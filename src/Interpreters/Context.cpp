@@ -1111,9 +1111,6 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-    if (!client_info.current_query_id.empty())
-        throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
-
     String query_id_to_set = query_id;
 
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
