@@ -255,7 +255,7 @@ private:
                 query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
         }
         if (query_id_formats.empty())
-            query_id_formats.emplace_back("Query id:", " {query_id}");
+            query_id_formats.emplace_back("Query id:", " {query_id}\n");
     }
 
 
