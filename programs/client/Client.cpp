@@ -134,7 +134,6 @@ private:
     bool stdout_is_a_tty = false;        /// stdout is a terminal.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
-    String query_id;                     /// Current query_id.
     String full_query; /// Current query as it was given to the client.
 
     // Current query as it will be sent to the server. It may differ from the
@@ -219,6 +218,8 @@ private:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
+    std::vector<std::pair<String, String>> query_id_formats;
+
     void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
@@ -243,6 +244,17 @@ private:
         /// Set path for format schema files
         if (config().has("format_schema_path"))
             context.setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
+
+        /// Initialize query_id_formats if any
+        if (config().has("query_id_formats"))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config().keys("query_id_formats", keys);
+            for (const auto & name : keys)
+                query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
+        }
+        if (query_id_formats.empty())
+            query_id_formats.emplace_back("Query id:", " {query_id}");
     }
 
 
@@ -559,7 +571,7 @@ private:
 
         if (is_interactive)
         {
-            if (!query_id.empty())
+            if (config().has("query_id"))
                 throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
@@ -665,7 +677,9 @@ private:
         }
         else
         {
-            query_id = config().getString("query_id", "");
+            auto query_id = config().getString("query_id", "");
+            if (!query_id.empty())
+                context.setCurrentQueryId(query_id);
             if (query_fuzzer_runs)
             {
                 nonInteractiveWithFuzzing();
@@ -1274,6 +1288,19 @@ private:
             std_out.next();
         }
 
+        if (is_interactive)
+        {
+            // Generate a new query_id
+            context.setCurrentQueryId("");
+            for (const auto & query_id_format : query_id_formats)
+            {
+                writeString(query_id_format.first, std_out);
+                writeString(fmt::format(query_id_format.second, fmt::arg("query_id", context.getCurrentQueryId())), std_out);
+                writeChar('\n', std_out);
+                std_out.next();
+            }
+        }
+
         watch.restart();
         processed_rows = 0;
         progress.reset();
@@ -1399,7 +1426,7 @@ private:
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query_to_send,
-                    query_id,
+                    context.getCurrentQueryId(),
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
                     &context.getClientInfo(),
@@ -1440,7 +1467,7 @@ private:
         connection->sendQuery(
             connection_parameters.timeouts,
             query_to_send,
-            query_id,
+            context.getCurrentQueryId(),
             QueryProcessingStage::Complete,
             &context.getSettingsRef(),
             &context.getClientInfo(),
