@@ -1200,8 +1200,7 @@ public:
                    block[arguments[0]],
                    block[result]};
 
-            FunctionArguments args(block_with_constant);
-            Base::executeImpl(args, {0, 1}, 2, input_rows_count);
+            Base::executeImpl(block_with_constant, {0, 1}, 2, input_rows_count);
             block[result] = block_with_constant[2];
         }
         else if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
@@ -1211,8 +1210,7 @@ public:
                    {right.column->cloneResized(input_rows_count), right.type, right.name},
                    block[result]};
 
-            FunctionArguments args(block_with_constant);
-            Base::executeImpl(args, {0, 1}, 2, input_rows_count);
+            Base::executeImpl(block_with_constant, {0, 1}, 2, input_rows_count);
             block[result] = block_with_constant[2];
         }
         else
@@ -1251,9 +1249,8 @@ public:
                         = {{left.column->cloneResized(1), left.type, left.name},
                            {right.type->createColumnConst(1, point), right.type, right.name},
                            {nullptr, return_type, ""}};
-                    FunctionArguments args(block_with_constant);
 
-                    Base::executeImpl(args, {0, 1}, 2, 1);
+                    Base::executeImpl(block_with_constant, {0, 1}, 2, 1);
                     Field point_transformed;
                     block_with_constant[2].column->get(0, point_transformed);
                     return point_transformed;
@@ -1289,8 +1286,7 @@ public:
                            {right.column->cloneResized(1), right.type, right.name},
                            {nullptr, return_type, ""}};
 
-                    FunctionArguments args(block_with_constant);
-                    Base::executeImpl(args, {0, 1}, 2, 1);
+                    Base::executeImpl(block_with_constant, {0, 1}, 2, 1);
                     Field point_transformed;
                     block_with_constant[2].column->get(0, point_transformed);
                     return point_transformed;

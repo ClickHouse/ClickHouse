@@ -713,8 +713,7 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
             {temporary_results[i * 2 + 1].type, temporary_results[0].type});
         temporary_results.emplace_back(array_elements_of_tuple_section);
 
-        FunctionArguments tmp_arguments(temporary_results);
-        executeImpl(tmp_arguments, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2, input_rows_count);
+        executeImpl(temporary_results, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2, input_rows_count);
 
         result_tuple_columns.emplace_back(std::move(temporary_results[i * 2 + 2].column));
     }
@@ -833,8 +832,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
             builder.initSource(nullable_col.getNullMapData().data());
         }
 
-        FunctionArguments source_block(source_columns);
-        perform(source_block, {0, 1}, 2, builder, input_rows_count);
+        perform(source_columns, {0, 1}, 2, builder, input_rows_count);
 
         /// Store the result.
         const ColumnWithTypeAndName & source_col = source_block[2];

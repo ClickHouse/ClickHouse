@@ -458,7 +458,7 @@ class Dispatcher
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
-    static void apply(FunctionArguments & block, const ColumnVector<T> * col, Int64 scale_arg, size_t result)
+    static void apply(ColumnsWithTypeAndName & block, const ColumnVector<T> * col, Int64 scale_arg, size_t result)
     {
         auto col_res = ColumnVector<T>::create();
 
@@ -487,7 +487,7 @@ class Dispatcher
         block[result].column = std::move(col_res);
     }
 
-    static void apply(FunctionArguments & block, const ColumnDecimal<T> * col, Int64 scale_arg, size_t result)
+    static void apply(ColumnsWithTypeAndName & block, const ColumnDecimal<T> * col, Int64 scale_arg, size_t result)
     {
         const typename ColumnDecimal<T>::Container & vec_src = col->getData();
 
@@ -501,7 +501,7 @@ class Dispatcher
     }
 
 public:
-    static void apply(FunctionArguments & block, const IColumn * column, Int64 scale_arg, size_t result)
+    static void apply(ColumnsWithTypeAndName & block, const IColumn * column, Int64 scale_arg, size_t result)
     {
         if constexpr (IsNumber<T>)
             apply(block, checkAndGetColumn<ColumnVector<T>>(column), scale_arg, result);

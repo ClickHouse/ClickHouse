@@ -75,7 +75,7 @@ public:
     }
 
     /// Initialize by the function arguments.
-    void init(FunctionArguments & /*block*/, const ColumnNumbers & /*arguments*/) {}
+    void init(ColumnsWithTypeAndName & /*block*/, const ColumnNumbers & /*arguments*/) {}
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
@@ -136,7 +136,7 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void init(FunctionArguments & block, const ColumnNumbers & arguments)
+    void init(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(block[arguments[0]].column.get());
 
@@ -204,7 +204,7 @@ public:
         SplitByCharImpl::checkArguments(arguments);
     }
 
-    void init(FunctionArguments & block, const ColumnNumbers & arguments)
+    void init(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(block[arguments[0]].column.get());
 
@@ -284,7 +284,7 @@ public:
     }
 
     /// Initialize by the function arguments.
-    void init(FunctionArguments & block, const ColumnNumbers & arguments)
+    void init(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(block[arguments[1]].column.get());
 
