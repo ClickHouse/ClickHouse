@@ -64,6 +64,10 @@
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 
+#include <Server/IRoutineServer.h>
+#include <Server/ArrowFlightServer.h>
+#include <Server/HTTPServer.h>
+#include <Server/TCPServer.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -802,7 +806,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         http_params->setTimeout(settings.http_receive_timeout);
         http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-        std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
+        std::vector<std::unique_ptr<IRoutineServer>> servers;
 
         std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -907,8 +911,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                servers.emplace_back(std::make_unique<DB::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for http://{}", address.toString());
@@ -922,7 +925,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                servers.emplace_back(std::make_unique<DB::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for https://{}", address.toString());
@@ -940,7 +943,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                servers.emplace_back(std::make_unique<DB::TCPServer>(
                     new TCPHandlerFactory(*this),
                     server_pool,
                     socket,
@@ -957,7 +960,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                servers.emplace_back(std::make_unique<DB::TCPServer>(
                     new TCPHandlerFactory(*this, /* secure= */ true),
                     server_pool,
                     socket,
@@ -977,7 +980,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                servers.emplace_back(std::make_unique<DB::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for replica communication (interserver): http://{}", address.toString());
@@ -990,7 +993,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                servers.emplace_back(std::make_unique<DB::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver): https://{}", address.toString());
@@ -1007,7 +1010,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
                 socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                servers.emplace_back(std::make_unique<DB::TCPServer>(
                     new MySQLHandlerFactory(*this),
                     server_pool,
                     socket,
@@ -1022,13 +1025,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
                 socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                servers.emplace_back(std::make_unique<DB::TCPServer>(
                     new PostgreSQLHandlerFactory(*this),
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for PostgreSQL compatibility protocol: " + address.toString());
+            });
+
+            create_server("arrow_flight_port", [&](UInt16 port)
+            {
+                auto arrow_flight_server = std::make_unique<DB::ArrowFlightServer>(*this, listen_host, port);
+                std::string location = arrow_flight_server->getLocation();
+                servers.emplace_back(std::move(arrow_flight_server));
+                LOG_INFO(log, "Listening for Arrow Flight compatibility protocol: ", location);
             });
 
             /// Prometheus (if defined and not setup yet with http_port)
@@ -1038,7 +1049,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                servers.emplace_back(std::make_unique<DB::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for Prometheus: http://{}", address.toString());
