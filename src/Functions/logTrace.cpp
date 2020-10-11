@@ -39,7 +39,7 @@ namespace
         void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
         {
             String message;
-            if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+            if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block[arguments[0]].column.get()))
                 message = col->getDataAt(0).data;
             else
                 throw Exception(
@@ -48,7 +48,7 @@ namespace
             static auto * log = &Poco::Logger::get("FunctionLogTrace");
             LOG_TRACE(log, message);
 
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0);
+            block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, 0);
         }
     };
 

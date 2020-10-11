@@ -70,9 +70,9 @@ public:
               *  convert all to non-constant columns,
               *  because many places in code expect all non-constant columns in non-constant tuple.
               */
-            tuple_columns[i] = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
+            tuple_columns[i] = block[arguments[i]].column->convertToFullColumnIfConst();
         }
-        block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
+        block[result].column = ColumnTuple::create(tuple_columns);
     }
 };
 

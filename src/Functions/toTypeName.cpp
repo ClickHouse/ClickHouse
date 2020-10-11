@@ -24,8 +24,8 @@ public:
     /// Execute the function on the block.
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column
-            = DataTypeString().createColumnConst(input_rows_count, block.getByPosition(arguments[0]).type->getName());
+        block[result].column
+            = DataTypeString().createColumnConst(input_rows_count, block[arguments[0]].type->getName());
     }
 };
 

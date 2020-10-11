@@ -56,7 +56,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block[arguments[0]].column.get()))
         {
             auto col_res = ColumnType::create();
 
@@ -75,9 +75,9 @@ public:
                 offset = offsets_from[i];
             }
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
         }
-        else if (const ColumnFixedString * col_from_fixed = typeid_cast<const ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
+        else if (const ColumnFixedString * col_from_fixed = typeid_cast<const ColumnFixedString *>(block[arguments[0]].column.get()))
         {
             auto col_res = ColumnVector<ToFieldType>::create();
 
@@ -97,11 +97,11 @@ public:
                 offset += step;
             }
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
         }
         else
         {
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }

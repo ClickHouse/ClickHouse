@@ -66,13 +66,13 @@ public:
       */
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IColumn * arg_column = block.getByPosition(arguments[0]).column.get();
+        const IColumn * arg_column = block[arguments[0]].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
 
         if (!arg_string)
             throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
+        block[result].column = block[result].type->createColumnConst(
             input_rows_count, macros->getValue(arg_string->getDataAt(0).toString()))->convertToFullColumnIfConst();
     }
 };
