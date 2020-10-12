@@ -7,7 +7,6 @@ namespace DB
 {
 
 /** A stream of blocks from which you can read one block.
-  * Also see BlocksListBlockInputStream.
   */
 class OneBlockInputStream : public IBlockInputStream
 {
