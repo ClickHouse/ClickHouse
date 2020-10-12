@@ -70,8 +70,8 @@ SELECT * FROM out_persons_00825 ORDER BY name LIMIT 1 FORMAT ProtobufSingle SETT
 SELECT 'SQUARES->';
 SELECT * FROM out_squares_00825 ORDER BY number LIMIT 1 FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:NumberAndSquare';
 
--- Code: 158, e.displayText() = DB::Exception: ProtobufSingle can output only single row at a time.
-SELECT * FROM out_persons_00825 ORDER BY name FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:Person'; -- { clientError 158 }
+-- Code: 544, e.displayText() = DB::Exception: The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.
+SELECT * FROM out_persons_00825 ORDER BY name FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:Person'; -- { clientError 544 }
 
 DROP TABLE IF EXISTS out_persons_00825;
 DROP TABLE IF EXISTS out_squares_00825;
