@@ -1,3 +1,4 @@
+#pragma once
 #include <unistd.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
@@ -70,7 +71,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IColumn * col = block.getByPosition(arguments[0]).column.get();
+        const IColumn * col = block[arguments[0]].column.get();
 
         if (!isColumnConst(*col))
             throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
@@ -94,7 +95,7 @@ public:
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, 0u)->convertToFullColumnIfConst();
+        block[result].column = block[result].type->createColumnConst(size, 0u)->convertToFullColumnIfConst();
     }
 };
 

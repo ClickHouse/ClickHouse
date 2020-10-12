@@ -61,7 +61,7 @@ namespace
             String name_,
             const Block & sample_block,
             const Context & context,
-            const ColumnDefaults & column_defaults,
+            const ColumnsDescription & columns,
             UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
             const CompressionMethod compression_method)
@@ -97,7 +97,7 @@ namespace
                 compression_method);
 
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
-            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
+            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
         }
 
         String getName() const override
@@ -217,7 +217,7 @@ Pipe IStorageURLBase::read(
         getName(),
         getHeaderBlock(column_names, metadata_snapshot),
         context,
-        metadata_snapshot->getColumns().getDefaults(),
+        metadata_snapshot->getColumns(),
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(request_uri.getPath(), compression_method)));

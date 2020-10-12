@@ -97,7 +97,6 @@ auto createLocalPipe(
     /* Now we don't need to materialize constants, because RemoteBlockInputStream will ignore constant and take it from header.
      * So, streams from different threads will always have the same header.
      */
-    /// return std::make_shared<MaterializingBlockInputStream>(stream);
 
     pipeline.setMaxThreads(1);
     return QueryPipeline::getPipe(std::move(pipeline));
