@@ -45,7 +45,10 @@ ReplxxLineReader::ReplxxLineReader(
             }
             else
             {
-                rx.history_load(history_file_path);
+                if (!rx.history_load(history_file_path))
+                {
+                    rx.print("Loading history failed: %s\n", strerror(errno));
+                }
 
                 if (flock(history_file_fd, LOCK_UN))
                 {
@@ -115,7 +118,8 @@ void ReplxxLineReader::addToHistory(const String & line)
     rx.history_add(line);
 
     // flush changes to the disk
-    rx.history_save(history_file_path);
+    if (!rx.history_save(history_file_path))
+        rx.print("Saving history failed: %s\n", strerror(errno));
 
     if (locked && 0 != flock(history_file_fd, LOCK_UN))
         rx.print("Unlock of history file failed: %s\n", strerror(errno));
