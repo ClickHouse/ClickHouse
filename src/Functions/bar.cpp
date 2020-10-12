@@ -81,7 +81,7 @@ public:
         if (max_width > 1000)
             throw Exception("Too large max_width.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        const auto & src = *block.getByPosition(arguments[0]).column;
+        const auto & src = *block[arguments[0]].column;
 
         auto res_column = ColumnString::create();
 
@@ -96,11 +96,11 @@ public:
             || executeNumber<Float32>(src, *res_column, min, max, max_width)
             || executeNumber<Float64>(src, *res_column, min, max, max_width))
         {
-            block.getByPosition(result).column = std::move(res_column);
+            block[result].column = std::move(res_column);
         }
         else
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block[arguments[0]].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
@@ -108,7 +108,7 @@ private:
     template <typename T>
     T extractConstant(Block & block, const ColumnNumbers & arguments, size_t argument_pos, const char * which_argument) const
     {
-        const auto & column = *block.getByPosition(arguments[argument_pos]).column;
+        const auto & column = *block[arguments[argument_pos]].column;
 
         if (!isColumnConst(column))
             throw Exception(

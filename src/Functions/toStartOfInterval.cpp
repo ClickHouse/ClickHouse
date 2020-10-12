@@ -228,11 +228,11 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) const override
     {
-        const auto & time_column = block.getByPosition(arguments[0]);
-        const auto & interval_column = block.getByPosition(arguments[1]);
+        const auto & time_column = block[arguments[0]];
+        const auto & interval_column = block[arguments[1]];
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
         auto result_column = dispatchForColumns(time_column, interval_column, time_zone);
-        block.getByPosition(result).column = std::move(result_column);
+        block[result].column = std::move(result_column);
     }
 
     bool hasInformationAboutMonotonicity() const override

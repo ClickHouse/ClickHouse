@@ -115,19 +115,19 @@ public:
                 sliceDynamicOffsetBounded(source, StringSink(*col_res, input_rows_count), *column_start, *column_length);
         }
 
-        block.getByPosition(result).column = std::move(col_res);
+        block[result].column = std::move(col_res);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         size_t number_of_arguments = arguments.size();
 
-        ColumnPtr column_string = block.getByPosition(arguments[0]).column;
-        ColumnPtr column_start = block.getByPosition(arguments[1]).column;
+        ColumnPtr column_string = block[arguments[0]].column;
+        ColumnPtr column_start = block[arguments[1]].column;
         ColumnPtr column_length;
 
         if (number_of_arguments == 3)
-            column_length = block.getByPosition(arguments[2]).column;
+            column_length = block[arguments[2]].column;
 
         const ColumnConst * column_start_const = checkAndGetColumn<ColumnConst>(column_start.get());
         const ColumnConst * column_length_const = nullptr;
@@ -153,7 +153,7 @@ public:
                                 length_value, block, result, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
             else
                 throw Exception(
-                    "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                    "Illegal column " + block[arguments[0]].column->getName() + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
         else
@@ -172,7 +172,7 @@ public:
                                 length_value, block, result, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
             else
                 throw Exception(
-                    "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                    "Illegal column " + block[arguments[0]].column->getName() + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
     }
