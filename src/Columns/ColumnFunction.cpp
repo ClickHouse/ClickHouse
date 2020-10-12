@@ -187,16 +187,16 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         throw Exception("Cannot call function " + function->getName() + " because is has " + toString(args) +
                         "arguments but " + toString(captured) + " columns were captured.", ErrorCodes::LOGICAL_ERROR);
 
-    Block block(captured_columns);
-    block.insert({nullptr, function->getReturnType(), ""});
+    auto columns = captured_columns;
+    columns.emplace_back(ColumnWithTypeAndName {nullptr, function->getReturnType(), ""});
 
     ColumnNumbers arguments(captured_columns.size());
     for (size_t i = 0; i < captured_columns.size(); ++i)
         arguments[i] = i;
 
-    function->execute(block, arguments, captured_columns.size(), size_);
+    function->execute(columns, arguments, captured_columns.size(), size_);
 
-    return block.getByPosition(captured_columns.size());
+    return columns[captured_columns.size()];
 }
 
 }

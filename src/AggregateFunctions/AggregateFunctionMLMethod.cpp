@@ -143,13 +143,13 @@ void LinearModelData::updateState()
 
 void LinearModelData::predict(
     ColumnVector<Float64>::Container & container,
-    Block & block,
+    ColumnsWithTypeAndName & columns,
     size_t offset,
     size_t limit,
     const ColumnNumbers & arguments,
     const Context & context) const
 {
-    gradient_computer->predict(container, block, offset, limit, arguments, weights, bias, context);
+    gradient_computer->predict(container, columns, offset, limit, arguments, weights, bias, context);
 }
 
 void LinearModelData::returnWeights(IColumn & to) const
@@ -449,7 +449,7 @@ void IWeightsUpdater::addToBatch(
 
 void LogisticRegression::predict(
     ColumnVector<Float64>::Container & container,
-    Block & block,
+    ColumnsWithTypeAndName & columns,
     size_t offset,
     size_t limit,
     const ColumnNumbers & arguments,
@@ -457,7 +457,7 @@ void LogisticRegression::predict(
     Float64 bias,
     const Context & /*context*/) const
 {
-    size_t rows_num = block.rows();
+    size_t rows_num = columns[arguments.front()].column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
         throw Exception("Invalid offset and limit for LogisticRegression::predict. "
@@ -468,7 +468,7 @@ void LogisticRegression::predict(
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
-        const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
+        const ColumnWithTypeAndName & cur_col = columns[arguments[i]];
 
         if (!isNativeNumber(cur_col.type))
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
@@ -518,7 +518,7 @@ void LogisticRegression::compute(
 
 void LinearRegression::predict(
     ColumnVector<Float64>::Container & container,
-    Block & block,
+    ColumnsWithTypeAndName & columns,
     size_t offset,
     size_t limit,
     const ColumnNumbers & arguments,
@@ -531,7 +531,7 @@ void LinearRegression::predict(
         throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
     }
 
-    size_t rows_num = block.rows();
+    size_t rows_num = columns[arguments.front()].column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
         throw Exception("Invalid offset and limit for LogisticRegression::predict. "
@@ -542,7 +542,7 @@ void LinearRegression::predict(
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
-        const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
+        const ColumnWithTypeAndName & cur_col = columns[arguments[i]];
 
         if (!isNativeNumber(cur_col.type))
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);

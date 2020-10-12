@@ -31,7 +31,7 @@ class LLVMFunction : public IFunctionBaseImpl
     std::unique_ptr<LLVMModuleState> module_state;
 
 public:
-    LLVMFunction(const ExpressionActions::Actions & actions, const Block & sample_block);
+    LLVMFunction(const ExpressionActions::Actions & actions, const DB::Block & sample_block);
 
     bool isCompilable() const override { return true; }
 
@@ -53,7 +53,7 @@ public:
 
     bool isSuitableForConstantFolding() const override;
 
-    bool isInjective(const Block & sample_block) const override;
+    bool isInjective(const ColumnsWithTypeAndName & sample_block) const override;
 
     bool hasInformationAboutMonotonicity() const override;
 

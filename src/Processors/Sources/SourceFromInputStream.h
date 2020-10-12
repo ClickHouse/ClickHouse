@@ -33,6 +33,7 @@ public:
 
     /// Implementation for methods from ISourceWithProgress.
     void setLimits(const StreamLocalLimits & limits_) final { stream->setLimits(limits_); }
+    void setLeafLimits(const SizeLimits &) final { }
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) final { stream->setQuota(quota_); }
     void setProcessListElement(QueryStatus * elem) final { stream->setProcessListElement(elem); }
     void setProgressCallback(const ProgressCallback & callback) final { stream->setProgressCallback(callback); }

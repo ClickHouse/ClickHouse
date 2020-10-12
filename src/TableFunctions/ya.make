@@ -19,6 +19,7 @@ SRCS(
     TableFunctionInput.cpp
     TableFunctionMerge.cpp
     TableFunctionMySQL.cpp
+    TableFunctionNull.cpp
     TableFunctionNumbers.cpp
     TableFunctionRemote.cpp
     TableFunctionURL.cpp

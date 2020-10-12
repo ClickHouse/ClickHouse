@@ -134,7 +134,6 @@ private:
     bool stdout_is_a_tty = false;        /// stdout is a terminal.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
-    String query_id;                     /// Current query_id.
     String full_query; /// Current query as it was given to the client.
 
     // Current query as it will be sent to the server. It may differ from the
@@ -219,6 +218,9 @@ private:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
+    /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
+    std::vector<std::pair<String, String>> query_id_formats;
+
     void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
@@ -243,6 +245,17 @@ private:
         /// Set path for format schema files
         if (config().has("format_schema_path"))
             context.setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
+
+        /// Initialize query_id_formats if any
+        if (config().has("query_id_formats"))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config().keys("query_id_formats", keys);
+            for (const auto & name : keys)
+                query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
+        }
+        if (query_id_formats.empty())
+            query_id_formats.emplace_back("Query id:", " {query_id}\n");
     }
 
 
@@ -559,7 +572,7 @@ private:
 
         if (is_interactive)
         {
-            if (!query_id.empty())
+            if (config().has("query_id"))
                 throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
@@ -665,7 +678,9 @@ private:
         }
         else
         {
-            query_id = config().getString("query_id", "");
+            auto query_id = config().getString("query_id", "");
+            if (!query_id.empty())
+                context.setCurrentQueryId(query_id);
             if (query_fuzzer_runs)
             {
                 nonInteractiveWithFuzzing();
@@ -701,6 +716,8 @@ private:
             connection_parameters.default_database,
             connection_parameters.user,
             connection_parameters.password,
+            "", /* cluster */
+            "", /* cluster_secret */
             "client",
             connection_parameters.compression,
             connection_parameters.security);
@@ -1165,6 +1182,9 @@ private:
                             dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
                         fuzz_base->dumpTree(std::cerr);
+
+                        fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
+
                         assert(false);
                     }
 
@@ -1267,6 +1287,19 @@ private:
             writeString(full_query, std_out);
             writeChar('\n', std_out);
             std_out.next();
+        }
+
+        if (is_interactive)
+        {
+            // Generate a new query_id
+            context.setCurrentQueryId("");
+            for (const auto & query_id_format : query_id_formats)
+            {
+                writeString(query_id_format.first, std_out);
+                writeString(fmt::format(query_id_format.second, fmt::arg("query_id", context.getCurrentQueryId())), std_out);
+                writeChar('\n', std_out);
+                std_out.next();
+            }
         }
 
         watch.restart();
@@ -1394,7 +1427,7 @@ private:
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query_to_send,
-                    query_id,
+                    context.getCurrentQueryId(),
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
                     &context.getClientInfo(),
@@ -1435,7 +1468,7 @@ private:
         connection->sendQuery(
             connection_parameters.timeouts,
             query_to_send,
-            query_id,
+            context.getCurrentQueryId(),
             QueryProcessingStage::Complete,
             &context.getSettingsRef(),
             &context.getClientInfo(),
@@ -1502,7 +1535,18 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample, columns_description);
+            try
+            {
+                sendDataFrom(data_in, sample, columns_description);
+            }
+            catch (Exception & e)
+            {
+                /// The following query will use data from input
+                //      "INSERT INTO data FORMAT TSV\n " < data.csv
+                //  And may be pretty hard to debug, so add information about data source to make it easier.
+                e.addMessage("data for INSERT was parsed from query");
+                throw;
+            }
             // Remember where the data ended. We use this info later to determine
             // where the next query begins.
             parsed_insert_query->end = data_in.buffer().begin() + data_in.count();
@@ -1510,7 +1554,15 @@ private:
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample, columns_description);
+            try
+            {
+                sendDataFrom(std_in, sample, columns_description);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("data for INSERT was parsed from stdin");
+                throw;
+            }
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
@@ -1531,9 +1583,8 @@ private:
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
 
-        const auto & column_defaults = columns_description.getDefaults();
-        if (!column_defaults.empty())
-            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
+        if (columns_description.hasDefaults())
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, context);
 
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 

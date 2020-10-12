@@ -190,7 +190,9 @@ SRCS(
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
     GatherUtils/createValueSource.cpp
-    GatherUtils/has.cpp
+    GatherUtils/has_all.cpp
+    GatherUtils/has_any.cpp
+    GatherUtils/has_substr.cpp
     GatherUtils/push.cpp
     GatherUtils/resizeConstantSize.cpp
     GatherUtils/resizeDynamicSize.cpp
@@ -265,6 +267,7 @@ SRCS(
     log10.cpp
     log2.cpp
     log.cpp
+    logTrace.cpp
     lowCardinalityIndices.cpp
     lowCardinalityKeys.cpp
     lower.cpp
@@ -386,6 +389,7 @@ SRCS(
     TargetSpecific.cpp
     tgamma.cpp
     throwIf.cpp
+    tid.cpp
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp

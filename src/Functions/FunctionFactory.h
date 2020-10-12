@@ -2,6 +2,7 @@
 
 #include <Functions/IFunctionAdaptors.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Interpreters/Context.h>
 
 #include <functional>
 #include <memory>

@@ -44,7 +44,7 @@ public:
 
         /// Information about different TTLs for part. Can be used by
         /// TTLSelector to assign merges with TTL.
-        MergeTreeDataPartTTLInfos ttl_infos;
+        const MergeTreeDataPartTTLInfos * ttl_infos = nullptr;
 
         /// Part compression codec definition.
         ASTPtr compression_codec_desc;

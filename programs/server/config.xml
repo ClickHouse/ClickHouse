@@ -311,6 +311,28 @@
     <remote_servers incl="clickhouse_remote_servers" >
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
+            <!-- Inter-server per-cluster secret for Distributed queries
+                 default: no secret (no authentication will be performed)
+
+                 If set, then Distributed queries will be validated on shards, so at least:
+                 - such cluster should exist on the shard,
+                 - such cluster should have the same secret.
+
+                 And also (and which is more important), the initial_user will
+                 be used as current user for the query.
+
+                 Right now the protocol is pretty simple and it only takes into account:
+                 - cluster name
+                 - query
+
+                 Also it will be nice if the following will be implemented:
+                 - source hostname (see interserver_http_host), but then it will depends from DNS,
+                   it can use IP address instead, but then the you need to get correct on the initiator node.
+                 - target hostname / ip address (same notes as for source hostname)
+                 - time-based security tokens
+            -->
+            <!-- <secret></secret> -->
+
             <shard>
                 <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <!-- <internal_replication>false</internal_replication> -->
@@ -624,6 +646,9 @@
 
         <!-- Settings from this profile will be used to execute DDL queries -->
         <!-- <profile>default</profile> -->
+
+        <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
+        <!-- <pool_size>1</pool_size> -->
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
