@@ -34,17 +34,19 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl()
 
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_)
-    : ThreadPoolImpl(max_threads_, max_threads_, max_threads_)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, bool shutdown_on_exception_, bool only_log_exceptions_)
+    : ThreadPoolImpl(max_threads_, max_threads_, max_threads_, shutdown_on_exception_, only_log_exceptions_)
 {
 }
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_, bool only_log_exceptions_)
     : max_threads(max_threads_)
     , max_free_threads(max_free_threads_)
     , queue_size(queue_size_)
     , shutdown_on_exception(shutdown_on_exception_)
+    , only_log_exceptions(only_log_exceptions_)
+    , job_metric(std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive)
 {
 }
 
@@ -230,8 +232,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         {
             try
             {
-                CurrentMetrics::Increment metric_active_threads(
-                    std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
+                CurrentMetrics::Increment job_execution_threads(job_metric);
 
                 job();
                 /// job should be reseted before decrementing scheduled_jobs to
@@ -246,8 +247,16 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
                 {
                     std::unique_lock lock(mutex);
-                    if (!first_exception)
-                        first_exception = std::current_exception(); // NOLINT
+                    if (!only_log_exceptions)
+                    {
+                        if (!first_exception)
+                            first_exception = std::current_exception(); // NOLINT
+                    }
+                    else
+                    {
+                        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+                    }
+
                     if (shutdown_on_exception)
                         shutdown = true;
                     --scheduled_jobs;

@@ -9,6 +9,7 @@
 #include <list>
 #include <optional>
 
+#include <Common/CurrentMetrics.h>
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
 #include <ext/scope_guard.h>
@@ -34,10 +35,10 @@ public:
     ThreadPoolImpl();
 
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
-    explicit ThreadPoolImpl(size_t max_threads_);
+    explicit ThreadPoolImpl(size_t max_threads_, bool shutdown_on_exception_ = true, bool only_log_exceptions_ = false);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
-    ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_ = true);
+    ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_ = true, bool only_log_exceptions_ = false);
 
     /// Add new job. Locks until number of scheduled jobs is less than maximum or exception in one of threads was thrown.
     /// If any thread was throw an exception, first exception will be rethrown from this method,
@@ -84,6 +85,8 @@ private:
     size_t scheduled_jobs = 0;
     bool shutdown = false;
     const bool shutdown_on_exception = true;
+    const bool only_log_exceptions = false;
+    CurrentMetrics::Metric job_metric;
 
     struct JobWithPriority
     {
