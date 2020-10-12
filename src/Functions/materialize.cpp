@@ -4,6 +4,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** materialize(x) - materialize the constant
   */
@@ -39,10 +41,11 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        block.getByPosition(result).column = block.getByPosition(arguments[0]).column->convertToFullColumnIfConst();
+        block[result].column = block[arguments[0]].column->convertToFullColumnIfConst();
     }
 };
 
+}
 
 void registerFunctionMaterialize(FunctionFactory & factory)
 {

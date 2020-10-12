@@ -9,6 +9,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Implements the function nullIf which takes 2 arguments and returns
 /// NULL if both arguments have the same value. Otherwise it returns the
@@ -45,35 +47,36 @@ public:
     {
         /// nullIf(col1, col2) == if(col1 = col2, NULL, col1)
 
-        Block temp_block = block;
+        ColumnsWithTypeAndName temp_block = block;
 
         auto equals_func = FunctionFactory::instance().get("equals", context)->build(
-            {temp_block.getByPosition(arguments[0]), temp_block.getByPosition(arguments[1])});
+            {temp_block[arguments[0]], temp_block[arguments[1]]});
 
-        size_t equals_res_pos = temp_block.columns();
-        temp_block.insert({nullptr, equals_func->getReturnType(), ""});
+        size_t equals_res_pos = temp_block.size();
+        temp_block.emplace_back(ColumnWithTypeAndName{nullptr, equals_func->getReturnType(), ""});
 
         equals_func->execute(temp_block, {arguments[0], arguments[1]}, equals_res_pos, input_rows_count);
 
         /// Argument corresponding to the NULL value.
-        size_t null_pos = temp_block.columns();
+        size_t null_pos = temp_block.size();
 
         /// Append a NULL column.
         ColumnWithTypeAndName null_elem;
-        null_elem.type = block.getByPosition(result).type;
+        null_elem.type = block[result].type;
         null_elem.column = null_elem.type->createColumnConstWithDefaultValue(input_rows_count);
         null_elem.name = "NULL";
 
-        temp_block.insert(null_elem);
+        temp_block.emplace_back(null_elem);
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {temp_block.getByPosition(equals_res_pos), temp_block.getByPosition(null_pos), temp_block.getByPosition(arguments[0])});
+            {temp_block[equals_res_pos], temp_block[null_pos], temp_block[arguments[0]]});
         func_if->execute(temp_block, {equals_res_pos, null_pos, arguments[0]}, result, input_rows_count);
 
-        block.getByPosition(result).column = makeNullable(std::move(temp_block.getByPosition(result).column));
+        block[result].column = makeNullable(std::move(temp_block[result].column));
     }
 };
 
+}
 
 void registerFunctionNullIf(FunctionFactory & factory)
 {

@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** Returns whether Thread Fuzzer is effective.
   * It can be used in tests to prevent too long runs.
@@ -36,10 +38,11 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, ThreadFuzzer::instance().isEffective());
+        block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, ThreadFuzzer::instance().isEffective());
     }
 };
 
+}
 
 void registerFunctionHasThreadFuzzer(FunctionFactory & factory)
 {

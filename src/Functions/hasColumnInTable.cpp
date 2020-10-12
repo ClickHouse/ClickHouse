@@ -12,7 +12,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -20,6 +19,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
+namespace
+{
 
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
@@ -88,7 +89,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
 {
     auto get_string_from_block = [&](size_t column_pos) -> String
     {
-        ColumnPtr column = block.getByPosition(column_pos).column;
+        ColumnPtr column = block[column_pos].column;
         const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.get());
         return const_column->getValue<String>();
     };
@@ -137,9 +138,10 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
+    block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
 }
 
+}
 
 void registerFunctionHasColumnInTable(FunctionFactory & factory)
 {

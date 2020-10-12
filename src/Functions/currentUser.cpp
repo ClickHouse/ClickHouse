@@ -7,6 +7,8 @@
 
 namespace DB
 {
+namespace
+{
 
 class FunctionCurrentUser : public IFunction
 {
@@ -41,10 +43,11 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, user_name);
+        block[result].column = DataTypeString().createColumnConst(input_rows_count, user_name);
     }
 };
 
+}
 
 void registerFunctionCurrentUser(FunctionFactory & factory)
 {

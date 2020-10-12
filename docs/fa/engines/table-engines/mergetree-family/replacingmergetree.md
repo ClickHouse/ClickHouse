@@ -33,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **پارامترهای جایگزین**
 
--   `ver` — column with version. Type `UInt*`, `Date`, `DateTime` یا `DateTime64`. پارامتر اختیاری.
+-   `ver` — column with version. Type `UInt*`, `Date` یا `DateTime`. پارامتر اختیاری.
 
     هنگام ادغام, `ReplacingMergeTree` از تمام ردیف ها با همان کلید اصلی تنها یک برگ دارد:
 

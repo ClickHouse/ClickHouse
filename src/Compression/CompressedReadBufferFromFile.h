@@ -28,10 +28,11 @@ private:
     bool nextImpl() override;
 
 public:
-    CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf);
+    CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
 
     CompressedReadBufferFromFile(
-        const std::string & path, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+        const std::string & path, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, bool allow_different_codecs_ = false);
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
 

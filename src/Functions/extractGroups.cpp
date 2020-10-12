@@ -13,12 +13,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
 
 /** Match all groups of given input string with given re, return array of arrays of matches.
  *
@@ -52,8 +53,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr column_haystack = block.getByPosition(arguments[0]).column;
-        const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
+        const ColumnPtr column_haystack = block[arguments[0]].column;
+        const ColumnPtr column_needle = block[arguments[1]].column;
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
@@ -99,9 +100,11 @@ public:
             offsets_data[i] = current_offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 };
+
+}
 
 void registerFunctionExtractGroups(FunctionFactory & factory)
 {

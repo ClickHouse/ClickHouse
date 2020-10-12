@@ -1,7 +1,7 @@
 #pragma once
 
 #include <functional>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>

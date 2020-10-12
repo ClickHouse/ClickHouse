@@ -7,6 +7,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// If value is not Nullable or NULL, wraps it to Nullable.
 class FunctionToNullable : public IFunction
@@ -35,10 +37,11 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        block.getByPosition(result).column = makeNullable(block.getByPosition(arguments[0]).column);
+        block[result].column = makeNullable(block[arguments[0]].column);
     }
 };
 
+}
 
 void registerFunctionToNullable(FunctionFactory & factory)
 {

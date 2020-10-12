@@ -13,6 +13,7 @@
 #include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/DelayedSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace ProfileEvents
 {
@@ -68,14 +69,19 @@ SelectStreamFactory::SelectStreamFactory(
 namespace
 {
 
-QueryPipeline createLocalStream(
+auto createLocalPipe(
     const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
     checkStackSize();
 
-    InterpreterSelectQuery interpreter{query_ast, context, SelectQueryOptions(processed_stage)};
+    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage));
+    auto query_plan = std::make_unique<QueryPlan>();
 
-    auto pipeline = interpreter.execute().pipeline;
+    interpreter.buildQueryPlan(*query_plan);
+    auto pipeline = std::move(*query_plan->buildQueryPipeline());
+
+    /// Avoid going it out-of-scope for EXPLAIN
+    pipeline.addQueryPlan(std::move(query_plan));
 
     pipeline.addSimpleTransform([&](const Block & source_header)
     {
@@ -91,10 +97,9 @@ QueryPipeline createLocalStream(
     /* Now we don't need to materialize constants, because RemoteBlockInputStream will ignore constant and take it from header.
      * So, streams from different threads will always have the same header.
      */
-    /// return std::make_shared<MaterializingBlockInputStream>(stream);
 
     pipeline.setMaxThreads(1);
-    return pipeline;
+    return QueryPipeline::getPipe(std::move(pipeline));
 }
 
 String formattedAST(const ASTPtr & ast)
@@ -130,7 +135,7 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        pipes.emplace_back(QueryPipeline::getPipe(createLocalStream(modified_query_ast, header, context, processed_stage)));
+        pipes.emplace_back(createLocalPipe(modified_query_ast, header, context, processed_stage));
     };
 
     String modified_query = formattedAST(modified_query_ast);
@@ -270,7 +275,7 @@ void SelectStreamFactory::createForShard(
             }
 
             if (try_results.empty() || local_delay < max_remote_delay)
-                return QueryPipeline::getPipe(createLocalStream(modified_query_ast, header, context, stage));
+                return createLocalPipe(modified_query_ast, header, context, stage);
             else
             {
                 std::vector<IConnectionPool::Entry> connections;

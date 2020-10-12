@@ -257,7 +257,8 @@ void TotalsHavingTransform::prepareTotals()
     {
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
         expression->execute(block);
-        totals = Chunk(block.getColumns(), 1);
+        /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
+        totals = Chunk(block.getColumns(), block.rows());
     }
 }
 

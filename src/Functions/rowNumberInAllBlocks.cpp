@@ -7,6 +7,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** Incremental number of row within all blocks passed to this function. */
 class FunctionRowNumberInAllBlocks : public IFunction
@@ -52,7 +54,7 @@ public:
     void executeImplDryRun(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
         auto column = ColumnUInt64::create(input_rows_count);
-        block.getByPosition(result).column = std::move(column);
+        block[result].column = std::move(column);
     }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
@@ -65,10 +67,11 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
             data[i] = current_row_number + i;
 
-        block.getByPosition(result).column = std::move(column);
+        block[result].column = std::move(column);
     }
 };
 
+}
 
 void registerFunctionRowNumberInAllBlocks(FunctionFactory & factory)
 {

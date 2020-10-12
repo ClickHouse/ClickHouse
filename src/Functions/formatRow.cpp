@@ -21,6 +21,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
 }
 
+namespace
+{
 
 /** formatRow(<format>, x, y, ...) is a function that allows you to use RowOutputFormat over
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
@@ -52,9 +54,9 @@ public:
         WriteBufferFromVector buffer(vec);
         ColumnString::Offsets & offsets = col_str->getOffsets();
         offsets.resize(input_rows_count);
-        Block arg_block;
+        DB::Block arg_block;
         for (auto i = 1u; i < arguments.size(); ++i)
-            arg_block.insert(block.getByPosition(arguments[i]));
+            arg_block.insert(block[arguments[i]]);
         materializeBlockInplace(arg_block);
         auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_block, context, [&](const Columns &, size_t row)
         {
@@ -69,7 +71,7 @@ public:
             offsets[row] = buffer.count();
         });
         out->write(arg_block);
-        block.getByPosition(result).column = std::move(col_str);
+        block[result].column = std::move(col_str);
     }
 
 private:
@@ -111,6 +113,8 @@ public:
 private:
     const Context & context;
 };
+
+}
 
 void registerFunctionFormatRow(FunctionFactory & factory)
 {

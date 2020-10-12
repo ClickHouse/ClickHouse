@@ -10,7 +10,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -18,6 +17,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
 
 /** runningAccumulate(agg_state) - takes the states of the aggregate function and returns a column with values,
   * are the result of the accumulation of these states for a set of block lines, from the first to the current line.
@@ -75,10 +76,10 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const ColumnAggregateFunction * column_with_states
-            = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
+            = typeid_cast<const ColumnAggregateFunction *>(&*block[arguments.at(0)].column);
 
         if (!column_with_states)
-            throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
+            throw Exception("Illegal column " + block[arguments.at(0)].column->getName()
                     + " of first argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -86,7 +87,7 @@ public:
         ColumnPtr column_with_groups;
 
         if (arguments.size() == 2)
-            column_with_groups = block.getByPosition(arguments[1]).column;
+            column_with_groups = block[arguments[1]].column;
 
         AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
@@ -129,10 +130,11 @@ public:
             ++row_number;
         }
 
-        block.getByPosition(result).column = std::move(result_column_ptr);
+        block[result].column = std::move(result_column_ptr);
     }
 };
 
+}
 
 void registerFunctionRunningAccumulate(FunctionFactory & factory)
 {

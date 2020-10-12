@@ -52,12 +52,14 @@ namespace DB
             const String & host_,
             UInt16 port_,
             UInt8 db_index_,
+            const String & password_,
             RedisStorageType storage_type_,
             const Block & sample_block_)
             : dict_struct{dict_struct_}
             , host{host_}
             , port{port_}
             , db_index{db_index_}
+            , password{password_}
             , storage_type{storage_type_}
             , sample_block{sample_block_}
             , client{std::make_shared<Poco::Redis::Client>(host, port)}
@@ -78,16 +80,22 @@ namespace DB
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
             // suppose key[0] is primary key, key[1] is secondary key
         }
+        if (!password.empty())
+        {
+            RedisCommand command("AUTH");
+            command << password;
+            String reply = client->execute<String>(command);
+            if (reply != "OK")
+                throw Exception{"Authentication failed with reason "
+                     + reply, ErrorCodes::INTERNAL_REDIS_ERROR};
+        }
 
         if (db_index != 0)
         {
             RedisCommand command("SELECT");
-            // Use poco's Int64, because it is defined as long long, and on
-            // MacOS, for the purposes of template instantiation, this type is
-            // distinct from int64_t, which is our Int64.
-            command << static_cast<Poco::Int64>(db_index);
+            command << std::to_string(db_index);
             String reply = client->execute<String>(command);
-            if (reply != "+OK\r\n")
+            if (reply != "OK")
                 throw Exception{"Selecting database with index " + DB::toString(db_index)
                     + " failed with reason " + reply, ErrorCodes::INTERNAL_REDIS_ERROR};
         }
@@ -104,6 +112,7 @@ namespace DB
             config_.getString(config_prefix_ + ".host"),
             config_.getUInt(config_prefix_ + ".port"),
             config_.getUInt(config_prefix_ + ".db_index", 0),
+            config_.getString(config_prefix_ + ".password",""),
             parseStorageType(config_.getString(config_prefix_ + ".storage_type", "")),
             sample_block_)
     {
@@ -115,6 +124,7 @@ namespace DB
                                     other.host,
                                     other.port,
                                     other.db_index,
+                                    other.password,
                                     other.storage_type,
                                     other.sample_block}
     {

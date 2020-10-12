@@ -22,6 +22,9 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+namespace
+{
+
 class FunctionGeohashesInBox : public IFunction
 {
 public:
@@ -158,12 +161,12 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IColumn * lon_min = block.getByPosition(arguments[0]).column.get();
-        const IColumn * lat_min = block.getByPosition(arguments[1]).column.get();
-        const IColumn * lon_max = block.getByPosition(arguments[2]).column.get();
-        const IColumn * lat_max = block.getByPosition(arguments[3]).column.get();
-        const IColumn * precision = block.getByPosition(arguments[4]).column.get();
-        ColumnPtr & res = block.getByPosition(result).column;
+        const IColumn * lon_min = block[arguments[0]].column.get();
+        const IColumn * lat_min = block[arguments[1]].column.get();
+        const IColumn * lon_max = block[arguments[2]].column.get();
+        const IColumn * lat_max = block[arguments[3]].column.get();
+        const IColumn * precision = block[arguments[4]].column.get();
+        ColumnPtr & res = block[result].column;
 
         if (checkColumn<ColumnVector<Float32>>(lon_min))
             execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
@@ -171,6 +174,8 @@ public:
             execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
     }
 };
+
+}
 
 void registerFunctionGeohashesInBox(FunctionFactory & factory)
 {

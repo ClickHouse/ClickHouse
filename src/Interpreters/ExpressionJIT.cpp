@@ -107,9 +107,9 @@ static ColumnData getColumnData(const IColumn * column)
 static void applyFunction(IFunctionBase & function, Field & value)
 {
     const auto & type = function.getArgumentTypes().at(0);
-    Block block = {{ type->createColumnConst(1, value), type, "x" }, { nullptr, function.getReturnType(), "y" }};
+    ColumnsWithTypeAndName block = {{ type->createColumnConst(1, value), type, "x" }, { nullptr, function.getReturnType(), "y" }};
     function.execute(block, {0}, 1, 1);
-    block.safeGetByPosition(1).column->get(0, value);
+    block[1].column->get(0, value);
 }
 
 static llvm::TargetMachine * getNativeMachine()
@@ -277,7 +277,7 @@ public:
 
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
     {
-        auto col_res = block.getByPosition(result).type->createColumn();
+        auto col_res = block[result].type->createColumn();
 
         if (block_size)
         {
@@ -290,16 +290,16 @@ public:
             std::vector<ColumnData> columns(arguments.size() + 1);
             for (size_t i = 0; i < arguments.size(); ++i)
             {
-                const auto * column = block.getByPosition(arguments[i]).column.get();
+                const auto * column = block[arguments[i]].column.get();
                 if (!column)
-                    throw Exception("Column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Column " + block[arguments[i]].name + " is missing", ErrorCodes::LOGICAL_ERROR);
                 columns[i] = getColumnData(column);
             }
             columns[arguments.size()] = getColumnData(col_res.get());
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
         }
 
-        block.getByPosition(result).column = std::move(col_res);
+        block[result].column = std::move(col_res);
     }
 };
 
@@ -441,7 +441,7 @@ struct LLVMModuleState
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
 };
 
-LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, const Block & sample_block)
+LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, const DB::Block & sample_block)
     : name(actions.back().result_name)
     , module_state(std::make_unique<LLVMModuleState>())
 {
@@ -510,7 +510,7 @@ bool LLVMFunction::isSuitableForConstantFolding() const
     return true;
 }
 
-bool LLVMFunction::isInjective(const Block & sample_block) const
+bool LLVMFunction::isInjective(const ColumnsWithTypeAndName & sample_block) const
 {
     for (const auto & f : originals)
         if (!f->isInjective(sample_block))
@@ -599,7 +599,6 @@ static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependen
             case ExpressionAction::ADD_COLUMN:
             case ExpressionAction::COPY_COLUMN:
             case ExpressionAction::ARRAY_JOIN:
-            case ExpressionAction::JOIN:
             {
                 Names columns = actions[i].getNeededColumns();
                 for (const auto & column : columns)

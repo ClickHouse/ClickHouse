@@ -9,12 +9,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
+
+namespace
+{
 
 /// Returns 1 if argument is zero or NULL.
 /// It can be used to negate filter in WHERE condition.
@@ -49,7 +51,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr & input_column = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & input_column = block[arguments[0]].column;
 
         if (const ColumnNullable * input_column_nullable = checkAndGetColumn<ColumnNullable>(input_column.get()))
         {
@@ -64,7 +66,7 @@ public:
                 {
                     auto res = ColumnUInt8::create(input_rows_count);
                     processNullable(column.getData(), null_map, res->getData(), input_rows_count);
-                    block.getByPosition(result).column = std::move(res);
+                    block[result].column = std::move(res);
                     return true;
                 }))
             {
@@ -81,7 +83,7 @@ public:
                 {
                     auto res = ColumnUInt8::create(input_rows_count);
                     processNotNullable(column.getData(), res->getData(), input_rows_count);
-                    block.getByPosition(result).column = std::move(res);
+                    block[result].column = std::move(res);
                     return true;
                 }))
             {
@@ -107,6 +109,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionIsZeroOrNull(FunctionFactory & factory)
 {

@@ -9,6 +9,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
+
 template <typename ToType, typename Name>
 class ExecutableFunctionRandomConstant : public IExecutableFunctionImpl
 {
@@ -21,7 +24,7 @@ bool useDefaultImplementationForNulls() const override { return false; }
 
     void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
+        block[result].column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
     }
 
 private:
@@ -107,9 +110,10 @@ public:
     }
 };
 
-
 struct NameRandConstant { static constexpr auto name = "randConstant"; };
 using FunctionBuilderRandConstant = RandomConstantOverloadResolver<UInt32, NameRandConstant>;
+
+}
 
 void registerFunctionRandConstant(FunctionFactory & factory)
 {

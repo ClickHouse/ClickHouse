@@ -13,12 +13,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
 
 /** globalVariable('name') - takes constant string argument and returns the value of global variable with that name.
   * It is intended for compatibility with MySQL.
@@ -59,7 +60,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & col = block[arguments[0]];
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();
         auto variable = global_variable_map.find(Poco::toLower(variable_name));
 
@@ -67,7 +68,7 @@ public:
         if (variable != global_variable_map.end())
             val = variable->second.value;
 
-        auto & result_col = block.getByPosition(result);
+        auto & result_col = block[result];
         result_col.column = result_col.type->createColumnConst(input_rows_count, val);
     }
 
@@ -81,6 +82,7 @@ private:
         {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}}, {"version", {std::make_shared<DataTypeString>(), "5.7.30"}}};
 };
 
+}
 
 void registerFunctionGlobalVariable(FunctionFactory & factory)
 {

@@ -11,14 +11,15 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
-    namespace ErrorCodes
-    {
-        extern const int BAD_ARGUMENTS;
-        extern const int ILLEGAL_COLUMN;
-        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    }
-
+namespace
+{
 
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
 * Takes state of aggregate function. Returns result of aggregation (finalized state).
@@ -66,7 +67,7 @@ public:
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
 
-        const auto * model = block.getByPosition(arguments[0]).column.get();
+        const auto * model = block[arguments[0]].column.get();
 
         if (const auto * column_with_states = typeid_cast<const ColumnConst *>(model))
             model = column_with_states->getDataColumnPtr().get();
@@ -74,14 +75,16 @@ public:
         const auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(model);
 
         if (!agg_function)
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = agg_function->predictValues(block, arguments, context);
+        block[result].column = agg_function->predictValues(block, arguments, context);
     }
 
     const Context & context;
 };
+
+}
 
 void registerFunctionEvalMLMethod(FunctionFactory & factory)
 {
