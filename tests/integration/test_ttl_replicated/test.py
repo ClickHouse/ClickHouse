@@ -18,7 +18,7 @@ def started_cluster():
         yield cluster
 
     except Exception as ex:
-        print ex
+        print(ex)
 
     finally:
         cluster.shutdown()
@@ -27,7 +27,6 @@ def started_cluster():
 def drop_table(nodes, table_name):
     for node in nodes:
         node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
-    time.sleep(1)
 
 # Column TTL works only with wide parts, because it's very expensive to apply it for compact parts
 def test_ttl_columns(started_cluster):

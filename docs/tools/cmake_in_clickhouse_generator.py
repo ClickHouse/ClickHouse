@@ -55,7 +55,7 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
         anchor=make_anchor(name),
         name=name,
         path=path,
-        line=line if line > 0 else 1)
+        line=line)
 
     formatted_description: str = "".join(description.split("\n"))
 
@@ -66,8 +66,8 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
 
     entities[name] = path, formatted_entity
 
-def process_file(root_path: str, input_name: str) -> None:
-    with open(os.path.join(root_path, input_name), 'r') as cmake_file:
+def process_file(root_path: str, file_path: str, file_name: str) -> None:
+    with open(os.path.join(file_path, file_name), 'r') as cmake_file:
         contents: str = cmake_file.read()
 
         def get_line_and_comment(target: str) -> Tuple[int, str]:
@@ -75,7 +75,7 @@ def process_file(root_path: str, input_name: str) -> None:
             comment: str = ""
 
             for n, line in enumerate(contents_list):
-                if line.find(target) == -1:
+                if 'option' not in line.lower() or target not in line:
                     continue
 
                 for maybe_comment_line in contents_list[n - 1::-1]:
@@ -84,19 +84,25 @@ def process_file(root_path: str, input_name: str) -> None:
 
                     comment = re.sub("\s*#\s*", "", maybe_comment_line) + " " + comment
 
-                return n, comment
+                # line numbering starts with 1
+                return n + 1, comment
 
         matches: Optional[List[Entity]] = re.findall(cmake_option_regex, contents, re.MULTILINE)
 
+
+        file_rel_path_with_name: str = os.path.join(file_path[len(root_path):], file_name)
+        if file_rel_path_with_name.startswith('/'):
+            file_rel_path_with_name = file_rel_path_with_name[1:]
+
         if matches:
             for entity in matches:
-                build_entity(os.path.join(root_path[6:], input_name), entity, get_line_and_comment(entity[0]))
+                build_entity(file_rel_path_with_name, entity, get_line_and_comment(entity[0]))
 
-def process_folder(root_path:str, name: str) -> None:
+def process_folder(root_path: str, name: str) -> None:
     for root, _, files in os.walk(os.path.join(root_path, name)):
         for f in files:
             if f == "CMakeLists.txt" or ".cmake" in f:
-                process_file(root, f)
+                process_file(root_path, root, f)
 
 def generate_cmake_flags_files() -> None:
     root_path: str = os.path.join(os.path.dirname(__file__), '..', '..')
@@ -105,8 +111,8 @@ def generate_cmake_flags_files() -> None:
     header_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_header.md")
     footer_file_name: str = os.path.join(root_path, "docs/_includes/cmake_in_clickhouse_footer.md")
 
-    process_file(root_path, "CMakeLists.txt")
-    process_file(root_path, "programs/CMakeLists.txt")
+    process_file(root_path, root_path, "CMakeLists.txt")
+    process_file(root_path, os.path.join(root_path, "programs"), "CMakeLists.txt")
 
     process_folder(root_path, "base")
     process_folder(root_path, "cmake")

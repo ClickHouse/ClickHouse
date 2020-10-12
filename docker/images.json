@@ -9,7 +9,8 @@
         "name": "yandex/clickhouse-binary-builder",
         "dependent": [
             "docker/test/split_build_smoke_test",
-            "docker/test/pvs"
+            "docker/test/pvs",
+            "docker/test/codebrowser"
         ]
     },
     "docker/packager/unbundled": {
@@ -131,6 +132,10 @@
     },
     "docker/test/integration/postgresql_java_client": {
         "name": "yandex/clickhouse-postgresql-java-client",
+        "dependent": []
+    },
+    "docker/test/integration/kerberos_kdc": {
+        "name": "yandex/clickhouse-kerberos-kdc",
         "dependent": []
     },
     "docker/test/base": {

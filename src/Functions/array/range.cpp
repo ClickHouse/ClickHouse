@@ -94,7 +94,7 @@ private:
                 out_offsets[row_idx] = offset;
             }
 
-            block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+            block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
             return true;
         }
         else
@@ -157,7 +157,7 @@ private:
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
 
@@ -219,7 +219,7 @@ private:
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
 
@@ -281,7 +281,7 @@ private:
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
 
@@ -347,7 +347,7 @@ private:
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
 
@@ -355,7 +355,7 @@ private:
     {
         if (arguments.size() == 1)
         {
-            const auto * col = block.getByPosition(arguments[0]).column.get();
+            const auto * col = block[arguments[0]].column.get();
             if (!executeInternal<UInt8>(block, col, result) &&
                 !executeInternal<UInt16>(block, col, result) &&
                 !executeInternal<UInt32>(block, col, result) &&
@@ -369,14 +369,14 @@ private:
         Columns columns_holder(3);
         ColumnRawPtrs columns(3);
 
-        const auto return_type = checkAndGetDataType<DataTypeArray>(block.getByPosition(result).type.get())->getNestedType();
+        const auto return_type = checkAndGetDataType<DataTypeArray>(block[result].type.get())->getNestedType();
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             if (i == 1)
-                columns_holder[i] = castColumn(block.getByPosition(arguments[i]), return_type)->convertToFullColumnIfConst();
+                columns_holder[i] = castColumn(block[arguments[i]], return_type)->convertToFullColumnIfConst();
             else
-                columns_holder[i] = castColumn(block.getByPosition(arguments[i]), return_type);
+                columns_holder[i] = castColumn(block[arguments[i]], return_type);
 
             columns[i] = columns_holder[i].get();
         }

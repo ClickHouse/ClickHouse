@@ -199,7 +199,7 @@ private:
         // same offsets as in keys
         to_vals_arr.getOffsets().insert(to_keys_offset.begin(), to_keys_offset.end());
 
-        block.getByPosition(result).column = std::move(res_tuple);
+        block[result].column = std::move(res_tuple);
     }
 
     template <typename KeyType, bool is_str_key>
@@ -228,7 +228,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        const DataTypeTuple * tup_type = checkAndGetDataType<DataTypeTuple>((block.safeGetByPosition(arguments[0])).type.get());
+        const DataTypeTuple * tup_type = checkAndGetDataType<DataTypeTuple>((block[arguments[0]]).type.get());
         const DataTypeArray * key_array_type = checkAndGetDataType<DataTypeArray>(tup_type->getElements()[0].get());
         const DataTypeArray * val_array_type = checkAndGetDataType<DataTypeArray>(tup_type->getElements()[1].get());
 
@@ -243,7 +243,7 @@ private:
         //prepare columns, extract data columns for direct access and put them to the vector
         for (auto arg : arguments)
         {
-            auto & col = block.getByPosition(arg);
+            auto & col = block[arg];
             const ColumnTuple * tup;
             bool is_const = isColumnConst(*col.column);
             if (is_const)
@@ -274,7 +274,7 @@ private:
             args.push_back({key_column, val_column, key_offsets, val_offsets, is_const});
         }
 
-        size_t row_count = block.getByPosition(arguments[0]).column->size();
+        size_t row_count = block[arguments[0]].column->size();
         auto key_type_id = key_array_type->getNestedType()->getTypeId();
 
         switch (key_type_id)
