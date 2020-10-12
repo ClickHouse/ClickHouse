@@ -378,6 +378,57 @@ For other regular expressions, the code is the same as for the ‘match’ funct
 
 The same thing as ‘like’, but negative.
 
+## iLike {#ilike}
+
+Case insensitive variant of function `like`. It should respect UTF-8 and work similar to `positionCaseInsensitiveUTF8`.
+
+**Syntax**
+
+``` sql
+ilike(haystack, pattern)
+```
+
+**Parameters**
+
+-   `haystack` — Input string. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If pattern contains no groups, an exception is thrown. [String](../../sql-reference/syntax.md#syntax-string-literal).
+
+**Returned value(s)**
+
+-   True, if the string matches the supplied pattern.
+-   False, if the string doesn't match the supplied pattern.
+
+**Example**
+
+Input table:
+
+``` text
+┌─id─┬─name─────┬─days─┐
+│  1 │ January  │   31 │
+│  2 │ February │   29 │
+│  3 │ March    │   31 │
+│  4 │ April    │   30 │
+└────┴──────────┴──────┘
+```
+
+Query:
+
+``` sql
+SELECT * FROM Months WHERE ilike(name, '%j%')
+```
+
+Result:
+
+``` text
+┌─id─┬─name────┬─days─┐
+│  1 │ January │   31 │
+└────┴─────────┴──────┘
+```
+
+**See Also**
+
+-   [like](https://clickhouse.tech/docs/en/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+
 ## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 
 Calculates the 4-gram distance between `haystack` and `needle`: counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns float number from 0 to 1 – the closer to zero, the more strings are similar to each other. If the constant `needle` or `haystack` is more than 32Kb, throws an exception. If some of the non-constant `haystack` or `needle` strings are more than 32Kb, the distance is always one.
