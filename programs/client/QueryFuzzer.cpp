@@ -272,9 +272,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * table_expr = typeid_cast<ASTTableExpression *>(ast.get()))
     {
-        fuzz(table_expr->database_and_table_name);
-        fuzz(table_expr->subquery);
-        fuzz(table_expr->table_function);
+        fuzz(table_expr->children);
     }
     else if (auto * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
     {

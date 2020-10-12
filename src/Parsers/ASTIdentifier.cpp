@@ -36,12 +36,15 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_)
     : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     assert(!name_parts.empty());
+    for (const auto & part : name_parts) assert(!part.empty());
 }
 
 void ASTIdentifier::setShortName(const String & new_name)
 {
+    assert(!new_name.empty());
+
     name = new_name;
-    name_parts.clear();
+    name_parts = {new_name};
 
     bool special = semantic->special;
     *semantic = IdentifierSemanticImpl();
@@ -84,13 +87,13 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     }
     else
     {
-        format_element(name);
+        format_element(shortName());
     }
 }
 
 void ASTIdentifier::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    writeString(name, ostr);
+    writeString(fullName(), ostr);
 }
 
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state) const
@@ -126,7 +129,8 @@ StorageID ASTTableIdentifier::getStorageId() const
 
 void ASTTableIdentifier::setDatabase(const String & database)
 {
-    assert(name_parts.size() > 1);
+    assert(!database.empty());
+    assert(!name_parts.empty());
 
     if (name_parts.size() == 1) name_parts.insert(name_parts.begin(), database);
     else name_parts[0] = database;
@@ -136,7 +140,8 @@ void ASTTableIdentifier::setDatabase(const String & database)
 
 void ASTTableIdentifier::setTable(const String & table)
 {
-    assert(name_parts.size() > 1);
+    assert(!table.empty());
+    assert(!name_parts.empty());
 
     name_parts.back() = table;
 
@@ -164,7 +169,7 @@ bool tryGetIdentifierNameInto(const IAST * ast, String & name)
 {
     if (ast)
     {
-        if (const auto * node = ast->as<ASTIdentifier>())
+        if (const auto * node = dynamic_cast<const ASTIdentifier*>(ast))
         {
             name = node->fullName();
             return true;
@@ -176,7 +181,7 @@ bool tryGetIdentifierNameInto(const IAST * ast, String & name)
 void setIdentifierSpecial(ASTPtr & ast)
 {
     if (ast)
-        if (auto * id = ast->as<ASTIdentifier>())
+        if (auto * id = dynamic_cast<ASTIdentifier*>(ast.get()))
             id->semantic->special = true;
 }
 

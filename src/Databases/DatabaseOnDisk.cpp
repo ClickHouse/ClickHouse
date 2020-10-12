@@ -56,7 +56,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     {
         const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
+        StoragePtr storage = factory.get(table_function.name, context)->execute(table_function, context, ast_create_query.table);
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.table, storage};
     }

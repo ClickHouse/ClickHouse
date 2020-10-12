@@ -1,46 +1,37 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/IdentifierSemantic.h>
+
 #include <Interpreters/Context.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getTableExpressions.h>
-
-#include <Common/typeid_cast.h>
-
-#include <Parsers/IAST.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
 
-DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
+DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableIdentifier & identifier, const String & current_database)
 {
     alias = identifier.tryGetAlias();
 
-    auto table_id = IdentifierSemantic::extractDatabaseAndTable(identifier);
+    auto table_id = identifier.getStorageId();
     std::tie(database, table, uuid) = std::tie(table_id.database_name, table_id.table_name, table_id.uuid);
     if (database.empty())
         database = current_database;
 }
 
-DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const String & current_database)
-{
-    const auto * identifier = node->as<ASTIdentifier>();
-    if (!identifier)
-        throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
-
-    *this = DatabaseAndTableWithAlias(*identifier, current_database);
-}
-
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database)
 {
     if (table_expression.database_and_table_name)
-        *this = DatabaseAndTableWithAlias(table_expression.database_and_table_name, current_database);
+        *this = DatabaseAndTableWithAlias(table_expression.database_and_table_name->as<ASTTableIdentifier&>(), current_database);
     else if (table_expression.table_function)
         alias = table_expression.table_function->tryGetAlias();
     else if (table_expression.subquery)
@@ -91,11 +82,10 @@ std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuer
     if (!table_expression)
         return {};
 
-    ASTPtr database_and_table_name = table_expression->database_and_table_name;
-    if (!database_and_table_name || !database_and_table_name->as<ASTIdentifier>())
+    if (!table_expression->database_and_table_name)
         return {};
 
-    return DatabaseAndTableWithAlias(database_and_table_name);
+    return DatabaseAndTableWithAlias(table_expression->database_and_table_name->as<ASTTableIdentifier&>());
 }
 
 }

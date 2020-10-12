@@ -66,6 +66,8 @@ class ASTTableIdentifier : public ASTIdentifier
         explicit ASTTableIdentifier(const StorageID & id);
         ASTTableIdentifier(const String & database, const String & table);
 
+        String getID(char delim) const override { return "TableIdentifier" + (delim + fullName()); }
+
         StorageID getStorageId() const;
 
         void setDatabase(const String & database);

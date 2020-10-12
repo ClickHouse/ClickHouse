@@ -22,14 +22,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StoragePtr TableFunctionInput::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionInput::executeImpl(const ASTFunction & function, const Context & context, const std::string & table_name) const
 {
-    const auto * function = ast_function->as<ASTFunction>();
-
-    if (!function->arguments)
+    if (!function.arguments)
         throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
 
-    auto args = function->arguments->children;
+    auto args = function.arguments->children;
 
     if (args.size() != 1)
         throw Exception("Table function '" + getName() + "' requires exactly 1 argument: structure",

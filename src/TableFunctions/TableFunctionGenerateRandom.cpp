@@ -26,14 +26,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr
+TableFunctionGenerateRandom::executeImpl(const ASTFunction & ast_function, const Context & context, const std::string & table_name) const
 {
-    ASTs & args_func = ast_function->children;
+    const ASTs & args_func = ast_function.children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = args_func.at(0)->children;
+    const ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
         throw Exception("Table function '" + getName() + "' requires at least one argument: "

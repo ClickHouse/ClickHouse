@@ -46,9 +46,9 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
 }
 
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTFunction & function, const Context & context, const std::string & table_name) const
 {
-    ASTs & args_func = ast_function->children;
+    const ASTs & args_func = function.children;
 
     if (args_func.size() != 1)
         throw Exception("Table function 'merge' requires exactly 2 arguments"

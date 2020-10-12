@@ -1,13 +1,15 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Storages/StorageDistributed.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTFunction.h>
+#include <Storages/StorageDistributed.h>
 #include <Common/typeid_cast.h>
 
 
@@ -25,9 +27,9 @@ namespace ErrorCodes
 namespace
 {
 
-StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
+StoragePtr tryGetTable(const ASTTableIdentifier & database_and_table, const Context & context)
 {
-    auto table_id = context.tryResolveStorageID(database_and_table);
+    auto table_id = context.tryResolveStorageID(database_and_table.getStorageId());
     if (!table_id)
         return {};
     return DatabaseCatalog::instance().tryGetTable(table_id, context);
@@ -47,13 +49,12 @@ struct NonGlobalTableData
 
     void visit(ASTTableExpression & node, ASTPtr &)
     {
-        ASTPtr & database_and_table = node.database_and_table_name;
-        if (database_and_table)
-            renameIfNeeded(database_and_table);
+        if (node.database_and_table_name)
+            renameIfNeeded(node.database_and_table_name->as<ASTTableIdentifier&>());
     }
 
 private:
-    void renameIfNeeded(ASTPtr & database_and_table)
+    void renameIfNeeded(ASTTableIdentifier & database_and_table)
     {
         const DistributedProductMode distributed_product_mode = context.getSettingsRef().distributed_product_mode;
 
@@ -97,14 +98,14 @@ private:
             std::string table;
             std::tie(database, table) = checker.getRemoteDatabaseAndTableName(*storage);
 
-            String alias = database_and_table->tryGetAlias();
+            String alias = database_and_table.tryGetAlias();
             if (alias.empty())
                 throw Exception("Distributed table should have an alias when distributed_product_mode set to local",
                                 ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
 
-            renamed_tables.emplace_back(database_and_table->clone());
-            database_and_table->as<ASTTableIdentifier>()->setDatabase(database);
-            database_and_table->as<ASTTableIdentifier>()->setTable(table);
+            renamed_tables.emplace_back(database_and_table.clone());
+            database_and_table.setDatabase(database);
+            database_and_table.setTable(table);
         }
         else
             throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting",
@@ -221,7 +222,7 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
 
     /// If not really distributed table, skip it.
     {
-        StoragePtr storage = tryGetTable(table_expression->database_and_table_name, context);
+        StoragePtr storage = tryGetTable(table_expression->database_and_table_name->as<ASTTableIdentifier&>(), context);
         if (!storage || !checker->hasAtLeastTwoShards(*storage))
             return;
     }

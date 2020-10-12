@@ -27,9 +27,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTFunction & function, const Context & context, const std::string & table_name) const
 {
-    ASTs & args_func = ast_function->children;
+    const ASTs & args_func = function.children;
 
     if (args_func.size() != 1)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -74,9 +74,9 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     ++arg_num;
 
-    const auto * function = args[arg_num]->as<ASTFunction>();
+    const auto * function2 = args[arg_num]->as<ASTFunction>();
 
-    if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
+    if (function2 && TableFunctionFactory::instance().isTableFunctionName(function2->name))
     {
         remote_table_function_ptr = args[arg_num];
         ++arg_num;

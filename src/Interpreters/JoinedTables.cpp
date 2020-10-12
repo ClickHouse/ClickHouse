@@ -159,7 +159,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
         return {};
 
     if (isLeftTableFunction())
-        return context.getQueryContext().executeTableFunction(left_table_expression);
+        return context.getQueryContext().executeTableFunction(left_table_expression->as<ASTFunction&>());
 
     if (left_db_and_table)
     {
@@ -240,7 +240,7 @@ void JoinedTables::rewriteDistributedInAndJoins(ASTPtr & query)
         std::vector<DatabaseAndTableWithAlias> renamed;
         renamed.reserve(ast_tables.size());
         for (auto & ast : ast_tables)
-            renamed.emplace_back(DatabaseAndTableWithAlias(*ast->as<ASTIdentifier>(), database));
+            renamed.emplace_back(DatabaseAndTableWithAlias(ast->as<ASTTableIdentifier&>(), database));
 
         /// Change qualified column names in distributed subqueries using table aliases.
         RenameQualifiedIdentifiersVisitor::Data data(renamed);

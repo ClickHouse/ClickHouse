@@ -138,16 +138,16 @@ void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk &, const A
     if (ast->children.empty())
         throw Exception("Logical error: qualified asterisk must have children", ErrorCodes::LOGICAL_ERROR);
 
-    auto & ident = ast->children[0];
+    auto & ident = ast->children[0]->as<ASTTableIdentifier&>();
 
-    /// @note it could contain table alias as table name.
+    /// NOTE: it could contain table alias as table name.
     DatabaseAndTableWithAlias db_and_table(ident);
 
     for (const auto & known_table : data.tables)
         if (db_and_table.satisfies(known_table.table, true))
             return;
 
-    throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
+    throw Exception("Unknown qualified identifier: " + ident.getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
 void TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & , Data & data)
@@ -176,7 +176,8 @@ void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr
 static void addIdentifier(ASTs & nodes, const DatabaseAndTableWithAlias & table, const String & column_name)
 {
     String table_name = table.getQualifiedNamePrefix(false);
-    auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{table_name, column_name});
+    auto identifier = table_name.empty() ? std::make_shared<ASTIdentifier>(column_name)
+                                         : std::make_shared<ASTIdentifier>(std::vector<String>{table_name, column_name});
     nodes.emplace_back(identifier);
 }
 
@@ -265,7 +266,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
         {
-            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
+            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]->as<ASTTableIdentifier&>());
 
             for (const auto & table : tables_with_columns)
             {

@@ -23,10 +23,10 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr ITableFunctionFileLike::executeImpl(const ASTFunction & function, const Context & context, const std::string & table_name) const
 {
     /// Parse args
-    ASTs & args_func = ast_function->children;
+    const ASTs & args_func = function.children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);

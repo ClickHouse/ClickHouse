@@ -28,14 +28,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr ITableFunctionXDBC::executeImpl(const ASTFunction & function, const Context & context, const std::string & table_name) const
 {
-    const auto & args_func = ast_function->as<ASTFunction &>();
-
-    if (!args_func.arguments)
+    if (!function.arguments)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = args_func.arguments->children;
+    ASTs & args = function.arguments->children;
     if (args.size() != 2 && args.size() != 3)
         throw Exception("Table function '" + getName() + "' requires 2 or 3 arguments: " + getName() + "('DSN', table) or " + getName()
                 + "('DSN', schema, table)",

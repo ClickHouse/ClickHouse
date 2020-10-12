@@ -16,21 +16,19 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StoragePtr TableFunctionView::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionView::executeImpl(const ASTFunction & function, const Context & context, const std::string & table_name) const
 {
-    if (const auto * function = ast_function->as<ASTFunction>())
+    if (auto * select = function.tryGetQueryArgument())
     {
-        if (auto * select = function->tryGetQueryArgument())
-        {
-            auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(function->arguments->children[0] /* ASTPtr */, context);
-            auto columns = ColumnsDescription(sample.getNamesAndTypesList());
-            ASTCreateQuery create;
-            create.select = select;
-            auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns);
-            res->startup();
-            return res;
-        }
+        auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(function.arguments->children[0] /* ASTPtr */, context);
+        auto columns = ColumnsDescription(sample.getNamesAndTypesList());
+        ASTCreateQuery create;
+        create.select = select;
+        auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns);
+        res->startup();
+        return res;
     }
+
     throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
 }
 

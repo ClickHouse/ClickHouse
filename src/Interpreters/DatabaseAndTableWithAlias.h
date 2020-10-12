@@ -1,20 +1,20 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <common/types.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
+#include <common/types.h>
 
 #include <memory>
 #include <optional>
-#include <Core/UUID.h>
 
 
 namespace DB
 {
 
 class ASTSelectQuery;
-class ASTIdentifier;
+class ASTTableIdentifier;
 struct ASTTableExpression;
 class Context;
 
@@ -28,9 +28,8 @@ struct DatabaseAndTableWithAlias
     UUID uuid = UUIDHelpers::Nil;
 
     DatabaseAndTableWithAlias() = default;
-    DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
-    DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
-    DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTTableIdentifier & identifier, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
 
     /// "alias." or "table." if alias is empty
     String getQualifiedNamePrefix(bool with_dot = true) const;

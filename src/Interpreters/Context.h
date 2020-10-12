@@ -46,6 +46,7 @@ namespace zkutil
 namespace DB
 {
 
+class ASTFunction;
 struct ContextShared;
 class Context;
 class ContextAccess;
@@ -347,7 +348,7 @@ public:
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
-    StoragePtr executeTableFunction(const ASTPtr & table_expression);
+    StoragePtr executeTableFunction(const ASTFunction & table_expression);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource();

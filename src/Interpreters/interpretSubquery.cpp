@@ -89,7 +89,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         if (function)
         {
             auto * query_context = const_cast<Context *>(&context.getQueryContext());
-            const auto & storage = query_context->executeTableFunction(table_expression);
+            const auto & storage = query_context->executeTableFunction(*function);
             columns = storage->getInMemoryMetadataPtr()->getColumns().getOrdinary();
             select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression)); // XXX: const_cast should be avoided!
         }

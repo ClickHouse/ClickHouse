@@ -10,6 +10,7 @@
 namespace DB
 {
 
+class ASTFunction;
 class Context;
 
 /** Interface for table functions.
@@ -32,12 +33,12 @@ public:
     virtual std::string getName() const = 0;
 
     /// Create storage according to the query.
-    StoragePtr execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const;
+    StoragePtr execute(const ASTFunction & ast_function, const Context & context, const std::string & table_name) const;
 
-    virtual ~ITableFunction() {}
+    virtual ~ITableFunction() = default;
 
 private:
-    virtual StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const = 0;
+    virtual StoragePtr executeImpl(const ASTFunction & ast_function, const Context & context, const std::string & table_name) const = 0;
     virtual const char * getStorageTypeName() const = 0;
 };
 

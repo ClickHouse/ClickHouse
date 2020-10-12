@@ -32,7 +32,7 @@ def random_str(length=10):
     return ''.join(random.choice(alphabet) for _ in range(length))
 
 
-@pytest.mark.timeout(timeout=10, method='signal')
+@pytest.mark.timeout(timeout=30, method='signal')
 def test_query(bin_prefix, sql_query, standalone_server):
     tcp_port = standalone_server.tcp_port
 

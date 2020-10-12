@@ -13,7 +13,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-StoragePtr ITableFunction::execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr ITableFunction::execute(const ASTFunction & ast_function, const Context & context, const std::string & table_name) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
     context.checkAccess(AccessType::CREATE_TEMPORARY_TABLE | StorageFactory::instance().getSourceAccessType(getStorageTypeName()));

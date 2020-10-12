@@ -1,8 +1,10 @@
 #include <Interpreters/getTableExpressions.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -84,7 +86,7 @@ static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression 
     }
     else if (table_expression.table_function)
     {
-        const auto table_function = table_expression.table_function;
+        const auto & table_function = table_expression.table_function->as<ASTFunction &>();
         auto * query_context = const_cast<Context *>(&context.getQueryContext());
         const auto & function_storage = query_context->executeTableFunction(table_function);
         auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr();
