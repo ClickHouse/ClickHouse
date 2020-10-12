@@ -20,7 +20,6 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
-#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -320,7 +319,7 @@ Pipe StorageS3::read(
             key));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
-    narrowPipe(pipe, num_streams);
+    pipe.resize(num_streams);
     return pipe;
 }
 
