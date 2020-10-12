@@ -21,41 +21,25 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
-                                                       const DataTypes & argument_types,
-                                                       const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertBinary(name, argument_types);
-
-    // default value
-    Float64 significance_level = 0.1;
-    if (parameters.size() > 1)
-    {
-        throw Exception("Aggregate function " + name + " requires one parameter or less.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    }
-
-    if (!parameters.empty())
-    {
-        significance_level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
-    }
+    assertNoParameters(name, parameters);
 
     AggregateFunctionPtr res;
 
     if (isDecimal(argument_types[0]) || isDecimal(argument_types[1]))
     {
-        throw Exception("Aggregate function " + name + " only supports numerical types.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::NOT_IMPLEMENTED);
     }
-
     else
     {
-        res.reset(createWithTwoNumericTypes<AggregateFunctionWelchTTest>(*argument_types[0], *argument_types[1], significance_level,
-                                                                         argument_types, parameters));
+        res.reset(createWithTwoNumericTypes<AggregateFunctionWelchTTest>(*argument_types[0], *argument_types[1], argument_types));
     }
-
 
     if (!res)
     {
-        throw Exception("Aggregate function " + name + " only supports numerical types.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     return res;
