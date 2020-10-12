@@ -112,7 +112,6 @@ def get_db_engine(args):
     return ""   # Will use default engine
 
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
-
     # print(client_options)
 
     if args.database:
@@ -149,10 +148,12 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} < " + pattern
 
     command = pattern.format(**params)
-    #print(command)
+
+    print(command)
 
     proc = Popen(command, shell=True, env=os.environ)
     start_time = datetime.now()
+
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
 
@@ -314,6 +315,7 @@ def run_tests_array(all_tests_with_params):
                     stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
                     proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+
                     if proc.returncode is None:
                         try:
                             proc.kill()
@@ -344,7 +346,7 @@ def run_tests_array(all_tests_with_params):
                             if stderr:
                                 print(stderr.encode('utf-8'))
 
-                            # Stop on fatal errors like segmentation fault. They are send to client via logs.
+                            # Stop on fatal errors like segmentation fault. They are sent to client via logs.
                             if ' <Fatal> ' in stderr:
                                 SERVER_DIED = True
 
@@ -481,7 +483,7 @@ def collect_build_flags(client):
         elif '-fsanitize=memory' in stdout:
             result.append(BuildFlags.MEMORY)
     else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")
@@ -492,7 +494,7 @@ def collect_build_flags(client):
         elif 'RelWithDebInfo' in stdout or 'Release' in stdout:
             result.append(BuildFlags.RELEASE)
     else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
@@ -501,7 +503,7 @@ def collect_build_flags(client):
         if 'ON' in stdout or '1' in stdout:
             result.append(BuildFlags.UNBUNDLED)
     else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.settings WHERE name = 'default_database_engine'")
@@ -510,7 +512,7 @@ def collect_build_flags(client):
         if 'Ordinary' in stdout:
             result.append(BuildFlags.DATABASE_ORDINARY)
     else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     return result
 
@@ -530,8 +532,12 @@ def main(args):
         return stdout.startswith('1')
 
     if not check_server_started(args.client, args.server_check_retries):
-        raise Exception("clickhouse-server is not responding. Cannot execute 'SELECT 1' query.")
+        raise Exception(
+            "Server is not responding. Cannot execute 'SELECT 1' query. \
+            Note: if you are using unbundled mode, you also have to specify -c option.")
+
     build_flags = collect_build_flags(args.client)
+
     if args.use_skip_list:
         tests_to_skip_from_list = collect_tests_to_skip(args.skip_list_path, build_flags)
     else:
@@ -776,8 +782,13 @@ if __name__ == '__main__':
     parser=ArgumentParser(description='ClickHouse functional tests')
     parser.add_argument('-q', '--queries', help='Path to queries dir')
     parser.add_argument('--tmp', help='Path to tmp dir')
-    parser.add_argument('-b', '--binary', default='clickhouse', help='Path to clickhouse binary or name of binary in PATH')
-    parser.add_argument('-c', '--client', help='Client program')
+
+    parser.add_argument('-b', '--binary', default='clickhouse',
+        help='Path to clickhouse (if bundled, clickhouse-server otherwise) binary or name of binary in PATH')
+
+    parser.add_argument('-c', '--client',
+        help='Path to clickhouse-client (if unbundled, useless otherwise) binary of name of binary in PATH')
+
     parser.add_argument('--extract_from_config', help='extract-from-config program')
     parser.add_argument('--configclient', help='Client config (if you use not default ports)')
     parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help='Preprocessed server config')
@@ -851,10 +862,14 @@ if __name__ == '__main__':
     if args.client is None:
         if find_binary(args.binary + '-client'):
             args.client = args.binary + '-client'
+
+            print("Using " + args.client + " as client program (expecting unbundled mode)")
         elif find_binary(args.binary):
             args.client = args.binary + ' client'
+
+            print("Using " + args.client + " as client program (expecting bundled mode)")
         else:
-            print("No 'clickhouse' binary found in PATH", file=sys.stderr)
+            print("No 'clickhouse' or 'clickhouse-client' client binary found", file=sys.stderr)
             parser.print_help()
             exit(1)
 
