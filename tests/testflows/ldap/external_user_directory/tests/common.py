@@ -5,7 +5,7 @@ from contextlib import contextmanager
 import testflows.settings as settings
 from testflows.core import *
 from testflows.asserts import error
-from ldap.authentication.tests.common import getuid, Config, ldap_servers, add_config
+from ldap.authentication.tests.common import getuid, Config, ldap_servers, add_config, restart
 from ldap.authentication.tests.common import xmltree, xml_indent, xml_append, xml_with_utf8
 from ldap.authentication.tests.common import ldap_user, ldap_users, add_user_to_ldap, delete_user_from_ldap
 from ldap.authentication.tests.common import change_user_password_in_ldap, change_user_cn_in_ldap
@@ -194,3 +194,11 @@ def login(servers, directory_server, *users, config=None):
                                 settings=[("user", user["username"]), ("password", user["password"])],
                                 exitcode=user.get("exitcode", None),
                                 message=user.get("message", None))
+
+@TestStep(When)
+@Name("I login as {username} and execute query")
+def login_and_execute_query(self, username, password, exitcode=None, message=None, steps=True, timeout=60):
+    self.context.node.query("SELECT 1",
+        settings=[("user", username), ("password", password)],
+        exitcode=exitcode or 0,
+        message=message, steps=steps, timeout=timeout)

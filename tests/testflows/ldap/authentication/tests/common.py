@@ -47,6 +47,37 @@ ASCII_CHARS = string.ascii_lowercase +  string.ascii_uppercase + string.digits
 def randomword(length, chars=ASCII_CHARS):
     return ''.join(random.choice(chars) for i in range(length))
 
+def restart(node=None, safe=False, timeout=20):
+    """Restart ClickHouse server and wait for config to be reloaded.
+    """
+    with When("I restart ClickHouse server node"):
+        if node is None:
+            node = current().context.node
+
+        with node.cluster.shell(node.name) as bash:
+            bash.expect(bash.prompt)
+
+            with By("closing terminal to the node to be restarted"):
+                bash.close()
+
+            with And("getting current log size"):
+                logsize = \
+                    node.command("ls -s --block-size=1 /var/log/clickhouse-server/clickhouse-server.log").output.split(" ")[
+                    0].strip()
+
+            with And("restarting ClickHouse server"):
+                node.restart(safe=safe)
+
+            with Then("tailing the log file from using previous log size as the offset"):
+                bash.prompt = bash.__class__.prompt
+                bash.open()
+                bash.send(f"tail -c +{logsize} -f /var/log/clickhouse-server/clickhouse-server.log")
+
+            with And("waiting for config reload message in the log file"):
+                bash.expect(
+                    f"ConfigReloader: Loaded config '/etc/clickhouse-server/config.xml', performed update on configuration",
+                    timeout=timeout)
+
 def add_config(config, timeout=20, restart=False):
     """Add dynamic configuration file to ClickHouse.
 

@@ -27,6 +27,7 @@
       * 4.1.1.15 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Parallel.LocalOnly](#rqsrs-009ldapexternaluserdirectoryauthenticationparallellocalonly)
       * 4.1.1.16 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Parallel.LocalAndMultipleLDAP](#rqsrs-009ldapexternaluserdirectoryauthenticationparallellocalandmultipleldap)
       * 4.1.1.17 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Parallel.SameUser](#rqsrs-009ldapexternaluserdirectoryauthenticationparallelsameuser)
+      * 4.1.1.18 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Parallel.DynamicallyAddedAndRemovedUsers](#rqsrs-009ldapexternaluserdirectoryauthenticationparalleldynamicallyaddedandremovedusers)
     * 4.1.2 [Connection](#connection)
       * 4.1.2.1 [RQ.SRS-009.LDAP.ExternalUserDirectory.Connection.Protocol.PlainText](#rqsrs-009ldapexternaluserdirectoryconnectionprotocolplaintext)
       * 4.1.2.2 [RQ.SRS-009.LDAP.ExternalUserDirectory.Connection.Protocol.TLS](#rqsrs-009ldapexternaluserdirectoryconnectionprotocoltls)
@@ -41,6 +42,8 @@
   * 4.2 [Specific](#specific)
     * 4.2.1 [User Discovery](#user-discovery)
       * 4.2.1.1 [RQ.SRS-009.LDAP.ExternalUserDirectory.Users.Lookup.Priority](#rqsrs-009ldapexternaluserdirectoryuserslookuppriority)
+      * 4.2.1.2 [RQ.SRS-009.LDAP.ExternalUserDirectory.Restart.Server](#rqsrs-009ldapexternaluserdirectoryrestartserver)
+      * 4.2.1.3 [RQ.SRS-009.LDAP.ExternalUserDirectory.Restart.Server.ParallelLogins](#rqsrs-009ldapexternaluserdirectoryrestartserverparallellogins)
     * 4.2.2 [Roles](#roles)
       * 4.2.2.1 [RQ.SRS-009.LDAP.ExternalUserDirectory.Role.Removed](#rqsrs-009ldapexternaluserdirectoryroleremoved)
       * 4.2.2.2 [RQ.SRS-009.LDAP.ExternalUserDirectory.Role.Removed.Privileges](#rqsrs-009ldapexternaluserdirectoryroleremovedprivileges)
@@ -236,6 +239,13 @@ version: 1.0
 [ClickHouse] SHALL support parallel authentication of the same external [LDAP] user
 authenticated using the same [LDAP] external user directory.
 
+##### RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Parallel.DynamicallyAddedAndRemovedUsers
+version: 1.0
+
+[ClickHouse] SHALL support parallel authentication of users using
+[LDAP] external user directory when [LDAP] users are dynamically added and
+removed.
+
 #### Connection
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Connection.Protocol.PlainText
@@ -308,6 +318,18 @@ version: 2.0
 
 [ClickHouse] SHALL lookup user presence in the same order
 as user directories are defined in the `config.xml`.
+
+##### RQ.SRS-009.LDAP.ExternalUserDirectory.Restart.Server
+version: 1.0
+
+[ClickHouse] SHALL support restarting server when one or more LDAP external directories
+are configured.
+
+##### RQ.SRS-009.LDAP.ExternalUserDirectory.Restart.Server.ParallelLogins
+version: 1.0
+
+[ClickHouse] SHALL support restarting server when one or more LDAP external directories
+are configured during parallel [LDAP] user logins.
 
 #### Roles
 

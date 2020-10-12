@@ -26,14 +26,6 @@ servers = {
     }
 }
 
-@TestStep(When)
-@Name("I login as {username} and execute query")
-def login_and_execute_query(self, username, password, exitcode=None, message=None, steps=True):
-    self.context.node.query("SELECT 1",
-        settings=[("user", username), ("password", password)],
-        exitcode=exitcode or 0,
-        message=message, steps=steps)
-
 @TestOutline
 def add_user_to_ldap_and_login(self, server, user=None, ch_user=None, login=None, exitcode=None, message=None):
     """Add user to LDAP and ClickHouse and then try to login."""
