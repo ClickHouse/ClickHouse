@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from __future__ import print_function
+
 
 import datetime
 import decimal
@@ -81,10 +81,10 @@ def test_psql_client(psql_client, server_address):
     cmd_prefix += "--no-align --field-separator=' ' "
 
     code, (stdout, stderr) = psql_client.exec_run(cmd_prefix + '-c "SELECT 1 as a"', demux=True)
-    assert stdout == '\n'.join(['a', '1', '(1 row)', ''])
+    assert stdout.decode() == '\n'.join(['a', '1', '(1 row)', ''])
 
     code, (stdout, stderr) = psql_client.exec_run(cmd_prefix + '''-c "SELECT 'колонка' as a"''', demux=True)
-    assert stdout == '\n'.join(['a', 'колонка', '(1 row)', ''])
+    assert stdout.decode() == '\n'.join(['a', 'колонка', '(1 row)', ''])
 
     code, (stdout, stderr) = psql_client.exec_run(
         cmd_prefix + '-c ' +
@@ -98,7 +98,7 @@ def test_psql_client(psql_client, server_address):
         ''',
         demux=True
     )
-    assert stdout == '\n'.join(['column', '0', '0', '1', '1', '5', '5', '(6 rows)', ''])
+    assert stdout.decode() == '\n'.join(['column', '0', '0', '1', '1', '5', '5', '(6 rows)', ''])
 
     code, (stdout, stderr) = psql_client.exec_run(
         cmd_prefix + '-c ' +
@@ -110,7 +110,7 @@ def test_psql_client(psql_client, server_address):
         ''',
         demux=True
     )
-    assert stdout == '\n'.join(['tmp_column', '0', '1', '(2 rows)', ''])
+    assert stdout.decode() == '\n'.join(['tmp_column', '0', '1', '(2 rows)', ''])
 
 
 def test_python_client(server_address):
@@ -157,4 +157,4 @@ def test_java_client(server_address, java_container):
         'default'.format(host=server_address, port=server_port), demux=True)
     print(stdout, stderr, file=sys.stderr)
     assert code == 0
-    assert stdout == reference
+    assert stdout.decode() == reference

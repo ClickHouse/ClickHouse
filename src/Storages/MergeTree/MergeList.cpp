@@ -5,12 +5,6 @@
 #include <Common/CurrentThread.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTrackingForMerges;
-}
-
-
 namespace DB
 {
 
@@ -46,7 +40,6 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
     {
-        memory_tracker.setMetric(CurrentMetrics::MemoryTrackingForMerges);
         background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
         background_thread_memory_tracker->setParent(&memory_tracker);
     }

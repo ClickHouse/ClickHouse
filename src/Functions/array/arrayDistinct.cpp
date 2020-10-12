@@ -87,10 +87,10 @@ private:
 
 void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
-    ColumnPtr array_ptr = block.getByPosition(arguments[0]).column;
+    ColumnPtr array_ptr = block[arguments[0]].column;
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
 
-    const auto & return_type = block.getByPosition(result).type;
+    const auto & return_type = block[result].type;
 
     auto res_ptr = return_type->createColumn();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
@@ -127,7 +127,7 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
         || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
         executeHashed(*inner_col, offsets, res_data, res_offsets, nullable_col);
 
-    block.getByPosition(result).column = std::move(res_ptr);
+    block[result].column = std::move(res_ptr);
 }
 
 template <typename T>

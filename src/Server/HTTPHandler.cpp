@@ -737,7 +737,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         }
 
         processQuery(context, request, params, response, used_output);
-        LOG_INFO(log, "Done processing query");
+        LOG_DEBUG(log, "Done processing query");
     }
     catch (...)
     {
