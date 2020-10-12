@@ -20,6 +20,7 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -319,7 +320,9 @@ Pipe StorageS3::read(
             key));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
-    pipe.resize(num_streams);
+    // It's possible to have many buckets read from s3, resize(num_streams) might open too many handles at the same time.
+    // Using narrowPipe instead.
+    narrowPipe(pipe, num_streams);
     return pipe;
 }
 
