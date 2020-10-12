@@ -36,7 +36,11 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_)
     : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     assert(!name_parts.empty());
-    for (const auto & part : name_parts) assert(!part.empty());
+    for (const auto & part : name_parts)
+    {
+        assert(!part.empty());
+        (void) part;  // otherwise not-used in release build
+    }
 }
 
 void ASTIdentifier::setShortName(const String & new_name)
