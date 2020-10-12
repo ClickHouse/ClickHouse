@@ -60,14 +60,14 @@ public:
     using ArrayA = typename ColVecA::Container;
     using ArrayB = typename ColVecB::Container;
 
-    DecimalComparison(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    DecimalComparison(ColumnsWithTypeAndName & data, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
-        if (!apply(block, result, col_left, col_right))
+        if (!apply(data, result, col_left, col_right))
             throw Exception("Wrong decimal comparison with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    static bool apply(Block & block, size_t result [[maybe_unused]],
+    static bool apply(ColumnsWithTypeAndName & data, size_t result [[maybe_unused]],
                       const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
         if constexpr (_actual)
@@ -77,7 +77,7 @@ public:
 
             c_res = applyWithScale(col_left.column, col_right.column, shift);
             if (c_res)
-                block.getByPosition(result).column = std::move(c_res);
+                data[result].column = std::move(c_res);
             return true;
         }
         return false;

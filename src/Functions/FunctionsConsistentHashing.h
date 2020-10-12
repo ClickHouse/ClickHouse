@@ -67,7 +67,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        if (isColumnConst(*block.getByPosition(arguments[1]).column))
+        if (isColumnConst(*block[arguments[1]].column))
             executeConstBuckets(block, arguments, result);
         else
             throw Exception(
@@ -95,7 +95,7 @@ private:
 
     void executeConstBuckets(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        Field buckets_field = (*block.getByPosition(arguments[1]).column)[0];
+        Field buckets_field = (*block[arguments[1]].column)[0];
         BucketsType num_buckets;
 
         if (buckets_field.getType() == Field::Types::Int64)
@@ -106,8 +106,8 @@ private:
             throw Exception("Illegal type " + String(buckets_field.getTypeName()) + " of the second argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        const auto & hash_col = block.getByPosition(arguments[0]).column;
-        const IDataType * hash_type = block.getByPosition(arguments[0]).type.get();
+        const auto & hash_col = block[arguments[0]].column;
+        const IDataType * hash_type = block[arguments[0]].type.get();
         auto res_col = ColumnVector<ResultType>::create();
 
         WhichDataType which(hash_type);
@@ -132,7 +132,7 @@ private:
             throw Exception("Illegal type " + hash_type->getName() + " of the first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        block.getByPosition(result).column = std::move(res_col);
+        block[result].column = std::move(res_col);
     }
 
     template <typename CurrentHashType>
