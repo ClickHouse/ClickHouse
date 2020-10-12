@@ -5,6 +5,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** ignore(...) is a function that takes any arguments, and always returns 0.
   */
@@ -40,15 +42,16 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+        block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block &, const ColumnNumbers &) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &, const ColumnNumbers &) const override
     {
         return DataTypeUInt8().createColumnConst(1, 0u);
     }
 };
 
+}
 
 void registerFunctionIgnore(FunctionFactory & factory)
 {

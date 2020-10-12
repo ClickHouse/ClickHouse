@@ -70,8 +70,8 @@ public:
         using SourceColumnType = typename SourceDataType::ColumnType;
         using ResultColumnType = typename ResultDataType::ColumnType;
 
-        const auto & src = block.getByPosition(arguments[0]);
-        auto & res = block.getByPosition(result);
+        const auto & src = block[arguments[0]];
+        auto & res = block[result];
         const auto & col = *src.column;
 
         const SourceColumnType * source_col_typed = checkAndGetColumn<SourceColumnType>(col);

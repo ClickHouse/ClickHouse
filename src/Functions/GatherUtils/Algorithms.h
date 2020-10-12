@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/FieldVisitors.h>
 #include "Sources.h"
 #include "Sinks.h"
@@ -558,7 +558,7 @@ bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
 {
     /// TODO: Decimal scale
     if constexpr (IsDecimalNumber<T> && IsDecimalNumber<U>)
-        return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename U::NativeType(second.data[second_ind]));
+        return accurate::equalsOp(first.data[first_ind].value, second.data[second_ind].value);
     else if constexpr (IsDecimalNumber<T> || IsDecimalNumber<U>)
         return false;
     else
@@ -588,7 +588,7 @@ bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                           size_t second_ind [[maybe_unused]])
 {
     if constexpr (IsDecimalNumber<T>)
-        return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename T::NativeType(first.data[second_ind]));
+        return accurate::equalsOp(first.data[first_ind].value, first.data[second_ind].value);
     else
         return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);
 }
@@ -782,3 +782,4 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
 }
 
 }
+

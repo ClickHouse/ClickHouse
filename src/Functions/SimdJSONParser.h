@@ -5,7 +5,7 @@
 #endif
 
 #if USE_SIMDJSON
-#    include <Core/Types.h>
+#    include <common/types.h>
 #    include <Common/Exception.h>
 #    include <common/defines.h>
 #    include <simdjson.h>

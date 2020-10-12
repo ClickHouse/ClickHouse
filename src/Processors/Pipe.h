@@ -1,12 +1,17 @@
 #pragma once
 #include <Processors/IProcessor.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
 
+struct StreamLocalLimits;
+
 class Pipe;
 using Pipes = std::vector<Pipe>;
+
+class QueryPipeline;
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
@@ -61,6 +66,7 @@ public:
     /// If totals or extremes are not empty, transform shouldn't change header.
     void addTransform(ProcessorPtr transform);
     void addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes);
+    void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
     enum class StreamType
     {
@@ -86,16 +92,21 @@ public:
 
     /// Get processors from Pipe. Use it with cautious, it is easy to loss totals and extremes ports.
     static Processors detachProcessors(Pipe pipe) { return std::move(pipe.processors); }
+    /// Get processors from Pipe w/o destroying pipe (used for EXPLAIN to keep QueryPlan).
+    const Processors & getProcessors() const { return processors; }
 
     /// Specify quotas and limits for every ISourceWithProgress.
-    void setLimits(const SourceWithProgress::LocalLimits & limits);
+    void setLimits(const StreamLocalLimits & limits);
+    void setLeafLimits(const SizeLimits & leaf_limits);
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
 
     /// Do not allow to change the table while the processors of pipe are alive.
-    void addTableLock(const TableLockHolder & lock) { holder.table_locks.push_back(lock); }
+    void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
     void addInterpreterContext(std::shared_ptr<Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
+    /// For queries with nested interpreters (i.e. StorageDistributed)
+    void addQueryPlan(std::unique_ptr<QueryPlan> plan) { holder.query_plans.emplace_back(std::move(plan)); }
 
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
@@ -113,6 +124,7 @@ private:
         std::vector<std::shared_ptr<Context>> interpreter_context;
         std::vector<StoragePtr> storage_holders;
         std::vector<TableLockHolder> table_locks;
+        std::vector<std::unique_ptr<QueryPlan>> query_plans;
     };
 
     Holder holder;

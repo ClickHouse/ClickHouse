@@ -28,6 +28,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 /** dateDiff('unit', t1, t2, [timezone])
   * t1 and t2 can be Date or DateTime
   *
@@ -82,14 +85,14 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * unit_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        const auto * unit_column = checkAndGetColumnConst<ColumnString>(block[arguments[0]].column.get());
         if (!unit_column)
             throw Exception("First argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
         String unit = Poco::toLower(unit_column->getValue<String>());
 
-        const IColumn & x = *block.getByPosition(arguments[1]).column;
-        const IColumn & y = *block.getByPosition(arguments[2]).column;
+        const IColumn & x = *block[arguments[1]].column;
+        const IColumn & y = *block[arguments[2]].column;
 
         size_t rows = input_rows_count;
         auto res = ColumnInt64::create(rows);
@@ -116,7 +119,7 @@ public:
         else
             throw Exception("Function " + getName() + " does not support '" + unit + "' unit", ErrorCodes::BAD_ARGUMENTS);
 
-        block.getByPosition(result).column = std::move(res);
+        block[result].column = std::move(res);
     }
 
 private:
@@ -211,6 +214,8 @@ private:
              - Int64(Transform::execute(x, timezone_x));
     }
 };
+
+}
 
 void registerFunctionDateDiff(FunctionFactory & factory)
 {

@@ -28,21 +28,13 @@ constexpr size_t min(size_t x, size_t y)
     return x < y ? x : y;
 }
 
+/// @note There's no auto scale to larger big integer, only for integral ones.
+/// It's cause of (U)Int64 backward compatibilty and very big performance penalties.
 constexpr size_t nextSize(size_t size)
 {
-    return min(size * 2, 8);
-}
-
-template <bool is_signed>
-constexpr size_t nextSize2(size_t size)
-{
-    // old way for built-in integers
-    if (size <= 8) return nextSize(size);
-
-    if constexpr (is_signed)
-        return size <= 32 ? 32 : 48;
-    else
-        return size <= 32 ? 16 : 48;
+    if (size < 8)
+        return size * 2;
+    return size;
 }
 
 template <bool is_signed, bool is_floating, size_t size>
@@ -55,9 +47,8 @@ template <> struct Construct<false, false, 1> { using Type = UInt8; };
 template <> struct Construct<false, false, 2> { using Type = UInt16; };
 template <> struct Construct<false, false, 4> { using Type = UInt32; };
 template <> struct Construct<false, false, 8> { using Type = UInt64; };
-template <> struct Construct<false, false, 16> { using Type = UInt256; };
+template <> struct Construct<false, false, 16> { using Type = UInt256; }; /// TODO: we cannot use our UInt128 here
 template <> struct Construct<false, false, 32> { using Type = UInt256; };
-template <> struct Construct<false, false, 48> { using Type = UInt256; };
 template <> struct Construct<false, true, 1> { using Type = Float32; };
 template <> struct Construct<false, true, 2> { using Type = Float32; };
 template <> struct Construct<false, true, 4> { using Type = Float32; };
@@ -67,8 +58,7 @@ template <> struct Construct<true, false, 2> { using Type = Int16; };
 template <> struct Construct<true, false, 4> { using Type = Int32; };
 template <> struct Construct<true, false, 8> { using Type = Int64; };
 template <> struct Construct<true, false, 16> { using Type = Int128; };
-template <> struct Construct<true, false, 32> { using Type = Int128; };
-template <> struct Construct<true, false, 48> { using Type = Int256; };
+template <> struct Construct<true, false, 32> { using Type = Int256; };
 template <> struct Construct<true, true, 1> { using Type = Float32; };
 template <> struct Construct<true, true, 2> { using Type = Float32; };
 template <> struct Construct<true, true, 4> { using Type = Float32; };
@@ -86,7 +76,7 @@ template <typename A, typename B> struct ResultOfAdditionMultiplication
     using Type = typename Construct<
         is_signed_v<A> || is_signed_v<B>,
         std::is_floating_point_v<A> || std::is_floating_point_v<B>,
-        nextSize2< is_signed_v<A> || is_signed_v<B> >(max(sizeof(A), sizeof(B)))>::Type;
+        nextSize(max(sizeof(A), sizeof(B)))>::Type;
 };
 
 template <typename A, typename B> struct ResultOfSubtraction
@@ -94,7 +84,7 @@ template <typename A, typename B> struct ResultOfSubtraction
     using Type = typename Construct<
         true,
         std::is_floating_point_v<A> || std::is_floating_point_v<B>,
-        nextSize2< is_signed_v<A> || is_signed_v<B> >(max(sizeof(A), sizeof(B)))>::Type;
+        nextSize(max(sizeof(A), sizeof(B)))>::Type;
 };
 
 /** When dividing, you always get a floating-point number.
@@ -127,7 +117,7 @@ template <typename A> struct ResultOfNegate
     using Type = typename Construct<
         true,
         std::is_floating_point_v<A>,
-        is_signed_v<A> ? sizeof(A) : nextSize2<true>(sizeof(A))>::Type;
+        is_signed_v<A> ? sizeof(A) : nextSize(sizeof(A))>::Type;
 };
 
 template <typename A> struct ResultOfAbs

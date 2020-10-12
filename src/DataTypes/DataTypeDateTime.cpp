@@ -185,31 +185,4 @@ bool DataTypeDateTime::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-static DataTypePtr create(const ASTPtr & arguments)
-{
-    if (!arguments)
-        return std::make_shared<DataTypeDateTime>();
-
-    if (arguments->children.size() != 1)
-        throw Exception("DateTime data type can optionally have only one argument - time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-    const auto * arg = arguments->children[0]->as<ASTLiteral>();
-    if (!arg || arg->value.getType() != Field::Types::String)
-        throw Exception("Parameter for DateTime data type must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    return std::make_shared<DataTypeDateTime>(arg->value.get<String>());
-}
-
-void registerDataTypeDateTime(DataTypeFactory & factory)
-{
-    factory.registerDataType("DateTime", create, DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("TIMESTAMP", "DateTime", DataTypeFactory::CaseInsensitive);
-}
-
 }

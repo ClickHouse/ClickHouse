@@ -101,7 +101,7 @@ BlockIO InterpreterAlterQuery::execute()
             switch (command.type)
             {
                 case LiveViewCommand::REFRESH:
-                    live_view->refresh(context);
+                    live_view->refresh();
                     break;
             }
         }
@@ -218,6 +218,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::MODIFY_TTL:
+        {
+            required_access.emplace_back(AccessType::ALTER_TTL, database, table);
+            break;
+        }
+        case ASTAlterCommand::REMOVE_TTL:
         {
             required_access.emplace_back(AccessType::ALTER_TTL, database, table);
             break;

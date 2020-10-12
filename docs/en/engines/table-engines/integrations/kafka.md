@@ -32,7 +32,8 @@ SETTINGS
     [kafka_num_consumers = N,]
     [kafka_max_block_size = 0,]
     [kafka_skip_broken_messages = N,]
-    [kafka_commit_every_batch = 0]
+    [kafka_commit_every_batch = 0,]
+    [kafka_thread_per_consumer = 0]
 ```
 
 Required parameters:
@@ -50,6 +51,7 @@ Optional parameters:
 -   `kafka_max_block_size` - The maximum batch size (in messages) for poll (default: `max_block_size`).
 -   `kafka_skip_broken_messages` – Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data).
 -   `kafka_commit_every_batch` - Commit every consumed and handled batch instead of a single commit after writing a whole block (default: `0`).
+-   `kafka_thread_per_consumer` - Provide independent thread for each consumer (default: `0`). When enabled, every consumer flush the data independently, in parallel (otherwise - rows from several consumers squashed to form one block).
 
 Examples:
 
@@ -162,6 +164,22 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 ```
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
+
+### Kerberos support {#kafka-kerberos-support}
+
+To deal with Kerberos-aware Kafka, add `security_protocol` child element with `sasl_plaintext` value. It is enough if Kerberos ticket-granting ticket is obtained and cached by OS facilities.
+ClickHouse is able to maintain Kerberos credentials using a keytab file. Consider `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` and `sasl.kerberos.kinit.cmd` child elements.
+
+Example:
+
+``` xml
+  <!-- Kerberos-aware Kafka -->
+  <kafka>
+    <security_protocol>SASL_PLAINTEXT</security_protocol>
+	<sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+	<sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+  </kafka>
+```
 
 ## Virtual Columns {#virtual-columns}
 

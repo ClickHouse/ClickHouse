@@ -768,7 +768,8 @@ T & Field::get()
     // Disregard signedness when converting between int64 types.
     constexpr Field::Types::Which target = TypeToEnum<NearestFieldType<ValueType>>::value;
     assert(target == which
-           || (isInt64FieldType(target) && isInt64FieldType(which)));
+           || (isInt64FieldType(target) && isInt64FieldType(which))
+           || target == Field::Types::Decimal64 /* DateTime64 fields */);
 #endif
 
     ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);

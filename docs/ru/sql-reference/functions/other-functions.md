@@ -508,6 +508,29 @@ SELECT
 └────────────────┴────────────┘
 ```
 
+## formatReadableQuantity(x) {#formatreadablequantityx}
+
+Принимает число. Возвращает округленное число с суффиксом (thousand, million, billion и т.д.) в виде строки.
+
+Облегчает визуальное восприятие больших чисел живым человеком.
+
+Пример:
+
+``` sql
+SELECT
+    arrayJoin([1024, 1234 * 1000, (4567 * 1000) * 1000, 98765432101234]) AS number,
+    formatReadableQuantity(number) AS number_for_humans
+```
+
+``` text
+┌─────────number─┬─number_for_humans─┐
+│           1024 │ 1.02 thousand     │
+│        1234000 │ 1.23 million      │
+│     4567000000 │ 4.57 billion      │
+│ 98765432101234 │ 98.77 trillion    │
+└────────────────┴───────────────────┘
+```
+
 ## least(a, b) {#leasta-b}
 
 Возвращает наименьшее значение из a и b.
@@ -1408,5 +1431,80 @@ SELECT randomStringUTF8(13)
 
 ```
 
+## isDecimalOverflow {#is-decimal-overflow}
+
+Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) вне собственной (или заданной) области значений.
+
+**Синтаксис**
+
+``` sql
+isDecimalOverflow(d, [p])
+```
+
+**Параметры** 
+
+-   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
+-   `p` — точность. Необязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
+
+**Возвращаемое значение**
+
+-   `1` — число имеет больше цифр, чем позволяет точность.
+-   `0` — число удовлетворяет заданной точности.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(1000000000, 0)),
+       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(-1000000000, 0));
+```
+
+Результат:
+
+``` text
+1	1	1	1
+```
+
+## countDigits {#count-digits}
+
+Возвращает количество десятичных цифр, необходимых для представления значения.
+
+**Синтаксис**
+
+``` sql
+countDigits(x)
+```
+
+**Параметры** 
+
+-   `x` — [целое](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) или [дробное](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) число.
+
+**Возвращаемое значение**
+
+Количество цифр.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+ !!! note "Примечание"
+    Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
+       countDigits(toDecimal64(1, 18)), countDigits(toDecimal64(-1, 18)),
+       countDigits(toDecimal128(1, 38)), countDigits(toDecimal128(-1, 38));
+```
+
+Результат:
+
+``` text
+10	10	19	19	39	39
+```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

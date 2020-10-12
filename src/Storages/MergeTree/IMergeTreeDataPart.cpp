@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FileSyncGuard.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -87,6 +88,7 @@ void IMergeTreeDataPart::MinMaxIndex::store(
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
+        out->finalize();
     }
 }
 
@@ -778,6 +780,10 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     String from = getFullRelativePath();
     String to = storage.relative_data_path + new_relative_path + "/";
 
+    std::optional<FileSyncGuard> sync_guard;
+    if (storage.getSettings()->fsync_part_directory)
+        sync_guard.emplace(volume->getDisk(), to);
+
     if (!volume->getDisk()->exists(from))
         throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is logical error.", ErrorCodes::FILE_DOESNT_EXIST);
 
@@ -1040,6 +1046,37 @@ void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) co
 {
     for (const auto & [column_name, size] : columns_sizes)
         column_to_size[column_name] = size.data_compressed;
+}
+
+
+bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const
+{
+    if (!metadata_snapshot->hasAnyTTL())
+        return false;
+
+    if (metadata_snapshot->hasRowsTTL())
+    {
+        if (isEmpty()) /// All rows were finally deleted and we don't store TTL
+            return true;
+        else if (ttl_infos.table_ttl.min == 0)
+            return false;
+    }
+
+    for (const auto & [column, desc] : metadata_snapshot->getColumnTTLs())
+    {
+        /// Part has this column, but we don't calculated TTL for it
+        if (!ttl_infos.columns_ttl.count(column) && getColumns().contains(column))
+            return false;
+    }
+
+    for (const auto & move_desc : metadata_snapshot->getMoveTTLs())
+    {
+        /// Move TTL is not calculated
+        if (!ttl_infos.moves_ttl.count(move_desc.result_column))
+            return false;
+    }
+
+    return true;
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

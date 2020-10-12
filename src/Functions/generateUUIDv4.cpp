@@ -49,7 +49,7 @@ public:
             uuid.high = (uuid.high & 0x3fffffffffffffffull) | 0x8000000000000000ull;
         }
 
-        block.getByPosition(result).column = std::move(col_res);
+        block[result].column = std::move(col_res);
     }
 };
 

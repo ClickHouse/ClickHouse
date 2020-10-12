@@ -79,10 +79,10 @@ result offsets: 3, 4
 result: Row 1: [1, 2, 3], Row2: [4]
           */
 
-        const ColumnArray * src_col = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+        const ColumnArray * src_col = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get());
 
         if (!src_col)
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " in argument of function 'arrayFlatten'",
+            throw Exception("Illegal column " + block[arguments[0]].column->getName() + " in argument of function 'arrayFlatten'",
                 ErrorCodes::ILLEGAL_COLUMN);
 
         const IColumn::Offsets & src_offsets = src_col->getOffsets();
@@ -107,7 +107,7 @@ result: Row 1: [1, 2, 3], Row2: [4]
             prev_data = &next_col->getData();
         }
 
-        block.getByPosition(result).column = ColumnArray::create(
+        block[result].column = ColumnArray::create(
             prev_data->getPtr(),
             result_offsets_column ? std::move(result_offsets_column) : src_col->getOffsetsPtr());
     }

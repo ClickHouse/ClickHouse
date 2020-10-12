@@ -12,8 +12,8 @@ RUN apt-get update --yes \
         strace \
         --yes --no-install-recommends
 
-#RUN wget -q -O - http://files.viva64.com/etc/pubkey.txt | sudo apt-key add -
-#RUN sudo wget -O /etc/apt/sources.list.d/viva64.list http://files.viva64.com/etc/viva64.list
+#RUN wget -nv -O - http://files.viva64.com/etc/pubkey.txt | sudo apt-key add -
+#RUN sudo wget -nv -O /etc/apt/sources.list.d/viva64.list http://files.viva64.com/etc/viva64.list
 #
 #RUN apt-get --allow-unauthenticated update -y \
 #    && env DEBIAN_FRONTEND=noninteractive \
@@ -24,10 +24,10 @@ ENV PKG_VERSION="pvs-studio-latest"
 
 RUN set -x \
     && export PUBKEY_HASHSUM="486a0694c7f92e96190bbfac01c3b5ac2cb7823981db510a28f744c99eabbbf17a7bcee53ca42dc6d84d4323c2742761" \
-    && wget https://files.viva64.com/etc/pubkey.txt -O /tmp/pubkey.txt \
+    && wget -nv https://files.viva64.com/etc/pubkey.txt -O /tmp/pubkey.txt \
     && echo "${PUBKEY_HASHSUM} /tmp/pubkey.txt" | sha384sum -c \
     && apt-key add /tmp/pubkey.txt \
-    && wget "https://files.viva64.com/${PKG_VERSION}.deb" \
+    && wget -nv "https://files.viva64.com/${PKG_VERSION}.deb" \
     && { debsig-verify ${PKG_VERSION}.deb \
     || echo "WARNING: Some file was just downloaded from the internet without any validation and we are installing it into the system"; } \
     && dpkg -i "${PKG_VERSION}.deb"
