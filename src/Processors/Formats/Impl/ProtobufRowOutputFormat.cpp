@@ -14,7 +14,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ROWS;
+    extern const int NO_ROW_DELIMITER;
 }
 
 
@@ -36,7 +36,7 @@ void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
     if (throw_on_multiple_rows_undelimited && !first_row)
     {
-        throw Exception("The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.", ErrorCodes::TOO_MANY_ROWS);
+        throw Exception("The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.", ErrorCodes::NO_ROW_DELIMITER);
     }
 
     writer.startMessage();

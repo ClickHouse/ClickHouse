@@ -47,7 +47,7 @@ void RabbitMQBlockOutputStream::writePrefix()
             {
                 buffer->countRow();
             },
-            true
+            /* ignore_no_row_delimiter = */ true
             );
 }
 
