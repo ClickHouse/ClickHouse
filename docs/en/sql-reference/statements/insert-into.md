@@ -56,6 +56,12 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 
 Columns are mapped according to their position in the SELECT clause. However, their names in the SELECT expression and the table for INSERT may differ. If necessary, type casting is performed.
 
+Insert statements can have asterisk (or variants) with column transformers in the column list:
+
+``` sql
+INSERT INTO insert_select_dst [(* EXCEPT (middle_a, middle_b))] SELECT * FROM insert_select_src;
+```
+
 None of the data formats except Values allow setting values to expressions such as `now()`, `1 + 2`, and so on. The Values format allows limited use of expressions, but this is not recommended, because in this case inefficient code is used for their execution.
 
 Other queries for modifying data parts are not supported: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
