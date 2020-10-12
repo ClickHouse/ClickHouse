@@ -6,6 +6,20 @@ add_headers_and_sources(clickhouse_functions .)
 list(REMOVE_ITEM clickhouse_functions_sources IFunctionImpl.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunctionImpl.h FunctionFactory.h FunctionHelpers.h)
 
+set(ERROR_CODES_IN ${CMAKE_CURRENT_SOURCE_DIR}/../Common/ErrorCodes.cpp)
+set(ERROR_CODES_OUT ${CMAKE_CURRENT_BINARY_DIR}/errorCodes.generated.cpp)
+add_custom_target(generate-error-codes
+    env
+        ERROR_CODES_IN_FILE=${ERROR_CODES_IN}
+        ERROR_CODES_OUT_FILE=${ERROR_CODES_OUT}
+        CXX=${CMAKE_CXX_COMPILER}
+        ${CMAKE_CURRENT_SOURCE_DIR}/errorCodes.sh
+    SOURCES errorCodes.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    BYPRODUCTS ${ERROR_CODES_OUT}
+)
+list(APPEND clickhouse_functions_sources ${ERROR_CODES_OUT})
+
 if (NOT USE_H3)
     list (REMOVE_ITEM clickhouse_functions_sources
         geoToH3.cpp
@@ -52,6 +66,8 @@ if (OPENSSL_CRYPTO_LIBRARY)
 endif()
 
 target_include_directories(clickhouse_functions SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})
+
+add_dependencies(clickhouse_functions generate-error-codes)
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
     OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"

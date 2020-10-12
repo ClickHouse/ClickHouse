@@ -64,6 +64,9 @@ void registerFunctionCountDigits(FunctionFactory &);
 void registerFunctionGlobalVariable(FunctionFactory &);
 void registerFunctionHasThreadFuzzer(FunctionFactory &);
 void registerFunctionInitializeAggregation(FunctionFactory &);
+#if !defined(ARCADIA_BUILD)
+void registerFunctionErrorCodeToName(FunctionFactory &);
+#endif
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -128,6 +131,9 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionGlobalVariable(factory);
     registerFunctionHasThreadFuzzer(factory);
     registerFunctionInitializeAggregation(factory);
+#if !defined(ARCADIA_BUILD)
+    registerFunctionErrorCodeToName(factory);
+#endif
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
