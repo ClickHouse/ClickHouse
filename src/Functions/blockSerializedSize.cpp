@@ -35,9 +35,9 @@ public:
         UInt64 size = 0;
 
         for (auto arg_pos : arguments)
-            size += blockSerializedSizeOne(block.getByPosition(arg_pos));
+            size += blockSerializedSizeOne(block[arg_pos]);
 
-        block.getByPosition(result).column = DataTypeUInt64().createColumnConst(
+        block[result].column = DataTypeUInt64().createColumnConst(
             input_rows_count, size)->convertToFullColumnIfConst();
     }
 

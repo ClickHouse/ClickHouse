@@ -13,7 +13,7 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-import rabbitmq_pb2
+from . import rabbitmq_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
@@ -103,7 +103,7 @@ def rabbitmq_cluster():
         global rabbitmq_id
         cluster.start()
         rabbitmq_id = instance.cluster.rabbitmq_docker_id
-        print("rabbitmq_id is {}".format(rabbitmq_id))
+        print(("rabbitmq_id is {}".format(rabbitmq_id)))
         instance.query('CREATE DATABASE test')
 
         yield cluster
@@ -957,7 +957,7 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.direct_exchange_{0};
             DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
@@ -1030,7 +1030,7 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.fanout_exchange_{0};
             DROP TABLE IF EXISTS test.fanout_exchange_{0}_mv;
@@ -1097,7 +1097,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.topic_exchange_{0};
             DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
@@ -1116,7 +1116,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
         '''.format(consumer_id))
 
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(num_tables + consumer_id))
+        print(("Setting up table {}".format(num_tables + consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.topic_exchange_{0};
             DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
@@ -1195,7 +1195,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     num_tables = 4
     for consumer_id in range(num_tables):
         table_name = 'rabbitmq_consumer{}'.format(consumer_id)
-        print("Setting up {}".format(table_name))
+        print(("Setting up {}".format(table_name)))
         instance.query('''
             DROP TABLE IF EXISTS test.{0};
             DROP TABLE IF EXISTS test.{0}_mv;
@@ -1353,7 +1353,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     num_tables_to_receive = 2
     for consumer_id in range(num_tables_to_receive):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.headers_exchange_{0};
             DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
@@ -1372,7 +1372,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     num_tables_to_ignore = 2
     for consumer_id in range(num_tables_to_ignore):
-        print("Setting up table {}".format(consumer_id + num_tables_to_receive))
+        print(("Setting up table {}".format(consumer_id + num_tables_to_receive)))
         instance.query('''
             DROP TABLE IF EXISTS test.headers_exchange_{0};
             DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
@@ -1570,7 +1570,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
 
     num_tables = 4
     for table_id in range(num_tables):
-        print("Setting up table {}".format(table_id))
+        print(("Setting up table {}".format(table_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.many_consumers_{0};
             DROP TABLE IF EXISTS test.many_consumers_{0}_mv;
@@ -1864,5 +1864,5 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
 
 if __name__ == '__main__':
     cluster.start()
-    raw_input("Cluster created, press any key to destroy...")
+    input("Cluster created, press any key to destroy...")
     cluster.shutdown()

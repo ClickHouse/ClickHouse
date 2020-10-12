@@ -479,4 +479,75 @@ SELECT trimBoth('     Hello, world!     ')
 
 Тип результата — UInt64.
 
+## normalizeQuery {#normalized-query}
+
+Заменяет литералы, последовательности литералов и сложные псевдонимы заполнителями.
+
+**Синтаксис** 
+``` sql
+normalizeQuery(x)
+```
+
+**Параметры** 
+
+-   `x` — Последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Последовательность символов с заполнителями.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT normalizeQuery('[1, 2, 3, x]') AS query;
+```
+
+Результат:
+
+``` text
+┌─query────┐
+│ [?.., x] │
+└──────────┘
+```
+
+## normalizedQueryHash {#normalized-query-hash}
+
+Возвращает идентичные 64-битные хэш - суммы без значений литералов для аналогичных запросов. Это помогает анализировать журнал запросов.
+
+**Синтаксис** 
+
+``` sql
+normalizedQueryHash(x)
+```
+
+**Параметры** 
+
+-   `x` — Последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Хэш-сумма.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│   1 │
+└─────┘
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->
