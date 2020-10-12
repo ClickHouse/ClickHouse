@@ -74,41 +74,41 @@ public:
             if (i % 2)
             {
                 src_array_args.push_back(args[i]);
-                src_array_elems.push_back(block.getByPosition(args[i]));
-                src_array_types.push_back(block.getByPosition(args[i]).type);
+                src_array_elems.push_back(block[args[i]]);
+                src_array_types.push_back(block[args[i]].type);
             }
             else
             {
                 dst_array_args.push_back(args[i]);
-                dst_array_elems.push_back(block.getByPosition(args[i]));
-                dst_array_types.push_back(block.getByPosition(args[i]).type);
+                dst_array_elems.push_back(block[args[i]]);
+                dst_array_types.push_back(block[args[i]].type);
             }
         }
 
         DataTypePtr src_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(src_array_types));
         DataTypePtr dst_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(dst_array_types));
 
-        Block temp_block = block;
+        ColumnsWithTypeAndName temp_block_columns = block;
 
-        size_t src_array_pos = temp_block.columns();
-        temp_block.insert({nullptr, src_array_type, ""});
+        size_t src_array_pos = temp_block_columns.size();
+        temp_block_columns.emplace_back(ColumnWithTypeAndName {nullptr, src_array_type, ""});
 
-        size_t dst_array_pos = temp_block.columns();
-        temp_block.insert({nullptr, dst_array_type, ""});
+        size_t dst_array_pos = temp_block_columns.size();
+        temp_block_columns.emplace_back(ColumnWithTypeAndName{nullptr, dst_array_type, ""});
 
         auto fun_array = FunctionFactory::instance().get("array", context);
 
-        fun_array->build(src_array_elems)->execute(temp_block, src_array_args, src_array_pos, input_rows_count);
-        fun_array->build(dst_array_elems)->execute(temp_block, dst_array_args, dst_array_pos, input_rows_count);
+        fun_array->build(src_array_elems)->execute(temp_block_columns, src_array_args, src_array_pos, input_rows_count);
+        fun_array->build(dst_array_elems)->execute(temp_block_columns, dst_array_args, dst_array_pos, input_rows_count);
 
         /// Execute transform.
         ColumnNumbers transform_args{args.front(), src_array_pos, dst_array_pos, args.back()};
         FunctionFactory::instance().get("transform", context)->build(
-            ext::map<ColumnsWithTypeAndName>(transform_args, [&](auto i){ return temp_block.getByPosition(i); }))
-            ->execute(temp_block, transform_args, result, input_rows_count);
+            ext::map<ColumnsWithTypeAndName>(transform_args, [&](auto i){ return temp_block_columns[i]; }))
+            ->execute(temp_block_columns, transform_args, result, input_rows_count);
 
         /// Put the result into the original block.
-        block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
+        block[result].column = std::move(temp_block_columns[result].column);
     }
 
 private:

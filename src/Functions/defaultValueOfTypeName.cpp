@@ -51,8 +51,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        const IDataType & type = *block.getByPosition(result).type;
-        block.getByPosition(result).column = type.createColumnConst(input_rows_count, type.getDefault());
+        const IDataType & type = *block[result].type;
+        block[result].column = type.createColumnConst(input_rows_count, type.getDefault());
     }
 };
 

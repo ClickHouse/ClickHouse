@@ -507,7 +507,7 @@ private:
 
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
-    void updateQuorum(const String & part_name);
+    void updateQuorum(const String & part_name, bool is_parallel);
 
     /// Deletes info from quorum/last_part node for particular partition_id.
     void cleanLastPartNode(const String & partition_id);
@@ -536,7 +536,7 @@ private:
 
     /// Produce an imaginary part info covering all parts in the specified partition (at the call moment).
     /// Returns false if the partition doesn't exist yet.
-    bool getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info);
+    bool getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info, bool for_replace_partition = false);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     std::unordered_set<std::string> existing_nodes_cache;
