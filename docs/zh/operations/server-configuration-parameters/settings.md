@@ -145,10 +145,10 @@ ClickHouse每x秒重新加载内置字典。 这使得编辑字典 “on the fly
 -   interval – The interval for sending, in seconds.
 -   timeout – The timeout for sending data, in seconds.
 -   root\_path – Prefix for keys.
--   metrics – Sending data from the [系统。指标](../../operations/system-tables.md#system_tables-metrics) 桌子
--   events – Sending deltas data accumulated for the time period from the [系统。活动](../../operations/system-tables.md#system_tables-events) 桌子
--   events\_cumulative – Sending cumulative data from the [系统。活动](../../operations/system-tables.md#system_tables-events) 桌子
--   asynchronous\_metrics – Sending data from the [系统。asynchronous\_metrics](../../operations/system-tables.md#system_tables-asynchronous_metrics) 桌子
+-   metrics – Sending data from the [系统。指标](../../operations/system-tables/metrics.md#system_tables-metrics) 桌子
+-   events – Sending deltas data accumulated for the time period from the [系统。活动](../../operations/system-tables/events.md#system_tables-events) 桌子
+-   events\_cumulative – Sending cumulative data from the [系统。活动](../../operations/system-tables/events.md#system_tables-events) 桌子
+-   asynchronous\_metrics – Sending data from the [系统。asynchronous\_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) 桌子
 
 您可以配置多个 `<graphite>` 条款 例如，您可以使用它以不同的时间间隔发送不同的数据。
 
@@ -503,7 +503,7 @@ SSL客户端/服务器配置。
 
 记录与之关联的事件 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). 例如，添加或合并数据。 您可以使用日志来模拟合并算法并比较它们的特征。 您可以可视化合并过程。
 
-查询记录在 [系统。part\_log](../../operations/system-tables.md#system_tables-part-log) 表，而不是在一个单独的文件。 您可以在以下命令中配置此表的名称 `table` 参数（见下文）。
+查询记录在 [系统。part\_log](../../operations/system-tables/part_log.md#system_tables-part-log) 表，而不是在一个单独的文件。 您可以在以下命令中配置此表的名称 `table` 参数（见下文）。
 
 使用以下参数配置日志记录:
 
@@ -540,7 +540,7 @@ SSL客户端/服务器配置。
 
 用于记录接收到的查询的设置 [log\_queries=1](../settings/settings.md) 设置。
 
-查询记录在 [系统。query\_log](../../operations/system-tables.md#system_tables-query_log) 表，而不是在一个单独的文件。 您可以更改表的名称 `table` 参数（见下文）。
+查询记录在 [系统。query\_log](../../operations/system-tables/query_log.md#system_tables-query_log) 表，而不是在一个单独的文件。 您可以更改表的名称 `table` 参数（见下文）。
 
 使用以下参数配置日志记录:
 
@@ -566,7 +566,7 @@ SSL客户端/服务器配置。
 
 设置用于记录接收到的查询的线程 [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads) 设置。
 
-查询记录在 [系统。query\_thread\_log](../../operations/system-tables.md#system_tables-query-thread-log) 表，而不是在一个单独的文件。 您可以更改表的名称 `table` 参数（见下文）。
+查询记录在 [系统。query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query-thread-log) 表，而不是在一个单独的文件。 您可以更改表的名称 `table` 参数（见下文）。
 
 使用以下参数配置日志记录:
 
@@ -590,7 +590,7 @@ SSL客户端/服务器配置。
 
 ## trace\_log {#server_configuration_parameters-trace_log}
 
-设置为 [trace\_log](../../operations/system-tables.md#system_tables-trace_log) 系统表操作。
+设置为 [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) 系统表操作。
 
 参数:
 

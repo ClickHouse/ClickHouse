@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -15,8 +14,8 @@ namespace DB
 {
 
 
-StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name_)
-    : StorageSystemPartsBase(name_,
+StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
+    : StorageSystemPartsBase(table_id_,
     {
         {"partition",                                  std::make_shared<DataTypeString>()},
         {"name",                                       std::make_shared<DataTypeString>()},
@@ -71,7 +70,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
     };
 
     std::unordered_map<String, ColumnInfo> columns_info;
-    for (const auto & column : info.storage->getColumns())
+    for (const auto & column : info.storage->getInMemoryMetadataPtr()->getColumns())
     {
         ColumnInfo column_info;
         if (column.default_desc.expression)

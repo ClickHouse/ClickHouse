@@ -67,7 +67,7 @@ public:
     /// produce it, saves the result in the cache and returns it.
     /// Only one of several concurrent threads calling getOrSet() will call load_func(),
     /// others will wait for that call to complete and will use its result (this helps prevent cache stampede).
-    /// Exceptions occuring in load_func will be propagated to the caller. Another thread from the
+    /// Exceptions occurring in load_func will be propagated to the caller. Another thread from the
     /// set of concurrent threads will then try to call its load_func etc.
     ///
     /// Returns std::pair of the cached value and a bool indicating whether the value was produced during this call.

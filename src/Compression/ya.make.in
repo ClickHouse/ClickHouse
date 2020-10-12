@@ -1,0 +1,20 @@
+LIBRARY()
+
+ADDINCL(
+    contrib/libs/lz4
+    contrib/libs/zstd
+)
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/lz4
+    contrib/libs/zstd
+)
+
+CFLAGS(-g0)
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

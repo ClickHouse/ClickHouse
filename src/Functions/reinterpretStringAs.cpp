@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -16,12 +17,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 template <typename ToDataType, typename Name>
 class FunctionReinterpretStringAs : public IFunction
@@ -51,9 +54,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block[arguments[0]].column.get()))
         {
             auto col_res = ColumnType::create();
 
@@ -66,15 +69,15 @@ public:
             size_t offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                ToFieldType value = 0;
+                ToFieldType value{};
                 memcpy(&value, &data_from[offset], std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
                 vec_res[i] = value;
                 offset = offsets_from[i];
             }
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
         }
-        else if (const ColumnFixedString * col_from_fixed = typeid_cast<const ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
+        else if (const ColumnFixedString * col_from_fixed = typeid_cast<const ColumnFixedString *>(block[arguments[0]].column.get()))
         {
             auto col_res = ColumnVector<ToFieldType>::create();
 
@@ -88,17 +91,17 @@ public:
             size_t copy_size = std::min(step, sizeof(ToFieldType));
             for (size_t i = 0; i < size; ++i)
             {
-                ToFieldType value = 0;
+                ToFieldType value{};
                 memcpy(&value, &data_from[offset], copy_size);
                 vec_res[i] = value;
                 offset += step;
             }
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
         }
         else
         {
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -118,6 +121,7 @@ struct NameReinterpretAsFloat32     { static constexpr auto name = "reinterpretA
 struct NameReinterpretAsFloat64     { static constexpr auto name = "reinterpretAsFloat64"; };
 struct NameReinterpretAsDate        { static constexpr auto name = "reinterpretAsDate"; };
 struct NameReinterpretAsDateTime    { static constexpr auto name = "reinterpretAsDateTime"; };
+struct NameReinterpretAsUUID        { static constexpr auto name = "reinterpretAsUUID"; };
 
 using FunctionReinterpretAsUInt8 = FunctionReinterpretStringAs<DataTypeUInt8,       NameReinterpretAsUInt8>;
 using FunctionReinterpretAsUInt16 = FunctionReinterpretStringAs<DataTypeUInt16,     NameReinterpretAsUInt16>;
@@ -131,7 +135,9 @@ using FunctionReinterpretAsFloat32 = FunctionReinterpretStringAs<DataTypeFloat32
 using FunctionReinterpretAsFloat64 = FunctionReinterpretStringAs<DataTypeFloat64,   NameReinterpretAsFloat64>;
 using FunctionReinterpretAsDate = FunctionReinterpretStringAs<DataTypeDate,         NameReinterpretAsDate>;
 using FunctionReinterpretAsDateTime = FunctionReinterpretStringAs<DataTypeDateTime, NameReinterpretAsDateTime>;
+using FunctionReinterpretAsUUID = FunctionReinterpretStringAs<DataTypeUUID, NameReinterpretAsUUID>;
 
+}
 
 void registerFunctionsReinterpretStringAs(FunctionFactory & factory)
 {
@@ -147,8 +153,7 @@ void registerFunctionsReinterpretStringAs(FunctionFactory & factory)
     factory.registerFunction<FunctionReinterpretAsFloat64>();
     factory.registerFunction<FunctionReinterpretAsDate>();
     factory.registerFunction<FunctionReinterpretAsDateTime>();
+    factory.registerFunction<FunctionReinterpretAsUUID>();
 }
 
 }
-
-

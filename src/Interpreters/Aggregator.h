@@ -24,6 +24,8 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 
+#include <Disks/SingleDiskVolume.h>
+
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
 
@@ -44,9 +46,6 @@ namespace ErrorCodes
 }
 
 class IBlockOutputStream;
-
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
@@ -69,8 +68,8 @@ using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 using AggregatedDataWithoutKey = AggregateDataPtr;
 
-using AggregatedDataWithUInt8Key = FixedHashMap<UInt8, AggregateDataPtr>;
-using AggregatedDataWithUInt16Key = FixedHashMap<UInt16, AggregateDataPtr>;
+using AggregatedDataWithUInt8Key = FixedImplicitZeroHashMapWithCalculatedSize<UInt8, AggregateDataPtr>;
+using AggregatedDataWithUInt16Key = FixedImplicitZeroHashMap<UInt16, AggregateDataPtr>;
 
 using AggregatedDataWithUInt32Key = HashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
@@ -80,7 +79,7 @@ using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
 using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
-using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+using AggregatedDataWithKeys256 = HashMap<DummyUInt256, AggregateDataPtr, UInt256HashCRC32>;
 
 using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
@@ -90,7 +89,7 @@ using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<Aggregate
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
-using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<DummyUInt256, AggregateDataPtr, UInt256HashCRC32>;
 
 /** Variants with better hash function, using more than 32 bits for hash.
   * Using for merging phase of external aggregation, where number of keys may be far greater than 4 billion,
@@ -102,7 +101,7 @@ using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateData
 using AggregatedDataWithUInt64KeyHash64 = HashMap<UInt64, AggregateDataPtr, DefaultHash<UInt64>>;
 using AggregatedDataWithStringKeyHash64 = HashMapWithSavedHash<StringRef, AggregateDataPtr, StringRefHash64>;
 using AggregatedDataWithKeys128Hash64 = HashMap<UInt128, AggregateDataPtr, UInt128Hash>;
-using AggregatedDataWithKeys256Hash64 = HashMap<UInt256, AggregateDataPtr, UInt256Hash>;
+using AggregatedDataWithKeys256Hash64 = HashMap<DummyUInt256, AggregateDataPtr, UInt256Hash>;
 
 template <typename Base>
 struct AggregationDataWithNullKey : public Base
@@ -229,7 +228,7 @@ struct AggregationMethodString
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -255,7 +254,7 @@ struct AggregationMethodStringNoCache
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -281,7 +280,7 @@ struct AggregationMethodFixedString
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -306,7 +305,7 @@ struct AggregationMethodFixedStringNoCache
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(key.data, key.size);
+        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
     }
 };
 
@@ -869,8 +868,8 @@ public:
           *  two-level aggregation begins to be used. Enough to reach of at least one of the thresholds.
           * 0 - the corresponding threshold is not specified.
           */
-        const size_t group_by_two_level_threshold;
-        const size_t group_by_two_level_threshold_bytes;
+        size_t group_by_two_level_threshold;
+        size_t group_by_two_level_threshold_bytes;
 
         /// Settings to flush temporary data to the filesystem (external aggregation).
         const size_t max_bytes_before_external_group_by;        /// 0 - do not use external aggregation.
@@ -878,7 +877,7 @@ public:
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set;
 
-        VolumeJBODPtr tmp_volume;
+        VolumePtr tmp_volume;
 
         /// Settings is used to determine cache size. No threads are created.
         size_t max_threads;
@@ -891,7 +890,7 @@ public:
             size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
-            VolumeJBODPtr tmp_volume_, size_t max_threads_,
+            VolumePtr tmp_volume_, size_t max_threads_,
             size_t min_free_disk_space_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
@@ -911,6 +910,21 @@ public:
         {
             intermediate_header = intermediate_header_;
         }
+
+        static Block getHeader(
+            const Block & src_header,
+            const Block & intermediate_header,
+            const ColumnNumbers & keys,
+            const AggregateDescriptions & aggregates,
+            bool final);
+
+        Block getHeader(bool final) const
+        {
+            return getHeader(src_header, intermediate_header, keys, aggregates, final);
+        }
+
+        /// Returns keys and aggregated for EXPLAIN query
+        void explain(WriteBuffer & out, size_t indent) const;
     };
 
     Aggregator(const Params & params_);
@@ -1164,19 +1178,22 @@ protected:
         MutableColumns & key_columns,
         AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
+        Arena * arena,
         bool final) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
         Mapped & mapped,
-        MutableColumns & final_aggregate_columns) const;
+        MutableColumns & final_aggregate_columns,
+        Arena * arena) const;
 
     template <typename Method, typename Table>
     void convertToBlockImplFinal(
         Method & method,
         Table & data,
         MutableColumns & key_columns,
-        MutableColumns & final_aggregate_columns) const;
+        MutableColumns & final_aggregate_columns,
+        Arena * arena) const;
 
     template <typename Method, typename Table>
     void convertToBlockImplNotFinal(

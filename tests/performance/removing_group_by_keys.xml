@@ -1,0 +1,9 @@
+<test>
+    <preconditions>
+        <table_exists>hits_10m_single</table_exists>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+    <query>SELECT avg(length(URL)) FROM hits_10m_single GROUP BY WatchID, CounterID FORMAT Null</query>
+    <query>SELECT avg(length(URL)) FROM hits_10m_single GROUP BY WatchID, CounterID, WatchID - CounterID FORMAT Null</query>
+</test>

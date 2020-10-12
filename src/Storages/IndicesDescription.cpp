@@ -1,5 +1,5 @@
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
 
 #include <Parsers/ASTIndexDeclaration.h>
@@ -19,6 +19,52 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
+IndexDescription::IndexDescription(const IndexDescription & other)
+    : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
+    , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
+    , name(other.name)
+    , type(other.type)
+    , arguments(other.arguments)
+    , column_names(other.column_names)
+    , data_types(other.data_types)
+    , sample_block(other.sample_block)
+    , granularity(other.granularity)
+{
+    if (other.expression)
+        expression = std::make_shared<ExpressionActions>(*other.expression);
+}
+
+
+IndexDescription & IndexDescription::operator=(const IndexDescription & other)
+{
+    if (&other == this)
+        return *this;
+
+    if (other.definition_ast)
+        definition_ast = other.definition_ast->clone();
+    else
+        definition_ast.reset();
+
+    if (other.expression_list_ast)
+        expression_list_ast = other.expression_list_ast->clone();
+    else
+        expression_list_ast.reset();
+
+    name = other.name;
+    type = other.type;
+
+    if (other.expression)
+        expression = std::make_shared<ExpressionActions>(*other.expression);
+    else
+        expression.reset();
+
+    arguments = other.arguments;
+    column_names = other.column_names;
+    data_types = other.data_types;
+    sample_block = other.sample_block;
+    granularity = other.granularity;
+    return *this;
+}
 
 IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
 {
@@ -44,7 +90,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     ASTPtr expr_list = extractKeyExpressionList(index_definition->expr->clone());
     result.expression_list_ast = expr_list->clone();
 
-    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, columns.getAllPhysical());
+    auto syntax = TreeRewriter(context).analyze(expr_list, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
     Block block_without_columns = result.expression->getSampleBlock();
 
@@ -71,6 +117,10 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     return result;
 }
 
+void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, const Context & context)
+{
+    *this = getIndexFromAST(definition_ast, new_columns, context);
+}
 
 bool IndicesDescription::has(const String & name) const
 {
@@ -108,6 +158,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
     return result;
 }
 
+
 ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const ColumnsDescription & columns, const Context & context) const
 {
     ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
@@ -115,7 +166,7 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = SyntaxAnalyzer(context).analyze(combined_expr_list, columns.getAllPhysical());
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 

@@ -65,7 +65,11 @@ std::string validateODBCConnectionString(const std::string & connection_string)
         else
             throw Exception("ODBC connection string parameter name doesn't begin with valid identifier character", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
 
-        while (pos < end && isWordCharASCII(*pos))
+        /// Additionally allow dash and dot symbols in names.
+        /// Strictly speaking, the name with that characters should be escaped.
+        /// But some ODBC drivers (e.g.) Postgres don't like escaping.
+
+        while (pos < end && (isWordCharASCII(*pos) || *pos == '-' || *pos == '.'))
             ++pos;
 
         return std::string(begin, pos);
@@ -213,7 +217,11 @@ std::string validateODBCConnectionString(const std::string & connection_string)
 
     auto write_value = [&](const std::string & value)
     {
-        if (std::all_of(value.begin(), value.end(), isWordCharASCII))
+        /// Additionally allow dash and dot symbols - for hostnames.
+        /// Strictly speaking, hostname with that characters should be escaped.
+        /// But some ODBC drivers (e.g.) Postgres don't like escaping.
+
+        if (std::all_of(value.begin(), value.end(), [](char c) { return isWordCharASCII(c) || c == '.' || c == '-'; }))
             write_plain_value(value);
         else
             write_escaped_value(value);

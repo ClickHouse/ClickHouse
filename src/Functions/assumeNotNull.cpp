@@ -1,5 +1,4 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnNumbers.h>
@@ -7,6 +6,8 @@
 
 
 namespace DB
+{
+namespace
 {
 
 /// Implements the function assumeNotNull which takes 1 argument and works as follows:
@@ -38,10 +39,10 @@ public:
         return removeNullable(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        const ColumnPtr & col = block.getByPosition(arguments[0]).column;
-        ColumnPtr & res_col = block.getByPosition(result).column;
+        const ColumnPtr & col = block[arguments[0]].column;
+        ColumnPtr & res_col = block[result].column;
 
         if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
             res_col = nullable_col->getNestedColumnPtr();
@@ -50,6 +51,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionAssumeNotNull(FunctionFactory & factory)
 {

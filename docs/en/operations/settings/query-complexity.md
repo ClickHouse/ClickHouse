@@ -36,7 +36,7 @@ Memory usage is not monitored for the states of certain aggregate functions.
 
 Memory usage is not fully tracked for states of the aggregate functions `min`, `max`, `any`, `anyLast`, `argMin`, `argMax` from `String` and `Array` arguments.
 
-Memory consumption is also restricted by the parameters `max_memory_usage_for_user` and `max_memory_usage_for_all_queries`.
+Memory consumption is also restricted by the parameters `max_memory_usage_for_user` and [max\_server\_memory\_usage](../../operations/server-configuration-parameters/settings.md#max_server_memory_usage).
 
 ## max\_memory\_usage\_for\_user {#max-memory-usage-for-user}
 
@@ -46,18 +46,9 @@ Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHo
 
 See also the description of [max\_memory\_usage](#settings_max_memory_usage).
 
-## max\_memory\_usage\_for\_all\_queries {#max-memory-usage-for-all-queries}
-
-The maximum amount of RAM to use for running all queries on a single server.
-
-Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L289). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
-
-See also the description of [max\_memory\_usage](#settings_max_memory_usage).
-
 ## max\_rows\_to\_read {#max-rows-to-read}
 
 The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
-When running a query in multiple threads, the following restrictions apply to each thread separately.
 
 A maximum number of rows that can be read from a table when running a query.
 
@@ -68,6 +59,31 @@ A maximum number of bytes (uncompressed data) that can be read from a table when
 ## read\_overflow\_mode {#read-overflow-mode}
 
 What to do when the volume of data read exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+
+## max\_rows\_to\_read_leaf {#max-rows-to-read-leaf}
+
+The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
+
+A maximum number of rows that can be read from a local table on a leaf node when running a distributed query. While
+distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will be checked only on the read 
+stage on the leaf nodes and ignored on results merging stage on the root node. For example, cluster consists of 2 shards 
+and each shard contains a table with 100 rows. Then distributed query which suppose to read all the data from both 
+tables with setting `max_rows_to_read=150` will fail as in total it will be 200 rows. While query 
+with `max_rows_to_read_leaf=150` will succeed since leaf nodes will read 100 rows at max.
+
+## max\_bytes\_to\_read_leaf {#max-bytes-to-read-leaf}
+
+A maximum number of bytes (uncompressed data) that can be read from a local table on a leaf node when running 
+a distributed query. While distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will 
+be checked only on the read stage on the leaf nodes and ignored on results merging stage on the root node. 
+For example, cluster consists of 2 shards and each shard contains a table with 100 bytes of data. 
+Then distributed query which suppose to read all the data from both tables with setting `max_bytes_to_read=150` will fail 
+as in total it will be 200 bytes. While query with `max_bytes_to_read_leaf=150` will succeed since leaf nodes will read 
+100 bytes at max.
+
+## read\_overflow\_mode_leaf {#read-overflow-mode-leaf}
+
+What to do when the volume of data read exceeds one of the leaf limits: ‘throw’ or ‘break’. By default, throw.
 
 ## max\_rows\_to\_group\_by {#settings-max-rows-to-group-by}
 
@@ -113,7 +129,7 @@ Limit on the number of bytes in the result. The same as the previous setting.
 
 What to do if the volume of the result exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
-Using ‘break’ is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max\_result\_rows](#setting-max_result_rows), multiple of [max\_block\_size](settings.md#setting-max_block_size) and depends on [max_threads](settings.md#settings-max_threads).
+Using ‘break’ is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max\_result\_rows](#setting-max_result_rows), multiple of [max\_block\_size](../../operations/settings/settings.md#setting-max_block_size) and depends on [max\_threads](../../operations/settings/settings.md#settings-max_threads).
 
 Example:
 

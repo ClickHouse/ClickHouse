@@ -65,10 +65,13 @@ void Chunk::setColumns(MutableColumns columns_, UInt64 num_rows_)
 
 void Chunk::checkNumRowsIsConsistent()
 {
-    for (auto & column : columns)
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        auto & column = columns[i];
         if (column->size() != num_rows)
-            throw Exception("Invalid number of rows in Chunk column " + column->getName()+ ": expected " +
+            throw Exception("Invalid number of rows in Chunk column " + column->getName()+ " position " + toString(i) + ": expected " +
                             toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
+    }
 }
 
 MutableColumns Chunk::mutateColumns()

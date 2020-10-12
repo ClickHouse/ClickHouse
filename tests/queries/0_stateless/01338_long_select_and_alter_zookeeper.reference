@@ -1,0 +1,3 @@
+10
+5
+CREATE TABLE default.alter_mt\n(\n    `key` UInt64,\n    `value` UInt64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test_01338/alter_mt\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192

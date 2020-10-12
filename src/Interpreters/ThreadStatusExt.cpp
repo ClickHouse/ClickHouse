@@ -74,6 +74,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         thread_group->thread_ids.emplace_back(thread_id);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
+        fatal_error_callback = thread_group->fatal_error_callback;
         query_context = thread_group->query_context;
 
         if (!global_context)
@@ -135,6 +136,22 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     setupState(thread_group_);
 }
 
+inline UInt64 time_in_nanoseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(timepoint.time_since_epoch()).count();
+}
+
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
 void ThreadStatus::initPerformanceCounters()
 {
     performance_counters_finalized = false;
@@ -145,11 +162,17 @@ void ThreadStatus::initPerformanceCounters()
     memory_tracker.resetCounters();
     memory_tracker.setDescription("(for thread)");
 
-    query_start_time_nanoseconds = getCurrentTimeNanoseconds();
-    query_start_time = time(nullptr);
+    // query_start_time_{microseconds, nanoseconds} are all constructed from the same time point
+    // to ensure that they are all equal upto the precision of a second.
+    const auto now = std::chrono::system_clock::now();
+
+    query_start_time_nanoseconds = time_in_nanoseconds(now);
+    query_start_time = time_in_seconds(now);
+    query_start_time_microseconds = time_in_microseconds(now);
     ++queries_started;
 
-    *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
+    // query_start_time_nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
+    *last_rusage = RUsageCounters::current();
 
     if (query_context)
     {
@@ -191,6 +214,10 @@ void ThreadStatus::finalizePerformanceCounters()
     performance_counters_finalized = true;
     updatePerformanceCounters();
 
+    // We want to close perf file descriptors if the perf events were enabled for
+    // one query. What this code does in practice is less clear -- e.g., if I run
+    // 'select 1 settings metrics_perf_events_enabled = 1', I still get
+    // query_context->getSettingsRef().metrics_perf_events_enabled == 0 *shrug*.
     bool close_perf_descriptors = true;
     if (query_context)
         close_perf_descriptors = !query_context->getSettingsRef().metrics_perf_events_enabled;
@@ -296,8 +323,16 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 {
     QueryThreadLogElement elem;
 
-    elem.event_time = time(nullptr);
+    // construct current_time and current_time_microseconds using the same time point
+    // so that the two times will always be equal up to a precision of a second.
+    const auto now = std::chrono::system_clock::now();
+    auto current_time =  time_in_seconds(now);
+    auto current_time_microseconds =  time_in_microseconds(now);
+
+    elem.event_time = current_time;
+    elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = query_start_time;
+    elem.query_start_time_microseconds = query_start_time_microseconds;
     elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
 
     elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);

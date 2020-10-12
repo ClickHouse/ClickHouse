@@ -59,7 +59,6 @@ Ver también la descripción de [Método de codificación de datos:](#settings_m
 ## ¿Qué puedes encontrar en Neodigit {#max-rows-to-read}
 
 Las siguientes restricciones se pueden verificar en cada bloque (en lugar de en cada fila). Es decir, las restricciones se pueden romper un poco.
-Al ejecutar una consulta en varios subprocesos, las siguientes restricciones se aplican a cada subproceso por separado.
 
 Un número máximo de filas que se pueden leer de una tabla al ejecutar una consulta.
 

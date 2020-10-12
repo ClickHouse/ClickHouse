@@ -23,7 +23,7 @@ Ayrıntılı açıklamasına bakın [CREATE TABLE](../../../sql-reference/statem
 
 **Motor Parametreleri**
 
--   `join_strictness` – [Katılık katılın](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [Katılık katılın](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [Birleştirme türü](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` fık thera: `JOIN` işlemi yapılmamaktadır.
 

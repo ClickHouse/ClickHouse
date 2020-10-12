@@ -15,7 +15,11 @@ namespace ErrorCodes
 
 RegexpRowInputFormat::RegexpRowInputFormat(
         ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-        : IRowInputFormat(header_, in_, std::move(params_)), buf(in_), format_settings(format_settings_), regexp(format_settings_.regexp.regexp)
+        : IRowInputFormat(header_, in_, std::move(params_))
+        , buf(in_)
+        , format_settings(format_settings_)
+        , field_format(stringToFormat(format_settings_.regexp.escaping_rule))
+        , regexp(format_settings_.regexp.regexp)
 {
     size_t fields_count = regexp.NumberOfCapturingGroups();
     matched_fields.resize(fields_count);
@@ -28,8 +32,13 @@ RegexpRowInputFormat::RegexpRowInputFormat(
         // Save pointer to argument.
         re2_arguments_ptrs[i] = &re2_arguments[i];
     }
+}
 
-    field_format = stringToFormat(format_settings_.regexp.escaping_rule);
+
+void RegexpRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    buf.reset();
 }
 
 RegexpRowInputFormat::ColumnFormat RegexpRowInputFormat::stringToFormat(const String & format)
@@ -42,6 +51,8 @@ RegexpRowInputFormat::ColumnFormat RegexpRowInputFormat::stringToFormat(const St
         return ColumnFormat::Csv;
     if (format == "JSON")
         return ColumnFormat::Json;
+    if (format == "Raw")
+        return ColumnFormat::Raw;
     throw Exception("Unsupported column format \"" + format + "\".", ErrorCodes::BAD_ARGUMENTS);
 }
 
@@ -78,6 +89,12 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
                     read = DataTypeNullable::deserializeTextJSON(*columns[index], field_buf, format_settings, type);
                 else
                     type->deserializeAsTextJSON(*columns[index], field_buf, format_settings);
+                break;
+            case ColumnFormat::Raw:
+                if (parse_as_nullable)
+                    read = DataTypeNullable::deserializeWholeText(*columns[index], field_buf, format_settings, type);
+                else
+                    type->deserializeAsWholeText(*columns[index], field_buf, format_settings);
                 break;
             default:
                 break;

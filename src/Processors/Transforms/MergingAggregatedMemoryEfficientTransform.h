@@ -1,3 +1,4 @@
+#pragma once
 #include <Processors/IProcessor.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>
@@ -20,7 +21,7 @@ namespace DB
   * We need to read them and merge them by buckets - keeping only a few buckets from each file in RAM simultaneously.
   *
   * 2. Merge aggregation results for distributed query processing.
-  * Partially aggregated data arrives from different servers, which can be splitted down or not, into 256 buckets,
+  * Partially aggregated data arrives from different servers, which can be split down or not, into 256 buckets,
   *  and these buckets are passed to us by the network from each server in sequence, one by one.
   * You should also read and merge by the buckets.
   *
@@ -29,10 +30,10 @@ namespace DB
   * There are a number of sources. They give out blocks with partially aggregated data.
   * Each source can return one of the following block sequences:
   * 1. "unsplitted" block with bucket_num = -1;
-  * 2. "splitted" (two_level) blocks with bucket_num from 0 to 255;
+  * 2. "split" (two_level) blocks with bucket_num from 0 to 255;
   * In both cases, there may also be a block of "overflows" with bucket_num = -1 and is_overflows = true;
   *
-  * We start from the convention that splitted blocks are always passed in the order of bucket_num.
+  * We start from the convention that split blocks are always passed in the order of bucket_num.
   * That is, if a < b, then the bucket_num = a block goes before bucket_num = b.
   * This is needed for a memory-efficient merge
   * - so that you do not need to read the blocks up front, but go all the way up by bucket_num.
@@ -41,7 +42,7 @@ namespace DB
   * The overflow block can be presented in any order relative to other blocks (but it can be only one).
   *
   * It is necessary to combine these sequences of blocks and return the result as a sequence with the same properties.
-  * That is, at the output, if there are "splitted" blocks in the sequence, then they should go in the order of bucket_num.
+  * That is, at the output, if there are "split" blocks in the sequence, then they should go in the order of bucket_num.
   *
   * The merge can be performed using several (merging_threads) threads.
   * For this, receiving of a set of blocks for the next bucket_num should be done sequentially,
@@ -136,12 +137,12 @@ private:
     void addChunk(Chunk chunk, size_t from_input);
 };
 
-/// Creates piece of pipeline which performs memory efficient merging of partially aggregated data from several sources.
-/// First processor will have num_inputs, last - single output. You should connect them to create pipeline.
-Processors createMergingAggregatedMemoryEfficientPipe(
-    Block header,
+class Pipe;
+
+/// Adds processors to pipe which performs memory efficient merging of partially aggregated data from several sources.
+void addMergingAggregatedMemoryEfficientTransform(
+    Pipe & pipe,
     AggregatingTransformParamsPtr params,
-    size_t num_inputs,
     size_t num_merging_processors);
 
 }

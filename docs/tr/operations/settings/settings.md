@@ -1048,17 +1048,6 @@ Olası değerler:
 
 Varsayılan değer: 0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
-
-Sıfırlamak [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) iç içe geçmiş için `Distributed` Tablo
-
-Olası değerler:
-
--   1 — Enabled.
--   0 — Disabled.
-
-Varsayılan değer: 0.
-
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
 Bir özel durum atmayı etkinleştirir veya devre dışı bırakır. [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) sorgu birleştirme gerçekleştirmedi.

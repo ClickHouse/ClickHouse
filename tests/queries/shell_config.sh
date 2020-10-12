@@ -31,13 +31,13 @@ export CLICKHOUSE_FORMAT=${CLICKHOUSE_FORMAT:="$CLICKHOUSE_BINARY-format"}
 export CLICKHOUSE_CONFIG_GREP=${CLICKHOUSE_CONFIG_GREP:="/etc/clickhouse-server/preprocessed/config.xml"}
 
 export CLICKHOUSE_HOST=${CLICKHOUSE_HOST:="localhost"}
-export CLICKHOUSE_PORT_TCP=${CLICKHOUSE_PORT_TCP:=`${CLICKHOUSE_EXTRACT_CONFIG} --try --key=tcp_port 2>/dev/null`} 2>/dev/null
+export CLICKHOUSE_PORT_TCP=${CLICKHOUSE_PORT_TCP:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=tcp_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_TCP=${CLICKHOUSE_PORT_TCP:="9000"}
-export CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:=`${CLICKHOUSE_EXTRACT_CONFIG} --try --key=tcp_port_secure 2>/dev/null`} 2>/dev/null
+export CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=tcp_port_secure 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:="9440"}
-export CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:=`${CLICKHOUSE_EXTRACT_CONFIG} --key=http_port 2>/dev/null`}
+export CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:=$(${CLICKHOUSE_EXTRACT_CONFIG} --key=http_port 2>/dev/null)}
 export CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:="8123"}
-export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=`${CLICKHOUSE_EXTRACT_CONFIG} --try --key=https_port 2>/dev/null`} 2>/dev/null
+export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=https_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:="8443"}
 export CLICKHOUSE_PORT_HTTP_PROTO=${CLICKHOUSE_PORT_HTTP_PROTO:="http"}
 
@@ -59,7 +59,7 @@ then
   export CLICKHOUSE_URL_HTTPS="${CLICKHOUSE_URL_HTTPS}?${CLICKHOUSE_URL_PARAMS}"
 fi
 
-export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=`${CLICKHOUSE_EXTRACT_CONFIG} --try --key=interserver_http_port 2>/dev/null`} 2>/dev/null
+export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=interserver_http_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:="9009"}
 export CLICKHOUSE_URL_INTERSERVER=${CLICKHOUSE_URL_INTERSERVER:="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_INTERSERVER}/"}
 
@@ -71,7 +71,7 @@ mkdir -p ${CLICKHOUSE_TMP}
 
 function clickhouse_client_removed_host_parameter()
 {
-	# removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
-	# bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
-	$(echo "$CLICKHOUSE_CLIENT"  | python -c "import sys, re; print re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read())") "$@"
+    # removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
+    # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
+    $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }

@@ -86,7 +86,7 @@ TEST_P(LeastSuperTypeTest, getLeastSupertype)
 
 class MostSubtypeTest : public TypeTest {};
 
-TEST_P(MostSubtypeTest, getLeastSupertype)
+TEST_P(MostSubtypeTest, getMostSubtype)
 {
     if (this->expected_type)
     {
@@ -124,9 +124,7 @@ INSTANTIATE_TEST_SUITE_P(data_type,
             {"Date DateTime64(3)", "DateTime64(3)"},
             {"DateTime DateTime64(3)", "DateTime64(3)"},
             {"DateTime DateTime64(0)", "DateTime64(0)"},
-            {"DateTime64(9) DateTime64(3)", "DateTime64(3)"},
-            {"DateTime DateTime64(12)", "DateTime64(8)"},
-            {"Date DateTime64(15)", "DateTime64(13)"},
+            {"DateTime64(9) DateTime64(3)", "DateTime64(9)"},
 
             {"String FixedString(32) FixedString(8)", "String"},
 

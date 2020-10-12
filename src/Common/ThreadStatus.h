@@ -4,7 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 
-#include <Core/SettingsCollection.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/Progress.h>
 
@@ -60,6 +60,7 @@ public:
     Context * global_context = nullptr;
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
+    std::function<void()> fatal_error_callback;
 
     std::vector<UInt64> thread_ids;
 
@@ -145,6 +146,10 @@ public:
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
                                      LogsLevel client_logs_level);
 
+    /// Callback that is used to trigger sending fatal error messages to client.
+    void setFatalErrorCallback(std::function<void()> callback);
+    void onFatalError();
+
     /// Sets query context for current thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
     void attachQueryContext(Context & query_context);
@@ -185,6 +190,7 @@ protected:
 
     bool performance_counters_finalized = false;
     UInt64 query_start_time_nanoseconds = 0;
+    UInt64 query_start_time_microseconds = 0;
     time_t query_start_time = 0;
     size_t queries_started = 0;
 
@@ -199,6 +205,9 @@ protected:
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
     std::unique_ptr<TasksStatsCounters> taskstats;
+
+    /// Is used to send logs from logs_queue to client in case of fatal errors.
+    std::function<void()> fatal_error_callback;
 
 private:
     void setupState(const ThreadGroupStatusPtr & thread_group_);

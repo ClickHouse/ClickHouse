@@ -4,19 +4,23 @@
 #include <Core/Names.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/IExternalLoadable.h>
+#include <Interpreters/StorageID.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <common/StringRef.h>
 #include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int TYPE_MISMATCH;
 }
 
 struct IDictionaryBase;
@@ -29,22 +33,37 @@ struct IDictionaryBase : public IExternalLoadable
 {
     using Key = UInt64;
 
-    virtual const std::string & getDatabase() const = 0;
-    virtual const std::string & getName() const = 0;
-    virtual const std::string & getFullName() const = 0;
+    IDictionaryBase(const StorageID & dict_id_)
+    : dict_id(dict_id_)
+    , full_name(dict_id.getInternalDictionaryName())
+    {
+    }
 
-    const std::string & getLoadableName() const override { return getFullName(); }
+    const std::string & getFullName() const{ return full_name; }
+    StorageID getDictionaryID() const
+    {
+        std::lock_guard lock{name_mutex};
+        return dict_id;
+    }
+
+    void updateDictionaryName(const StorageID & new_name) const
+    {
+        std::lock_guard lock{name_mutex};
+        assert(new_name.uuid == dict_id.uuid && dict_id.uuid != UUIDHelpers::Nil);
+        dict_id = new_name;
+    }
+
+    const std::string & getLoadableName() const override final { return getFullName(); }
 
     /// Specifies that no database is used.
     /// Sometimes we cannot simply use an empty string for that because an empty string is
     /// usually replaced with the current database.
     static constexpr char NO_DATABASE_TAG[] = "<no_database>";
 
-    std::string_view getDatabaseOrNoDatabaseTag() const
+    std::string getDatabaseOrNoDatabaseTag() const
     {
-        const std::string & database = getDatabase();
-        if (!database.empty())
-            return database;
+        if (!dict_id.database_name.empty())
+            return dict_id.database_name;
         return NO_DATABASE_TAG;
     }
 
@@ -87,11 +106,20 @@ struct IDictionaryBase : public IExternalLoadable
     {
         return std::static_pointer_cast<const IDictionaryBase>(IExternalLoadable::shared_from_this());
     }
+
+private:
+    mutable std::mutex name_mutex;
+    mutable StorageID dict_id;
+
+protected:
+    const String full_name;
 };
 
 
 struct IDictionary : IDictionaryBase
 {
+    IDictionary(const StorageID & dict_id_) : IDictionaryBase(dict_id_) {}
+
     virtual bool hasHierarchy() const = 0;
 
     virtual void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const = 0;
@@ -103,19 +131,22 @@ struct IDictionary : IDictionaryBase
     virtual void isInVectorVector(
         const PaddedPODArray<Key> & /*child_ids*/, const PaddedPODArray<Key> & /*ancestor_ids*/, PaddedPODArray<UInt8> & /*out*/) const
     {
-        throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Hierarchy is not supported for {} dictionary.", getDictionaryID().getNameForLogs());
     }
 
     virtual void
     isInVectorConstant(const PaddedPODArray<Key> & /*child_ids*/, const Key /*ancestor_id*/, PaddedPODArray<UInt8> & /*out*/) const
     {
-        throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Hierarchy is not supported for {} dictionary.", getDictionaryID().getNameForLogs());
     }
 
     virtual void
     isInConstantVector(const Key /*child_id*/, const PaddedPODArray<Key> & /*ancestor_ids*/, PaddedPODArray<UInt8> & /*out*/) const
     {
-        throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Hierarchy is not supported for {} dictionary.", getDictionaryID().getNameForLogs());
     }
 
     void isInConstantConstant(const Key child_id, const Key ancestor_id, UInt8 & out) const
@@ -125,5 +156,15 @@ struct IDictionary : IDictionaryBase
         out = out_arr[0];
     }
 };
+
+/// Implicit conversions in dictGet functions is disabled.
+inline void checkAttributeType(const IDictionaryBase * dictionary, const std::string & attribute_name,
+                               AttributeUnderlyingType attribute_type, AttributeUnderlyingType to)
+{
+    if (attribute_type != to)
+        throw Exception{ErrorCodes::TYPE_MISMATCH, "{}: type mismatch: attribute {} has type {}, expected {}",
+                        dictionary->getDictionaryID().getNameForLogs(),
+                        attribute_name, toString(attribute_type), toString(to)};
+}
 
 }

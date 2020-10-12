@@ -1,11 +1,14 @@
 ---
 toc_priority: 41
-toc_title: For Searching Strings
+toc_title: For Searching in Strings
 ---
 
-# Functions for Searching Strings {#functions-for-searching-strings}
+# Functions for Searching in Strings {#functions-for-searching-strings}
 
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
+
+!!! note "Note"
+    Functions for [replacing](../../sql-reference/functions/string-replace-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
@@ -18,15 +21,16 @@ For a case-insensitive search, use the function [positionCaseInsensitive](#posit
 **Syntax**
 
 ``` sql
-position(haystack, needle)
+position(haystack, needle[, start_pos])
 ```
 
-Alias: `locate(haystack, needle)`.
+Alias: `locate(haystack, needle[, start_pos])`.
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -51,6 +55,18 @@ Result:
 ┌─position('Hello, world!', '!')─┐
 │                             13 │
 └────────────────────────────────┘
+```
+
+``` sql
+SELECT
+    position('Hello, world!', 'o', 1),
+    position('Hello, world!', 'o', 7)
+```
+
+``` text
+┌─position('Hello, world!', 'o', 1)─┬─position('Hello, world!', 'o', 7)─┐
+│                                 5 │                                 9 │
+└───────────────────────────────────┴───────────────────────────────────┘
 ```
 
 The same phrase in Russian contains characters which can’t be represented using a single byte. The function returns some unexpected result (use [positionUTF8](#positionutf8) function for multi-byte encoded text):
@@ -78,13 +94,14 @@ Works under the assumption that the string contains a set of bytes representing 
 **Syntax**
 
 ``` sql
-positionCaseInsensitive(haystack, needle)
+positionCaseInsensitive(haystack, needle[, start_pos])
 ```
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -120,13 +137,14 @@ For a case-insensitive search, use the function [positionCaseInsensitiveUTF8](#p
 **Syntax**
 
 ``` sql
-positionUTF8(haystack, needle)
+positionUTF8(haystack, needle[, start_pos])
 ```
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -153,7 +171,7 @@ Result:
 └───────────────────────────────────┘
 ```
 
-The phrase “Salut, étudiante!”, where character `é` can be represented using a one point (`U+00E9`) or two points (`U+0065U+0301`) the function can be returned some unexpected result:
+The phrase “Salut, étudiante!”, where character `é` can be represented using a one point (`U+00E9`) or two points (`U+0065U+0301`) the function can be returned some unexpected result:
 
 Query for the letter `é`, which is represented one Unicode point `U+00E9`:
 
@@ -169,16 +187,16 @@ Result:
 └────────────────────────────────────────┘
 ```
 
-Query for the letter `é`, which is represented two Unicode points `U+0065U+0301`:
+Query for the letter `é`, which is represented two Unicode points `U+0065U+0301`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!')
+SELECT positionUTF8('Salut, étudiante!', '!')
 ```
 
 Result:
 
 ``` text
-┌─positionUTF8('Salut, étudiante!', '!')─┐
+┌─positionUTF8('Salut, étudiante!', '!')─┐
 │                                     18 │
 └────────────────────────────────────────┘
 ```
@@ -192,13 +210,14 @@ Works under the assumption that the string contains a set of bytes representing 
 **Syntax**
 
 ``` sql
-positionCaseInsensitiveUTF8(haystack, needle)
+positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 ```
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned value**
 
@@ -225,7 +244,7 @@ Result:
 
 ## multiSearchAllPositions {#multisearchallpositions}
 
-The same as [position](string-search-functions.md#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
+The same as [position](../../sql-reference/functions/string-search-functions.md#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
 
 The search is performed on sequences of bytes without respect to string encoding and collation.
 
@@ -241,8 +260,8 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned values**
 
@@ -340,6 +359,89 @@ Extracts a fragment of a string using a regular expression. If ‘haystack’ do
 ## extractAll(haystack, pattern) {#extractallhaystack-pattern}
 
 Extracts all the fragments of a string using a regular expression. If ‘haystack’ doesn’t match the ‘pattern’ regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the ‘extract’ function (it takes the first subpattern, or the entire expression if there isn’t a subpattern).
+
+## extractAllGroupsHorizontal {#extractallgroups-horizontal}
+
+Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where the first array includes all fragments matching the first group, the second array - matching the second group, etc.  
+
+!!! note "Note"
+    `extractAllGroupsHorizontal` function is slower than [extractAllGroupsVertical](#extractallgroups-vertical).
+
+**Syntax** 
+
+``` sql
+extractAllGroupsHorizontal(haystack, pattern)
+```
+
+**Parameters** 
+
+-   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Type: [Array](../../sql-reference/data-types/array.md).
+
+If `haystack` doesn’t match the `pattern` regex, an array of empty arrays is returned. 
+
+**Example**
+
+Query:
+
+``` sql
+SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
+```
+
+Result:
+
+``` text
+┌─extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
+│ [['abc','def','ghi'],['111','222','333']]                                                │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See also**
+-   [extractAllGroupsVertical](#extractallgroups-vertical)
+
+## extractAllGroupsVertical {#extractallgroups-vertical}
+
+Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where each array includes matching fragments from every group. Fragments are grouped in order of appearance in the `haystack`.
+
+**Syntax** 
+
+``` sql
+extractAllGroupsVertical(haystack, pattern)
+```
+
+**Parameters** 
+
+-   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Type: [Array](../../sql-reference/data-types/array.md).
+
+If `haystack` doesn’t match the `pattern` regex, an empty array is returned. 
+
+**Example**
+
+Query:
+
+``` sql
+SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
+```
+
+Result:
+
+``` text
+┌─extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
+│ [['abc','111'],['def','222'],['ghi','333']]                                            │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See also**
+-   [extractAllGroupsHorizontal](#extractallgroups-horizontal)
 
 ## like(haystack, pattern), haystack LIKE pattern operator {#function-like}
 

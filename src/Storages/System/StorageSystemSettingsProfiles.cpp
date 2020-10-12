@@ -7,7 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessFlags.h>
@@ -51,7 +51,7 @@ void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, const
                        const UUID & id,
                        const String & storage_name,
                        const SettingsProfileElements & elements,
-                       const ExtendedRoleSet & apply_to)
+                       const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id);
@@ -76,7 +76,7 @@ void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, const
         if (!profile)
             continue;
 
-        const auto * storage = access_control.findStorage(id);
+        auto storage = access_control.findStorage(id);
         if (!storage)
             continue;
 

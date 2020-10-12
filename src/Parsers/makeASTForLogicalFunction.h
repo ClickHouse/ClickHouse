@@ -5,9 +5,6 @@
 
 namespace DB
 {
-/// Makes an AST calculating NOT argument.
-ASTPtr makeASTForLogicalNot(ASTPtr argument);
-
 /// Makes an AST calculating argument1 AND argument2 AND ... AND argumentN.
 ASTPtr makeASTForLogicalAnd(ASTs && arguments);
 

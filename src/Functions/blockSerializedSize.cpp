@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Returns size on disk for *block* (without taking into account compression).
 class FunctionBlockSerializedSize : public IFunction
@@ -28,14 +30,14 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         UInt64 size = 0;
 
         for (auto arg_pos : arguments)
-            size += blockSerializedSizeOne(block.getByPosition(arg_pos));
+            size += blockSerializedSizeOne(block[arg_pos]);
 
-        block.getByPosition(result).column = DataTypeUInt64().createColumnConst(
+        block[result].column = DataTypeUInt64().createColumnConst(
             input_rows_count, size)->convertToFullColumnIfConst();
     }
 
@@ -60,6 +62,7 @@ public:
     }
 };
 
+}
 
 void registerFunctionBlockSerializedSize(FunctionFactory & factory)
 {

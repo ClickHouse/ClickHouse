@@ -1,4 +1,5 @@
 #include <Access/EnabledSettings.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB

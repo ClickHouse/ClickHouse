@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2028
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 echo 'select 1' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}&max_query_size=8" -d @- 2>&1 | grep -o "Max query size exceeded"
 echo -
@@ -27,20 +28,20 @@ if not url.startswith('http'):
 q = 'select sum(number) from (select * from system.numbers limit 10000000) where number = 0'
 
 def gen_data(q):
-    yield q
-    yield ''.join([' '] * (1024 - len(q)))
+    yield q.encode()
+    yield (''.join([' '] * (1024 - len(q)))).encode()
 
     pattern = ''' or toString(number) = '{}'\n'''
 
     for i in range(1, 4 * 1024):
-        yield pattern.format(str(i).zfill(1024 - len(pattern) + 2))
+        yield pattern.format(str(i).zfill(1024 - len(pattern) + 2)).encode()
 
 s = requests.Session()
 resp = s.post(url + '&max_query_size={}'.format(1 << 21), timeout=1, data=gen_data(q), stream=True,
               headers = {'Connection': 'close'})
 
 for line in resp.iter_lines():
-    print line
-" | python | grep -o "Max query size exceeded"
+    print(line)
+" | python3 | grep -o "Max query size exceeded"
 echo -
 

@@ -49,10 +49,7 @@ private:
     struct lessWithCollation;
 
     ColumnString() = default;
-
-    ColumnString(const ColumnString & src)
-        : offsets(src.offsets.begin(), src.offsets.end()),
-        chars(src.chars.begin(), src.chars.end()) {}
+    ColumnString(const ColumnString & src);
 
 public:
     const char * getFamilyName() const override { return "String"; }
@@ -86,7 +83,7 @@ public:
     void get(size_t n, Field & res) const override
     {
         assert(n < size());
-        res.assignString(&chars[offsetAt(n)], sizeAt(n) - 1);
+        res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
     }
 
     StringRef getDataAt(size_t n) const override
@@ -191,6 +188,12 @@ public:
 
     void updateWeakHash32(WeakHash32 & hash) const override;
 
+    void updateHashFast(SipHash & hash) const override
+    {
+        hash.update(reinterpret_cast<const char *>(offsets.data()), size() * sizeof(offsets[0]));
+        hash.update(reinterpret_cast<const char *>(chars.data()), size() * sizeof(chars[0]));
+    }
+
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -220,6 +223,10 @@ public:
         const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
     }
+
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override;
 
     /// Variant of compareAt for string comparison with respect of collation.
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const;

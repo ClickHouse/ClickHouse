@@ -121,6 +121,62 @@ Result:
 
 Округляет дату-с-временем вниз до начала минуты.
 
+## toStartOfSecond {#tostartofsecond}
+
+Отсекает доли секунды.
+
+**Синтаксис**
+
+``` sql
+toStartOfSecond(value[, timezone])
+```
+
+**Параметры**
+
+-   `value` — Дата и время. [DateTime64](../data-types/datetime64.md).
+-   `timezone` — [Часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../data-types/string.md). 
+
+**Возвращаемое значение**
+
+- Входное значение с отсеченными долями секунды.
+
+Тип: [DateTime64](../data-types/datetime64.md).
+
+**Примеры**
+
+Пример без часового пояса:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(dt64);
+```
+
+Результат:
+
+``` text
+┌───toStartOfSecond(dt64)─┐
+│ 2020-01-01 10:20:30.000 │
+└─────────────────────────┘
+```
+
+Пример с часовым поясом:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(dt64, 'Europe/Moscow');
+```
+
+Результат:
+
+``` text
+┌─toStartOfSecond(dt64, 'Europe/Moscow')─┐
+│                2020-01-01 13:20:30.000 │
+└────────────────────────────────────────┘
+```
+
+**См. также**
+
+- Часовая зона сервера, конфигурационный параметр [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+
+
 ## toStartOfFiveMinute {#tostartoffiveminute}
 
 Округляет дату-с-временем вниз до начала пятиминутного интервала.

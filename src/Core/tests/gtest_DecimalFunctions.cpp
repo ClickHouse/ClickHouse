@@ -56,7 +56,7 @@ void testGetFractional(const DecimalUtilsSplitAndCombineTestParam & param)
               DecimalUtils::getFractionalPart(DecimalType{param.decimal_value}, param.scale));
 }
 
-// unfortunatelly typed parametrized tests () are not supported in this version of gtest, so I have to emulate by hand.
+// Unfortunately typed parametrized tests () are not supported in this version of gtest, so I have to emulate by hand.
 TEST_P(DecimalUtilsSplitAndCombineTest, splitDecimal32)
 {
     testSplit<Decimal32>(GetParam());

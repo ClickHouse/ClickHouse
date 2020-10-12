@@ -15,15 +15,16 @@
 **Синтаксис**
 
 ``` sql
-position(haystack, needle)
+position(haystack, needle[, start_pos])
 ```
 
-Алиас: `locate(haystack, needle)`.
+Алиас: `locate(haystack, needle[, start_pos])`.
 
 **Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -75,13 +76,14 @@ SELECT position('Привет, мир!', '!')
 **Синтаксис**
 
 ``` sql
-positionCaseInsensitive(haystack, needle)
+positionCaseInsensitive(haystack, needle[, start_pos])
 ```
 
 **Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -117,13 +119,14 @@ SELECT positionCaseInsensitive('Hello, world!', 'hello')
 **Синтаксис**
 
 ``` sql
-positionUTF8(haystack, needle)
+positionUTF8(haystack, needle[, start_pos])
 ```
 
 **Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -189,13 +192,14 @@ SELECT positionUTF8('Salut, étudiante!', '!')
 **Синтаксис**
 
 ``` sql
-positionCaseInsensitiveUTF8(haystack, needle)
+positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 ```
 
 **Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -336,6 +340,89 @@ Result:
 ## extractAll(haystack, pattern) {#extractallhaystack-pattern}
 
 Извлечение всех фрагментов строки по регулярному выражению. Если haystack не соответствует регулярному выражению pattern, то возвращается пустая строка. Возвращается массив строк, состоящий из всех соответствий регулярному выражению. В остальном, поведение аналогично функции extract (по прежнему, вынимается первый subpattern, или всё выражение, если subpattern-а нет).
+
+## extractAllGroupsHorizontal {#extractallgroups-horizontal}
+
+Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где первый массив содержит все фрагменты, соответствующие первой группе регулярного выражения, второй массив - соответствующие второй группе, и т.д.  
+
+!!! note "Замечание"
+    Функция `extractAllGroupsHorizontal` работает медленнее, чем функция [extractAllGroupsVertical](#extractallgroups-vertical).
+
+**Синтаксис** 
+
+``` sql
+extractAllGroupsHorizontal(haystack, pattern)
+```
+
+**Параметры** 
+
+-   `haystack` — строка для разбора. Тип: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md). 
+
+**Возвращаемое значение**
+
+-   Тип: [Array](../../sql-reference/data-types/array.md).
+
+Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается массив пустых массивов. 
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
+```
+
+Результат:
+
+``` text
+┌─extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
+│ [['abc','def','ghi'],['111','222','333']]                                                │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**См. также**
+-   функция [extractAllGroupsVertical](#extractallgroups-vertical)
+
+## extractAllGroupsVertical {#extractallgroups-vertical}
+
+Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где каждый массив содержит по одному фрагменту, соответствующему каждой группе регулярного выражения. Фрагменты группируются в массивы в соответствии с порядком появления в исходной строке.
+
+**Синтаксис** 
+
+``` sql
+extractAllGroupsVertical(haystack, pattern)
+```
+
+**Параметры** 
+
+-   `haystack` — строка для разбора. Тип: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Тип: [Array](../../sql-reference/data-types/array.md).
+
+Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается пустой массив. 
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
+```
+
+Результат:
+
+``` text
+┌─extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
+│ [['abc','111'],['def','222'],['ghi','333']]                                            │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**См. также**
+-   функция [extractAllGroupsHorizontal](#extractallgroups-horizontal)
 
 ## like(haystack, pattern), оператор haystack LIKE pattern {#function-like}
 

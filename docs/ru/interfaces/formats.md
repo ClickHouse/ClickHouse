@@ -7,7 +7,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | Формат                                                          | INSERT | SELECT |
 |-----------------------------------------------------------------|--------|--------|
 | [TabSeparated](#tabseparated)                                   | ✔      | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                             | ✗      | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                             | ✔      | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔      | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔      | ✔      |
 | [Template](#format-template)                                    | ✔      | ✔      |
@@ -28,6 +28,8 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [PrettySpace](#prettyspace)                                     | ✗      | ✔      |
 | [Protobuf](#protobuf)                                           | ✔      | ✔      |
 | [Parquet](#data-format-parquet)                                 | ✔      | ✔      |
+| [Arrow](#data-format-arrow)                                     | ✔      | ✔      |
+| [ArrowStream](#data-format-arrow-stream)                        | ✔      | ✔      |
 | [ORC](#data-format-orc)                                         | ✔      | ✗      |
 | [RowBinary](#rowbinary)                                         | ✔      | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)       | ✔      | ✔      |
@@ -61,7 +63,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-22      1031592
 2014-03-23      1046491
 
-0000-00-00      8873898
+1970-01-01      8873898
 
 2014-03-17      1031592
 2014-03-23      1406958
@@ -132,7 +134,7 @@ SELECT * FROM nestedt FORMAT TSV
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Отличается от формата `TabSeparated` тем, что строки выводятся без экранирования.
-Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
+Используя этот формат, следите, чтобы в полях не было символов табуляции или разрыва строки.
 
 Этот формат также доступен под именем `TSVRaw`.
 
@@ -432,7 +434,7 @@ JSON совместим с JavaScript. Для этого, дополнитель
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
-ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`.
+ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`. Чтобы включить отображение в результате значений  `+nan`, `-nan`, `+inf`, `-inf`, установите параметр [output\_format\_json\_quote\_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) равным 1.
 
 Смотрите также формат [JSONEachRow](#jsoneachrow) .
 
@@ -672,7 +674,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Totals:
 ┌──EventDate─┬───────c─┐
-│ 0000-00-00 │ 8873898 │
+│ 1970-01-01 │ 8873898 │
 └────────────┴─────────┘
 
 Extremes:
@@ -940,14 +942,69 @@ message MessageType {
 }
 ```
 
-не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create.md#create-default-values).
+не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values).
 
 ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
 в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
+## Avro {#data-format-avro}
+
+[Apache Avro](https://avro.apache.org/) — это ориентированный на строки фреймворк для сериализации данных. Разработан в рамках проекта Apache Hadoop.
+
+В ClickHouse формат Avro поддерживает чтение и запись [файлов данных Avro](https://avro.apache.org/docs/current/spec.html#Object+Container+Files).
+
+[Логические типы Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+## AvroConfluent {#data-format-avro-confluent}
+
+Для формата `AvroConfluent` ClickHouse поддерживает декодирование сообщений `Avro` с одним объектом. Такие сообщения используются с [Kafka] (http://kafka.apache.org/) и  реестром схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html). 
+
+Каждое сообщение `Avro` содержит идентификатор схемы, который может быть разрешен для фактической схемы с помощью реестра схем.
+
+Схемы кэшируются после разрешения.
+
+URL-адрес реестра схем настраивается с помощью [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#format_avro_schema_registry_url).
+
+### Соответствие типов данных {#sootvetstvie-tipov-dannykh-0}
+
+Такое же, как в [Avro](#data-format-avro).
+
+### Использование {#ispolzovanie}
+
+Чтобы быстро проверить разрешение схемы, используйте [kafkacat](https://github.com/edenhill/kafkacat) с языком запросов [clickhouse-local](../operations/utilities/clickhouse-local.md): 
+
+``` bash
+$ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-local   --input-format AvroConfluent --format_avro_schema_registry_url 'http://schema-registry' -S "field1 Int64, field2 String"  -q 'select *  from table'
+1 a
+2 b
+3 c
+```
+
+Чтобы использовать `AvroConfluent` с [Kafka](../engines/table-engines/integrations/kafka.md):
+
+``` sql
+CREATE TABLE topic1_stream
+(
+    field1 String,
+    field2 String
+)
+ENGINE = Kafka()
+SETTINGS
+kafka_broker_list = 'kafka-broker',
+kafka_topic_list = 'topic1',
+kafka_group_name = 'group1',
+kafka_format = 'AvroConfluent';
+
+SET format_avro_schema_registry_url = 'http://schema-registry';
+
+SELECT * FROM topic1_stream;
+```
+!!! note "Внимание"
+    `format_avro_schema_registry_url` необходимо настроить в `users.xml`, чтобы сохранить значение после перезапуска. Также можно использовать настройку `format_avro_schema_registry_url` табличного движка `Kafka`.
+
 ## Parquet {#data-format-parquet}
 
-[Apache Parquet](http://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.
+[Apache Parquet](https://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.
 
 ### Соответствие типов данных {#sootvetstvie-tipov-dannykh}
 
@@ -992,6 +1049,16 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 ```
 
 Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../engines/table-engines/integrations/hdfs.md).
+
+## Arrow {#data-format-arrow}
+
+[Apache Arrow](https://arrow.apache.org/) поставляется с двумя встроенными поколоночнами форматами хранения. ClickHouse поддерживает операции чтения и записи для этих форматов.
+
+`Arrow` — это Apache Arrow's "file mode" формат. Он предназначен для произвольного доступа в памяти.
+
+## ArrowStream {#data-format-arrow-stream}
+
+`ArrowStream` — это Apache Arrow's "stream mode" формат. Он предназначен для обработки потоков в памяти.
 
 ## ORC {#data-format-orc}
 

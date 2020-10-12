@@ -25,43 +25,8 @@ namespace ErrorCodes
 }
 
 
-ColumnsDescription getStructureOfRemoteTable(
-    const Cluster & cluster,
-    const StorageID & table_id,
-    const Context & context,
-    const ASTPtr & table_func_ptr)
-{
-    const auto & shards_info = cluster.getShardsInfo();
-
-    std::string fail_messages;
-
-    for (const auto & shard_info : shards_info)
-    {
-        try
-        {
-            const auto & res = getStructureOfRemoteTableInShard(shard_info, table_id, context, table_func_ptr);
-
-            /// Expect at least some columns.
-            /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
-            if (res.size() == 0)
-                continue;
-
-            return res;
-        }
-        catch (const NetException &)
-        {
-            std::string fail_message = getCurrentExceptionMessage(false);
-            fail_messages += fail_message + '\n';
-            continue;
-        }
-    }
-
-    throw NetException(
-        "All attempts to get table structure failed. Log: \n\n" + fail_messages + "\n",
-        ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
-}
-
 ColumnsDescription getStructureOfRemoteTableInShard(
+    const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
     const Context & context,
@@ -75,7 +40,8 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         {
             const auto * table_function = table_func_ptr->as<ASTFunction>();
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
-            return table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName())->getColumns();
+            auto storage_ptr = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
+            return storage_ptr->getInMemoryMetadataPtr()->getColumns();
         }
 
         auto table_func_name = queryToString(table_func_ptr);
@@ -84,7 +50,10 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     else
     {
         if (shard_info.isLocal())
-            return DatabaseCatalog::instance().getTable(table_id, context)->getColumns();
+        {
+            auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
+            return storage_ptr->getInMemoryMetadataPtr()->getColumns();
+        }
 
         /// Request for a table description
         query = "DESC TABLE " + table_id.getFullTableName();
@@ -92,7 +61,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ColumnsDescription res;
 
-    auto new_context = ClusterProxy::removeUserRestrictionsFromSettings(context, context.getSettingsRef());
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context.getSettingsRef());
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     Block sample_block
@@ -145,6 +114,42 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     }
 
     return res;
+}
+
+ColumnsDescription getStructureOfRemoteTable(
+    const Cluster & cluster,
+    const StorageID & table_id,
+    const Context & context,
+    const ASTPtr & table_func_ptr)
+{
+    const auto & shards_info = cluster.getShardsInfo();
+
+    std::string fail_messages;
+
+    for (const auto & shard_info : shards_info)
+    {
+        try
+        {
+            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
+
+            /// Expect at least some columns.
+            /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
+            if (res.empty())
+                continue;
+
+            return res;
+        }
+        catch (const NetException &)
+        {
+            std::string fail_message = getCurrentExceptionMessage(false);
+            fail_messages += fail_message + '\n';
+            continue;
+        }
+    }
+
+    throw NetException(
+        "All attempts to get table structure failed. Log: \n\n" + fail_messages + "\n",
+        ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
 }
 
 }

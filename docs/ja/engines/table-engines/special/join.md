@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **エンジン変数**
 
--   `join_strictness` – [厳密に結合する](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [厳密に結合する](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [結合タイプ](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` 句は、 `JOIN` 操作はでなされる。
 

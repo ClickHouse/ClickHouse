@@ -1,6 +1,6 @@
 drop table if exists t50;
 
-create table t50 (a Int, b Int, s String) engine = MergeTree order by a settings index_granularity = 50, index_granularity_bytes=1000;
+create table t50 (a Int, b Int, s String) engine = MergeTree order by a settings index_granularity = 50, index_granularity_bytes=1000, min_index_granularity_bytes=500;
 
 -- some magic to satisfy conditions to run optimizations in MergeTreeRangeReader
 insert into t50 select 0, 1, repeat('a', 10000);

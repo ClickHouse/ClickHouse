@@ -11,10 +11,12 @@
 #include <common/LocalDateTime.h>
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
+#include <common/wide_integer_to_string.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <Core/BigInt.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -39,6 +41,12 @@ namespace ErrorCodes
 {
     extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+template <typename T>
+inline std::string bigintToString(const T & x)
+{
+    return to_string(x);
 }
 
 /// Helper functions for formatted and binary output.
@@ -89,18 +97,32 @@ inline void writeStringBinary(const std::string & s, WriteBuffer & buf)
     buf.write(s.data(), s.size());
 }
 
-inline void writeStringBinary(const char * s, WriteBuffer & buf)
-{
-    writeVarUInt(strlen(s), buf);
-    buf.write(s, strlen(s));
-}
-
 inline void writeStringBinary(const StringRef & s, WriteBuffer & buf)
 {
     writeVarUInt(s.size, buf);
     buf.write(s.data, s.size);
 }
 
+inline void writeStringBinary(const char * s, WriteBuffer & buf)
+{
+    writeStringBinary(StringRef{s}, buf);
+}
+
+inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
+{
+    writeStringBinary(StringRef{s}, buf);
+}
+
+template <typename T>
+void writeBigIntBinary(const T & x, WriteBuffer & buf)
+{
+    static const constexpr size_t bytesize = BigInt<T>::size;
+    char bytes[bytesize];
+
+    BigInt<T>::serialize(x, bytes);
+
+    buf.write(bytes, bytesize);
+}
 
 template <typename T>
 void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
@@ -413,15 +435,19 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
 }
 
 
-inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(const StringRef & s, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeJSONString(s.data(), s.data() + s.size(), buf, settings);
+    writeJSONString(s.data, s.data + s.size, buf, settings);
 }
 
-
-inline void writeJSONString(const StringRef & ref, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(const std::string_view & s, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeJSONString(ref.data, ref.data + ref.size, buf, settings);
+    writeJSONString(StringRef{s}, buf, settings);
+}
+
+inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings)
+{
+    writeJSONString(StringRef{s}, buf, settings);
 }
 
 
@@ -656,13 +682,6 @@ inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 template <char delimiter = '-'>
 inline void writeDateText(DayNum date, WriteBuffer & buf)
 {
-    if (unlikely(!date))
-    {
-        static const char s[] = {'0', '0', '0', '0', delimiter, '0', '0', delimiter, '0', '0'};
-        buf.write(s, sizeof(s));
-        return;
-    }
-
     writeDateText<delimiter>(LocalDate(date), buf);
 }
 
@@ -719,18 +738,6 @@ inline void writeDateTimeText(const LocalDateTime & datetime, WriteBuffer & buf)
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
 inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    if (unlikely(!datetime))
-    {
-        static const char s[] =
-        {
-            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
-            between_date_time_delimiter,
-            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'
-        };
-        buf.write(s, sizeof(s));
-        return;
-    }
-
     const auto & values = date_lut.getValues(datetime);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
@@ -743,21 +750,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
 {
     static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DateTime64>();
     scale = scale > MaxScale ? MaxScale : scale;
-    if (unlikely(!datetime64))
-    {
-        static const char s[] =
-        {
-            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
-            between_date_time_delimiter,
-            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
-            fractional_time_delimiter,
-            // Exactly MaxScale zeroes
-            '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
-        };
-        buf.write(s, sizeof(s) - (MaxScale - scale)
-                  + (scale == 0 ? -1 : 0)); // if scale is zero, also remove the fractional_time_delimiter.
-        return;
-    }
+
     auto c = DecimalUtils::split(datetime64, scale);
     const auto & values = date_lut.getValues(c.whole);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
@@ -815,17 +808,20 @@ inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const DummyUInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writeBigIntBinary(x.value, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
+inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
+inline void writeBinary(const Int256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline std::enable_if_t<is_integral_v<T>, void>
+inline std::enable_if_t<is_integer_v<T> && !is_big_int_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>
@@ -842,30 +838,64 @@ template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { wri
 inline void writeText(const char * x, WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
 inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
 
+inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(LocalDate(x), buf); }
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
+inline void writeText(const UInt256 & x, WriteBuffer & buf) { writeText(bigintToString(x), buf); }
+inline void writeText(const Int256 & x, WriteBuffer & buf) { writeText(bigintToString(x), buf); }
 
 template <typename T>
-void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
+String decimalFractional(const T & x, UInt32 scale)
 {
-    if (value < Decimal<T>(0))
+    if constexpr (std::is_same_v<T, Int256>)
     {
-        value *= Decimal<T>(-1);
+        static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+
+        if (x <= std::numeric_limits<UInt32>::max())
+            return decimalFractional(static_cast<UInt32>(x), scale);
+        else if (x <= std::numeric_limits<UInt64>::max())
+            return decimalFractional(static_cast<UInt64>(x), scale);
+        else if (x <= max_int128)
+            return decimalFractional(static_cast<Int128>(x), scale);
+    }
+    else if constexpr (std::is_same_v<T, Int128>)
+    {
+        if (x <= std::numeric_limits<UInt32>::max())
+            return decimalFractional(static_cast<UInt32>(x), scale);
+        else if (x <= std::numeric_limits<UInt64>::max())
+            return decimalFractional(static_cast<UInt64>(x), scale);
+    }
+
+    String str(scale, '0');
+    T value = x;
+    for (Int32 pos = scale - 1; pos >= 0; --pos, value /= 10)
+        str[pos] += static_cast<char>(value % 10);
+    return str;
+}
+
+template <typename T>
+void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr)
+{
+    T part = DecimalUtils::getWholePart(x, scale);
+
+    if (x.value < 0 && part == 0)
+    {
         writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
     }
 
-    const T whole_part = DecimalUtils::getWholePart(value, scale);
+    if constexpr (std::is_same_v<T, Int256>)
+        writeText(part, ostr);
+    else
+        writeIntText(part, ostr);
 
-    writeIntText(whole_part, ostr);
     if (scale)
     {
         writeChar('.', ostr);
-        String str_fractional(scale, '0');
-        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
-            str_fractional[pos] += value % Decimal<T>(10);
-        ostr.write(str_fractional.data(), scale);
+        part = DecimalUtils::getFractionalPart(x, scale);
+        String fractional = decimalFractional(part, scale);
+        ostr.write(fractional.data(), scale);
     }
 }
 
@@ -891,6 +921,20 @@ inline void writeQuoted(const LocalDateTime & x, WriteBuffer & buf)
 }
 
 inline void writeQuoted(const UUID & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
+
+inline void writeQuoted(const UInt256 & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
+
+inline void writeQuoted(const Int256 & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
     writeText(x, buf);
@@ -996,6 +1040,26 @@ inline String toString(const T & x)
     WriteBufferFromOwnString buf;
     writeText(x, buf);
     return buf.str();
+}
+
+inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
+{
+    /// c_str is guaranteed to return zero-terminated string
+    buffer.write(s.c_str(), s.size() + 1);
+}
+
+template <typename T>
+inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
+writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
+{
+    if constexpr (sizeof(x) == 2)
+        x = __builtin_bswap16(x);
+    else if constexpr (sizeof(x) == 4)
+        x = __builtin_bswap32(x);
+    else if constexpr (sizeof(x) == 8)
+        x = __builtin_bswap64(x);
+
+    writePODBinary(x, buf);
 }
 
 }

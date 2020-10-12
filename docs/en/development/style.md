@@ -1,6 +1,6 @@
 ---
 toc_priority: 68
-toc_title: How to Write C++ Code
+toc_title: C++ Guide
 ---
 
 # How to Write C++ Code {#how-to-write-c-code}
@@ -699,11 +699,11 @@ auto s = std::string{"Hello"};
 
 But other things being equal, cross-platform or portable code is preferred.
 
-**2.** Language: C++17.
+**2.** Language: C++20 (see the list of available [C++20 features](https://en.cppreference.com/w/cpp/compiler_support#C.2B.2B20_features)).
 
-**3.** Compiler: `gcc`. At this time (December 2017), the code is compiled using version 7.2. (It can also be compiled using `clang 4`.)
+**3.** Compiler: `gcc`. At this time (August 2020), the code is compiled using version 9.3. (It can also be compiled using `clang 8`.)
 
-The standard library is used (`libstdc++` or `libc++`).
+The standard library is used (`libc++`).
 
 **4.**OS: Linux Ubuntu, not older than Precise.
 
@@ -747,7 +747,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 ## Libraries {#libraries}
 
-**1.** The C++14 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
+**1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
 **2.** If necessary, you can use any well-known libraries available in the OS package.
 

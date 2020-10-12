@@ -1048,17 +1048,6 @@ ClickHouse生成异常
 
 默认值：0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
-
-重置 [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) 对于嵌套 `Distributed` 表
-
-可能的值:
-
--   1 — Enabled.
--   0 — Disabled.
-
-默认值：0。
-
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
 启用或禁用抛出异常，如果 [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) 查询未执行合并。
@@ -1165,7 +1154,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   系统表 [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   系统表 [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
@@ -1188,7 +1177,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   系统表 [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   系统表 [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
@@ -1204,7 +1193,7 @@ ClickHouse生成异常
 **另请参阅**
 
 -   [采样查询探查器](../optimizing-performance/sampling-query-profiler.md)
--   系统表 [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   系统表 [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
 
@@ -1263,3 +1252,61 @@ ClickHouse生成异常
 默认值：16。
 
 [原始文章](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+
+## transform\_null\_in {#transform_null_in}
+
+为[IN](../../sql-reference/operators/in.md) 运算符启用[NULL](../../sql-reference/syntax.md#null-literal) 值的相等性。
+
+默认情况下，无法比较 `NULL` 值，因为 `NULL` 表示未定义的值。 因此，比较 `expr = NULL` 必须始终返回 `false`。 在此设置下，`NULL = NULL` 为IN运算符返回 `true`.
+
+可能的值：
+
+-   0 — 比较 `IN` 运算符中 `NULL` 值将返回 `false`。
+-   1 — 比较 `IN` 运算符中 `NULL` 值将返回 `true`。
+
+默认值：0。
+
+**例**
+
+考虑`null_in`表：
+
+``` text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
+```
+
+查询:
+
+``` sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
+```
+
+结果:
+
+``` text
+┌──idx─┬────i─┐
+│    1 │    1 │
+└──────┴──────┘
+```
+
+查询:
+
+``` sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
+```
+
+结果:
+
+``` text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+└──────┴───────┘
+```
+
+**另请参阅**
+
+-   [IN 运算符中的 NULL 处理](../../sql-reference/operators/in.md#in-null-processing)

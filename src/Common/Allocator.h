@@ -57,16 +57,7 @@
   * third-party applications which may already use own allocator doing mmaps
   * in the implementation of alloc/realloc.
   */
-#ifdef NDEBUG
-    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
-#else
-    /**
-      * In debug build, use small mmap threshold to reproduce more memory
-      * stomping bugs. Along with ASLR it will hopefully detect more issues than
-      * ASan. The program may fail due to the limit on number of memory mappings.
-      */
-    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 4096;
-#endif
+extern const size_t MMAP_THRESHOLD;
 
 static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
@@ -79,6 +70,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
+    extern const int LOGICAL_ERROR;
 }
 }
 
@@ -99,6 +91,7 @@ public:
     /// Allocate memory range.
     void * alloc(size_t size, size_t alignment = 0)
     {
+        checkSize(size);
         CurrentMemoryTracker::alloc(size);
         return allocNoTrack(size, alignment);
     }
@@ -106,6 +99,7 @@ public:
     /// Free memory range.
     void free(void * buf, size_t size)
     {
+        checkSize(size);
         freeNoTrack(buf, size);
         CurrentMemoryTracker::free(size);
     }
@@ -116,6 +110,8 @@ public:
       */
     void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
     {
+        checkSize(new_size);
+
         if (old_size == new_size)
         {
             /// nothing to do.
@@ -251,6 +247,13 @@ private:
         {
             ::free(buf);
         }
+    }
+
+    void checkSize(size_t size)
+    {
+        /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
+        if (size >= 0x8000000000000000ULL)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too large size ({}) passed to allocator. It indicates an error.", size);
     }
 
 #ifndef NDEBUG

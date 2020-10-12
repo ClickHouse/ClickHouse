@@ -2,14 +2,14 @@
 LIBRARY()
 
 CFLAGS(
-    -DUSE_SSL -DUSE_XXHASH
+    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
     library/cpp/consistent_hashing
     contrib/libs/farmhash
+    contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
-    contrib/libs/icu/common
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
@@ -17,9 +17,11 @@ ADDINCL(
 
 PEERDIR(
     clickhouse/src/Common
+    clickhouse/src/Parsers
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
+    contrib/libs/h3
     contrib/libs/hyperscan
     contrib/libs/icu
     contrib/libs/libdivide
@@ -30,6 +32,8 @@ PEERDIR(
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
+CFLAGS(-g0)
+
 SRCS(
     abs.cpp
     acos.cpp
@@ -91,8 +95,11 @@ SRCS(
     array/hasAll.cpp
     array/hasAny.cpp
     array/has.cpp
+    array/hasSubstr.cpp
     array/indexOf.cpp
     array/length.cpp
+    array/mapOp.cpp
+    array/mapPopulateSeries.cpp
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
@@ -120,17 +127,21 @@ SRCS(
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
+    buildId.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
     concat.cpp
     convertCharset.cpp
     cos.cpp
+    countDigits.cpp
     CRC.cpp
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
+    date_trunc.cpp
     defaultValueOfArgumentType.cpp
+    defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
     dumpColumnStructure.cpp
@@ -152,6 +163,7 @@ SRCS(
     filesystem.cpp
     finalizeAggregation.cpp
     formatDateTime.cpp
+    formatRow.cpp
     formatString.cpp
     fromUnixTimestamp64Micro.cpp
     fromUnixTimestamp64Milli.cpp
@@ -178,7 +190,9 @@ SRCS(
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
     GatherUtils/createValueSource.cpp
-    GatherUtils/has.cpp
+    GatherUtils/has_all.cpp
+    GatherUtils/has_any.cpp
+    GatherUtils/has_substr.cpp
     GatherUtils/push.cpp
     GatherUtils/resizeConstantSize.cpp
     GatherUtils/resizeDynamicSize.cpp
@@ -194,14 +208,29 @@ SRCS(
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
+    geoToH3.cpp
     getMacro.cpp
     getScalar.cpp
+    getSetting.cpp
     getSizeOfEnumType.cpp
+    globalVariable.cpp
     greatCircleDistance.cpp
     greater.cpp
     greaterOrEquals.cpp
     greatest.cpp
+    h3EdgeAngle.cpp
+    h3EdgeLengthM.cpp
+    h3GetBaseCell.cpp
+    h3GetResolution.cpp
+    h3HexAreaM2.cpp
+    h3IndexesAreNeighbors.cpp
+    h3IsValid.cpp
+    h3kRing.cpp
+    h3ToChildren.cpp
+    h3ToParent.cpp
+    h3ToString.cpp
     hasColumnInTable.cpp
+    hasThreadFuzzer.cpp
     hasTokenCaseInsensitive.cpp
     hasToken.cpp
     hostName.cpp
@@ -211,18 +240,22 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
+    ilike.cpp
     in.cpp
+    initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
     intExp10.cpp
     intExp2.cpp
     isConstant.cpp
+    isDecimalOverflow.cpp
     isFinite.cpp
     isInfinite.cpp
     isNaN.cpp
     isNotNull.cpp
     isNull.cpp
     isValidUTF8.cpp
+    isZeroOrNull.cpp
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
@@ -234,6 +267,7 @@ SRCS(
     log10.cpp
     log2.cpp
     log.cpp
+    logTrace.cpp
     lowCardinalityIndices.cpp
     lowCardinalityKeys.cpp
     lower.cpp
@@ -269,8 +303,11 @@ SRCS(
     multiSearchFirstPositionUTF8.cpp
     negate.cpp
     neighbor.cpp
+    normalizedQueryHash.cpp
+    normalizeQuery.cpp
     notEmpty.cpp
     notEquals.cpp
+    notILike.cpp
     notLike.cpp
     now64.cpp
     now.cpp
@@ -337,6 +374,7 @@ SRCS(
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stringToH3.cpp
     substring.cpp
     subtractDays.cpp
     subtractHours.cpp
@@ -348,8 +386,10 @@ SRCS(
     subtractYears.cpp
     tan.cpp
     tanh.cpp
+    TargetSpecific.cpp
     tgamma.cpp
     throwIf.cpp
+    tid.cpp
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp
@@ -359,6 +399,7 @@ SRCS(
     toDayOfMonth.cpp
     toDayOfWeek.cpp
     toDayOfYear.cpp
+    toFixedString.cpp
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp

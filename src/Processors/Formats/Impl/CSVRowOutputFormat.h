@@ -27,9 +27,10 @@ public:
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowEndDelimiter() override;
-    void writePrefix() override;
     void writeBeforeTotals() override;
     void writeBeforeExtremes() override;
+
+    void doWritePrefix() override;
 
     /// https://www.iana.org/assignments/media-types/text/csv
     String getContentType() const override

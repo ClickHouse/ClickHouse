@@ -1048,17 +1048,6 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیشفرض: 0
 
-## به زور \_بهتیتیتیتی\_سکیپ\_اس\_ش\_شارد\_مایش داده میشود {#settings-force_optimize_skip_unused_shards_no_nested}
-
-بازنشانی [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) برای تو در تو `Distributed` جدول
-
-مقادیر ممکن:
-
--   1 — Enabled.
--   0 — Disabled.
-
-مقدار پیش فرض: 0.
-
 ## ا\_فزون\_ف\_کوپ {#setting-optimize_throw_if_noop}
 
 را قادر می سازد و یا غیر فعال پرتاب یک استثنا اگر یک [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) پرس و جو یک ادغام انجام نمی.

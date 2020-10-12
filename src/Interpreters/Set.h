@@ -41,12 +41,6 @@ public:
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
 
-    /** Create a Set from expression (specified literally in the query).
-      * 'types' - types of what are on the left hand side of IN.
-      * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-      */
-    void createFromAST(const DataTypes & types, ASTPtr node, const Context & context);
-
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
       */
@@ -74,6 +68,7 @@ public:
     Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
 
     void checkColumnsNumber(size_t num_key_columns) const;
+    bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
 
 private:
@@ -233,16 +228,13 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
 
 private:
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 
     using ColumnsWithInfinity = std::vector<ValueWithInfinity>;
-
-    ColumnsWithInfinity left_point;
-    ColumnsWithInfinity right_point;
 };
 
 }

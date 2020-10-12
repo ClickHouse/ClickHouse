@@ -12,7 +12,9 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
 #include <Common/typeid_cast.h>
+#include <Common/FileSyncGuard.h>
 
+#include <Parsers/queryToString.h>
 
 namespace ProfileEvents
 {
@@ -132,23 +134,22 @@ void updateTTL(
 
 }
 
-BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block, size_t max_parts)
+BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
         return result;
 
-    data.check(block, true);
-    block.checkNumberOfRows();
+    metadata_snapshot->check(block, true);
 
-    if (!data.hasPartitionKey()) /// Table is not partitioned.
+    if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row());
         return result;
     }
 
     Block block_copy = block;
-    const auto & partition_key = data.getPartitionKey();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
     partition_key.expression->execute(block_copy);
 
     ColumnRawPtrs partition_columns;
@@ -193,7 +194,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     return result;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition)
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot)
 {
     Block & block = block_with_partition.block;
 
@@ -207,7 +208,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     MergeTreePartition partition(std::move(block_with_partition.partition));
 
-    MergeTreePartInfo new_part_info(partition.getID(data.getPartitionKey().sample_block), temp_index, temp_index, 0);
+    MergeTreePartInfo new_part_info(partition.getID(metadata_snapshot->getPartitionKey().sample_block), temp_index, temp_index, 0);
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -231,12 +232,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     size_t expected_size = block.bytes();
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
-    const auto & move_ttl_entries = data.getMoveTTLs();
+    const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
     for (const auto & ttl_entry : move_ttl_entries)
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
-    NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
-    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
+    NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
 
     auto new_data_part = data.createPart(
@@ -251,22 +252,30 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
-    /// The name could be non-unique in case of stale files from previous runs.
-    String full_path = new_data_part->getFullRelativePath();
-
-    if (new_data_part->volume->getDisk()->exists(full_path))
+    std::optional<FileSyncGuard> sync_guard;
+    if (new_data_part->isStoredOnDisk())
     {
-        LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
-        new_data_part->volume->getDisk()->removeRecursive(full_path);
+        /// The name could be non-unique in case of stale files from previous runs.
+        String full_path = new_data_part->getFullRelativePath();
+
+        if (new_data_part->volume->getDisk()->exists(full_path))
+        {
+            LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
+            new_data_part->volume->getDisk()->removeRecursive(full_path);
+        }
+
+        const auto disk = new_data_part->volume->getDisk();
+        disk->createDirectories(full_path);
+
+        if (data.getSettings()->fsync_part_directory)
+            sync_guard.emplace(disk, full_path);
     }
 
-    new_data_part->volume->getDisk()->createDirectories(full_path);
-
     /// If we need to calculate some columns to sort.
-    if (data.hasSortingKey() || data.hasSecondaryIndices())
-        data.getSortingKeyAndSkipIndicesExpression()->execute(block);
+    if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
+        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
 
-    Names sort_columns = data.getSortingKeyColumns();
+    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -290,11 +299,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if (data.hasRowsTTL())
-        updateTTL(data.getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+    if (metadata_snapshot->hasRowsTTL())
+        updateTTL(metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
 
-    for (const auto & [name, ttl_entry] : data.getColumnTTLs())
+    for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
         updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
+
+    const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
+    for (const auto & ttl_entry : recompression_ttl_entries)
+        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
 
@@ -303,11 +316,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, columns, index_factory.getMany(data.getSecondaryIndices()), compression_codec);
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+    bool sync_on_insert = data.getSettings()->fsync_after_insert;
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
-    out.writeSuffixAndFinalizePart(new_data_part);
+    out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());

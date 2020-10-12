@@ -23,13 +23,13 @@
 
 ## -State {#state}
 
-В случае применения этого комбинатора, агрегатная функция возвращает не готовое значение (например, в случае функции [uniq](reference.md#agg_function-uniq) — количество уникальных значений), а промежуточное состояние агрегации (например, в случае функции `uniq` — хэш-таблицу для расчёта количества уникальных значений), которое имеет тип `AggregateFunction(...)` и может использоваться для дальнейшей обработки или может быть сохранено в таблицу для последующей доагрегации.
+В случае применения этого комбинатора, агрегатная функция возвращает не готовое значение (например, в случае функции [uniq](reference/uniq.md#agg_function-uniq) — количество уникальных значений), а промежуточное состояние агрегации (например, в случае функции `uniq` — хэш-таблицу для расчёта количества уникальных значений), которое имеет тип `AggregateFunction(...)` и может использоваться для дальнейшей обработки или может быть сохранено в таблицу для последующей доагрегации.
 
 Для работы с промежуточными состояниями предназначены:
 
 -   Движок таблиц [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md).
 -   Функция [finalizeAggregation](../../sql-reference/aggregate-functions/combinators.md#function-finalizeaggregation).
--   Функция [runningAccumulate](../../sql-reference/aggregate-functions/combinators.md#function-runningaccumulate).
+-   Функция [runningAccumulate](../../sql-reference/aggregate-functions/combinators.md#runningaccumulate).
 -   Комбинатор [-Merge](#aggregate_functions_combinators-merge).
 -   Комбинатор [-MergeState](#aggregate_functions_combinators-mergestate).
 
@@ -206,7 +206,7 @@ FROM
 
 Получим имена людей, чей возраст находится в интервалах `[30,60)` и `[60,75)`. Поскольку мы используем целочисленное представление возраста, то интервалы будут выглядеть как `[30, 59]` и `[60,74]`.
 
-Чтобы собрать имена в массив, возьмём агрегатную функцию [groupArray](reference.md#agg_function-grouparray). Она принимает один аргумент. В нашем случае, это столбец `name`. Функция `groupArrayResample` должна использовать столбец `age` для агрегирования имён по возрасту. Чтобы определить необходимые интервалы, передадим в функцию `groupArrayResample` аргументы `30, 75, 30`.
+Чтобы собрать имена в массив, возьмём агрегатную функцию [groupArray](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray). Она принимает один аргумент. В нашем случае, это столбец `name`. Функция `groupArrayResample` должна использовать столбец `age` для агрегирования имён по возрасту. Чтобы определить необходимые интервалы, передадим в функцию `groupArrayResample` аргументы `30, 75, 30`.
 
 ``` sql
 SELECT groupArrayResample(30, 75, 30)(name, age) from people

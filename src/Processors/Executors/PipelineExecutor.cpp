@@ -1,17 +1,17 @@
 #include <Processors/Executors/PipelineExecutor.h>
-#include <unordered_map>
 #include <queue>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/printPipeline.h>
 #include <Common/EventCounter.h>
 #include <ext/scope_guard.h>
 #include <Common/CurrentThread.h>
-
-#include <Common/Stopwatch.h>
 #include <Processors/ISource.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/ProcessList.h>
 
+#ifndef NDEBUG
+    #include <Common/Stopwatch.h>
+#endif
 
 namespace DB
 {
@@ -42,7 +42,7 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
 {
     try
     {
-        buildGraph();
+        graph = std::make_unique<ExecutingGraph>(processors);
     }
     catch (Exception & exception)
     {
@@ -57,93 +57,16 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     }
 }
 
-bool PipelineExecutor::addEdges(UInt64 node)
-{
-    auto throw_unknown_processor = [](const IProcessor * proc, const IProcessor * parent, bool from_input_port)
-    {
-        String msg = "Processor " + proc->getName() + " was found as " + (from_input_port ? "input" : "output")
-                     + " for processor " + parent->getName() + ", but not found in list of processors.";
-
-        throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
-    };
-
-    const IProcessor * cur = graph[node].processor;
-
-    auto add_edge = [&](auto & from_port, const IProcessor * to_proc, Edges & edges,
-                        bool is_backward, UInt64 input_port_number, UInt64 output_port_number,
-                        std::vector<void *> * update_list)
-    {
-        auto it = processors_map.find(to_proc);
-        if (it == processors_map.end())
-            throw_unknown_processor(to_proc, cur, true);
-
-        UInt64 proc_num = it->second;
-        auto & edge = edges.emplace_back(proc_num, is_backward, input_port_number, output_port_number, update_list);
-
-        from_port.setUpdateInfo(&edge.update_info);
-    };
-
-    bool was_edge_added = false;
-
-    auto & inputs = processors[node]->getInputs();
-    auto from_input = graph[node].backEdges.size();
-
-    if (from_input < inputs.size())
-    {
-        was_edge_added = true;
-
-        for (auto it = std::next(inputs.begin(), from_input); it != inputs.end(); ++it, ++from_input)
-        {
-            const IProcessor * proc = &it->getOutputPort().getProcessor();
-            auto output_port_number = proc->getOutputPortNumber(&it->getOutputPort());
-            add_edge(*it, proc, graph[node].backEdges, true, from_input, output_port_number, graph[node].post_updated_input_ports.get());
-        }
-    }
-
-    auto & outputs = processors[node]->getOutputs();
-    auto from_output = graph[node].directEdges.size();
-
-    if (from_output < outputs.size())
-    {
-        was_edge_added = true;
-
-        for (auto it = std::next(outputs.begin(), from_output); it != outputs.end(); ++it, ++from_output)
-        {
-            const IProcessor * proc = &it->getInputPort().getProcessor();
-            auto input_port_number = proc->getInputPortNumber(&it->getInputPort());
-            add_edge(*it, proc, graph[node].directEdges, false, input_port_number, from_output, graph[node].post_updated_output_ports.get());
-        }
-    }
-
-    return was_edge_added;
-}
-
-void PipelineExecutor::buildGraph()
-{
-    UInt64 num_processors = processors.size();
-
-    graph.reserve(num_processors);
-    for (UInt64 node = 0; node < num_processors; ++node)
-    {
-        IProcessor * proc = processors[node].get();
-        processors_map[proc] = node;
-        graph.emplace_back(proc, node);
-    }
-
-    for (UInt64 node = 0; node < num_processors; ++node)
-        addEdges(node);
-}
-
 void PipelineExecutor::addChildlessProcessorsToStack(Stack & stack)
 {
     UInt64 num_processors = processors.size();
     for (UInt64 proc = 0; proc < num_processors; ++proc)
     {
-        if (graph[proc].directEdges.empty())
+        if (graph->nodes[proc]->direct_edges.empty())
         {
             stack.push(proc);
-            /// do not lock mutex, as this function is executedin single thread
-            graph[proc].status = ExecStatus::Preparing;
+            /// do not lock mutex, as this function is executed in single thread
+            graph->nodes[proc]->status = ExecutingGraph::ExecStatus::Preparing;
         }
     }
 }
@@ -162,7 +85,7 @@ static void executeJob(IProcessor * processor)
     }
 }
 
-void PipelineExecutor::addJob(ExecutionState * execution_state)
+void PipelineExecutor::addJob(ExecutingGraph::Node * execution_state)
 {
     auto job = [execution_state]()
     {
@@ -185,7 +108,7 @@ void PipelineExecutor::addJob(ExecutionState * execution_state)
 
 bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
 {
-    auto & cur_node = graph[pid];
+    auto & cur_node = *graph->nodes[pid];
     Processors new_processors;
 
     try
@@ -194,18 +117,8 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
     }
     catch (...)
     {
-        cur_node.execution_state->exception = std::current_exception();
+        cur_node.exception = std::current_exception();
         return false;
-    }
-
-    for (const auto & processor : new_processors)
-    {
-        if (processors_map.count(processor.get()))
-            throw Exception("Processor " + processor->getName() + " was already added to pipeline.",
-                    ErrorCodes::LOGICAL_ERROR);
-
-        processors_map[processor.get()] = graph.size();
-        graph.emplace_back(processor.get(), graph.size());
     }
 
     {
@@ -213,44 +126,54 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
         processors.insert(processors.end(), new_processors.begin(), new_processors.end());
     }
 
-    UInt64 num_processors = processors.size();
-    for (UInt64 node = 0; node < num_processors; ++node)
+    uint64_t num_processors = processors.size();
+    std::vector<uint64_t> back_edges_sizes(num_processors, 0);
+    std::vector<uint64_t> direct_edge_sizes(num_processors, 0);
+
+    for (uint64_t node = 0; node < graph->nodes.size(); ++node)
     {
-        size_t num_direct_edges = graph[node].directEdges.size();
-        size_t num_back_edges = graph[node].backEdges.size();
+        direct_edge_sizes[node] = graph->nodes[node]->direct_edges.size();
+        back_edges_sizes[node] = graph->nodes[node]->back_edges.size();
+    }
 
-        if (addEdges(node))
+    auto updated_nodes = graph->expandPipeline(processors);
+
+    for (auto updated_node : updated_nodes)
+    {
+        auto & node = *graph->nodes[updated_node];
+
+        size_t num_direct_edges = node.direct_edges.size();
+        size_t num_back_edges = node.back_edges.size();
+
+        std::lock_guard guard(node.status_mutex);
+
+        for (uint64_t edge = back_edges_sizes[updated_node]; edge < num_back_edges; ++edge)
+            node.updated_input_ports.emplace_back(edge);
+
+        for (uint64_t edge = direct_edge_sizes[updated_node]; edge < num_direct_edges; ++edge)
+            node.updated_output_ports.emplace_back(edge);
+
+        if (node.status == ExecutingGraph::ExecStatus::Idle)
         {
-            std::lock_guard guard(*graph[node].status_mutex);
-
-            for (; num_back_edges < graph[node].backEdges.size(); ++num_back_edges)
-                graph[node].updated_input_ports.emplace_back(num_back_edges);
-
-            for (; num_direct_edges < graph[node].directEdges.size(); ++num_direct_edges)
-                graph[node].updated_output_ports.emplace_back(num_direct_edges);
-
-            if (graph[node].status == ExecStatus::Idle)
-            {
-                graph[node].status = ExecStatus::Preparing;
-                stack.push(node);
-            }
+            node.status = ExecutingGraph::ExecStatus::Preparing;
+            stack.push(updated_node);
         }
     }
 
     return true;
 }
 
-bool PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, Queue & queue, size_t thread_number)
+bool PipelineExecutor::tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & edge, Queue & queue, size_t thread_number)
 {
     /// In this method we have ownership on edge, but node can be concurrently accessed.
 
-    auto & node = graph[edge.to];
+    auto & node = *graph->nodes[edge.to];
 
-    std::unique_lock lock(*node.status_mutex);
+    std::unique_lock lock(node.status_mutex);
 
-    ExecStatus status = node.status;
+    ExecutingGraph::ExecStatus status = node.status;
 
-    if (status == ExecStatus::Finished)
+    if (status == ExecutingGraph::ExecStatus::Finished)
         return true;
 
     if (edge.backward)
@@ -258,13 +181,13 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, Queue & queu
     else
         node.updated_input_ports.push_back(edge.input_port_number);
 
-    if (status == ExecStatus::Idle)
+    if (status == ExecutingGraph::ExecStatus::Idle)
     {
-        node.status = ExecStatus::Preparing;
+        node.status = ExecutingGraph::ExecStatus::Preparing;
         return prepareProcessor(edge.to, thread_number, queue, std::move(lock));
     }
     else
-        graph[edge.to].processor->onUpdatePorts();
+        graph->nodes[edge.to]->processor->onUpdatePorts();
 
     return true;
 }
@@ -272,12 +195,12 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, Queue & queu
 bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, std::unique_lock<std::mutex> node_lock)
 {
     /// In this method we have ownership on node.
-    auto & node = graph[pid];
+    auto & node = *graph->nodes[pid];
 
     bool need_expand_pipeline = false;
 
-    std::vector<Edge *> updated_back_edges;
-    std::vector<Edge *> updated_direct_edges;
+    std::vector<ExecutingGraph::Edge *> updated_back_edges;
+    std::vector<ExecutingGraph::Edge *> updated_direct_edges;
 
     {
 #ifndef NDEBUG
@@ -292,12 +215,12 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         }
         catch (...)
         {
-            node.execution_state->exception = std::current_exception();
+            node.exception = std::current_exception();
             return false;
         }
 
 #ifndef NDEBUG
-        node.execution_state->preparation_time_ns += watch.elapsed();
+        node.preparation_time_ns += watch.elapsed();
 #endif
 
         node.updated_input_ports.clear();
@@ -308,18 +231,18 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             case IProcessor::Status::NeedData:
             case IProcessor::Status::PortFull:
             {
-                node.status = ExecStatus::Idle;
+                node.status = ExecutingGraph::ExecStatus::Idle;
                 break;
             }
             case IProcessor::Status::Finished:
             {
-                node.status = ExecStatus::Finished;
+                node.status = ExecutingGraph::ExecStatus::Finished;
                 break;
             }
             case IProcessor::Status::Ready:
             {
-                node.status = ExecStatus::Executing;
-                queue.push(node.execution_state.get());
+                node.status = ExecutingGraph::ExecStatus::Executing;
+                queue.push(&node);
                 break;
             }
             case IProcessor::Status::Async:
@@ -342,22 +265,22 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         }
 
         {
-            for (auto & edge_id : *node.post_updated_input_ports)
+            for (auto & edge_id : node.post_updated_input_ports)
             {
-                auto * edge = static_cast<Edge *>(edge_id);
+                auto * edge = static_cast<ExecutingGraph::Edge *>(edge_id);
                 updated_back_edges.emplace_back(edge);
                 edge->update_info.trigger();
             }
 
-            for (auto & edge_id : *node.post_updated_output_ports)
+            for (auto & edge_id : node.post_updated_output_ports)
             {
-                auto * edge = static_cast<Edge *>(edge_id);
+                auto * edge = static_cast<ExecutingGraph::Edge *>(edge_id);
                 updated_direct_edges.emplace_back(edge);
                 edge->update_info.trigger();
             }
 
-            node.post_updated_input_ports->clear();
-            node.post_updated_output_ports->clear();
+            node.post_updated_input_ports.clear();
+            node.post_updated_output_ports.clear();
         }
     }
 
@@ -379,10 +302,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
     {
         Stack stack;
 
-        executor_contexts[thread_number]->task_list.emplace_back(
-                node.execution_state.get(),
-                &stack
-        );
+        executor_contexts[thread_number]->task_list.emplace_back(&node, &stack);
 
         ExpandPipelineTask * desired = &executor_contexts[thread_number]->task_list.back();
         ExpandPipelineTask * expected = nullptr;
@@ -404,7 +324,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         while (!stack.empty())
         {
             auto item = stack.top();
-            if (!prepareProcessor(item, thread_number, queue, std::unique_lock<std::mutex>(*graph[item].status_mutex)))
+            if (!prepareProcessor(item, thread_number, queue, std::unique_lock<std::mutex>(graph->nodes[item]->status_mutex)))
                 return false;
 
             stack.pop();
@@ -479,9 +399,14 @@ void PipelineExecutor::execute(size_t num_threads)
         executeImpl(num_threads);
 
         /// Execution can be stopped because of exception. Check and rethrow if any.
-        for (auto & node : graph)
-            if (node.execution_state->exception)
-                std::rethrow_exception(node.execution_state->exception);
+        for (auto & node : graph->nodes)
+            if (node->exception)
+                std::rethrow_exception(node->exception);
+
+        /// Exception which happened in executing thread, but not at processor.
+        for (auto & executor_context : executor_contexts)
+            if (executor_context->exception)
+                std::rethrow_exception(executor_context->exception);
     }
     catch (...)
     {
@@ -508,9 +433,9 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         return true;
 
     /// Execution can be stopped because of exception. Check and rethrow if any.
-    for (auto & node : graph)
-        if (node.execution_state->exception)
-            std::rethrow_exception(node.execution_state->exception);
+    for (auto & node : graph->nodes)
+        if (node->exception)
+            std::rethrow_exception(node->exception);
 
     finalizeExecution();
 
@@ -526,9 +451,15 @@ void PipelineExecutor::finalizeExecution()
         return;
 
     bool all_processors_finished = true;
-    for (auto & node : graph)
-        if (node.status != ExecStatus::Finished)  /// Single thread, do not hold mutex
+    for (auto & node : graph->nodes)
+    {
+        if (node->status != ExecutingGraph::ExecStatus::Finished)
+        {
+            /// Single thread, do not hold mutex
             all_processors_finished = false;
+            break;
+        }
+    }
 
     if (!all_processors_finished)
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
@@ -558,21 +489,21 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
 #endif
 
     auto & context = executor_contexts[thread_num];
-    auto & state = context->state;
+    auto & node = context->node;
     bool yield = false;
 
     while (!finished && !yield)
     {
         /// First, find any processor to execute.
         /// Just travers graph and prepare any processor.
-        while (!finished && state == nullptr)
+        while (!finished && node == nullptr)
         {
             {
                 std::unique_lock lock(task_queue_mutex);
 
                 if (!task_queue.empty())
                 {
-                    state = task_queue.pop(thread_num);
+                    node = task_queue.pop(thread_num);
 
                     if (!task_queue.empty() && !threads_queue.empty() /*&& task_queue.quota() > threads_queue.size()*/)
                     {
@@ -581,7 +512,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                         if (threads_queue.has(thread_to_wake))
                             threads_queue.pop(thread_to_wake);
                         else
-                            thread_to_wake = threads_queue.pop_any();
+                            thread_to_wake = threads_queue.popAny();
 
                         lock.unlock();
                         wakeUpExecutor(thread_to_wake);
@@ -615,27 +546,27 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
         if (finished)
             break;
 
-        while (state && !yield)
+        while (node && !yield)
         {
             if (finished)
                 break;
 
-            addJob(state);
+            addJob(node);
 
             {
 #ifndef NDEBUG
                 Stopwatch execution_time_watch;
 #endif
 
-                state->job();
+                node->job();
 
 #ifndef NDEBUG
                 context->execution_time_ns += execution_time_watch.elapsed();
 #endif
             }
 
-            if (state->exception)
-                finish();
+            if (node->exception)
+                cancel();
 
             if (finished)
                 break;
@@ -654,17 +585,17 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
 
                 /// Prepare processor after execution.
                 {
-                    auto lock = std::unique_lock<std::mutex>(*graph[state->processors_id].status_mutex);
-                    if (!prepareProcessor(state->processors_id, thread_num, queue, std::move(lock)))
+                    auto lock = std::unique_lock<std::mutex>(node->status_mutex);
+                    if (!prepareProcessor(node->processors_id, thread_num, queue, std::move(lock)))
                         finish();
                 }
 
-                state = nullptr;
+                node = nullptr;
 
                 /// Take local task from queue if has one.
                 if (!queue.empty())
                 {
-                    state = queue.front();
+                    node = queue.front();
                     queue.pop();
                 }
 
@@ -686,7 +617,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                         if (threads_queue.has(thread_to_wake))
                             threads_queue.pop(thread_to_wake);
                         else
-                            thread_to_wake = threads_queue.pop_any();
+                            thread_to_wake = threads_queue.popAny();
 
                         lock.unlock();
 
@@ -744,7 +675,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
             UInt64 proc = stack.top();
             stack.pop();
 
-            prepareProcessor(proc, 0, queue, std::unique_lock<std::mutex>(*graph[proc].status_mutex));
+            prepareProcessor(proc, 0, queue, std::unique_lock<std::mutex>(graph->nodes[proc]->status_mutex));
 
             while (!queue.empty())
             {
@@ -800,7 +731,16 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                             CurrentThread::detachQueryIfNotDetached();
                 );
 
-                executeSingleThread(thread_num, num_threads);
+                try
+                {
+                    executeSingleThread(thread_num, num_threads);
+                }
+                catch (...)
+                {
+                    /// In case of exception from executor itself, stop other threads.
+                    finish();
+                    executor_contexts[thread_num]->exception = std::current_exception();
+                }
             });
         }
 
@@ -816,32 +756,31 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
 String PipelineExecutor::dumpPipeline() const
 {
-    for (const auto & node : graph)
+    for (const auto & node : graph->nodes)
     {
-        if (node.execution_state)
         {
             WriteBufferFromOwnString buffer;
-            buffer << "(" << node.execution_state->num_executed_jobs << " jobs";
+            buffer << "(" << node->num_executed_jobs << " jobs";
 
 #ifndef NDEBUG
-            buffer << ", execution time: " << node.execution_state->execution_time_ns / 1e9 << " sec.";
-            buffer << ", preparation time: " << node.execution_state->preparation_time_ns / 1e9 << " sec.";
+            buffer << ", execution time: " << node->execution_time_ns / 1e9 << " sec.";
+            buffer << ", preparation time: " << node->preparation_time_ns / 1e9 << " sec.";
 #endif
 
             buffer << ")";
-            node.processor->setDescription(buffer.str());
+            node->processor->setDescription(buffer.str());
         }
     }
 
     std::vector<IProcessor::Status> statuses;
     std::vector<IProcessor *> proc_list;
-    statuses.reserve(graph.size());
-    proc_list.reserve(graph.size());
+    statuses.reserve(graph->nodes.size());
+    proc_list.reserve(graph->nodes.size());
 
-    for (const auto & proc : graph)
+    for (const auto & node : graph->nodes)
     {
-        proc_list.emplace_back(proc.processor);
-        statuses.emplace_back(proc.last_processor_status);
+        proc_list.emplace_back(node->processor);
+        statuses.emplace_back(node->last_processor_status);
     }
 
     WriteBufferFromOwnString out;

@@ -179,7 +179,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         ColumnArray & to_array = assert_cast<ColumnArray &>(to);
         IColumn & to_data = to_array.getData();

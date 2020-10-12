@@ -2,7 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -11,8 +11,7 @@
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 
-#include <boost/format.hpp>
-
+#include <random>
 #include <bitset>
 #include <cmath>
 #include <initializer_list>
@@ -63,6 +62,10 @@ std::vector<T> operator+(std::vector<T> && left, std::vector<T> && right)
 namespace
 {
 
+template <class T> using is_pod = std::is_trivial<std::is_standard_layout<T>>;
+template <class T> inline constexpr bool is_pod_v = is_pod<T>::value;
+
+
 template <typename T>
 struct AsHexStringHelper
 {
@@ -84,7 +87,7 @@ std::ostream & operator << (std::ostream & ostr, const AsHexStringHelper<T> & he
 template <typename T>
 AsHexStringHelper<T> AsHexString(const T & container)
 {
-    static_assert (sizeof(container[0]) == 1 && std::is_pod<std::decay_t<decltype(container[0])>>::value, "Only works on containers of byte-size PODs.");
+    static_assert (sizeof(container[0]) == 1 && is_pod_v<std::decay_t<decltype(container[0])>>, "Only works on containers of byte-size PODs.");
 
     return AsHexStringHelper<T>{container};
 }
@@ -162,7 +165,7 @@ public:
           data_end(container.data() + container.size()),
           current_value(T{})
     {
-        static_assert(sizeof(container[0]) == 1 && std::is_pod<std::decay_t<decltype(container[0])>>::value, "Only works on containers of byte-size PODs.");
+        static_assert(sizeof(container[0]) == 1 && is_pod_v<std::decay_t<decltype(container[0])>>, "Only works on containers of byte-size PODs.");
         read();
     }
 
@@ -252,8 +255,8 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
             if (++mismatching_items <= MAX_MISMATCHING_ITEMS)
             {
                 result << "\nmismatching " << sizeof(T) << "-byte item #" << i
-                   << "\nexpected: " << bin(left_value) << " (0x" << std::hex << left_value << ")"
-                   << "\ngot     : " << bin(right_value) << " (0x" << std::hex << right_value << ")";
+                   << "\nexpected: " << bin(left_value) << " (0x" << std::hex << size_t(left_value) << ")"
+                   << "\ngot     : " << bin(right_value) << " (0x" << std::hex << size_t(right_value) << ")";
                 if (mismatching_items == MAX_MISMATCHING_ITEMS)
                 {
                     result << "\n..." << std::endl;
@@ -386,7 +389,7 @@ CodecTestSequence makeSeq(Args && ... args)
     }
 
     return CodecTestSequence{
-            (boost::format("%1% values of %2%") % std::size(vals) % type_name<T>()).str(),
+            (fmt::format("{} values of {}", std::size(vals), type_name<T>())),
             std::move(data),
             makeDataType<T>()
     };
@@ -408,7 +411,7 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
     }
 
     return CodecTestSequence{
-            (boost::format("%1% values of %2% from %3%") % (End - Begin) % type_name<T>() % gen_name).str(),
+            (fmt::format("{} values of {} from {}", (End - Begin), type_name<T>(), gen_name)),
             std::move(data),
             makeDataType<T>()
     };
@@ -465,11 +468,12 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 
     parser.parse(token_iterator, codec_ast, expected);
 
-    return CompressionCodecFactory::instance().get(codec_ast, data_type, false);
+    return CompressionCodecFactory::instance().get(codec_ast, data_type);
 }
 
 template <typename Timer>
-void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSequence & test_sequence, std::optional<double> expected_compression_ratio = std::optional<double>{})
+void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSequence & test_sequence,
+                     std::optional<double> expected_compression_ratio = {})
 {
     const auto & source_data = test_sequence.serialized_data;
 
@@ -536,17 +540,12 @@ TEST_P(CodecTest, TranscodingWithDataType)
     testTranscoding(*codec);
 }
 
-TEST_P(CodecTest, TranscodingWithoutDataType)
-{
-    const auto codec = makeCodec(CODEC_WITHOUT_DATA_TYPE);
-    testTranscoding(*codec);
-}
 
 // Param is tuple-of-tuple to simplify instantiating with values, since typically group of cases test only one codec.
 class CodecTestCompatibility : public ::testing::TestWithParam<std::tuple<Codec, std::tuple<CodecTestSequence, std::string>>>
 {};
 
-// Check that iput sequence when encoded matches the encoded string binary.
+// Check that input sequence when encoded matches the encoded string binary.
 TEST_P(CodecTestCompatibility, Encoding)
 {
     const auto & codec_spec = std::get<0>(GetParam());
@@ -652,6 +651,7 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
 
     std::cerr << std::endl;
 }
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(CodecTestPerformance);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Here we use generators to produce test payload for codecs.
@@ -698,7 +698,7 @@ auto SequentialGenerator = [](auto stride = 1)
 template <typename T>
 using uniform_distribution =
 typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distribution<T>,
-        typename std::conditional_t<is_integral_v<T>, std::uniform_int_distribution<T>, void>>;
+        typename std::conditional_t<is_integer_v<T>, std::uniform_int_distribution<T>, void>>;
 
 
 template <typename T = Int32>
@@ -1274,8 +1274,8 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
     )
 );
 
-// These 'tests' try to measure performance of encoding and decoding and hence only make sence to be run locally,
-// also they require pretty big data to run agains and generating this data slows down startup of unit test process.
+// These 'tests' try to measure performance of encoding and decoding and hence only make sense to be run locally,
+// also they require pretty big data to run against and generating this data slows down startup of unit test process.
 // So un-comment only at your discretion.
 
 // Just as if all sequences from generatePyramidOfSequences were appended to one-by-one to the first one.

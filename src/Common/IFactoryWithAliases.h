@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Poco/String.h>
 
 #include <unordered_map>
@@ -16,14 +16,14 @@ namespace ErrorCodes
 }
 
 /** If stored objects may have several names (aliases)
- * this interface may be helpful
- * template parameter is available as Creator
- */
-template <typename CreatorFunc>
-class IFactoryWithAliases : public IHints<2, IFactoryWithAliases<CreatorFunc>>
+  * this interface may be helpful
+  * template parameter is available as Value
+  */
+template <typename ValueType>
+class IFactoryWithAliases : public IHints<2, IFactoryWithAliases<ValueType>>
 {
 protected:
-    using Creator = CreatorFunc;
+    using Value = ValueType;
 
     String getAliasToOrName(const String & name) const
     {
@@ -43,13 +43,13 @@ public:
         CaseInsensitive
     };
 
-    /** Register additional name for creator
-     * real_name have to be already registered.
-     */
+    /** Register additional name for value
+      * real_name have to be already registered.
+      */
     void registerAlias(const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
-        const auto & creator_map = getCreatorMap();
-        const auto & case_insensitive_creator_map = getCaseInsensitiveCreatorMap();
+        const auto & creator_map = getMap();
+        const auto & case_insensitive_creator_map = getCaseInsensitiveMap();
         const String factory_name = getFactoryName();
 
         String real_dict_name;
@@ -80,7 +80,7 @@ public:
     {
         std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
-        std::transform(getCreatorMap().begin(), getCreatorMap().end(), std::back_inserter(result), getter);
+        std::transform(getMap().begin(), getMap().end(), std::back_inserter(result), getter);
         std::transform(aliases.begin(), aliases.end(), std::back_inserter(result), getter);
         return result;
     }
@@ -88,7 +88,7 @@ public:
     bool isCaseInsensitive(const String & name) const
     {
         String name_lowercase = Poco::toLower(name);
-        return getCaseInsensitiveCreatorMap().count(name_lowercase) || case_insensitive_aliases.count(name_lowercase);
+        return getCaseInsensitiveMap().count(name_lowercase) || case_insensitive_aliases.count(name_lowercase);
     }
 
     const String & aliasTo(const String & name) const
@@ -109,11 +109,11 @@ public:
     virtual ~IFactoryWithAliases() override {}
 
 private:
-    using InnerMap = std::unordered_map<String, Creator>; // name -> creator
+    using InnerMap = std::unordered_map<String, Value>; // name -> creator
     using AliasMap = std::unordered_map<String, String>; // alias -> original type
 
-    virtual const InnerMap & getCreatorMap() const = 0;
-    virtual const InnerMap & getCaseInsensitiveCreatorMap() const = 0;
+    virtual const InnerMap & getMap() const = 0;
+    virtual const InnerMap & getCaseInsensitiveMap() const = 0;
     virtual String getFactoryName() const = 0;
 
     /// Alias map to data_types from previous two maps

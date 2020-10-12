@@ -7,7 +7,8 @@
 
 namespace DB
 {
-
+namespace
+{
 
 /** Returns the server time zone.
   */
@@ -36,12 +37,13 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, DateLUT::instance().getTimeZone());
+        block[result].column = DataTypeString().createColumnConst(input_rows_count, DateLUT::instance().getTimeZone());
     }
 };
 
+}
 
 void registerFunctionTimeZone(FunctionFactory & factory)
 {

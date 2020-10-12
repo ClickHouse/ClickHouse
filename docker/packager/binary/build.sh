@@ -17,10 +17,13 @@ ccache --show-stats ||:
 ccache --zero-stats ||:
 ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
 rm -f CMakeCache.txt
-cmake .. -LA -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS
-ninja clickhouse-bundle
+# Read cmake arguments into array (possibly empty)
+read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
+cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+# shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
+ninja $NINJA_FLAGS clickhouse-bundle
 mv ./programs/clickhouse* /output
-mv ./src/unit_tests_dbms /output
+mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
 
@@ -33,6 +36,25 @@ then
     rm /output/clickhouse-odbc-bridge ||:
 
     cp -r ../docker/test/performance-comparison /output/scripts ||:
+
+    # We have to know the revision that corresponds to this binary build.
+    # It is not the nominal SHA from pull/*/head, but the pull/*/merge, which is
+    # head merged to master by github, at some point after the PR is updated.
+    # There are some quirks to consider:
+    # - apparently the real SHA is not recorded in system.build_options;
+    # - it can change at any time as github pleases, so we can't just record
+    #   the SHA and use it later, it might become inaccessible;
+    # - CI has an immutable snapshot of repository that it uses for all checks
+    #   for a given nominal SHA, but it is not accessible outside Yandex.
+    # This is why we add this repository snapshot from CI to the performance test
+    # package.
+    mkdir /output/ch
+    git -C /output/ch init --bare
+    git -C /output/ch remote add origin /build
+    git -C /output/ch fetch --no-tags --depth 50 origin HEAD:pr
+    git -C /output/ch fetch --no-tags --depth 50 origin master:master
+    git -C /output/ch reset --soft pr
+    git -C /output/ch log -5
 fi
 
 # May be set for split build or for performance test.

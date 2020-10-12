@@ -48,15 +48,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
     const Context & context;
 
-    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
-    static constexpr size_t INITIAL_SIZE_DEGREE = 9;
+    /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
+    static constexpr size_t INITIAL_SIZE_DEGREE = 6;
 
     struct UnpackedArrays
     {
@@ -233,7 +233,7 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
 
     for (size_t i = 0; i < num_args; ++i)
     {
-        const ColumnWithTypeAndName & arg = block.getByPosition(arguments[i]);
+        const ColumnWithTypeAndName & arg = block[arguments[i]];
         initial_columns[i] = arg;
         columns[i] = arg;
         auto & column = columns[i];
@@ -251,7 +251,6 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
             }
             else
             {
-
                 if (!arg.type->equals(*return_type) && !arg.type->equals(*nullable_return_type))
                 {
                     /// If result has array type Array(T) still cast Array(Nullable(U)) to Array(Nullable(T))
@@ -292,12 +291,11 @@ static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTy
 
     auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
 
-    Block block = args;
-    block.insert({nullptr, eq_func->getReturnType(), ""});
+    args.emplace_back(ColumnWithTypeAndName{nullptr, eq_func->getReturnType(), ""});
 
-    eq_func->execute(block, {0, 1}, 2, args.front().column->size());
+    eq_func->execute(args, {0, 1}, 2, args.front().column->size());
 
-    return block.getByPosition(2).column;
+    return args[2].column;
 }
 
 FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
@@ -385,9 +383,9 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     return arrays;
 }
 
-void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
-    const auto & return_type = block.getByPosition(result).type;
+    const auto & return_type = block[result].type;
     const auto * return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
 
     if (!return_type_array)
@@ -397,7 +395,7 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
 
     if (typeid_cast<const DataTypeNothing *>(nested_return_type.get()))
     {
-        block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
+        block[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
         return;
     }
 
@@ -405,7 +403,7 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
     DataTypes data_types;
     data_types.reserve(num_args);
     for (size_t i = 0; i < num_args; ++i)
-        data_types.push_back(block.getByPosition(arguments[i]).type);
+        data_types.push_back(block[arguments[i]].type);
 
     auto return_type_with_nulls = getMostSubtype(data_types, true, true);
 
@@ -448,7 +446,7 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
         }
     }
 
-    block.getByPosition(result).column = std::move(result_column);
+    block[result].column = std::move(result_column);
 }
 
 template <typename T, size_t>

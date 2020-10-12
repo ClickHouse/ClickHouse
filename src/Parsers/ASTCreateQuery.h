@@ -60,10 +60,8 @@ public:
     bool is_materialized_view{false};
     bool is_live_view{false};
     bool is_populate{false};
-    bool is_dictionary{false}; /// CREATE DICTIONARY
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     ASTColumns * columns_list = nullptr;
-    ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of dictionary
     ASTExpressionList * tables = nullptr;
     //FIXME
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
@@ -72,7 +70,11 @@ public:
     String as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
+
+    bool is_dictionary{false}; /// CREATE DICTIONARY
+    ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
+
     std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
     bool attach_short_syntax{false};
 

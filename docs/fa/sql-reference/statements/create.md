@@ -78,7 +78,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 شرح ستون می تواند یک عبارت برای یک مقدار پیش فرض مشخص, در یکی از روش های زیر:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 مثال: `URLDomain String DEFAULT domain(URL)`.
 
-اگر یک عبارت برای مقدار پیش فرض تعریف نشده است, مقادیر پیش فرض خواهد شد به صفر برای اعداد تنظیم, رشته های خالی برای رشته, طعمه خالی برای ارریس, و `0000-00-00` برای تاریخ و یا `0000-00-00 00:00:00` برای تاریخ با زمان. نقاط صفر پشتیبانی نمی شوند.
+اگر یک عبارت برای مقدار پیش فرض تعریف نشده است, مقادیر پیش فرض خواهد شد به صفر برای اعداد تنظیم, رشته های خالی برای رشته, طعمه خالی برای ارریس, و `1970-01-01` برای تاریخ و یا `1970-01-01 00:00:00` برای تاریخ با زمان. نقاط صفر پشتیبانی نمی شوند.
 
 اگر عبارت پیش فرض تعریف شده است, نوع ستون اختیاری است. در صورتی که یک نوع به صراحت تعریف شده وجود ندارد, نوع بیان پیش فرض استفاده شده است. مثال: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ نوع خواهد شد برای استفاده ‘EventDate’ ستون.
 
@@ -155,7 +155,7 @@ ENGINE = <Engine>
 فشرده سازی برای موتورهای جدول زیر پشتیبانی می شود:
 
 -   [ادغام](../../engines/table-engines/mergetree-family/mergetree.md) خانواده پشتیبانی از کدک های فشرده سازی ستون و انتخاب روش فشرده سازی پیش فرض توسط [فشردهسازی](../../operations/server-configuration-parameters/settings.md#server-settings-compression) تنظیمات.
--   [ثبت](../../engines/table-engines/log-family/log-family.md) خانواده با استفاده از `lz4` روش فشرده سازی به طور پیش فرض و پشتیبانی از کدک های فشرده سازی ستون.
+-   [ثبت](../../engines/table-engines/log-family/index.md) خانواده با استفاده از `lz4` روش فشرده سازی به طور پیش فرض و پشتیبانی از کدک های فشرده سازی ستون.
 -   [تنظیم](../../engines/table-engines/special/set.md). فقط فشرده سازی پیش فرض پشتیبانی می کند.
 -   [پیوستن](../../engines/table-engines/special/join.md). فقط فشرده سازی پیش فرض پشتیبانی می کند.
 
@@ -466,7 +466,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster
 ``` sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]

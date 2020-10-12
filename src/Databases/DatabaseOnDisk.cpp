@@ -20,6 +20,7 @@
 
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -145,7 +146,7 @@ void DatabaseOnDisk::createTable(
 {
     const auto & settings = context.getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
-    assert(getDatabaseName() == create.database && table_name == create.table);
+    assert(table_name == create.table);
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -216,9 +217,15 @@ void DatabaseOnDisk::dropTable(const Context & context, const String & table_nam
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
     String table_data_path_relative = getTableDataPath(table_name);
-    assert(!table_data_path_relative.empty());
+    if (table_data_path_relative.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
 
     StoragePtr table = detachTable(table_name);
+
+    /// This is possible for Lazy database.
+    if (!table)
+        return;
+
     bool renamed = false;
     try
     {
@@ -248,10 +255,13 @@ void DatabaseOnDisk::renameTable(
         const String & table_name,
         IDatabase & to_database,
         const String & to_table_name,
-        bool exchange)
+        bool exchange,
+        bool dictionary)
 {
     if (exchange)
         throw Exception("Tables can be exchanged only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
+    if (dictionary)
+        throw Exception("Dictionaries can be renamed only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
 
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
@@ -266,7 +276,7 @@ void DatabaseOnDisk::renameTable(
     }
 
     auto table_data_relative_path = getTableDataPath(table_name);
-    TableStructureWriteLockHolder table_lock;
+    TableExclusiveLockHolder table_lock;
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
@@ -305,6 +315,14 @@ void DatabaseOnDisk::renameTable(
     to_database.createTable(context, to_table_name, table, attach_query);
 
     Poco::File(table_metadata_path).remove();
+
+    /// Special case: usually no actions with symlinks are required when detaching/attaching table,
+    /// but not when moving from Atomic database to Ordinary
+    if (from_atomic_to_ordinary)
+    {
+        auto & atomic_db = assert_cast<DatabaseAtomic &>(*this);
+        atomic_db.tryRemoveSymlink(table_name);
+    }
 }
 
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
@@ -332,9 +350,14 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     ASTPtr ast;
 
     auto settings = global_context.getSettingsRef();
-    auto metadata_dir_path = getMetadataPath();
-    auto database_metadata_path = metadata_dir_path.substr(0, metadata_dir_path.size() - 1) + ".sql";
-    ast = getCreateQueryFromMetadata(database_metadata_path, true);
+    {
+        std::lock_guard lock(mutex);
+        auto database_metadata_path = global_context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
+        ast = parseQueryFromMetadata(log, global_context, database_metadata_path, true);
+        auto & ast_create_query = ast->as<ASTCreateQuery &>();
+        ast_create_query.attach = false;
+        ast_create_query.database = database_name;
+    }
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.
@@ -349,6 +372,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 
 void DatabaseOnDisk::drop(const Context & context)
 {
+    assert(tables.empty());
     Poco::File(context.getPath() + getDataPath()).remove(false);
     Poco::File(getMetadataPath()).remove(false);
 }
@@ -389,6 +413,9 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         }
     };
 
+    /// Metadata files to load: name and flag for .tmp_drop files
+    std::set<std::pair<String, bool>> metadata_files;
+
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
@@ -404,7 +431,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
             /// There are files that we tried to delete previously
-            process_tmp_drop_metadata_file(dir_it.name());
+            metadata_files.emplace(dir_it.name(), false);
         }
         else if (endsWith(dir_it.name(), ".sql.tmp"))
         {
@@ -415,15 +442,29 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         else if (endsWith(dir_it.name(), ".sql"))
         {
             /// The required files have names like `table_name.sql`
-            process_metadata_file(dir_it.name());
+            metadata_files.emplace(dir_it.name(), true);
         }
         else
             throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + getMetadataPath(),
                 ErrorCodes::INCORRECT_FILE_NAME);
     }
+
+    /// Read and parse metadata in parallel
+    ThreadPool pool;
+    for (const auto & file : metadata_files)
+    {
+        pool.scheduleOrThrowOnError([&]()
+        {
+            if (file.second)
+                process_metadata_file(file.first);
+            else
+                process_tmp_drop_metadata_file(file.first);
+        });
+    }
+    pool.wait();
 }
 
-ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/)
+ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * logger, const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/)
 {
     String query;
 
@@ -445,7 +486,8 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Contex
       */
     if (remove_empty && query.empty())
     {
-        LOG_ERROR(loger, "File {} is empty. Removing.", metadata_file_path);
+        if (logger)
+            LOG_ERROR(logger, "File {} is empty. Removing.", metadata_file_path);
         Poco::File(metadata_file_path).remove();
         return nullptr;
     }
@@ -463,13 +505,13 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Contex
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid != UUIDHelpers::Nil)
+    if (!create.table.empty() && create.uuid != UUIDHelpers::Nil)
     {
         String table_name = Poco::Path(metadata_file_path).makeFile().getBaseName();
         table_name = unescapeForFileName(table_name);
 
-        if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER)
-            LOG_WARNING(loger, "File {} contains both UUID and table name. Will use name `{}` instead of `{}`", metadata_file_path, table_name, create.table);
+        if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
+            LOG_WARNING(logger, "File {} contains both UUID and table name. Will use name `{}` instead of `{}`", metadata_file_path, table_name, create.table);
         create.table = table_name;
     }
 
@@ -484,7 +526,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
-        ast_create_query.database = database_name;
+        ast_create_query.database = getDatabaseName();
     }
 
     return ast;

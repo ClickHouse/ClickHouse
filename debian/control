@@ -11,7 +11,6 @@ Build-Depends: debhelper (>= 9),
                libicu-dev,
                libreadline-dev,
                gperf,
-               python,
                tzdata
 Standards-Version: 3.9.8
 
@@ -28,7 +27,7 @@ Description: Client binary for ClickHouse
 
 Package: clickhouse-common-static
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, tzdata
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Suggests: clickhouse-common-static-dbg
 Replaces: clickhouse-common, clickhouse-server-base
 Provides: clickhouse-common, clickhouse-server-base
@@ -63,5 +62,5 @@ Description: debugging symbols for clickhouse-common-static
 Package: clickhouse-test
 Priority: optional
 Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, python-requests, curl, perl, sudo, openssl, netcat-openbsd, telnet, brotli, bsdutils
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python3, python3-lxml, python3-termcolor, python3-requests, curl, perl, sudo, openssl, netcat-openbsd, telnet, brotli, bsdutils
 Description: ClickHouse tests

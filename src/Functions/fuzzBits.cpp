@@ -5,11 +5,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <pcg_random.hpp>
-#include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
 #include <common/arithmeticOverflow.h>
-
-#include <common/defines.h>
 
 #include <memory>
 
@@ -49,7 +46,6 @@ namespace
             ptr_out[i] = ptr_in[i] ^ mask;
         }
     }
-}
 
 
 class FunctionFuzzBits : public IFunction
@@ -82,10 +78,10 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        auto col_in_untyped = block.getByPosition(arguments[0]).column;
-        const double inverse_probability = assert_cast<const ColumnConst &>(*block.getByPosition(arguments[1]).column).getValue<double>();
+        auto col_in_untyped = block[arguments[0]].column;
+        const double inverse_probability = assert_cast<const ColumnConst &>(*block[arguments[1]].column).getValue<double>();
 
         if (inverse_probability < 0.0 || 1.0 < inverse_probability)
         {
@@ -117,7 +113,7 @@ public:
                 ptr_to[offsets_to[i] - 1] = 0;
             }
 
-            block.getByPosition(result).column = std::move(col_to);
+            block[result].column = std::move(col_to);
         }
         else if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
         {
@@ -135,16 +131,18 @@ public:
             auto * ptr_to = chars_to.data();
             fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
 
-            block.getByPosition(result).column = std::move(col_to);
+            block[result].column = std::move(col_to);
         }
         else
         {
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block[arguments[0]].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 };
+
+}
 
 void registerFunctionFuzzBits(FunctionFactory & factory)
 {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -22,9 +22,8 @@ class Context;
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
-struct TableStructureWriteLockHolder;
 class ASTCreateQuery;
-using Dictionaries = std::vector<String>;
+using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 
 namespace ErrorCodes
 {
@@ -49,6 +48,11 @@ public:
     virtual ~IDatabaseTablesIterator() = default;
 
     virtual UUID uuid() const { return UUIDHelpers::Nil; }
+
+    const String & databaseName() const { assert(!database_name.empty()); return database_name; }
+
+protected:
+    String database_name;
 };
 
 /// Copies list of tables and iterates through such snapshot.
@@ -66,12 +70,21 @@ protected:
         other.it = other.tables.end();
         it = tables.begin();
         std::advance(it, idx);
+        database_name = std::move(other.database_name);
     }
 
 public:
-    DatabaseTablesSnapshotIterator(Tables & tables_) : tables(tables_), it(tables.begin()) {}
+    DatabaseTablesSnapshotIterator(const Tables & tables_, const String & database_name_)
+    : tables(tables_), it(tables.begin())
+    {
+        database_name = database_name_;
+    }
 
-    DatabaseTablesSnapshotIterator(Tables && tables_) : tables(tables_), it(tables.begin()) {}
+    DatabaseTablesSnapshotIterator(Tables && tables_, String && database_name_)
+    : tables(std::move(tables_)), it(tables.begin())
+    {
+        database_name = std::move(database_name_);
+    }
 
     void next() override { ++it; }
 
@@ -86,25 +99,30 @@ public:
 class DatabaseDictionariesSnapshotIterator
 {
 private:
-    Dictionaries dictionaries;
-    Dictionaries::iterator it;
+    DictionariesWithID dictionaries;
+    DictionariesWithID::iterator it;
+    String database_name;
 
 public:
     DatabaseDictionariesSnapshotIterator() = default;
-    DatabaseDictionariesSnapshotIterator(Dictionaries & dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
-    DatabaseDictionariesSnapshotIterator(Dictionaries && dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
-
-    DatabaseDictionariesSnapshotIterator(const std::unordered_map<String, DictionaryAttachInfo> & dictionaries_)
+    DatabaseDictionariesSnapshotIterator(DictionariesWithID & dictionaries_, const String & database_name_)
+    : dictionaries(dictionaries_), it(dictionaries.begin()), database_name(database_name_)
     {
-        boost::range::copy(dictionaries_ | boost::adaptors::map_keys, std::back_inserter(dictionaries));
-        it = dictionaries.begin();
+    }
+    DatabaseDictionariesSnapshotIterator(DictionariesWithID && dictionaries_, const String & database_name_)
+    : dictionaries(dictionaries_), it(dictionaries.begin()), database_name(database_name_)
+    {
     }
 
     void next() { ++it; }
 
     bool isValid() const { return !dictionaries.empty() && it != dictionaries.end(); }
 
-    const String & name() const { return *it; }
+    const String & name() const { return it->first; }
+
+    const UUID & uuid() const { return it->second; }
+
+    const String & databaseName() const { assert(!database_name.empty()); return database_name; }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
@@ -131,7 +149,7 @@ public:
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
-    virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/) {}
+    virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
 
     /// Check the existence of the table.
     virtual bool isTableExist(const String & name, const Context & context) const = 0;
@@ -229,7 +247,8 @@ public:
         const String & /*name*/,
         IDatabase & /*to_database*/,
         const String & /*to_name*/,
-        bool /*exchange*/)
+        bool /*exchange*/,
+        bool /*dictionary*/)
     {
         throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -237,7 +256,7 @@ public:
     using ASTModifier = std::function<void(IAST &)>;
 
     /// Change the table structure in metadata.
-    /// You must call under the TableStructureLock of the corresponding table . If engine_modifier is empty, then engine does not change.
+    /// You must call under the alter_lock of the corresponding table . If engine_modifier is empty, then engine does not change.
     virtual void alterTable(
         const Context & /*context*/,
         const StorageID & /*table_id*/,
@@ -283,7 +302,19 @@ public:
     virtual ASTPtr getCreateDatabaseQuery() const = 0;
 
     /// Get name of database.
-    String getDatabaseName() const { return database_name; }
+    String getDatabaseName() const
+    {
+        std::lock_guard lock{mutex};
+        return database_name;
+    }
+    /// Get UUID of database.
+    virtual UUID getUUID() const { return UUIDHelpers::Nil; }
+
+    virtual void renameDatabase(const String & /*new_name*/)
+    {
+        throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
 
@@ -322,6 +353,7 @@ protected:
         return nullptr;
     }
 
+    mutable std::mutex mutex;
     String database_name;
 };
 

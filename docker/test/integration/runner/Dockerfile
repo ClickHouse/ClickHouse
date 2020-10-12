@@ -16,16 +16,17 @@ RUN apt-get update \
     iproute2 \
     module-init-tools \
     cgroupfs-mount \
-    python-pip \
+    python3-pip \
     tzdata \
     libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
-    python-pika \
+    python3-pika \
     liblua5.1-dev \
     luajit \
     libssl-dev \
+    libcurl4-openssl-dev \
     gdb \
     && rm -rf \
         /var/lib/apt/lists/* \
@@ -36,7 +37,7 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio rpm-confluent-schemaregistry grpcio grpcio-tools cassandra-driver
+RUN python3 -m pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio grpcio grpcio-tools cassandra-driver confluent-kafka avro
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 17.09.1-ce
@@ -45,7 +46,7 @@ RUN set -eux; \
   \
 # this "case" statement is generated via "update.sh"
   \
-  if ! wget -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
+  if ! wget -nv -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
     echo >&2 "error: failed to download 'docker-${DOCKER_VERSION}' from '${DOCKER_CHANNEL}' for '${x86_64}'"; \
     exit 1; \
   fi; \
@@ -62,6 +63,7 @@ RUN set -eux; \
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
+COPY compose/ /compose/
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -74,4 +76,3 @@ VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
 CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
-

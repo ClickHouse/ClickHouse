@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Core/Block.h>
 #include <Interpreters/Aggregator.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 
 #include <common/DateLUT.h>
 
@@ -16,6 +17,7 @@ public:
     TTLBlockInputStream(
         const BlockInputStreamPtr & input_,
         const MergeTreeData & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
         time_t current_time,
         bool force_
@@ -33,6 +35,7 @@ protected:
 
 private:
     const MergeTreeData & storage;
+    StorageMetadataPtr metadata_snapshot;
 
     /// ttl_infos and empty_columns are updating while reading
     const MergeTreeData::MutableDataPartPtr & data_part;
@@ -73,8 +76,15 @@ private:
     /// Finalize agg_result into result_columns
     void finalizeAggregates(MutableColumns & result_columns);
 
+    /// Execute description expressions on block and update ttl's in
+    /// ttl_info_map with expression results.
+    void updateTTLWithDescriptions(Block & block, const TTLDescriptions & descriptions, TTLInfoMap & ttl_info_map);
+
     /// Updates TTL for moves
     void updateMovesTTL(Block & block);
+
+    /// Update values for recompression TTL using data from block.
+    void updateRecompressionTTL(Block & block);
 
     UInt32 getTimestampByIndex(const IColumn * column, size_t ind);
     bool isTTLExpired(time_t ttl) const;

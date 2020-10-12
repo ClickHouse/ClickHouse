@@ -74,6 +74,7 @@ SELECT name, status FROM system.dictionaries;
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
 Записывает буферы логов в системные таблицы (например system.query\_log). Позволяет не ждать 7.5 секунд при отладке.
+Если буфер логов пустой, то этот запрос просто создаст системные таблицы.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
@@ -89,7 +90,7 @@ SELECT name, status FROM system.dictionaries;
 
 ## Управление распределёнными таблицами {#query-language-system-distributed}
 
-ClickHouse может оперировать [распределёнными](../../sql-reference/statements/system.md) таблицами. Когда пользователь вставляет данные в эти таблицы, ClickHouse сначала формирует очередь из данных, которые должны быть отправлены на узлы кластера, а затем асинхронно отправляет подготовленные данные. Вы можете управлять очередью с помощью запросов [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) и [FLUSH DISTRIBUTED](#query_language-system-flush-distributed). Также есть возможность синхронно вставлять распределенные данные с помощью настройки `insert_distributed_sync`.
+ClickHouse может оперировать [распределёнными](../../sql-reference/statements/system.md) таблицами. Когда пользователь вставляет данные в эти таблицы, ClickHouse сначала формирует очередь из данных, которые должны быть отправлены на узлы кластера, а затем асинхронно отправляет подготовленные данные. Вы можете управлять очередью с помощью запросов [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) и [FLUSH DISTRIBUTED](#query_language-system-flush-distributed). Также есть возможность синхронно вставлять распределенные данные с помощью настройки [insert_distributed_sync](../../operations/settings/settings.md#insert_distributed_sync).
 
 ### STOP DISTRIBUTED SENDS {#query_language-system-stop-distributed-sends}
 
@@ -234,14 +235,10 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 Инициализация очереди репликации на основе данных ZooKeeper, происходит так же как при attach table. На короткое время таблица станет недоступной для любых операций.
 
 ``` sql
-SYSTEM RESTART QUEUES [db.]replicated_merge_tree_family_table_name
+SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 Реинициализация состояния Zookeeper сессий для всех `ReplicatedMergeTree` таблиц, сравнивает текущее состояние с тем что хранится в Zookeeper как источник правды и добавляет задачи Zookeeper очередь если необходимо
-
-``` sql
-SYSTEM RESTART QUEUES [db.]replicated_merge_tree_family_table_name
-```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/system/) <!--hide-->

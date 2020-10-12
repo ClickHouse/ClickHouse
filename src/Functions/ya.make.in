@@ -1,14 +1,14 @@
 LIBRARY()
 
 CFLAGS(
-    -DUSE_SSL -DUSE_XXHASH
+    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
     library/cpp/consistent_hashing
     contrib/libs/farmhash
+    contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
-    contrib/libs/icu/common
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
@@ -16,9 +16,11 @@ ADDINCL(
 
 PEERDIR(
     clickhouse/src/Common
+    clickhouse/src/Parsers
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
+    contrib/libs/h3
     contrib/libs/hyperscan
     contrib/libs/icu
     contrib/libs/libdivide
@@ -29,8 +31,10 @@ PEERDIR(
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
+CFLAGS(-g0)
+
 SRCS(
-<? find . -name '*.cpp' | grep -i -v -P 'tests|h3|Bitmap|sumbur' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -i -v -P 'tests|Bitmap|sumbur|abtesting' | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

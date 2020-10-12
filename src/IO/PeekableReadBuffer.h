@@ -12,7 +12,8 @@ namespace ErrorCodes
 
 /// Also allows to set checkpoint at some position in stream and come back to this position later.
 /// When next() is called, saves data between checkpoint and current position to own memory and loads next data to sub-buffer
-/// Sub-buffer should not be accessed directly during the lifetime of peekable buffer.
+/// Sub-buffer should not be accessed directly during the lifetime of peekable buffer (unless
+/// you reset() the state of peekable buffer after each change of underlying buffer)
 /// If position() of peekable buffer is explicitly set to some position before checkpoint
 /// (e.g. by istr.position() = prev_pos), behavior is undefined.
 class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
@@ -38,6 +39,11 @@ public:
             peeked_size = 0;
         }
         checkpoint = pos;
+
+        // FIXME: we are checking checkpoint existence in few places (rollbackToCheckpoint/dropCheckpoint)
+        // by simple if(checkpoint) but checkpoint can be nullptr after
+        // setCheckpoint called on empty (non initialized/eof) buffer
+        // and we can't just use simple if(checkpoint)
     }
 
     /// Forget checkpoint and all data between checkpoint and position
@@ -67,6 +73,10 @@ public:
     /// Returns true if there unread data extracted from sub-buffer in own memory.
     /// This data will be lost after destruction of peekable buffer.
     bool hasUnreadData() const;
+
+    // for streaming reading (like in Kafka) we need to restore initial state of the buffer
+    // w/o recreating the buffer.
+    void reset();
 
 private:
     bool nextImpl() override;

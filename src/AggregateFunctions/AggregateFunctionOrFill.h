@@ -148,7 +148,8 @@ public:
 
     void insertResultInto(
         AggregateDataPtr place,
-        IColumn & to) const override
+        IColumn & to,
+        Arena * arena) const override
     {
         if (place[size_of_data])
         {
@@ -157,20 +158,20 @@ public:
                 // -OrNull
 
                 if (inner_nullable)
-                    nested_function->insertResultInto(place, to);
+                    nested_function->insertResultInto(place, to, arena);
                 else
                 {
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
 
                     col.getNullMapColumn().insertDefault();
-                    nested_function->insertResultInto(place, col.getNestedColumn());
+                    nested_function->insertResultInto(place, col.getNestedColumn(), arena);
                 }
             }
             else
             {
                 // -OrDefault
 
-                nested_function->insertResultInto(place, to);
+                nested_function->insertResultInto(place, to, arena);
             }
         }
         else

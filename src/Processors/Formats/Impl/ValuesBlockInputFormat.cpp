@@ -35,12 +35,13 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
           attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
           rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
 {
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(buf);
 }
 
 Chunk ValuesBlockInputFormat::generate()
 {
+    if (total_rows == 0)
+        readPrefix();
+
     const Block & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
     block_missing_values.clear();
@@ -405,6 +406,12 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
     return false;
 }
 
+void ValuesBlockInputFormat::readPrefix()
+{
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(buf);
+}
+
 void ValuesBlockInputFormat::readSuffix()
 {
     if (buf.hasUnreadData())
@@ -416,6 +423,7 @@ void ValuesBlockInputFormat::resetParser()
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.
+    buf.reset();
     total_rows = 0;
 }
 

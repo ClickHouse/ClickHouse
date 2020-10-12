@@ -107,6 +107,11 @@ public:
         throw Exception("updateWeakHash32 is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    void updateHashFast(SipHash &) const override
+    {
+        throw Exception("updateHashFast is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void popBack(size_t) override
     {
         throw Exception("popBack is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -115,6 +120,11 @@ public:
     int compareAt(size_t, size_t, const IColumn &, int) const override
     {
         throw Exception("compareAt is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
+    {
+        throw Exception("compareColumn is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void getPermutation(bool, size_t, int, Permutation &) const override

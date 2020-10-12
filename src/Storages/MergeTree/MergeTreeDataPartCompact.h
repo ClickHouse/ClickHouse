@@ -37,6 +37,7 @@ public:
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
+        const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
@@ -46,6 +47,7 @@ public:
 
     MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -66,7 +68,7 @@ private:
     void loadIndexGranularity() override;
 
     /// Compact parts doesn't support per column size, only total size
-    void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 }

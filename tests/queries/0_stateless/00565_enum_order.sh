@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 set -e -o pipefail
 
@@ -36,21 +36,21 @@ CREATE TABLE `test_log` (
 EOF
 
 DATA='2018-01-01\t2018-01-01 03:00:00\tclient:1-\tserveruuid:0\t0\t0\t0\t\t\ttest\ttest\tINSERT\t[]\t[]\t[]\t[]\t[]\t[]\t1\t2018-02-02 15:54:10\tfalse\n'
-QUERY='INSERT INTO `test_log`(`date`, `datetime`, `path`, `gtid`, `query_serial`, `row_serial`,
-    `reqid`, `method`, `service`, `db`, `type`, `operation`, `old_fields`.`name`,
-    `old_fields`.`value`, `old_fields`.`is_null`, `new_fields`.`name`, `new_fields`.`value`,
-    `new_fields`.`is_null`, `record_source_type`, `record_source_timestamp`, `deleted`) FORMAT TabSeparated'
+QUERY='INSERT INTO "test_log"("date", "datetime", "path", "gtid", "query_serial", "row_serial",
+    "reqid", "method", "service", "db", "type", "operation", "old_fields"."name",
+    "old_fields"."value", "old_fields"."is_null", "new_fields"."name", "new_fields"."value",
+    "new_fields"."is_null", "record_source_type", "record_source_timestamp", "deleted") FORMAT TabSeparated'
 QUERY="$(tr -d '\n' <<<"$QUERY")"
-echo $QUERY
-URL=$(python -c 'print "'${CLICKHOUSE_URL}'&query=" + __import__("urllib").quote("'"$QUERY"'")')
+echo "$QUERY"
+URL=$(python3 -c 'import urllib.parse; print("'"${CLICKHOUSE_URL}"'&query=" + urllib.parse.quote('"'''$QUERY'''"'))')
 
 set +e
-for i in 1 2 3; do
+for _ in 1 2 3; do
     echo run by native protocol
-    printf "$DATA" | $CLICKHOUSE_CLIENT --query "$QUERY"
+    echo -ne "$DATA" | $CLICKHOUSE_CLIENT --query "$QUERY"
 
     echo run by http protocol
-    printf "$DATA" | $CLICKHOUSE_CURL -sS -X POST --data-binary @- "$URL"
+    echo -ne "$DATA" | $CLICKHOUSE_CURL -sS -X POST --data-binary @- "$URL"
 done
 
 echo 'Count:'

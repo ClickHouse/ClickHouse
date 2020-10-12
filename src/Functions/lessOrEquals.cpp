@@ -15,7 +15,7 @@ void registerFunctionLessOrEquals(FunctionFactory & factory)
 template <>
 void FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
                                                                             const ColumnsWithTypeAndName & y, size_t tuple_size,
-                                                                            size_t input_rows_count)
+                                                                            size_t input_rows_count) const
 {
     return executeTupleLessGreaterImpl(
         FunctionFactory::instance().get("less", context),

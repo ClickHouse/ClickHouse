@@ -1,9 +1,6 @@
-#include <iostream>
-
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ParserDictionary.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/formatAST.h>
@@ -11,7 +8,6 @@
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
-#include <sstream>
 
 #include <gtest/gtest.h>
 
@@ -78,7 +74,7 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
     /// layout test
     auto * layout = create->dictionary->layout;
     EXPECT_EQ(layout->layout_type, "flat");
-    EXPECT_EQ(layout->children.size(), 0);
+    EXPECT_EQ(layout->parameters->children.size(), 0);
 
     /// lifetime test
     auto * lifetime = create->dictionary->lifetime;

@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 select format('Hello {1} World {0}', materialize('first'), materialize('second')) from system.numbers limit 1;
 select format('Hello {0} World {1}', materialize('first'), materialize('second')) from system.numbers limit 2;

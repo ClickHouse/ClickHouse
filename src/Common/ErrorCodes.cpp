@@ -175,7 +175,6 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST = 168;
     extern const int BAD_TYPE_OF_FIELD = 169;
     extern const int BAD_GET = 170;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE = 171;
     extern const int CANNOT_CREATE_DIRECTORY = 172;
     extern const int CANNOT_ALLOCATE_MEMORY = 173;
     extern const int CYCLIC_ALIASES = 174;
@@ -277,13 +276,12 @@ namespace ErrorCodes
     extern const int AIO_READ_ERROR = 274;
     extern const int AIO_WRITE_ERROR = 275;
     extern const int INDEX_NOT_USED = 277;
-    extern const int LEADERSHIP_LOST = 278;
     extern const int ALL_CONNECTION_TRIES_FAILED = 279;
     extern const int NO_AVAILABLE_DATA = 280;
     extern const int DICTIONARY_IS_EMPTY = 281;
     extern const int INCORRECT_INDEX = 282;
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE = 283;
-    extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD = 284;
+    extern const int WRONG_GLOBAL_SUBQUERY = 284;
     extern const int TOO_FEW_LIVE_REPLICAS = 285;
     extern const int UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE = 286;
     extern const int UNKNOWN_FORMAT_VERSION = 287;
@@ -291,7 +289,6 @@ namespace ErrorCodes
     extern const int REPLICA_IS_NOT_IN_QUORUM = 289;
     extern const int LIMIT_EXCEEDED = 290;
     extern const int DATABASE_ACCESS_DENIED = 291;
-    extern const int LEADERSHIP_CHANGED = 292;
     extern const int MONGODB_CANNOT_AUTHENTICATE = 293;
     extern const int INVALID_BLOCK_EXTRA_INFO = 294;
     extern const int RECEIVED_EMPTY_DATA = 295;
@@ -338,7 +335,6 @@ namespace ErrorCodes
     extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED = 362;
     extern const int CANNOT_CREATE_IO_BUFFER = 363;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS = 364;
-    extern const int OUTPUT_IS_NOT_SORTED = 365;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT = 366;
     extern const int TOO_MANY_FETCHES = 367;
     extern const int ALL_REPLICAS_ARE_STALE = 369;
@@ -490,12 +486,27 @@ namespace ErrorCodes
     extern const int NO_REMOTE_SHARD_AVAILABLE = 519;
     extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE = 520;
     extern const int ATOMIC_RENAME_FAIL = 521;
-    extern const int OPENCL_ERROR = 522;
     extern const int UNKNOWN_ROW_POLICY = 523;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN = 524;
     extern const int INCORRECT_DISK_INDEX = 525;
     extern const int UNKNOWN_VOLUME_TYPE = 526;
-    extern const int CASSANDRA_INTERNAL_ERROR = 527;
+    extern const int NO_SUITABLE_FUNCTION_IMPLEMENTATION = 527;
+    extern const int CASSANDRA_INTERNAL_ERROR = 528;
+    extern const int NOT_A_LEADER = 529;
+    extern const int CANNOT_CONNECT_RABBITMQ = 530;
+    extern const int CANNOT_FSTAT = 531;
+    extern const int LDAP_ERROR = 532;
+    extern const int INCONSISTENT_RESERVATIONS = 533;
+    extern const int NO_RESERVATIONS_PROVIDED = 534;
+    extern const int UNKNOWN_RAID_TYPE = 535;
+    extern const int CANNOT_RESTORE_FROM_FIELD_DUMP = 536;
+    extern const int ILLEGAL_MYSQL_VARIABLE = 537;
+    extern const int MYSQL_SYNTAX_ERROR = 538;
+    extern const int CANNOT_BIND_RABBITMQ_EXCHANGE = 539;
+    extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE = 540;
+    extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING = 541;
+    extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE = 542;
+    extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL = 543;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
@@ -504,6 +515,7 @@ namespace ErrorCodes
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
+    extern const int UNRECOGNIZED_ARGUMENTS = 2003;
 }
 
 }

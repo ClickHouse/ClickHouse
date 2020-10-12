@@ -3,7 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 for typename in "UInt32" "UInt64" "Float64" "Float32" "DateTime" "Decimal32(5)" "Decimal64(5)" "Decimal128(5)" "DateTime64(3)"
 do

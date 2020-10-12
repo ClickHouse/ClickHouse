@@ -1,3 +1,4 @@
+#pragma once
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -51,7 +52,7 @@ public:
                     "Function " + getName()
                         + " supports 1 or 2 or 3 arguments. The 1st argument "
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                          "a constant UInt8 with week mode. The 3nd argument (optional) must be "
+                          "a constant UInt8 with week mode. The 3rd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
@@ -67,7 +68,7 @@ public:
                     "Function " + getName()
                         + " supports 1 or 2 or 3 arguments. The 1st argument "
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                          "a constant UInt8 with week mode. The 3nd argument (optional) must be "
+                          "a constant UInt8 with week mode. The 3rd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!isString(arguments[2].type))
@@ -75,7 +76,7 @@ public:
                     "Function " + getName()
                         + " supports 1 or 2 or 3 arguments. The 1st argument "
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                          "a constant UInt8 with week mode. The 3nd argument (optional) must be "
+                          "a constant UInt8 with week mode. The 3rd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (isDate(arguments[0].type) && std::is_same_v<ToDataType, DataTypeDate>)
@@ -95,9 +96,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = block[arguments[0]].type.get();
         WhichDataType which(from_type);
 
         if (which.isDate())
@@ -114,7 +115,7 @@ public:
         }
         else
             throw Exception(
-                "Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+                "Illegal type " + block[arguments[0]].type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
