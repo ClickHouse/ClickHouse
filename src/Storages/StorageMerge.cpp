@@ -1,3 +1,4 @@
+#include <DataStreams/narrowBlockInputStreams.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <Storages/StorageMerge.h>
@@ -21,6 +22,7 @@
 #include <algorithm>
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/AddingConstColumnTransform.h>
 #include <Processors/Transforms/ConvertingTransform.h>
 
@@ -265,7 +267,9 @@ Pipe StorageMerge::read(
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
     if (!pipe.empty())
-        pipe.resize(num_streams);
+        // It's possible to have many tables read from merge, resize(num_streams) might open too many files at the same time.
+        // Using narrowPipe instead.
+        narrowPipe(pipe, num_streams);
 
     return pipe;
 }
@@ -339,7 +343,9 @@ Pipe StorageMerge::createSources(
     if (!pipe.empty())
     {
         if (concat_streams && pipe.numOutputPorts() > 1)
-            pipe.resize(1);
+            // It's possible to have many tables read from merge, resize(1) might open too many files at the same time.
+            // Using concat instead.
+            pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
 
         if (has_table_virtual_column)
         {
