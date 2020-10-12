@@ -250,6 +250,7 @@
         "01465_ttl_recompression",
         "01085_max_distributed_connections_http",
         "01494_storage_join_persistency",
+        "00429_long_http_bufferization",
         "attach",
         "ddl_dictionaries",
         "dictionary",
