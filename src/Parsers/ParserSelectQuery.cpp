@@ -45,6 +45,12 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_top("TOP");
     ParserKeyword s_with_ties("WITH TIES");
     ParserKeyword s_offset("OFFSET");
+    ParserKeyword s_fetch("FETCH");
+    ParserKeyword s_only("ONLY");
+    ParserKeyword s_row("ROW");
+    ParserKeyword s_rows("ROWS");
+    ParserKeyword s_first("FIRST");
+    ParserKeyword s_next("NEXT");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -189,6 +195,56 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!order_list.parse(pos, order_expression_list, expected))
             return false;
+    }
+
+    /// OFFSET offset_row_count {ROW | ROWS} FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}
+    if (s_offset.ignore(pos, expected))
+    {
+        /// OFFSET must exists with "order by"
+        if (!order_expression_list)
+            return false;
+
+        if (!exp_elem.parse(pos, limit_offset, expected))
+            return false;
+
+        if (s_row.ignore(pos, expected))
+        {
+            if (s_rows.ignore(pos, expected))
+                throw Exception("Can not use ROW and ROWS together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
+        }
+        else if (!s_rows.ignore(pos, expected))
+            return false;
+
+        if (!s_fetch.ignore(pos, expected))
+            return false;
+
+        if (s_first.ignore(pos, expected))
+        {
+            if (s_next.ignore(pos, expected))
+                throw Exception("Can not use ROW and ROWS together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
+        }
+        else if (!s_next.ignore(pos, expected))
+            return false;
+
+        if (!exp_elem.parse(pos, limit_length, expected))
+            return false;
+
+        if (s_row.ignore(pos, expected))
+        {
+            if (s_rows.ignore(pos, expected))
+                throw Exception("Can not use ROW and ROWS together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
+        }
+        else if (!s_rows.ignore(pos, expected))
+            return false;
+
+        if (s_with_ties.ignore(pos, expected))
+        {
+            select_query->limit_with_ties = true;
+        }
+        else if (s_only.ignore(pos, expected))
+        {
+            select_query->limit_with_ties = false;
+        }
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.
