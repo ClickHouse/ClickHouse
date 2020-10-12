@@ -7,6 +7,7 @@
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -74,7 +75,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds, const JobGroupID & job_id)
 {
     auto on_error = [&]
     {
@@ -108,7 +109,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         if (shutdown)
             return on_error();
 
-        jobs.emplace(std::move(job), priority);
+        jobs.emplace(std::move(job), priority, job_id);
         ++scheduled_jobs;
 
         if (threads.size() < std::min(max_threads, scheduled_jobs))
@@ -137,22 +138,23 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
     return ReturnType(true);
 }
 
+
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, int priority)
+void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, int priority, const JobGroupID & job_group_id)
 {
-    scheduleImpl<void>(std::move(job), priority, std::nullopt);
+    scheduleImpl<void>(std::move(job), priority, std::nullopt, job_group_id);
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_microseconds) noexcept
+bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_microseconds, const JobGroupID & job_group_id) noexcept
 {
-    return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
+    return scheduleImpl<bool>(std::move(job), priority, wait_microseconds, job_group_id);
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, int priority, uint64_t wait_microseconds)
+void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, int priority, uint64_t wait_microseconds, const JobGroupID & job_group_id)
 {
-    scheduleImpl<void>(std::move(job), priority, wait_microseconds);
+    scheduleImpl<void>(std::move(job), priority, wait_microseconds, job_group_id);
 }
 
 template <typename Thread>
@@ -209,6 +211,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
     while (true)
     {
         Job job;
+        JobGroupID job_group_id;
         bool need_shutdown = false;
 
         {
@@ -219,6 +222,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             if (!jobs.empty())
             {
                 job = jobs.top().job;
+                job_group_id = jobs.top().job_group_id;
                 jobs.pop();
             }
             else
@@ -259,6 +263,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
                     if (shutdown_on_exception)
                         shutdown = true;
+
                     --scheduled_jobs;
                 }
 

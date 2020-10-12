@@ -13,6 +13,7 @@
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
 #include <ext/scope_guard.h>
+#include <Core/UUID.h>
 
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -30,6 +31,7 @@ class ThreadPoolImpl
 {
 public:
     using Job = std::function<void()>;
+    using JobGroupID = DB::UUID;
 
     /// Maximum number of threads is based on the number of physical cores.
     ThreadPoolImpl();
@@ -48,13 +50,13 @@ public:
     /// NOTE: Probably you should call wait() if exception was thrown. If some previously scheduled jobs are using some objects,
     /// located on stack of current thread, the stack must not be unwinded until all jobs finished. However,
     /// if ThreadPool is a local object, it will wait for all scheduled jobs in own destructor.
-    void scheduleOrThrowOnError(Job job, int priority = 0);
+    void scheduleOrThrowOnError(Job job, int priority = 0, const JobGroupID & job_group_id = DB::UUIDHelpers::Nil);
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
-    bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0) noexcept;
+    bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0, const JobGroupID & job_group_id = DB::UUIDHelpers::Nil) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0);
+    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0, const JobGroupID & job_group_id = DB::UUIDHelpers::Nil);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -64,7 +66,7 @@ public:
 
     /// Waits for all threads. Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
     /// You should not destroy object while calling schedule or wait methods from another threads.
-    ~ThreadPoolImpl();
+    virtual ~ThreadPoolImpl();
 
     /// Returns number of running and scheduled jobs.
     size_t active() const;
@@ -83,6 +85,8 @@ private:
     size_t queue_size;
 
     size_t scheduled_jobs = 0;
+    std::unordered_map<JobGroupID, size_t> scheduled_jobs_by_group;
+
     bool shutdown = false;
     const bool shutdown_on_exception = true;
     const bool only_log_exceptions = false;
@@ -92,11 +96,12 @@ private:
     {
         Job job;
         int priority;
+        JobGroupID job_group_id;
 
-        JobWithPriority(Job job_, int priority_)
-            : job(job_), priority(priority_) {}
+        JobWithPriority(Job job_, int priority_, const JobGroupID & job_group_id_)
+            : job(job_), priority(priority_), job_group_id(job_group_id_) {}
 
-        bool operator< (const JobWithPriority & rhs) const
+        bool operator<(const JobWithPriority & rhs) const
         {
             return priority < rhs.priority;
         }
@@ -106,15 +111,13 @@ private:
     std::list<Thread> threads;
     std::exception_ptr first_exception;
 
-
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
+    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds, const JobGroupID & job_id);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
     void finalize();
 };
-
 
 /// ThreadPool with std::thread for threads.
 using FreeThreadPool = ThreadPoolImpl<std::thread>;
