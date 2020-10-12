@@ -36,6 +36,7 @@ void registerAggregateFunctionMoving(AggregateFunctionFactory &);
 void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory &);
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory &);
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
+void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
