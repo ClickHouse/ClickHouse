@@ -17,7 +17,7 @@ avgWeighted(x, weight)
 -   `x` — Values. [Integer](../../../sql-reference/data-types/int-uint.md) or [floating-point](../../../sql-reference/data-types/float.md).
 -   `weight` — Weights of the values. [Integer](../../../sql-reference/data-types/int-uint.md) or [floating-point](../../../sql-reference/data-types/float.md).
 
-Type of `x` and `weight` must be the same.
+Type of `x` and `weight` may be different.
 
 **Returned value**
 
