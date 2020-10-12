@@ -70,6 +70,35 @@ Works with tables in the MergeTree family.
 
 If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
+## force\_data\_skipping\_indices {#settings-force_data_skipping_indices}
+
+Disables query execution if passed data skipping indices wasn't used.
+
+Consider the following example:
+
+```sql
+CREATE TABLE data
+(
+    key Int,
+    d1 Int,
+    d1_null Nullable(Int),
+    INDEX d1_idx d1 TYPE minmax GRANULARITY 1,
+    INDEX d1_null_idx assumeNotNull(d1_null) TYPE minmax GRANULARITY 1
+)
+Engine=MergeTree()
+ORDER BY key;
+
+SELECT * FROM data_01515;
+SELECT * FROM data_01515 SETTINGS force_data_skipping_indices=''; -- query will produce CANNOT_PARSE_TEXT error.
+SELECT * FROM data_01515 SETTINGS force_data_skipping_indices='d1_idx'; -- query will produce INDEX_NOT_USED error.
+SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='d1_idx'; -- Ok.
+SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`'; -- Ok (example of full featured parser).
+SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- query will produce INDEX_NOT_USED error, since d1_null_idx is not used.
+SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
+```
+
+Works with tables in the MergeTree family.
+
 ## format\_schema {#format-schema}
 
 This parameter is useful when you are using formats that require a schema definition, such as [Cap’n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.

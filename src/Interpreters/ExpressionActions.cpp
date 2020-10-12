@@ -1114,10 +1114,6 @@ ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSe
     input_columns = split_actions->getSampleBlock().getNamesAndTypesList();
     input_columns.insert(input_columns.end(), inputs_from_array_join.begin(), inputs_from_array_join.end());
 
-    /// Remove not needed columns.
-    if (!actions.empty())
-        prependProjectInput();
-
     return split_actions;
 }
 
