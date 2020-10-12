@@ -210,7 +210,7 @@ class Cluster(object):
                 self.down()
         finally:
             with self.lock:
-                for shell in self._bash.values():
+                for shell in list(self._bash.values()):
                     shell.__exit__(type, value, traceback)
 
     def node(self, name):

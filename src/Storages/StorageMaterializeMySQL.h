@@ -26,6 +26,7 @@ public:
         const Context & context, QueryProcessingStage::Enum processed_stage, size_t max_block_size, unsigned num_streams) override;
 
     NamesAndTypesList getVirtuals() const override;
+    ColumnSizeByName getColumnSizes() const override;
 
 private:
     StoragePtr nested_storage;

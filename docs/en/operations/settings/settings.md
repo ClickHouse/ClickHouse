@@ -70,6 +70,35 @@ Works with tables in the MergeTree family.
 
 If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
+## force\_data\_skipping\_indices {#settings-force_data_skipping_indices}
+
+Disables query execution if passed data skipping indices wasn't used.
+
+Consider the following example:
+
+```sql
+CREATE TABLE data
+(
+    key Int,
+    d1 Int,
+    d1_null Nullable(Int),
+    INDEX d1_idx d1 TYPE minmax GRANULARITY 1,
+    INDEX d1_null_idx assumeNotNull(d1_null) TYPE minmax GRANULARITY 1
+)
+Engine=MergeTree()
+ORDER BY key;
+
+SELECT * FROM data_01515;
+SELECT * FROM data_01515 SETTINGS force_data_skipping_indices=''; -- query will produce CANNOT_PARSE_TEXT error.
+SELECT * FROM data_01515 SETTINGS force_data_skipping_indices='d1_idx'; -- query will produce INDEX_NOT_USED error.
+SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='d1_idx'; -- Ok.
+SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`'; -- Ok (example of full featured parser).
+SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- query will produce INDEX_NOT_USED error, since d1_null_idx is not used.
+SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
+```
+
+Works with tables in the MergeTree family.
+
 ## format\_schema {#format-schema}
 
 This parameter is useful when you are using formats that require a schema definition, such as [Cap’n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
@@ -940,6 +969,8 @@ This algorithm chooses the first replica in the set or a random replica if the f
 
 The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, the load is evenly distributed among replicas that are still available.
 
+It's possible to explicitly define what the first replica is by using the setting `load_balancing_first_offset`. This gives more control to rebalance query workloads among replicas.
+
 ### Round Robin {#load_balancing-round_robin}
 
 ``` sql
@@ -1142,9 +1173,9 @@ See also:
 
 ## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
-Write to quorum timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
+Write to quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
-Default value: 60 seconds.
+Default value: 600000 milliseconds (ten minutes).
 
 See also:
 
@@ -1563,7 +1594,7 @@ See also:
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
-Enables of disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
+Enables or disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
 
 Possible values:
 
@@ -1815,7 +1846,7 @@ Default value: 8192.
 
 Turns on or turns off using of single dictionary for the data part.
 
-By default, ClickHouse server monitors the size of dictionaries and if a dictionary overflows then the server starts to write the next one. To prohibit creating several dictionaries set `low_cardinality_use_single_dictionary_for_part = 1`.
+By default, the ClickHouse server monitors the size of dictionaries and if a dictionary overflows then the server starts to write the next one. To prohibit creating several dictionaries set `low_cardinality_use_single_dictionary_for_part = 1`.
 
 Possible values:
 
@@ -1974,4 +2005,65 @@ Possible values:
 
 Default value: `120` seconds.
 
+## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
+
+Limits the width of value displayed in [Pretty](../../interfaces/formats.md#pretty) formats. If the value width exceeds the limit, the value is cut. 
+
+Possible values:
+
+-   Positive integer. 
+-   0 — The value is cut completely.
+
+Default value: `10000` symbols.
+
+**Examples**
+
+Query:
+```sql
+SET output_format_pretty_max_value_width = 10;
+SELECT range(number) FROM system.numbers LIMIT 10 FORMAT PrettyCompactNoEscapes;
+```
+Result:
+```text
+┌─range(number)─┐
+│ []            │
+│ [0]           │
+│ [0,1]         │
+│ [0,1,2]       │
+│ [0,1,2,3]     │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+│ [0,1,2,3,4⋯   │
+└───────────────┘
+```
+
+Query with zero width:
+```sql
+SET output_format_pretty_max_value_width = 0;
+SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
+```
+Result:
+```text
+┌─range(number)─┐
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+│ ⋯             │
+└───────────────┘
+```
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+
+## allow_experimental_bigint_types {#allow_experimental_bigint_types}
+
+Enables or disables integer values exceeding the range that is supported by the int data type.
+
+Possible values:
+
+-   1 — The bigint data type is enabled.
+-   0 — The bigint data type is disabled.
+
+Default value: `0`.

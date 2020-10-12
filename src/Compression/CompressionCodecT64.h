@@ -26,14 +26,9 @@ public:
         Bit
     };
 
-    CompressionCodecT64(TypeIndex type_idx_, Variant variant_)
-        : type_idx(type_idx_)
-        , variant(variant_)
-    {}
+    CompressionCodecT64(TypeIndex type_idx_, Variant variant_);
 
     uint8_t getMethodByte() const override;
-
-    ASTPtr getCodecDesc() const override;
 
     void updateHash(SipHash & hash) const override;
 

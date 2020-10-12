@@ -357,7 +357,7 @@ SELECT date_trunc('hour', now())
 
 ## now {#now}
 
-Accepts zero arguments and returns the current time at one of the moments of request execution.
+Accepts zero or one arguments(timezone) and returns the current time at one of the moments of request execution, or current time of specific timezone at one of the moments of request execution if `timezone` argument provided.
 This function returns a constant, even if the request took a long time to complete.
 
 ## today {#today}

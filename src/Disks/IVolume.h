@@ -36,10 +36,11 @@ using Volumes = std::vector<VolumePtr>;
 class IVolume : public Space
 {
 public:
-    IVolume(String name_, Disks disks_, size_t max_data_part_size_ = 0)
+    IVolume(String name_, Disks disks_, size_t max_data_part_size_ = 0, bool perform_ttl_move_on_insert_ = true)
         : disks(std::move(disks_))
         , name(name_)
         , max_data_part_size(max_data_part_size_)
+        , perform_ttl_move_on_insert(perform_ttl_move_on_insert_)
     {
     }
 
@@ -70,6 +71,9 @@ protected:
 public:
     /// Max size of reservation, zero means unlimited size
     UInt64 max_data_part_size = 0;
+    /// Should a new data part be synchronously moved to a volume according to ttl on insert
+    /// or move this part in background task asynchronously after insert.
+    bool perform_ttl_move_on_insert = true;
 };
 
 /// Reservation for multiple disks at once. Can be used in RAID1 implementation.

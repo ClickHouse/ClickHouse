@@ -60,6 +60,31 @@ A maximum number of bytes (uncompressed data) that can be read from a table when
 
 What to do when the volume of data read exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
+## max\_rows\_to\_read_leaf {#max-rows-to-read-leaf}
+
+The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
+
+A maximum number of rows that can be read from a local table on a leaf node when running a distributed query. While
+distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will be checked only on the read 
+stage on the leaf nodes and ignored on results merging stage on the root node. For example, cluster consists of 2 shards 
+and each shard contains a table with 100 rows. Then distributed query which suppose to read all the data from both 
+tables with setting `max_rows_to_read=150` will fail as in total it will be 200 rows. While query 
+with `max_rows_to_read_leaf=150` will succeed since leaf nodes will read 100 rows at max.
+
+## max\_bytes\_to\_read_leaf {#max-bytes-to-read-leaf}
+
+A maximum number of bytes (uncompressed data) that can be read from a local table on a leaf node when running 
+a distributed query. While distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will 
+be checked only on the read stage on the leaf nodes and ignored on results merging stage on the root node. 
+For example, cluster consists of 2 shards and each shard contains a table with 100 bytes of data. 
+Then distributed query which suppose to read all the data from both tables with setting `max_bytes_to_read=150` will fail 
+as in total it will be 200 bytes. While query with `max_bytes_to_read_leaf=150` will succeed since leaf nodes will read 
+100 bytes at max.
+
+## read\_overflow\_mode_leaf {#read-overflow-mode-leaf}
+
+What to do when the volume of data read exceeds one of the leaf limits: ‘throw’ or ‘break’. By default, throw.
+
 ## max\_rows\_to\_group\_by {#settings-max-rows-to-group-by}
 
 A maximum number of unique keys received from aggregation. This setting lets you limit memory consumption when aggregating.
