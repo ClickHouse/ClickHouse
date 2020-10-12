@@ -50,7 +50,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
     {
-        const auto & src_column = block.getByPosition(arguments[0]);
+        const auto & src_column = block[arguments[0]];
         if (!src_column.column)
             throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -76,7 +76,7 @@ public:
             throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
                             ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result_pos).column = std::move(result_column);
+        block[result_pos].column = std::move(result_column);
     }
 
 private:

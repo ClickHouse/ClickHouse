@@ -758,7 +758,7 @@ bool StorageMergeTree::merge(
     try
     {
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr),
+            future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr), global_context,
             merging_tagger->reserved_space, deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);

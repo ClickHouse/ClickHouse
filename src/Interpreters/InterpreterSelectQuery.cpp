@@ -14,6 +14,7 @@
 
 #include <Access/AccessFlags.h>
 
+#include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -247,6 +248,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
+    if (context->getSettingsRef().enable_global_with_statement)
+        ApplyWithAliasVisitor().visit(query_ptr);
     ApplyWithSubqueryVisitor().visit(query_ptr);
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
