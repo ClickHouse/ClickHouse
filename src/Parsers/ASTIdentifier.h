@@ -45,14 +45,13 @@ public:
 protected:
     mutable String name;  // cached full name constructed from name parts
     std::vector<String> name_parts;
+    std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 
 private:
     using ASTWithAlias::children; /// ASTIdentifier is child free
-
-    std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
     friend struct IdentifierSemantic;
     friend void setIdentifierSpecial(ASTPtr & ast);
@@ -67,6 +66,8 @@ class ASTTableIdentifier : public ASTIdentifier
         ASTTableIdentifier(const String & database, const String & table);
 
         String getID(char delim) const override { return "TableIdentifier" + (delim + fullName()); }
+
+        ASTPtr clone() const override;
 
         StorageID getStorageId() const;
 

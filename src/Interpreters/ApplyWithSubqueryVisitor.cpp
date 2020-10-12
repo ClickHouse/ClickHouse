@@ -50,7 +50,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
 {
     if (table.database_and_table_name)
     {
-        auto table_id = IdentifierSemantic::extractDatabaseAndTable(table.database_and_table_name->as<ASTIdentifier &>());
+        auto table_id = IdentifierSemantic::extractDatabaseAndTable(table.database_and_table_name->as<ASTTableIdentifier &>());
         if (table_id.database_name.empty())
         {
             auto subquery_it = data.subqueries.find(table_id.table_name);

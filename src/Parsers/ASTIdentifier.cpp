@@ -124,6 +124,13 @@ ASTTableIdentifier::ASTTableIdentifier(const String & database, const String & t
     assert(database != "_temporary_and_external_tables");
 }
 
+ASTPtr ASTTableIdentifier::clone() const
+{
+    auto ret = std::make_shared<ASTTableIdentifier>(*this);
+    ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
+    return ret;
+}
+
 StorageID ASTTableIdentifier::getStorageId() const
 {
     assert(!name_parts.empty());
