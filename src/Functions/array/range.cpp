@@ -57,7 +57,7 @@ private:
     }
 
     template <typename T>
-    bool executeInternal(Block & block, const IColumn * arg, const size_t result)
+    bool executeInternal(Block & block, const IColumn * arg, const size_t result) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(arg))
         {
@@ -94,7 +94,7 @@ private:
                 out_offsets[row_idx] = offset;
             }
 
-            block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+            block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
             return true;
         }
         else
@@ -102,7 +102,8 @@ private:
     }
 
     template <typename T>
-    bool executeConstStartStep(Block & block, const IColumn * end_arg, const T start, const T step, const size_t input_rows_count, const size_t result)
+    bool executeConstStartStep(
+        Block & block, const IColumn * end_arg, const T start, const T step, const size_t input_rows_count, const size_t result) const
     {
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
         if (!end_column)
@@ -145,17 +146,24 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step)
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step)
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
 
     template <typename T>
-    bool executeConstStep(Block & block, const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count, const size_t result)
+    bool executeConstStep(
+        Block & block, const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count, const size_t result) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_arg);
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
@@ -200,17 +208,24 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start_data[row_idx], ed = end_data[row_idx]; st < ed; st += step)
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step)
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
 
     template <typename T>
-    bool executeConstStart(Block & block, const IColumn * end_arg, const IColumn * step_arg, const T start, const size_t input_rows_count, const size_t result)
+    bool executeConstStart(
+        Block & block, const IColumn * end_arg, const IColumn * step_arg, const T start, const size_t input_rows_count, const size_t result) const
     {
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
         auto step_column = checkAndGetColumn<ColumnVector<T>>(step_arg);
@@ -255,17 +270,25 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step_data[row_idx])
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step_data[row_idx])
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
 
     template <typename T>
-    bool executeGeneric(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count, const size_t result)
+    bool executeGeneric(
+        Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col,
+        const size_t input_rows_count, const size_t result) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_col);
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_col);
@@ -313,20 +336,26 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start_data[row_idx], ed = end_start[row_idx]; st < ed; st += step_data[row_idx])
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step_data[row_idx])
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (arguments.size() == 1)
         {
-            const auto * col = block.getByPosition(arguments[0]).column.get();
+            const auto * col = block[arguments[0]].column.get();
             if (!executeInternal<UInt8>(block, col, result) &&
                 !executeInternal<UInt16>(block, col, result) &&
                 !executeInternal<UInt32>(block, col, result) &&
@@ -340,14 +369,14 @@ private:
         Columns columns_holder(3);
         ColumnRawPtrs columns(3);
 
-        const auto return_type = checkAndGetDataType<DataTypeArray>(block.getByPosition(result).type.get())->getNestedType();
+        const auto return_type = checkAndGetDataType<DataTypeArray>(block[result].type.get())->getNestedType();
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             if (i == 1)
-                columns_holder[i] = castColumn(block.getByPosition(arguments[i]), return_type)->convertToFullColumnIfConst();
+                columns_holder[i] = castColumn(block[arguments[i]], return_type)->convertToFullColumnIfConst();
             else
-                columns_holder[i] = castColumn(block.getByPosition(arguments[i]), return_type);
+                columns_holder[i] = castColumn(block[arguments[i]], return_type);
 
             columns[i] = columns_holder[i].get();
         }

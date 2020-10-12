@@ -191,7 +191,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (which_type.isStringOrFixedString())
     {
         if (src.getType() == Field::Types::String)
+        {
+            if (which_type.isFixedString())
+            {
+                size_t n = assert_cast<const DataTypeFixedString &>(type).getN();
+                const auto & src_str = src.get<String>();
+                if (src_str.size() < n)
+                {
+                    String src_str_extended = src_str;
+                    src_str_extended.resize(n);
+                    return src_str_extended;
+                }
+            }
             return src;
+        }
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
     {
@@ -329,5 +342,16 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         return convertFieldToTypeImpl(from_value, to_type, from_type_hint);
 }
 
+Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
+{
+    bool is_null = from_value.isNull();
+    if (is_null && !to_type.isNullable())
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
+    Field converted = convertFieldToType(from_value, to_type, from_type_hint);
+    if (!is_null && converted.isNull())
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Cannot convert value{}: it cannot be represented as {}",
+                        from_type_hint ? " from " + from_type_hint->getName() : "", to_type.getName());
+    return converted;
+}
 
 }

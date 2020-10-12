@@ -3,7 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#define FOR_NUMERIC_TYPES(M) \
+#define FOR_BASIC_NUMERIC_TYPES(M) \
     M(UInt8) \
     M(UInt16) \
     M(UInt32) \
@@ -12,6 +12,21 @@
     M(Int16) \
     M(Int32) \
     M(Int64) \
+    M(Float32) \
+    M(Float64)
+
+#define FOR_NUMERIC_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(UInt256) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Int128) \
+    M(Int256) \
     M(Float32) \
     M(Float64)
 
@@ -30,6 +45,19 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 #undef DISPATCH
     if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Int8>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<Int16>(std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
+template <template <typename> class AggregateFunctionTemplate, template <typename> class Data, typename... TArgs>
+static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
+{
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<Data<TYPE>>(std::forward<TArgs>(args)...);
+    FOR_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Data<Int8>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<Data<Int16>>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -105,6 +133,7 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal32) return new AggregateFunctionTemplate<Decimal32>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -115,6 +144,7 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal32) return new AggregateFunctionTemplate<Decimal32, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128, Data>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256, Data>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 

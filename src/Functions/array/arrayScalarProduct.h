@@ -31,7 +31,7 @@ private:
     using ResultColumnType = ColumnVector<typename Method::ResultType>;
 
     template <typename T>
-    bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         return executeNumberNumber<T, UInt8>(block, arguments, result)
             || executeNumberNumber<T, UInt16>(block, arguments, result)
@@ -47,10 +47,10 @@ private:
 
 
     template <typename T, typename U>
-    bool executeNumberNumber(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeNumberNumber(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        ColumnPtr col1 = block.getByPosition(arguments[0]).column->convertToFullColumnIfConst();
-        ColumnPtr col2 = block.getByPosition(arguments[1]).column->convertToFullColumnIfConst();
+        ColumnPtr col1 = block[arguments[0]].column->convertToFullColumnIfConst();
+        ColumnPtr col2 = block[arguments[1]].column->convertToFullColumnIfConst();
         if (!col1 || !col2)
             return false;
 
@@ -75,7 +75,7 @@ private:
             col_array1->getOffsets(),
             col_res->getData());
 
-        block.getByPosition(result).column = std::move(col_res);
+        block[result].column = std::move(col_res);
         return true;
     }
 
@@ -123,7 +123,7 @@ public:
         return Method::getReturnType(nested_types[0], nested_types[1]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) const override
     {
         if (!(executeNumber<UInt8>(block, arguments, result)
             || executeNumber<UInt16>(block, arguments, result)
@@ -135,7 +135,7 @@ public:
               || executeNumber<Int64>(block, arguments, result)
               || executeNumber<Float32>(block, arguments, result)
               || executeNumber<Float64>(block, arguments, result)))
-            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function "
+            throw Exception{"Illegal column " + block[arguments[0]].column->getName() + " of first argument of function "
                                 + getName(),
                             ErrorCodes::ILLEGAL_COLUMN};
     }

@@ -1,9 +1,12 @@
 ---
 toc_priority: 40
-toc_title: Working with strings
+toc_title: Strings
 ---
 
 # Functions for Working with Strings {#functions-for-working-with-strings}
+
+!!! note "Note"
+    Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [replacing](../../sql-reference/functions/string-replace-functions.md) in strings are described separately.
 
 ## empty {#empty}
 
@@ -483,5 +486,76 @@ The result type is UInt32.
 Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
 
 The result type is UInt64.
+
+## normalizeQuery {#normalized-query}
+
+Replaces literals, sequences of literals and complex aliases with placeholders.
+
+**Syntax** 
+``` sql
+normalizeQuery(x)
+```
+
+**Parameters** 
+
+-   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Sequence of characters with placeholders.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT normalizeQuery('[1, 2, 3, x]') AS query;
+```
+
+Result:
+
+``` text
+┌─query────┐
+│ [?.., x] │
+└──────────┘
+```
+
+## normalizedQueryHash {#normalized-query-hash}
+
+Returns identical 64bit hash values without the values of literals for similar queries. It helps to analyze query log.
+
+**Syntax** 
+
+``` sql
+normalizedQueryHash(x)
+```
+
+**Parameters** 
+
+-   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Hash value.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
+```
+
+Result:
+
+``` text
+┌─res─┐
+│   1 │
+└─────┘
+```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->

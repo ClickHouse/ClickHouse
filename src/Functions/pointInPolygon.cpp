@@ -34,7 +34,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -43,6 +42,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
 
 using CoordinateType = Float64;
 using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
@@ -149,9 +150,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
+        const IColumn * point_col = block[arguments[0]].column.get();
         const auto * const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
         if (const_tuple_col)
             point_col = &const_tuple_col->getDataColumn();
@@ -163,7 +164,7 @@ public:
 
         const auto & tuple_columns = tuple_col->getColumns();
 
-        const ColumnWithTypeAndName poly = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName poly = block[arguments[1]];
         const IColumn * poly_col = poly.column.get();
         const ColumnConst * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
 
@@ -202,11 +203,11 @@ public:
             if (point_is_const)
             {
                 bool is_in = impl->contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, is_in);
+                block[result].column = block[result].type->createColumnConst(input_rows_count, is_in);
             }
             else
             {
-                block.getByPosition(result).column = pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
+                block[result].column = pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
             }
         }
         else
@@ -224,14 +225,14 @@ public:
             /// Or, a polygon without holes can be represented by 1d array:
             /// [(outer_x_1, outer_y_1, ...)]
 
-            if (isTwoDimensionalArray(*block.getByPosition(arguments[1]).type))
+            if (isTwoDimensionalArray(*block[arguments[1]].type))
             {
                 /// We cast everything to Float64 in advance (in batch fashion)
                 ///  to avoid casting with virtual calls in a loop.
                 /// Note that if the type is already Float64, the operation in noop.
 
                 ColumnPtr polygon_column_float64 = castColumn(
-                    block.getByPosition(arguments[1]),
+                    block[arguments[1]],
                     std::make_shared<DataTypeArray>(
                         std::make_shared<DataTypeArray>(
                             std::make_shared<DataTypeTuple>(DataTypes{
@@ -251,7 +252,7 @@ public:
             else
             {
                 ColumnPtr polygon_column_float64 = castColumn(
-                    block.getByPosition(arguments[1]),
+                    block[arguments[1]],
                     std::make_shared<DataTypeArray>(
                         std::make_shared<DataTypeTuple>(DataTypes{
                             std::make_shared<DataTypeFloat64>(),
@@ -268,7 +269,7 @@ public:
                 }
             }
 
-            block.getByPosition(result).column = std::move(res_column);
+            block[result].column = std::move(res_column);
         }
     }
 
@@ -472,7 +473,7 @@ private:
     {
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            const auto * const_col = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
+            const auto * const_col = checkAndGetColumn<ColumnConst>(block[arguments[i]].column.get());
             if (!const_col)
                 throw Exception("Multi-argument version of function " + getName() + " works only with const polygon",
                     ErrorCodes::BAD_ARGUMENTS);
@@ -508,20 +509,35 @@ private:
 
     void parseConstPolygonFromSingleColumn(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
     {
-        ColumnPtr polygon_column_float64 = castColumn(
-            block.getByPosition(arguments[1]),
-            std::make_shared<DataTypeArray>(
-                std::make_shared<DataTypeTuple>(DataTypes{
-                    std::make_shared<DataTypeFloat64>(),
-                    std::make_shared<DataTypeFloat64>()})));
+        if (isTwoDimensionalArray(*block[arguments[1]].type))
+        {
+            ColumnPtr polygon_column_float64 = castColumn(
+                block[arguments[1]],
+                std::make_shared<DataTypeArray>(
+                    std::make_shared<DataTypeArray>(
+                        std::make_shared<DataTypeTuple>(DataTypes{
+                            std::make_shared<DataTypeFloat64>(),
+                            std::make_shared<DataTypeFloat64>()}))));
 
-        const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
-        const IColumn & column_const_data = column_const.getDataColumn();
+            const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
+            const IColumn & column_const_data = column_const.getDataColumn();
 
-        if (isTwoDimensionalArray(*block.getByPosition(arguments[1]).type))
             parseConstPolygonWithHolesFromSingleColumn(column_const_data, 0, out_polygon);
+        }
         else
+        {
+            ColumnPtr polygon_column_float64 = castColumn(
+                block[arguments[1]],
+                std::make_shared<DataTypeArray>(
+                    std::make_shared<DataTypeTuple>(DataTypes{
+                        std::make_shared<DataTypeFloat64>(),
+                        std::make_shared<DataTypeFloat64>()})));
+
+            const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
+            const IColumn & column_const_data = column_const.getDataColumn();
+
             parseConstPolygonWithoutHolesFromSingleColumn(column_const_data, 0, out_polygon);
+        }
     }
 
     void parseConstPolygon(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
@@ -546,6 +562,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {

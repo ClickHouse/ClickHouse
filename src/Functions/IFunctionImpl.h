@@ -5,7 +5,7 @@
 /// In order to implement a new function you can choose one of two options:
 ///  * Implement interface for IFunction (old function interface, which is planned to be removed sometimes)
 ///  * Implement three interfaces for IExecutableFunctionImpl, IFunctionBaseImpl and IFunctionOverloadResolverImpl
-/// Generally saying, IFunction represents a union of tree new interfaces. However, it can't be used for all cases.
+/// Generally saying, IFunction represents a union of three new interfaces. However, it can't be used for all cases.
 /// Examples:
 ///  * Function properties may depend on arguments type (e.g. toUInt32(UInt8) is globally monotonic, toUInt32(UInt64) - only on intervals)
 ///  * In implementation of lambda functions DataTypeFunction needs an functional object with known arguments and return type
@@ -31,6 +31,8 @@ using ExecutableFunctionLowCardinalityResultCachePtr = std::shared_ptr<Executabl
 class IExecutableFunctionImpl
 {
 public:
+    using Block = ColumnsWithTypeAndName;
+
     virtual ~IExecutableFunctionImpl() = default;
 
     virtual String getName() const = 0;
@@ -82,6 +84,8 @@ using ExecutableFunctionImplPtr = std::unique_ptr<IExecutableFunctionImpl>;
 class IFunctionBaseImpl
 {
 public:
+    using Block = ColumnsWithTypeAndName;
+
     virtual ~IFunctionBaseImpl() = default;
 
     virtual String getName() const = 0;
@@ -105,9 +109,9 @@ public:
     virtual bool isStateful() const { return false; }
 
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
 
-    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
+    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_block*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool hasInformationAboutMonotonicity() const { return false; }
@@ -125,6 +129,8 @@ using FunctionBaseImplPtr = std::unique_ptr<IFunctionBaseImpl>;
 class IFunctionOverloadResolverImpl
 {
 public:
+    using Block = ColumnsWithTypeAndName;
+
     virtual ~IFunctionOverloadResolverImpl() = default;
 
     virtual String getName() const = 0;
@@ -152,15 +158,9 @@ public:
     /// Properties from IFunctionOverloadResolver. See comments in IFunction.h
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
-    virtual bool isInjective(const Block &) const { return false; }
+    virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isStateful() const { return false; }
     virtual bool isVariadic() const { return false; }
-
-    /// Will be called if isVariadic returns true. You need to check if function can have specified number of arguments.
-    virtual void checkNumberOfArgumentsIfVariadic(size_t /*number_of_arguments*/) const
-    {
-        throw Exception("checkNumberOfArgumentsIfVariadic is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const
     {
@@ -194,15 +194,17 @@ using FunctionOverloadResolverImplPtr = std::unique_ptr<IFunctionOverloadResolve
 
 
 /// Previous function interface.
-class IFunction : public std::enable_shared_from_this<IFunction>
+class IFunction
 {
 public:
+    using Block = ColumnsWithTypeAndName;
+
     virtual ~IFunction() = default;
 
     virtual String getName() const = 0;
 
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
-    virtual void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const = 0;
+    virtual void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         executeImpl(block, arguments, result, input_rows_count);
     }
@@ -256,8 +258,8 @@ public:
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
-    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
+    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_block*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }
@@ -288,11 +290,6 @@ public:
     }
 
     virtual bool isVariadic() const { return false; }
-
-    virtual void checkNumberOfArgumentsIfVariadic(size_t /*number_of_arguments*/) const
-    {
-        throw Exception("checkNumberOfArgumentsIfVariadic is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const
     {

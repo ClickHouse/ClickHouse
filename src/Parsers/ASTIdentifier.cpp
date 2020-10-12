@@ -111,6 +111,12 @@ void ASTIdentifier::resetTable(const String & database_name, const String & tabl
     uuid = ident.uuid;
 }
 
+void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(uuid);
+    IAST::updateTreeHashImpl(hash_state);
+}
+
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name)
 {
     assert(database_name != "_temporary_and_external_tables");

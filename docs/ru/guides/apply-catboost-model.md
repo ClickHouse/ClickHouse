@@ -227,4 +227,4 @@ FROM
 ```
 
 !!! note "Примечание"
-    Подробнее про функции [avg()](../sql-reference/aggregate-functions/reference.md#agg_function-avg), [log()](../sql-reference/functions/math-functions.md).
+    Подробнее про функции [avg()](../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg), [log()](../sql-reference/functions/math-functions.md).

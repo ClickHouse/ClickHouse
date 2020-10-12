@@ -14,15 +14,15 @@ namespace Util
 
 /// SensitiveDataMasker allows to remove sensitive data from queries using set of regexp-based rules
 
-/// It's used as a singelton via getInstance method
+/// It's used as a singleton via getInstance method
 
 /// Initially it's empty (nullptr) and after manual initialization
 /// (one-time, done by setInstance call) it takes the proper value which
 /// is stored in unique_ptr.
 
-/// It looks like the singelton is the best option here, as
+/// It looks like the singleton is the best option here, as
 /// two users of that object (OwnSplitChannel & Interpreters/executeQuery)
-/// can't own/share that Masker properly without syncronization & locks,
+/// can't own/share that Masker properly without synchronization & locks,
 /// and we can't afford setting global locks for each logged line.
 
 /// I've considered singleton alternatives, but it's unclear who should own the object,

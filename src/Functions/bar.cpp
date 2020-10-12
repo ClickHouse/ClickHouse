@@ -1,5 +1,4 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
@@ -19,6 +18,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 /** bar(x, min, max, width) - draws a strip from the number of characters proportional to (x - min) and equal to width for x == max.
   * Returns a string with nice Unicode-art bar with resolution of 1/8 part of symbol.
@@ -65,7 +67,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         Int64 min = extractConstant<Int64>(block, arguments, 1, "Second"); /// The level at which the line has zero length.
         Int64 max = extractConstant<Int64>(block, arguments, 2, "Third"); /// The level at which the line has the maximum length.
@@ -79,7 +81,7 @@ public:
         if (max_width > 1000)
             throw Exception("Too large max_width.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        const auto & src = *block.getByPosition(arguments[0]).column;
+        const auto & src = *block[arguments[0]].column;
 
         auto res_column = ColumnString::create();
 
@@ -94,11 +96,11 @@ public:
             || executeNumber<Float32>(src, *res_column, min, max, max_width)
             || executeNumber<Float64>(src, *res_column, min, max, max_width))
         {
-            block.getByPosition(result).column = std::move(res_column);
+            block[result].column = std::move(res_column);
         }
         else
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block[arguments[0]].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
@@ -106,7 +108,7 @@ private:
     template <typename T>
     T extractConstant(Block & block, const ColumnNumbers & arguments, size_t argument_pos, const char * which_argument) const
     {
-        const auto & column = *block.getByPosition(arguments[argument_pos]).column;
+        const auto & column = *block[arguments[argument_pos]].column;
 
         if (!isColumnConst(column))
             throw Exception(
@@ -161,6 +163,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionBar(FunctionFactory & factory)
 {

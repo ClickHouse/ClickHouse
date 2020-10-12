@@ -28,8 +28,8 @@ XML description:
 
 Attributes are described in the elements:
 
--   `<id>` — [Key column](external-dicts-dict-structure.md#ext_dict_structure-key).
--   `<attribute>` — [Data column](external-dicts-dict-structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
+-   `<id>` — [Key column](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-key).
+-   `<attribute>` — [Data column](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
 
 DDL query:
 
@@ -44,8 +44,8 @@ PRIMARY KEY Id
 
 Attributes are described in the query body:
 
--   `PRIMARY KEY` — [Key column](external-dicts-dict-structure.md#ext_dict_structure-key)
--   `AttrName AttrType` — [Data column](external-dicts-dict-structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
+-   `PRIMARY KEY` — [Key column](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-key)
+-   `AttrName AttrType` — [Data column](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
 
 ## Key {#ext_dict_structure-key}
 
@@ -90,12 +90,12 @@ PRIMARY KEY Id
 
 ### Composite Key {#composite-key}
 
-The key can be a `tuple` from any types of fields. The [layout](external-dicts-dict-layout.md) in this case must be `complex_key_hashed` or `complex_key_cache`.
+The key can be a `tuple` from any types of fields. The [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
 !!! tip "Tip"
     A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
 
-The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](external-dicts-dict-structure.md). Example:
+The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Example:
 
 ``` xml
 <structure>
@@ -161,8 +161,8 @@ Configuration fields:
 | `name`                                               | Column name.                                                                                                                                                                                                                                                                                                                                    | Yes      |
 | `type`                                               | ClickHouse data type.<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../../sql-reference/data-types/nullable.md) is not supported.       | Yes      |
 | `null_value`                                         | Default value for a non-existing element.<br/>In the example, it is an empty string. You cannot use `NULL` in this field.                                                                                                                                                                                                                       | Yes      |
-| `expression`                                         | [Expression](../../syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                                               | No       |
-| <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](external-dicts-dict-hierarchical.md).<br/><br/>Default value: `false`.                                                                                                                                                         | No       |
+| `expression`                                         | [Expression](../../../sql-reference/syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                              | No       |
+| <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-hierarchical.md).<br/><br/>Default value: `false`.                                                                                               | No       |
 | `injective`                                          | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`. | No       |
 | `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.                                                                                                                                                                                                                            | No       |
 

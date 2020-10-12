@@ -132,7 +132,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         auto & column = assert_cast<ColumnVector<Float64> &>(to);
         column.getData().push_back(this->data(place).get());

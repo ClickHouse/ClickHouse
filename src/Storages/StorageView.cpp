@@ -6,20 +6,16 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/SelectQueryDescription.h>
 
 #include <Common/typeid_cast.h>
 
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/ConvertingTransform.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-
 
 namespace DB
 {
@@ -37,17 +33,23 @@ StorageView::StorageView(
     const ColumnsDescription & columns_)
     : IStorage(table_id_)
 {
-    setColumns(columns_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    inner_query = query.select->ptr();
+    SelectQueryDescription description;
+
+    description.inner_query = query.select->ptr();
+    storage_metadata.setSelectQuery(description);
+    setInMemoryMetadata(storage_metadata);
 }
 
 
-Pipes StorageView::read(
+Pipe StorageView::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -56,7 +58,8 @@ Pipes StorageView::read(
 {
     Pipes pipes;
 
-    ASTPtr current_inner_query = inner_query;
+    ASTPtr current_inner_query = metadata_snapshot->getSelectQuery().inner_query;
+
     if (query_info.view_query)
     {
         if (!query_info.view_query->as<ASTSelectWithUnionQuery>())
@@ -78,13 +81,12 @@ Pipes StorageView::read(
     /// And also convert to expected structure.
     pipeline.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<ConvertingTransform>(header, getSampleBlockForColumns(column_names),
-                                                     ConvertingTransform::MatchColumnsMode::Name);
+        return std::make_shared<ConvertingTransform>(
+            header, metadata_snapshot->getSampleBlockForColumns(
+                column_names, getVirtuals(), getStorageID()), ConvertingTransform::MatchColumnsMode::Name);
     });
 
-    pipes = std::move(pipeline).getPipes();
-
-    return pipes;
+    return QueryPipeline::getPipe(std::move(pipeline));
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
@@ -102,7 +104,13 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
     ASTTableExpression * table_expression = getFirstTableExpression(outer_query);
 
     if (!table_expression->database_and_table_name)
-        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
+    {
+        // If it's a view table function, add a fake db.table name.
+        if (table_expression->table_function && table_expression->table_function->as<ASTFunction>()->name == "view")
+            table_expression->database_and_table_name = std::make_shared<ASTIdentifier>("__view");
+        else
+            throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
+    }
 
     DatabaseAndTableWithAlias db_table(table_expression->database_and_table_name);
     String alias = db_table.alias.empty() ? db_table.table : db_table.alias;

@@ -16,7 +16,7 @@ struct IdentifierSemanticImpl
     std::optional<size_t> membership; /// table position in join
 };
 
-/// Static calss to manipulate IdentifierSemanticImpl via ASTIdentifier
+/// Static class to manipulate IdentifierSemanticImpl via ASTIdentifier
 struct IdentifierSemantic
 {
     enum class ColumnMatch

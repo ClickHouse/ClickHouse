@@ -8,7 +8,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -36,7 +36,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
     param_visitor.visit(ast);
     String name = ast->getColumnName();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(ast, source_columns);
+    auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
     /// There must be at least one column in the block so that it knows the number of rows.

@@ -138,8 +138,6 @@ void BackgroundProcessingPool::workLoopFunc()
     }
 
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
-    if (auto * const memory_tracker = CurrentThread::getMemoryTracker())
-        memory_tracker->setMetric(settings.memory_metric);
 
     pcg64 rng(randomSeed());
     std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, settings.thread_sleep_seconds_random_part)(rng)));

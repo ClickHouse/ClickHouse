@@ -353,7 +353,7 @@ public:
         this->data(place).read(buf, max_bins);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         auto & data = this->data(place);
 

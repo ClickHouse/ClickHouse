@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/ProfileEvents.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -53,6 +53,14 @@ namespace ProfileEvents
     extern const Event PerfCpuMigrations;
     extern const Event PerfAlignmentFaults;
     extern const Event PerfEmulationFaults;
+    extern const Event PerfMinEnabledTime;
+    extern const Event PerfMinEnabledRunningTime;
+    extern const Event PerfDataTLBReferences;
+    extern const Event PerfDataTLBMisses;
+    extern const Event PerfInstructionTLBReferences;
+    extern const Event PerfInstructionTLBMisses;
+    extern const Event PerfLocalMemoryReferences;
+    extern const Event PerfLocalMemoryMisses;
 #endif
 }
 
@@ -73,7 +81,6 @@ inline UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
     clock_gettime(clock_type, &ts);
     return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
-
 
 struct RUsageCounters
 {
@@ -99,13 +106,6 @@ struct RUsageCounters
 
         soft_page_faults = static_cast<UInt64>(rusage.ru_minflt);
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
-    }
-
-    static RUsageCounters zeros(UInt64 real_time_ = getCurrentTimeNanoseconds())
-    {
-        RUsageCounters res;
-        res.real_time = real_time_;
-        return res;
     }
 
     static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
@@ -156,7 +156,7 @@ struct PerfEventValue
     UInt64 time_running = 0;
 };
 
-static constexpr size_t NUMBER_OF_RAW_EVENTS = 16;
+static constexpr size_t NUMBER_OF_RAW_EVENTS = 22;
 
 struct PerfDescriptorsHolder : boost::noncopyable
 {

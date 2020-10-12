@@ -701,11 +701,11 @@ auto s = std::string{"Hello"};
 
 Mais toutes choses étant égales par ailleurs, le code multi-plateforme ou portable est préféré.
 
-**2.** Langue: C++17.
+**2.** Langue: C++20.
 
-**3.** Compilateur: `gcc`. En ce moment (décembre 2017), le code est compilé en utilisant la version 7.2. (Il peut également être compilé en utilisant `clang 4`.)
+**3.** Compilateur: `gcc`. En ce moment (août 2020), le code est compilé en utilisant la version 9.3. (Il peut également être compilé en utilisant `clang 8`.)
 
-La bibliothèque standard est utilisée (`libstdc++` ou `libc++`).
+La bibliothèque standard est utilisée (`libc++`).
 
 **4.**OS: Linux Ubuntu, pas plus vieux que précis.
 
@@ -749,7 +749,7 @@ Si votre code dans le `master` la branche n'est pas constructible pourtant, l'ex
 
 ## Bibliothèque {#libraries}
 
-**1.** La bibliothèque standard C++14 est utilisée (les extensions expérimentales sont autorisées), ainsi que `boost` et `Poco` Framework.
+**1.** La bibliothèque standard C++20 est utilisée (les extensions expérimentales sont autorisées), ainsi que `boost` et `Poco` Framework.
 
 **2.** Si nécessaire, vous pouvez utiliser toutes les bibliothèques bien connues disponibles dans le package OS.
 

@@ -455,6 +455,10 @@ public:
         cannotConvertType("UInt128");
     }
 
+    bool readInt128(Int128 &) override { cannotConvertType("Int128"); }
+    bool readInt256(Int256 &) override { cannotConvertType("Int256"); }
+    bool readUInt256(UInt256 &) override { cannotConvertType("UInt256"); }
+
     bool readFloat32(Float32 &) override
     {
         cannotConvertType("Float32");
@@ -512,6 +516,12 @@ public:
     {
         cannotConvertType("Decimal128");
     }
+
+    bool readDecimal256(Decimal256 &, UInt32, UInt32) override
+    {
+        cannotConvertType("Decimal256");
+    }
+
 
     bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) override
     {
@@ -641,6 +651,7 @@ public:
     bool readDecimal32(Decimal32 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
     bool readDecimal64(Decimal64 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
     bool readDecimal128(Decimal128 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
+    bool readDecimal256(Decimal256 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
 
     bool readAggregateFunction(const AggregateFunctionPtr & function, AggregateDataPtr place, Arena & arena) override
     {
@@ -797,7 +808,7 @@ private:
     template<typename EnumType>
     bool readEnum(EnumType & value)
     {
-        if constexpr (!is_integral_v<FromType>)
+        if constexpr (!is_integer_v<FromType>)
             cannotConvertType("Enum"); // It's not correct to convert floating point to enum.
         FromType number;
         if (!readField(number))

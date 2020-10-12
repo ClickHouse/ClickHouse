@@ -9,27 +9,31 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance('node',
-            config_dir='configs',
-            tmpfs=['/disk1:size=100M', '/disk2:size=100M'])
+                            main_configs=["configs/config.d/storage_configuration.xml"],
+                            tmpfs=['/disk1:size=100M', '/disk2:size=100M'])
+
 
 @pytest.fixture(scope='module')
 def start_cluster():
     try:
         cluster.start()
-        node.query('CREATE DATABASE test ENGINE=Ordinary')
+        node.query('CREATE DATABASE test ENGINE=Ordinary') # Different paths with Atomic
         yield cluster
     finally:
         cluster.shutdown()
+
 
 def _files_in_dist_mon(node, root, table):
     return int(node.exec_in_container([
         'bash',
         '-c',
         # `-maxdepth 1` to avoid /tmp/ subdirectory
-        'find /{root}/data/test/{table}/default@127%2E0%2E0%2E2:9000 -maxdepth 1 -type f 2>/dev/null | wc -l'.format(root=root, table=table)
+        'find /{root}/data/test/{table}/default@127%2E0%2E0%2E2:9000 -maxdepth 1 -type f 2>/dev/null | wc -l'.format(
+            root=root, table=table)
     ]).split('\n')[0])
 
-def test_different_versions(start_cluster):
+
+def test_insert(start_cluster):
     node.query('CREATE TABLE test.foo (key Int) Engine=Memory()')
     node.query("""
     CREATE TABLE test.dist_foo (key Int)
@@ -64,3 +68,13 @@ def test_different_versions(start_cluster):
     assert node.query('SELECT count() FROM test.dist2_foo') == '300\n'
     node.query('SYSTEM FLUSH DISTRIBUTED test.dist2_foo')
     assert node.query('SELECT count() FROM test.dist2_foo') == '400\n'
+
+    #
+    # DROP
+    #
+    node.query('DROP TABLE test.dist2_foo')
+    for disk in ['disk1', 'disk2']:
+        node.exec_in_container([
+            'bash', '-c',
+            'test ! -e /{}/data/test/dist2_foo'.format(disk)
+        ])

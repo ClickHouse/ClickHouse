@@ -1,15 +1,16 @@
 <test>
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
+        <table_exists>hits_10m_single</table_exists>
     </preconditions>
 
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(WatchID)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(toString(WatchID)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(JavaEnable)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(GoodEvent)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(CounterID)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(ClientIP)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(RegionID)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(UserID)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(toString(UserID)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(CounterClass)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(OS)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(UserAgent)) SETTINGS max_threads = 1</query>
@@ -43,7 +44,7 @@
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(IsLink)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(IsDownload)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(IsNotBounce)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(FUniqID)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(toString(FUniqID)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(HID)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(IsOldCounter)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(IsEvent)) SETTINGS max_threads = 1</query>
@@ -70,7 +71,7 @@
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(ParamPrice)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(ParamCurrencyID)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(HasGCLID)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(RefererHash)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(URLHash)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(toString(RefererHash)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(toString(URLHash)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toString(CLID)) SETTINGS max_threads = 1</query>
 </test>

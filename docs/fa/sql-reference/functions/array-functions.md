@@ -702,13 +702,13 @@ arrayDifference(array)
 
 **پارامترها**
 
--   `array` – [& حذف](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [& حذف](https://clickhouse.tech/docs/en/data_types/array/).
 
 **مقادیر بازگشتی**
 
 بازگرداندن مجموعه ای از تفاوت بین عناصر مجاور.
 
-نوع: [اینترنت\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#int-ranges), [شناور\*](https://clickhouse.yandex/docs/en/data_types/float/).
+نوع: [اینترنت\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.tech/docs/en/data_types/int_uint/#int-ranges), [شناور\*](https://clickhouse.tech/docs/en/data_types/float/).
 
 **مثال**
 
@@ -754,7 +754,7 @@ arrayDistinct(array)
 
 **پارامترها**
 
--   `array` – [& حذف](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [& حذف](https://clickhouse.tech/docs/en/data_types/array/).
 
 **مقادیر بازگشتی**
 

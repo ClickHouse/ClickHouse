@@ -47,7 +47,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
+        return std::make_shared<DataTypeArray>(this->argument_types[0]);
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -64,7 +64,10 @@ public:
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).value.merge(this->data(rhs).value);
+        auto & set = this->data(place).value;
+        if (set.capacity() != reserved)
+            set.resize(reserved);
+        set.merge(this->data(rhs).value);
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
@@ -79,7 +82,7 @@ public:
         set.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -197,10 +200,13 @@ public:
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).value.merge(this->data(rhs).value);
+        auto & set = this->data(place).value;
+        if (set.capacity() != reserved)
+            set.resize(reserved);
+        set.merge(this->data(rhs).value);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();

@@ -11,8 +11,8 @@ namespace DB
 class ParserSettingsProfileElement : public IParserBase
 {
 public:
-    ParserSettingsProfileElement & useIDMode(bool enable_) { id_mode = enable_; return *this; }
-    ParserSettingsProfileElement & enableInheritKeyword(bool enable_) { enable_inherit_keyword = enable_; return *this; }
+    ParserSettingsProfileElement & useIDMode(bool id_mode_ = true) { id_mode = id_mode_; return *this; }
+    ParserSettingsProfileElement & useInheritKeyword(bool use_inherit_keyword_ = true) { use_inherit_keyword = use_inherit_keyword_; return *this; }
 
 protected:
     const char * getName() const override { return "SettingsProfileElement"; }
@@ -20,15 +20,15 @@ protected:
 
 private:
     bool id_mode = false;
-    bool enable_inherit_keyword = false;
+    bool use_inherit_keyword = false;
 };
 
 
 class ParserSettingsProfileElements : public IParserBase
 {
 public:
-    ParserSettingsProfileElements & useIDMode(bool enable_) { id_mode = enable_; return *this; }
-    ParserSettingsProfileElements & enableInheritKeyword(bool enable_) { enable_inherit_keyword = enable_; return *this; }
+    ParserSettingsProfileElements & useIDMode(bool id_mode_ = true) { id_mode = id_mode_; return *this; }
+    ParserSettingsProfileElements & useInheritKeyword(bool use_inherit_keyword_ = true) { use_inherit_keyword = use_inherit_keyword_; return *this; }
 
 protected:
     const char * getName() const override { return "SettingsProfileElements"; }
@@ -36,7 +36,7 @@ protected:
 
 private:
     bool id_mode = false;
-    bool enable_inherit_keyword = false;
+    bool use_inherit_keyword = false;
 };
 
 }

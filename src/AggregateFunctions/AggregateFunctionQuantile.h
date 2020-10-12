@@ -138,7 +138,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like sorting) for obtain a result.
         auto & data = this->data(place);
@@ -200,6 +200,12 @@ struct NameQuantilesDeterministic { static constexpr auto name = "quantilesDeter
 
 struct NameQuantileExact { static constexpr auto name = "quantileExact"; };
 struct NameQuantilesExact { static constexpr auto name = "quantilesExact"; };
+
+struct NameQuantileExactLow { static constexpr auto name = "quantileExactLow"; };
+struct NameQuantilesExactLow { static constexpr auto name = "quantilesExactLow"; };
+
+struct NameQuantileExactHigh { static constexpr auto name = "quantileExactHigh"; };
+struct NameQuantilesExactHigh { static constexpr auto name = "quantilesExactHigh"; };
 
 struct NameQuantileExactExclusive { static constexpr auto name = "quantileExactExclusive"; };
 struct NameQuantilesExactExclusive { static constexpr auto name = "quantilesExactExclusive"; };

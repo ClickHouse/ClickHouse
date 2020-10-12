@@ -13,9 +13,6 @@
 #include <Common/StackTrace.h>
 #include <common/logger_useful.h>
 
-#include <unistd.h>
-#include <fcntl.h>
-
 
 namespace DB
 {
@@ -81,7 +78,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
     size_t stack_trace_offset = stack_trace.getOffset();
     writeIntBinary(UInt8(stack_trace_size - stack_trace_offset), out);
     for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-        writePODBinary(stack_trace.getFrames()[i], out);
+        writePODBinary(stack_trace.getFramePointers()[i], out);
 
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);
@@ -144,7 +141,14 @@ void TraceCollector::run()
 
         if (trace_log)
         {
-            TraceLogElement element{std::time(nullptr), clock_gettime_ns(), trace_type, thread_id, query_id, trace, size};
+            // time and time_in_microseconds are both being constructed from the same timespec so that the
+            // times will be equal upto the precision of a second.
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+
+            UInt64 time = UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
+            UInt64 time_in_microseconds = UInt64((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
+            TraceLogElement element{time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, trace, size};
             trace_log->add(element);
         }
     }

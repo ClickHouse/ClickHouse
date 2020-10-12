@@ -1,6 +1,6 @@
 # 数组函数 {#shu-zu-han-shu}
 
-## 空 {#empty}
+## empty {#empty}
 
 对于空数组返回1，对于非空数组返回0。
 结果类型是UInt8。
@@ -12,7 +12,7 @@
 结果类型是UInt8。
 该函数也适用于字符串。
 
-## 长度 {#array_functions-length}
+## length {#array_functions-length}
 
 返回数组中的元素个数。
 结果类型是UInt64。
@@ -24,9 +24,9 @@
 
 ## emptyArrayFloat32,emptyArrayFloat64 {#emptyarrayfloat32-emptyarrayfloat64}
 
-## 空空漫步，空空漫步时间 {#emptyarraydate-emptyarraydatetime}
+## emptyArrayDate，emptyArrayDateTime {#emptyarraydate-emptyarraydatetime}
 
-## 空字符串 {#emptyarraystring}
+## emptyArrayString {#emptyarraystring}
 
 不接受任何参数并返回适当类型的空数组。
 
@@ -34,7 +34,7 @@
 
 接受一个空数组并返回一个仅包含一个默认值元素的数组。
 
-## 范围(N) {#rangen}
+## range(N) {#rangen}
 
 返回从0到N-1的数字数组。
 以防万一，如果在数据块中创建总长度超过100,000,000个元素的数组，则抛出异常。
@@ -74,7 +74,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 如果索引超出数组的边界，则返回默认值（数字为0，字符串为空字符串等）。
 
-## 有(arr,elem) {#hasarr-elem}
+## has(arr,elem) {#hasarr-elem}
 
 检查’arr’数组是否具有’elem’元素。
 如果元素不在数组中，则返回0;如果在，则返回1。
@@ -186,7 +186,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
     │                                    2 │
     └──────────────────────────────────────┘
 
-## ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人) {#array_functions-arrayenumerate}
+## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
 返回 Array \[1, 2, 3, …, length (arr) \]
 
@@ -658,7 +658,7 @@ SELECT
 
 arrayReduce（‘agg\_func’，arr1，…） - 将聚合函数`agg_func`应用于数组`arr1 ...`。如果传递了多个数组，则相应位置上的元素将作为多个参数传递给聚合函数。例如：SELECT arrayReduce（‘max’，\[1,2,3\]）= 3
 
-## ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人) {#arrayreversearr}
+## arrayReverse(arr) {#arrayreversearr}
 
 返回与源数组大小相同的数组，包含反转源数组的所有元素的结果。
 

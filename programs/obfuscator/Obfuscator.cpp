@@ -13,8 +13,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <Common/SipHash.h>
@@ -31,7 +31,6 @@
 #include <ext/bit_cast.h>
 #include <memory>
 #include <cmath>
-#include <optional>
 #include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
@@ -365,6 +364,17 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
     }
 }
 
+static void transformUUID(const UInt128 & src, UInt128 & dst, UInt64 seed)
+{
+    SipHash hash;
+    hash.update(seed);
+    hash.update(reinterpret_cast<const char *>(&src), sizeof(UInt128));
+
+    /// Saving version and variant from an old UUID
+    hash.get128(reinterpret_cast<char *>(&dst));
+    dst.high = (dst.high & 0x1fffffffffffffffull) | (src.high & 0xe000000000000000ull);
+    dst.low = (dst.low & 0xffffffffffff0fffull) | (src.low & 0x000000000000f000ull);
+}
 
 class FixedStringModel : public IModel
 {
@@ -392,6 +402,38 @@ public:
 
         for (size_t i = 0; i < size; ++i)
             transformFixedString(&src_data[i * string_size], &res_data[i * string_size], string_size, seed);
+
+        return res_column;
+    }
+
+    void updateSeed() override
+    {
+        seed = hash(seed);
+    }
+};
+
+class UUIDModel : public IModel
+{
+private:
+    UInt64 seed;
+
+public:
+    explicit UUIDModel(UInt64 seed_) : seed(seed_) {}
+
+    void train(const IColumn &) override {}
+    void finalize() override {}
+
+    ColumnPtr generate(const IColumn & column) override
+    {
+        const ColumnUInt128 & src_column = assert_cast<const ColumnUInt128 &>(column);
+        const auto & src_data = src_column.getData();
+
+        auto res_column = ColumnUInt128::create();
+        auto & res_data = res_column->getData();
+
+        res_data.resize(src_data.size());
+        for (size_t i = 0; i < src_column.size(); ++i)
+            transformUUID(src_data[i], res_data[i], seed);
 
         return res_column;
     }
@@ -936,6 +978,9 @@ public:
 
         if (typeid_cast<const DataTypeFixedString *>(&data_type))
             return std::make_unique<FixedStringModel>(seed);
+
+        if (typeid_cast<const DataTypeUUID *>(&data_type))
+            return std::make_unique<UUIDModel>(seed);
 
         if (const auto * type = typeid_cast<const DataTypeArray *>(&data_type))
             return std::make_unique<ArrayModel>(get(*type->getNestedType(), seed, markov_model_params));

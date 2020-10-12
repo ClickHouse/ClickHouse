@@ -12,11 +12,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
 }
+
+namespace
+{
 
 /** in(x, set) - function for evaluating the IN
   * notIn(x, set) - and NOT IN.
@@ -78,16 +80,16 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
     {
         if constexpr (ignore_set)
         {
-            block.getByPosition(result).column = ColumnUInt8::create(input_rows_count, 0u);
+            block[result].column = ColumnUInt8::create(input_rows_count, 0u);
             return;
         }
 
         /// Second argument must be ColumnSet.
-        ColumnPtr column_set_ptr = block.getByPosition(arguments[1]).column;
+        ColumnPtr column_set_ptr = block[arguments[1]].column;
         const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
             column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
@@ -95,10 +97,10 @@ public:
             throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        Block block_of_key_columns;
+        DB::Block block_of_key_columns;
 
         /// First argument may be a tuple or a single column.
-        const ColumnWithTypeAndName & left_arg = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & left_arg = block[arguments[0]];
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
         const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(left_arg.column.get());
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
@@ -123,12 +125,12 @@ public:
         else
             block_of_key_columns.insert(left_arg);
 
-        block.getByPosition(result).column = set->execute(block_of_key_columns, negative);
+        block[result].column = set->execute(block_of_key_columns, negative);
     }
 };
 
 template<bool ignore_set>
-static void registerFunctionsInImpl(FunctionFactory & factory)
+void registerFunctionsInImpl(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIn<false, false, true, ignore_set>>();
     factory.registerFunction<FunctionIn<false, true, true, ignore_set>>();
@@ -138,6 +140,8 @@ static void registerFunctionsInImpl(FunctionFactory & factory)
     factory.registerFunction<FunctionIn<false, true, false, ignore_set>>();
     factory.registerFunction<FunctionIn<true, false, false, ignore_set>>();
     factory.registerFunction<FunctionIn<true, true, false, ignore_set>>();
+}
+
 }
 
 void registerFunctionsIn(FunctionFactory & factory)

@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 template <bool UseNull>
 class AggregateFunctionCombinatorOrFill final : public IAggregateFunctionCombinator
@@ -21,6 +23,7 @@ public:
 
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
+        const AggregateFunctionProperties &,
         const DataTypes & arguments,
         const Array & params) const override
     {
@@ -30,6 +33,8 @@ public:
             params);
     }
 };
+
+}
 
 void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactory & factory)
 {

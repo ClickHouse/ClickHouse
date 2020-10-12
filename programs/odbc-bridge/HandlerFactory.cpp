@@ -30,6 +30,12 @@ Poco::Net::HTTPRequestHandler * HandlerFactory::createRequestHandler(const Poco:
 #else
             return nullptr;
 #endif
+        else if (uri.getPath() == "/schema_allowed")
+#if USE_ODBC
+            return new SchemaAllowedHandler(keep_alive_timeout, context);
+#else
+            return nullptr;
+#endif
         else if (uri.getPath() == "/write")
             return new ODBCHandler(pool_map, keep_alive_timeout, context, "write");
         else

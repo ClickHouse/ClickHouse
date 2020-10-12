@@ -135,7 +135,13 @@ void writeCommonErrorMessage(
     out << ": failed at position " << (last_token.begin - begin + 1);
 
     if (last_token.type == TokenType::EndOfStream || last_token.type == TokenType::Semicolon)
+    {
         out << " (end of query)";
+    }
+    else
+    {
+        out << " ('" << std::string(last_token.begin, last_token.end - last_token.begin) << "')";
+    }
 
     /// If query is multiline.
     const char * nl = find_first_symbols<'\n'>(begin, end);
@@ -225,6 +231,15 @@ ASTPtr tryParseQuery(
         || token_iterator->type == TokenType::Semicolon)
     {
         out_error_message = "Empty query";
+        // Token iterator skips over comments, so we'll get this error for queries
+        // like this:
+        // "
+        // -- just a comment
+        // ;
+        //"
+        // Advance the position, so that we can use this parser for stream parsing
+        // even in presence of such queries.
+        pos = token_iterator->begin;
         return nullptr;
     }
 

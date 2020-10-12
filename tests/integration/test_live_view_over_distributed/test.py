@@ -1,18 +1,14 @@
-from __future__ import print_function
+
 
 import sys
-import itertools
-import timeit
-import logging
 
 import pytest
-
-from helpers.uclient import client, prompt, end_of_block
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV
+from helpers.uclient import client, prompt, end_of_block
 
 cluster = ClickHouseCluster(__file__)
+# log = sys.stdout
+log = None
 
 NODES = {'node' + str(i): cluster.add_instance(
     'node' + str(i),
@@ -45,6 +41,7 @@ CREATE LIVE VIEW lv_over_distributed_table AS SELECT * FROM distributed_table;
 
 INSERT_SQL_TEMPLATE = "INSERT INTO base_table VALUES ('{node_id}', {key}, {value})"
 
+
 @pytest.fixture(scope="function")
 def started_cluster():
     try:
@@ -60,7 +57,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("node", NODES.values()[:1])
+@pytest.mark.parametrize("node", list(NODES.values())[:1])
 @pytest.mark.parametrize("source", ["lv_over_distributed_table"])
 class TestLiveViewOverDistributedSuite:
     def test_select_with_order_by_node(self, started_cluster, node, source):
@@ -73,7 +70,7 @@ node2\t1\t11
 
     def test_select_with_order_by_key(self, started_cluster, node, source):
         assert node.query("SELECT * FROM {source} ORDER BY key, node".format(source=source)) \
-            == """node1\t0\t0
+               == """node1\t0\t0
 node2\t0\t10
 node1\t1\t1
 node2\t1\t11
@@ -81,18 +78,17 @@ node2\t1\t11
 
     def test_select_with_group_by_node(self, started_cluster, node, source):
         assert node.query("SELECT node, SUM(value) FROM {source} GROUP BY node ORDER BY node".format(source=source)) \
-            == "node1\t1\nnode2\t21\n"
+               == "node1\t1\nnode2\t21\n"
 
     def test_select_with_group_by_key(self, started_cluster, node, source):
         assert node.query("SELECT key, SUM(value) FROM {source} GROUP BY key ORDER BY key".format(source=source)) \
-            == "0\t10\n1\t12\n"
+               == "0\t10\n1\t12\n"
 
     def test_select_sum(self, started_cluster, node, source):
         assert node.query("SELECT SUM(value) FROM {source}".format(source=source)) \
-            == "22\n"
+               == "22\n"
 
     def test_watch_live_view_order_by_node(self, started_cluster, node, source):
-        log = sys.stdout
         command = " ".join(node.client.command)
         args = dict(log=log, command=command)
 
@@ -111,18 +107,30 @@ node2\t1\t11
             client1.expect(prompt)
 
             client1.send("WATCH lv FORMAT CSV")
-            client1.expect('"node1",0,0,1\r\n.*"node1",1,1,1\r\n.*"node2",0,10,1\r\n.*"node2",1,11,1\r\n')
+            client1.expect('"node1",0,0,1')
+            client1.expect('"node1",1,1,1')
+            client1.expect('"node2",0,10,1')
+            client1.expect('"node2",1,11,1')
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 2, 2)")
             client2.expect(prompt)
-            client1.expect('"node1",0,0,2\r\n.*"node1",1,1,2\r\n.*"node1",2,2,2\r\n.*"node2",0,10,2\r\n.*"node2",1,11,2\r\n')
+            client1.expect('"node1",0,0,2')
+            client1.expect('"node1",1,1,2')
+            client1.expect('"node1",2,2,2')
+            client1.expect('"node2",0,10,2')
+            client1.expect('"node2",1,11,2')
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 0, 3), ('node3', 3, 3)")
             client2.expect(prompt)
-            client1.expect('"node1",0,0,3\r\n.*"node1",0,3,3\r\n.*"node1",1,1,3\r\n.*"node1",2,2,3\r\n.*"node2",0,10,3\r\n.*"node2",1,11,3\r\n.*"node3",3,3,3\r\n')
+            client1.expect('"node1",0,0,3')
+            client1.expect('"node1",0,3,3')
+            client1.expect('"node1",1,1,3')
+            client1.expect('"node1",2,2,3')
+            client1.expect('"node2",0,10,3')
+            client1.expect('"node2",1,11,3')
+            client1.expect('"node3",3,3,3')
 
     def test_watch_live_view_order_by_key(self, started_cluster, node, source):
-        log = sys.stdout
         command = " ".join(node.client.command)
         args = dict(log=log, command=command)
 
@@ -141,18 +149,30 @@ node2\t1\t11
             client1.expect(prompt)
 
             client1.send("WATCH lv FORMAT CSV")
-            client1.expect('"node1",0,0,1\r\n.*"node2",0,10,1\r\n.*"node1",1,1,1\r\n.*"node2",1,11,1\r\n')
+            client1.expect('"node1",0,0,1')
+            client1.expect('"node2",0,10,1')
+            client1.expect('"node1",1,1,1')
+            client1.expect('"node2",1,11,1')
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 2, 2)")
             client2.expect(prompt)
-            client1.expect('"node1",0,0,2\r\n.*"node2",0,10,2\r\n.*"node1",1,1,2\r\n.*"node2",1,11,2\r\n.*"node1",2,2,2\r\n')
+            client1.expect('"node1",0,0,2')
+            client1.expect('"node2",0,10,2')
+            client1.expect('"node1",1,1,2')
+            client1.expect('"node2",1,11,2')
+            client1.expect('"node1",2,2,2')
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 0, 3), ('node3', 3, 3)")
             client2.expect(prompt)
-            client1.expect('"node1",0,0,3\r\n.*"node1",0,3,3\r\n.*"node2",0,10,3\r\n.*"node1",1,1,3\r\n.*"node2",1,11,3\r\n.*"node1",2,2,3\r\n.*"node3",3,3,3\r\n')
+            client1.expect('"node1",0,0,3')
+            client1.expect('"node1",0,3,3')
+            client1.expect('"node2",0,10,3')
+            client1.expect('"node1",1,1,3')
+            client1.expect('"node2",1,11,3')
+            client1.expect('"node1",2,2,3')
+            client1.expect('"node3",3,3,3')
 
     def test_watch_live_view_group_by_node(self, started_cluster, node, source):
-        log = sys.stdout
         command = " ".join(node.client.command)
         args = dict(log=log, command=command)
 
@@ -167,22 +187,26 @@ node2\t1\t11
 
             client1.send("DROP TABLE IF EXISTS lv")
             client1.expect(prompt)
-            client1.send("CREATE LIVE VIEW lv AS SELECT node, SUM(value) FROM distributed_table GROUP BY node ORDER BY node")
+            client1.send(
+                "CREATE LIVE VIEW lv AS SELECT node, SUM(value) FROM distributed_table GROUP BY node ORDER BY node")
             client1.expect(prompt)
 
             client1.send("WATCH lv FORMAT CSV")
-            client1.expect('"node1",1,1\r\n.*"node2",21,1\r\n')
+            client1.expect('"node1",1,1')
+            client1.expect('"node2",21,1')
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 2, 2)")
             client2.expect(prompt)
-            client1.expect('"node1",3,2\r\n.*"node2",21,2\r\n')
+            client1.expect('"node1",3,2')
+            client1.expect('"node2",21,2')
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 0, 3), ('node3', 3, 3)")
             client2.expect(prompt)
-            client1.expect('"node1",6,3\r\n.*"node2",21,3\r\n.*"node3",3,3\r\n')
+            client1.expect('"node1",6,3')
+            client1.expect('"node2",21,3')
+            client1.expect('"node3",3,3')
 
     def test_watch_live_view_group_by_key(self, started_cluster, node, source):
-        log = sys.stdout
         command = " ".join(node.client.command)
         args = dict(log=log, command=command)
         sep = ' \xe2\x94\x82'
@@ -197,23 +221,28 @@ node2\t1\t11
 
             client1.send("DROP TABLE IF EXISTS lv")
             client1.expect(prompt)
-            client1.send("CREATE LIVE VIEW lv AS SELECT key, SUM(value) FROM distributed_table GROUP BY key ORDER BY key")
+            client1.send(
+                "CREATE LIVE VIEW lv AS SELECT key, SUM(value) FROM distributed_table GROUP BY key ORDER BY key")
             client1.expect(prompt)
 
             client1.send("WATCH lv FORMAT CSV")
-            client1.expect("0,10,1\r\n.*1,12,1\r\n")
+            client1.expect('0,10,1')
+            client1.expect('1,12,1')
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 2, 2)")
             client2.expect(prompt)
-            client1.expect("0,10,2\r\n.*1,12,2\r\n.*2,2,2\r\n")
+            client1.expect('0,10,2')
+            client1.expect('1,12,2')
+            client1.expect('2,2,2')
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 0, 3), ('node1', 3, 3)")
             client2.expect(prompt)
-            client1.expect("0,13,3\r\n.*1,12,3\r\n.*2,2,3\r\n.*3,3,3\r\n")
-
+            client1.expect('0,13,3')
+            client1.expect('1,12,3')
+            client1.expect('2,2,3')
+            client1.expect('3,3,3')
 
     def test_watch_live_view_sum(self, started_cluster, node, source):
-        log = sys.stdout
         command = " ".join(node.client.command)
         args = dict(log=log, command=command)
 

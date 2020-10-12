@@ -1,6 +1,6 @@
 *** Create and kill a single invalid mutation ***
+happened during execution of mutation '0000000000'
 1
-Mutation 0000000000 was killed
 waiting	test	kill_mutation_r1	0000000000	DELETE WHERE toUInt32(s) = 1
 0
 *** Create and kill invalid mutation that blocks another mutation ***

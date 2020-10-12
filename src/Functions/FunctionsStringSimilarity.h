@@ -51,12 +51,12 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
-        const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
-        const ColumnPtr & column_needle = block.getByPosition(arguments[1]).column;
+        const ColumnPtr & column_haystack = block[arguments[0]].column;
+        const ColumnPtr & column_needle = block[arguments[1]].column;
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
@@ -73,8 +73,8 @@ public:
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
             Impl::constantConstant(col_haystack_const->getValue<String>(), needle, res);
-            block.getByPosition(result).column
-                = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
+            block[result].column
+                = block[result].type->createColumnConst(col_haystack_const->size(), toField(res));
             return;
         }
 
@@ -122,12 +122,12 @@ public:
         else
         {
             throw Exception(
-                "Illegal columns " + block.getByPosition(arguments[0]).column->getName() + " and "
-                    + block.getByPosition(arguments[1]).column->getName() + " of arguments of function " + getName(),
+                "Illegal columns " + block[arguments[0]].column->getName() + " and "
+                    + block[arguments[1]].column->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        block.getByPosition(result).column = std::move(col_res);
+        block[result].column = std::move(col_res);
     }
 };
 

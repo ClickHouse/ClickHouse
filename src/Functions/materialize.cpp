@@ -4,6 +4,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** materialize(x) - materialize the constant
   */
@@ -14,6 +16,11 @@ public:
     static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionMaterialize>();
+    }
+
+    bool useDefaultImplementationForNulls() const override
+    {
+        return false;
     }
 
     /// Get the function name.
@@ -32,12 +39,13 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        block.getByPosition(result).column = block.getByPosition(arguments[0]).column->convertToFullColumnIfConst();
+        block[result].column = block[arguments[0]].column->convertToFullColumnIfConst();
     }
 };
 
+}
 
 void registerFunctionMaterialize(FunctionFactory & factory)
 {

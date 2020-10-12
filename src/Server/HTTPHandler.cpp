@@ -232,15 +232,12 @@ HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
 
 
 void HTTPHandler::processQuery(
+    Context & context,
     Poco::Net::HTTPServerRequest & request,
     HTMLForm & params,
     Poco::Net::HTTPServerResponse & response,
     Output & used_output)
 {
-    Context context = server.context();
-
-    CurrentThread::QueryScope query_scope(context);
-
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     std::istream & istr = request.stream();
@@ -369,7 +366,7 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(context.getTemporaryVolume()->getNextDisk()->getPath());
+            const std::string tmp_path(context.getTemporaryVolume()->getDisk()->getPath());
             const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
@@ -478,16 +475,21 @@ void HTTPHandler::processQuery(
         reserved_param_suffixes.emplace_back("_structure");
     }
 
+    std::string database = request.get("X-ClickHouse-Database", "");
+    std::string default_format = request.get("X-ClickHouse-Format", "");
+
     SettingsChanges settings_changes;
     for (const auto & [key, value] : params)
     {
         if (key == "database")
         {
-            context.setCurrentDatabase(value);
+            if (database.empty())
+                database = value;
         }
         else if (key == "default_format")
         {
-            context.setDefaultFormat(value);
+            if (default_format.empty())
+                default_format = value;
         }
         else if (param_could_be_skipped(key))
         {
@@ -499,6 +501,12 @@ void HTTPHandler::processQuery(
                 settings_changes.push_back({key, value});
         }
     }
+
+    if (!database.empty())
+        context.setCurrentDatabase(database);
+
+    if (!default_format.empty())
+        context.setDefaultFormat(default_format);
 
     /// For external data we also want settings
     context.checkSettingsConstraints(settings_changes);
@@ -683,6 +691,11 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
+    /// Should be initialized before anything,
+    /// For correct memory accounting.
+    Context context = server.context();
+    CurrentThread::QueryScope query_scope(context);
+
     Output used_output;
 
     /// In case of exception, send stack trace to client.
@@ -706,8 +719,8 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
-        processQuery(request, params, response, used_output);
-        LOG_INFO(log, "Done processing query");
+        processQuery(context, request, params, response, used_output);
+        LOG_DEBUG(log, "Done processing query");
     }
     catch (...)
     {

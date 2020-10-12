@@ -33,6 +33,8 @@ protected:
     size_t terminal_width = 0;
     bool suffix_written = false;
 
+    size_t row_number_width = 7; // "10000. "
+
     const FormatSettings format_settings;
 
     using Widths = PODArray<size_t>;
@@ -42,7 +44,7 @@ protected:
     virtual void writeSuffix();
 
 
-    void writeSuffixIfNot()
+    virtual void writeSuffixIfNot()
     {
         if (!suffix_written)
             writeSuffix();

@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/SetSettings.h>
 
 
 namespace DB
@@ -21,7 +22,7 @@ class StorageSetOrJoinBase : public IStorage
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     Strings getDataPaths() const override { return {path}; }
 
@@ -31,10 +32,12 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_);
+        const Context & context_,
+        bool persistent_);
 
     String base_path;
     String path;
+    bool persistent;
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
@@ -67,7 +70,7 @@ public:
     /// Access the insides.
     SetPtr & getSet() { return set; }
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
 private:
     SetPtr set;
@@ -82,7 +85,8 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_);
+        const Context & context_,
+        bool persistent_);
 };
 
 }

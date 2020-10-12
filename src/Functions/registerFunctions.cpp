@@ -3,7 +3,6 @@
 
 namespace DB
 {
-
 void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
@@ -38,6 +37,11 @@ void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
 void registerFunctionsUnixTimestamp64(FunctionFactory & factory);
+#if !defined(ARCADIA_BUILD)
+void registerFunctionBayesAB(FunctionFactory &);
+#endif
+void registerFunctionTid(FunctionFactory & factory);
+void registerFunctionLogTrace(FunctionFactory & factory);
 
 
 void registerFunctions()
@@ -80,6 +84,11 @@ void registerFunctions()
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
     registerFunctionsUnixTimestamp64(factory);
+#if !defined(ARCADIA_BUILD)
+    registerFunctionBayesAB(factory);
+#endif
+    registerFunctionTid(factory);
+    registerFunctionLogTrace(factory);
 }
 
 }

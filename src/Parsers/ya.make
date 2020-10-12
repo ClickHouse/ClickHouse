@@ -1,14 +1,18 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
 )
 
+CFLAGS(-g0)
+
 SRCS(
     ASTAlterQuery.cpp
     ASTAsterisk.cpp
     ASTColumnDeclaration.cpp
     ASTColumnsMatcher.cpp
+    ASTColumnsTransformers.cpp
     ASTConstraintDeclaration.cpp
     ASTCreateQuery.cpp
     ASTCreateQuotaQuery.cpp
@@ -16,12 +20,11 @@ SRCS(
     ASTCreateRowPolicyQuery.cpp
     ASTCreateSettingsProfileQuery.cpp
     ASTCreateUserQuery.cpp
-    ASTDictionary.cpp
     ASTDictionaryAttributeDeclaration.cpp
+    ASTDictionary.cpp
     ASTDropAccessEntityQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
-    ASTExtendedRoleSet.cpp
     ASTFunction.cpp
     ASTFunctionWithKeyValueArguments.cpp
     ASTGrantQuery.cpp
@@ -39,9 +42,12 @@ SRCS(
     ASTQueryWithOnCluster.cpp
     ASTQueryWithOutput.cpp
     ASTQueryWithTableAndOutput.cpp
+    ASTRolesOrUsersSet.cpp
+    ASTRowPolicyName.cpp
     ASTSampleRatio.cpp
     ASTSelectQuery.cpp
     ASTSelectWithUnionQuery.cpp
+    ASTSetQuery.cpp
     ASTSetRoleQuery.cpp
     ASTSettingsProfileElement.cpp
     ASTShowAccessEntitiesQuery.cpp
@@ -53,16 +59,33 @@ SRCS(
     ASTSystemQuery.cpp
     ASTTablesInSelectQuery.cpp
     ASTTTLElement.cpp
+    ASTUserNameWithHost.cpp
     ASTWithAlias.cpp
+    ASTWithElement.cpp
     CommonParsers.cpp
     ExpressionElementParsers.cpp
     ExpressionListParsers.cpp
     formatAST.cpp
+    formatSettingName.cpp
     IAST.cpp
     iostream_debug_helpers.cpp
     IParserBase.cpp
     Lexer.cpp
     makeASTForLogicalFunction.cpp
+    MySQL/ASTAlterCommand.cpp
+    MySQL/ASTAlterQuery.cpp
+    MySQL/ASTCreateDefines.cpp
+    MySQL/ASTCreateQuery.cpp
+    MySQL/ASTDeclareColumn.cpp
+    MySQL/ASTDeclareConstraint.cpp
+    MySQL/ASTDeclareIndex.cpp
+    MySQL/ASTDeclareOption.cpp
+    MySQL/ASTDeclarePartition.cpp
+    MySQL/ASTDeclarePartitionOptions.cpp
+    MySQL/ASTDeclareReference.cpp
+    MySQL/ASTDeclareSubPartition.cpp
+    MySQL/ASTDeclareTableOptions.cpp
+    obfuscateQueries.cpp
     parseDatabaseAndTableName.cpp
     parseIdentifierOrStringLiteral.cpp
     parseIntervalKind.cpp
@@ -76,12 +99,14 @@ SRCS(
     ParserCreateRowPolicyQuery.cpp
     ParserCreateSettingsProfileQuery.cpp
     ParserCreateUserQuery.cpp
+    ParserDataType.cpp
     ParserDescribeTableQuery.cpp
-    ParserDictionary.cpp
     ParserDictionaryAttributeDeclaration.cpp
+    ParserDictionary.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
-    ParserExtendedRoleSet.cpp
+    ParserExplainQuery.cpp
+    ParserExternalDDLQuery.cpp
     ParserGrantQuery.cpp
     ParserInsertQuery.cpp
     ParserKillQueryQuery.cpp
@@ -90,6 +115,8 @@ SRCS(
     ParserQuery.cpp
     ParserQueryWithOutput.cpp
     ParserRenameQuery.cpp
+    ParserRolesOrUsersSet.cpp
+    ParserRowPolicyName.cpp
     ParserSampleRatio.cpp
     ParserSelectQuery.cpp
     ParserSelectWithUnionQuery.cpp
@@ -106,10 +133,14 @@ SRCS(
     ParserTablesInSelectQuery.cpp
     ParserUnionQueryElement.cpp
     ParserUseQuery.cpp
+    ParserUserNameWithHost.cpp
     ParserWatchQuery.cpp
+    ParserWithElement.cpp
     parseUserName.cpp
     queryToString.cpp
+    QueryWithOutputSettingsPushDownVisitor.cpp
     TokenIterator.cpp
+
 )
 
 END()

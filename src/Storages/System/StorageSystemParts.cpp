@@ -7,16 +7,16 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
+#include <Parsers/queryToString.h>
 #include <Common/hex.h>
 
 namespace DB
 {
 
-StorageSystemParts::StorageSystemParts(const std::string & name_)
-    : StorageSystemPartsBase(name_,
+StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
+    : StorageSystemPartsBase(table_id_,
     {
         {"partition",                                   std::make_shared<DataTypeString>()},
         {"name",                                        std::make_shared<DataTypeString>()},
@@ -60,6 +60,12 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
         {"move_ttl_info.expression",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
         {"move_ttl_info.max",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+
+        {"default_compression_codec",                   std::make_shared<DataTypeString>()},
+
+        {"recompression_ttl_info.expression",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"recompression_ttl_info.min",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"recompression_ttl_info.max",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
     }
     )
 {
@@ -119,8 +125,16 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
         columns_[i++]->insert(info.database);
         columns_[i++]->insert(info.table);
         columns_[i++]->insert(info.engine);
-        columns_[i++]->insert(part->volume->getDisk()->getName());
-        columns_[i++]->insert(part->getFullPath());
+        if (part->isStoredOnDisk())
+        {
+            columns_[i++]->insert(part->volume->getDisk()->getName());
+            columns_[i++]->insert(part->getFullPath());
+        }
+        else
+        {
+            columns_[i++]->insertDefault();
+            columns_[i++]->insertDefault();
+        }
 
         if (has_state_column)
             columns_[i++]->insert(part->stateString());
@@ -143,24 +157,30 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
             columns_[i++]->insert(static_cast<UInt32>(part->ttl_infos.table_ttl.max));
         }
 
-        /// move_ttl_info
+        auto add_ttl_info_map = [&](const TTLInfoMap & ttl_info_map)
         {
             Array expression_array;
             Array min_array;
             Array max_array;
-            expression_array.reserve(part->ttl_infos.moves_ttl.size());
-            min_array.reserve(part->ttl_infos.moves_ttl.size());
-            max_array.reserve(part->ttl_infos.moves_ttl.size());
-            for (const auto & [expression, move_ttl_info] : part->ttl_infos.moves_ttl)
+            expression_array.reserve(ttl_info_map.size());
+            min_array.reserve(ttl_info_map.size());
+            max_array.reserve(ttl_info_map.size());
+            for (const auto & [expression, ttl_info] : ttl_info_map)
             {
                 expression_array.emplace_back(expression);
-                min_array.push_back(static_cast<UInt32>(move_ttl_info.min));
-                max_array.push_back(static_cast<UInt32>(move_ttl_info.max));
+                min_array.push_back(static_cast<UInt32>(ttl_info.min));
+                max_array.push_back(static_cast<UInt32>(ttl_info.max));
             }
             columns_[i++]->insert(expression_array);
             columns_[i++]->insert(min_array);
             columns_[i++]->insert(max_array);
-        }
+        };
+
+        add_ttl_info_map(part->ttl_infos.moves_ttl);
+
+        columns_[i++]->insert(queryToString(part->default_codec->getCodecDesc()));
+
+        add_ttl_info_map(part->ttl_infos.recompression_ttl);
     }
 }
 

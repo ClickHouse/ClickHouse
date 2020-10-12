@@ -61,9 +61,9 @@ struct HashMapCell
     /// Get the key (internally).
     static const Key & getKey(const value_type & value) { return value.first; }
 
-    bool keyEquals(const Key & key_) const { return value.first == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return value.first == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return value.first == key_; }
+    bool keyEquals(const Key & key_) const { return bitEquals(value.first, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(value.first, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(value.first, key_); }
 
     void setHash(size_t /*hash_value*/) {}
     size_t getHash(const Hash & hash) const { return hash(value.first); }
@@ -120,8 +120,8 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 
     using Base::Base;
 
-    bool keyEquals(const Key & key_) const { return this->value.first == key_; }
-    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.first == key_; }
+    bool keyEquals(const Key & key_) const { return bitEquals(this->value.first, key_); }
+    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->value.first, key_); }
     bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }

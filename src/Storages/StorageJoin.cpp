@@ -44,8 +44,9 @@ StorageJoin::StorageJoin(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     bool overwrite_,
-    const Context & context_)
-    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_}
+    const Context & context_,
+    bool persistent_)
+    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_, persistent_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -53,29 +54,32 @@ StorageJoin::StorageJoin(
     , strictness(strictness_)
     , overwrite(overwrite_)
 {
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     for (const auto & key : key_names)
-        if (!getColumns().hasPhysical(key))
+        if (!metadata_snapshot->getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<HashJoin>(table_join, getSampleBlock().sortColumns(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
     restore();
 }
 
 
-void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageJoin::truncate(
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder&)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
     Poco::File(path + "tmp/").createDirectories();
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, getSampleBlock().sortColumns(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
 }
 
 
 HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
 {
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
         throw Exception("Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
@@ -89,7 +93,7 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
     /// Some HACK to remove wrong names qualifiers: table.column -> column.
     analyzed_join->setRightKeys(key_names);
 
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, getSampleBlock().sortColumns());
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
     join_clone->reuseJoinedData(*join);
     return join_clone;
 }
@@ -115,23 +119,30 @@ void registerStorageJoin(StorageFactory & factory)
         auto join_overflow_mode = settings.join_overflow_mode;
         auto join_any_take_last_row = settings.join_any_take_last_row;
         auto old_any_join = settings.any_join_distinct_right_table_keys;
+        bool persistent = true;
 
         if (args.storage_def && args.storage_def->settings)
         {
             for (const auto & setting : args.storage_def->settings->changes)
             {
                 if (setting.name == "join_use_nulls")
-                    join_use_nulls.set(setting.value);
+                    join_use_nulls = setting.value;
                 else if (setting.name == "max_rows_in_join")
-                    max_rows_in_join.set(setting.value);
+                    max_rows_in_join = setting.value;
                 else if (setting.name == "max_bytes_in_join")
-                    max_bytes_in_join.set(setting.value);
+                    max_bytes_in_join = setting.value;
                 else if (setting.name == "join_overflow_mode")
-                    join_overflow_mode.set(setting.value);
+                    join_overflow_mode = setting.value;
                 else if (setting.name == "join_any_take_last_row")
-                    join_any_take_last_row.set(setting.value);
+                    join_any_take_last_row = setting.value;
                 else if (setting.name == "any_join_distinct_right_table_keys")
-                    old_any_join.set(setting.value);
+                    old_any_join = setting.value;
+                else if (setting.name == "persistent")
+                {
+                    auto join_settings = std::make_unique<JoinSettings>();
+                    join_settings->loadFromQuery(*args.storage_def);
+                    persistent = join_settings->persistent;
+                }
                 else
                     throw Exception(
                         "Unknown setting " + setting.name + " for storage " + args.engine_name,
@@ -214,7 +225,8 @@ void registerStorageJoin(StorageFactory & factory)
             args.columns,
             args.constraints,
             join_any_take_last_row,
-            args.context);
+            args.context,
+            persistent);
     };
 
     factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
@@ -433,20 +445,18 @@ private:
 
 
 // TODO: multiple stream read and index read
-Pipes StorageJoin::read(
+Pipe StorageJoin::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<JoinSource>(*join, max_block_size, getSampleBlockForColumns(column_names)));
-
-    return pipes;
+    return Pipe(std::make_shared<JoinSource>(*join, max_block_size, metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
 }
 
 }

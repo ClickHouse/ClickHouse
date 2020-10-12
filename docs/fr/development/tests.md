@@ -175,7 +175,7 @@ Code ClickHouse principal (qui est situé dans `dbms` annuaire) est construit av
 
 Clang a des avertissements encore plus utiles - vous pouvez les chercher avec `-Weverything` et choisissez quelque chose à construire par défaut.
 
-Pour les builds de production, gcc est utilisé (il génère toujours un code légèrement plus efficace que clang). Pour le développement, clang est généralement plus pratique à utiliser. Vous pouvez construire sur votre propre machine avec le mode débogage (pour économiser la batterie de votre ordinateur portable), mais veuillez noter que le compilateur est capable de générer plus d'Avertissements avec `-O3` grâce à une meilleure analyse du flux de contrôle et de l'inter-procédure. Lors de la construction avec clang, `libc++` est utilisé au lieu de `libstdc++` et lors de la construction avec le mode débogage, la version de débogage de `libc++` est utilisé qui permet d'attraper plus d'erreurs à l'exécution.
+Pour les builds de production, gcc est utilisé (il génère toujours un code légèrement plus efficace que clang). Pour le développement, clang est généralement plus pratique à utiliser. Vous pouvez construire sur votre propre machine avec le mode débogage (pour économiser la batterie de votre ordinateur portable), mais veuillez noter que le compilateur est capable de générer plus d'Avertissements avec `-O3` grâce à une meilleure analyse du flux de contrôle et de l'inter-procédure. Lors de la construction avec clang avec le mode débogage, la version de débogage de `libc++` est utilisé qui permet d'attraper plus d'erreurs à l'exécution.
 
 ## Désinfectant {#sanitizers}
 

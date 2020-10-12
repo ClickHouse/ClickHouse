@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
-#include <Common/SettingsChanges.h>
 #include <Access/SettingsConstraints.h>
 #include <Access/SettingsProfileElement.h>
 #include <boost/container/flat_set.hpp>

@@ -1,14 +1,11 @@
 #include "CompressedReadBufferBase.h"
 
-#include <vector>
 #include <cstring>
 #include <cassert>
 #include <city.h>
-#include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/hex.h>
-#include <common/unaligned.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
@@ -47,7 +44,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     std::stringstream message;
 
-    /// TODO mess up of endianess in error message.
+    /// TODO mess up of endianness in error message.
     message << "Checksum doesn't match: corrupted data."
         " Reference: " + getHexUIntLowercase(expected_checksum.first) + getHexUIntLowercase(expected_checksum.second)
         + ". Actual: " + getHexUIntLowercase(calculated_checksum.first) + getHexUIntLowercase(calculated_checksum.second)
@@ -108,13 +105,24 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     uint8_t method = ICompressionCodec::readMethod(own_compressed_buffer.data());
 
     if (!codec)
+    {
         codec = CompressionCodecFactory::instance().get(method);
+    }
     else if (method != codec->getMethodByte())
-        throw Exception("Data compressed with different methods, given method byte 0x"
-                        + getHexUIntLowercase(method)
-                        + ", previous method byte 0x"
-                        + getHexUIntLowercase(codec->getMethodByte()),
-                        ErrorCodes::CANNOT_DECOMPRESS);
+    {
+        if (allow_different_codecs)
+        {
+            codec = CompressionCodecFactory::instance().get(method);
+        }
+        else
+        {
+            throw Exception("Data compressed with different methods, given method byte 0x"
+                            + getHexUIntLowercase(method)
+                            + ", previous method byte 0x"
+                            + getHexUIntLowercase(codec->getMethodByte()),
+                            ErrorCodes::CANNOT_DECOMPRESS);
+        }
+    }
 
     size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(own_compressed_buffer.data());
     size_decompressed = ICompressionCodec::readDecompressedBlockSize(own_compressed_buffer.data());
@@ -166,21 +174,32 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
     if (!codec)
+    {
         codec = CompressionCodecFactory::instance().get(method);
+    }
     else if (codec->getMethodByte() != method)
-        throw Exception("Data compressed with different methods, given method byte "
-                        + getHexUIntLowercase(method)
-                        + ", previous method byte "
-                        + getHexUIntLowercase(codec->getMethodByte()),
-                        ErrorCodes::CANNOT_DECOMPRESS);
+    {
+        if (allow_different_codecs)
+        {
+            codec = CompressionCodecFactory::instance().get(method);
+        }
+        else
+        {
+            throw Exception("Data compressed with different methods, given method byte "
+                            + getHexUIntLowercase(method)
+                            + ", previous method byte "
+                            + getHexUIntLowercase(codec->getMethodByte()),
+                            ErrorCodes::CANNOT_DECOMPRESS);
+        }
+    }
 
     codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
 }
 
 
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
-CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in)
-    : compressed_in(in), own_compressed_buffer(0)
+CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_different_codecs_)
+    : compressed_in(in), own_compressed_buffer(0), allow_different_codecs(allow_different_codecs_)
 {
 }
 

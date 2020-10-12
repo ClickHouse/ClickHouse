@@ -1,3 +1,4 @@
+#pragma once
 #include <unistd.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
@@ -68,9 +69,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IColumn * col = block.getByPosition(arguments[0]).column.get();
+        const IColumn * col = block[arguments[0]].column.get();
 
         if (!isColumnConst(*col))
             throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
@@ -85,7 +86,7 @@ public:
         /// We do not sleep if the block is empty.
         if (size > 0)
         {
-            /// When sleeping, the query cannot be cancelled. For abitily to cancel query, we limit sleep time.
+            /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
             if (seconds > 3.0)   /// The choice is arbitrary
                 throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 
@@ -94,7 +95,7 @@ public:
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, 0u)->convertToFullColumnIfConst();
+        block[result].column = block[result].type->createColumnConst(size, 0u)->convertToFullColumnIfConst();
     }
 };
 

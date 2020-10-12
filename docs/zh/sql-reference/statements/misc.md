@@ -223,7 +223,7 @@ KILL MUTATION [ON CLUSTER cluster]
   [FORMAT format]
 ```
 
-尝试取消和删除 [突变](alter.md#alter-mutations) 当前正在执行。 要取消的突变选自 [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) 表使用由指定的过滤器 `WHERE` 《公约》条款 `KILL` 查询。
+尝试取消和删除 [突变](alter.md#alter-mutations) 当前正在执行。 要取消的突变选自 [`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations) 表使用由指定的过滤器 `WHERE` 《公约》条款 `KILL` 查询。
 
 测试查询 (`TEST`）仅检查用户的权限并显示要停止的查询列表。
 

@@ -9,6 +9,8 @@
 namespace ProfileEvents
 {
     extern const Event ThrottlerSleepMicroseconds;
+    extern const Event SelectedRows;
+    extern const Event SelectedBytes;
 }
 
 
@@ -18,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
-    extern const int OUTPUT_IS_NOT_SORTED;
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
@@ -26,10 +27,6 @@ namespace ErrorCodes
     extern const int TOO_DEEP_PIPELINE;
 }
 
-const SortDescription & IBlockInputStream::getSortDescription() const
-{
-    throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED);
-}
 
 /// It's safe to access children without mutex as long as these methods are called before first call to `read()` or `readPrefix()`.
 
@@ -66,7 +63,7 @@ Block IBlockInputStream::read()
         if (enabled_extremes)
             updateExtremes(res);
 
-        if (limits.mode == LIMITS_CURRENT && !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
+        if (limits.mode == LimitsMode::LIMITS_CURRENT && !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
             limit_exceeded_need_break = true;
 
         if (quota)
@@ -212,11 +209,11 @@ void IBlockInputStream::checkQuota(Block & block)
 {
     switch (limits.mode)
     {
-        case LIMITS_TOTAL:
+        case LimitsMode::LIMITS_TOTAL:
             /// Checked in `progress` method.
             break;
 
-        case LIMITS_CURRENT:
+        case LimitsMode::LIMITS_CURRENT:
         {
             UInt64 total_elapsed = info.total_stopwatch.elapsedNanoseconds();
             quota->used({Quota::RESULT_ROWS, block.rows()}, {Quota::RESULT_BYTES, block.bytes()}, {Quota::EXECUTION_TIME, total_elapsed - prev_elapsed});
@@ -245,7 +242,7 @@ void IBlockInputStream::progressImpl(const Progress & value)
         /** Check the restrictions on the amount of data to read, the speed of the query, the quota on the amount of data to read.
             * NOTE: Maybe it makes sense to have them checked directly in ProcessList?
             */
-        if (limits.mode == LIMITS_TOTAL)
+        if (limits.mode == LimitsMode::LIMITS_TOTAL)
         {
             if (!limits.size_limits.check(total_rows_estimate, progress.read_bytes, "rows to read",
                                          ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
@@ -265,9 +262,12 @@ void IBlockInputStream::progressImpl(const Progress & value)
 
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
-        if (quota && limits.mode == LIMITS_TOTAL)
+        if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
             quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
+
+    ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);
+    ProfileEvents::increment(ProfileEvents::SelectedBytes, value.read_bytes);
 }
 
 

@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -45,9 +46,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const auto in = block.getByPosition(arguments.front()).column.get();
+        const auto in = block[arguments.front()].column.get();
 
         if (   !execute<UInt8>(block, in, result)
             && !execute<UInt16>(block, in, result)
@@ -63,7 +64,7 @@ public:
     }
 
     template <typename T>
-    bool execute(Block & block, const IColumn * in_untyped, const size_t result)
+    bool execute(Block & block, const IColumn * in_untyped, const size_t result) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {
@@ -77,7 +78,7 @@ public:
             for (const auto i : ext::range(0, size))
                 out_data[i] = Impl::execute(in_data[i]);
 
-            block.getByPosition(result).column = std::move(out);
+            block[result].column = std::move(out);
             return true;
         }
 

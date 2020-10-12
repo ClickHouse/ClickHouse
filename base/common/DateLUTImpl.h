@@ -49,7 +49,7 @@ public:
     struct Values
     {
         /// Least significat 32 bits from time_t at beginning of the day.
-        /// If the unix timestamp of beginning of the day is negative (example: 1970-01-01 MSK, where time_t == -10800), then value is zero.
+        /// If the unix timestamp of beginning of the day is negative (example: 1970-01-01 MSK, where time_t == -10800), then value will overflow.
         /// Change to time_t; change constants above; and recompile the sources if you need to support time after 2105 year.
         UInt32 date;
 
@@ -404,7 +404,7 @@ public:
         a date at start of january) In this case one can get 53 for the
         first week of next year.  This flag ensures that the week is
         relevant for the given year. Note that this flag is only
-        releveant if WeekModeFlag::JANUARY is not set.
+        relevant if WeekModeFlag::JANUARY is not set.
 
                   If set Week is in range 1-53.
 
@@ -686,12 +686,17 @@ public:
     inline time_t makeDateTime(UInt16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
     {
         size_t index = makeDayNum(year, month, day_of_month);
-        time_t time_offset = hour * 3600 + minute * 60 + second;
+        UInt32 time_offset = hour * 3600 + minute * 60 + second;
 
         if (time_offset >= lut[index].time_at_offset_change)
             time_offset -= lut[index].amount_of_offset_change;
 
-        return lut[index].date + time_offset;
+        UInt32 res = lut[index].date + time_offset;
+
+        if (unlikely(res > DATE_LUT_MAX))
+            return 0;
+
+        return res;
     }
 
     inline const Values & getValues(DayNum d) const { return lut[d]; }

@@ -4,8 +4,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModelsLoader.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <ext/range.h>
 #include <string>
@@ -71,9 +69,9 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
     return type;
 }
 
-void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
-    const auto * name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+    const auto * name_col = checkAndGetColumnConst<ColumnString>(block[arguments[0]].column.get());
     if (!name_col)
         throw Exception("First argument of function " + getName() + " must be a constant string",
                         ErrorCodes::ILLEGAL_COLUMN);
@@ -87,7 +85,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
     columns.reserve(arguments.size());
     for (auto arg : ext::range(1, arguments.size()))
     {
-        auto & column = block.getByPosition(arguments[arg]).column;
+        auto & column = block[arguments[arg]].column;
         columns.push_back(column.get());
         if (auto full_column = column->convertToFullColumnIfConst())
         {
@@ -132,7 +130,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
             res = ColumnNullable::create(res, null_map);
     }
 
-    block.getByPosition(result).column = res;
+    block[result].column = res;
 }
 
 void registerFunctionsExternalModels(FunctionFactory & factory)

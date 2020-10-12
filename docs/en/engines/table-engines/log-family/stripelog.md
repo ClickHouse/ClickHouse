@@ -5,7 +5,7 @@ toc_title: StripeLog
 
 # Stripelog {#stripelog}
 
-This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](log-family.md) article.
+This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 
 Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows).
 
@@ -20,7 +20,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = StripeLog
 ```
 
-See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) query.
+See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 ## Writing the Data {#table_engines-stripelog-writing-the-data}
 

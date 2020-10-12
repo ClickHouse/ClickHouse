@@ -54,7 +54,7 @@ ReadBufferFromFile::ReadBufferFromFile(
 
 
 ReadBufferFromFile::ReadBufferFromFile(
-    int fd_,
+    int & fd_,
     const std::string & original_file_name,
     size_t buf_size,
     char * existing_memory,
@@ -63,6 +63,7 @@ ReadBufferFromFile::ReadBufferFromFile(
     ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment),
     file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
 {
+    fd_ = -1;
 }
 
 
@@ -77,6 +78,9 @@ ReadBufferFromFile::~ReadBufferFromFile()
 
 void ReadBufferFromFile::close()
 {
+    if (fd < 0)
+        return;
+
     if (0 != ::close(fd))
         throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 

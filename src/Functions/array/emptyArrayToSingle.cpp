@@ -45,7 +45,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 };
 
 
@@ -53,20 +53,20 @@ namespace
 {
     namespace FunctionEmptyArrayToSingleImpl
     {
-        bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+        bool executeConst(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
         {
-            if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
+            if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block[arguments[0]].column.get()))
             {
                 if (const_array->getValue<Array>().empty())
                 {
-                    auto nested_type = typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType();
+                    auto nested_type = typeid_cast<const DataTypeArray &>(*block[arguments[0]].type).getNestedType();
 
-                    block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
+                    block[result].column = block[result].type->createColumnConst(
                         input_rows_count,
                         Array{nested_type->getDefault()});
                 }
                 else
-                    block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
+                    block[result].column = block[arguments[0]].column;
 
                 return true;
             }
@@ -369,14 +369,14 @@ namespace
 }
 
 
-void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
     if (FunctionEmptyArrayToSingleImpl::executeConst(block, arguments, result, input_rows_count))
         return;
 
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+    const ColumnArray * array = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get());
     if (!array)
-        throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+        throw Exception("Illegal column " + block[arguments[0]].column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
     MutableColumnPtr res_ptr = array->cloneEmpty();
@@ -414,7 +414,7 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
     else
         FunctionEmptyArrayToSingleImpl::executeDispatch<false>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
 
-    block.getByPosition(result).column = std::move(res_ptr);
+    block[result].column = std::move(res_ptr);
 }
 
 

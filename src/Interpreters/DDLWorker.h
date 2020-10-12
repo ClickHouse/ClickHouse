@@ -26,17 +26,19 @@ class ASTAlterQuery;
 class AccessRightsElements;
 struct DDLLogEntry;
 struct DDLTask;
+using DDLTaskPtr = std::unique_ptr<DDLTask>;
 
 
 /// Pushes distributed DDL query to the queue
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_required_access);
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option = false);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option = false);
 
 
 class DDLWorker
 {
 public:
-    DDLWorker(const std::string & zk_root_dir, Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix);
+    DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix);
     ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
@@ -56,14 +58,19 @@ private:
     ZooKeeperPtr tryGetZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     ZooKeeperPtr getAndSetZooKeeper();
+    /// ZooKeeper recover loop (while not stopped).
+    void recoverZooKeeper();
 
-    void processTasks();
+    void checkCurrentTasks();
+    void scheduleTasks();
+    void saveTask(const String & entry_name);
 
     /// Reads entry and check that the host belongs to host list of the task
-    /// Returns true and sets current_task if entry parsed and the check is passed
-    bool initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
+    /// Returns non-empty DDLTaskPtr if entry parsed and the check is passed
+    DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
 
-    void processTask(DDLTask & task, const ZooKeeperPtr & zookeeper);
+    void enqueueTask(DDLTaskPtr task);
+    void processTask(DDLTask & task);
 
     /// Check that query should be executed on leader replica only
     static bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage);
@@ -100,30 +107,30 @@ private:
     void attachToThreadGroup();
 
 private:
+    std::atomic<bool> is_circular_replicated = false;
     Context & context;
     Poco::Logger * log;
-    std::unique_ptr<Context> current_context;
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
     std::string queue_dir;      /// dir with queue of queries
 
-    /// Name of last task that was skipped or successfully executed
-    std::string last_processed_task_name;
-
     mutable std::mutex zookeeper_mutex;
     ZooKeeperPtr current_zookeeper;
 
     /// Save state of executed task to avoid duplicate execution on ZK error
-    using DDLTaskPtr = std::unique_ptr<DDLTask>;
-    DDLTaskPtr current_task;
+    std::vector<std::string> last_tasks;
 
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
-    std::atomic<bool> stop_flag{false};
+    std::atomic<bool> stop_flag = false;
 
     ThreadFromGlobalPool main_thread;
     ThreadFromGlobalPool cleanup_thread;
+
+    /// Size of the pool for query execution.
+    size_t pool_size = 1;
+    ThreadPool worker_pool;
 
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
     Int64 cleanup_delay_period = 60; // minute (in seconds)

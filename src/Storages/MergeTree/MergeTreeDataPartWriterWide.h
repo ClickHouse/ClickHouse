@@ -1,10 +1,11 @@
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#pragma once
+#include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 namespace DB
 {
 
 /// Writes data part in wide format.
-class MergeTreeDataPartWriterWide : public IMergeTreeDataPartWriter
+class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
 public:
 
@@ -13,6 +14,7 @@ public:
     MergeTreeDataPartWriterWide(
         const MergeTreeData::DataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
@@ -22,7 +24,7 @@ public:
     void write(const Block & block, const IColumn::Permutation * permutation,
         const Block & primary_key_block, const Block & skip_indexes_block) override;
 
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) override;
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 
@@ -65,7 +67,7 @@ private:
     void addStreams(
         const String & name,
         const IDataType & type,
-        const CompressionCodecPtr & effective_codec,
+        const ASTPtr & effective_codec_desc,
         size_t estimated_size);
 
     SerializationStates serialization_states;

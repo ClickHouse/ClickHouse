@@ -33,7 +33,7 @@ ClickHouse 收集的指标项：
 -   服务用于计算的资源占用的各种指标。
 -   关于查询处理的常见统计信息。
 
-可以在 [系统指标](system-tables.md#system_tables-metrics) ，[系统事件](system-tables.md#system_tables-events) 以及[系统异步指标](system-tables.md#system_tables-asynchronous_metrics) 等系统表查看所有的指标项。
+可以在 [系统指标](system-tables/metrics.md#system_tables-metrics) ，[系统事件](system-tables/events.md#system_tables-events) 以及[系统异步指标](system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) 等系统表查看所有的指标项。
 
 可以配置ClickHouse 往 [石墨](https://github.com/graphite-project)导入指标。 参考 [石墨部分](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) 配置文件。在配置指标导出之前，需要参考Graphite[官方教程](https://graphite.readthedocs.io/en/latest/install.html)搭建服务。
 

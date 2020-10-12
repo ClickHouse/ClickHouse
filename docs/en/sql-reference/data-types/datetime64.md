@@ -15,7 +15,7 @@ Syntax:
 DateTime64(precision, [timezone])
 ```
 
-Internally, stores data as a number of ‘ticks’ since epoch start (1970-01-01 00:00:00 UTC) as Int64. The tick resolution is determined by the precision parameter. Additionally, the `DateTime64` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime64` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01.000’). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. See details in [DateTime](datetime.md).
+Internally, stores data as a number of ‘ticks’ since epoch start (1970-01-01 00:00:00 UTC) as Int64. The tick resolution is determined by the precision parameter. Additionally, the `DateTime64` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime64` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01.000’). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. See details in [DateTime](../../sql-reference/data-types/datetime.md).
 
 ## Examples {#examples}
 
@@ -98,5 +98,5 @@ FROM dt
 -   [The `date_time_input_format` setting](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
 -   [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
--   [`Date` data type](date.md)
--   [`DateTime` data type](datetime.md)
+-   [`Date` data type](../../sql-reference/data-types/date.md)
+-   [`DateTime` data type](../../sql-reference/data-types/datetime.md)

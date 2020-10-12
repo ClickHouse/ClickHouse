@@ -1,20 +1,13 @@
-#include "config_functions.h"
-#if USE_H3
-#    include <Columns/ColumnsNumber.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/IFunction.h>
-#    include <Common/typeid_cast.h>
-#    include <IO/WriteHelpers.h>
-#    include <ext/range.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
+#include <ext/range.h>
 
-#    if __has_include(<h3/h3api.h>)
-#        include <h3/h3api.h>
-#        include <h3/constants.h>
-#    else
-#        include <h3api.h>
-#        include <constants.h>
-#    endif
+#include <constants.h>
+#include <h3api.h>
 
 
 namespace DB
@@ -24,6 +17,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
+
+namespace
+{
 
 class FunctionH3EdgeAngle : public IFunction
 {
@@ -48,9 +44,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
+        const auto * col_hindex = block[arguments[0]].column.get();
 
         auto dst = ColumnVector<Float64>::create();
         auto & dst_data = dst->getData();
@@ -69,10 +65,11 @@ public:
             dst_data[row] = res;
         }
 
-        block.getByPosition(result).column = std::move(dst);
+        block[result].column = std::move(dst);
     }
 };
 
+}
 
 void registerFunctionH3EdgeAngle(FunctionFactory & factory)
 {
@@ -80,4 +77,3 @@ void registerFunctionH3EdgeAngle(FunctionFactory & factory)
 }
 
 }
-#endif

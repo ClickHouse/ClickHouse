@@ -18,6 +18,7 @@ void registerFunctionBlockSerializedSize(FunctionFactory &);
 void registerFunctionToColumnTypeName(FunctionFactory &);
 void registerFunctionDumpColumnStructure(FunctionFactory &);
 void registerFunctionDefaultValueOfArgumentType(FunctionFactory &);
+void registerFunctionDefaultValueOfTypeName(FunctionFactory &);
 void registerFunctionBlockSize(FunctionFactory &);
 void registerFunctionBlockNumber(FunctionFactory &);
 void registerFunctionRowNumberInBlock(FunctionFactory &);
@@ -38,6 +39,7 @@ void registerFunctionIsNaN(FunctionFactory &);
 void registerFunctionIfNotFinite(FunctionFactory &);
 void registerFunctionThrowIf(FunctionFactory &);
 void registerFunctionVersion(FunctionFactory &);
+void registerFunctionBuildId(FunctionFactory &);
 void registerFunctionUptime(FunctionFactory &);
 void registerFunctionTimeZone(FunctionFactory &);
 void registerFunctionRunningAccumulate(FunctionFactory &);
@@ -55,7 +57,13 @@ void registerFunctionBasename(FunctionFactory &);
 void registerFunctionTransform(FunctionFactory &);
 void registerFunctionGetMacro(FunctionFactory &);
 void registerFunctionGetScalar(FunctionFactory &);
+void registerFunctionGetSetting(FunctionFactory &);
 void registerFunctionIsConstant(FunctionFactory &);
+void registerFunctionIsDecimalOverflow(FunctionFactory &);
+void registerFunctionCountDigits(FunctionFactory &);
+void registerFunctionGlobalVariable(FunctionFactory &);
+void registerFunctionHasThreadFuzzer(FunctionFactory &);
+void registerFunctionInitializeAggregation(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -74,6 +82,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionToColumnTypeName(factory);
     registerFunctionDumpColumnStructure(factory);
     registerFunctionDefaultValueOfArgumentType(factory);
+    registerFunctionDefaultValueOfTypeName(factory);
     registerFunctionBlockSize(factory);
     registerFunctionBlockNumber(factory);
     registerFunctionRowNumberInBlock(factory);
@@ -94,6 +103,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionIfNotFinite(factory);
     registerFunctionThrowIf(factory);
     registerFunctionVersion(factory);
+    registerFunctionBuildId(factory);
     registerFunctionUptime(factory);
     registerFunctionTimeZone(factory);
     registerFunctionRunningAccumulate(factory);
@@ -111,7 +121,13 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionTransform(factory);
     registerFunctionGetMacro(factory);
     registerFunctionGetScalar(factory);
+    registerFunctionGetSetting(factory);
     registerFunctionIsConstant(factory);
+    registerFunctionIsDecimalOverflow(factory);
+    registerFunctionCountDigits(factory);
+    registerFunctionGlobalVariable(factory);
+    registerFunctionHasThreadFuzzer(factory);
+    registerFunctionInitializeAggregation(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

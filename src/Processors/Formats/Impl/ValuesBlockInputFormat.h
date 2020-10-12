@@ -63,6 +63,7 @@ private:
 
     bool shouldDeduceNewTemplate(size_t column_idx);
 
+    void readPrefix();
     void readSuffix();
 
     bool skipToNextRow(size_t min_chunk_bytes = 0, int balance = 0);
@@ -70,12 +71,12 @@ private:
 private:
     PeekableReadBuffer buf;
 
-    RowInputFormatParams params;
+    const RowInputFormatParams params;
 
     std::unique_ptr<Context> context;   /// pimpl
     const FormatSettings format_settings;
 
-    size_t num_columns;
+    const size_t num_columns;
     size_t total_rows = 0;
 
     std::vector<ParserType> parser_type_for_column;
@@ -87,7 +88,7 @@ private:
     ConstantExpressionTemplates templates;
     ConstantExpressionTemplate::Cache templates_cache;
 
-    DataTypes types;
+    const DataTypes types;
 
     BlockMissingValues block_missing_values;
 };
