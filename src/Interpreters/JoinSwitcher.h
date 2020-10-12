@@ -5,7 +5,8 @@
 #include <Core/Block.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
+
 
 namespace DB
 {

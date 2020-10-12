@@ -39,8 +39,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto & elem = block.getByPosition(arguments[0]);
-        block.getByPosition(result).column = ColumnUInt8::create(input_rows_count, isColumnConst(*elem.column));
+        const auto & elem = block[arguments[0]];
+        block[result].column = ColumnUInt8::create(input_rows_count, isColumnConst(*elem.column));
     }
 };
 

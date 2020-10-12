@@ -49,6 +49,7 @@
 #include <Poco/DirectoryIterator.h>
 
 #include <boost/range/adaptor/filtered.hpp>
+#include <boost/algorithm/string/join.hpp>
 
 #include <algorithm>
 #include <iomanip>
@@ -632,7 +633,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                                   std::back_inserter(names_intersection));
 
             if (!names_intersection.empty())
-                throw Exception("Columns: " + Nested::createCommaSeparatedStringFrom(names_intersection) +
+                throw Exception("Columns: " + boost::algorithm::join(names_intersection, ", ") +
                 " listed both in columns to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
         }
     }

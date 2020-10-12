@@ -13,7 +13,6 @@ ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w
 
 ## toInt(8\|16\|32\|64\|128\|256) {#toint8163264128256}
 
-
 Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
 
 -   `toInt8(expr)` — Results in the `Int8` data type.
@@ -189,9 +188,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 └──────┴────────────────────────────────────────────────────┘
 ```
 
-
-## toDecimal(32\|64\|128\'|256)OrZero {#todecimal3264128256orzero}
-
+## toDecimal(32\|64\|128\|256)OrZero {#todecimal3264128256orzero}
 
 Converts an input value to the [Decimal(P,S)](../../sql-reference/data-types/decimal.md) data type. This family of functions include:
 

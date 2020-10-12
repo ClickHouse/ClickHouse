@@ -42,8 +42,8 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         auto arg_num = arguments[0];
-        const auto & arg = block.getByPosition(arg_num);
-        auto & res = block.getByPosition(result);
+        const auto & arg = block[arg_num];
+        auto & res = block[result];
         const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(arg.column.get());
         res.column = low_cardinality_column->getDictionary().getNestedColumn()->cloneResized(arg.column->size());
     }

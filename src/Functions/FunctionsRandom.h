@@ -83,7 +83,7 @@ public:
         vec_to.resize(size);
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
-        block.getByPosition(result).column = std::move(col_to);
+        block[result].column = std::move(col_to);
     }
 };
 
@@ -102,7 +102,7 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
