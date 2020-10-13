@@ -25,12 +25,18 @@ public:
     void push(const Block & block);
 
 protected:
-    Chunk generate() override { return std::move(chunk); }
+    Chunk generate() override
+    {
+        //std::cerr << "generating\n";
+        pushed_input = false;
+        return std::move(chunk);
+    }
 
 private:
     Names column_names;
     Chunk chunk;
     std::atomic_bool no_input_flag = true;
+    bool pushed_input = false;
 };
 
 }

@@ -29,13 +29,10 @@ const Block & PushingPipelineExecutor::getHeader() const
 bool PushingPipelineExecutor::push(const Block & block)
 {
     if (!executor)
-        executor = pipeline.execute();
+       executor = pipeline.execute();
 
     source.push(block);
-
-    if (!executor->executeStep(&source.no_input_flag))
-        return false;
-    return true;
+    return executor->executeStep(&source.no_input_flag);
 }
 
 void PushingPipelineExecutor::cancel()

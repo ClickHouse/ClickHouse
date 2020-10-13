@@ -70,7 +70,7 @@ bool run()
         auto in = std::make_shared<PushingSource>(sample);
 
         DatabasePtr database = std::make_shared<DatabaseOrdinary>(
-            "default", "/home/zhengtianqi/gentoo.tmp/home/amos/git/ClickHouse/data/metadata/default/", context);
+            "default", "/home/nik-kochetov/test/clickhouse/data/metadata/default/", context);
         DatabaseCatalog::instance().attachDatabase("default", database);
         // database->attachTable("a", storage);
         // context.setCurrentDatabase("test");
@@ -78,7 +78,7 @@ bool run()
         ASTPtr query;
         if (!parse(query, "select count() where i % 2 = 1 "))
         {
-            DUMP("parse error");
+            //DUMP("parse error");
             return false;
         }
 
@@ -104,7 +104,7 @@ bool run()
             auto columns = a.mutateColumns();
             columns[0]->insert(i);
             a.setColumns(std::move(columns));
-            DUMP(a);
+            std::cerr << a.dumpStructure() << std::endl;
             if (!executor->push(a))
                 return false;
         }

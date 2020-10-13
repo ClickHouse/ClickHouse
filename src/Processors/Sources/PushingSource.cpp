@@ -23,11 +23,18 @@ ISource::Status PushingSource::prepare()
         return Status::PortFull;
 
     if (!has_input)
+    {
+        if (!pushed_input)
+        {
+             //std::cerr << "yielding\n";
+             no_input_flag = true;
+        }
+        //std::cerr << "ready\n";
         return Status::Ready;
+    }
 
     output.pushData(std::move(current_chunk));
     has_input = false;
-    no_input_flag = true;
 
     if (got_exception)
     {
@@ -42,9 +49,11 @@ ISource::Status PushingSource::prepare()
 
 void PushingSource::push(const Block & block)
 {
+    //std::cerr << "Pushing\n";
     if (chunk)
         throw Exception("Cannot push block to a non-empty PushingSource", ErrorCodes::LOGICAL_ERROR);
 
+    pushed_input = true;
     no_input_flag = false;
 
     if (!block)
