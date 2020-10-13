@@ -130,7 +130,7 @@ public:
 };
 
 template<bool ignore_set>
-void registerFunctionsInImpl(FunctionFactory & factory)
+void registerInImpl(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIn<false, false, true, ignore_set>>();
     factory.registerFunction<FunctionIn<false, true, true, ignore_set>>();
@@ -146,8 +146,8 @@ void registerFunctionsInImpl(FunctionFactory & factory)
 
 void registerFunctionsIn(FunctionFactory & factory)
 {
-    registerFunctionsInImpl<false>(factory);
-    registerFunctionsInImpl<true>(factory);
+    registerInImpl<false>(factory);
+    registerInImpl<true>(factory);
 }
 
 }

@@ -133,16 +133,16 @@ using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 }
 
 template <class T>
-void registerFunctionCRCImpl(FunctionFactory & factory)
+void registerCRCImpl(FunctionFactory & factory)
 {
     factory.registerFunction<T>(T::name, FunctionFactory::CaseInsensitive);
 }
 
 void registerFunctionCRC(FunctionFactory & factory)
 {
-    registerFunctionCRCImpl<FunctionCRC32ZLIB>(factory);
-    registerFunctionCRCImpl<FunctionCRC32IEEE>(factory);
-    registerFunctionCRCImpl<FunctionCRC64ECMA>(factory);
+    registerCRCImpl<FunctionCRC32ZLIB>(factory);
+    registerCRCImpl<FunctionCRC32IEEE>(factory);
+    registerCRCImpl<FunctionCRC64ECMA>(factory);
 }
 
 }

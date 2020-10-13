@@ -156,4 +156,12 @@ void registerFunctionAddressToLine(FunctionFactory & factory)
 
 }
 
+#else
+
+namespace DB
+{
+    class FunctionFactory;
+    void registerFunctionAddressToLine(FunctionFactory &) {}
+}
+
 #endif

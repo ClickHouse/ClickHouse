@@ -16,4 +16,10 @@ void registerFunctionBase64Encode(FunctionFactory & factory)
     factory.registerFunction<FunctionBase64Conversion<Base64Encode>>();
 }
 }
+#else
+namespace DB
+{
+    class FunctionFactory;
+    void registerFunctionBase64Encode(FunctionFactory &) {}
+}
 #endif

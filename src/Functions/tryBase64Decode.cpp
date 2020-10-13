@@ -10,4 +10,13 @@ void registerFunctionTryBase64Decode(FunctionFactory & factory)
     factory.registerFunction<FunctionBase64Conversion<TryBase64Decode>>();
 }
 }
+
+
+#else
+
+namespace DB
+{
+    class FunctionFactory;
+    void registerFunctionTryBase64Decode(FunctionFactory &) {}
+}
 #endif

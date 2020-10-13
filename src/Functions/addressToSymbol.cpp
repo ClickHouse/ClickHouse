@@ -98,4 +98,12 @@ void registerFunctionAddressToSymbol(FunctionFactory & factory)
 
 }
 
+#else
+
+namespace DB
+{
+    class FunctionFactory;
+    void registerFunctionAddressToSymbol(FunctionFactory &) {}
+}
+
 #endif

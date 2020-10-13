@@ -221,4 +221,12 @@ void registerFunctionConvertCharset(FunctionFactory & factory)
 
 }
 
+#else
+
+namespace DB
+{
+    class FunctionFactory;
+    void registerFunctionConvertCharset(FunctionFactory &) {}
+}
+
 #endif

@@ -6,6 +6,9 @@ add_headers_and_sources(clickhouse_functions .)
 list(REMOVE_ITEM clickhouse_functions_sources IFunctionImpl.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunctionImpl.h FunctionFactory.h FunctionHelpers.h)
 
+add_glob(${functions_sources} ${CMAKE_CURRENT_SOURCE_DIR} *.cpp */*.cpp)
+
+
 if (NOT USE_H3)
     list (REMOVE_ITEM clickhouse_functions_sources
         geoToH3.cpp
