@@ -307,65 +307,92 @@ private:
             }
 
             const auto input_value = input_column->getDataAt(r);
-
-            // 1: Init CTX
-            if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
+            auto aad_value = StringRef{};
+            if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM && !std::is_same_v<nullptr_t, std::decay_t<AadColumnType>>)
             {
-                // 1.a.1: Init CTX with custom IV length and optionally with AAD
-                if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
-                    onError("Failed to initialize encryption context with cipher");
+                aad_value = aad_column->getDataAt(r);
+            }
 
-                if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, iv_value.size, nullptr) != 1)
-                    onError("Failed to set custom IV length to " + std::to_string(iv_value.size));
-
-                if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
-                        reinterpret_cast<const unsigned char*>(key_value.data),
-                        reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
-                    onError("Failed to set key and IV");
-
-                // 1.a.2 Set AAD
-                if constexpr (!std::is_same_v<nullptr_t, std::decay_t<AadColumnType>>)
+            if constexpr (mode != CipherMode::MySQLCompatibility)
+            {
+                // in GCM mode IV can be of arbitrary size (>0).
+                if ((mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size == 0)
+                    || (mode != CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size != iv_size))
                 {
-                    const auto aad_data = aad_column->getDataAt(r);
-                    int tmp_len = 0;
-                    if (aad_data.size != 0 && EVP_EncryptUpdate(evp_ctx, nullptr, &tmp_len,
-                            reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)
-                        onError("Failed to set AAD data");
+                    throw Exception("Invalid IV size " + std::to_string(iv_value.size) + " != expected size " + std::to_string(iv_size),
+                            DB::ErrorCodes::BAD_ARGUMENTS);
+                }
+
+                if (key_value.size != key_size)
+                {
+                    throw Exception("Invalid key size " + std::to_string(key_value.size) + " != expected size " + std::to_string(key_size),
+                            DB::ErrorCodes::BAD_ARGUMENTS);
                 }
             }
-            else
-            {
-                // 1.b: Init CTX
-                validateIV<mode>(iv_value, iv_size);
 
-                if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr,
-                        reinterpret_cast<const unsigned char*>(key_value.data),
-                        reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
-                    onError("Failed to initialize cipher context");
+            // Avoid extra work on empty ciphertext/plaintext for some ciphers
+            if (!(input_value.size == 0 && block_size == 1 && mode != CipherMode::RFC5116_AEAD_AES_GCM))
+            {
+                // 1: Init CTX
+                if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
+                {
+                    // 1.a.1: Init CTX with custom IV length and optionally with AAD
+                    if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
+                        onError("Failed to initialize encryption context with cipher");
+
+                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, iv_value.size, nullptr) != 1)
+                        onError("Failed to set custom IV length to " + std::to_string(iv_value.size));
+
+                    if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
+                            reinterpret_cast<const unsigned char*>(key_value.data),
+                            reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
+                        onError("Failed to set key and IV");
+
+                    // 1.a.2 Set AAD
+                    if constexpr (!std::is_same_v<nullptr_t, std::decay_t<AadColumnType>>)
+                    {
+                        const auto aad_data = aad_column->getDataAt(r);
+                        int tmp_len = 0;
+                        if (aad_data.size != 0 && EVP_EncryptUpdate(evp_ctx, nullptr, &tmp_len,
+                                reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)
+                            onError("Failed to set AAD data");
+                    }
+                }
+                else
+                {
+                    // 1.b: Init CTX
+                    validateIV<mode>(iv_value, iv_size);
+
+                    if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr,
+                            reinterpret_cast<const unsigned char*>(key_value.data),
+                            reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
+                        onError("Failed to initialize cipher context");
+                }
+
+                int output_len = 0;
+                // 2: Feed the data to the cipher
+                if (EVP_EncryptUpdate(evp_ctx,
+                        reinterpret_cast<unsigned char*>(encrypted), &output_len,
+                        reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)) != 1)
+                    onError("Failed to encrypt");
+                encrypted += output_len;
+
+                // 3: retrieve encrypted data (ciphertext)
+                if (EVP_EncryptFinal_ex(evp_ctx,
+                        reinterpret_cast<unsigned char*>(encrypted), &output_len) != 1)
+                    onError("Failed to fetch ciphertext");
+                encrypted += output_len;
+
+                // 4: optionally retrieve a tag and append it to the ciphertext (RFC5116):
+                // https://tools.ietf.org/html/rfc5116#section-5.1
+                if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
+                {
+                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_GET_TAG, tag_size, encrypted) != 1)
+                        onError("Failed to retrieve GCM tag");
+                    encrypted += tag_size;
+                }
             }
 
-            int output_len = 0;
-            // 2: Feed the data to the cipher
-            if (EVP_EncryptUpdate(evp_ctx,
-                    reinterpret_cast<unsigned char*>(encrypted), &output_len,
-                    reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)) != 1)
-                onError("Failed to encrypt");
-            encrypted += output_len;
-
-            // 3: retrieve encrypted data (ciphertext)
-            if (EVP_EncryptFinal_ex(evp_ctx,
-                    reinterpret_cast<unsigned char*>(encrypted), &output_len) != 1)
-                onError("Failed to fetch ciphertext");
-            encrypted += output_len;
-
-            // 4: optionally retrieve a tag and append it to the ciphertext (RFC5116):
-            // https://tools.ietf.org/html/rfc5116#section-5.1
-            if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
-            {
-                if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_GET_TAG, tag_size, encrypted) != 1)
-                    onError("Failed to retrieve GCM tag");
-                encrypted += tag_size;
-            }
             *encrypted = '\0';
             ++encrypted;
 
@@ -564,64 +591,68 @@ private:
                 input_value.size -= tag_size;
             }
 
-            // 1: Init CTX
-            if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
+            // Avoid extra work on empty ciphertext/plaintext for some ciphers
+            if (!(input_value.size == 0 && block_size == 1 && mode != CipherMode::RFC5116_AEAD_AES_GCM))
             {
-                if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
-                    onError("Failed to initialize cipher context 1");
-
-                // 1.a.1 : Set custom IV length
-                if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, iv_value.size, nullptr) != 1)
-                    onError("Failed to set custom IV length to " + std::to_string(iv_value.size));
-
-                // 1.a.1 : Init CTX with key and IV
-                if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
-                        reinterpret_cast<const unsigned char*>(key_value.data),
-                        reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
-                    onError("Failed to set key and IV");
-
-                // 1.a.2: Set AAD if present
-                if constexpr (!std::is_same_v<nullptr_t, std::decay_t<AadColumnType>>)
+                // 1: Init CTX
+                if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    const auto aad_data = aad_column->getDataAt(r);
-                    int tmp_len = 0;
-                    if (aad_data.size != 0 && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
-                            reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)
-                        onError("Failed to sed AAD data");
+                    if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
+                        onError("Failed to initialize cipher context 1");
+
+                    // 1.a.1 : Set custom IV length
+                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, iv_value.size, nullptr) != 1)
+                        onError("Failed to set custom IV length to " + std::to_string(iv_value.size));
+
+                    // 1.a.1 : Init CTX with key and IV
+                    if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
+                            reinterpret_cast<const unsigned char*>(key_value.data),
+                            reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
+                        onError("Failed to set key and IV");
+
+                    // 1.a.2: Set AAD if present
+                    if constexpr (!std::is_same_v<nullptr_t, std::decay_t<AadColumnType>>)
+                    {
+                        const auto aad_data = aad_column->getDataAt(r);
+                        int tmp_len = 0;
+                        if (aad_data.size != 0 && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
+                                reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)
+                            onError("Failed to sed AAD data");
+                    }
                 }
+                else
+                {
+                    // 1.b: Init CTX
+                    validateIV<mode>(iv_value, iv_size);
+
+                    if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr,
+                            reinterpret_cast<const unsigned char*>(key_value.data),
+                            reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
+                        onError("Failed to initialize cipher context");
+                }
+
+                // 2: Feed the data to the cipher
+                int output_len = 0;
+                if (EVP_DecryptUpdate(evp_ctx,
+                        reinterpret_cast<unsigned char*>(decrypted), &output_len,
+                        reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)) != 1)
+                    onError("Failed to decrypt");
+                decrypted += output_len;
+
+                // 3: optionally get tag from the ciphertext (RFC5116) and feed it to the context
+                if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
+                {
+                    void * tag = const_cast<void *>(reinterpret_cast<const void *>(input_value.data + input_value.size));
+                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_TAG, tag_size, tag) != 1)
+                        onError("Failed to set tag");
+                }
+
+                // 4: retrieve encrypted data (ciphertext)
+                if (EVP_DecryptFinal_ex(evp_ctx,
+                        reinterpret_cast<unsigned char*>(decrypted), &output_len) != 1)
+                    onError("Failed to decrypt");
+                decrypted += output_len;
             }
-            else
-            {
-                // 1.b: Init CTX
-                validateIV<mode>(iv_value, iv_size);
-
-                if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr,
-                        reinterpret_cast<const unsigned char*>(key_value.data),
-                        reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
-                    onError("Failed to initialize cipher context");
-            }
-
-            // 2: Feed the data to the cipher
-            int output_len = 0;
-            if (EVP_DecryptUpdate(evp_ctx,
-                    reinterpret_cast<unsigned char*>(decrypted), &output_len,
-                    reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)) != 1)
-                onError("Failed to decrypt");
-            decrypted += output_len;
-
-            // 3: optionally get tag from the ciphertext (RFC5116) and feed it to the context
-            if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
-            {
-                void * tag = const_cast<void *>(reinterpret_cast<const void *>(input_value.data + input_value.size));
-                if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_TAG, tag_size, tag) != 1)
-                    onError("Failed to set tag");
-            }
-
-            // 4: retrieve encrypted data (ciphertext)
-            if (EVP_DecryptFinal_ex(evp_ctx,
-                    reinterpret_cast<unsigned char*>(decrypted), &output_len) != 1)
-                onError("Failed to decrypt");
-            decrypted += output_len;
 
             *decrypted = '\0';
             ++decrypted;

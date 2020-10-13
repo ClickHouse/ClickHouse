@@ -2,16 +2,7 @@
 0
 0
 1
-MySQL-specific key folding and decrpyting
-aes-128-ecb	1
-aes-128-ecb	1
-aes-128-ecb	1
-aes-192-ecb	1
-aes-192-ecb	1
-aes-192-ecb	1
-aes-256-ecb	1
-aes-256-ecb	1
-aes-256-ecb	1
+MySQL-compatitable mode, with key folding, no length checks, etc.
 aes-128-cbc	1
 aes-128-cbc	1
 aes-128-cbc	1
@@ -48,6 +39,79 @@ aes-192-cfb128	1
 aes-256-cfb128	1
 aes-256-cfb128	1
 aes-256-cfb128	1
+aes-128-ecb	1
+aes-128-ecb	1
+aes-128-ecb	1
+aes-192-ecb	1
+aes-192-ecb	1
+aes-192-ecb	1
+aes-256-ecb	1
+aes-256-ecb	1
+aes-256-ecb	1
+aes-128-ofb	1
+aes-128-ofb	1
+aes-128-ofb	1
+aes-192-ofb	1
+aes-192-ofb	1
+aes-192-ofb	1
+aes-256-ofb	1
+aes-256-ofb	1
+aes-256-ofb	1
+Strict mode without key folding and proper key and iv lengths checks.
+aes-128-cbc	1
+aes-128-cbc	1
+aes-128-cbc	1
+aes-192-cbc	1
+aes-192-cbc	1
+aes-192-cbc	1
+aes-256-cbc	1
+aes-256-cbc	1
+aes-256-cbc	1
+aes-128-cfb1	1
+aes-128-cfb1	1
+aes-128-cfb1	1
+aes-192-cfb1	1
+aes-192-cfb1	1
+aes-192-cfb1	1
+aes-256-cfb1	1
+aes-256-cfb1	1
+aes-256-cfb1	1
+aes-128-cfb8	1
+aes-128-cfb8	1
+aes-128-cfb8	1
+aes-192-cfb8	1
+aes-192-cfb8	1
+aes-192-cfb8	1
+aes-256-cfb8	1
+aes-256-cfb8	1
+aes-256-cfb8	1
+aes-128-cfb128	1
+aes-128-cfb128	1
+aes-128-cfb128	1
+aes-192-cfb128	1
+aes-192-cfb128	1
+aes-192-cfb128	1
+aes-256-cfb128	1
+aes-256-cfb128	1
+aes-256-cfb128	1
+aes-128-ctr	1
+aes-128-ctr	1
+aes-128-ctr	1
+aes-192-ctr	1
+aes-192-ctr	1
+aes-192-ctr	1
+aes-256-ctr	1
+aes-256-ctr	1
+aes-256-ctr	1
+aes-128-ecb	1
+aes-128-ecb	1
+aes-128-ecb	1
+aes-192-ecb	1
+aes-192-ecb	1
+aes-192-ecb	1
+aes-256-ecb	1
+aes-256-ecb	1
+aes-256-ecb	1
 aes-128-ofb	1
 aes-128-ofb	1
 aes-128-ofb	1
@@ -58,23 +122,23 @@ aes-256-ofb	1
 aes-256-ofb	1
 aes-256-ofb	1
 GCM mode with IV
-aes-128-gcm	FB9958E2E897EF3FDB49067B51A24AF6	1
-aes-128-gcm	FB9958E2E897EF3FDB49067B51A24AF6	1
-aes-128-gcm	FB9958E2E897EF3FDB49067B51A24AF6	1
-aes-192-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1	1
-aes-192-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1	1
-aes-192-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1	1
-aes-256-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1DC7FD4DD71B7E38F	1
-aes-256-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1DC7FD4DD71B7E38F	1
-aes-256-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1DC7FD4DD71B7E38F	1
+aes-128-gcm	1
+aes-128-gcm	1
+aes-128-gcm	1
+aes-192-gcm	1
+aes-192-gcm	1
+aes-192-gcm	1
+aes-256-gcm	1
+aes-256-gcm	1
+aes-256-gcm	1
 GCM mode with IV and AAD
-aes-128-gcm	FB9958E2E897EF3FDB49067B51A24AF6	1
-aes-128-gcm	FB9958E2E897EF3FDB49067B51A24AF6	1
-aes-128-gcm	FB9958E2E897EF3FDB49067B51A24AF6	1
-aes-192-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1	1
-aes-192-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1	1
-aes-192-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1	1
-aes-256-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1DC7FD4DD71B7E38F	1
-aes-256-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1DC7FD4DD71B7E38F	1
-aes-256-gcm	FB9958E2E897EF3FDB49067B51A24AF645B3626EED2F9EA1DC7FD4DD71B7E38F	1
+aes-128-gcm	1
+aes-128-gcm	1
+aes-128-gcm	1
+aes-192-gcm	1
+aes-192-gcm	1
+aes-192-gcm	1
+aes-256-gcm	1
+aes-256-gcm	1
+aes-256-gcm	1
 F56E87055BC32D0EEB31B2EACC2BF2A5	1
