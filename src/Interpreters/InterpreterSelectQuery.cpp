@@ -304,6 +304,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
 
+    SubqueriesForSets subquery_for_sets;
+
     auto analyze = [&] (bool try_move_to_prewhere)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
@@ -345,6 +347,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_ptr, syntax_analyzer_result, *context, metadata_snapshot,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
                 !options.only_analyze, options);
+
+        query_analyzer->getSubqueriesForSets() = std::move(subquery_for_sets);
 
         if (!options.only_analyze)
         {
@@ -430,6 +434,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (need_analyze_again)
     {
+        subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
         analyze(/* try_move_to_prewhere = */ false);
