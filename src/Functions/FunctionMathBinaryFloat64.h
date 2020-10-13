@@ -95,7 +95,7 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            block.getByPosition(result).column = std::move(dst);
+            block[result].column = std::move(dst);
             return true;
         }
 
@@ -157,7 +157,7 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            block.getByPosition(result).column = std::move(dst);
+            block[result].column = std::move(dst);
             return true;
         }
         if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
@@ -200,7 +200,7 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            block.getByPosition(result).column = std::move(dst);
+            block[result].column = std::move(dst);
             return true;
         }
 
@@ -209,8 +209,8 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & col_left = block.getByPosition(arguments[0]);
-        const ColumnWithTypeAndName & col_right = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & col_left = block[arguments[0]];
+        const ColumnWithTypeAndName & col_right = block[arguments[1]];
 
         auto call = [&](const auto & types) -> bool
         {

@@ -171,7 +171,8 @@ void ThreadStatus::initPerformanceCounters()
     query_start_time_microseconds = time_in_microseconds(now);
     ++queries_started;
 
-    *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
+    // query_start_time_nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
+    *last_rusage = RUsageCounters::current();
 
     if (query_context)
     {

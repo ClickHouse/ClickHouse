@@ -88,3 +88,9 @@ find $ROOT_PATH -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*'
 # Check that ya.make files are auto-generated
 "$ROOT_PATH"/utils/generate-ya-make/generate-ya-make.sh
 git status -uno | grep ya.make && echo "ya.make files should be generated with utils/generate-ya-make/generate-ya-make.sh"
+
+# Check that every header file has #pragma once in first line
+find $ROOT_PATH/{src,programs,utils} -name '*.h' | while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
+
+# Check for executable bit on non-executable files
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -q '.' && echo "These files should not be executable."

@@ -124,7 +124,7 @@ private:
 
         executeInIterations(src_data.data(), dst_data.data(), size);
 
-        block.getByPosition(result).column = std::move(dst);
+        block[result].column = std::move(dst);
         return true;
     }
 
@@ -144,7 +144,7 @@ private:
 
         executeInIterations(dst_data.data(), dst_data.data(), size);
 
-        block.getByPosition(result).column = std::move(dst);
+        block[result].column = std::move(dst);
         return true;
     }
 
@@ -152,7 +152,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & col = block[arguments[0]];
 
         auto call = [&](const auto & types) -> bool
         {
