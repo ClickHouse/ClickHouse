@@ -56,7 +56,7 @@ public:
 
     void executeImpl(Block & block , const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const auto value_col = block.getByPosition(arguments.front()).column.get();
+        const auto value_col = block[arguments.front()].column.get();
 
         if (!execute<UInt8>(block, arguments, result, value_col)
             && !execute<UInt16>(block, arguments, result, value_col)
@@ -98,7 +98,7 @@ private:
                     out[i] = Impl::apply(val[i], mask[i]);
             }
 
-            block.getByPosition(result).column = std::move(out_col);
+            block[result].column = std::move(out_col);
             return true;
         }
         else if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
@@ -110,7 +110,7 @@ private:
 
             if (is_const)
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, const_mask)));
+                block[result].column = block[result].type->createColumnConst(size, toField(Impl::apply(val, const_mask)));
             }
             else
             {
@@ -122,7 +122,7 @@ private:
                 for (const auto i : ext::range(0, size))
                     out[i] = Impl::apply(val, mask[i]);
 
-                block.getByPosition(result).column = std::move(out_col);
+                block[result].column = std::move(out_col);
             }
 
             return true;
@@ -139,7 +139,7 @@ private:
 
         for (const auto i : ext::range(1, arguments.size()))
         {
-            if (auto pos_col_const = checkAndGetColumnConst<ColumnVector<ValueType>>(block.getByPosition(arguments[i]).column.get()))
+            if (auto pos_col_const = checkAndGetColumnConst<ColumnVector<ValueType>>(block[arguments[i]].column.get()))
             {
                 const auto pos = pos_col_const->getUInt(0);
                 if (pos < 8 * sizeof(ValueType))
@@ -162,7 +162,7 @@ private:
 
         for (const auto i : ext::range(1, arguments.size()))
         {
-            const auto pos_col = block.getByPosition(arguments[i]).column.get();
+            const auto pos_col = block[arguments[i]].column.get();
 
             if (!addToMaskImpl<UInt8>(mask, pos_col)
                 && !addToMaskImpl<UInt16>(mask, pos_col)

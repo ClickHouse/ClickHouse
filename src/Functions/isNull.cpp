@@ -40,17 +40,17 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & elem = block[arguments[0]];
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             /// Merely return the embedded null map.
-            block.getByPosition(result).column = nullable->getNullMapColumnPtr();
+            block[result].column = nullable->getNullMapColumnPtr();
         }
         else
         {
             /// Since no element is nullable, return a zero-constant column representing
             /// a zero-filled null map.
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
+            block[result].column = DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
         }
     }
 };
