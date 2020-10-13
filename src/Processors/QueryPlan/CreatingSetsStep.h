@@ -48,7 +48,7 @@ private:
 
 void addCreatingSetsStep(
     QueryPlan & query_plan,
-    SubqueriesForSets subqueries_for_sets,
+    SubqueriesForSets & subqueries_for_sets,
     const SizeLimits & limits,
     const Context & context);
 
