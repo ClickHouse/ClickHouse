@@ -37,11 +37,11 @@ public:
         if (num_elements == 0)
         {
             /// We should return constant empty array.
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(input_rows_count);
+            block[result].column = block[result].type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
 
-        const DataTypePtr & return_type = block.getByPosition(result).type;
+        const DataTypePtr & return_type = block[result].type;
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*return_type).getNestedType();
 
         size_t block_size = input_rows_count;
@@ -57,7 +57,7 @@ public:
 
         for (size_t i = 0; i < num_elements; ++i)
         {
-            const auto & arg = block.getByPosition(arguments[i]);
+            const auto & arg = block[arguments[i]];
 
             ColumnPtr preprocessed_column = arg.column;
 
@@ -89,7 +89,7 @@ public:
             out_offsets[i] = current_offset;
         }
 
-        block.getByPosition(result).column = std::move(out);
+        block[result].column = std::move(out);
     }
 
 private:

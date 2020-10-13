@@ -47,7 +47,6 @@
 #include <Interpreters/Context.h>
 
 #include <DataStreams/RemoteBlockInputStream.h>
-#include <DataStreams/NullBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -475,6 +474,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 
     /// Working with quorum.
     zookeeper->createIfNotExists(zookeeper_path + "/quorum", String());
+    zookeeper->createIfNotExists(zookeeper_path + "/quorum/parallel", String());
     zookeeper->createIfNotExists(zookeeper_path + "/quorum/last_part", String());
     zookeeper->createIfNotExists(zookeeper_path + "/quorum/failed_parts", String());
 
@@ -1705,15 +1705,24 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                 if (replica.empty())
                 {
                     Coordination::Stat quorum_stat;
-                    String quorum_path = zookeeper_path + "/quorum/status";
-                    String quorum_str = zookeeper->get(quorum_path, &quorum_stat);
+                    const String quorum_unparallel_path = zookeeper_path + "/quorum/status";
+                    const String quorum_parallel_path = zookeeper_path + "/quorum/parallel/" + entry.new_part_name;
+                    String quorum_str, quorum_path;
                     ReplicatedMergeTreeQuorumEntry quorum_entry;
+
+                    if (zookeeper->tryGet(quorum_unparallel_path, quorum_str, &quorum_stat))
+                        quorum_path = quorum_unparallel_path;
+                    else
+                    {
+                        quorum_str = zookeeper->get(quorum_parallel_path, &quorum_stat);
+                        quorum_path = quorum_parallel_path;
+                    }
+
                     quorum_entry.fromString(quorum_str);
 
                     if (quorum_entry.part_name == entry.new_part_name)
                     {
                         ops.emplace_back(zkutil::makeRemoveRequest(quorum_path, quorum_stat.version));
-
                         auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
 
                         if (part_info.min_block != part_info.max_block)
@@ -3114,12 +3123,14 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
 
 /** If a quorum is tracked for a part, update information about it in ZK.
   */
-void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
+void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_parallel)
 {
     auto zookeeper = getZooKeeper();
 
     /// Information on which replicas a part has been added, if the quorum has not yet been reached.
-    const String quorum_status_path = zookeeper_path + "/quorum/status";
+    String quorum_status_path = zookeeper_path + "/quorum/status";
+    if (is_parallel)
+        quorum_status_path = zookeeper_path + "/quorum/parallel/" + part_name;
     /// The name of the previous part for which the quorum was reached.
     const String quorum_last_part_path = zookeeper_path + "/quorum/last_part";
 
@@ -3129,9 +3140,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
     /// If there is no node, then all quorum INSERTs have already reached the quorum, and nothing is needed.
     while (zookeeper->tryGet(quorum_status_path, value, &stat))
     {
-        ReplicatedMergeTreeQuorumEntry quorum_entry;
-        quorum_entry.fromString(value);
-
+        ReplicatedMergeTreeQuorumEntry quorum_entry(value);
         if (quorum_entry.part_name != part_name)
         {
             /// The quorum has already been achieved. Moreover, another INSERT with a quorum has already started.
@@ -3147,22 +3156,28 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             Coordination::Requests ops;
             Coordination::Responses responses;
 
-            Coordination::Stat added_parts_stat;
-            String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
+            if (!is_parallel)
+            {
+                Coordination::Stat added_parts_stat;
+                String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
 
-            ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(format_version);
+                ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(format_version);
 
-            if (!old_added_parts.empty())
-                parts_with_quorum.fromString(old_added_parts);
+                if (!old_added_parts.empty())
+                    parts_with_quorum.fromString(old_added_parts);
 
-            auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-            /// We store one last part which reached quorum for each partition.
-            parts_with_quorum.added_parts[part_info.partition_id] = part_name;
+                auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+                /// We store one last part which reached quorum for each partition.
+                parts_with_quorum.added_parts[part_info.partition_id] = part_name;
 
-            String new_added_parts = parts_with_quorum.toString();
+                String new_added_parts = parts_with_quorum.toString();
 
-            ops.emplace_back(zkutil::makeRemoveRequest(quorum_status_path, stat.version));
-            ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, new_added_parts, added_parts_stat.version));
+                ops.emplace_back(zkutil::makeRemoveRequest(quorum_status_path, stat.version));
+                ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, new_added_parts, added_parts_stat.version));
+            }
+            else
+                ops.emplace_back(zkutil::makeRemoveRequest(quorum_status_path, stat.version));
+
             auto code = zookeeper->tryMulti(ops, responses);
 
             if (code == Coordination::Error::ZOK)
@@ -3391,7 +3406,25 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
               * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
               */
             if (quorum)
-                updateQuorum(part_name);
+            {
+                /// Check if this quorum insert is parallel or not
+                if (zookeeper->exists(zookeeper_path + "/quorum/parallel/" + part_name))
+                    updateQuorum(part_name, true);
+                else if (zookeeper->exists(zookeeper_path + "/quorum/status"))
+                    updateQuorum(part_name, false);
+            }
+
+            /// merged parts that are still inserted with quorum. if it only contains one block, it hasn't been merged before
+            if (part_info.level != 0 || part_info.mutation != 0)
+            {
+                Strings quorum_parts = zookeeper->getChildren(zookeeper_path + "/quorum/parallel");
+                for (const String & quorum_part : quorum_parts)
+                {
+                    auto quorum_part_info = MergeTreePartInfo::fromPartName(quorum_part, format_version);
+                    if (part_info.contains(quorum_part_info))
+                        updateQuorum(quorum_part, true);
+                }
+            }
 
             merge_selecting_task->schedule();
 
@@ -3674,6 +3707,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
         *this, metadata_snapshot, query_settings.insert_quorum,
         query_settings.insert_quorum_timeout.totalMilliseconds(),
         query_settings.max_partitions_per_insert_block,
+        query_settings.insert_quorum_parallel,
         deduplicate);
 }
 
@@ -4258,7 +4292,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     PartsTemporaryRename renamed_parts(*this, "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
-    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false);   /// TODO Allow to use quorum here.
+    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false);   /// TODO Allow to use quorum here.
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         String old_name = loaded_parts[i]->name;

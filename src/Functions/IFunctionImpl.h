@@ -31,6 +31,8 @@ using ExecutableFunctionLowCardinalityResultCachePtr = std::shared_ptr<Executabl
 class IExecutableFunctionImpl
 {
 public:
+    using Block = ColumnsWithTypeAndName;
+
     virtual ~IExecutableFunctionImpl() = default;
 
     virtual String getName() const = 0;
@@ -82,6 +84,8 @@ using ExecutableFunctionImplPtr = std::unique_ptr<IExecutableFunctionImpl>;
 class IFunctionBaseImpl
 {
 public:
+    using Block = ColumnsWithTypeAndName;
+
     virtual ~IFunctionBaseImpl() = default;
 
     virtual String getName() const = 0;
@@ -105,9 +109,9 @@ public:
     virtual bool isStateful() const { return false; }
 
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
 
-    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
+    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_block*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool hasInformationAboutMonotonicity() const { return false; }
@@ -125,6 +129,8 @@ using FunctionBaseImplPtr = std::unique_ptr<IFunctionBaseImpl>;
 class IFunctionOverloadResolverImpl
 {
 public:
+    using Block = ColumnsWithTypeAndName;
+
     virtual ~IFunctionOverloadResolverImpl() = default;
 
     virtual String getName() const = 0;
@@ -152,7 +158,7 @@ public:
     /// Properties from IFunctionOverloadResolver. See comments in IFunction.h
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
-    virtual bool isInjective(const Block &) const { return false; }
+    virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isStateful() const { return false; }
     virtual bool isVariadic() const { return false; }
 
@@ -191,6 +197,8 @@ using FunctionOverloadResolverImplPtr = std::unique_ptr<IFunctionOverloadResolve
 class IFunction
 {
 public:
+    using Block = ColumnsWithTypeAndName;
+
     virtual ~IFunction() = default;
 
     virtual String getName() const = 0;
@@ -250,8 +258,8 @@ public:
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
-    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
+    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_block*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }
