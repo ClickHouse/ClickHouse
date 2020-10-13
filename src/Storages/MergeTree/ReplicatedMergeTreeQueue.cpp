@@ -1287,7 +1287,7 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
     }
 
     if (entry)
-        return { entry, std::unique_ptr<CurrentlyExecuting>{ new CurrentlyExecuting(entry, *this) } };
+        return { entry, std::shared_ptr<CurrentlyExecuting>{ new CurrentlyExecuting(entry, *this) } };
     else
         return {};
 }

@@ -25,6 +25,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/MergeTree/MergeTreeBackgroundJob.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -709,6 +710,8 @@ public:
 
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
+
+    virtual std::optional<MergeTreeBackgroundJob> getDataProcessingJob()  { return {}; }
 
 protected:
 

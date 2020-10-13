@@ -195,6 +195,8 @@ public:
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
 
+    std::optional<MergeTreeBackgroundJob> getDataProcessingJob() override;
+
 private:
 
     /// Get a sequential consistent view of current parts.
