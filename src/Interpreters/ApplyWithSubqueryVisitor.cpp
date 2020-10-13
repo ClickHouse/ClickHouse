@@ -71,7 +71,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
     if (checkFunctionIsInOrGlobalInOperator(func))
     {
         auto & ast = func.arguments->children.at(1);
-        if (const auto * ident = ast->as<ASTIdentifier>())
+        if (const auto * ident = ast->as<ASTTableIdentifier>())
         {
             auto table_id = IdentifierSemantic::extractDatabaseAndTable(*ident);
             if (table_id.database_name.empty())

@@ -668,7 +668,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         auto & child = node.arguments->children[arg];
 
         const auto * lambda = child->as<ASTFunction>();
-        const auto * identifier = child->as<ASTIdentifier>();
+        const auto * identifier = child->as<ASTTableIdentifier>();
         if (lambda && lambda->name == "lambda")
         {
             /// If the argument is a lambda expression, just remember its approximate type.

@@ -144,14 +144,9 @@ std::optional<size_t> IdentifierSemantic::chooseTableColumnMatch(const ASTIdenti
     return tryChooseTable<TableWithColumnNamesAndTypes>(identifier, tables, ambiguous, true);
 }
 
-StorageID IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
+StorageID IdentifierSemantic::extractDatabaseAndTable(const ASTTableIdentifier & identifier)
 {
-    if (identifier.name_parts.size() > 2)
-        throw Exception("Syntax error: more than two components in table expression", ErrorCodes::SYNTAX_ERROR);
-
-    if (identifier.name_parts.size() == 2)
-        return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
-    return { "", identifier.name, identifier.uuid };
+    return identifier.getStorageId();
 }
 
 std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const String & table_name)
