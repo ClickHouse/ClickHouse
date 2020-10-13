@@ -1528,7 +1528,7 @@ SELECT getSetting('custom_a');
 
 ## isDecimalOverflow {#is-decimal-overflow}
 
-Checks whether the [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) value is out of its (or specified) precision.
+Checks whether the [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s-decimal256s) value is out of its (or specified) precision.
 
 **Syntax**
 
@@ -1538,7 +1538,7 @@ isDecimalOverflow(d, [p])
 
 **Parameters** 
 
--   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
+-   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s-decimal256s).
 -   `p` — precision. Optional. If omitted, the initial presicion of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
 
 **Returned values**
@@ -1575,7 +1575,7 @@ countDigits(x)
 
 **Parameters** 
 
--   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) value.
+-   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s-decimal256s) value.
 
 **Returned value**
 
