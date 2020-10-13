@@ -2030,6 +2030,55 @@ Possible values:
 
 Default value: `120` seconds.
 
+## cast_keep_nullable {#cast_keep_nullable}
+
+Enables or disables keeping of the `Nullable` data type in [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) operations.
+
+If set, `CAST(something_nullable AS Type)` returns `Nullable(Type)`.
+
+Possible values:
+
+-  0 — The final type of `CAST` exactly the destination data type specified.
+-  1 — The final type of `CAST` becomes `Nullable(DestinationDataType)`. 
+
+Default value: `0`.
+
+**Examples** 
+
+The following query exactly results in the destination data type:
+
+```sql
+SET cast_keep_nullable = 0;
+SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
+```
+
+Result:
+
+```text
+┌─x─┬─toTypeName(CAST(toNullable(toInt32(0)), 'Int32'))─┐
+│ 0 │ Int32                                             │
+└───┴───────────────────────────────────────────────────┘
+```
+
+The following query results in the `Nullable` modification on the destination data type:
+
+```sql
+SET cast_keep_nullable = 1;
+SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
+```
+
+Result:
+
+```text
+┌─x─┬─toTypeName(CAST(toNullable(toInt32(0)), 'Int32'))─┐
+│ 0 │ Nullable(Int32)                                   │
+└───┴───────────────────────────────────────────────────┘
+```
+
+**See Also** 
+
+-   [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) operator
+
 ## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
 
 Limits the width of value displayed in [Pretty](../../interfaces/formats.md#pretty) formats. If the value width exceeds the limit, the value is cut. 
