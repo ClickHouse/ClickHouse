@@ -80,6 +80,7 @@ function test_with_engine {
     echo "Done $1"
 }
 
-test_with_engine TinyLog
-test_with_engine StripeLog
-test_with_engine Log
+#test_with_engine TinyLog
+#test_with_engine StripeLog
+#test_with_engine Log
+test_with_engine Memory
