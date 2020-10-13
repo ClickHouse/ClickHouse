@@ -87,7 +87,9 @@ public:
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
-        return !node->as<ASTSubquery>() && !(node->as<ASTFunction>());
+        /// Don't descent into table functions and subqueries and special case for ArrayJoin.
+        return !node->as<ASTSubquery>() &&
+               !(node->as<ASTTableExpression>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTArrayJoin>());
     }
 
     static void visit(ASTPtr & ast, Data & data)
