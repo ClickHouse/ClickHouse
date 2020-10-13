@@ -10,12 +10,12 @@ Turns an subquery into a table. Used for implementing views (for more informatio
 **Syntax**
 
 ``` sql
-view(`subquery`)
+view(subquery)
 ```
 
 **Parameters**
 
--   `subquery` — Subquery of the `SELECT` type.
+-   `subquery` — Subquery of the `SELECT` type only.
 
 **Returned value**
 
