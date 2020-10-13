@@ -1424,6 +1424,8 @@ void InterpreterSelectQuery::executeFetchColumns(
     if (!max_block_size)
         throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
+    query_plan.setMaxThreads(max_threads_execute_query);
+
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
     if (query_plan.isInitialized())
     {
@@ -1524,8 +1526,6 @@ void InterpreterSelectQuery::executeFetchColumns(
     }
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
-
-    query_plan.setMaxThreads(max_threads_execute_query);
 
     /// Aliases in table declaration.
     if (processing_stage == QueryProcessingStage::FetchColumns && alias_actions)
