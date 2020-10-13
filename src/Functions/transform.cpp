@@ -145,15 +145,15 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
-        const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[2]).column.get());
+        const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(block[arguments[1]].column.get());
+        const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(block[arguments[2]].column.get());
 
         if (!array_from || !array_to)
             throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
 
         initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), block, arguments);
 
-        const auto * in = block.getByPosition(arguments.front()).column.get();
+        const auto * in = block[arguments.front()].column.get();
 
         if (isColumnConst(*in))
         {
@@ -163,9 +163,9 @@ public:
 
         const IColumn * default_column = nullptr;
         if (arguments.size() == 4)
-            default_column = block.getByPosition(arguments[3]).column.get();
+            default_column = block[arguments[3]].column.get();
 
-        auto column_result = block.getByPosition(result).type->createColumn();
+        auto column_result = block[result].type->createColumn();
         auto * out = column_result.get();
 
         if (!executeNum<UInt8>(in, out, default_column)
@@ -183,7 +183,7 @@ public:
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        block.getByPosition(result).column = std::move(column_result);
+        block[result].column = std::move(column_result);
     }
 
 private:
@@ -194,25 +194,25 @@ private:
         ColumnsWithTypeAndName tmp_block;
         ColumnNumbers tmp_arguments;
 
-        tmp_block.emplace_back(block.getByPosition(arguments[0]));
+        tmp_block.emplace_back(block[arguments[0]]);
         tmp_block[0].column = tmp_block[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
         tmp_arguments.push_back(0);
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            tmp_block.emplace_back(block.getByPosition(arguments[i]));
+            tmp_block.emplace_back(block[arguments[i]]);
             tmp_arguments.push_back(i);
         }
 
         auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
                     .build(tmp_block);
 
-        tmp_block.emplace_back(block.getByPosition(result));
+        tmp_block.emplace_back(block[result]);
         size_t tmp_result = arguments.size();
 
         impl->execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
 
-        block.getByPosition(result).column = tmp_block[tmp_result].column;
+        block[result].column = tmp_block[tmp_result].column;
     }
 
     template <typename T>
@@ -765,7 +765,7 @@ private:
 
         if (arguments.size() == 4)
         {
-            const IColumn * default_col = block.getByPosition(arguments[3]).column.get();
+            const IColumn * default_col = block[arguments[3]].column.get();
             const ColumnConst * const_default_col = typeid_cast<const ColumnConst *>(default_col);
 
             if (const_default_col)

@@ -431,3 +431,33 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
     check_query(clickhouse_node, "SELECT * FROM test_database.t1 ORDER BY a FORMAT TSV", "1\tBEGIN\n2\tBEGIN\n")
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
+
+def select_without_columns(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE db")
+    mysql_node.query("CREATE TABLE db.t (a INT PRIMARY KEY, b INT)")
+    clickhouse_node.query(
+        "CREATE DATABASE db ENGINE = MaterializeMySQL('{}:3306', 'db', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SHOW TABLES FROM db FORMAT TSV", "t\n")
+    clickhouse_node.query("SYSTEM STOP MERGES db.t")
+    clickhouse_node.query("CREATE VIEW v AS SELECT * FROM db.t")
+    mysql_node.query("INSERT INTO db.t VALUES (1, 1), (2, 2)")
+    mysql_node.query("DELETE FROM db.t WHERE a=2;")
+    check_query(clickhouse_node, "SELECT count((_sign, _version)) FROM db.t FORMAT TSV", "3\n")
+
+    assert clickhouse_node.query("SELECT count(_sign) FROM db.t FORMAT TSV") == "2\n"
+    assert clickhouse_node.query("SELECT count(_version) FROM db.t FORMAT TSV") == "2\n"
+
+    assert clickhouse_node.query("SELECT count() FROM db.t FORMAT TSV") == "1\n"
+    assert clickhouse_node.query("SELECT count(*) FROM db.t FORMAT TSV") == "1\n"
+    assert clickhouse_node.query("SELECT count() FROM (SELECT * FROM db.t) FORMAT TSV") == "1\n"
+    assert clickhouse_node.query("SELECT count() FROM v FORMAT TSV") == "1\n"
+    assert clickhouse_node.query("SELECT count() FROM merge('db', 't') FORMAT TSV") == "1\n"
+    assert clickhouse_node.query("SELECT count() FROM remote('localhost', 'db', 't') FORMAT TSV") == "1\n"
+
+    assert clickhouse_node.query("SELECT _part FROM db.t FORMAT TSV") == "0_1_1_0\n"
+    assert clickhouse_node.query("SELECT _part FROM remote('localhost', 'db', 't') FORMAT TSV") == "0_1_1_0\n"
+
+
+    clickhouse_node.query("DROP VIEW v")
+    clickhouse_node.query("DROP DATABASE db")
+    mysql_node.query("DROP DATABASE db")

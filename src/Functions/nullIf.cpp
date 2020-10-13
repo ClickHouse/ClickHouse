@@ -47,7 +47,7 @@ public:
     {
         /// nullIf(col1, col2) == if(col1 = col2, NULL, col1)
 
-        ColumnsWithTypeAndName temp_block = block.data;
+        ColumnsWithTypeAndName temp_block = block;
 
         auto equals_func = FunctionFactory::instance().get("equals", context)->build(
             {temp_block[arguments[0]], temp_block[arguments[1]]});
@@ -62,7 +62,7 @@ public:
 
         /// Append a NULL column.
         ColumnWithTypeAndName null_elem;
-        null_elem.type = block.getByPosition(result).type;
+        null_elem.type = block[result].type;
         null_elem.column = null_elem.type->createColumnConstWithDefaultValue(input_rows_count);
         null_elem.name = "NULL";
 
@@ -72,7 +72,7 @@ public:
             {temp_block[equals_res_pos], temp_block[null_pos], temp_block[arguments[0]]});
         func_if->execute(temp_block, {equals_res_pos, null_pos, arguments[0]}, result, input_rows_count);
 
-        block.getByPosition(result).column = makeNullable(std::move(temp_block[result].column));
+        block[result].column = makeNullable(std::move(temp_block[result].column));
     }
 };
 

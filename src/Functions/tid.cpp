@@ -24,7 +24,7 @@ namespace
         void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
         {
             auto current_tid = getThreadId();
-            block.getByPosition(result).column = DataTypeUInt64().createColumnConst(input_rows_count, current_tid);
+            block[result].column = DataTypeUInt64().createColumnConst(input_rows_count, current_tid);
         }
     };
 
