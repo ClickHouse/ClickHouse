@@ -105,7 +105,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 -   エンドポイント設定。
 
-    チェック [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) と [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) 設定。
+    チェック [listen_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) と [tcp_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) 設定。
 
     ClickHouse serverはデフォルトでのみlocalhost接続を受け入れます。
 
@@ -117,7 +117,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
     チェック:
 
-    -   その [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 設定。
+    -   その [tcp_port_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 設定。
     -   の設定 [SSLセルティクス](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     適切なパラメータを接続 たとえば、 `port_secure` 変数との `clickhouse_client`.
