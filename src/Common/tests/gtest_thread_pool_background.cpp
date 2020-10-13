@@ -34,6 +34,7 @@ TEST(BackgroundThreadPool, Exceptions)
         pool.scheduleOrThrowOnShutdown([&] { ++res; });
 
     pool.wait();
+    Poco::Logger::root().setLevel("none");
 
     EXPECT_EQ(res, 1000);
 }
