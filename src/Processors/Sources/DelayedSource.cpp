@@ -122,8 +122,7 @@ void DelayedSource::work()
         return;
     }
 
-    if (pipe.numOutputPorts() > 1)
-        pipe.addTransform(std::make_shared<ResizeProcessor>(header, pipe.numOutputPorts(), 1));
+    pipe.resize(1);
 
     main_output = pipe.getOutputPort(0);
     totals_output = pipe.getTotalsPort();
