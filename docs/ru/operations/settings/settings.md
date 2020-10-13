@@ -281,6 +281,14 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 Значение по умолчанию: 1.
 
+## input\_format\_tsv\_empty\_as\_default {#settings-input-format-tsv-empty-as-default}
+
+Если эта настройка включена, замените пустые поля ввода в TSV значениями по умолчанию. Для сложных выражений по умолчанию также должна быть включена настройка `input_format_defaults_for_omitted_fields`.
+
+По умолчанию отключена.
+
+Disabled by default.
+
 ## input\_format\_null\_as\_default {#settings-input-format-null-as-default}
 
 Включает или отключает использование значений по умолчанию в случаях, когда во входных данных содержится `NULL`, но тип соответствующего столбца не `Nullable(T)` (для текстовых форматов).
@@ -369,7 +377,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 Устанавливает строгость по умолчанию для [JOIN](../../sql-reference/statements/select/join.md#select-join).
 
-Возможные значения
+Возможные значения:
 
 -   `ALL` — если в правой таблице несколько совпадающих строк, данные умножаются на количество этих строк. Это нормальное поведение `JOIN` как в стандартном SQL.
 -   `ANY` — если в правой таблице несколько соответствующих строк, то соединяется только первая найденная. Если в «правой» таблице есть не более одной подходящей строки, то результаты `ANY` и `ALL` совпадают.
@@ -598,6 +606,31 @@ ClickHouse использует этот параметр при чтении д
 
 Значение по умолчанию: 0.
 
+## network_compression_method {#network_compression_method}
+
+Устанавливает метод сжатия данных, который используется для обмена данными между серверами и между сервером и [clickhouse-client](../../interfaces/cli.md).
+
+Возможные значения:
+
+-   `LZ4` — устанавливает метод сжатия LZ4.
+-   `ZSTD` — устанавливает метод сжатия ZSTD.
+
+Значение по умолчанию: `LZ4`.
+
+**См. также**
+
+-   [network_zstd_compression_level](#network_zstd_compression_level)
+
+## network_zstd_compression_level {#network_zstd_compression_level}
+
+Регулирует уровень сжатия ZSTD. Используется только тогда, когда [network_compression_method](#network_compression_method) установлен на `ZSTD`.
+
+Возможные значения:
+
+-   Положительное целое число от 1 до 15.
+
+Значение по умолчанию: `1`.
+
 ## log\_queries {#settings-log-queries}
 
 Установка логирования запроса.
@@ -608,42 +641,6 @@ ClickHouse использует этот параметр при чтении д
 
 ``` text
 log_queries=1
-```
-
-## log\_queries\_min\_type {#settings-log-queries-min-type}
-
-`query_log` минимальный уровень логирования.
-
-Возможные значения:
-- `QUERY_START` (`=1`)
-- `QUERY_FINISH` (`=2`)
-- `EXCEPTION_BEFORE_START` (`=3`)
-- `EXCEPTION_WHILE_PROCESSING` (`=4`)
-
-Значение по умолчанию: `QUERY_START`.
-
-Можно использовать для ограничения того, какие объекты будут записаны в `query_log`, например, если вас интересуют ошибки, тогда вы можете использовать `EXCEPTION_WHILE_PROCESSING`:
-
-``` text
-log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
-```
-
-## log\_queries\_min\_type {#settings-log-queries-min-type}
-
-`query_log` минимальный уровень логирования.
-
-Возможные значения:
-- `QUERY_START` (`=1`)
-- `QUERY_FINISH` (`=2`)
-- `EXCEPTION_BEFORE_START` (`=3`)
-- `EXCEPTION_WHILE_PROCESSING` (`=4`)
-
-Значение по умолчанию: `QUERY_START`.
-
-Можно использовать для ограничения того, какие объекты будут записаны в `query_log`, например, если вас интересуют ошибки, тогда вы можете использовать `EXCEPTION_WHILE_PROCESSING`:
-
-``` text
-log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 
 ## log\_queries\_min\_type {#settings-log-queries-min-type}
@@ -917,6 +914,11 @@ ClickHouse поддерживает следующие алгоритмы выб
 -   [Nearest hostname](#load_balancing-nearest_hostname)
 -   [In order](#load_balancing-in_order)
 -   [First or random](#load_balancing-first_or_random)
+-   [Round robin](#load_balancing-round_robin)
+
+См. также:
+
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
 
 ### Random (by Default) {#load_balancing-random}
 
@@ -959,6 +961,14 @@ load_balancing = first_or_random
 Алгоритм выбирает первую реплику или случайную реплику, если первая недоступна. Он эффективен в топологиях с перекрестной репликацией, но бесполезен в других конфигурациях.
 
 Алгоритм `first or random` решает проблему алгоритма `in order`. При использовании `in order`, если одна реплика перестаёт отвечать, то следующая за ней принимает двойную нагрузку, в то время как все остальные обрабатываю свой обычный трафик. Алгоритм `first or random` равномерно распределяет нагрузку между репликами.
+
+### Round Robin {#load_balancing-round_robin}
+
+``` sql
+load_balancing = round_robin
+```
+
+Этот алгоритм использует циклический перебор реплик с одинаковым количеством ошибок (учитываются только запросы с алгоритмом `round_robin`).
 
 ## prefer\_localhost\_replica {#settings-prefer-localhost-replica}
 
@@ -1370,6 +1380,48 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0.
 
+## distributed\_replica\_error\_half\_life {#settings-distributed_replica_error_half_life}
+
+-   Тип: секунды
+-   Значение по умолчанию: 60 секунд
+
+Управляет скоростью обнуления ошибок в распределенных таблицах. Если реплика недоступна в течение некоторого времени, накапливает 5 ошибок, а distributed\_replica\_error\_half\_life установлена на 1 секунду, то реплика считается нормальной через 3 секунды после последней ошибки.
+
+См. также:
+
+-   [load\_balancing](#load_balancing-round_robin)
+-   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
+
+## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
+
+-   Тип: unsigned int
+-   Значение по умолчанию: 1000
+
+Счетчик ошибок каждой реплики ограничен этим значением, чтобы одна реплика не накапливала слишком много ошибок.
+
+См. также:
+
+-   [load\_balancing](#load_balancing-round_robin)
+-   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
+
+## distributed\_replica\_max\_ignored\_errors {#settings-distributed_replica_max_ignored_errors}
+
+-   Тип: unsigned int
+-   Значение по умолчанию: 0
+
+Количество ошибок, которые будут проигнорированы при выборе реплик (согласно алгоритму `load_balancing`).
+
+См. также:
+
+-   [load\_balancing](#load_balancing-round_robin)
+-   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+-   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
 Основной интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Фактический интервал растёт экспоненциально при возникновении ошибок.
@@ -1420,65 +1472,103 @@ ClickHouse генерирует исключение
 
 ## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
 
-Sets the period for a real clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Real clock timer counts wall-clock time.
+Устанавливает период для таймера реального времени [профилировщика запросов](../../operations/optimizing-performance/sampling-query-profiler.md). Таймер реального времени считает wall-clock time.
 
-Possible values:
+Возможные значения:
 
--   Positive integer number, in nanoseconds.
+-   Положительное целое число в наносекундах.
 
-        Recommended values:
+        Рекомендуемые значения:
 
-            - 10000000 (100 times a second) nanoseconds and less for single queries.
-            - 1000000000 (once a second) for cluster-wide profiling.
+            - 10000000 (100 раз в секунду) наносекунд и меньшее значение для одиночных запросов.
+            - 1000000000 (раз в секунду) для профилирования в масштабе кластера.
 
--   0 for turning off the timer.
+-   0 для выключения таймера.
 
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-Default value: 1000000000 nanoseconds (once a second).
+Значение по умолчанию: 1000000000 наносекунд (раз в секунду).
 
-See also:
+См. также:
 
--   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   Системная таблица [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
-Sets the period for a CPU clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). This timer counts only CPU time.
+Устанавливает период для таймера CPU [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Этот таймер считает только время CPU.
 
-Possible values:
+Возможные значения:
 
--   Positive integer number of nanoseconds.
+-   Положительное целое число в наносекундах.
 
-        Recommended values:
+        Рекомендуемые значения:
 
-            - 10000000 (100 times a second) nanosecods and more for for single queries.
-            - 1000000000 (once a second) for cluster-wide profiling.
+            - 10000000 (100 раз в секунду) наносекунд и большее значение для одиночных запросов.
+            - 1000000000 (раз в секунду) для профилирования в масштабе кластера.
 
--   0 for turning off the timer.
+-   0 для выключения таймера.
 
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-Default value: 1000000000 nanoseconds.
+Значение по умолчанию: 1000000000 наносекунд.
 
-See also:
+См. также:
 
--   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   Системная таблица [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
-Enables of disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
+Включает или отключает [функции самоанализа](../../sql-reference/functions/introspection.md) для профилирования запросов.
 
-Possible values:
+Возможные значения:
 
--   1 — Introspection functions enabled.
--   0 — Introspection functions disabled.
+-   1 — включены функции самоанализа.
+-   0 — функции самоанализа отключены.
 
-Default value: 0.
+Значение по умолчанию: 0.
 
-**See Also**
+**См. также**
 
 -   [Sampling Query Profiler](../optimizing-performance/sampling-query-profiler.md)
--   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   Системная таблица [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+
+## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
+
+-   Тип: bool
+-   Значение по умолчанию: True
+
+Обеспечивает параллельный анализ форматов данных с сохранением порядка. Поддерживается только для форматов TSV, TKSV, CSV и JSONEachRow.
+
+## min\_chunk\_bytes\_for\_parallel\_parsing {#min-chunk-bytes-for-parallel-parsing}
+
+-   Тип: unsigned int
+-   Значение по умолчанию: 1 MiB
+
+Минимальный размер блока в байтах, который каждый поток будет анализировать параллельно.
+
+## output\_format\_avro\_codec {#settings-output_format_avro_codec}
+
+Устанавливает кодек сжатия, используемый для вывода файла Avro.
+
+Тип: строка
+
+Возможные значения:
+
+-   `null` — без сжатия
+-   `deflate` — сжать с помощью Deflate (zlib)
+-   `snappy` — сжать с помощью [Snappy](https://google.github.io/snappy/)
+
+Значение по умолчанию: `snappy` (если доступно) или `deflate`.
+
+## output\_format\_avro\_sync\_interval {#settings-output_format_avro_sync_interval}
+
+Устанавливает минимальный размер данных (в байтах) между маркерами синхронизации для выходного файла Avro.
+
+Тип: unsigned int
+
+озможные значения: 32 (32 байта) - 1073741824 (1 GiB)
+
+Значение по умолчанию: 32768 (32 KiB)
 
 ## background\_pool\_size {#background_pool_size}
 
@@ -1758,6 +1848,26 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 **См. также:**
 
 -   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+
+## output\_format\_pretty\_grid\_charset {#output-format-pretty-grid-charset}
+
+Позволяет изменить кодировку, которая используется для печати грид-границ. Доступны следующие кодировки: UTF-8, ASCII.
+
+**Пример**
+
+``` text
+SET output_format_pretty_grid_charset = 'UTF-8';
+SELECT * FROM a;
+┌─a─┐
+│ 1 │
+└───┘
+
+SET output_format_pretty_grid_charset = 'ASCII';
+SELECT * FROM a;
++-a-+
+| 1 |
++---+
+```
 
 ## optimize_read_in_order {#optimize_read_in_order}
 
