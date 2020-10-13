@@ -654,6 +654,9 @@ bool StorageMergeTree::merge(
         };
 
         bool selected = false;
+
+        /// This flag is true when there is only one part in partition, it's level > 0
+        /// and setting optimize_skip_merged_partitions is true
         bool is_single_merged_part = false;
 
         if (partition_id.empty())
@@ -710,6 +713,7 @@ bool StorageMergeTree::merge(
 
         if (!selected)
         {
+            /// If is_single_merged_part is true we treat this part as already merged
             if (final && is_single_merged_part)
             {
                 return true;

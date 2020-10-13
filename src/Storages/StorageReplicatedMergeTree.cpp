@@ -3761,12 +3761,16 @@ bool StorageReplicatedMergeTree::optimize(
                     ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
                     FutureMergedMutatedPart future_merged_part;
+
+                    /// This flag is true when there is only one part in partition, it's level > 0
+                    /// and setting optimize_skip_merged_partitions is true
                     bool is_single_merged_part = false;
                     bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                         future_merged_part, disk_space, can_merge, partition_id, true, &is_single_merged_part, nullptr);
 
                     if (!selected)
                     {
+                        /// If is_single_merged_part is true we treat this part as already merged
                         if (is_single_merged_part)
                             return true;
                         break;
@@ -3789,7 +3793,7 @@ bool StorageReplicatedMergeTree::optimize(
                 }
                 if (try_no == max_retries)
                     return handle_noop("Can't create merge queue node in ZooKeeper, because log was updated in every of "
-                        + toString(max_retries) + " tries");
+                                       + toString(max_retries) + " tries");
             }
         }
         else
@@ -3803,6 +3807,9 @@ bool StorageReplicatedMergeTree::optimize(
                 FutureMergedMutatedPart future_merged_part;
                 String disable_reason;
                 bool selected = false;
+
+                /// This flag is true when there is only one part in partition, it's level > 0
+                /// and setting optimize_skip_merged_partitions is true
                 bool is_single_merged_part = false;
                 if (!partition)
                 {
@@ -3819,6 +3826,7 @@ bool StorageReplicatedMergeTree::optimize(
 
                 if (!selected)
                 {
+                    /// If is_single_merged_part is true we treat this part as already merged
                     if (final && is_single_merged_part)
                         return true;
                     std::stringstream message;

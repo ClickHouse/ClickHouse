@@ -358,7 +358,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
     bool final,
-    bool *  is_single_merged_part,
+    bool * is_single_merged_part,
     String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
@@ -373,6 +373,8 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         return false;
     }
 
+    /// If final, optimize_skip_merged_partitions is true and we have only one part in partition with level > 0
+    /// than we don't select it to merge
     if (final && data.getSettings()->optimize_skip_merged_partitions && parts.size() == 1 && parts[0]->info.level > 0)
     {
         *is_single_merged_part = true;
@@ -636,6 +638,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     bool deduplicate)
 {
     static const String TMP_PREFIX = "tmp_merge_";
+
+
 
     if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);

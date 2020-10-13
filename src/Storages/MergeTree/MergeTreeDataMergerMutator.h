@@ -88,7 +88,9 @@ public:
         String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
-      * final - choose to merge even a single part - that is, allow to merge one part "with itself".
+      * final - choose to merge even a single part - that is, allow to merge one part "with itself",
+      * but if setting optimize_skip_merged_partitions is true (it's true as default) than single part with level > 0
+      * won't be merged with itself.
       */
     bool selectAllPartsToMergeWithinPartition(
         FutureMergedMutatedPart & future_part,
