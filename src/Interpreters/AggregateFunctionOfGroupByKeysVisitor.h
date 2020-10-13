@@ -10,6 +10,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTSubquery.h>
 
 namespace DB
 {
@@ -86,7 +87,7 @@ public:
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
-        return !(node->as<ASTFunction>());
+        return !node->as<ASTSubquery>() && !(node->as<ASTFunction>());
     }
 
     static void visit(ASTPtr & ast, Data & data)
