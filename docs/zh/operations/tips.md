@@ -66,7 +66,7 @@ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 如果您的预算允许，请选择RAID-10。
 
 如果您有超过4个磁盘，请使用RAID-6（首选）或RAID-50，而不是RAID-5。
-当使用RAID-5、RAID-6或RAID-50时，始终增加stripe\_cache\_size，因为默认值通常不是最佳选择。
+当使用RAID-5、RAID-6或RAID-50时，始终增加stripe_cache_size，因为默认值通常不是最佳选择。
 
 ``` bash
 echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
