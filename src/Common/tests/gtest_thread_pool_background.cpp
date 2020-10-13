@@ -1,5 +1,8 @@
 #include <atomic>
 #include <iostream>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/AutoPtr.h>
+#include <Poco/Logger.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/UUID.h>
@@ -19,6 +22,9 @@ namespace CurrentMetrics
 
 TEST(BackgroundThreadPool, Exceptions)
 {
+    Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("trace");
     BackgroundThreadPool pool(16, CurrentMetrics::BackgroundPoolTask);
     pool.scheduleOrThrowOnShutdown([&] { throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_METHOD, "Some Exception"); });
 
