@@ -458,7 +458,7 @@ class Dispatcher
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
-    static void apply(FunctionArguments & block, const ColumnVector<T> * col, Int64 scale_arg, size_t result)
+    static void apply(ColumnsWithTypeAndName & block, const ColumnVector<T> * col, Int64 scale_arg, size_t result)
     {
         auto col_res = ColumnVector<T>::create();
 
@@ -484,10 +484,10 @@ class Dispatcher
             }
         }
 
-        block.getByPosition(result).column = std::move(col_res);
+        block[result].column = std::move(col_res);
     }
 
-    static void apply(FunctionArguments & block, const ColumnDecimal<T> * col, Int64 scale_arg, size_t result)
+    static void apply(ColumnsWithTypeAndName & block, const ColumnDecimal<T> * col, Int64 scale_arg, size_t result)
     {
         const typename ColumnDecimal<T>::Container & vec_src = col->getData();
 
@@ -497,11 +497,11 @@ class Dispatcher
         if (!vec_res.empty())
             DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), vec_res, scale_arg);
 
-        block.getByPosition(result).column = std::move(col_res);
+        block[result].column = std::move(col_res);
     }
 
 public:
-    static void apply(FunctionArguments & block, const IColumn * column, Int64 scale_arg, size_t result)
+    static void apply(ColumnsWithTypeAndName & block, const IColumn * column, Int64 scale_arg, size_t result)
     {
         if constexpr (IsNumber<T>)
             apply(block, checkAndGetColumn<ColumnVector<T>>(column), scale_arg, result);
@@ -549,7 +549,7 @@ public:
     {
         if (arguments.size() == 2)
         {
-            const IColumn & scale_column = *block.getByPosition(arguments[1]).column;
+            const IColumn & scale_column = *block[arguments[1]].column;
             if (!isColumnConst(scale_column))
                 throw Exception("Scale argument for rounding functions must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
@@ -568,7 +568,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & column = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & column = block[arguments[0]];
         Int64 scale_arg = getScaleArg(block, arguments);
 
         auto call = [&](const auto & types) -> bool
@@ -648,21 +648,21 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        auto in_column = block.getByPosition(arguments[0]).column;
-        const auto & in_type = block.getByPosition(arguments[0]).type;
+        auto in_column = block[arguments[0]].column;
+        const auto & in_type = block[arguments[0]].type;
 
-        auto array_column = block.getByPosition(arguments[1]).column;
-        const auto & array_type = block.getByPosition(arguments[1]).type;
+        auto array_column = block[arguments[1]].column;
+        const auto & array_type = block[arguments[1]].type;
 
-        const auto & return_type = block.getByPosition(result).type;
+        const auto & return_type = block[result].type;
         auto column_result = return_type->createColumn();
         auto out = column_result.get();
 
         if (!in_type->equals(*return_type))
-            in_column = castColumn(block.getByPosition(arguments[0]), return_type);
+            in_column = castColumn(block[arguments[0]], return_type);
 
         if (!array_type->equals(*return_type))
-            array_column = castColumn(block.getByPosition(arguments[1]), std::make_shared<DataTypeArray>(return_type));
+            array_column = castColumn(block[arguments[1]], std::make_shared<DataTypeArray>(return_type));
 
         const auto in = in_column.get();
         auto boundaries = typeid_cast<const ColumnConst &>(*array_column).getValue<Array>();
@@ -687,7 +687,7 @@ public:
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        block.getByPosition(result).column = std::move(column_result);
+        block[result].column = std::move(column_result);
     }
 
 private:

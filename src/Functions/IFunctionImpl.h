@@ -22,45 +22,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
-    extern const int POSITION_OUT_OF_BOUND;
 }
-
-class FunctionArguments
-{
-public:
-    explicit FunctionArguments(ColumnsWithTypeAndName & arguments) : data(arguments) {}
-
-    const ColumnWithTypeAndName & getByPosition(size_t position) const { return data[position]; }
-    ColumnWithTypeAndName & getByPosition(size_t position) { return data[position]; }
-
-    ColumnWithTypeAndName & safeGetByPosition(size_t position)
-    {
-        checkPosition(position);
-        return data[position];
-    }
-    const ColumnWithTypeAndName & safeGetByPosition(size_t position) const
-    {
-        checkPosition(position);
-        return data[position];
-    }
-
-    size_t columns() const { return data.size(); }
-    const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const { return data; }
-
-    ColumnsWithTypeAndName & data;
-
-private:
-    void checkPosition(size_t position) const
-    {
-        if (data.empty())
-            throw Exception("Arguments are empty", ErrorCodes::POSITION_OUT_OF_BOUND);
-
-        if (position >= data.size())
-            throw Exception("Position " + std::to_string(position)
-                            + " is out of bound in FunctionArguments::safeGetByPosition(), max position = "
-                            + std::to_string(data.size() - 1), ErrorCodes::POSITION_OUT_OF_BOUND);
-    }
-};
 
 /// Cache for functions result if it was executed on low cardinality column.
 class ExecutableFunctionLowCardinalityResultCache;
@@ -69,7 +31,7 @@ using ExecutableFunctionLowCardinalityResultCachePtr = std::shared_ptr<Executabl
 class IExecutableFunctionImpl
 {
 public:
-    using Block = FunctionArguments;
+    using Block = ColumnsWithTypeAndName;
 
     virtual ~IExecutableFunctionImpl() = default;
 
@@ -122,7 +84,7 @@ using ExecutableFunctionImplPtr = std::unique_ptr<IExecutableFunctionImpl>;
 class IFunctionBaseImpl
 {
 public:
-    using Block = FunctionArguments;
+    using Block = ColumnsWithTypeAndName;
 
     virtual ~IFunctionBaseImpl() = default;
 
@@ -167,7 +129,7 @@ using FunctionBaseImplPtr = std::unique_ptr<IFunctionBaseImpl>;
 class IFunctionOverloadResolverImpl
 {
 public:
-    using Block = FunctionArguments;
+    using Block = ColumnsWithTypeAndName;
 
     virtual ~IFunctionOverloadResolverImpl() = default;
 
@@ -235,7 +197,7 @@ using FunctionOverloadResolverImplPtr = std::unique_ptr<IFunctionOverloadResolve
 class IFunction
 {
 public:
-    using Block = FunctionArguments;
+    using Block = ColumnsWithTypeAndName;
 
     virtual ~IFunction() = default;
 

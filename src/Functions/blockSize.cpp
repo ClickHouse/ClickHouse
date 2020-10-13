@@ -45,7 +45,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = ColumnUInt64::create(input_rows_count, input_rows_count);
+        block[result].column = ColumnUInt64::create(input_rows_count, input_rows_count);
     }
 };
 

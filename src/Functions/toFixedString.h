@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -53,13 +54,13 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const auto n = block.getByPosition(arguments[1]).column->getUInt(0);
+        const auto n = block[arguments[1]].column->getUInt(0);
         return executeForN(block, arguments, result, n);
     }
 
     static void executeForN(Block & block, const ColumnNumbers & arguments, const size_t result, const size_t n)
     {
-        const auto & column = block.getByPosition(arguments[0]).column;
+        const auto & column = block[arguments[0]].column;
 
         if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
         {
@@ -81,7 +82,7 @@ public:
                 memcpy(&out_chars[i * n], &in_chars[off], len);
             }
 
-            block.getByPosition(result).column = std::move(column_fixed);
+            block[result].column = std::move(column_fixed);
         }
         else if (const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
@@ -99,7 +100,7 @@ public:
             for (size_t i = 0; i < size; ++i)
                 memcpy(&out_chars[i * n], &in_chars[i * src_n], src_n);
 
-            block.getByPosition(result).column = std::move(column_fixed);
+            block[result].column = std::move(column_fixed);
         }
         else
             throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);

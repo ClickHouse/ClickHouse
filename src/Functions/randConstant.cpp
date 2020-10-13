@@ -24,7 +24,7 @@ bool useDefaultImplementationForNulls() const override { return false; }
 
     void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
+        block[result].column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
     }
 
 private:

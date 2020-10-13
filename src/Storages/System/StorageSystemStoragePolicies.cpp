@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
