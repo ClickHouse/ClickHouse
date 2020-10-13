@@ -175,6 +175,8 @@ public:
         FunctionBasePtr function_base;
         /// Prepared function which is used in function execution.
         ExecutableFunctionPtr function;
+        /// If function is a compiled statement.
+        bool is_function_compiled = false;
 
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
@@ -231,35 +233,32 @@ private:
     using Node = ActionsDAG::Node;
     using Index = ActionsDAG::Index;
 
-    struct Argument
-    {
-        size_t position;
-        bool can_remove;
-    };
-
-    using Arguments = std::vector<Argument>;
-
     struct Action
     {
         Node * node;
-        Arguments arguments;
+        ColumnNumbers arguments;
+        /// Columns which will be removed after actions is executed.
+        /// It is always a subset of arguments.
+        ColumnNumbers to_remove;
         size_t result_position;
+        bool is_used_in_result;
     };
 
     using Actions = std::vector<Action>;
 
     struct ExecutionContext
     {
-        ColumnsWithTypeAndName input_columns;
+        ColumnsWithTypeAndName & input_columns;
         ColumnsWithTypeAndName columns;
         size_t num_rows;
     };
 
     std::list<Node> nodes;
-    Index index;
     Actions actions;
+    size_t num_columns;
 
     NamesAndTypesList required_columns;
+    Block sample_block;
 
 public:
     ~ExpressionActions();
@@ -283,7 +282,7 @@ public:
 
     /// Get a list of input columns.
     Names getRequiredColumns() const;
-    const NamesAndTypesList & getRequiredColumnsWithTypes() const;
+    const NamesAndTypesList & getRequiredColumnsWithTypes() const { return required_columns; }
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
@@ -291,7 +290,7 @@ public:
     bool hasArrayJoin() const;
 
     /// Obtain a sample block that contains the names and types of result columns.
-    const Block & getSampleBlock() const;
+    const Block & getSampleBlock() const { return sample_block; }
 
     std::string dumpActions() const;
 
@@ -310,9 +309,9 @@ private:
     std::shared_ptr<CompiledExpressionCache> compilation_cache;
 #endif
 
-    void checkLimits(Block & block) const;
+    void checkLimits(ExecutionContext & execution_context) const;
 
-    void executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run);
+    static void executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run);
 };
 
 
