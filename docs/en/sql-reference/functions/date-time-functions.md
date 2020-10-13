@@ -218,7 +218,7 @@ Rounds down a date with time to the start of the ten-minute interval.
 
 Rounds down the date with time to the start of the fifteen-minute interval.
 
-## toStartOfInterval(time\_or\_data, INTERVAL x unit \[, time\_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
+## toStartOfInterval(time_or_data, INTERVAL x unit \[, time_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
 
 This is a generalization of other functions named `toStartOf*`. For example,
 `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
@@ -339,7 +339,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┘
 ```
 
-## date_trunc(datepart, time\_or\_data\[, time\_zone\]), dateTrunc(datepart, time\_or\_data\[, time\_zone\]) {#date_trunc}
+## date_trunc(datepart, time_or_data\[, time_zone\]), dateTrunc(datepart, time_or_data\[, time_zone\]) {#date_trunc}
 
 Truncates a date or date with time based on the specified datepart, such as
 - `second`

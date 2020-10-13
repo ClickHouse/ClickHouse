@@ -51,15 +51,15 @@ private:
         size_t num_arguments = arguments.size();
         if (1 == num_arguments)
         {
-            block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
+            block[result].column = block[arguments[0]].column;
             return;
         }
 
-        auto result_type = block.getByPosition(result).type;
+        auto result_type = block[result].type;
 
         Columns converted_columns(num_arguments);
         for (size_t arg = 0; arg < num_arguments; ++arg)
-            converted_columns[arg] = castColumn(block.getByPosition(arguments[arg]), result_type)->convertToFullColumnIfConst();
+            converted_columns[arg] = castColumn(block[arguments[arg]], result_type)->convertToFullColumnIfConst();
 
         auto result_column = result_type->createColumn();
         result_column->reserve(input_rows_count);
@@ -86,7 +86,7 @@ private:
             result_column->insertFrom(*converted_columns[best_arg], row_num);
         }
 
-        block.getByPosition(result).column = std::move(result_column);
+        block[result].column = std::move(result_column);
     }
 };
 

@@ -71,17 +71,17 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto & return_type = block.getByPosition(result).type;
+        const auto & return_type = block[result].type;
 
         if (return_type->onlyNull())
         {
-            block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
+            block[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
 
-        auto & array_column = block.getByPosition(arguments[0]).column;
-        const auto & offset_column = block.getByPosition(arguments[1]).column;
-        const auto & length_column = arguments.size() > 2 ? block.getByPosition(arguments[2]).column : nullptr;
+        auto & array_column = block[arguments[0]].column;
+        const auto & offset_column = block[arguments[1]].column;
+        const auto & length_column = arguments.size() > 2 ? block[arguments[2]].column : nullptr;
 
         std::unique_ptr<GatherUtils::IArraySource> source;
 
@@ -105,7 +105,7 @@ public:
         {
             if (!length_column || length_column->onlyNull())
             {
-                block.getByPosition(result).column = array_column;
+                block[result].column = array_column;
                 return;
             }
             else if (isColumnConst(*length_column))
@@ -146,7 +146,7 @@ public:
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *offset_column, *length_column);
         }
 
-        block.getByPosition(result).column = std::move(sink);
+        block[result].column = std::move(sink);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
