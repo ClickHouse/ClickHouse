@@ -622,7 +622,7 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(Int64(increment.value.load()), current_mutations_by_version.rbegin()->first);
 }
 
-std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(const StorageMetadataPtr &, bool aggressive, const String & partition_id, bool final, String * out_disable_reason)
+std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * out_disable_reason)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     std::unique_lock lock(currently_processing_in_background_mutex);
@@ -712,7 +712,7 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
         return {};
     }
 
-    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
+    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, metadata_snapshot, false);
     auto table_id = getStorageID();
     merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
     return MergeMutateSelectedEntry{future_part, std::move(merging_tagger), std::move(merge_entry), {}};
@@ -756,7 +756,7 @@ bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_sn
     {
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, metadata_snapshot, *(merge_mutate_entry.merge_entry), table_lock_holder, time(nullptr),
-            merge_mutate_entry.tagger->reserved_space, deduplicate);
+            global_context, merge_mutate_entry.tagger->reserved_space, deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         write_part_log({});
@@ -868,7 +868,7 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
         future_part.name = part->getNewName(new_part_info);
         future_part.type = part->getType();
 
-        tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true);
+        tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
         auto table_id = getStorageID();
         MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
         return MergeMutateSelectedEntry{future_part, std::move(tagger), std::move(merge_entry), commands};
