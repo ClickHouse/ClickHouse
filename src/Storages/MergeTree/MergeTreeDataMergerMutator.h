@@ -96,6 +96,7 @@ public:
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
         bool final,
+        bool * is_single_merged_part,
         String * out_disable_reason = nullptr);
 
     /** Merge the parts.

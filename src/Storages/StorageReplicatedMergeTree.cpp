@@ -3761,11 +3761,16 @@ bool StorageReplicatedMergeTree::optimize(
                     ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
                     FutureMergedMutatedPart future_merged_part;
+                    bool is_single_merged_part = false;
                     bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
+                        future_merged_part, disk_space, can_merge, partition_id, true, &is_single_merged_part, nullptr);
 
                     if (!selected)
+                    {
+                        if (is_single_merged_part)
+                            return true;
                         break;
+                    }
 
                     ReplicatedMergeTreeLogEntryData merge_entry;
                     CreateMergeEntryResult create_result = createLogEntryToMergeParts(
@@ -3798,6 +3803,7 @@ bool StorageReplicatedMergeTree::optimize(
                 FutureMergedMutatedPart future_merged_part;
                 String disable_reason;
                 bool selected = false;
+                bool is_single_merged_part = false;
                 if (!partition)
                 {
                     selected = merger_mutator.selectPartsToMerge(
@@ -3805,15 +3811,16 @@ bool StorageReplicatedMergeTree::optimize(
                 }
                 else
                 {
-
                     UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
                     String partition_id = getPartitionIDFromQuery(partition, query_context);
                     selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
+                        future_merged_part, disk_space, can_merge, partition_id, final, &is_single_merged_part, &disable_reason);
                 }
 
                 if (!selected)
                 {
+                    if (final && is_single_merged_part)
+                        return true;
                     std::stringstream message;
                     message << "Cannot select parts for optimization";
                     if (!disable_reason.empty())
