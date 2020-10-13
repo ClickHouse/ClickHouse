@@ -1314,7 +1314,8 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             continue;
         }
 
-        pipe.addSimpleTransform([&metadata_snapshot](const Block & header) {
+        pipe.addSimpleTransform([&metadata_snapshot](const Block & header)
+        {
             return std::make_shared<ExpressionTransform>(header, metadata_snapshot->getSortingKey().expression);
         });
 
@@ -1329,7 +1330,8 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         for (size_t i = 0; i < sort_columns_size; ++i)
             sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
 
-        auto get_merging_processor = [&]() -> MergingTransformPtr {
+        auto get_merging_processor = [&]() -> MergingTransformPtr
+        {
             switch (data.merging_params.mode)
             {
                 case MergeTreeData::MergingParams::Ordinary: {
@@ -1385,11 +1387,13 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
                 key_columns.emplace_back(desc.column_number);
         }
 
-        pipe.addSimpleTransform([&](const Block & stream_header) {
+        pipe.addSimpleTransform([&](const Block & stream_header)
+        {
             return std::make_shared<AddingSelectorTransform>(stream_header, num_streams, key_columns);
         });
 
-        pipe.transform([&](OutputPortRawPtrs ports) {
+        pipe.transform([&](OutputPortRawPtrs ports)
+        {
             Processors processors;
             std::vector<OutputPorts::iterator> output_ports;
             processors.reserve(ports.size() + num_streams);
