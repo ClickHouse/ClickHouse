@@ -88,6 +88,8 @@ BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
         if (query_ptr->as<ASTDropQuery &>().is_view && !table->isView())
             throw Exception("Table " + table_id.getNameForLogs() + " is not a View", ErrorCodes::LOGICAL_ERROR);
 
+        table_id = table->getStorageID();
+
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
