@@ -1990,4 +1990,53 @@ SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
 
 Значение по умолчанию: `120` секунд.
 
+## cast_keep_nullable {#cast_keep_nullable}
+
+Включает или отключает сохранение типа `Nullable` для аргумента функции [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast).
+
+Если настройка включена, то функция `CAST(something_nullable AS Type)` возвращает `Nullable(Type)`.
+
+Возможные значения:
+
+-  0 — функция `CAST` преобразует аргумент строго к указанному типу.
+-  1 — функция `CAST` преобразует аргумент к типу `Nullable` для указанного типа. 
+
+Значение по умолчанию: `0`.
+
+**Примеры** 
+
+Запрос возвращает аргумент, преобразованный строго к указанному типу:
+
+```sql
+SET cast_keep_nullable = 0;
+SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
+```
+
+Результат:
+
+```text
+┌─x─┬─toTypeName(CAST(toNullable(toInt32(0)), 'Int32'))─┐
+│ 0 │ Int32                                             │
+└───┴───────────────────────────────────────────────────┘
+```
+
+Запрос возвращает аргумент, преобразованный к типу `Nullable` для указанного типа:
+
+```sql
+SET cast_keep_nullable = 1;
+SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
+```
+
+Результат:
+
+```text
+┌─x─┬─toTypeName(CAST(toNullable(toInt32(0)), 'Int32'))─┐
+│ 0 │ Nullable(Int32)                                   │
+└───┴───────────────────────────────────────────────────┘
+```
+
+**См. также** 
+
+-   Функция [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
