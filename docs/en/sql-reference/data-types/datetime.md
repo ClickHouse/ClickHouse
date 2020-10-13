@@ -29,7 +29,7 @@ The [clickhouse-client](../../interfaces/cli.md) applies the server time zone by
 
 ClickHouse outputs values in `YYYY-MM-DD hh:mm:ss` text format by default. You can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
 
-When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format) setting.
+When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) setting.
 
 ## Examples {#examples}
 
