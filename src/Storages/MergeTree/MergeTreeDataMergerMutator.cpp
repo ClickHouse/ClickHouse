@@ -358,6 +358,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
     bool final,
+    bool *  is_single_merged_part,
     String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
@@ -369,6 +370,12 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     {
         if (out_disable_reason)
             *out_disable_reason = "There is only one part inside partition";
+        return false;
+    }
+
+    if (final && data.getSettings()->optimize_skip_merged_partitions && parts.size() == 1 && parts[0]->info.level > 0)
+    {
+        *is_single_merged_part = true;
         return false;
     }
 
