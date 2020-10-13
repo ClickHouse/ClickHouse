@@ -27,6 +27,7 @@ SRCS(
     DataTypeInterval.cpp
     DataTypeLowCardinality.cpp
     DataTypeLowCardinalityHelpers.cpp
+    DataTypeMap.cpp
     DataTypeNothing.cpp
     DataTypeNullable.cpp
     DataTypeNumberBase.cpp
@@ -41,7 +42,6 @@ SRCS(
     IDataType.cpp
     NestedUtils.cpp
     registerDataTypeDateTime.cpp
-    DataTypeMap.cpp
 
 )
 
