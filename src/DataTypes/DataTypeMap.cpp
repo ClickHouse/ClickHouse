@@ -18,7 +18,6 @@
 
 #include <ext/map.h>
 #include <ext/enumerate.h>
-#include <ext/range.h>
 
 
 namespace DB
@@ -84,31 +83,6 @@ void DataTypeMap::serializeBinary(const IColumn & column, size_t row_num, WriteB
     keys->serializeBinary(extractElementColumn(column, 0), row_num, ostr);
     values->serializeBinary(extractElementColumn(column, 1), row_num, ostr);
 }
-
-
-template <typename F>
-static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
-{
-    /// We use the assumption that maps of zero size do not exist.
-    size_t old_size = column.size();
-
-    try
-    {
-        impl();
-    }
-    catch (...)
-    {
-        for (const auto & i : ext::range(0, ext::size(elems)))
-        {
-            auto & element_column = extractElementColumn(column, i);
-            if (element_column.size() > old_size)
-                element_column.popBack(1);
-        }
-
-        throw;
-    }
-}
-
 
 void DataTypeMap::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
@@ -356,7 +330,10 @@ bool DataTypeMap::equals(const IDataType & rhs) const
 
     const DataTypeMap & rhs_map = static_cast<const DataTypeMap &>(rhs);
 
-    if (!keys->equals(*rhs_map.keys) || !values->equals(*rhs_map.values))
+    if (!keys->equals(*rhs_map.keys))
+        return false;
+
+    if (!values->equals(*rhs_map.values))
         return false;
 
     return true;

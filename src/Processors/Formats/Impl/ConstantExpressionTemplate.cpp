@@ -499,8 +499,10 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         DataTypes nested_types;
         if (type_info.is_array)
             nested_types = { assert_cast<const DataTypeArray &>(*collection_type).getNestedType() };
-        else
+        else if (type_info.is_tuple)
             nested_types = assert_cast<const DataTypeTuple &>(*collection_type).getElements();
+        else
+            nested_types = assert_cast<const DataTypeMap &>(*collection_type).getElements();
 
         for (size_t i = 0; i < nested_types.size(); ++i)
         {
