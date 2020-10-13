@@ -253,26 +253,26 @@ void TCPHandler::runImpl()
             /// Processing Query
             state.io = executeQuery(state.query, *query_context, false, state.stage, may_have_embedded_data);
 
-            if (state.io.out)
-                state.need_receive_data_for_insert = true;
-
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            /// Does the request require receive data from client?
-            if (state.need_receive_data_for_insert)
+            if (state.io.out)
+            {
+                state.need_receive_data_for_insert = true;
                 processInsertQuery(connection_settings);
-            else if (state.need_receive_data_for_input)
+            }
+            else if (state.need_receive_data_for_input) // It implies pipeline execution
             {
                 /// It is special case for input(), all works for reading data from client will be done in callbacks.
                 auto executor = state.io.pipeline.execute();
                 executor->execute(state.io.pipeline.getNumThreads());
-                state.io.onFinish();
             }
             else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors();
-            else
+            else if (state.io.in)
                 processOrdinaryQuery();
+
+            state.io.onFinish();
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
@@ -401,7 +401,7 @@ void TCPHandler::runImpl()
 
         watch.stop();
 
-        LOG_INFO(log, "Processed in {} sec.", watch.elapsedSeconds());
+        LOG_DEBUG(log, "Processed in {} sec.", watch.elapsedSeconds());
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
@@ -509,7 +509,6 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
     readData(connection_settings);
     state.io.out->writeSuffix();
-    state.io.onFinish();
 }
 
 
@@ -570,8 +569,6 @@ void TCPHandler::processOrdinaryQuery()
 
         sendData({});
     }
-
-    state.io.onFinish();
 
     sendProgress();
 }
@@ -637,8 +634,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
 
         sendData({});
     }
-
-    state.io.onFinish();
 
     sendProgress();
 }
@@ -1310,7 +1305,7 @@ void TCPHandler::run()
     {
         runImpl();
 
-        LOG_INFO(log, "Done processing connection.");
+        LOG_DEBUG(log, "Done processing connection.");
     }
     catch (Poco::Exception & e)
     {

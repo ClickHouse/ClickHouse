@@ -267,6 +267,7 @@ SRCS(
     log10.cpp
     log2.cpp
     log.cpp
+    logTrace.cpp
     lowCardinalityIndices.cpp
     lowCardinalityKeys.cpp
     lower.cpp
@@ -388,6 +389,7 @@ SRCS(
     TargetSpecific.cpp
     tgamma.cpp
     throwIf.cpp
+    tid.cpp
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp

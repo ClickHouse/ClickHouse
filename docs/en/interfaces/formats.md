@@ -210,7 +210,7 @@ Setting `format_template_resultset` specifies the path to file, which contains a
 -   `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1)
 -   `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1)
 -   `rows` is the total number of output rows
--   `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact number of rows there would have been without a LIMIT.
+-   `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
 -   `time` is the request execution time in seconds
 -   `rows_read` is the number of rows has been read
 -   `bytes_read` is the number of bytes (uncompressed) has been read
@@ -361,21 +361,21 @@ Parsing allows the presence of the additional field `tskv` without the equal sig
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-When formatting, rows are enclosed in double-quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double-quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double-quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
+When formatting, rows are enclosed in double-quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double-quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double-quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\*By default, the delimiter is `,`. See the [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) setting for more information.
+\*By default, the delimiter is `,`. See the [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) setting for more information.
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
 
 Empty unquoted input values are replaced with default values for the respective columns, if
-[input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+[input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 is enabled.
 
-`NULL` is formatted as `\N` or `NULL` or an empty unquoted string (see settings [input\_format\_csv\_unquoted\_null\_literal\_as\_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) and [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` is formatted as `\N` or `NULL` or an empty unquoted string (see settings [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) and [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
 
@@ -439,12 +439,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) to 0.
+The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) to 0.
 
 `rows` – The total number of output rows.
 
 `rows_before_limit_at_least` The minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT.
-If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact number of rows there would have been without a LIMIT.
+If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
 
 `totals` – Total values (when using WITH TOTALS).
 
@@ -452,7 +452,7 @@ If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact numb
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output\_format\_json\_quote\_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1.
+ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1.
 
 See also the [JSONEachRow](#jsoneachrow) format.
 
@@ -633,7 +633,7 @@ ClickHouse ignores spaces between elements and commas after the objects. You can
 
 ClickHouse substitutes omitted values with the default values for the corresponding [data types](../sql-reference/data-types/index.md).
 
-If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting.
+If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting.
 
 Consider the following table:
 
@@ -676,7 +676,7 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
-If you have a table with [Nested](../sql-reference/data-types/nested-data-structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+If you have a table with [Nested](../sql-reference/data-types/nested-data-structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
 
 For example, consider the following table:
 
@@ -690,7 +690,7 @@ As you can see in the `Nested` data type description, ClickHouse treats each com
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-To insert data as a hierarchical JSON object, set [input\_format\_import\_nested\_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+To insert data as a hierarchical JSON object, set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -872,7 +872,7 @@ The minimum set of characters that you need to escape when passing data in Value
 
 This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
 
-See also: [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) and [input\_format\_values\_deduce\_templates\_of\_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) settings.
+See also: [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) and [input_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) settings.
 
 ## Vertical {#vertical}
 
@@ -1135,7 +1135,7 @@ Column names must:
 -   start with `[A-Za-z_]`
 -   subsequently contain only `[A-Za-z0-9_]`
 
-Output Avro file compression and sync interval can be configured with [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
+Output Avro file compression and sync interval can be configured with [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
 
 ## AvroConfluent {#data-format-avro-confluent}
 
@@ -1145,7 +1145,7 @@ Each Avro message embeds a schema id that can be resolved to the actual schema w
 
 Schemas are cached once resolved.
 
-Schema Registry URL is configured with [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#format_avro_schema_registry_url).
+Schema Registry URL is configured with [format_avro_schema_registry_url](../operations/settings/settings.md#format_avro_schema_registry_url).
 
 ### Data Types Matching {#data_types-matching-1}
 
@@ -1298,13 +1298,13 @@ can contain an absolute path or a path relative to the current directory on the 
 If you use the client in the [batch mode](../interfaces/cli.md#cli_usage), the path to the schema must be relative due to security reasons.
 
 If you input or output data via the [HTTP interface](../interfaces/http.md) the file name specified in the format schema
-should be located in the directory specified in [format\_schema\_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
+should be located in the directory specified in [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 in the server configuration.
 
 ## Skipping Errors {#skippingerrors}
 
-Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input\_format\_allow\_errors\_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and
-[input\_format\_allow\_errors\_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) settings.
+Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and
+[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) settings.
 Limitations:
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.

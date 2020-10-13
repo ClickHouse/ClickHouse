@@ -119,7 +119,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName temp_block = block.data;
+        ColumnsWithTypeAndName temp_block = block;
 
         const UInt16 interval_value = 1;
         const ColumnPtr interval_column = ColumnConst::create(ColumnInt64::create(1, interval_value), input_rows_count);
@@ -143,7 +143,7 @@ public:
             to_start_of_interval->execute(temp_block, {arguments[1], interval_pos, arguments[2]}, result, input_rows_count);
         }
 
-        block.getByPosition(result).column = std::move(temp_block[result].column);
+        block[result].column = std::move(temp_block[result].column);
     }
 
     bool hasInformationAboutMonotonicity() const override

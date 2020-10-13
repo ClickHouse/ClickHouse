@@ -439,7 +439,7 @@ Tipo:
 Cuando se indica la misma letra (T o U), para los tipos numéricos pueden no ser tipos coincidentes, sino tipos que tienen un tipo común.
 Por ejemplo, el primer argumento puede tener el tipo Int64, mientras que el segundo tiene el tipo Array(UInt16).
 
-Si el ‘x’ valor es igual a uno de los elementos en el ‘array\_from’ matriz, devuelve el elemento existente (que está numerado igual) de la ‘array\_to’ matriz. De lo contrario, devuelve ‘default’. Si hay varios elementos coincidentes en ‘array\_from’, devuelve una de las coincidencias.
+Si el ‘x’ valor es igual a uno de los elementos en el ‘array_from’ matriz, devuelve el elemento existente (que está numerado igual) de la ‘array_to’ matriz. De lo contrario, devuelve ‘default’. Si hay varios elementos coincidentes en ‘array_from’, devuelve una de las coincidencias.
 
 Ejemplo:
 
@@ -464,7 +464,7 @@ ORDER BY c DESC
 ### ¿Cómo puedo hacerlo?) {#transformx-array-from-array-to}
 
 Difiere de la primera variación en que el ‘default’ se omite el argumento.
-Si el ‘x’ valor es igual a uno de los elementos en el ‘array\_from’ matriz, devuelve el elemento coincidente (que está numerado igual) de la ‘array\_to’ matriz. De lo contrario, devuelve ‘x’.
+Si el ‘x’ valor es igual a uno de los elementos en el ‘array_from’ matriz, devuelve el elemento coincidente (que está numerado igual) de la ‘array_to’ matriz. De lo contrario, devuelve ‘x’.
 
 Tipo:
 
@@ -1121,7 +1121,7 @@ Resultado:
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model\_name, …) {#function-modelevaluate}
+## modelEvaluate(model_name, …) {#function-modelevaluate}
 
 Evaluar modelo externo.
 Acepta un nombre de modelo y argumentos de modelo. Devuelve Float64.
@@ -1129,7 +1129,7 @@ Acepta un nombre de modelo y argumentos de modelo. Devuelve Float64.
 ## ¿Cómo puedo hacerlo?\]) {#throwifx-custom-message}
 
 Lance una excepción si el argumento no es cero.
-custom\_message - es un parámetro opcional: una cadena constante, proporciona un mensaje de error
+custom_message - es un parámetro opcional: una cadena constante, proporciona un mensaje de error
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
