@@ -47,7 +47,7 @@ BlockIO InterpreterDropQuery::execute()
     if (!drop.table.empty())
     {
         if (!drop.is_dictionary)
-            return executeToTable({drop.database, drop.table, drop.uuid}, drop);
+            return executeToTable(drop);
         else
             return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     }
@@ -58,28 +58,24 @@ BlockIO InterpreterDropQuery::execute()
 }
 
 
-BlockIO InterpreterDropQuery::executeToTable(
-    const StorageID & table_id_,
-    const ASTDropQuery & query)
+BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
 {
-    if (query.temporary || table_id_.database_name.empty())
+    auto table_id = StorageID(query);
+    if (query.temporary || table_id.database_name.empty())
     {
-        if (context.tryResolveStorageID(table_id_, Context::ResolveExternal))
-            return executeToTemporaryTable(table_id_.getTableName(), query.kind);
+        if (context.tryResolveStorageID(table_id, Context::ResolveExternal))
+            return executeToTemporaryTable(table_id.getTableName(), query.kind);
+        else
+            table_id.database_name = context.getCurrentDatabase();
     }
 
     if (query.temporary)
     {
         if (query.if_exists)
             return {};
-        throw Exception("Temporary table " + backQuoteIfNeed(table_id_.table_name) + " doesn't exist",
+        throw Exception("Temporary table " + backQuoteIfNeed(table_id.table_name) + " doesn't exist",
                         ErrorCodes::UNKNOWN_TABLE);
     }
-
-    auto table_id = query.if_exists ? context.tryResolveStorageID(table_id_, Context::ResolveOrdinary)
-                                    : context.resolveStorageID(table_id_, Context::ResolveOrdinary);
-    if (!table_id)
-        return {};
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
@@ -255,7 +251,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     query.table = iterator->name();
-                    executeToTable({query.database, query.table}, query);
+                    executeToTable(query);
                 }
             }
 
