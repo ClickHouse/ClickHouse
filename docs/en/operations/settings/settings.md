@@ -2,7 +2,7 @@
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
-Changes the behavior of [distributed subqueries](../../sql-reference/operators/in.md).
+Changes the behaviour of [distributed subqueries](../../sql-reference/operators/in.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -42,7 +42,7 @@ Consider the following queries:
 
 If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal because ClickHouse applies `WHERE` to the subquery when processing it.
 
-If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer, because the `WHERE` clause applies to all the data after the subquery finishes.
+If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer because the `WHERE` clause applies to all the data after the subquery finishes.
 
 ## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
@@ -244,7 +244,7 @@ Ok.
 
 ## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
-Enables or disables template deduction for SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows parsing and interpreting expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse tries to deduce template of an expression, parse the following rows using this template and evaluate the expression on a batch of successfully parsed rows.
+Enables or disables template deduction for SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows parsing and interpreting expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse tries to deduce the template of an expression, parse the following rows using this template and evaluate the expression on a batch of successfully parsed rows.
 
 Possible values:
 
@@ -265,7 +265,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## input\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
 
-This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g.
+This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. Expressions for some column may have the same structure, but contain numeric literals of different types, e.g.
 
 ``` sql
 (..., abs(0), ...),             -- UInt64 literal
@@ -307,7 +307,7 @@ Disabled by default.
 
 ## input\_format\_null\_as\_default {#settings-input-format-null-as-default}
 
-Enables or disables using default values if input data contain `NULL`, but data type of the corresponding column in not `Nullable(T)` (for text input formats).
+Enables or disables using default values if input data contain `NULL`, but the data type of the corresponding column in not `Nullable(T)` (for text input formats).
 
 ## input\_format\_skip\_unknown\_fields {#settings-input-format-skip-unknown-fields}
 
@@ -424,7 +424,7 @@ See also:
 
 ## join\_use\_nulls {#join_use_nulls}
 
-Sets the type of [JOIN](../../sql-reference/statements/select/join.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
+Sets the type of [JOIN](../../sql-reference/statements/select/join.md) behaviour. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
 Possible values:
 
@@ -453,8 +453,8 @@ Limits sizes of right-hand join data blocks in partial merge join algorithm for 
 ClickHouse server:
 
 1.  Splits right-hand join data into blocks with up to the specified number of rows.
-2.  Indexes each block with their minimum and maximum values
-3.  Unloads prepared blocks to disk if possible.
+2.  Indexes each block with its minimum and maximum values.
+3.  Unloads prepared blocks to disk if it is possible.
 
 Possible values:
 
@@ -476,25 +476,25 @@ Default value: 64.
 
 ## any\_join\_distinct\_right\_table\_keys {#any_join_distinct_right_table_keys}
 
-Enables legacy ClickHouse server behavior in `ANY INNER|LEFT JOIN` operations.
+Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
 
 !!! note "Warning"
-    Use this setting only for the purpose of backward compatibility if your use cases depend on legacy `JOIN` behavior.
+    Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
 
-When the legacy behavior enabled:
+When the legacy behaviour enabled:
 
 -   Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are not equal because ClickHouse uses the logic with many-to-one left-to-right table keys mapping.
 -   Results of `ANY INNER JOIN` operations contain all rows from the left table like the `SEMI LEFT JOIN` operations do.
 
-When the legacy behavior disabled:
+When the legacy behaviour disabled:
 
 -   Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations.
--   Results of `ANY INNER JOIN` operations contain one row per key from both left and right tables.
+-   Results of `ANY INNER JOIN` operations contain one row per key from both the left and right tables.
 
 Possible values:
 
--   0 — Legacy behavior is disabled.
--   1 — Legacy behavior is enabled.
+-   0 — Legacy behaviour is disabled.
+-   1 — Legacy behaviour is enabled.
 
 Default value: 0.
 
@@ -663,7 +663,7 @@ Possible values:
 
 Default value: `QUERY_START`.
 
-Can be used to limit which entiries will goes to `query_log`, say you are interesting only in errors, then you can use `EXCEPTION_WHILE_PROCESSING`:
+Can be used to limit which entities will go to `query_log`, say you are interested only in errors, then you can use `EXCEPTION_WHILE_PROCESSING`:
 
 ``` text
 log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
@@ -691,11 +691,11 @@ The setting also doesn’t have a purpose when using INSERT SELECT, since data i
 
 Default value: 1,048,576.
 
-The default is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion and a large enough block size allow sorting more data in RAM.
+The default is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
 
 ## min\_insert\_block\_size\_rows {#min-insert-block-size-rows}
 
-Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
+Sets the minimum number of rows in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
 
 Possible values:
 
@@ -706,7 +706,7 @@ Default value: 1048576.
 
 ## min\_insert\_block\_size\_bytes {#min-insert-block-size-bytes}
 
-Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
+Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
 
 Possible values:
 
@@ -783,7 +783,7 @@ Default value: 256 KiB.
 
 ## max\_parser\_depth {#max_parser_depth}
 
-Limits maximum recursion depth in the recursive descent parser. Allows to control stack size.
+Limits maximum recursion depth in the recursive descent parser. Allows controlling the stack size.
 
 Possible values:
 
@@ -894,12 +894,12 @@ Yandex.Metrica uses this parameter set to 1 for implementing suggestions for seg
 
 ## replace\_running\_query\_max\_wait\_ms {#replace-running-query-max-wait-ms}
 
-The wait time for running query with the same `query_id` to finish, when the [replace_running_query](#replace-running-query) setting is active.
+The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace-running-query) setting is active.
 
 Possible values:
 
 - Positive integer.
-- 0 — Throwing an exception that does not allow to run a new query if the server already executes a query with the  same `query_id`.
+- 0 — Throwing an exception that does not allow to run a new query if the server already executes a query with the same `query_id`.
 
 Default value: 5000.
 
@@ -977,7 +977,7 @@ It's possible to explicitly define what the first replica is by using the settin
 load_balancing = round_robin
 ```
 
-This algorithm uses round robin policy across replicas with the same number of errors (only the queries with `round_robin` policy is accounted).
+This algorithm uses a round-robin policy across replicas with the same number of errors (only the queries with `round_robin` policy is accounted).
 
 ## prefer\_localhost\_replica {#settings-prefer-localhost-replica}
 
@@ -1014,7 +1014,7 @@ Replica lag is not controlled.
 Enable compilation of queries. By default, 0 (disabled).
 
 The compilation is only used for part of the query-processing pipeline: for the first stage of aggregation (GROUP BY).
-If this portion of the pipeline was compiled, the query may run faster due to deployment of short cycles and inlining aggregate function calls. The maximum performance improvement (up to four times faster in rare cases) is seen for queries with multiple simple aggregate functions. Typically, the performance gain is insignificant. In very rare cases, it may slow down query execution.
+If this portion of the pipeline was compiled, the query may run faster due to the deployment of short cycles and inlining aggregate function calls. The maximum performance improvement (up to four times faster in rare cases) is seen for queries with multiple simple aggregate functions. Typically, the performance gain is insignificant. In very rare cases, it may slow down query execution.
 
 ## min\_count\_to\_compile {#min-count-to-compile}
 
@@ -1130,7 +1130,7 @@ When `output_format_json_quote_denormals = 1`, the query returns:
 
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
-The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
+The character is interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
 ## input\_format\_csv\_unquoted\_null\_literal\_as\_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
@@ -1173,7 +1173,7 @@ See also:
 
 ## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
-Write to quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
+Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
 Default value: 600000 milliseconds (ten minutes).
 
@@ -1229,8 +1229,8 @@ Default value: 0.
 Usage
 
 By default, deduplication is not performed for materialized views but is done upstream, in the source table.
-If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform deduplication check by itself,
+If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
+At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
 ignoring check result for the source table, and will insert rows lost because of the first failure.
 
 ## max\_network\_bytes {#settings-max-network-bytes}
@@ -1461,7 +1461,7 @@ Default value: 0.
 -   Type: seconds
 -   Default value: 60 seconds
 
-Controls how fast errors in distributed tables are zeroed. If a replica is unavailable for some time, accumulates 5 errors, and distributed\_replica\_error\_half\_life is set to 1 second, then the replica is considered normal 3 seconds after last error.
+Controls how fast errors in distributed tables are zeroed. If a replica is unavailable for some time, accumulates 5 errors, and distributed\_replica\_error\_half\_life is set to 1 second, then the replica is considered normal 3 seconds after the last error.
 
 See also:
 
@@ -1475,7 +1475,7 @@ See also:
 -   Type: unsigned int
 -   Default value: 1000
 
-Error count of each replica is capped at this value, preventing a single replica from accumulating too many errors.
+The error count of each replica is capped at this value, preventing a single replica from accumulating too many errors.
 
 See also:
 
@@ -1489,7 +1489,7 @@ See also:
 -   Type: unsigned int
 -   Default value: 0
 
-Number of errors that will be ignored while choosing replicas (according to `load_balancing` algorithm).
+The number of errors that will be ignored while choosing replicas (according to `load_balancing` algorithm).
 
 See also:
 
@@ -1520,7 +1520,7 @@ Default value: 30000 milliseconds (30 seconds).
 
 ## distributed\_directory\_monitor\_batch\_inserts {#distributed_directory_monitor_batch_inserts}
 
-Enables/disables sending of inserted data in batches.
+Enables/disables inserted data sending in batches.
 
 When batch sending is enabled, the [Distributed](../../engines/table-engines/special/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better-utilizing server and network resources.
 
@@ -1613,7 +1613,7 @@ Default value: 0.
 -   Type: bool
 -   Default value: True
 
-Enable order-preserving parallel parsing of data formats. Supported only for TSV, TKSV, CSV and JSONEachRow formats.
+Enable order-preserving parallel parsing of data formats. Supported only for TSV, TKSV, CSV, and JSONEachRow formats.
 
 ## min\_chunk\_bytes\_for\_parallel\_parsing {#min-chunk-bytes-for-parallel-parsing}
 
@@ -1665,7 +1665,7 @@ Default value: 0.
 
 ## background\_pool\_size {#background_pool_size}
 
-Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from `default` profile at ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from the `default` profile at the ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
 
 Before changing it, please also take a look at related [MergeTree settings](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-merge_tree), such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
 
@@ -1684,8 +1684,8 @@ If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table
 Possible values:
 
 -   0 — Disabled.
--   1 — `SELECT` will be executed on each shard from underlying table of the distributed engine.
--   2 — `SELECT` and `INSERT` will be executed on each shard from/to underlying table of the distributed engine.
+-   1 — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
+-   2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
 Default value: 0.
 
@@ -1708,7 +1708,7 @@ Default value: `0`.
 -   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
 ## background\_buffer\_flush\_schedule\_pool\_size {#background_buffer_flush_schedule_pool_size}
 
-Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can’t be changed in a user session.
+Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
 
 Possible values:
 
@@ -1718,7 +1718,7 @@ Default value: 16.
 
 ## background\_move\_pool\_size {#background_move_pool_size}
 
-Sets the number of threads performing background moves of data parts for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)-engine tables. This setting is applied at ClickHouse server start and can’t be changed in a user session.
+Sets the number of threads performing background moves of data parts for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)-engine tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
 
 Possible values:
 
@@ -1740,7 +1740,7 @@ Default value: 16.
 
 Prohibits data parts merging in [Replicated\*MergeTree](../../engines/table-engines/mergetree-family/replication.md)-engine tables.
 
-When merging is prohibited, the replica never merges parts and always downloads merged parts from other replicas. If there is no required data yet, the replica waits for it. CPU and disk load on the replica server decreases, but the network load on cluster increases. This setting can be useful on servers with relatively weak CPUs or slow disks, such as servers for backups storage.
+When merging is prohibited, the replica never merges parts and always downloads merged parts from other replicas. If there is no required data yet, the replica waits for it. CPU and disk load on the replica server decreases, but the network load on the cluster increases. This setting can be useful on servers with relatively weak CPUs or slow disks, such as servers for backups storage.
 
 Possible values:
 
@@ -1755,7 +1755,7 @@ Default value: 0.
 
 ## background\_distributed\_schedule\_pool\_size {#background_distributed_schedule_pool_size}
 
-Sets the number of threads performing background tasks for [distributed](../../engines/table-engines/special/distributed.md) sends. This setting is applied at ClickHouse server start and can’t be changed in a user session.
+Sets the number of threads performing background tasks for [distributed](../../engines/table-engines/special/distributed.md) sends. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
 
 Possible values:
 
@@ -1891,7 +1891,7 @@ Default value: 0.
 
 ## min\_insert\_block\_size\_rows\_for\_materialized\_views {#min-insert-block-size-rows-for-materialized-views}
 
-Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+Sets the minimum number of rows in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
 Possible values:
 
@@ -1906,7 +1906,7 @@ Default value: 1048576.
 
 ## min\_insert\_block\_size\_bytes\_for\_materialized\_views {#min-insert-block-size-bytes-for-materialized-views}
 
-Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
 Possible values:
 
@@ -1921,7 +1921,7 @@ Default value: 268435456.
 
 ## output\_format\_pretty\_grid\_charset {#output-format-pretty-grid-charset}
 
-Allows to change a charset which is used for printing grids borders. Available charsets are following: UTF-8, ASCII.
+Allows changing a charset which is used for printing grids borders. Available charsets are UTF-8, ASCII.
 
 **Example**
 
@@ -1978,12 +1978,12 @@ When `ttl_only_drop_parts` is disabled (by default), the ClickHouse server only 
 
 When `ttl_only_drop_parts` is enabled, the ClickHouse server drops a whole part when all rows in it are expired. 
 
-Dropping whole parts instead of partial cleaning TTL-d rows allows to have shorter `merge_with_ttl_timeout` times and lower impact on system performance.
+Dropping whole parts instead of partial cleaning TTL-d rows allows having shorter `merge_with_ttl_timeout` times and lower impact on system performance.
 
 Possible values:
 
--   0 — Complete dropping of data parts is disabled.
--   1 — Complete dropping of data parts is enabled.
+-   0 — The complete dropping of data parts is disabled.
+-   1 — The complete dropping of data parts is enabled.
 
 Default value: `0`.
 
@@ -1994,9 +1994,9 @@ Default value: `0`.
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
-Defines how many seconds locking request waits before failing. 
+Defines how many seconds a locking request waits before failing. 
 
-Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When timeout expires and locking request fails, the ClickHouse server throws an exeption "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
+Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
 
 Possible values:
 

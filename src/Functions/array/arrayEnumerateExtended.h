@@ -131,14 +131,14 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
     ColumnPtr offsets_column;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
+        const ColumnPtr & array_ptr = block[arguments[i]].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
-                block.getByPosition(arguments[i]).column.get());
+                block[arguments[i]].column.get());
             if (!const_array)
-                throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
+                throw Exception("Illegal column " + block[arguments[i]].column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
             array_holders.emplace_back(const_array->convertToFullColumn());
@@ -201,7 +201,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
             executeHashed(*offsets, data_columns, res_values);
     }
 
-    block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_column);
+    block[result].column = ColumnArray::create(std::move(res_nested), offsets_column);
 }
 
 template <typename Derived>

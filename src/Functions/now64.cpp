@@ -84,7 +84,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result, size_t input_rows_count) const override
     {
-        auto & result_col = block.getByPosition(result);
+        auto & result_col = block[result];
         const UInt32 scale = assert_cast<const DataTypeDateTime64 *>(result_col.type.get())->getScale();
 
         result_col.column = result_col.type->createColumnConst(input_rows_count, nowSubsecond(scale));

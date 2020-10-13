@@ -74,21 +74,21 @@ public:
             if (i % 2)
             {
                 src_array_args.push_back(args[i]);
-                src_array_elems.push_back(block.getByPosition(args[i]));
-                src_array_types.push_back(block.getByPosition(args[i]).type);
+                src_array_elems.push_back(block[args[i]]);
+                src_array_types.push_back(block[args[i]].type);
             }
             else
             {
                 dst_array_args.push_back(args[i]);
-                dst_array_elems.push_back(block.getByPosition(args[i]));
-                dst_array_types.push_back(block.getByPosition(args[i]).type);
+                dst_array_elems.push_back(block[args[i]]);
+                dst_array_types.push_back(block[args[i]].type);
             }
         }
 
         DataTypePtr src_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(src_array_types));
         DataTypePtr dst_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(dst_array_types));
 
-        ColumnsWithTypeAndName temp_block_columns = block.data;
+        ColumnsWithTypeAndName temp_block_columns = block;
 
         size_t src_array_pos = temp_block_columns.size();
         temp_block_columns.emplace_back(ColumnWithTypeAndName {nullptr, src_array_type, ""});
@@ -108,7 +108,7 @@ public:
             ->execute(temp_block_columns, transform_args, result, input_rows_count);
 
         /// Put the result into the original block.
-        block.getByPosition(result).column = std::move(temp_block_columns[result].column);
+        block[result].column = std::move(temp_block_columns[result].column);
     }
 
 private:
