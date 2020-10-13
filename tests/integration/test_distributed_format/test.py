@@ -34,7 +34,7 @@ def test_single_file(started_cluster, cluster):
 
     assert out == '1\ta\n2\tbb\n3\tccc\n'
 
-    query = "create table t (dummy UInt32) engine = File('Distributed', '/var/lib/clickhouse/data/test/distr_1/shard1_replica1/1.bin');" \
+    query = "create table t (x UInt64, s String) engine = File('Distributed', '/var/lib/clickhouse/data/test/distr_1/shard1_replica1/1.bin');" \
             "select * from t"
     out = node.exec_in_container(['/usr/bin/clickhouse', 'local', '--stacktrace', '-q', query])
 
@@ -57,7 +57,7 @@ def test_two_files(started_cluster, cluster):
 
     assert out == '0\t_\n1\ta\n2\tbb\n3\tccc\n'
 
-    query = "create table t (dummy UInt32) engine = File('Distributed', '/var/lib/clickhouse/data/test/distr_2/shard1_replica1/{1,2,3,4}.bin');" \
+    query = "create table t (x UInt64, s String) engine = File('Distributed', '/var/lib/clickhouse/data/test/distr_2/shard1_replica1/{1,2,3,4}.bin');" \
             "select * from t order by x"
     out = node.exec_in_container(['/usr/bin/clickhouse', 'local', '--stacktrace', '-q', query])
 
@@ -77,7 +77,7 @@ def test_single_file_old(started_cluster, cluster):
 
     assert out == '1\ta\n2\tbb\n3\tccc\n'
 
-    query = "create table t (dummy UInt32) engine = File('Distributed', '/var/lib/clickhouse/data/test/distr_3/default@not_existing:9000/1.bin');" \
+    query = "create table t (x UInt64, s String) engine = File('Distributed', '/var/lib/clickhouse/data/test/distr_3/default@not_existing:9000/1.bin');" \
             "select * from t"
     out = node.exec_in_container(['/usr/bin/clickhouse', 'local', '--stacktrace', '-q', query])
 
