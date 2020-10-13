@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 
 namespace DB
@@ -87,6 +88,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
+    std::optional<MergeTreeBackgroundJob> getDataProcessingJob() override;
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -119,7 +121,7 @@ private:
     std::atomic<bool> shutdown_called {false};
 
     /// Task handler for merges, mutations and moves.
-    BackgroundProcessingPool::TaskHandle merging_mutating_task_handle;
+    BackgroundJobsExecutor background_executor;
     BackgroundProcessingPool::TaskHandle moving_task_handle;
 
     void loadMutations();
@@ -142,13 +144,12 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
-    using CurrentlyMergingPartsTaggerPtr = std::unique_ptr<CurrentlyMergingPartsTagger>;
+    using CurrentlyMergingPartsTaggerPtr = std::shared_ptr<CurrentlyMergingPartsTagger>;
 
     struct MergeMutateSelectedEntry
     {
         FutureMergedMutatedPart future_part;
         CurrentlyMergingPartsTaggerPtr tagger;
-        MergeList::EntryPtr merge_entry;
         MutationCommands commands;
     };
 

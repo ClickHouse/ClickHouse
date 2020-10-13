@@ -194,7 +194,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_path(zookeeper_path + "/replicas/" + replica_name)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
+    , merger_mutator(*this, global_context.getSettingsRef().background_pool_size)
     , queue(*this)
     , fetcher(*this)
     , cleanup_thread(*this)
@@ -2597,6 +2597,29 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
             throw;
         }
     });
+}
+
+
+std::optional<MergeTreeBackgroundJob> StorageReplicatedMergeTree::getDataProcessingJob()
+{
+    /// If replication queue is stopped exit immediately as we successfully executed the task
+    if (queue.actions_blocker.isCancelled())
+        return {};
+
+    /// This object will mark the element of the queue as running.
+    ReplicatedMergeTreeQueue::SelectedEntry selected_entry = selectQueueEntry();
+
+    LogEntryPtr & entry = selected_entry.first;
+
+    if (!entry)
+        return {};
+
+    auto job = [this, selected_entry{std::move(selected_entry)}] () mutable
+    {
+        processQueueEntry(selected_entry);
+    };
+
+    return std::make_optional<MergeTreeBackgroundJob>(std::move(job), CurrentMetrics::BackgroundPoolTask, PoolType::MERGE_MUTATE);
 }
 
 BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
