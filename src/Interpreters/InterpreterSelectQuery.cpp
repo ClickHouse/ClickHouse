@@ -1907,7 +1907,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
     const Settings & settings = context->getSettingsRef();
 
     SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), limits, *context);
+    addCreatingSetsStep(query_plan, subqueries_for_sets, limits, *context);
 }
 
 

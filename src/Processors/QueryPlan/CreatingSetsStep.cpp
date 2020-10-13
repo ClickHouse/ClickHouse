@@ -108,7 +108,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
 }
 
 void addCreatingSetsStep(
-    QueryPlan & query_plan, SubqueriesForSets subqueries_for_sets, const SizeLimits & limits, const Context & context)
+    QueryPlan & query_plan, SubqueriesForSets & subqueries_for_sets, const SizeLimits & limits, const Context & context)
 {
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());
