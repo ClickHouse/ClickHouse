@@ -52,12 +52,9 @@ SELECT encrypt('aes-128-gcm', 'text', 'key', 'IV', 1213); --{serverError 43} bad
 -- Valid cases
 -----------------------------------------------------------------------------------------
 
-SELECT 'UInt64';
-SELECT hex(aes_encrypt_mysql('aes-128-ecb', 123456789101112, 'keykeykeykeykeykeykeykeykeykeyke'));
-SELECT 'Float64';
-SELECT hex(aes_encrypt_mysql('aes-128-ecb', 1234567891011.12, 'keykeykeykeykeykeykeykeykeykeyke'));
-SELECT 'Decimal64';
-SELECT hex(aes_encrypt_mysql('aes-128-ecb', toDecimal64(1234567891011.12, 2), 'keykeykeykeykeykeykeykeykeykeyke'));
+SELECT 'UInt64', hex(aes_encrypt_mysql('aes-128-ecb', 123456789101112, 'keykeykeykeykeykeykeykeykeykeyke'));
+SELECT 'Float64', hex(aes_encrypt_mysql('aes-128-ecb', 1234567891011.12, 'keykeykeykeykeykeykeykeykeykeyke'));
+SELECT 'Decimal64', hex(aes_encrypt_mysql('aes-128-ecb', toDecimal64(1234567891011.12, 2), 'keykeykeykeykeykeykeykeykeykeyke'));
 
 -----------------------------------------------------------------------------------------
 -- Validate against predefined ciphertext,plaintext,key and IV for MySQL compatibility mode
@@ -66,51 +63,85 @@ CREATE TABLE encryption_test
 (
     input String,
     key String DEFAULT unhex('fb9958e2e897ef3fdb49067b51a24af645b3626eed2f9ea1dc7fd4dd71b7e38f9a68db2a3184f952382c783785f9d77bf923577108a88adaacae5c141b1576b0'),
-    iv String DEFAULT unhex('8CA3554377DFF8A369BC50A89780DD85')
+    iv String DEFAULT unhex('8CA3554377DFF8A369BC50A89780DD85'),
+    key32 String DEFAULT substring(key, 1, 32),
+    key24 String DEFAULT substring(key, 1, 24),
+    key16 String DEFAULT substring(key, 1, 16)
 ) Engine = Memory;
 
 INSERT INTO encryption_test (input)
 VALUES (''), ('text'), ('What Is ClickHouse? ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).');
 
-SELECT 'MySQL-specific key folding';
-SELECT 'aes-128-ecb' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-192-ecb' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-256-ecb' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
 
-SELECT 'aes-128-cbc' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-192-cbc' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-256-cbc' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
+SELECT 'MySQL-compatitable mode, with key folding, no length checks, etc.';
+SELECT 'aes-128-cbc' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-192-cbc' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-256-cbc' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
 
-SELECT 'aes-128-cfb1' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-192-cfb1' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-256-cfb1' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
+SELECT 'aes-128-cfb1' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-192-cfb1' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-256-cfb1' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
 
-SELECT 'aes-128-cfb8' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-192-cfb8' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-256-cfb8' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
+SELECT 'aes-128-cfb8' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-192-cfb8' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-256-cfb8' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
 
-SELECT 'aes-128-cfb128' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-192-cfb128' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-256-cfb128' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
+SELECT 'aes-128-cfb128' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-192-cfb128' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-256-cfb128' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
 
-SELECT 'aes-128-ofb' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-192-ofb' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
-SELECT 'aes-256-ofb' as mode, hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test;
+SELECT 'aes-128-ecb' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-192-ecb' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-256-ecb' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
 
-SELECT 'Nullable and LowCardinality';
-WITH CAST(NULL as Nullable(String)) as input, 'aes-256-ofb' as mode SELECT toTypeName(input), hex(aes_encrypt_mysql(mode, input, key,iv)) FROM encryption_test LIMIT 1;
-WITH CAST('text' as Nullable(String)) as input, 'aes-256-ofb' as mode SELECT toTypeName(input), hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test LIMIT 1;
-WITH CAST('text' as LowCardinality(String)) as input, 'aes-256-ofb' as mode SELECT toTypeName(input), hex(aes_encrypt_mysql(mode, input, key, iv)) FROM encryption_test LIMIT 1;
+SELECT 'aes-128-ofb' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-192-ofb' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+SELECT 'aes-256-ofb' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+
+
+SELECT 'Strict mode without key folding and proper key and iv lengths checks.';
+SELECT 'aes-128-cbc' as mode, hex(encrypt(mode, input, key16, iv)) FROM encryption_test;
+SELECT 'aes-192-cbc' as mode, hex(encrypt(mode, input, key24, iv)) FROM encryption_test;
+SELECT 'aes-256-cbc' as mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
+
+SELECT 'aes-128-cfb1' as mode, hex(encrypt(mode, input, key16, iv)) FROM encryption_test;
+SELECT 'aes-192-cfb1' as mode, hex(encrypt(mode, input, key24, iv)) FROM encryption_test;
+SELECT 'aes-256-cfb1' as mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
+
+SELECT 'aes-128-cfb8' as mode, hex(encrypt(mode, input, key16, iv)) FROM encryption_test;
+SELECT 'aes-192-cfb8' as mode, hex(encrypt(mode, input, key24, iv)) FROM encryption_test;
+SELECT 'aes-256-cfb8' as mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
+
+SELECT 'aes-128-cfb128' as mode, hex(encrypt(mode, input, key16, iv)) FROM encryption_test;
+SELECT 'aes-192-cfb128' as mode, hex(encrypt(mode, input, key24, iv)) FROM encryption_test;
+SELECT 'aes-256-cfb128' as mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
+
+SELECT 'aes-128-ctr' as mode, hex(encrypt(mode, input, key16, iv)) FROM encryption_test;
+SELECT 'aes-192-ctr' as mode, hex(encrypt(mode, input, key24, iv)) FROM encryption_test;
+SELECT 'aes-256-ctr' as mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
+
+SELECT 'aes-128-ecb' as mode, hex(encrypt(mode, input, key16)) FROM encryption_test;
+SELECT 'aes-192-ecb' as mode, hex(encrypt(mode, input, key24)) FROM encryption_test;
+SELECT 'aes-256-ecb' as mode, hex(encrypt(mode, input, key32)) FROM encryption_test;
+
+SELECT 'aes-128-ofb' as mode, hex(encrypt(mode, input, key16, iv)) FROM encryption_test;
+SELECT 'aes-192-ofb' as mode, hex(encrypt(mode, input, key24, iv)) FROM encryption_test;
+SELECT 'aes-256-ofb' as mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
 
 SELECT 'GCM mode with IV';
-SELECT 'aes-128-gcm' as mode, hex(encrypt(mode, input, substr(key, 1, 16), iv)) FROM encryption_test;
-SELECT 'aes-192-gcm' as mode, hex(encrypt(mode, input, substr(key, 1, 24), iv)) FROM encryption_test;
-SELECT 'aes-256-gcm' as mode, hex(encrypt(mode, input, substr(key, 1, 32), iv)) FROM encryption_test;
+SELECT 'aes-128-gcm' as mode, hex(encrypt(mode, input, key16, iv)) FROM encryption_test;
+SELECT 'aes-192-gcm' as mode, hex(encrypt(mode, input, key24, iv)) FROM encryption_test;
+SELECT 'aes-256-gcm' as mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
 
 SELECT 'GCM mode with IV and AAD';
-SELECT 'aes-128-gcm' as mode, hex(encrypt(mode, input, substr(key, 1, 16), iv, 'AAD')) FROM encryption_test;
-SELECT 'aes-192-gcm' as mode, hex(encrypt(mode, input, substr(key, 1, 24), iv, 'AAD')) FROM encryption_test;
-SELECT 'aes-256-gcm' as mode, hex(encrypt(mode, input, substr(key, 1, 32), iv, 'AAD')) FROM encryption_test;
+SELECT 'aes-128-gcm' as mode, hex(encrypt(mode, input, key16, iv, 'AAD')) FROM encryption_test;
+SELECT 'aes-192-gcm' as mode, hex(encrypt(mode, input, key24, iv, 'AAD')) FROM encryption_test;
+SELECT 'aes-256-gcm' as mode, hex(encrypt(mode, input, key32, iv, 'AAD')) FROM encryption_test;
+
+SELECT 'Nullable and LowCardinality';
+WITH CAST(NULL as Nullable(String)) as input, 'aes-256-ofb' as mode SELECT toTypeName(input), hex(aes_encrypt_mysql(mode, input, key32,iv)) FROM encryption_test LIMIT 1;
+WITH CAST('text' as Nullable(String)) as input, 'aes-256-ofb' as mode SELECT toTypeName(input), hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test LIMIT 1;
+WITH CAST('text' as LowCardinality(String)) as input, 'aes-256-ofb' as mode SELECT toTypeName(input), hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test LIMIT 1;
 
 -- based on https://github.com/openssl/openssl/blob/master/demos/evp/aesgcm.c#L20
 WITH

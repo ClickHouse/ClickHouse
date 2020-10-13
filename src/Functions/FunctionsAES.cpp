@@ -40,7 +40,7 @@ StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, const
 
 const EVP_CIPHER * getCipherByName(const StringRef & cipher_name)
 {
-    const auto *evp_cipher = EVP_get_cipherbyname(cipher_name.data);
+    const auto * evp_cipher = EVP_get_cipherbyname(cipher_name.data);
     if (evp_cipher == nullptr)
     {
         // For some reasons following ciphers can't be found by name.
