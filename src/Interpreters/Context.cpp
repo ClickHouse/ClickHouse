@@ -61,6 +61,7 @@
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 namespace ProfileEvents
 {
@@ -1373,6 +1374,37 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             "BgBufSchPool");
     return *shared->buffer_flush_schedule_pool;
+}
+
+TaskSleepSettings Context::getBackgroundProcessingTaskSleepSettings()
+{
+    TaskSleepSettings task_settings;
+
+    const auto & config = getConfigRef();
+    task_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
+    task_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
+    task_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+    task_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+    task_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+    task_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+    task_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+    return task_settings;
+}
+
+TaskSleepSettings Context::getBackgroundMoveTaskSleepSettings()
+{
+    TaskSleepSettings task_settings;
+
+    const auto & config = getConfigRef();
+    task_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
+    task_settings.thread_sleep_seconds_random_part = config.getDouble("background_move_processing_pool_thread_sleep_seconds_random_part", 1.0);
+    task_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+    task_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+    task_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+    task_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+    task_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+
+    return task_settings;
 }
 
 BackgroundSchedulePool & Context::getSchedulePool()

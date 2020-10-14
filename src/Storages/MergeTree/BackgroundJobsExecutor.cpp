@@ -39,27 +39,35 @@ bool incrementIfLess(std::atomic<long> & atomic_value, long max_value)
 {
     auto value = atomic_value.load(std::memory_order_relaxed);
     while (value < max_value)
-        if(atomic_value.compare_exchange_weak(value, value + 1, std::memory_order_release, std::memory_order_relaxed))
+    {
+        if (atomic_value.compare_exchange_weak(value, value + 1, std::memory_order_release, std::memory_order_relaxed))
             return true;
+    }
     return false;
 }
 
 }
-
 
 void IBackgroundJobExecutor::scheduleTask(bool nothing_to_do)
 {
     auto errors = errors_count.load(std::memory_order_relaxed);
     size_t next_time_to_execute = 0;
     if (errors != 0)
+    {
         next_time_to_execute += 1000 * (std::min(
                 sleep_settings.task_sleep_seconds_when_no_work_max,
                 sleep_settings.task_sleep_seconds_when_no_work_min * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, errors))
             + std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng));
+    }
     else if (nothing_to_do)
-        next_time_to_execute += 1000 * (sleep_settings.thread_sleep_seconds_if_nothing_to_do + std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng)); 
+    {
+        next_time_to_execute += 1000 * (sleep_settings.thread_sleep_seconds_if_nothing_to_do
+            + std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng)); 
+    }
     else
+    {
         next_time_to_execute = 1000 * std::uniform_real_distribution<double>(0, sleep_settings.thread_sleep_seconds_random_part)(rng);
+    }
 
      scheduling_task->scheduleAfter(next_time_to_execute);
 }
@@ -138,7 +146,7 @@ void IBackgroundJobExecutor::triggerDataProcessing()
         scheduling_task->schedule();
 }
 
- IBackgroundJobExecutor::~IBackgroundJobExecutor()
+IBackgroundJobExecutor::~IBackgroundJobExecutor()
 {
     finish();
 }
@@ -150,7 +158,7 @@ BackgroundJobsExecutor::BackgroundJobsExecutor(
         data_,
         global_context_,
         "(dataProcessingTask)",
-        TaskSleepSettings{},
+        global_context_.getBackgroundProcessingTaskSleepSettings(),
         {PoolConfig{PoolType::MERGE_MUTATE, global_context_.getSettingsRef().background_pool_size, CurrentMetrics::BackgroundPoolTask}})
 {
 }
@@ -170,7 +178,7 @@ BackgroundMovesExecutor::BackgroundMovesExecutor(
         data_,
         global_context_,
         "(dataMovingTask)",
-        TaskSleepSettings{},
+        global_context_.getBackgroundMoveTaskSleepSettings(),
         {PoolConfig{PoolType::MOVE, global_context_.getSettingsRef().background_move_pool_size, CurrentMetrics::BackgroundMovePoolTask}})
 {
 }
