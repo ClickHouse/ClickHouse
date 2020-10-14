@@ -291,12 +291,11 @@ static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTy
 
     auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
 
-    Block block = args;
-    block.insert({nullptr, eq_func->getReturnType(), ""});
+    args.emplace_back(ColumnWithTypeAndName{nullptr, eq_func->getReturnType(), ""});
 
-    eq_func->execute(block, {0, 1}, 2, args.front().column->size());
+    eq_func->execute(args, {0, 1}, 2, args.front().column->size());
 
-    return block.getByPosition(2).column;
+    return args[2].column;
 }
 
 FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(

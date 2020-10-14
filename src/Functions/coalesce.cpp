@@ -114,11 +114,11 @@ public:
 
         ColumnNumbers multi_if_args;
 
-        Block temp_block = block;
+        ColumnsWithTypeAndName temp_block_columns = block.data;
 
         for (size_t i = 0; i < filtered_args.size(); ++i)
         {
-            size_t res_pos = temp_block.columns();
+            size_t res_pos = temp_block_columns.size();
             bool is_last = i + 1 == filtered_args.size();
 
             if (is_last)
@@ -127,10 +127,10 @@ public:
             }
             else
             {
-                temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
-                is_not_null->build({temp_block.getByPosition(filtered_args[i])})->execute(temp_block, {filtered_args[i]}, res_pos, input_rows_count);
-                temp_block.insert({nullptr, removeNullable(block.getByPosition(filtered_args[i]).type), ""});
-                assume_not_null->build({temp_block.getByPosition(filtered_args[i])})->execute(temp_block, {filtered_args[i]}, res_pos + 1, input_rows_count);
+                temp_block_columns.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});
+                is_not_null->build({temp_block_columns[filtered_args[i]]})->execute(temp_block_columns, {filtered_args[i]}, res_pos, input_rows_count);
+                temp_block_columns.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(block.getByPosition(filtered_args[i]).type), ""});
+                assume_not_null->build({temp_block_columns[filtered_args[i]]})->execute(temp_block_columns, {filtered_args[i]}, res_pos + 1, input_rows_count);
 
                 multi_if_args.push_back(res_pos);
                 multi_if_args.push_back(res_pos + 1);
@@ -153,11 +153,11 @@ public:
         ColumnsWithTypeAndName multi_if_args_elems;
         multi_if_args_elems.reserve(multi_if_args.size());
         for (auto column_num : multi_if_args)
-            multi_if_args_elems.emplace_back(temp_block.getByPosition(column_num));
+            multi_if_args_elems.emplace_back(temp_block_columns[column_num]);
 
-        multi_if->build(multi_if_args_elems)->execute(temp_block, multi_if_args, result, input_rows_count);
+        multi_if->build(multi_if_args_elems)->execute(temp_block_columns, multi_if_args, result, input_rows_count);
 
-        ColumnPtr res = std::move(temp_block.getByPosition(result).column);
+        ColumnPtr res = std::move(temp_block_columns[result].column);
 
         /// if last argument is not nullable, result should be also not nullable
         if (!block.getByPosition(multi_if_args.back()).column->isNullable() && res->isNullable())

@@ -723,4 +723,44 @@ SELECT toLowCardinality('1')
 └───────────────────────┘
 ```
 
+## formatRow {#formatrow}
+
+Преобразует произвольные выражения в строку заданного формата.
+
+**Синтаксис** 
+
+``` sql
+formatRow(format, x, y, ...)
+```
+
+**Параметры**
+
+-   `format` — Текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Выражения.
+
+**Возвращаемое значение**
+
+-   Отформатированная строка (в текстовых форматах обычно с завершающим переводом строки).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT formatRow('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Ответ:
+
+``` text
+┌─formatRow('CSV', number, 'good')─┐
+│ 0,"good"
+                         │
+│ 1,"good"
+                         │
+│ 2,"good"
+                         │
+└──────────────────────────────────┘
+```
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->

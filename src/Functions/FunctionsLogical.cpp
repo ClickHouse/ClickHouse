@@ -554,7 +554,7 @@ DataTypePtr FunctionUnaryLogical<Impl, Name>::getReturnTypeImpl(const DataTypes 
 }
 
 template <template <typename> class Impl, typename T>
-bool functionUnaryExecuteType(Block & block, const ColumnNumbers & arguments, size_t result)
+bool functionUnaryExecuteType(FunctionArguments & block, const ColumnNumbers & arguments, size_t result)
 {
     if (auto col = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
     {

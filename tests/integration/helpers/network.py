@@ -166,6 +166,17 @@ class _NetworkManager:
                 except docker.errors.NotFound:
                     pass
 
+            # for some reason docker api may hang if image doesn't exist, so we download it
+            # before running
+            for i in range(5):
+                try:
+                    subprocess.check_call("docker pull yandex/clickhouse-integration-helper", shell=True)
+                    break
+                except:
+                    time.sleep(i)
+            else:
+                raise Exception("Cannot pull yandex/clickhouse-integration-helper image")
+
             self._container = self._docker_client.containers.run('yandex/clickhouse-integration-helper',
                                                                  auto_remove=True,
                                                                  command=('sleep %s' % self.container_exit_timeout),

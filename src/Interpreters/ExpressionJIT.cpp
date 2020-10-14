@@ -107,9 +107,9 @@ static ColumnData getColumnData(const IColumn * column)
 static void applyFunction(IFunctionBase & function, Field & value)
 {
     const auto & type = function.getArgumentTypes().at(0);
-    Block block = {{ type->createColumnConst(1, value), type, "x" }, { nullptr, function.getReturnType(), "y" }};
+    ColumnsWithTypeAndName block = {{ type->createColumnConst(1, value), type, "x" }, { nullptr, function.getReturnType(), "y" }};
     function.execute(block, {0}, 1, 1);
-    block.safeGetByPosition(1).column->get(0, value);
+    block[1].column->get(0, value);
 }
 
 static llvm::TargetMachine * getNativeMachine()
@@ -441,7 +441,7 @@ struct LLVMModuleState
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
 };
 
-LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, const Block & sample_block)
+LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, const DB::Block & sample_block)
     : name(actions.back().result_name)
     , module_state(std::make_unique<LLVMModuleState>())
 {
@@ -510,7 +510,7 @@ bool LLVMFunction::isSuitableForConstantFolding() const
     return true;
 }
 
-bool LLVMFunction::isInjective(const Block & sample_block) const
+bool LLVMFunction::isInjective(const ColumnsWithTypeAndName & sample_block) const
 {
     for (const auto & f : originals)
         if (!f->isInjective(sample_block))
