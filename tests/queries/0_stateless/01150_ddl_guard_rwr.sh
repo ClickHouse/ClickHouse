@@ -39,5 +39,6 @@ timeout 20 bash -c 'thread_rename' &
 wait
 sleep 1
 
+$CLICKHOUSE_CLIENT --query "DETACH DATABASE IF EXISTS test_01150"
 $CLICKHOUSE_CLIENT --query "ATTACH DATABASE IF NOT EXISTS test_01150"
 $CLICKHOUSE_CLIENT --query "DROP DATABASE test_01150";
