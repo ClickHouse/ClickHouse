@@ -10,8 +10,8 @@ rankCorr(x, y)
 
 **Parameters**
 
--   `x` — Floating-point number. [Float64](../../../sql-reference/data-types/float.md#float32-float64-float32-float64).
--   `y` — Floating-point number. [Float64](../../../sql-reference/data-types/float.md#float32-float64-float32-float64).
+-   `x` — Floating-point number. [Float64](../../../sql-reference/data-types/float.md).
+-   `y` — Floating-point number. [Float64](../../../sql-reference/data-types/float.md).
 
 **Returned value(s)**
 
