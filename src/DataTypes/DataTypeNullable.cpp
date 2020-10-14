@@ -527,13 +527,12 @@ bool DataTypeNullable::equals(const IDataType & rhs) const
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
 }
 
-DataTypePtr DataTypeNullable::getSubcolumnType(const String & subcolumn_name) const
+DataTypePtr DataTypeNullable::tryGetSubcolumnType(const String & subcolumn_name) const
 {
-    std::cerr << "(DataTypeNullable::getSubcolumnType) subcolumn_name: " << subcolumn_name << "\n";
     if (subcolumn_name == "null")
         return std::make_shared<DataTypeUInt8>();
 
-    return nested_data_type->getSubcolumnType(subcolumn_name);
+    return nested_data_type->tryGetSubcolumnType(subcolumn_name);
 }
 
 MutableColumnPtr DataTypeNullable::getSubcolumn(const String & subcolumn_name, IColumn & column) const
@@ -543,14 +542,6 @@ MutableColumnPtr DataTypeNullable::getSubcolumn(const String & subcolumn_name, I
         return column_nullable.getNullMapColumnPtr()->assumeMutable();
 
     return nested_data_type->getSubcolumn(subcolumn_name, column_nullable.getNestedColumn());
-}
-
-String DataTypeNullable::getEscapedFileName(const NameAndTypePair & column) const
-{
-    if (column.isSubcolumn())
-        return escapeForFileName(column.getStorageName()) + "." + column.getSubcolumnName();
-
-    return escapeForFileName(column.name);
 }
 
 

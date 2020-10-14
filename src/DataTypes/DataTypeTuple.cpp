@@ -421,14 +421,6 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-String DataTypeTuple::getEscapedFileName(const NameAndTypePair & column) const
-{
-    if (column.isSubcolumn())
-        return escapeForFileName(column.getStorageName()) + "%2E" + column.getSubcolumnName();
-
-    return escapeForFileName(column.name);
-}
-
 void DataTypeTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
     for (; value_index < elems.size(); ++value_index)
@@ -539,7 +531,7 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
     return res;
 }
 
-DataTypePtr DataTypeTuple::getSubcolumnType(const String & subcolumn_name) const
+DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) const
 {
     for (size_t i = 0; i < names.size(); ++i)
     {
@@ -550,11 +542,11 @@ DataTypePtr DataTypeTuple::getSubcolumnType(const String & subcolumn_name) const
                 return elems[i];
 
             if (subcolumn_name[name_length] == '.')
-                return elems[i]->getSubcolumnType(subcolumn_name.substr(name_length + 1));
+                return elems[i]->tryGetSubcolumnType(subcolumn_name.substr(name_length + 1));
         }
     }
 
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
+    return nullptr;
 }
 
 MutableColumnPtr DataTypeTuple::getSubcolumn(const String & subcolumn_name, IColumn & column) const

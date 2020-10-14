@@ -37,7 +37,7 @@ struct NameAndTypePair;
   *
   * DataType is totally immutable object. You can always share them.
   */
-class IDataType : private boost::noncopyable, public std::enable_shared_from_this<IDataType>
+class IDataType : private boost::noncopyable
 {
 public:
     IDataType();
@@ -101,6 +101,8 @@ public:
         /// Index of tuple element, starting at 1.
         String tuple_element_name;
 
+        bool is_part_of_nested = false;
+
         Substream(Type type_) : type(type_) {}
     };
 
@@ -115,7 +117,8 @@ public:
     void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
 
-    virtual DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
+    virtual DataTypePtr tryGetSubcolumnType(const String & /* subcolumn_name */) const { return nullptr; }
+    DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
     virtual MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const;
     std::vector<String> getSubcolumnNames() const;
 
@@ -446,7 +449,7 @@ public:
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
 
-    virtual String getEscapedFileName(const NameAndTypePair & column) const;
+    virtual size_t getNestedLevel() const { return 0; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);

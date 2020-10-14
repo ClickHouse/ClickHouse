@@ -13,10 +13,12 @@ private:
     /// The type of array elements.
     DataTypePtr nested;
 
+    size_t nested_level = 0;
+
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeArray(const DataTypePtr & nested_);
+    DataTypeArray(const DataTypePtr & nested_, size_t nested_level_ = 0);
 
     TypeIndex getTypeId() const override { return TypeIndex::Array; }
 
@@ -34,6 +36,8 @@ public:
     {
         return false;
     }
+
+    size_t getNestedLevel() const override { return nested_level; }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
@@ -111,10 +115,8 @@ public:
         return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
     }
 
-    DataTypePtr getSubcolumnType(const String & subcolumn_name) const override;
+    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const override;
-
-    String getEscapedFileName(const NameAndTypePair & column) const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
 
@@ -123,6 +125,7 @@ public:
 
 private:
     MutableColumnPtr getSubcolumnImpl(const String & subcolumn_name, IColumn & column, size_t level) const;
+    DataTypePtr tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const;
 };
 
 }
