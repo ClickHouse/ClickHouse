@@ -1813,6 +1813,7 @@ public:
     ColumnExprContext *columnExpr();
     AliasContext *alias();
     antlr4::tree::TerminalNode *AS();
+    IdentifierContext *identifier();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -2229,6 +2230,7 @@ public:
     TableExprContext *tableExpr();
     AliasContext *alias();
     antlr4::tree::TerminalNode *AS();
+    IdentifierContext *identifier();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 

@@ -161,7 +161,8 @@ antlrcpp::Any ParseTreeVisitor::visitTableArgList(ClickHouseParser::TableArgList
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprAlias(ClickHouseParser::TableExprAliasContext *ctx)
 {
-    return TableExpr::createAlias(visit(ctx->tableExpr()), visit(ctx->alias()));
+    if (ctx->AS()) return TableExpr::createAlias(visit(ctx->tableExpr()), visit(ctx->identifier()));
+    else return TableExpr::createAlias(visit(ctx->tableExpr()), visit(ctx->alias()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprFunction(ClickHouseParser::TableExprFunctionContext *ctx)

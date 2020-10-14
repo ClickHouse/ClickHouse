@@ -293,7 +293,7 @@ columnExpr
     | columnExpr OR columnExpr                                                            # ColumnExprOr
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                                   # ColumnExprBetween
     | <assoc=right> columnExpr QUERY columnExpr COLON columnExpr                          # ColumnExprTernaryOp
-    | columnExpr AS? alias                                                                # ColumnExprAlias
+    | columnExpr (alias | AS identifier)                                                  # ColumnExprAlias
 
     | (tableIdentifier DOT)? ASTERISK                                                     # ColumnExprAsterisk  // single-column only
     | LPAREN selectUnionStmt RPAREN                                                       # ColumnExprSubquery  // single-column only
@@ -316,10 +316,10 @@ nestedIdentifier: identifier (DOT identifier)?;
 // Tables
 
 tableExpr
-    : tableIdentifier                # TableExprIdentifier
-    | tableFunctionExpr              # TableExprFunction
-    | LPAREN selectUnionStmt RPAREN  # TableExprSubquery
-    | tableExpr AS? alias            # TableExprAlias
+    : tableIdentifier                    # TableExprIdentifier
+    | tableFunctionExpr                  # TableExprFunction
+    | LPAREN selectUnionStmt RPAREN      # TableExprSubquery
+    | tableExpr (alias | AS identifier)  # TableExprAlias
     ;
 tableFunctionExpr: identifier LPAREN tableArgList? RPAREN;
 tableIdentifier: (databaseIdentifier DOT)? identifier;

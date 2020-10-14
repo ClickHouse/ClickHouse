@@ -175,7 +175,8 @@ antlrcpp::Any ParseTreeVisitor::visitColumnArgList(ClickHouseParser::ColumnArgLi
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprAlias(ClickHouseParser::ColumnExprAliasContext *ctx)
 {
-    return ColumnExpr::createAlias(visit(ctx->columnExpr()), visit(ctx->alias()));
+    if (ctx->AS()) return ColumnExpr::createAlias(visit(ctx->columnExpr()), visit(ctx->identifier()));
+    else return ColumnExpr::createAlias(visit(ctx->columnExpr()), visit(ctx->alias()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprAnd(ClickHouseParser::ColumnExprAndContext *ctx)

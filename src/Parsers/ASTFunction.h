@@ -18,7 +18,9 @@ public:
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
 
-public:
+    /// do not print empty parentheses if there are no args - compatibility with new AST for data types.
+    bool no_empty_args = false;
+
     /** Get text identifying the AST node. */
     String getID(char delim) const override;
 

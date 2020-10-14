@@ -101,6 +101,7 @@ ASTPtr EngineExpr::convertToOld() const
     auto expr = std::make_shared<ASTFunction>();
 
     expr->name = get<Identifier>(NAME)->getName();
+    expr->no_empty_args = true;
     if (has(ARGS))
     {
         expr->arguments = get(ARGS)->convertToOld();

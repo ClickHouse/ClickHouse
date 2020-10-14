@@ -1811,6 +1811,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     {
         auto func = std::make_shared<ASTFunction>();
         tryGetIdentifierNameInto(ident, func->name);
+        func->no_empty_args = true;
         node = func;
         return true;
     }

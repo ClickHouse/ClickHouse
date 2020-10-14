@@ -76,6 +76,7 @@ ASTPtr ColumnTypeExpr::convertToOld() const
     auto func = std::make_shared<ASTFunction>();
 
     func->name = get<Identifier>(NAME)->getName();
+    func->no_empty_args = true;
     if (expr_type != ExprType::SIMPLE && has(LIST))
     {
         func->arguments = get(LIST)->convertToOld();

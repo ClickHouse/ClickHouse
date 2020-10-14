@@ -43,11 +43,17 @@ int main(int argc, const char **)
             {
                 std::cout << std::endl << "Original AST:" << std::endl;
                 orig_ast->dumpTree(std::cout);
+                std::cout << std::endl << "Original query:" << std::endl;
+                orig_ast->format({std::cout, false});
+                std::cout << std::endl;
             }
             if (old_ast)
             {
                 std::cout << std::endl << "Converted AST:" << std::endl;
                 old_ast->dumpTree(std::cout);
+                std::cout << std::endl << "Converted query:" << std::endl;
+                old_ast->format({std::cout, false});
+                std::cout << std::endl;
             }
         }
     }
