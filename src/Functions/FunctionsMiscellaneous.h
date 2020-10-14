@@ -121,8 +121,8 @@ public:
 
     void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
+        ColumnsWithTypeAndName columns_to_catpure;
+        columns_to_catpure.reserve(arguments.size());
 
         Names names;
         DataTypes types;
@@ -140,12 +140,12 @@ public:
         }
 
         for (const auto & argument : arguments)
-            columns.push_back(columns[argument]);
+            columns_to_catpure.push_back(columns[argument]);
 
         auto function = std::make_unique<FunctionExpression>(expression_actions, types, names,
                                                              capture->return_type, capture->return_name);
         auto function_adaptor = std::make_shared<FunctionBaseAdaptor>(std::move(function));
-        columns[result].column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns);
+        columns[result].column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns_to_catpure);
     }
 
 private:
