@@ -305,6 +305,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 select_query->limit_with_ties = false;
             }
+            else
+            {
+                return false;
+            }
         }
     }
 
