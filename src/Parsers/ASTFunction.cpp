@@ -380,7 +380,8 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
         if (arguments)
         {
-            settings.ostr << '(' << (settings.hilite ? hilite_none : "");
+            if (!arguments->children.empty() || !no_empty_args)
+                settings.ostr << '(' << (settings.hilite ? hilite_none : "");
 
             bool special_hilite_regexp = settings.hilite
                 && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne" || name == "replaceRegexpAll");
@@ -398,7 +399,8 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
 
-            settings.ostr << (settings.hilite ? hilite_function : "") << ')';
+            if (!arguments->children.empty() || !no_empty_args)
+                settings.ostr << (settings.hilite ? hilite_function : "") << ')';
         }
 
         settings.ostr << (settings.hilite ? hilite_none : "");

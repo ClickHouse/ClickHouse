@@ -49,6 +49,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto func = std::make_shared<ASTFunction>();
     tryGetIdentifierNameInto(name, func->name);
+    // FIXME(ilezhankin): func->no_empty_args = true; ?
     func->arguments = columns;
     func->children.push_back(columns);
     node = func;
