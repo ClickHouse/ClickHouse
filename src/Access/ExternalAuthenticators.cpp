@@ -29,6 +29,7 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
     const bool has_port = config.has(ldap_server_config + ".port");
     const bool has_auth_dn_prefix = config.has(ldap_server_config + ".auth_dn_prefix");
     const bool has_auth_dn_suffix = config.has(ldap_server_config + ".auth_dn_suffix");
+    const bool has_verification_cooldown = config.has(ldap_server_config + ".verification_cooldown");
     const bool has_enable_tls = config.has(ldap_server_config + ".enable_tls");
     const bool has_tls_minimum_protocol_version = config.has(ldap_server_config + ".tls_minimum_protocol_version");
     const bool has_tls_require_cert = config.has(ldap_server_config + ".tls_require_cert");
@@ -51,6 +52,9 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
 
     if (has_auth_dn_suffix)
         params.auth_dn_suffix = config.getString(ldap_server_config + ".auth_dn_suffix");
+
+    if (has_verification_cooldown)
+        params.verification_cooldown = std::chrono::seconds{config.getUInt64(ldap_server_config + ".verification_cooldown")};
 
     if (has_enable_tls)
     {

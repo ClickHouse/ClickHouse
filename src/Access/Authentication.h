@@ -6,6 +6,7 @@
 #include <Poco/SHA1Engine.h>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <chrono>
 
 
 namespace DB
@@ -103,7 +104,11 @@ private:
 
     Type type = Type::NO_PASSWORD;
     Digest password_hash;
+
+    // Used and maintained only for LDAP.
     String server_name;
+    mutable std::size_t last_successful_password_check_params_hash = 0;
+    mutable std::chrono::steady_clock::time_point last_successful_password_check_timestamp;
 };
 
 

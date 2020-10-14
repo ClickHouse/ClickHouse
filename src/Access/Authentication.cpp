@@ -86,8 +86,37 @@ bool Authentication::isCorrectPassword(const String & password_, const String & 
             ldap_server_params.user = user_;
             ldap_server_params.password = password_;
 
+            const auto current_params_hash = ldap_server_params.getCoreHash();
+            const auto last_check_period = std::chrono::steady_clock::now() - last_successful_password_check_timestamp;
+
+            if (
+                // Forbid the initial values explicitly.
+                last_successful_password_check_params_hash != 0 &&
+                last_successful_password_check_timestamp != std::chrono::steady_clock::time_point{} &&
+
+                // Check if we can "reuse" the result of the previous successful password verification.
+                current_params_hash == last_successful_password_check_params_hash &&
+                last_check_period <= ldap_server_params.verification_cooldown
+            )
+            {
+                return true;
+            }
+
             LDAPSimpleAuthClient ldap_client(ldap_server_params);
-            return ldap_client.check();
+            const auto result = ldap_client.check();
+
+            if (result)
+            {
+                last_successful_password_check_params_hash = current_params_hash;
+                last_successful_password_check_timestamp = std::chrono::steady_clock::now();
+            }
+            else
+            {
+                last_successful_password_check_params_hash = 0;
+                last_successful_password_check_timestamp = std::chrono::steady_clock::time_point{};
+            }
+
+            return result;
         }
 
         case MAX_TYPE:
