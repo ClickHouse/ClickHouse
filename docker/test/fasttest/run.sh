@@ -33,7 +33,7 @@ server_pid=none
 
 function stop_server
 {
-    if kill -0 -- "$server_pid"
+    if ! kill -0 -- "$server_pid"
     then
         echo "ClickHouse server pid '$server_pid' is not running"
         return 0
@@ -274,7 +274,7 @@ then
     stop_server ||:
 
     # Clean the data so that there is no interference from the previous test run.
-    rm -rf "$FASTTEST_DATA"/{meta,}data ||:
+    rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files} ||:
 
     start_server
 
