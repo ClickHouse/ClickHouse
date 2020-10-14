@@ -101,7 +101,7 @@ public:
 
     const Block & getHeader() const { return pipe.getHeader(); }
 
-    void addTableLock(const TableLockHolder & lock) { pipe.addTableLock(lock); }
+    void addTableLock(TableLockHolder lock) { pipe.addTableLock(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<Context> context) { pipe.addInterpreterContext(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
     void addQueryPlan(std::unique_ptr<QueryPlan> plan) { pipe.addQueryPlan(std::move(plan)); }

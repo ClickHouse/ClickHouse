@@ -283,7 +283,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) const override
+    bool isInjective(const ColumnsWithTypeAndName & sample_block) const override
     {
         return helper.isDictGetFunctionInjective(sample_block);
     }
@@ -813,7 +813,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) const override
+    bool isInjective(const ColumnsWithTypeAndName & sample_block) const override
     {
         return helper.isDictGetFunctionInjective(sample_block);
     }
@@ -1385,7 +1385,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) const override
+    bool isInjective(const ColumnsWithTypeAndName & sample_block) const override
     {
         return helper.isDictGetFunctionInjective(sample_block);
     }
@@ -1533,7 +1533,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) const override
+    bool isInjective(const ColumnsWithTypeAndName & sample_block) const override
     {
         return helper.isDictGetFunctionInjective(sample_block);
     }
@@ -1672,7 +1672,7 @@ public:
 
 private:
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const Block & /*sample_block*/) const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName & /*sample_block*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }

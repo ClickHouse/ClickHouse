@@ -695,8 +695,8 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
       * - result of taking elements by index for an array of second elements of tuples;
       * ...
       */
-    Block block_of_temporary_results;
-    block_of_temporary_results.insert(block.getByPosition(arguments[1]));
+    ColumnsWithTypeAndName temporary_results;
+    temporary_results.emplace_back(block.getByPosition(arguments[1]));
 
     /// results of taking elements by index for arrays from each element of the tuples;
     Columns result_tuple_columns;
@@ -706,16 +706,17 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
         ColumnWithTypeAndName array_of_tuple_section;
         array_of_tuple_section.column = ColumnArray::create(tuple_columns[i], col_array->getOffsetsPtr());
         array_of_tuple_section.type = std::make_shared<DataTypeArray>(tuple_types[i]);
-        block_of_temporary_results.insert(array_of_tuple_section);
+        temporary_results.emplace_back(array_of_tuple_section);
 
         ColumnWithTypeAndName array_elements_of_tuple_section;
         array_elements_of_tuple_section.type = getReturnTypeImpl(
-            {block_of_temporary_results.getByPosition(i * 2 + 1).type, block_of_temporary_results.getByPosition(0).type});
-        block_of_temporary_results.insert(array_elements_of_tuple_section);
+            {temporary_results[i * 2 + 1].type, temporary_results[0].type});
+        temporary_results.emplace_back(array_elements_of_tuple_section);
 
-        executeImpl(block_of_temporary_results, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2, input_rows_count);
+        FunctionArguments tmp_arguments(temporary_results);
+        executeImpl(tmp_arguments, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2, input_rows_count);
 
-        result_tuple_columns.emplace_back(std::move(block_of_temporary_results.getByPosition(i * 2 + 2).column));
+        result_tuple_columns.emplace_back(std::move(temporary_results[i * 2 + 2].column));
     }
 
     block.getByPosition(result).column = ColumnTuple::create(result_tuple_columns);
@@ -778,7 +779,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
     {
         /// Perform initializations.
         ArrayImpl::NullMapBuilder builder;
-        Block source_block;
+        ColumnsWithTypeAndName source_columns;
 
         const DataTypePtr & input_type = typeid_cast<const DataTypeNullable &>(
             *typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType()).getNestedType();
@@ -791,7 +792,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
             const auto & nested_col = nullable_col.getNestedColumnPtr();
 
             /// Put nested_col inside a ColumnArray.
-            source_block =
+            source_columns =
             {
                 {
                     ColumnArray::create(nested_col, col_array->getOffsetsPtr()),
@@ -814,7 +815,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
             const auto & nullable_col = assert_cast<const ColumnNullable &>(col_const_array->getData());
             const auto & nested_col = nullable_col.getNestedColumnPtr();
 
-            source_block =
+            source_columns =
             {
                 {
                     ColumnConst::create(ColumnArray::create(nested_col, col_const_array->getOffsetsPtr()), input_rows_count),
@@ -832,6 +833,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
             builder.initSource(nullable_col.getNullMapData().data());
         }
 
+        FunctionArguments source_block(source_columns);
         perform(source_block, {0, 1}, 2, builder, input_rows_count);
 
         /// Store the result.

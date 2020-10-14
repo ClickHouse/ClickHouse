@@ -39,7 +39,7 @@ public:
 
     virtual void predict(
         ColumnVector<Float64>::Container & container,
-        Block & block,
+        ColumnsWithTypeAndName & columns,
         size_t offset,
         size_t limit,
         const ColumnNumbers & arguments,
@@ -65,7 +65,7 @@ public:
 
     void predict(
         ColumnVector<Float64>::Container & container,
-        Block & block,
+        ColumnsWithTypeAndName & columns,
         size_t offset,
         size_t limit,
         const ColumnNumbers & arguments,
@@ -91,7 +91,7 @@ public:
 
     void predict(
         ColumnVector<Float64>::Container & container,
-        Block & block,
+        ColumnsWithTypeAndName & columns,
         size_t offset,
         size_t limit,
         const ColumnNumbers & arguments,
@@ -264,7 +264,7 @@ public:
 
     void predict(
         ColumnVector<Float64>::Container & container,
-        Block & block,
+        ColumnsWithTypeAndName & columns,
         size_t offset,
         size_t limit,
         const ColumnNumbers & arguments,
@@ -364,7 +364,7 @@ public:
     void predictValues(
         ConstAggregateDataPtr place,
         IColumn & to,
-        Block & block,
+        ColumnsWithTypeAndName & columns,
         size_t offset,
         size_t limit,
         const ColumnNumbers & arguments,
@@ -382,7 +382,7 @@ public:
             throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
                             ErrorCodes::LOGICAL_ERROR);
 
-        this->data(place).predict(column->getData(), block, offset, limit, arguments, context);
+        this->data(place).predict(column->getData(), columns, offset, limit, arguments, context);
     }
 
     /** This function is called if aggregate function without State modifier is selected in a query.

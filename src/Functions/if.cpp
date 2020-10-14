@@ -52,6 +52,7 @@ struct NumIfImpl
     using ArrayA = typename ColumnVector<A>::Container;
     using ArrayB = typename ColumnVector<B>::Container;
     using ColVecResult = ColumnVector<ResultType>;
+    using Block = FunctionArguments;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
     {
@@ -106,6 +107,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     using ArrayA = typename ColumnDecimal<Decimal<A>>::Container;
     using ArrayB = typename ColumnDecimal<Decimal<B>>::Container;
     using ColVecResult = ColumnDecimal<ResultType>;
+    using Block = FunctionArguments;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
     {
@@ -575,27 +577,28 @@ private:
         const DataTypeTuple & type1 = static_cast<const DataTypeTuple &>(*arg1.type);
         const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
 
-        Block temporary_block;
-        temporary_block.insert(block.getByPosition(arguments[0]));
+        ColumnsWithTypeAndName temporary_block;
+        temporary_block.emplace_back(block.getByPosition(arguments[0]));
 
         size_t tuple_size = type1.getElements().size();
         Columns tuple_columns(tuple_size);
 
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            temporary_block.insert({nullptr,
+            temporary_block.emplace_back(ColumnWithTypeAndName{nullptr,
                 getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
                 {}});
 
-            temporary_block.insert({col1_contents[i], type1.getElements()[i], {}});
-            temporary_block.insert({col2_contents[i], type2.getElements()[i], {}});
+            temporary_block.emplace_back(ColumnWithTypeAndName{col1_contents[i], type1.getElements()[i], {}});
+            temporary_block.emplace_back(ColumnWithTypeAndName{col2_contents[i], type2.getElements()[i], {}});
 
             /// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
-            executeImpl(temporary_block, {0, i + 2, i + 3}, i + 1, input_rows_count);
-            temporary_block.erase(i + 3);
-            temporary_block.erase(i + 2);
+            FunctionArguments args(temporary_block);
+            executeImpl(args, {0, i + 2, i + 3}, i + 1, input_rows_count);
+            temporary_block.erase(temporary_block.begin() + (i + 3));
+            temporary_block.erase(temporary_block.begin() + (i + 2));
 
-            tuple_columns[i] = temporary_block.getByPosition(i + 1).column;
+            tuple_columns[i] = temporary_block[i + 1].column;
         }
 
         /// temporary_block is: cond, res_0, res_1, res_2...
@@ -736,7 +739,7 @@ private:
                 throw Exception("Illegal column " + arg_cond.column->getName() + " of " + getName() + " condition",
                                 ErrorCodes::ILLEGAL_COLUMN);
 
-            Block temporary_block
+            ColumnsWithTypeAndName temporary_block
             {
                 { new_cond_column, removeNullable(arg_cond.type), arg_cond.name },
                 column1,
@@ -744,9 +747,10 @@ private:
                 result_column
             };
 
-            executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
+            FunctionArguments args(temporary_block);
+            executeImpl(args, {0, 1, 2}, 3, new_cond_column->size());
 
-            result_column.column = std::move(temporary_block.getByPosition(3).column);
+            result_column.column = std::move(temporary_block[3].column);
             return true;
         }
 
@@ -805,7 +809,7 @@ private:
         ColumnPtr result_null_mask;
 
         {
-            Block temporary_block(
+            ColumnsWithTypeAndName temporary_block(
             {
                 arg_cond,
                 {
@@ -829,15 +833,16 @@ private:
                 }
             });
 
-            executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
+            FunctionArguments args(temporary_block);
+            executeImpl(args, {0, 1, 2}, 3, input_rows_count);
 
-            result_null_mask = temporary_block.getByPosition(3).column;
+            result_null_mask = temporary_block[3].column;
         }
 
         ColumnPtr result_nested_column;
 
         {
-            Block temporary_block(
+            ColumnsWithTypeAndName temporary_block(
             {
                 arg_cond,
                 {
@@ -857,9 +862,10 @@ private:
                 }
             });
 
-            executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
+            FunctionArguments args(temporary_block);
+            executeImpl(args, {0, 1, 2}, 3, temporary_block.front().column->size());
 
-            result_nested_column = temporary_block.getByPosition(3).column;
+            result_nested_column = temporary_block[3].column;
         }
 
         block.getByPosition(result).column = ColumnNullable::create(
