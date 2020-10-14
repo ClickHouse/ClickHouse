@@ -651,6 +651,8 @@ public:
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
 
+    Disks getDisksByType(const String & type) const { return getStoragePolicy()->getDisksByType(type); }
+
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
     /// Returns destination disk or volume for the TTL rule according to current storage policy

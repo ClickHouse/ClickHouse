@@ -198,6 +198,9 @@ public:
     /// Return some uniq string for file, overrided for S3
     virtual const String getUniqueId(const String & path) const { return path; }
 
+    /// Check file, overrided for S3 only
+    virtual bool checkFile(const String & path) const { return exists(path); }
+
 private:
     /// Returns executor to perform asynchronous operations.
     Executor & getExecutor() { return *executor; }

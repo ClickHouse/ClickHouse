@@ -317,18 +317,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {"compress",                "false"}
     });
 
-    ReservationPtr reservationS3;
+    Disks disksS3;
 
     if (try_use_s3_copy)
     {
-        /// TODO: Make a normal check for S3 Disk
-        reservationS3 = data.makeEmptyReservationOnLargestDisk();
-        auto disk = reservationS3->getDisk();
-
-        if (disk->getType() != "s3")
-        {
+        disksS3 =  data.getDisksByType("s3");
+        if (disksS3.empty())
             try_use_s3_copy = false;
-        }
     }
 
     if (try_use_s3_copy)
@@ -378,7 +373,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
         try
         {
-            return downloadPartToS3(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservationS3), in);
+            return downloadPartToS3(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(disksS3), in);
         }
         catch(const Exception& e)
         {
@@ -551,13 +546,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
     bool to_detached,
     const String & tmp_prefix_,
     bool ,//sync,
-    const ReservationPtr reservation,
+    const Disks & disksS3,
     PooledReadWriteBufferFromHTTP & in
     )
 {
-    auto disk = reservation->getDisk();
-    if (disk->getType() != "s3")
-        throw Exception("S3 disk is not S3 anymore", ErrorCodes::LOGICAL_ERROR);
+    if (disksS3.empty())
+        throw Exception("No S3 disks anymore", ErrorCodes::LOGICAL_ERROR);
+
+    auto disk = disksS3[0];
 
     static const String TMP_PREFIX = "tmp_fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
@@ -586,29 +582,77 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        String metadata_file = disk->getPath() + new_data_part->getFullRelativePath() + file_name;
+        String data_path = new_data_part->getFullRelativePath() + file_name;
+        String metadata_file = fullPath(disk, data_path);
 
-        auto file_out = createWriteBufferFromFileBase(metadata_file, 0, 0, DBMS_DEFAULT_BUFFER_SIZE, -1);
-
-        HashingWriteBuffer hashing_out(*file_out);
-
-        copyData(in, hashing_out, file_size, blocker.getCounter());
-
-        if (blocker.isCancelled())
         {
-            /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
-            /// performing a poll with a not very large timeout.
-            /// And now we check it only between read chunks (in the `copyData` function).
-            throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+            auto file_out = createWriteBufferFromFileBase(metadata_file, 0, 0, DBMS_DEFAULT_BUFFER_SIZE, -1);
+
+            HashingWriteBuffer hashing_out(*file_out);
+
+            copyData(in, hashing_out, file_size, blocker.getCounter());
+
+            if (blocker.isCancelled())
+            {
+                /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
+                /// performing a poll with a not very large timeout.
+                /// And now we check it only between read chunks (in the `copyData` function).
+                disk->removeRecursive(part_download_path, true);
+                throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+            }
+
+            MergeTreeDataPartChecksum::uint128 expected_hash;
+            readPODBinary(expected_hash, in);
+
+            if (expected_hash != hashing_out.getHash())
+            {
+                throw Exception("Checksum mismatch for file " + metadata_file + " transferred from " + replica_path,
+                    ErrorCodes::CHECKSUM_DOESNT_MATCH);
+            }
         }
 
-        MergeTreeDataPartChecksum::uint128 expected_hash;
-        readPODBinary(expected_hash, in);
+        if (!i)
+        { /// Check access for first s3 object of first file
+            if (!disk->checkFile(data_path))
+            { /// Wrong S3 disk
+                Poco::File metadata(metadata_file);
 
-        if (expected_hash != hashing_out.getHash())
-        {
-            throw Exception("Checksum mismatch for file " + metadata_file + " transferred from " + replica_path,
-                ErrorCodes::CHECKSUM_DOESNT_MATCH);
+                size_t disk_id = 1;
+                while (true)
+                {
+                    if (disk_id >= disksS3.size())
+                    { /// No more S3 disks
+                        disk->removeRecursive(part_download_path, true);
+                        /// After catch this exception replication continues with full data copy
+                        throw Exception("Can't find S3 drive for shared data", ErrorCodes::S3_ERROR);
+                    }
+
+                    /// Try next S3 disk
+                    auto next_disk = disksS3[disk_id];
+
+                    auto next_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, next_disk);
+                    MergeTreeData::MutableDataPartPtr next_new_data_part = data.createPart(part_name, next_volume, part_relative_path);
+
+                    next_disk->createDirectories(part_download_path);
+
+                    String next_data_path = next_new_data_part->getFullRelativePath() + file_name;
+                    String next_metadata_file = fullPath(next_disk, next_data_path);
+                    metadata.copyTo(next_metadata_file);
+                    if (next_disk->checkFile(next_data_path))
+                    { /// Right disk found
+                        disk->removeRecursive(part_download_path, true);
+                        disk = next_disk;
+                        volume = next_volume;
+                        data_path = next_data_path;
+                        new_data_part = next_new_data_part;
+                        break;
+                    }
+
+                    /// Wrong disk again
+                    next_disk->removeRecursive(part_download_path, true);
+                    ++disk_id;
+                }
+            }
         }
     }
 

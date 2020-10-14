@@ -115,7 +115,7 @@ private:
             bool to_detached,
             const String & tmp_prefix_,
             bool sync,
-            const ReservationPtr reservation,
+            const Disks & disksS3,
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData & data;
