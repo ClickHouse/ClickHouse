@@ -61,7 +61,8 @@ void IBackgroundJobExecutor::scheduleTask(bool nothing_to_do)
     }
     else
     {
-        next_time_to_execute = 1000 * std::uniform_real_distribution<double>(0, sleep_settings.thread_sleep_seconds_random_part)(rng);
+        scheduling_task->schedule();
+        return;
     }
 
      scheduling_task->scheduleAfter(next_time_to_execute);
@@ -108,7 +109,7 @@ try
         scheduleTask(true);
     }
 }
-catch (...) /// Exception while we looking for task
+catch (...) /// Exception while we looking for a task
 {
     tryLogCurrentException(__PRETTY_FUNCTION__);
     scheduleTask(true);
