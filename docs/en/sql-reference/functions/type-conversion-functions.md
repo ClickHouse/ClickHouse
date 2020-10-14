@@ -11,7 +11,7 @@ When you convert a value from one to another data type, you should remember that
 
 ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-## toInt(8\|16\|32\|64) {#toint8163264}
+## toInt(8\|16\|32\|64\|128\|256) {#toint8163264128256}
 
 Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
 
@@ -19,6 +19,8 @@ Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md)
 -   `toInt16(expr)` — Results in the `Int16` data type.
 -   `toInt32(expr)` — Results in the `Int32` data type.
 -   `toInt64(expr)` — Results in the `Int64` data type.
+-   `toInt128(expr)` — Results in the `Int128` data type.
+-   `toInt256(expr)` — Results in the `Int256` data type.
 
 **Parameters**
 
@@ -26,7 +28,7 @@ Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md)
 
 **Returned value**
 
-Integer value in the `Int8`, `Int16`, `Int32`, or `Int64` data type.
+Integer value in the `Int8`, `Int16`, `Int32`, `Int64`, `Int128` or `Int256` data type.
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
@@ -44,9 +46,9 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 └──────────────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
-## toInt(8\|16\|32\|64)OrZero {#toint8163264orzero}
+## toInt(8\|16\|32\|64\|128\|256)OrZero {#toint8163264orzero}
 
-It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64). If failed, returns 0.
+It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns 0.
 
 **Example**
 
@@ -60,9 +62,9 @@ select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
 └─────────────────────────┴───────────────────────────┘
 ```
 
-## toInt(8\|16\|32\|64)OrNull {#toint8163264ornull}
+## toInt(8\|16\|32\|64\|128\|256)OrNull {#toint8163264128256ornull}
 
-It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64). If failed, returns NULL.
+It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns NULL.
 
 **Example**
 
@@ -76,7 +78,7 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 └─────────────────────────┴───────────────────────────┘
 ```
 
-## toUInt(8\|16\|32\|64) {#touint8163264}
+## toUInt(8\|16\|32\|64\|256) {#touint8163264256}
 
 Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
 
@@ -84,6 +86,7 @@ Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md
 -   `toUInt16(expr)` — Results in the `UInt16` data type.
 -   `toUInt32(expr)` — Results in the `UInt32` data type.
 -   `toUInt64(expr)` — Results in the `UInt64` data type.
+-   `toUInt256(expr)` — Results in the `UInt256` data type.
 
 **Parameters**
 
@@ -91,7 +94,7 @@ Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md
 
 **Returned value**
 
-Integer value in the `UInt8`, `UInt16`, `UInt32`, or `UInt64` data type.
+Integer value in the `UInt8`, `UInt16`, `UInt32`, `UInt64` or `UInt256` data type.
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
@@ -109,9 +112,9 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 └─────────────────────┴───────────────┴────────────────┴──────────────┘
 ```
 
-## toUInt(8\|16\|32\|64)OrZero {#touint8163264orzero}
+## toUInt(8\|16\|32\|64\|256)OrZero {#touint8163264256orzero}
 
-## toUInt(8\|16\|32\|64)OrNull {#touint8163264ornull}
+## toUInt(8\|16\|32\|64\|256)OrNull {#touint8163264256ornull}
 
 ## toFloat(32\|64) {#tofloat3264}
 
@@ -131,21 +134,23 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 ## toDateTimeOrNull {#todatetimeornull}
 
-## toDecimal(32\|64\|128) {#todecimal3264128}
+## toDecimal(32\|64\|128\|256) {#todecimal3264128256}
 
 Converts `value` to the [Decimal](../../sql-reference/data-types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
 
 -   `toDecimal32(value, S)`
 -   `toDecimal64(value, S)`
 -   `toDecimal128(value, S)`
+-   `toDecimal256(value, S)`
 
-## toDecimal(32\|64\|128)OrNull {#todecimal3264128ornull}
+## toDecimal(32\|64\|128\|256)OrNull {#todecimal3264128256ornull}
 
 Converts an input string to a [Nullable(Decimal(P,S))](../../sql-reference/data-types/decimal.md) data type value. This family of functions include:
 
 -   `toDecimal32OrNull(expr, S)` — Results in `Nullable(Decimal32(S))` data type.
 -   `toDecimal64OrNull(expr, S)` — Results in `Nullable(Decimal64(S))` data type.
 -   `toDecimal128OrNull(expr, S)` — Results in `Nullable(Decimal128(S))` data type.
+-   `toDecimal256OrNull(expr, S)` — Results in `Nullable(Decimal256(S))` data type.
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `NULL` value instead of an exception in the event of an input value parsing error.
 
@@ -183,13 +188,14 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 └──────┴────────────────────────────────────────────────────┘
 ```
 
-## toDecimal(32\|64\|128)OrZero {#todecimal3264128orzero}
+## toDecimal(32\|64\|128\|256)OrZero {#todecimal3264128256orzero}
 
 Converts an input value to the [Decimal(P,S)](../../sql-reference/data-types/decimal.md) data type. This family of functions include:
 
 -   `toDecimal32OrZero( expr, S)` — Results in `Decimal32(S)` data type.
 -   `toDecimal64OrZero( expr, S)` — Results in `Decimal64(S)` data type.
 -   `toDecimal128OrZero( expr, S)` — Results in `Decimal128(S)` data type.
+-   `toDecimal256OrZero( expr, S)` — Results in `Decimal256(S)` data type.
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `0` value instead of an exception in the event of an input value parsing error.
 
@@ -244,7 +250,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix\_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix\_timestamp))’.
+As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix_timestamp))’.
 
 Conversion between a date and date with time is performed the natural way: by adding a null time or dropping the time.
 
@@ -516,14 +522,14 @@ Result:
 
 **See Also**
 
--   \[ISO 8601 announcement by @xkcd\](https://xkcd.com/1179/)
+-   [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)
 
 ## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
 
-This function is similar to [‘parseDateTimeBestEffort’](#parsedatetimebesteffort), the only difference is that this function prefers US style (`MM/DD/YYYY` etc) in case of ambiguouty.
+This function is similar to [‘parseDateTimeBestEffort’](#parsedatetimebesteffort), the only difference is that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity.
 
 **Syntax**
 
@@ -541,7 +547,7 @@ parseDateTimeBestEffortUS(time_string [, time_zone]);
 -   A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
 -   A string with a date and a time component: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
 -   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` etc.
--   A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `YYYY-MM` are substituted as `2000-01`.
+-   A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case, `YYYY-MM` are substituted as `2000-01`.
 -   A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
 
 **Returned value**
@@ -727,6 +733,47 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 ┌─fromUnixTimestamp64Milli(i64, 'UTC')─┐
 │              2009-02-13 23:31:31.011 │
 └──────────────────────────────────────┘
+```
+
+## formatRow {#formatrow}
+
+Converts arbitrary expressions into a string via given format. 
+
+**Syntax** 
+
+``` sql
+formatRow(format, x, y, ...)
+```
+
+**Parameters**
+
+-   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Expressions.
+
+**Returned value**
+
+-   A formatted string (for text formats it's usually terminated with the new line character).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatRow('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Result:
+
+``` text
+┌─formatRow('CSV', number, 'good')─┐
+│ 0,"good"
+                         │
+│ 1,"good"
+                         │
+│ 2,"good"
+                         │
+└──────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

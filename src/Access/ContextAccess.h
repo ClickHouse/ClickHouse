@@ -63,9 +63,6 @@ public:
     UserPtr getUser() const;
     String getUserName() const;
 
-    bool isCorrectPassword(const String & password) const;
-    bool isClientHostAllowed() const;
-
     /// Returns information about current and enabled roles.
     /// The function can return nullptr.
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
@@ -141,6 +138,13 @@ public:
     void checkAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const;
     void checkAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
 
+    bool hasAdminOption(const UUID & role_id) const;
+    bool hasAdminOption(const UUID & role_id, const String & role_name) const;
+    bool hasAdminOption(const UUID & role_id, const std::unordered_map<UUID, String> & names_of_roles) const;
+    bool hasAdminOption(const std::vector<UUID> & role_ids) const;
+    bool hasAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const;
+    bool hasAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
+
     /// Makes an instance of ContextAccess which provides full access to everything
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
@@ -186,7 +190,7 @@ private:
     void checkAccessImpl2(const AccessFlags & flags, const Args &... args) const;
 
     template <typename Container, typename GetNameFunction>
-    void checkAdminOptionImpl(const Container & role_ids, const GetNameFunction & get_name_function) const;
+    bool checkAdminOptionImpl(bool throw_on_error, const Container & role_ids, const GetNameFunction & get_name_function) const;
 
     const AccessControlManager * manager = nullptr;
     const Params params;

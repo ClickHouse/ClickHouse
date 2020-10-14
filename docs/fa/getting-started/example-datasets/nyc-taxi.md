@@ -198,7 +198,7 @@ real    75m56.214s
 
 (وارد کردن داده ها به طور مستقیم از پستگرس نیز ممکن است با استفاده از `COPY ... TO PROGRAM`.)
 
-Unfortunately, all the fields associated with the weather (precipitation…average\_wind\_speed) were filled with NULL. Because of this, we will remove them from the final data set.
+Unfortunately, all the fields associated with the weather (precipitation…average_wind_speed) were filled with NULL. Because of this, we will remove them from the final data set.
 
 برای شروع, ما یک جدول بر روی یک سرور ایجاد. بعد ما را به جدول توزیع.
 

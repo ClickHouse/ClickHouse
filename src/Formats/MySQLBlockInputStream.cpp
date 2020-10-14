@@ -23,13 +23,27 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
+MySQLBlockInputStream::Connection::Connection(
+    const mysqlxx::PoolWithFailover::Entry & entry_,
+    const std::string & query_str)
+    : entry(entry_)
+    , query{entry->query(query_str)}
+    , result{query.use()}
+{
+}
 
 MySQLBlockInputStream::MySQLBlockInputStream(
-    const mysqlxx::PoolWithFailover::Entry & entry_, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_, const bool auto_close_)
-    : entry{entry_}, query{this->entry->query(query_str)}, result{query.use()}, max_block_size{max_block_size_}, auto_close{auto_close_}
+    const mysqlxx::PoolWithFailover::Entry & entry,
+    const std::string & query_str,
+    const Block & sample_block,
+    const UInt64 max_block_size_,
+    const bool auto_close_)
+    : connection{std::make_unique<Connection>(entry, query_str)}
+    , max_block_size{max_block_size_}
+    , auto_close{auto_close_}
 {
-    if (sample_block.columns() != result.getNumFields())
-        throw Exception{"mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while "
+    if (sample_block.columns() != connection->result.getNumFields())
+        throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
                             + toString(sample_block.columns()) + " expected",
                         ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
@@ -90,7 +104,8 @@ namespace
             case ValueType::vtDateTime64:[[fallthrough]];
             case ValueType::vtDecimal32: [[fallthrough]];
             case ValueType::vtDecimal64: [[fallthrough]];
-            case ValueType::vtDecimal128:
+            case ValueType::vtDecimal128:[[fallthrough]];
+            case ValueType::vtDecimal256:
             {
                 ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
                 data_type.deserializeAsWholeText(column, buffer, FormatSettings{});
@@ -105,11 +120,11 @@ namespace
 
 Block MySQLBlockInputStream::readImpl()
 {
-    auto row = result.fetch();
+    auto row = connection->result.fetch();
     if (!row)
     {
         if (auto_close)
-           entry.disconnect();
+           connection->entry.disconnect();
         return {};
     }
 
@@ -144,9 +159,40 @@ Block MySQLBlockInputStream::readImpl()
         if (num_rows == max_block_size)
             break;
 
-        row = result.fetch();
+        row = connection->result.fetch();
     }
     return description.sample_block.cloneWithColumns(std::move(columns));
+}
+
+MySQLBlockInputStream::MySQLBlockInputStream(
+    const Block & sample_block_,
+    UInt64 max_block_size_,
+    bool auto_close_)
+    : max_block_size(max_block_size_)
+    , auto_close(auto_close_)
+{
+    description.init(sample_block_);
+}
+
+MySQLLazyBlockInputStream::MySQLLazyBlockInputStream(
+    mysqlxx::Pool & pool_,
+    const std::string & query_str_,
+    const Block & sample_block_,
+    const UInt64 max_block_size_,
+    const bool auto_close_)
+    : MySQLBlockInputStream(sample_block_, max_block_size_, auto_close_)
+    , pool(pool_)
+    , query_str(query_str_)
+{
+}
+
+void MySQLLazyBlockInputStream::readPrefix()
+{
+    connection = std::make_unique<Connection>(pool.get(), query_str);
+    if (description.sample_block.columns() != connection->result.getNumFields())
+        throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
+                            + toString(description.sample_block.columns()) + " expected",
+                        ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 }
 
 }

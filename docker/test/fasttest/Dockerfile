@@ -11,7 +11,7 @@ RUN apt-get update \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
+    && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list
 
 # initial packages
@@ -52,10 +52,10 @@ RUN apt-get update \
         moreutils \
         ninja-build \
         psmisc \
-        python \
-        python-lxml \
-        python-requests \
-        python-termcolor \
+        python3 \
+        python3-lxml \
+        python3-requests \
+        python3-termcolor \
         qemu-user-static \
         rename \
         software-properties-common \

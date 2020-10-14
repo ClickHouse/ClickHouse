@@ -8,7 +8,7 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1')
+node1 = cluster.add_instance('node1', main_configs=['configs/wide_parts_only.xml'])
 
 
 @pytest.fixture(scope="module")
@@ -122,7 +122,7 @@ def test_delete_and_drop_mutation(started_cluster):
             if int(result.strip()) == 2:
                 break
         except:
-            print "Result", result
+            print("Result", result)
             pass
 
         time.sleep(0.5)

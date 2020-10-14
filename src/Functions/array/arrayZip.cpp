@@ -65,7 +65,7 @@ public:
         for (size_t i = 0; i < num_arguments; ++i)
         {
             /// Constant columns cannot be inside tuple. It's only possible to have constant tuple as a whole.
-            ColumnPtr holder = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
+            ColumnPtr holder = block[arguments[i]].column->convertToFullColumnIfConst();
 
             const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(holder.get());
 
@@ -86,7 +86,7 @@ public:
             tuple_columns[i] = column_array->getDataPtr();
         }
 
-        block.getByPosition(result).column = ColumnArray::create(
+        block[result].column = ColumnArray::create(
             ColumnTuple::create(tuple_columns), static_cast<const ColumnArray &>(*first_array_column).getOffsetsPtr());
     }
 };

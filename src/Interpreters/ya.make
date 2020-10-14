@@ -23,6 +23,9 @@ SRCS(
     addTypeConversionToAST.cpp
     AggregateDescription.cpp
     Aggregator.cpp
+    ApplyWithAliasVisitor.cpp
+    ApplyWithGlobalVisitor.cpp
+    ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
     AsynchronousMetricLog.cpp
@@ -125,6 +128,7 @@ SRCS(
     QueryAliasesVisitor.cpp
     QueryLog.cpp
     QueryNormalizer.cpp
+    QueryParameterVisitor.cpp
     QueryThreadLog.cpp
     RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp

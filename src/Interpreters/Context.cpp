@@ -73,19 +73,10 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric BackgroundMovePoolTask;
-    extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
-
     extern const Metric BackgroundSchedulePoolTask;
-    extern const Metric MemoryTrackingInBackgroundSchedulePool;
-
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
-    extern const Metric MemoryTrackingInBackgroundBufferFlushSchedulePool;
-
     extern const Metric BackgroundDistributedSchedulePoolTask;
-    extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
-
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
-    extern const Metric MemoryTrackingInBackgroundMessageBrokerSchedulePool;
 }
 
 
@@ -106,7 +97,6 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
-    extern const int AUTHENTICATION_FAILED;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -356,6 +346,7 @@ struct ContextShared
     mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
+    std::optional<MergeTreeSettings> replicated_merge_tree_settings;   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
@@ -689,22 +680,20 @@ void Context::setUserImpl(const String & name, const std::optional<String> & pas
     client_info.current_password = password.value_or("");
 #endif
 
-    auto new_user_id = getAccessControlManager().find<User>(name);
-    std::shared_ptr<const ContextAccess> new_access;
-    if (new_user_id)
+    /// Find a user with such name and check the password.
+    UUID new_user_id;
+    if (password)
+        new_user_id = getAccessControlManager().login(name, *password, address.host());
+    else
     {
-        new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, settings, current_database, client_info);
         /// Access w/o password is done under interserver-secret (remote_servers.secret)
-        /// So it is okay not to check client's host (since there is trust).
-        if (password && (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(*password)))
-        {
-            new_user_id = {};
-            new_access = nullptr;
-        }
+        /// So it is okay not to check client's host in this case (since there is trust).
+        new_user_id = getAccessControlManager().getIDOfLoggedUser(name);
     }
 
-    if (!new_user_id || !new_access)
-        throw Exception(name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
+    auto new_access = getAccessControlManager().getContextAccess(
+        new_user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
+        settings, current_database, client_info);
 
     user_id = new_user_id;
     access = std::move(new_access);
@@ -716,7 +705,7 @@ void Context::setUserImpl(const String & name, const std::optional<String> & pas
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
-    setUserImpl(name, std::make_optional(password), address);
+    setUserImpl(name, password, address);
 }
 
 void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
@@ -970,6 +959,7 @@ StoragePtr Context::getViewSource()
 
 Settings Context::getSettings() const
 {
+    auto lock = getLock();
     return settings;
 }
 
@@ -1090,6 +1080,18 @@ String Context::getInitialQueryId() const
 }
 
 
+void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
+{
+    if (global_context != this)
+        throw Exception("Cannot set current database for non global context, this method should be used during server initialization", ErrorCodes::LOGICAL_ERROR);
+    auto lock = getLock();
+
+    if (!current_database.empty())
+        throw Exception("Default database name cannot be changed in global context without server restart", ErrorCodes::LOGICAL_ERROR);
+
+    current_database = name;
+}
+
 void Context::setCurrentDatabase(const String & name)
 {
     DatabaseCatalog::instance().assertDatabaseExists(name);
@@ -1100,9 +1102,6 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-    if (!client_info.current_query_id.empty())
-        throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
-
     String query_id_to_set = query_id;
 
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
@@ -1404,7 +1403,6 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
         pool_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
         pool_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
         pool_settings.tasks_metric = CurrentMetrics::BackgroundMovePoolTask;
-        pool_settings.memory_metric = CurrentMetrics::MemoryTrackingInBackgroundMoveProcessingPool;
         shared->background_move_pool.emplace(settings.background_move_pool_size, pool_settings, "BackgroundMovePool", "BgMoveProcPool");
     }
     return *shared->background_move_pool;
@@ -1417,7 +1415,6 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
         shared->buffer_flush_schedule_pool.emplace(
             settings.background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
-            CurrentMetrics::MemoryTrackingInBackgroundBufferFlushSchedulePool,
             "BgBufSchPool");
     return *shared->buffer_flush_schedule_pool;
 }
@@ -1429,7 +1426,6 @@ BackgroundSchedulePool & Context::getSchedulePool()
         shared->schedule_pool.emplace(
             settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
-            CurrentMetrics::MemoryTrackingInBackgroundSchedulePool,
             "BgSchPool");
     return *shared->schedule_pool;
 }
@@ -1441,7 +1437,6 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
         shared->distributed_schedule_pool.emplace(
             settings.background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
-            CurrentMetrics::MemoryTrackingInBackgroundDistributedSchedulePool,
             "BgDistSchPool");
     return *shared->distributed_schedule_pool;
 }
@@ -1453,7 +1448,6 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool()
         shared->message_broker_schedule_pool.emplace(
             settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
-            CurrentMetrics::MemoryTrackingInBackgroundMessageBrokerSchedulePool,
             "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
 }
@@ -1888,6 +1882,22 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     }
 
     return *shared->merge_tree_settings;
+}
+
+const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
+{
+    auto lock = getLock();
+
+    if (!shared->replicated_merge_tree_settings)
+    {
+        const auto & config = getConfigRef();
+        MergeTreeSettings mt_settings;
+        mt_settings.loadFromConfig("merge_tree", config);
+        mt_settings.loadFromConfig("replicated_merge_tree", config);
+        shared->replicated_merge_tree_settings.emplace(mt_settings);
+    }
+
+    return *shared->replicated_merge_tree_settings;
 }
 
 const StorageS3Settings & Context::getStorageS3Settings() const

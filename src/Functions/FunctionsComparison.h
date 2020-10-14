@@ -581,7 +581,7 @@ private:
             vec_res.resize(col_left->getData().size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::vectorVector(col_left->getData(), col_right->getData(), vec_res);
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
             return true;
         }
         else if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
@@ -592,7 +592,7 @@ private:
             vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::vectorConstant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
             return true;
         }
 
@@ -610,7 +610,7 @@ private:
             vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constantVector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
 
-            block.getByPosition(result).column = std::move(col_res);
+            block[result].column = std::move(col_res);
             return true;
         }
         else if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
@@ -618,7 +618,7 @@ private:
             UInt8 res = 0;
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constantConstant(col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), res);
 
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
+            block[result].column = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
             return true;
         }
 
@@ -763,7 +763,7 @@ private:
             if (!res)
                 return false;
 
-            block.getByPosition(result).column = ColumnConst::create(block.getByPosition(result).column, c0_const->size());
+            block[result].column = ColumnConst::create(block[result].column, c0_const->size());
             return true;
         }
         else
@@ -818,7 +818,7 @@ private:
                     + " of arguments of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
 
-            block.getByPosition(result).column = std::move(c_res);
+            block[result].column = std::move(c_res);
             return true;
         }
     }
@@ -846,22 +846,22 @@ private:
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())
         {
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+            block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
         else
         {
             auto column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
 
-            Block tmp_block
+            ColumnsWithTypeAndName tmp_block_columns
             {
                 { left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, "" },
                 { !left_const ? column_converted : col_right_untyped->getPtr(), type_to_compare, "" },
-                block.getByPosition(result)
+                block[result]
             };
 
-            executeImpl(tmp_block, {0, 1}, 2, input_rows_count);
+            executeImpl(tmp_block_columns, {0, 1}, 2, input_rows_count);
 
-            block.getByPosition(result).column = std::move(tmp_block.getByPosition(2).column);
+            block[result].column = std::move(tmp_block_columns[2].column);
         }
 
         return true;
@@ -892,7 +892,7 @@ private:
         if (tuple_size != typeid_cast<const DataTypeTuple &>(*c1.type).getElements().size())
             throw Exception("Cannot compare tuples of different sizes.", ErrorCodes::BAD_ARGUMENTS);
 
-        auto & res = block.getByPosition(result);
+        auto & res = block[result];
         if (res.type->onlyNull())
         {
             res.column = res.type->createColumnConstWithDefaultValue(input_rows_count);
@@ -949,24 +949,24 @@ private:
 
         ColumnsWithTypeAndName convolution_types(tuple_size);
 
-        Block tmp_block;
+        ColumnsWithTypeAndName tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tmp_block.insert(x[i]);
-            tmp_block.insert(y[i]);
+            tmp_block.emplace_back(x[i]);
+            tmp_block.emplace_back(y[i]);
 
             auto impl = func_compare->build({x[i], y[i]});
             convolution_types[i].type = impl->getReturnType();
 
             /// Comparison of the elements.
-            tmp_block.insert({ nullptr, impl->getReturnType(), "" });
+            tmp_block.emplace_back(ColumnWithTypeAndName{ nullptr, impl->getReturnType(), "" });
             impl->execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
         }
 
         if (tuple_size == 1)
         {
             /// Do not call AND for single-element tuple.
-            block.getByPosition(result).column = tmp_block.getByPosition(2).column;
+            block[result].column = tmp_block[2].column;
             return;
         }
 
@@ -977,10 +977,10 @@ private:
             convolution_args[i] = i * 3 + 2;
 
         auto impl = func_convolution->build(convolution_types);
-        tmp_block.insert({ nullptr, impl->getReturnType(), "" });
+        tmp_block.emplace_back(ColumnWithTypeAndName{ nullptr, impl->getReturnType(), "" });
 
         impl->execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
-        block.getByPosition(result).column = tmp_block.getByPosition(tuple_size * 3).column;
+        block[result].column = tmp_block[tuple_size * 3].column;
     }
 
     void executeTupleLessGreaterImpl(
@@ -996,34 +996,34 @@ private:
         size_t tuple_size,
         size_t input_rows_count) const
     {
-        Block tmp_block;
+        ColumnsWithTypeAndName tmp_block;
 
         /// Pairwise comparison of the inequality of all elements; on the equality of all elements except the last.
         /// (x[i], y[i], x[i] < y[i], x[i] == y[i])
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tmp_block.insert(x[i]);
-            tmp_block.insert(y[i]);
+            tmp_block.emplace_back(x[i]);
+            tmp_block.emplace_back(y[i]);
 
-            tmp_block.insert(ColumnWithTypeAndName()); // pos == i * 4 + 2
+            tmp_block.emplace_back(ColumnWithTypeAndName()); // pos == i * 4 + 2
 
             if (i + 1 != tuple_size)
             {
                 auto impl_head = func_compare_head->build({x[i], y[i]});
-                tmp_block.getByPosition(i * 4 + 2).type = impl_head->getReturnType();
+                tmp_block[i * 4 + 2].type = impl_head->getReturnType();
                 impl_head->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
 
-                tmp_block.insert(ColumnWithTypeAndName()); // i * 4 + 3
+                tmp_block.emplace_back(ColumnWithTypeAndName()); // i * 4 + 3
 
                 auto impl_equals = func_equals->build({x[i], y[i]});
-                tmp_block.getByPosition(i * 4 + 3).type = impl_equals->getReturnType();
+                tmp_block[i * 4 + 3].type = impl_equals->getReturnType();
                 impl_equals->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
 
             }
             else
             {
                 auto impl_tail = func_compare_tail->build({x[i], y[i]});
-                tmp_block.getByPosition(i * 4 + 2).type = impl_tail->getReturnType();
+                tmp_block[i * 4 + 2].type = impl_tail->getReturnType();
                 impl_tail->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
             }
         }
@@ -1039,31 +1039,31 @@ private:
         {
             --i;
 
-            size_t and_lhs_pos = tmp_block.columns() - 1; // res
+            size_t and_lhs_pos = tmp_block.size() - 1; // res
             size_t and_rhs_pos = i * 4 + 3; // `x == y`[i]
-            tmp_block.insert(ColumnWithTypeAndName());
+            tmp_block.emplace_back(ColumnWithTypeAndName());
 
-            ColumnsWithTypeAndName and_args = {{ nullptr, tmp_block.getByPosition(and_lhs_pos).type, "" },
-                                               { nullptr, tmp_block.getByPosition(and_rhs_pos).type, "" }};
+            ColumnsWithTypeAndName and_args = {{ nullptr, tmp_block[and_lhs_pos].type, "" },
+                                               { nullptr, tmp_block[and_rhs_pos].type, "" }};
 
             auto func_and_adaptor = func_and->build(and_args);
-            tmp_block.getByPosition(tmp_block.columns() - 1).type = func_and_adaptor->getReturnType();
-            func_and_adaptor->execute(tmp_block, {and_lhs_pos, and_rhs_pos}, tmp_block.columns() - 1, input_rows_count);
+            tmp_block[tmp_block.size() - 1].type = func_and_adaptor->getReturnType();
+            func_and_adaptor->execute(tmp_block, {and_lhs_pos, and_rhs_pos}, tmp_block.size() - 1, input_rows_count);
 
-            size_t or_lhs_pos = tmp_block.columns() - 1; // (res && `x == y`[i])
+            size_t or_lhs_pos = tmp_block.size() - 1; // (res && `x == y`[i])
             size_t or_rhs_pos = i * 4 + 2; // `x < y`[i]
-            tmp_block.insert(ColumnWithTypeAndName());
+            tmp_block.emplace_back(ColumnWithTypeAndName());
 
-            ColumnsWithTypeAndName or_args = {{ nullptr, tmp_block.getByPosition(or_lhs_pos).type, "" },
-                                              { nullptr, tmp_block.getByPosition(or_rhs_pos).type, "" }};
+            ColumnsWithTypeAndName or_args = {{ nullptr, tmp_block[or_lhs_pos].type, "" },
+                                              { nullptr, tmp_block[or_rhs_pos].type, "" }};
 
             auto func_or_adaptor = func_or->build(or_args);
-            tmp_block.getByPosition(tmp_block.columns() - 1).type = func_or_adaptor->getReturnType();
-            func_or_adaptor->execute(tmp_block, {or_lhs_pos, or_rhs_pos}, tmp_block.columns() - 1, input_rows_count);
+            tmp_block[tmp_block.size() - 1].type = func_or_adaptor->getReturnType();
+            func_or_adaptor->execute(tmp_block, {or_lhs_pos, or_rhs_pos}, tmp_block.size() - 1, input_rows_count);
 
         }
 
-        block.getByPosition(result).column = tmp_block.getByPosition(tmp_block.columns() - 1).column;
+        block[result].column = tmp_block[tmp_block.size() - 1].column;
     }
 
     void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1) const
@@ -1075,7 +1075,7 @@ private:
         {
             UInt8 res = 0;
             GenericComparisonImpl<Op<int, int>>::constantConstant(*c0, *c1, res);
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(c0->size(), toField(res));
+            block[result].column = DataTypeUInt8().createColumnConst(c0->size(), toField(res));
         }
         else
         {
@@ -1090,7 +1090,7 @@ private:
             else
                 GenericComparisonImpl<Op<int, int>>::vectorVector(*c0, *c1, vec_res);
 
-            block.getByPosition(result).column = std::move(c_res);
+            block[result].column = std::move(c_res);
         }
     }
 
@@ -1175,8 +1175,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
-        const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
+        const auto & col_with_type_and_name_left = block[arguments[0]];
+        const auto & col_with_type_and_name_right = block[arguments[1]];
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
         const IColumn * col_right_untyped = col_with_type_and_name_right.column.get();
 
@@ -1194,12 +1194,12 @@ public:
                 || IsOperation<Op>::less_or_equals
                 || IsOperation<Op>::greater_or_equals)
             {
-                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
+                block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
                 return;
             }
             else
             {
-                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+                block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
                 return;
             }
         }
@@ -1213,7 +1213,7 @@ public:
         const bool left_is_string = isStringOrFixedString(which_left);
         const bool right_is_string = isStringOrFixedString(which_right);
 
-        bool date_and_datetime = (left_type != right_type) &&
+        bool date_and_datetime = (which_left.idx != which_right.idx) &&
             which_left.isDateOrDateTime() && which_right.isDateOrDateTime();
 
         if (left_is_num && right_is_num && !date_and_datetime)

@@ -83,7 +83,7 @@ public:
     {
         Columns array_offsets;
 
-        const auto & first_arg = block.getByPosition(arguments[0]);
+        const auto & first_arg = block[arguments[0]];
 
         const IDataType * tuple_type = first_arg.type.get();
         const IColumn * tuple_col = first_arg.column.get();
@@ -101,14 +101,14 @@ public:
         if (!tuple_type_concrete || !tuple_col_concrete)
             throw Exception("First argument for function " + getName() + " must be tuple or array of tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        size_t index = getElementNum(block.getByPosition(arguments[1]).column, *tuple_type_concrete);
+        size_t index = getElementNum(block[arguments[1]].column, *tuple_type_concrete);
         ColumnPtr res = tuple_col_concrete->getColumns()[index];
 
         /// Wrap into Arrays
         for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
             res = ColumnArray::create(res, *it);
 
-        block.getByPosition(result).column = res;
+        block[result].column = res;
     }
 
 private:

@@ -23,11 +23,6 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
      {"round_robin",      LoadBalancing::ROUND_ROBIN}})
 
 
-IMPLEMENT_SETTING_ENUM(SpecialSort, ErrorCodes::UNKNOWN_JOIN,
-    {{"not_specified",  SpecialSort::NOT_SPECIFIED},
-     {"opencl_bitonic", SpecialSort::OPENCL_BITONIC}})
-
-
 IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,
     {{"",    JoinStrictness::Unspecified},
      {"ALL", JoinStrictness::ALL},
@@ -70,6 +65,11 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENT
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
      {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort}})
 
+
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"simple",         FormatSettings::DateTimeOutputFormat::Simple},
+     {"iso",            FormatSettings::DateTimeOutputFormat::ISO},
+     {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
 IMPLEMENT_SETTING_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS,
     {{"none",        LogsLevel::none},
