@@ -198,6 +198,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , queue(*this)
     , fetcher(*this)
     , background_executor(*this, global_context)
+    , background_moves_executor(*this, global_context)
     , cleanup_thread(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
@@ -3485,6 +3486,8 @@ void StorageReplicatedMergeTree::startup()
             auto lock = queue.lockQueue();
             background_executor.start();
         }
+        if (areBackgroundMovesNeeded())
+            background_moves_executor.start();
 
     }
     catch (...)
@@ -3527,6 +3530,7 @@ void StorageReplicatedMergeTree::shutdown()
         /// MUTATE, etc. query.
         queue.pull_log_blocker.cancelForever();
     }
+    background_moves_executor.finish();
 
     if (data_parts_exchange_endpoint)
     {
@@ -5974,7 +5978,7 @@ MutationCommands StorageReplicatedMergeTree::getFirtsAlterMutationCommandsForPar
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
-    background_executor.startMovingTaskIfNeeded();
+    background_moves_executor.start();
 }
 
 }

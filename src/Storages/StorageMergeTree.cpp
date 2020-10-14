@@ -79,6 +79,8 @@ StorageMergeTree::StorageMergeTree(
     , writer(*this)
     , merger_mutator(*this, global_context.getSettingsRef().background_pool_size)
     , background_executor(*this, global_context)
+    , background_moves_executor(*this, global_context)
+
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -106,6 +108,8 @@ void StorageMergeTree::startup()
     try
     {
         background_executor.start();
+        if (areBackgroundMovesNeeded())
+            background_moves_executor.start();
     }
     catch (...)
     {
@@ -143,6 +147,7 @@ void StorageMergeTree::shutdown()
     parts_mover.moves_blocker.cancelForever();
 
     background_executor.finish();
+    background_moves_executor.finish();
 
     try
     {
@@ -1449,7 +1454,7 @@ MutationCommands StorageMergeTree::getFirtsAlterMutationCommandsForPart(const Da
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()
 {
-    background_executor.startMovingTaskIfNeeded();
+    background_executor.start();
 }
 
 }

@@ -276,6 +276,7 @@ private:
     /// Threads.
 
     BackgroundJobsExecutor background_executor;
+    BackgroundMovesExecutor background_moves_executor;
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
