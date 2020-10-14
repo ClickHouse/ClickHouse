@@ -187,31 +187,9 @@ w5 =  8.412723297322498080632E-4L,
 w6 = -1.880801938119376907179E-3L,
 w7 =  4.885026142432270781165E-3L;
 
-/* sin(pi*x) assuming x > 2^-1000, if sin(pi*x)==0 the sign is arbitrary */
-static long double sin_pi(long double x)
-{
-	int n;
-
-	/* spurious inexact if odd int */
-	x *= 0.5;
-	x = 2.0*(x - floorl(x));  /* x mod 2.0 */
-
-	n = (int)(x*4.0);
-	n = (n+1)/2;
-	x -= n*0.5f;
-	x *= pi;
-
-	switch (n) {
-	default: /* case 4: */
-	case 0: return __sinl(x, 0.0, 0);
-	case 1: return __cosl(x, 0.0);
-	case 2: return __sinl(-x, 0.0, 0);
-	case 3: return -__cosl(x, 0.0);
-	}
-}
-
 #include <stdint.h>
 #include <math.h>
+#include "libm.h"
 
 long double __lgammal_r(long double x, int *sg) {
 	long double t, y, z, nadj, p, p1, p2, q, r, w;
@@ -234,7 +212,7 @@ long double __lgammal_r(long double x, int *sg) {
 	}
 	if (sign) {
 		x = -x;
-		t = sin_pi(x);
+		t = sin(pi * x);
 		if (t == 0.0)
 			return 1.0 / (x-x); /* -integer */
 		if (t > 0.0)
