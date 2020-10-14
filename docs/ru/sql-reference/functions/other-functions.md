@@ -410,7 +410,7 @@ ORDER BY h ASC
 Преобразовать значение согласно явно указанному отображению одних элементов на другие.
 Имеется два варианта функции:
 
-### transform(x, array\_from, array\_to, default) {#transformx-array-from-array-to-default}
+### transform(x, array_from, array_to, default) {#transformx-array-from-array-to-default}
 
 `x` - что преобразовывать.
 
@@ -430,7 +430,7 @@ ORDER BY h ASC
 При этом, где обозначена одна и та же буква (T или U), могут быть, в случае числовых типов, не совпадающие типы, а типы, для которых есть общий тип.
 Например, первый аргумент может иметь тип Int64, а второй - Array(UInt16).
 
-Если значение x равно одному из элементов массива array\_from, то возвращает соответствующий (такой же по номеру) элемент массива array\_to; иначе возвращает default. Если имеется несколько совпадающих элементов в array\_from, то возвращает какой-нибудь из соответствующих.
+Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает default. Если имеется несколько совпадающих элементов в array_from, то возвращает какой-нибудь из соответствующих.
 
 Пример:
 
@@ -452,10 +452,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array\_from, array\_to) {#transformx-array-from-array-to}
+### transform(x, array_from, array_to) {#transformx-array-from-array-to}
 
 Отличается от первого варианта отсутствующим аргументом default.
-Если значение x равно одному из элементов массива array\_from, то возвращает соответствующий (такой же по номеру) элемент массива array\_to; иначе возвращает x.
+Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает x.
 
 Типы:
 
@@ -737,7 +737,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-То же, что и \[runningDifference\] (./other\_functions.md \# other\_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
+То же, что и \[runningDifference\] (./other_functions.md # other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
 
 ## MACNumToString(num) {#macnumtostringnum}
 
@@ -1188,7 +1188,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Возвращает значение по списку ключей.
 
-Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls).
+Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join_use_nulls](../../operations/settings/settings.md#join_use_nulls).
 
 Подробнее о настройке `join_use_nulls` в [операциях Join](../../sql-reference/functions/other-functions.md).
 
@@ -1227,16 +1227,16 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model\_name, …) {#function-modelevaluate}
+## modelEvaluate(model_name, …) {#function-modelevaluate}
 
 Оценивает внешнюю модель.
 
 Принимает на вход имя и аргументы модели. Возвращает Float64.
 
-## throwIf(x\[, custom\_message\]) {#throwifx-custom-message}
+## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
 
 Бросает исключение, если аргумент не равен нулю.
-custom\_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -1431,5 +1431,80 @@ SELECT randomStringUTF8(13)
 
 ```
 
+## isDecimalOverflow {#is-decimal-overflow}
+
+Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) вне собственной (или заданной) области значений.
+
+**Синтаксис**
+
+``` sql
+isDecimalOverflow(d, [p])
+```
+
+**Параметры** 
+
+-   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
+-   `p` — точность. Необязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
+
+**Возвращаемое значение**
+
+-   `1` — число имеет больше цифр, чем позволяет точность.
+-   `0` — число удовлетворяет заданной точности.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(1000000000, 0)),
+       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(-1000000000, 0));
+```
+
+Результат:
+
+``` text
+1	1	1	1
+```
+
+## countDigits {#count-digits}
+
+Возвращает количество десятичных цифр, необходимых для представления значения.
+
+**Синтаксис**
+
+``` sql
+countDigits(x)
+```
+
+**Параметры** 
+
+-   `x` — [целое](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) или [дробное](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) число.
+
+**Возвращаемое значение**
+
+Количество цифр.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+ !!! note "Примечание"
+    Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
+       countDigits(toDecimal64(1, 18)), countDigits(toDecimal64(-1, 18)),
+       countDigits(toDecimal128(1, 38)), countDigits(toDecimal128(-1, 38));
+```
+
+Результат:
+
+``` text
+10	10	19	19	39	39
+```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

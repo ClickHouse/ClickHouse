@@ -213,7 +213,7 @@ private:
         }
 
         to_vals_arr.getOffsets().insert(to_keys_offsets.begin(), to_keys_offsets.end());
-        block.getByPosition(result).column = std::move(res_tuple);
+        block[result].column = std::move(res_tuple);
     }
 
     template <typename KeyType>
@@ -255,7 +255,8 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        auto col1 = block.safeGetByPosition(arguments[0]), col2 = block.safeGetByPosition(arguments[1]);
+        auto col1 = block[arguments[0]];
+        auto col2 = block[arguments[1]];
 
         const auto * k = assert_cast<const DataTypeArray *>(col1.type.get());
         const auto * v = assert_cast<const DataTypeArray *>(col2.type.get());
@@ -269,7 +270,7 @@ private:
         if (arguments.size() == 3)
         {
             /* max key provided */
-            max_key_column = block.safeGetByPosition(arguments[2]).column;
+            max_key_column = block[arguments[2]].column;
         }
 
         switch (k->getNestedType()->getTypeId())

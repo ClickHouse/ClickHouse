@@ -127,6 +127,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
     format_settings.avro.output_codec = settings.output_format_avro_codec;
     format_settings.avro.output_sync_interval = settings.output_format_avro_sync_interval;
+    format_settings.date_time_output_format = settings.date_time_output_format;
 
     return format_settings;
 }

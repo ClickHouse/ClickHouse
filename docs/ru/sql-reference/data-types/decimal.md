@@ -79,7 +79,7 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 DB::Exception: Decimal math overflow.
 ```
 
-Проверка переполнения приводит к замедлению операций. При уверенности, что типа результата хватит для его записи проверку переполнения можно отключить настройкой decimal\_check\_overflow. В этом случае при переполнении вернется неверное значение:
+Проверка переполнения приводит к замедлению операций. При уверенности, что типа результата хватит для его записи проверку переполнения можно отключить настройкой decimal_check_overflow. В этом случае при переполнении вернется неверное значение:
 
 ``` sql
 SET decimal_check_overflow = 0;
@@ -101,5 +101,10 @@ SELECT toDecimal32(1, 8) < 100
 ``` text
 DB::Exception: Can't compare.
 ```
+
+**Смотрите также**
+-   [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
+-   [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
+
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/decimal/) <!--hide-->

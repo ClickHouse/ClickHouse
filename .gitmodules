@@ -158,7 +158,7 @@
 	url = https://github.com/openldap/openldap.git
 [submodule "contrib/AMQP-CPP"]
 	path = contrib/AMQP-CPP
-	url = https://github.com/CopernicaMarketingSoftware/AMQP-CPP.git
+	url = https://github.com/ClickHouse-Extras/AMQP-CPP.git
 [submodule "contrib/cassandra"]
 	path = contrib/cassandra
 	url = https://github.com/ClickHouse-Extras/cpp-driver.git
