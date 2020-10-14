@@ -47,12 +47,12 @@ Always returns `Ok.` regardless of the result of the internal dictionary update.
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 Reloads all dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries\_lazy\_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
 Always returns `Ok.` regardless of the result of the dictionary update.
 
 ## RELOAD DICTIONARY {#query_language-system-reload-dictionary}
 
-Completely reloads a dictionary `dictionary_name`, regardless of the state of the dictionary (LOADED / NOT\_LOADED / FAILED).
+Completely reloads a dictionary `dictionary_name`, regardless of the state of the dictionary (LOADED / NOT_LOADED / FAILED).
 Always returns `Ok.` regardless of the result of updating the dictionary.
 The status of the dictionary can be checked by querying the `system.dictionaries` table.
 
@@ -64,7 +64,7 @@ SELECT name, status FROM system.dictionaries;
 
 Resets ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
-For more convenient (automatic) cache management, see disable\_internal\_dns\_cache, dns\_cache\_update\_period parameters.
+For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_update_period parameters.
 
 ## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
@@ -91,7 +91,7 @@ The fourth one is useful to remove metadata of dead replica when all other repli
 ## DROP UNCOMPRESSED CACHE {#query_language-system-drop-uncompressed-cache}
 
 Reset the uncompressed data cache. Used in development of ClickHouse and performance tests.
-For manage uncompressed data cache parameters use following server level settings [uncompressed\_cache\_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) and query/user/profile level settings [use\_uncompressed\_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache)
+For manage uncompressed data cache parameters use following server level settings [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) and query/user/profile level settings [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache)
 
 ## DROP COMPILED EXPRESSION CACHE {#query_language-system-drop-compiled-expression-cache}
 
@@ -100,7 +100,7 @@ Complied expression cache used when query/user/profile enable option [compile](.
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
-Flushes buffers of log messages to system tables (e.g. system.query\_log). Allows you to not wait 7.5 seconds when debugging.
+Flushes buffers of log messages to system tables (e.g. system.query_log). Allows you to not wait 7.5 seconds when debugging.
 This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
