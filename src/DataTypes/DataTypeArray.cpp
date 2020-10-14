@@ -32,8 +32,8 @@ namespace ErrorCodes
 }
 
 
-DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
-    : nested{nested_}
+DataTypeArray::DataTypeArray(const DataTypePtr & nested_, size_t nested_level_)
+    : nested{nested_}, nested_level{nested_level_}
 {
 }
 
@@ -147,6 +147,23 @@ namespace
         }
 
         offset_values.resize(i);
+    }
+
+    MutableColumnPtr getArraySizesPositionIndependent(ColumnArray & column_array)
+    {
+        ColumnArray::Offsets & offset_values = column_array.getOffsets();
+        MutableColumnPtr new_offsets = column_array.getOffsetsColumn().cloneEmpty();
+
+        if (offset_values.empty())
+            return new_offsets;
+
+        auto & new_offsets_values = assert_cast<ColumnVector<ColumnArray::Offset> &>(*new_offsets).getData();
+        new_offsets_values.reserve(offset_values.size());
+        new_offsets_values.push_back(offset_values[0]);
+        for (size_t i = 1; i < offset_values.size(); ++i)
+            new_offsets_values.push_back(offset_values[i] - offset_values[i - 1]);
+
+        return new_offsets;
     }
 }
 
@@ -502,14 +519,23 @@ bool DataTypeArray::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && nested->equals(*static_cast<const DataTypeArray &>(rhs).nested);
 }
 
-DataTypePtr DataTypeArray::getSubcolumnType(const String & subcolumn_name) const
+DataTypePtr DataTypeArray::tryGetSubcolumnType(const String & subcolumn_name) const
 {
-    ReadBufferFromString buf(subcolumn_name);
-    size_t dim;
-    if (checkString("size", buf) && tryReadIntText(dim, buf) && dim < getNumberOfDimensions())
+    return tryGetSubcolumnTypeImpl(subcolumn_name, 0);
+}
+
+DataTypePtr DataTypeArray::tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const
+{
+    if (subcolumn_name == "size" + std::to_string(level))
         return std::make_shared<DataTypeUInt64>();
 
-    return std::make_shared<DataTypeArray>(nested->getSubcolumnType(subcolumn_name));
+    DataTypePtr subcolumn;
+    if (const auto * nested_array = typeid_cast<const DataTypeArray *>(nested.get()))
+        subcolumn = nested_array->tryGetSubcolumnTypeImpl(subcolumn_name, level + 1);
+    else
+        subcolumn = nested->tryGetSubcolumnType(subcolumn_name);
+
+    return (subcolumn ? std::make_shared<DataTypeArray>(std::move(subcolumn), nested_level + 1) : subcolumn);
 }
 
 MutableColumnPtr DataTypeArray::getSubcolumn(const String & subcolumn_name, IColumn & column) const
@@ -521,21 +547,15 @@ MutableColumnPtr DataTypeArray::getSubcolumnImpl(const String & subcolumn_name, 
 {
     auto & column_array = assert_cast<ColumnArray &>(column);
     if (subcolumn_name == "size" + std::to_string(level))
-        return column_array.getOffsetsPtr()->assumeMutable();
+        return getArraySizesPositionIndependent(column_array);
 
+    MutableColumnPtr subcolumn;
     if (const auto * nested_array = typeid_cast<const DataTypeArray *>(nested.get()))
-        return nested_array->getSubcolumnImpl(subcolumn_name, column, level + 1);
+        subcolumn = nested_array->getSubcolumnImpl(subcolumn_name, column_array.getData(), level + 1);
+    else
+        subcolumn = nested->getSubcolumn(subcolumn_name, column_array.getData());
 
-    auto subcolumn = nested->getSubcolumn(subcolumn_name, column_array.getData());
     return ColumnArray::create(std::move(subcolumn), column_array.getOffsetsPtr()->assumeMutable());
-}
-
-String DataTypeArray::getEscapedFileName(const NameAndTypePair & column) const
-{
-    if (column.isSubcolumn())
-        return escapeForFileName(column.getStorageName()) + "." + column.getSubcolumnName();
-
-    return escapeForFileName(column.name);
 }
 
 size_t DataTypeArray::getNumberOfDimensions() const

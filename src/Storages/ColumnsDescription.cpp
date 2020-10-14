@@ -523,7 +523,6 @@ void ColumnsDescription::addSubcolumns(const String & storage_name, const DataTy
 {
     for (const auto & subcolumn_name : storage_type->getSubcolumnNames())
     {
-        std::cerr << "storage_name: " << storage_name << ", subcolumn_name: " << subcolumn_name << "\n";
         auto subcolumn = NameAndTypePair(storage_name, subcolumn_name,
             storage_type, storage_type->getSubcolumnType(subcolumn_name));
 

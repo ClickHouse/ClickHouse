@@ -95,9 +95,8 @@ public:
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
-    DataTypePtr getSubcolumnType(const String & subcolumn_name) const override;
+    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const override;
-    String getEscapedFileName(const NameAndTypePair & column) const override;
 
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }

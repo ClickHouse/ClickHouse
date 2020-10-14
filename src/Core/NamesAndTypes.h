@@ -46,7 +46,7 @@ private:
 };
 
 template<int I>
-auto get(const NameAndTypePair & name_and_type)
+decltype(auto) get(const NameAndTypePair & name_and_type)
 {
     if constexpr (I == 0)
         return name_and_type.name;
