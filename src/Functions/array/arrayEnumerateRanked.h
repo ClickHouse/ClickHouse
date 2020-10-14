@@ -116,7 +116,7 @@ public:
         return type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -150,7 +150,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
 
 template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
-    Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+        ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
     size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns;

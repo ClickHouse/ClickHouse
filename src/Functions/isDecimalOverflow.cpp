@@ -60,7 +60,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
     {
         const auto & src_column = block[arguments[0]];
         if (!src_column.column)

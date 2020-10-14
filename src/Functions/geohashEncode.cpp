@@ -100,7 +100,7 @@ public:
 
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const IColumn * longitude = block[arguments[0]].column.get();
         const IColumn * latitude = block[arguments[1]].column.get();

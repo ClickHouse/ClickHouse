@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 template <bool or_null>
-void ExecutableFunctionJoinGet<or_null>::execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t)
+void ExecutableFunctionJoinGet<or_null>::execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t)
 {
     ColumnsWithTypeAndName keys;
     for (size_t i = 2; i < arguments.size(); ++i)
@@ -29,7 +29,7 @@ void ExecutableFunctionJoinGet<or_null>::execute(Block & block, const ColumnNumb
 }
 
 template <bool or_null>
-ExecutableFunctionImplPtr FunctionJoinGet<or_null>::prepare(const Block &, const ColumnNumbers &, size_t) const
+ExecutableFunctionImplPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const
 {
     return std::make_unique<ExecutableFunctionJoinGet<or_null>>(join, DB::Block{{return_type->createColumn(), return_type, attr_name}});
 }

@@ -51,7 +51,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
         size_t current_block_number = block_number++;
         block[result].column = ColumnUInt64::create(input_rows_count, current_block_number);

@@ -571,7 +571,7 @@ private:
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
-    bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
+    bool executeNumRightType(ColumnsWithTypeAndName & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
@@ -600,7 +600,7 @@ private:
     }
 
     template <typename T0, typename T1>
-    bool executeNumConstRightType(Block & block, size_t result, const ColumnConst * col_left, const IColumn * col_right_untyped) const
+    bool executeNumConstRightType(ColumnsWithTypeAndName & block, size_t result, const ColumnConst * col_left, const IColumn * col_right_untyped) const
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
@@ -626,7 +626,7 @@ private:
     }
 
     template <typename T0>
-    bool executeNumLeftType(Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
+    bool executeNumLeftType(ColumnsWithTypeAndName & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
     {
         if (const ColumnVector<T0> * col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped))
         {
@@ -676,7 +676,7 @@ private:
         return false;
     }
 
-    void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right) const
+    void executeDecimal(ColumnsWithTypeAndName & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right) const
     {
         TypeIndex left_number = col_left.type->getTypeId();
         TypeIndex right_number = col_right.type->getTypeId();
@@ -699,7 +699,7 @@ private:
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1) const
+    bool executeString(ColumnsWithTypeAndName & block, size_t result, const IColumn * c0, const IColumn * c1) const
     {
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
@@ -824,8 +824,8 @@ private:
     }
 
     bool executeWithConstString(
-        Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
-        const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
+            ColumnsWithTypeAndName & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
+            const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
     {
         /// To compare something with const string, we cast constant to appropriate type and compare as usual.
         /// It is ok to throw exception if value is not convertible.
@@ -867,8 +867,8 @@ private:
         return true;
     }
 
-    void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1,
-                          size_t input_rows_count) const
+    void executeTuple(ColumnsWithTypeAndName & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1,
+                      size_t input_rows_count) const
     {
         /** We will lexicographically compare the tuples. This is done as follows:
           * x == y : x1 == y1 && x2 == y2 ...
@@ -930,19 +930,19 @@ private:
         executeTupleImpl(block, result, x, y, tuple_size, input_rows_count);
     }
 
-    void executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
-                              const ColumnsWithTypeAndName & y, size_t tuple_size,
-                              size_t input_rows_count) const;
+    void executeTupleImpl(ColumnsWithTypeAndName & block, size_t result, const ColumnsWithTypeAndName & x,
+                          const ColumnsWithTypeAndName & y, size_t tuple_size,
+                          size_t input_rows_count) const;
 
     void executeTupleEqualityImpl(
-        std::shared_ptr<IFunctionOverloadResolver> func_compare,
-        std::shared_ptr<IFunctionOverloadResolver> func_convolution,
-        Block & block,
-        size_t result,
-        const ColumnsWithTypeAndName & x,
-        const ColumnsWithTypeAndName & y,
-        size_t tuple_size,
-        size_t input_rows_count) const
+            std::shared_ptr<IFunctionOverloadResolver> func_compare,
+            std::shared_ptr<IFunctionOverloadResolver> func_convolution,
+            ColumnsWithTypeAndName & block,
+            size_t result,
+            const ColumnsWithTypeAndName & x,
+            const ColumnsWithTypeAndName & y,
+            size_t tuple_size,
+            size_t input_rows_count) const
     {
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
@@ -984,17 +984,17 @@ private:
     }
 
     void executeTupleLessGreaterImpl(
-        std::shared_ptr<IFunctionOverloadResolver> func_compare_head,
-        std::shared_ptr<IFunctionOverloadResolver> func_compare_tail,
-        std::shared_ptr<IFunctionOverloadResolver> func_and,
-        std::shared_ptr<IFunctionOverloadResolver> func_or,
-        std::shared_ptr<IFunctionOverloadResolver> func_equals,
-        Block & block,
-        size_t result,
-        const ColumnsWithTypeAndName & x,
-        const ColumnsWithTypeAndName & y,
-        size_t tuple_size,
-        size_t input_rows_count) const
+            std::shared_ptr<IFunctionOverloadResolver> func_compare_head,
+            std::shared_ptr<IFunctionOverloadResolver> func_compare_tail,
+            std::shared_ptr<IFunctionOverloadResolver> func_and,
+            std::shared_ptr<IFunctionOverloadResolver> func_or,
+            std::shared_ptr<IFunctionOverloadResolver> func_equals,
+            ColumnsWithTypeAndName & block,
+            size_t result,
+            const ColumnsWithTypeAndName & x,
+            const ColumnsWithTypeAndName & y,
+            size_t tuple_size,
+            size_t input_rows_count) const
     {
         ColumnsWithTypeAndName tmp_block;
 
@@ -1066,7 +1066,7 @@ private:
         block[result].column = tmp_block[tmp_block.size() - 1].column;
     }
 
-    void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1) const
+    void executeGenericIdenticalTypes(ColumnsWithTypeAndName & block, size_t result, const IColumn * c0, const IColumn * c1) const
     {
         bool c0_const = isColumnConst(*c0);
         bool c1_const = isColumnConst(*c1);
@@ -1094,7 +1094,7 @@ private:
         }
     }
 
-    void executeGeneric(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
+    void executeGeneric(ColumnsWithTypeAndName & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype({c0.type, c1.type});
 
@@ -1173,7 +1173,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const auto & col_with_type_and_name_left = block[arguments[0]];
         const auto & col_with_type_and_name_right = block[arguments[1]];

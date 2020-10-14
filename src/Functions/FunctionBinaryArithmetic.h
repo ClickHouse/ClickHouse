@@ -613,7 +613,7 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
-    void executeAggregateMultiply(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    void executeAggregateMultiply(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         ColumnNumbers new_arguments = arguments;
         if (WhichDataType(block[new_arguments[1]].type).isAggregateFunction())
@@ -680,7 +680,7 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     /// Merge two aggregation states together.
-    void executeAggregateAddition(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    void executeAggregateAddition(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         const IColumn & lhs_column = *block[arguments[0]].column;
         const IColumn & rhs_column = *block[arguments[1]].column;
@@ -712,8 +712,8 @@ class FunctionBinaryArithmetic : public IFunction
             block[result].column = std::move(column_to);
     }
 
-    void executeDateTimeIntervalPlusMinus(Block & block, const ColumnNumbers & arguments,
-        size_t result, size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
+    void executeDateTimeIntervalPlusMinus(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments,
+                                          size_t result, size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
     {
         ColumnNumbers new_arguments = arguments;
 
@@ -722,7 +722,7 @@ class FunctionBinaryArithmetic : public IFunction
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
-        Block new_block = block;
+        ColumnsWithTypeAndName new_block = block;
         new_block[new_arguments[1]].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
         ColumnsWithTypeAndName new_arguments_with_type_and_name =
@@ -851,7 +851,7 @@ public:
         return type_res;
     }
 
-    bool executeFixedString(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeFixedString(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result) const
     {
         using OpImpl = FixedStringOperationImpl<Op<UInt8, UInt8>>;
 
@@ -929,7 +929,7 @@ public:
     }
 
     template <typename A, typename B>
-    bool executeNumeric(Block & block, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right) const
+    bool executeNumeric(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -1056,7 +1056,7 @@ public:
         return false;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(block[arguments[0]].type, block[arguments[1]].type))
@@ -1171,7 +1171,7 @@ class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op
 public:
     using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>;
     using Monotonicity = typename Base::Monotonicity;
-    using Block = typename Base::Block;
+    using Block = typename Base::ColumnsWithTypeAndName;
 
     static FunctionPtr create(
         const ColumnWithTypeAndName & left_,

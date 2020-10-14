@@ -36,7 +36,7 @@ namespace
             return std::make_shared<DataTypeUInt8>();
         }
 
-        void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+        void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
         {
             String message;
             if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block[arguments[0]].column.get()))

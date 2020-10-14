@@ -54,7 +54,7 @@ public:
         return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone_name);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         block[result].column = block[arguments[0]].column;
     }

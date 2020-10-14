@@ -72,7 +72,7 @@ private:
 
     template <typename KeyType, typename ValType>
     void execute2(
-        Block & block, size_t result, ColumnPtr key_column, ColumnPtr val_column, ColumnPtr max_key_column, const DataTypeTuple & res_type)
+            ColumnsWithTypeAndName & block, size_t result, ColumnPtr key_column, ColumnPtr val_column, ColumnPtr max_key_column, const DataTypeTuple & res_type)
         const
     {
         MutableColumnPtr res_tuple = res_type.createColumn();
@@ -218,7 +218,7 @@ private:
 
     template <typename KeyType>
     void execute1(
-        Block & block, size_t result, ColumnPtr key_column, ColumnPtr val_column, ColumnPtr max_key_column, const DataTypeTuple & res_type)
+            ColumnsWithTypeAndName & block, size_t result, ColumnPtr key_column, ColumnPtr val_column, ColumnPtr max_key_column, const DataTypeTuple & res_type)
         const
     {
         const auto & val_type = (assert_cast<const DataTypeArray *>(res_type.getElements()[1].get()))->getNestedType();
@@ -253,7 +253,7 @@ private:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         auto col1 = block[arguments[0]];
         auto col2 = block[arguments[1]];

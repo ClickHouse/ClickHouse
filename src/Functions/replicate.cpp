@@ -48,7 +48,7 @@ public:
         return std::make_shared<DataTypeArray>(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         ColumnPtr first_column = block[arguments[0]].column;
         const ColumnArray * array_column = checkAndGetColumn<ColumnArray>(block[arguments[1]].column.get());

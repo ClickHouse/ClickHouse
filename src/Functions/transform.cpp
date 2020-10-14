@@ -143,7 +143,7 @@ public:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(block[arguments[1]].column.get());
         const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(block[arguments[2]].column.get());
@@ -187,7 +187,7 @@ public:
     }
 
 private:
-    static void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+    static void executeConst(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
         /// Materialize the input column and compute the function as usual.
 
@@ -741,7 +741,7 @@ private:
     mutable Cache cache;
 
     /// Can be called from different threads. It works only on the first call.
-    void initialize(const Array & from, const Array & to, Block & block, const ColumnNumbers & arguments) const
+    void initialize(const Array & from, const Array & to, ColumnsWithTypeAndName & block, const ColumnNumbers & arguments) const
     {
         if (cache.initialized)
             return;

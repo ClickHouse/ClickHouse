@@ -24,7 +24,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     String getName() const override { return name; }
 
@@ -56,7 +56,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const override;
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & sample_block, const ColumnNumbers & arguments, size_t result) const override;
 
 private:
     TableLockHolder table_lock;

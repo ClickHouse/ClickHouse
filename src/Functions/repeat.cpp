@@ -165,7 +165,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         const auto & strcolumn = block[arguments[0]].column;
         const auto & numcolumn = block[arguments[1]].column;

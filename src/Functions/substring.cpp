@@ -80,9 +80,9 @@ public:
 
     template <typename Source>
     void executeForSource(const ColumnPtr & column_start, const ColumnPtr & column_length,
-                              const ColumnConst * column_start_const, const ColumnConst * column_length_const,
-                              Int64 start_value, Int64 length_value, Block & block, size_t result, Source && source,
-                              size_t input_rows_count) const
+                          const ColumnConst * column_start_const, const ColumnConst * column_length_const,
+                          Int64 start_value, Int64 length_value, ColumnsWithTypeAndName & block, size_t result, Source && source,
+                          size_t input_rows_count) const
     {
         auto col_res = ColumnString::create();
 
@@ -118,7 +118,7 @@ public:
         block[result].column = std::move(col_res);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         size_t number_of_arguments = arguments.size();
 

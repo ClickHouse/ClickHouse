@@ -46,7 +46,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const auto in = block[arguments.front()].column.get();
 
@@ -64,7 +64,7 @@ public:
     }
 
     template <typename T>
-    bool execute(Block & block, const IColumn * in_untyped, const size_t result) const
+    bool execute(ColumnsWithTypeAndName & block, const IColumn * in_untyped, const size_t result) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {

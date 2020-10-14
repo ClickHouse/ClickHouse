@@ -1132,7 +1132,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         try
         {
@@ -1177,7 +1177,7 @@ public:
     }
 
 private:
-    void executeInternal(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    void executeInternal(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         if (!arguments.size())
             throw Exception{"Function " + getName() + " expects at least 1 arguments",
@@ -1394,7 +1394,7 @@ public:
     }
 
     template <typename ConvertToDataType>
-    bool executeInternal(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, UInt32 scale = 0) const
+    bool executeInternal(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, UInt32 scale = 0) const
     {
         const IDataType * from_type = block[arguments[0]].type.get();
 
@@ -1414,7 +1414,7 @@ public:
         return false;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         bool ok = true;
 
@@ -1856,7 +1856,7 @@ using FunctionParseDateTime64BestEffortOrNull = FunctionConvertFromString<
 class ExecutableFunctionCast : public IExecutableFunctionImpl
 {
 public:
-    using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t, size_t)>;
+    using WrapperType = std::function<void(ColumnsWithTypeAndName &, const ColumnNumbers &, size_t, size_t)>;
 
     explicit ExecutableFunctionCast(WrapperType && wrapper_function_, const char * name_)
             : wrapper_function(std::move(wrapper_function_)), name(name_) {}
@@ -1864,7 +1864,7 @@ public:
     String getName() const override { return name; }
 
 protected:
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// drop second argument, pass others
         ColumnNumbers new_arguments{arguments.front()};
@@ -1890,7 +1890,7 @@ struct NameCast { static constexpr auto name = "CAST"; };
 class FunctionCast final : public IFunctionBaseImpl
 {
 public:
-    using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t, size_t)>;
+    using WrapperType = std::function<void(ColumnsWithTypeAndName &, const ColumnNumbers &, size_t, size_t)>;
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
 
     FunctionCast(const char * name_, MonotonicityForRange && monotonicity_for_range_
@@ -1903,7 +1903,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
     {
         return std::make_unique<ExecutableFunctionCast>(
                 prepareUnpackDictionaries(getArgumentTypes()[0], getReturnType()), name);
@@ -1950,7 +1950,7 @@ private:
                 FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                 .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        return [function_adaptor] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             function_adaptor->execute(block, arguments, result, input_rows_count);
         };
@@ -1964,7 +1964,7 @@ private:
                 FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                 .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        return [function_adaptor] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             function_adaptor->execute(block, arguments, result, input_rows_count);
         };
@@ -1975,7 +1975,7 @@ private:
         if (!isStringOrFixedString(from_type))
             throw Exception{"CAST AS FixedString is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED};
 
-        return [N] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+        return [N] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
             FunctionToFixedString::executeForN(block, arguments, result, N);
         };
@@ -1992,7 +1992,7 @@ private:
                 FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                 .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        return [function_adaptor] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             function_adaptor->execute(block, arguments, result, input_rows_count);
         };
@@ -2016,7 +2016,7 @@ private:
             throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
                 ErrorCodes::CANNOT_CONVERT_TYPE};
 
-        return [type_index, scale, to_type] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        return [type_index, scale, to_type] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
             {
@@ -2042,7 +2042,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return [] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+            return [] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
             {
                 ConvertImplGenericFromString::execute(block, arguments, result);
             };
@@ -2057,7 +2057,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return [] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+            return [] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
             {
                 ConvertImplGenericFromString::execute(block, arguments, result);
             };
@@ -2086,7 +2086,7 @@ private:
         const auto nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type);
 
         return [nested_function, from_nested_type, to_nested_type](
-            Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+                ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
             const auto & array_arg = block[arguments.front()];
 
@@ -2098,7 +2098,7 @@ private:
                     { col_array->getDataPtr(), from_nested_type, "" },
                     { nullptr, to_nested_type, "" }
                 };
-                Block nested_block(nested_block_columns);
+                ColumnsWithTypeAndName nested_block(nested_block_columns);
 
                 /// convert nested column
                 nested_function(nested_block, {0}, 1, nested_block_columns.front().column->size());
@@ -2116,7 +2116,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return [] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+            return [] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
             {
                 ConvertImplGenericFromString::execute(block, arguments, result);
             };
@@ -2141,7 +2141,7 @@ private:
             element_wrappers.push_back(prepareUnpackDictionaries(idx_type.second, to_element_types[idx_type.first]));
 
         return [element_wrappers, from_element_types, to_element_types]
-            (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+            (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             const auto col = block[arguments.front()].column.get();
 
@@ -2196,7 +2196,7 @@ private:
             auto func_or_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                     .build(ColumnsWithTypeAndName{{nullptr, from_type, "" }});
 
-            return [func_or_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+            return [func_or_adaptor] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
                 func_or_adaptor->execute(block, arguments, result, input_rows_count);
             };
@@ -2235,7 +2235,7 @@ private:
     WrapperType createStringToEnumWrapper(ssize_t source_is_nullable) const
     {
         const char * function_name = name;
-        return [function_name, source_is_nullable] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+        return [function_name, source_is_nullable] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
             const auto first_col = block[arguments.front()].column.get();
 
@@ -2287,7 +2287,7 @@ private:
 
     WrapperType createIdentityWrapper(const DataTypePtr &) const
     {
-        return [] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+        return [] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
             block[result].column = block[arguments.front()].column;
         };
@@ -2296,7 +2296,7 @@ private:
     WrapperType createNothingWrapper(const IDataType * to_type) const
     {
         ColumnPtr res = to_type->createColumnConstWithDefaultValue(1);
-        return [res] (Block & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
+        return [res] (ColumnsWithTypeAndName & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
         {
             /// Column of Nothing type is trivially convertible to any other column
             block[result].column = res->cloneResized(input_rows_count)->convertToFullColumnIfConst();
@@ -2315,7 +2315,7 @@ private:
             if (!to_nested->isNullable())
                 throw Exception{"Cannot convert NULL to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
 
-            return [](Block & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
+            return [](ColumnsWithTypeAndName & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
             {
                 auto & res = block[result];
                 res.column = res.type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
@@ -2333,7 +2333,7 @@ private:
             return wrapper;
 
         return [wrapper, from_low_cardinality, to_low_cardinality, skip_not_null_check]
-                (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+                (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             auto & arg = block[arguments[0]];
             auto & res = block[result];
@@ -2415,7 +2415,7 @@ private:
         if (result_is_nullable)
         {
             return [wrapper, source_is_nullable]
-                (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+                (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
                 /// Create a temporary block on which to perform the operation.
                 auto & res = block[result];
@@ -2456,7 +2456,7 @@ private:
         {
             /// Conversion from Nullable to non-Nullable.
 
-            return [wrapper, skip_not_null_check] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+            return [wrapper, skip_not_null_check] (ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
                 auto tmp_block_columns = createBlockWithNestedColumns(block, arguments, result);
 

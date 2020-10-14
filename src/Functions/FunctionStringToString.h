@@ -52,7 +52,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const ColumnPtr column = block[arguments[0]].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))

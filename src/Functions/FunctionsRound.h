@@ -545,7 +545,7 @@ public:
         return arguments[0];
     }
 
-    static Int64 getScaleArg(Block & block, const ColumnNumbers & arguments)
+    static Int64 getScaleArg(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments)
     {
         if (arguments.size() == 2)
         {
@@ -566,7 +566,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & column = block[arguments[0]];
         Int64 scale_arg = getScaleArg(block, arguments);
@@ -646,7 +646,7 @@ public:
         return getLeastSupertype({type_x, type_arr_nested});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         auto in_column = block[arguments[0]].column;
         const auto & in_type = block[arguments[0]].type;

@@ -72,7 +72,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         /// Format function is not proven to be faster for two arguments.
         /// Actually there is overhead of 2 to 5 extra instructions for each string for checking empty strings in FormatImpl.
@@ -87,7 +87,7 @@ public:
 private:
     const Context & context;
 
-    void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
+    void executeBinary(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
     {
         const IColumn * c0 = block[arguments[0]].column.get();
         const IColumn * c1 = block[arguments[1]].column.get();
@@ -115,7 +115,7 @@ private:
         block[result].column = std::move(c_res);
     }
 
-    void executeFormatImpl(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
+    void executeFormatImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
     {
         const size_t num_arguments = arguments.size();
         assert(num_arguments >= 2);

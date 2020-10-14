@@ -35,7 +35,7 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         DB::Block expr_block;
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -81,7 +81,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionExpression>(expression_actions, signature);
     }
@@ -119,7 +119,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -179,7 +179,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionCapture>(expression_actions, capture);
     }

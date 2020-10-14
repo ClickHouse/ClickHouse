@@ -22,7 +22,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     /// Execute the function on the block.
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         block[result].column
             = DataTypeString().createColumnConst(input_rows_count, block[arguments[0]].type->getName());
@@ -45,7 +45,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionToTypeName>();
     }

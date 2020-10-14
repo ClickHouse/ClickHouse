@@ -80,7 +80,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
     {
         if constexpr (ignore_set)
         {
