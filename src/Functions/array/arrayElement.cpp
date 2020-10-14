@@ -795,17 +795,15 @@ static bool getMappedValue(const ColumnArray * col_values_untyped, std::vector<i
 
 bool FunctionArrayElement::executeMap(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
-    const ColumnMap * col_map = typeid_cast<const ColumnMap *>(block.getByPosition(arguments[0]).column.get());
+    const ColumnMap * col_map = typeid_cast<const ColumnMap *>(block[arguments[0]].column.get());
     if (!col_map)
         return false;
 
-    const DataTypes & kv_types = assert_cast<const DataTypeMap *>(block.getByPosition(arguments[0]).type.get())->getElements();
-        // *typeid_cast<const DataTypeMap &>(*block.getByPosition(arguments[0]).type).getElements();
+    const DataTypes & kv_types = assert_cast<const DataTypeMap *>(block[arguments[0]].type.get())->getElements();
     const DataTypePtr & key_type = (typeid_cast<const DataTypeArray *>(kv_types[0].get()))->getNestedType();
     const DataTypePtr & value_type = (typeid_cast<const DataTypeArray *>(kv_types[1].get()))->getNestedType();
 
-    const ColumnPtr aaaa = block.getByPosition(arguments[1]).column;
-    Field index = (*block.getByPosition(arguments[1]).column)[0];
+    Field index = (*block[arguments[1]].column)[0];
     if (strcmp(index.getTypeName(), key_type->getName().data()) != 0)
         throw Exception (ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Second argument for key's type must be '{}', got '{}' instead",
@@ -829,7 +827,7 @@ bool FunctionArrayElement::executeMap(Block & block, const ColumnNumbers & argum
         if (!getMappedValue(col_values_untyped, matchedIdx, value_type->getTypeId(), col_res_untyped.get()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "value type unmatched, we need type '{}' failed", value_type->getName());
     }
-    block.getByPosition(result).column = std::move(col_res_untyped);
+    block[result].column = std::move(col_res_untyped);
 
     return true;
 }
@@ -872,7 +870,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
 
     const ColumnArray * col_array = nullptr;
     const ColumnArray * col_const_array = nullptr;
-    const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(block.getByPosition(arguments[0]).column.get());
+    const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(block[arguments[0]].column.get());
     if (col_map)
     {
         executeMap(block, arguments, result, input_rows_count);

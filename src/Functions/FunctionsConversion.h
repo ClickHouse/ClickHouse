@@ -2191,14 +2191,14 @@ private:
         return []
             (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
-            const auto col = block.getByPosition(arguments.front()).column.get();
+            const auto col = block[arguments.front()].column.get();
             const ColumnMap & column_map = typeid_cast<const ColumnMap &>(*col);
 
             Columns converted_columns(2);
             converted_columns[0] = column_map.getColumns()[0];
             converted_columns[1] = column_map.getColumns()[1];
 
-            block.getByPosition(result).column = ColumnMap::create(converted_columns);
+            block[result].column = ColumnMap::create(converted_columns);
         };
     }
 
