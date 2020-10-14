@@ -135,11 +135,11 @@ public:
         }
     }
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (arguments.size() == 1)
         {
-            ColumnPtr column_array_ptr = block[arguments[0]].column;
+            ColumnPtr column_array_ptr = columns[arguments[0]].column;
             const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
             if (!column_array)
@@ -151,11 +151,11 @@ public:
                 column_array = assert_cast<const ColumnArray *>(column_array_ptr.get());
             }
 
-            block[result].column = Impl::execute(*column_array, column_array->getDataPtr());
+            columns[result].column = Impl::execute(*column_array, column_array->getDataPtr());
         }
         else
         {
-            const auto & column_with_type_and_name = block[arguments[0]];
+            const auto & column_with_type_and_name = columns[arguments[0]];
 
             if (!column_with_type_and_name.column)
                 throw Exception("First argument for function " + getName() + " must be a function.",
@@ -177,7 +177,7 @@ public:
 
             for (size_t i = 1; i < arguments.size(); ++i)
             {
-                const auto & array_with_type_and_name = block[arguments[i]];
+                const auto & array_with_type_and_name = columns[arguments[i]];
 
                 ColumnPtr column_array_ptr = array_with_type_and_name.column;
                 const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
@@ -220,7 +220,7 @@ public:
                                                           array_with_type_and_name.name));
             }
 
-            /// Put all the necessary columns multiplied by the sizes of arrays into the block.
+            /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
             auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
             auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
             replicated_column_function->appendArguments(arrays);
@@ -229,7 +229,7 @@ public:
             if (lambda_result->lowCardinality())
                 lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
 
-            block[result].column = Impl::execute(*column_first_array, lambda_result);
+            columns[result].column = Impl::execute(*column_first_array, lambda_result);
         }
     }
 };

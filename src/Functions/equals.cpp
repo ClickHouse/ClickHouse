@@ -13,14 +13,14 @@ void registerFunctionEquals(FunctionFactory & factory)
 }
 
 template <>
-void FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(ColumnsWithTypeAndName & block, size_t result, const ColumnsWithTypeAndName & x,
+void FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(ColumnsWithTypeAndName & columns, size_t result, const ColumnsWithTypeAndName & x,
                                                                 const ColumnsWithTypeAndName & y, size_t tuple_size,
                                                                 size_t input_rows_count) const
 {
     return executeTupleEqualityImpl(
         FunctionFactory::instance().get("equals", context),
         FunctionFactory::instance().get("and", context),
-        block, result, x, y, tuple_size, input_rows_count);
+        columns, result, x, y, tuple_size, input_rows_count);
 }
 
 }

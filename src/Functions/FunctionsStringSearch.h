@@ -97,16 +97,16 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
-        const ColumnPtr & column_haystack = block[arguments[0]].column;
-        const ColumnPtr & column_needle = block[arguments[1]].column;
+        const ColumnPtr & column_haystack = columns[arguments[0]].column;
+        const ColumnPtr & column_needle = columns[arguments[1]].column;
 
         ColumnPtr column_start_pos = nullptr;
         if (arguments.size() >= 3)
-            column_start_pos = block[arguments[2]].column;
+            column_start_pos = columns[arguments[2]].column;
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
@@ -127,10 +127,10 @@ public:
                     vec_res);
 
                 if (is_col_start_pos_const)
-                    block[result].column
-                        = block[result].type->createColumnConst(col_haystack_const->size(), toField(vec_res[0]));
+                    columns[result].column
+                        = columns[result].type->createColumnConst(col_haystack_const->size(), toField(vec_res[0]));
                 else
-                    block[result].column = std::move(col_res);
+                    columns[result].column = std::move(col_res);
 
                 return;
             }
@@ -175,11 +175,11 @@ public:
                 vec_res);
         else
             throw Exception(
-                "Illegal columns " + block[arguments[0]].column->getName() + " and "
-                    + block[arguments[1]].column->getName() + " of arguments of function " + getName(),
+                "Illegal columns " + columns[arguments[0]].column->getName() + " and "
+                    + columns[arguments[1]].column->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        block[result].column = std::move(col_res);
+        columns[result].column = std::move(col_res);
     }
 };
 

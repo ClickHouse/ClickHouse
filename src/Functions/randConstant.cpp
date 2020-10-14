@@ -22,9 +22,9 @@ public:
 
 bool useDefaultImplementationForNulls() const override { return false; }
 
-    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block[result].column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
+        columns[result].column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
     }
 
 private:

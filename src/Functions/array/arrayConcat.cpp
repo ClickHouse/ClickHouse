@@ -49,13 +49,13 @@ public:
         return getLeastSupertype(arguments);
     }
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const DataTypePtr & return_type = block[result].type;
+        const DataTypePtr & return_type = columns[result].type;
 
         if (return_type->onlyNull())
         {
-            block[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
+            columns[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
 
@@ -66,7 +66,7 @@ public:
 
         for (size_t i = 0; i < num_args; ++i)
         {
-            const ColumnWithTypeAndName & arg = block[arguments[i]];
+            const ColumnWithTypeAndName & arg = columns[arguments[i]];
             ColumnPtr preprocessed_column = arg.column;
 
             if (!arg.type->equals(*return_type))
@@ -95,7 +95,7 @@ public:
 
         auto sink = GatherUtils::concat(sources);
 
-        block[result].column = std::move(sink);
+        columns[result].column = std::move(sink);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

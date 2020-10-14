@@ -75,16 +75,16 @@ public:
         return true;
     }
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IColumn * encoded = block[arguments[0]].column.get();
-        ColumnPtr & res_column = block[result].column;
+        const IColumn * encoded = columns[arguments[0]].column.get();
+        ColumnPtr & res_column = columns[result].column;
 
         if (tryExecute<ColumnString>(encoded, res_column) ||
             tryExecute<ColumnFixedString>(encoded, res_column))
             return;
 
-        throw Exception("Unsupported argument type:" + block[arguments[0]].column->getName()
+        throw Exception("Unsupported argument type:" + columns[arguments[0]].column->getName()
                         + " of argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
     }

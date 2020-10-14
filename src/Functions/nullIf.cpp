@@ -43,36 +43,36 @@ public:
         return makeNullable(arguments[0]);
     }
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         /// nullIf(col1, col2) == if(col1 = col2, NULL, col1)
 
-        ColumnsWithTypeAndName temp_block = block;
+        ColumnsWithTypeAndName temp_columns = columns;
 
         auto equals_func = FunctionFactory::instance().get("equals", context)->build(
-            {temp_block[arguments[0]], temp_block[arguments[1]]});
+            {temp_columns[arguments[0]], temp_columns[arguments[1]]});
 
-        size_t equals_res_pos = temp_block.size();
-        temp_block.emplace_back(ColumnWithTypeAndName{nullptr, equals_func->getReturnType(), ""});
+        size_t equals_res_pos = temp_columns.size();
+        temp_columns.emplace_back(ColumnWithTypeAndName{nullptr, equals_func->getReturnType(), ""});
 
-        equals_func->execute(temp_block, {arguments[0], arguments[1]}, equals_res_pos, input_rows_count);
+        equals_func->execute(temp_columns, {arguments[0], arguments[1]}, equals_res_pos, input_rows_count);
 
         /// Argument corresponding to the NULL value.
-        size_t null_pos = temp_block.size();
+        size_t null_pos = temp_columns.size();
 
         /// Append a NULL column.
         ColumnWithTypeAndName null_elem;
-        null_elem.type = block[result].type;
+        null_elem.type = columns[result].type;
         null_elem.column = null_elem.type->createColumnConstWithDefaultValue(input_rows_count);
         null_elem.name = "NULL";
 
-        temp_block.emplace_back(null_elem);
+        temp_columns.emplace_back(null_elem);
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {temp_block[equals_res_pos], temp_block[null_pos], temp_block[arguments[0]]});
-        func_if->execute(temp_block, {equals_res_pos, null_pos, arguments[0]}, result, input_rows_count);
+            {temp_columns[equals_res_pos], temp_columns[null_pos], temp_columns[arguments[0]]});
+        func_if->execute(temp_columns, {equals_res_pos, null_pos, arguments[0]}, result, input_rows_count);
 
-        block[result].column = makeNullable(std::move(temp_block[result].column));
+        columns[result].column = makeNullable(std::move(temp_columns[result].column));
     }
 };
 

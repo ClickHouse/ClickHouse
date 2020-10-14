@@ -49,20 +49,20 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         size_t rows = input_rows_count;
         size_t num_args = arguments.size();
 
         DataTypePtr common_type = nullptr;
-        auto commonType = [&common_type, &block, &arguments]()
+        auto commonType = [&common_type, &columns, &arguments]()
         {
             if (common_type == nullptr)
             {
                 DataTypes data_types;
                 data_types.reserve(arguments.size());
                 for (const auto & argument : arguments)
-                    data_types.push_back(block[argument].type);
+                    data_types.push_back(columns[argument].type);
 
                 common_type = getLeastSupertype(data_types);
             }
@@ -74,7 +74,7 @@ public:
 
         for (size_t i = 0; i < num_args; ++i)
         {
-            const auto & argument = block[arguments[i]];
+            const auto & argument = columns[arguments[i]];
             ColumnPtr preprocessed_column = argument.column;
 
             const auto argument_type = typeid_cast<const DataTypeArray *>(argument.type.get());
@@ -109,7 +109,7 @@ public:
         auto result_column_ptr = typeid_cast<ColumnUInt8 *>(result_column.get());
         GatherUtils::sliceHas(*sources[0], *sources[1], search_type, *result_column_ptr);
 
-        block[result].column = std::move(result_column);
+        columns[result].column = std::move(result_column);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

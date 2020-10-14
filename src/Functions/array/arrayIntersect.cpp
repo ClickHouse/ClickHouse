@@ -48,7 +48,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -88,7 +88,7 @@ private:
         ColumnsWithTypeAndName casted;
     };
 
-    static CastArgumentsResult castColumns(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments,
+    static CastArgumentsResult castColumns(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments,
                                            const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
     UnpackedArrays prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const;
 
@@ -206,7 +206,7 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
 }
 
 FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
-        ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const DataTypePtr & return_type,
+        ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, const DataTypePtr & return_type,
         const DataTypePtr & return_type_with_nulls)
 {
     size_t num_args = arguments.size();
@@ -233,7 +233,7 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
 
     for (size_t i = 0; i < num_args; ++i)
     {
-        const ColumnWithTypeAndName & arg = block[arguments[i]];
+        const ColumnWithTypeAndName & arg = columns[arguments[i]];
         initial_columns[i] = arg;
         columns[i] = arg;
         auto & column = columns[i];
@@ -383,9 +383,9 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     return arrays;
 }
 
-void FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+void FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
-    const auto & return_type = block[result].type;
+    const auto & return_type = columns[result].type;
     const auto * return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
 
     if (!return_type_array)
@@ -395,7 +395,7 @@ void FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & block, const C
 
     if (typeid_cast<const DataTypeNothing *>(nested_return_type.get()))
     {
-        block[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
+        columns[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
         return;
     }
 
@@ -403,11 +403,11 @@ void FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & block, const C
     DataTypes data_types;
     data_types.reserve(num_args);
     for (size_t i = 0; i < num_args; ++i)
-        data_types.push_back(block[arguments[i]].type);
+        data_types.push_back(columns[arguments[i]].type);
 
     auto return_type_with_nulls = getMostSubtype(data_types, true, true);
 
-    auto columns = castColumns(block, arguments, return_type, return_type_with_nulls);
+    auto columns = castColumns(columns, arguments, return_type, return_type_with_nulls);
 
     UnpackedArrays arrays = prepareArrays(columns.casted, columns.initial);
 
@@ -446,7 +446,7 @@ void FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & block, const C
         }
     }
 
-    block[result].column = std::move(result_column);
+    columns[result].column = std::move(result_column);
 }
 
 template <typename T, size_t>
