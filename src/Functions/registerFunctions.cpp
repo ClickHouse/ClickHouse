@@ -7,7 +7,6 @@
 
 namespace DB
 {
-
 void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
@@ -46,6 +45,8 @@ void registerFunctionsUnixTimestamp64(FunctionFactory & factory);
 #if !defined(ARCADIA_BUILD)
 void registerFunctionBayesAB(FunctionFactory &);
 #endif
+void registerFunctionTid(FunctionFactory & factory);
+void registerFunctionLogTrace(FunctionFactory & factory);
 
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
@@ -107,6 +108,8 @@ void registerFunctions()
     registerFunctionAESEncryptMysql(factory);
     registerFunctionAESDecryptMysql(factory);
 #endif
+    registerFunctionTid(factory);
+    registerFunctionLogTrace(factory);
 }
 
 }

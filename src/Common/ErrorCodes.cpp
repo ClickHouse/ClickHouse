@@ -486,7 +486,6 @@ namespace ErrorCodes
     extern const int NO_REMOTE_SHARD_AVAILABLE = 519;
     extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE = 520;
     extern const int ATOMIC_RENAME_FAIL = 521;
-    extern const int OPENCL_ERROR = 522;
     extern const int UNKNOWN_ROW_POLICY = 523;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN = 524;
     extern const int INCORRECT_DISK_INDEX = 525;
@@ -508,6 +507,8 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING = 541;
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE = 542;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL = 543;
+    extern const int ROW_AND_ROWS_TOGETHER = 544;
+    extern const int FIRST_AND_NEXT_TOGETHER = 545;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

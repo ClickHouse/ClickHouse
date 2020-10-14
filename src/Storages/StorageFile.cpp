@@ -17,7 +17,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
-#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -234,12 +233,12 @@ public:
         const Context & context_,
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
-        ColumnDefaults column_defaults_)
+        ColumnsDescription columns_description_)
         : SourceWithProgress(getHeader(metadata_snapshot_, files_info_->need_path_column, files_info_->need_file_column))
         , storage(std::move(storage_))
         , metadata_snapshot(metadata_snapshot_)
         , files_info(std::move(files_info_))
-        , column_defaults(std::move(column_defaults_))
+        , columns_description(std::move(columns_description_))
         , context(context_)
         , max_block_size(max_block_size_)
     {
@@ -314,8 +313,8 @@ public:
                 reader = FormatFactory::instance().getInput(
                         storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size);
 
-                if (!column_defaults.empty())
-                    reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
+                if (columns_description.hasDefaults())
+                    reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_description, context);
 
                 reader->readPrefix();
             }
@@ -366,7 +365,7 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
 
-    ColumnDefaults column_defaults;
+    ColumnsDescription columns_description;
 
     const Context & context;    /// TODO Untangle potential issues with context lifetime.
     UInt64 max_block_size;
@@ -417,7 +416,7 @@ Pipe StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-                this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns().getDefaults()));
+                this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns()));
 
     return Pipe::unitePipes(std::move(pipes));
 }
@@ -525,9 +524,12 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
     if (paths.size() != 1)
         throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
+    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
+    if (path_new == paths[0])
+        return;
+
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
     Poco::File(paths[0]).renameTo(path_new);
 

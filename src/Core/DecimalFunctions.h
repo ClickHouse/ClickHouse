@@ -152,12 +152,14 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
 {
     using T = typename DecimalType::NativeType;
 
-    T result = decimal.value;
+    /// There's UB with min integer value here. But it does not matter for Decimals cause they use not full integer ranges.
+    /// Anycase we make modulo before compare to make scale_multiplier > 1 unaffected.
+    T result = decimal.value % scale_multiplier;
     if constexpr (!keep_sign)
         if (result < T(0))
             result = -result;
 
-    return result % scale_multiplier;
+    return result;
 }
 
 /** Get fractional part from decimal

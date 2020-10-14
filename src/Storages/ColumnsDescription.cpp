@@ -378,6 +378,14 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
 }
 
 
+bool ColumnsDescription::hasDefaults() const
+{
+    for (const auto & column : columns)
+        if (column.default_desc.expression)
+            return true;
+    return false;
+}
+
 ColumnDefaults ColumnsDescription::getDefaults() const
 {
     ColumnDefaults ret;
@@ -424,6 +432,16 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
 {
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
+}
+
+ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
+{
+    const auto it = columns.get<1>().find(column_name);
+
+    if (it == columns.get<1>().end() || !it->codec)
+        return default_codec->getFullCodecDesc();
+
+    return it->codec;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const

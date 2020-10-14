@@ -31,12 +31,12 @@ toc_title: "\u6587\u5B57\u5217\u306E\u64CD\u4F5C"
 文字列にUTF-8でエンコードされたテキストを構成するバイトのセットが含まれていると仮定して、Unicodeコードポイント(文字ではない)で文字列の長さを返 この仮定が満たされない場合、結果が返されます（例外はスローされません）。
 結果の型はUInt64です。
 
-## char\_length,CHAR\_LENGTH {#char-length}
+## char_length,CHAR_LENGTH {#char-length}
 
 文字列にUTF-8でエンコードされたテキストを構成するバイトのセットが含まれていると仮定して、Unicodeコードポイント(文字ではない)で文字列の長さを返 この仮定が満たされない場合、結果が返されます（例外はスローされません）。
 結果の型はUInt64です。
 
-## character\_length,CHARACTER\_LENGTH {#character-length}
+## character_length,CHARACTER_LENGTH {#character-length}
 
 文字列にUTF-8でエンコードされたテキストを構成するバイトのセットが含まれていると仮定して、Unicodeコードポイント(文字ではない)で文字列の長さを返 この仮定が満たされない場合、結果が返されます（例外はスローされません）。
 結果の型はUInt64です。
@@ -77,7 +77,7 @@ toValidUTF8( input_string )
 
 パラメータ:
 
--   input\_string — Any set of bytes represented as the [文字列](../../sql-reference/data-types/string.md) データ型オブジェクト。
+-   input_string — Any set of bytes represented as the [文字列](../../sql-reference/data-types/string.md) データ型オブジェクト。
 
 戻り値:有効なUTF-8文字列。
 
