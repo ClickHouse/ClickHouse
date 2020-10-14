@@ -45,6 +45,7 @@
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
@@ -475,8 +476,16 @@ private:
         ///   The value of the option is used as the text of query (or of multiple queries).
         ///   If stdin is not a terminal, INSERT data for the first query is read from it.
         /// - stdin is not a terminal. In this case queries are read from it.
-        if (!stdin_is_a_tty || config().has("query"))
+        /// - -qf (--queries-file) command line option is present.
+        ///   The value of the option is used as file with query (or of multiple queries) to execute.
+        if (!stdin_is_a_tty || config().has("query") || config().has("queries-file"))
             is_interactive = false;
+
+        if (config().has("query") && config().has("queries-file"))
+        {
+            std::cerr << "Specify either `query` or `queries-file` option" << std::endl;
+            return Application::EXIT_OK;
+        }
 
         std::cout << std::fixed << std::setprecision(3);
         std::cerr << std::fixed << std::setprecision(3);
@@ -786,8 +795,15 @@ private:
     {
         String text;
 
-        if (config().has("query"))
-            text = config().getRawString("query");  /// Poco configuration should not process substitutions in form of ${...} inside query.
+        if (config().has("queries-file"))
+        {
+            ReadBufferFromFile in(config().getRawString("queries-file"));
+            readStringUntilEOF(text, in);
+            processMultiQuery(text);
+            return;
+        }
+        else if (config().has("query"))
+            text = config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
@@ -2320,6 +2336,7 @@ public:
                 "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
+            ("queries-file,qf", po::value<std::string>(), "file path with queries to execute")
             ("format,f", po::value<std::string>(), "default output format")
             ("testmode,T", "enable test hints in comments")
             ("ignore-error", "do not stop processing in multiquery mode")
@@ -2448,6 +2465,8 @@ public:
             config().setString("query_id", options["query_id"].as<std::string>());
         if (options.count("query"))
             config().setString("query", options["query"].as<std::string>());
+        if (options.count("queries-file"))
+            config().setString("queries-file", options["queries-file"].as<std::string>());
         if (options.count("database"))
             config().setString("database", options["database"].as<std::string>());
         if (options.count("pager"))
