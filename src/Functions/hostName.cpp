@@ -47,7 +47,7 @@ public:
       */
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
+        block[result].column = block[result].type->createColumnConst(
             input_rows_count, DNSResolver::instance().getHostName())->convertToFullColumnIfConst();
     }
 };

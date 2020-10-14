@@ -49,6 +49,7 @@
 #include <Poco/DirectoryIterator.h>
 
 #include <boost/range/adaptor/filtered.hpp>
+#include <boost/algorithm/string/join.hpp>
 
 #include <algorithm>
 #include <iomanip>
@@ -632,7 +633,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                                   std::back_inserter(names_intersection));
 
             if (!names_intersection.empty())
-                throw Exception("Columns: " + Nested::createCommaSeparatedStringFrom(names_intersection) +
+                throw Exception("Columns: " + boost::algorithm::join(names_intersection, ", ") +
                 " listed both in columns to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
         }
     }
@@ -3037,28 +3038,31 @@ ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, SpacePtr spa
     return space->reserve(expected_size);
 }
 
-ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_size,
-        const IMergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t time_of_move,
-        size_t min_volume_index,
-        bool is_insert) const
+ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(
+    const StorageMetadataPtr & metadata_snapshot,
+    UInt64 expected_size,
+    const IMergeTreeDataPart::TTLInfos & ttl_infos,
+    time_t time_of_move,
+    size_t min_volume_index,
+    bool is_insert) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move, min_volume_index, is_insert);
+    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(metadata_snapshot, expected_size, ttl_infos, time_of_move, min_volume_index, is_insert);
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
-ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_size,
-        const IMergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t time_of_move,
-        size_t min_volume_index,
-        bool is_insert) const
+ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
+    const StorageMetadataPtr & metadata_snapshot,
+    UInt64 expected_size,
+    const IMergeTreeDataPart::TTLInfos & ttl_infos,
+    time_t time_of_move,
+    size_t min_volume_index,
+    bool is_insert) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
     ReservationPtr reservation;
 
     auto move_ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_move, true);

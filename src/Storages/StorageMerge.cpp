@@ -538,6 +538,14 @@ void StorageMerge::convertingSourceStream(
     }
 }
 
+IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
+{
+
+    auto first_materialize_mysql = getFirstTable([](const StoragePtr & table) { return table && table->getName() == "MaterializeMySQL"; });
+    if (!first_materialize_mysql)
+        return {};
+    return first_materialize_mysql->getColumnSizes();
+}
 
 void registerStorageMerge(StorageFactory & factory)
 {
