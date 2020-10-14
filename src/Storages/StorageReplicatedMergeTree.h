@@ -186,7 +186,7 @@ public:
     std::optional<std::string> pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry);
 
     /// checks (in zookeeper) if the picked replica finished the merge
-    bool isMergeFinishedByReplica(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
+    bool isMergeFinishedByReplica(const String & replica, const ReplicatedMergeTreeLogEntryData & entry);
 
 private:
     /// Get a sequential consistent view of current parts.
@@ -568,6 +568,10 @@ private:
     /// updates SingleReplicaPicker every time we pull new merge event from
     /// the zookeeper queue ( see queueUpdatingTask() )
     void refreshSingleReplicaPicker();
+
+    /// calculate entry hash based on zookeeper path and new part name
+    uint64_t getEntryHash(const ReplicatedMergeTreeLogEntryData & entry) const;
+
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

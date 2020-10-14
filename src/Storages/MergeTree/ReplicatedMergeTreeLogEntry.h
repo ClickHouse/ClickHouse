@@ -181,8 +181,6 @@ struct ReplicatedMergeTreeLogEntryData
     {
         return type == MUTATE_PART && alter_version != -1;
     }
-
-    uint64_t getHash() const;
 };
 
 

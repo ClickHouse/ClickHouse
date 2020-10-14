@@ -55,6 +55,7 @@
 #include <thread>
 #include <future>
 
+#include <city.h>
 #include <algorithm>
 
 #include <boost/algorithm/string/join.hpp>
@@ -2590,10 +2591,12 @@ void StorageReplicatedMergeTree::refreshSingleReplicaPicker()
 {
     auto threshold = getSettings()->execute_merges_on_single_replica_time_threshold.totalSeconds();
 
-    single_replica_picker.execute_merges_on_single_replica_time_threshold = threshold;
-
     if (threshold == 0)
+    {
+        // we can reset the settings w/o lock (it's atomic)
+        single_replica_picker.execute_merges_on_single_replica_time_threshold = threshold;
         return;
+    }
 
     auto zookeeper = getZooKeeper();
     auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
@@ -2619,14 +2622,22 @@ void StorageReplicatedMergeTree::refreshSingleReplicaPicker()
     if (current_replica_index < 0 || active_replicas.size() < 2)
     {
         LOG_ERROR(log, "Can't find current replica in the active replicas list, or too few active replicas to use execute_merges_on_single_replica_time_threshold!");
+        // we can reset the settings w/o lock (it's atomic)
         single_replica_picker.execute_merges_on_single_replica_time_threshold = 0;
         return;
     }
 
     std::lock_guard lock(single_replica_picker.mutex);
+    single_replica_picker.execute_merges_on_single_replica_time_threshold = threshold;
     single_replica_picker.current_replica_index = current_replica_index;
     single_replica_picker.active_replicas = active_replicas;
+}
 
+
+uint64_t StorageReplicatedMergeTree::getEntryHash(const ReplicatedMergeTreeLogEntryData & entry) const
+{
+    auto hash_data = zookeeper_path + entry.new_part_name;
+    return CityHash_v1_0_2::CityHash64(hash_data.c_str(), hash_data.length());
 }
 
 // that will return the same replica name for LogEntry on all the replicas (if the replica set is the same).
@@ -2646,11 +2657,16 @@ std::optional<std::string> StorageReplicatedMergeTree::pickReplicaToExecuteMerge
        )
         return std::nullopt;
 
-    auto hash = entry.getHash();
+    auto hash = getEntryHash(entry);
 
     std::lock_guard lock(single_replica_picker.mutex);
 
-    auto replica_index = static_cast<int>(hash % single_replica_picker.active_replicas.size());
+    auto num_replicas = single_replica_picker.active_replicas.size();
+
+    if (num_replicas==0)
+        return std::nullopt;
+
+    auto replica_index = static_cast<int>(hash % num_replicas);
 
     if (replica_index == single_replica_picker.current_replica_index)
         return std::nullopt;
