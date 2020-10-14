@@ -317,7 +317,7 @@ public:
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Makes full clone of part in detached/ on another disk
-    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
+    void makeCloneOnDiskDetached(const std::shared_ptr<IReservation> & reservation) const;
 
     /// Checks that .bin and .mrk files exist.
     ///

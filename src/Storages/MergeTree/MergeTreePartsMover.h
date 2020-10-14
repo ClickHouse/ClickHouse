@@ -16,7 +16,7 @@ namespace DB
 struct MergeTreeMoveEntry
 {
     std::shared_ptr<const IMergeTreeDataPart> part;
-    ReservationPtr reserved_space;
+    std::shared_ptr<IReservation> reserved_space;
 
     MergeTreeMoveEntry(const std::shared_ptr<const IMergeTreeDataPart> & part_, ReservationPtr reservation_)
         : part(part_), reserved_space(std::move(reservation_))

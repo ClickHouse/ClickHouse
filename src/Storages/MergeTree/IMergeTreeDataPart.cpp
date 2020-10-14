@@ -943,7 +943,7 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
     volume->getDisk()->removeIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
-void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservation) const
+void IMergeTreeDataPart::makeCloneOnDiskDetached(const std::shared_ptr<IReservation> & reservation) const
 {
     assertOnDisk();
     auto reserved_disk = reservation->getDisk();

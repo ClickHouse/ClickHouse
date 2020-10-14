@@ -27,6 +27,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Processors/Pipe.h>
+#include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 
 namespace DB
@@ -275,14 +276,13 @@ private:
     int metadata_version = 0;
     /// Threads.
 
+    BackgroundJobsExecutor background_executor;
+
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
     BackgroundSchedulePool::TaskHolder queue_updating_task;
 
     BackgroundSchedulePool::TaskHolder mutations_updating_task;
-
-    /// A task that performs actions from the queue.
-    BackgroundProcessingPool::TaskHandle queue_task_handle;
 
     /// A task which move parts to another disks/volumes
     /// Transparent for replication.
@@ -568,7 +568,6 @@ private:
     MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
-
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */

@@ -711,7 +711,9 @@ public:
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
 
-    virtual std::optional<MergeTreeBackgroundJob> getDataProcessingJob()  { return {}; }
+    virtual std::optional<MergeTreeBackgroundJob> getDataProcessingJob() = 0;
+    std::optional<MergeTreeBackgroundJob> getDataMovingJob();
+    bool areBackgroundMovesNeeded() const;
 
 protected:
 
@@ -889,7 +891,6 @@ protected:
     /// Selects parts for move and moves them, used in background process
     bool selectPartsAndMove();
 
-    bool areBackgroundMovesNeeded() const;
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts
@@ -901,18 +902,19 @@ private:
         MergeTreeData & data;
         CurrentlyMovingPartsTagger(MergeTreeMovingParts && moving_parts_, MergeTreeData & data_);
 
-        CurrentlyMovingPartsTagger(const CurrentlyMovingPartsTagger & other) = delete;
         ~CurrentlyMovingPartsTagger();
     };
 
+    using CurrentlyMovingPartsTaggerPtr = std::shared_ptr<CurrentlyMovingPartsTagger>;
+
     /// Move selected parts to corresponding disks
-    bool moveParts(CurrentlyMovingPartsTagger && moving_tagger);
+    bool moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger);
 
     /// Select parts for move and disks for them. Used in background moving processes.
-    CurrentlyMovingPartsTagger selectPartsForMove();
+    CurrentlyMovingPartsTaggerPtr selectPartsForMove();
 
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
-    CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
+    CurrentlyMovingPartsTaggerPtr checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason = nullptr) const;
 
