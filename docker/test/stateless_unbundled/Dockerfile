@@ -67,7 +67,7 @@ RUN apt-get --allow-unauthenticated update -y \
             unixodbc \
             unixodbc-dev \
             wget \
-            zlib1g-dev\
+            zlib1g-dev
 
 RUN pip3 install numpy, scipy, pandas
 
