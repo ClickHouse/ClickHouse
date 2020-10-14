@@ -33,6 +33,12 @@ server_pid=none
 
 function stop_server
 {
+    if ! kill -0 -- "$server_pid"
+    then
+        echo "ClickHouse server pid '$server_pid' is not running"
+        return 0
+    fi
+
     for _ in {1..60}
     do
         if ! pkill -f "clickhouse-server" && ! kill -- "$server_pid" ; then break ; fi
@@ -168,8 +174,8 @@ clickhouse-test --help
 
 mkdir -p "$FASTTEST_DATA"{,/client-config}
 cp -a "$FASTTEST_SOURCE/programs/server/"{config,users}.xml "$FASTTEST_DATA"
-cp -a "$FASTTEST_SOURCE/programs/server/"{config,users}.xml "$FASTTEST_DATA"
 "$FASTTEST_SOURCE/tests/config/install.sh" "$FASTTEST_DATA" "$FASTTEST_DATA/client-config"
+cp -a "$FASTTEST_SOURCE/programs/server/config.d/log_to_console.xml" "$FASTTEST_DATA/config.d"
 # doesn't support SSL
 rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
 }
@@ -269,7 +275,7 @@ then
     stop_server ||:
 
     # Clean the data so that there is no interference from the previous test run.
-    rm -rf "$FASTTEST_DATA"/{meta,}data ||:
+    rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files} ||:
 
     start_server
 
@@ -329,7 +335,10 @@ case "$stage" in
     ;&
 "run_tests")
     run_tests
-    ;&
+    ;;
+*)
+    echo "Unknown test stage '$stage'"
+    exit 1
 esac
 
 pstree -apgT
