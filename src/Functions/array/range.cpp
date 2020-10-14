@@ -287,7 +287,7 @@ private:
 
     template <typename T>
     bool executeGeneric(
-            ColumnsWithTypeAndName & columns, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col,
+            ColumnsWithTypeAndName & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col,
             const size_t input_rows_count, const size_t result) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_col);
@@ -347,7 +347,7 @@ private:
             out_offsets[row_idx] = offset;
         }
 
-        columns[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
 
@@ -367,7 +367,7 @@ private:
         }
 
         Columns columns_holder(3);
-        ColumnRawPtrs columns(3);
+        ColumnRawPtrs column_ptrs(3);
 
         const auto return_type = checkAndGetDataType<DataTypeArray>(columns[result].type.get())->getNestedType();
 
@@ -378,58 +378,58 @@ private:
             else
                 columns_holder[i] = castColumn(columns[arguments[i]], return_type);
 
-            columns[i] = columns_holder[i].get();
+            column_ptrs[i] = columns_holder[i].get();
         }
 
         // for step column, defaults to 1
         if (arguments.size() == 2)
         {
             columns_holder[2] = return_type->createColumnConst(input_rows_count, 1);
-            columns[2] = columns_holder[2].get();
+            column_ptrs[2] = columns_holder[2].get();
         }
 
-        bool is_start_const = isColumnConst(*columns[0]);
-        bool is_step_const = isColumnConst(*columns[2]);
+        bool is_start_const = isColumnConst(*column_ptrs[0]);
+        bool is_step_const = isColumnConst(*column_ptrs[2]);
         bool ok;
         if (is_start_const && is_step_const)
         {
-            UInt64 start = assert_cast<const ColumnConst &>(*columns[0]).getUInt(0);
-            UInt64 step = assert_cast<const ColumnConst &>(*columns[2]).getUInt(0);
+            UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
+            UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
 
-            ok = executeConstStartStep<UInt8>(columns, columns[1], start, step, input_rows_count, result) ||
-                executeConstStartStep<UInt16>(columns, columns[1], start, step, input_rows_count, result) ||
-                executeConstStartStep<UInt32>(columns, columns[1], start, step, input_rows_count, result) ||
-                executeConstStartStep<UInt64>(columns, columns[1], start, step, input_rows_count, result);
+            ok = executeConstStartStep<UInt8>(columns, column_ptrs[1], start, step, input_rows_count, result) ||
+                 executeConstStartStep<UInt16>(columns, column_ptrs[1], start, step, input_rows_count, result) ||
+                 executeConstStartStep<UInt32>(columns, column_ptrs[1], start, step, input_rows_count, result) ||
+                 executeConstStartStep<UInt64>(columns, column_ptrs[1], start, step, input_rows_count, result);
         }
         else if (is_start_const && !is_step_const)
         {
-            UInt64 start = assert_cast<const ColumnConst &>(*columns[0]).getUInt(0);
+            UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
 
-            ok = executeConstStart<UInt8>(columns, columns[1], columns[2], start, input_rows_count, result) ||
-                executeConstStart<UInt16>(columns, columns[1], columns[2], start, input_rows_count, result) ||
-                executeConstStart<UInt32>(columns, columns[1], columns[2], start, input_rows_count, result) ||
-                executeConstStart<UInt64>(columns, columns[1], columns[2], start, input_rows_count, result);
+            ok = executeConstStart<UInt8>(columns, column_ptrs[1], column_ptrs[2], start, input_rows_count, result) ||
+                 executeConstStart<UInt16>(columns, column_ptrs[1], column_ptrs[2], start, input_rows_count, result) ||
+                 executeConstStart<UInt32>(columns, column_ptrs[1], column_ptrs[2], start, input_rows_count, result) ||
+                 executeConstStart<UInt64>(columns, column_ptrs[1], column_ptrs[2], start, input_rows_count, result);
         }
         else if (!is_start_const && is_step_const)
         {
-            UInt64 step = assert_cast<const ColumnConst &>(*columns[2]).getUInt(0);
+            UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
 
-            ok = executeConstStep<UInt8>(columns, columns[0], columns[1], step, input_rows_count, result) ||
-                executeConstStep<UInt16>(columns, columns[0], columns[1], step, input_rows_count, result) ||
-                executeConstStep<UInt32>(columns, columns[0], columns[1], step, input_rows_count, result) ||
-                executeConstStep<UInt64>(columns, columns[0], columns[1], step, input_rows_count, result);
+            ok = executeConstStep<UInt8>(columns, column_ptrs[0], column_ptrs[1], step, input_rows_count, result) ||
+                 executeConstStep<UInt16>(columns, column_ptrs[0], column_ptrs[1], step, input_rows_count, result) ||
+                 executeConstStep<UInt32>(columns, column_ptrs[0], column_ptrs[1], step, input_rows_count, result) ||
+                 executeConstStep<UInt64>(columns, column_ptrs[0], column_ptrs[1], step, input_rows_count, result);
         }
         else
         {
-            ok = executeGeneric<UInt8>(columns, columns[0], columns[1], columns[2], input_rows_count, result) ||
-                executeGeneric<UInt16>(columns, columns[0], columns[1], columns[2], input_rows_count, result) ||
-                executeGeneric<UInt32>(columns, columns[0], columns[1], columns[2], input_rows_count, result) ||
-                executeGeneric<UInt64>(columns, columns[0], columns[1], columns[2], input_rows_count, result);
+            ok = executeGeneric<UInt8>(columns, column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count, result) ||
+                 executeGeneric<UInt16>(columns, column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count, result) ||
+                 executeGeneric<UInt32>(columns, column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count, result) ||
+                 executeGeneric<UInt64>(columns, column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count, result);
         }
 
         if (!ok)
         {
-            throw Exception{"Illegal columns " + columns[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal columns " + column_ptrs[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
     }
 
