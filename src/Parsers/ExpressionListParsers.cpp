@@ -670,14 +670,14 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
             IntervalKind interval_kind;
             ASTPtr number;
 
+            /// parse function arguments and interval kind from string literal
             if (!stringToIntervalKind(literal, number, interval_kind))
                 return false;
+
             auto function = std::make_shared<ASTFunction>();
 
-            /// function arguments
             auto exp_list = std::make_shared<ASTExpressionList>();
 
-            /// the first argument of the function is the previous element, the second is the next one
             function->name = interval_kind.toNameOfFunctionToIntervalDataType();
             function->arguments = exp_list;
             function->children.push_back(exp_list);
@@ -690,12 +690,11 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     }
 
     ASTPtr expr;
-
     /// Any expression can be inside, because operator surrounds it.
     if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
     {
-            pos = begin;
-            return next_parser.parse(pos, node, expected);
+        pos = begin;
+        return next_parser.parse(pos, node, expected);
     }
 
     IntervalKind interval_kind;
