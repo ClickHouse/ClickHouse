@@ -27,7 +27,7 @@ Mira la siguiente estructura jerárquica:
 
 Esta jerarquía se puede expresar como la siguiente tabla de diccionario.
 
-| region\_id | parent\_region | nombre\_región |
+| region_id | parent_region | nombre_región |
 |------------|----------------|----------------|
 | 1          | 0              | Rusia          |
 | 2          | 1              | Moscu          |
