@@ -325,7 +325,7 @@ private:
             ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
         const
     {
-        const IColumn * columns[3];
+        const IColumn * column_ptrs[3];
         bool is_column_const[3];
         const ColumnAggregateFunction * col_agg_func;
         const PaddedPODArray<AggregateDataPtr> * container0;
@@ -333,23 +333,23 @@ private:
 
         for (size_t i = 0; i < 3; ++i)
         {
-            columns[i] = columns[arguments[i]].column.get();
-            is_column_const[i] = isColumnConst(*columns[i]);
+            column_ptrs[i] = columns[arguments[i]].column.get();
+            is_column_const[i] = isColumnConst(*column_ptrs[i]);
         }
         if (is_column_const[0])
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(columns[0])->getDataColumnPtr().get());
+            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get());
         else
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(columns[0]);
+            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0]);
 
         container0 = &col_agg_func->getData();
         if (is_column_const[1])
-            container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(columns[1])->getDataColumnPtr().get())->getData();
+            container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get())->getData();
         else
-            container1 = &typeid_cast<const ColumnUInt32*>(columns[1])->getData();
+            container1 = &typeid_cast<const ColumnUInt32*>(column_ptrs[1])->getData();
         if (is_column_const[2])
-            container2 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(columns[2])->getDataColumnPtr().get())->getData();
+            container2 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(column_ptrs[2])->getDataColumnPtr().get())->getData();
         else
-            container2 = &typeid_cast<const ColumnUInt32*>(columns[2])->getData();
+            container2 = &typeid_cast<const ColumnUInt32*>(column_ptrs[2])->getData();
 
         auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
         col_to->reserve(input_rows_count);
@@ -460,7 +460,7 @@ private:
     void executeIntType(
             ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
-        const IColumn * columns[3];
+        const IColumn * column_ptrs[3];
         bool is_column_const[3];
         const ColumnAggregateFunction * col_agg_func;
         const PaddedPODArray<AggregateDataPtr> * container0;
@@ -468,21 +468,21 @@ private:
 
         for (size_t i = 0; i < 3; ++i)
         {
-            columns[i] = columns[arguments[i]].column.get();
-            is_column_const[i] = isColumnConst(*columns[i]);
+            column_ptrs[i] = columns[arguments[i]].column.get();
+            is_column_const[i] = isColumnConst(*column_ptrs[i]);
         }
         if (is_column_const[0])
         {
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(columns[0])->getDataColumnPtr().get());
+            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get());
         }
         else
         {
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(columns[0]);
+            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0]);
         }
         container0 = &col_agg_func->getData();
 
         if (is_column_const[1])
-            array = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(columns[1])->getDataColumnPtr().get());
+            array = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get());
         else
         {
             array = typeid_cast<const ColumnArray *>(columns[arguments[1]].column.get());
@@ -491,7 +491,7 @@ private:
         const ColumnVector<UInt32>::Container & from_container = typeid_cast<const ColumnVector<UInt32> *>(&array->getData())->getData();
 
         if (is_column_const[2])
-            array = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(columns[2])->getDataColumnPtr().get());
+            array = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(column_ptrs[2])->getDataColumnPtr().get());
         else
             array = typeid_cast<const ColumnArray *>(columns[arguments[2]].column.get());
 
@@ -766,24 +766,24 @@ private:
     void executeIntType(
             ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<UInt8>::Container & vec_to) const
     {
-        const IColumn * columns[2];
+        const IColumn * column_ptrs[2];
         bool is_column_const[2];
         const PaddedPODArray<AggregateDataPtr> * container0;
         const PaddedPODArray<UInt32> * container1;
 
         for (size_t i = 0; i < 2; ++i)
         {
-            columns[i] = columns[arguments[i]].column.get();
-            is_column_const[i] = isColumnConst(*columns[i]);
+            column_ptrs[i] = columns[arguments[i]].column.get();
+            is_column_const[i] = isColumnConst(*column_ptrs[i]);
         }
         if (is_column_const[0])
-            container0 = &typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(columns[0])->getDataColumnPtr().get())->getData();
+            container0 = &typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get())->getData();
         else
-            container0 = &typeid_cast<const ColumnAggregateFunction*>(columns[0])->getData();
+            container0 = &typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0])->getData();
         if (is_column_const[1])
-            container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(columns[1])->getDataColumnPtr().get())->getData();
+            container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get())->getData();
         else
-            container1 = &typeid_cast<const ColumnUInt32*>(columns[1])->getData();
+            container1 = &typeid_cast<const ColumnUInt32*>(column_ptrs[1])->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -863,24 +863,24 @@ private:
     void executeIntType(
             ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        const ColumnAggregateFunction * columns[2];
+        const ColumnAggregateFunction * column_ptrs[2];
         bool is_column_const[2];
         for (size_t i = 0; i < 2; ++i)
         {
             if (auto argument_column_const = checkAndGetColumn<ColumnConst>(columns[arguments[i]].column.get()))
             {
-                columns[i] = typeid_cast<const ColumnAggregateFunction*>(argument_column_const->getDataColumnPtr().get());
+                column_ptrs[i] = typeid_cast<const ColumnAggregateFunction*>(argument_column_const->getDataColumnPtr().get());
                 is_column_const[i] = true;
             }
             else
             {
-                columns[i] = typeid_cast<const ColumnAggregateFunction*>(columns[arguments[i]].column.get());
+                column_ptrs[i] = typeid_cast<const ColumnAggregateFunction*>(columns[arguments[i]].column.get());
                 is_column_const[i] = false;
             }
         }
 
-        const PaddedPODArray<AggregateDataPtr> & container0 = columns[0]->getData();
-        const PaddedPODArray<AggregateDataPtr> & container1 = columns[1]->getData();
+        const PaddedPODArray<AggregateDataPtr> & container0 = column_ptrs[0]->getData();
+        const PaddedPODArray<AggregateDataPtr> & container1 = column_ptrs[1]->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -992,28 +992,28 @@ private:
     template <typename T>
     void executeBitmapData(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
-        const ColumnAggregateFunction * columns[2];
+        const ColumnAggregateFunction * column_ptrs[2];
         bool is_column_const[2];
         for (size_t i = 0; i < 2; ++i)
         {
             if (auto argument_column_const = typeid_cast<const ColumnConst *>(columns[arguments[i]].column.get()))
             {
-                columns[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
+                column_ptrs[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
                 is_column_const[i] = true;
             }
             else
             {
-                columns[i] = typeid_cast<const ColumnAggregateFunction *>(columns[arguments[i]].column.get());
+                column_ptrs[i] = typeid_cast<const ColumnAggregateFunction *>(columns[arguments[i]].column.get());
                 is_column_const[i] = false;
             }
         }
 
-        auto col_to = ColumnAggregateFunction::create(columns[0]->getAggregateFunction());
+        auto col_to = ColumnAggregateFunction::create(column_ptrs[0]->getAggregateFunction());
 
         col_to->reserve(input_rows_count);
 
-        const PaddedPODArray<AggregateDataPtr> & container0 = columns[0]->getData();
-        const PaddedPODArray<AggregateDataPtr> & container1 = columns[1]->getData();
+        const PaddedPODArray<AggregateDataPtr> & container0 = column_ptrs[0]->getData();
+        const PaddedPODArray<AggregateDataPtr> & container1 = column_ptrs[1]->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
