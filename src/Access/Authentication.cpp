@@ -94,8 +94,12 @@ bool Authentication::isCorrectPassword(const String & password_, const String & 
                 last_successful_password_check_params_hash != 0 &&
                 last_successful_password_check_timestamp != std::chrono::steady_clock::time_point{} &&
 
+                // Check if the caching is enabled at all.
+                ldap_server_params.verification_cooldown > std::chrono::seconds{0} &&
+
                 // Check if we can "reuse" the result of the previous successful password verification.
                 current_params_hash == last_successful_password_check_params_hash &&
+                last_check_period >= std::chrono::seconds{0} &&
                 last_check_period <= ldap_server_params.verification_cooldown
             )
             {
