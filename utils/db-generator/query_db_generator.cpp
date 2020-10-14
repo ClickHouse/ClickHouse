@@ -1295,6 +1295,8 @@ int main(int argc, const char *argv[])
             freopen(vm["input"].as<std::string>().c_str(), "r", stdin);
         if (vm.count("output"))
             freopen(vm["output"].as<std::string>().c_str(), "w", stdout);
+        if (vm.empty())
+            std::cout << "Copy your queries (with semicolons) here, press Enter and Ctrl+D." << std::endl;
     }
     catch (...)
     {
