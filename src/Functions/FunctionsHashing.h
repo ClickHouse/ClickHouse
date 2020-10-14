@@ -543,7 +543,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block[arguments[0]].column.get()))
         {
@@ -604,7 +604,7 @@ private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType>
-    void executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
+    void executeType(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result) const
     {
         using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
@@ -647,7 +647,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = block[arguments[0]].type.get();
         WhichDataType which(from_type);
@@ -1041,7 +1041,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         size_t rows = input_rows_count;
         auto col_to = ColumnVector<ToType>::create(rows);
@@ -1209,7 +1209,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const auto arg_count = arguments.size();
 
@@ -1222,7 +1222,7 @@ public:
     }
 
 private:
-    void executeSingleArg(Block & block, const ColumnNumbers & arguments, const size_t result) const
+    void executeSingleArg(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result) const
     {
         const auto col_untyped = block[arguments.front()].column.get();
 
@@ -1252,7 +1252,7 @@ private:
                 " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
-    void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
+    void executeTwoArgs(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result) const
     {
         const auto level_col = block[arguments.back()].column.get();
         if (!isColumnConst(*level_col))

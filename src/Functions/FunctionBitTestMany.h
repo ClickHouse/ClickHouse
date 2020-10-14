@@ -54,7 +54,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block , const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block , const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const auto value_col = block[arguments.front()].column.get();
 
@@ -72,8 +72,8 @@ public:
 private:
     template <typename T>
     bool execute(
-        Block & block, const ColumnNumbers & arguments, const size_t result,
-        const IColumn * const value_col_untyped) const
+            ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result,
+            const IColumn * const value_col_untyped) const
     {
         if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
         {
@@ -132,7 +132,7 @@ private:
     }
 
     template <typename ValueType>
-    ValueType createConstMaskIfConst(const Block & block, const ColumnNumbers & arguments, bool & out_is_const) const
+    ValueType createConstMaskIfConst(const ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, bool & out_is_const) const
     {
         out_is_const = true;
         ValueType mask = 0;
@@ -156,7 +156,7 @@ private:
     }
 
     template <typename ValueType>
-    PaddedPODArray<ValueType> createMask(const size_t size, const Block & block, const ColumnNumbers & arguments) const
+    PaddedPODArray<ValueType> createMask(const size_t size, const ColumnsWithTypeAndName & block, const ColumnNumbers & arguments) const
     {
         PaddedPODArray<ValueType> mask(size, ValueType{});
 

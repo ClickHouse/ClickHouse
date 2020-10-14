@@ -60,7 +60,7 @@ public:
         return std::make_shared<DataTypeTuple>(arguments);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);

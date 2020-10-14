@@ -48,7 +48,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -88,8 +88,8 @@ private:
         ColumnsWithTypeAndName casted;
     };
 
-    static CastArgumentsResult castColumns(Block & block, const ColumnNumbers & arguments,
-                        const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
+    static CastArgumentsResult castColumns(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments,
+                                           const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
     UnpackedArrays prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const;
 
     template <typename Map, typename ColumnType, bool is_numeric_column>
@@ -206,7 +206,7 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
 }
 
 FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
-        Block & block, const ColumnNumbers & arguments, const DataTypePtr & return_type,
+        ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const DataTypePtr & return_type,
         const DataTypePtr & return_type_with_nulls)
 {
     size_t num_args = arguments.size();
@@ -383,7 +383,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     return arrays;
 }
 
-void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+void FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
     const auto & return_type = block[result].type;
     const auto * return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());

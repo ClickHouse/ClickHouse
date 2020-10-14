@@ -64,7 +64,7 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 

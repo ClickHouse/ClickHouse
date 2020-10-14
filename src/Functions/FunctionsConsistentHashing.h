@@ -65,7 +65,7 @@ public:
         return {1};
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (isColumnConst(*block[arguments[1]].column))
             executeConstBuckets(block, arguments, result);
@@ -93,7 +93,7 @@ private:
         return static_cast<BucketsType>(buckets);
     }
 
-    void executeConstBuckets(Block & block, const ColumnNumbers & arguments, size_t result) const
+    void executeConstBuckets(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result) const
     {
         Field buckets_field = (*block[arguments[1]].column)[0];
         BucketsType num_buckets;

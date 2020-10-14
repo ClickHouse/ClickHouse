@@ -52,13 +52,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const auto n = block[arguments[1]].column->getUInt(0);
         return executeForN(block, arguments, result, n);
     }
 
-    static void executeForN(Block & block, const ColumnNumbers & arguments, const size_t result, const size_t n)
+    static void executeForN(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const size_t result, const size_t n)
     {
         const auto & column = block[arguments[0]].column;
 

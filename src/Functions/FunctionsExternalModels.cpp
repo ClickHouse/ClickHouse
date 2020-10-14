@@ -69,7 +69,7 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
     return type;
 }
 
-void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+void FunctionModelEvaluate::executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
     const auto * name_col = checkAndGetColumnConst<ColumnString>(block[arguments[0]].column.get());
     if (!name_col)

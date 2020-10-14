@@ -178,7 +178,7 @@ public:
 
 private:
     template <typename T0, typename T1>
-    static UInt32 decimalScale(Block & block [[maybe_unused]], const ColumnNumbers & arguments [[maybe_unused]])
+    static UInt32 decimalScale(ColumnsWithTypeAndName & block [[maybe_unused]], const ColumnNumbers & arguments [[maybe_unused]])
     {
         if constexpr (IsDecimalNumber<T0> && IsDecimalNumber<T1>)
         {
@@ -194,11 +194,11 @@ private:
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     bool executeRightType(
-        const ColumnUInt8 * cond_col,
-        Block & block,
-        const ColumnNumbers & arguments,
-        size_t result,
-        const ColVecT0 * col_left) const
+            const ColumnUInt8 * cond_col,
+            ColumnsWithTypeAndName & block,
+            const ColumnNumbers & arguments,
+            size_t result,
+            const ColVecT0 * col_left) const
     {
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
@@ -223,11 +223,11 @@ private:
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     bool executeConstRightType(
-        const ColumnUInt8 * cond_col,
-        Block & block,
-        const ColumnNumbers & arguments,
-        size_t result,
-        const ColumnConst * col_left) const
+            const ColumnUInt8 * cond_col,
+            ColumnsWithTypeAndName & block,
+            const ColumnNumbers & arguments,
+            size_t result,
+            const ColumnConst * col_left) const
     {
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
@@ -253,7 +253,7 @@ private:
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     bool executeRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
-        [[maybe_unused]] Block & block,
+        [[maybe_unused]] ColumnsWithTypeAndName & block,
         [[maybe_unused]] const ColumnNumbers & arguments,
         [[maybe_unused]] size_t result,
         [[maybe_unused]] const ColumnArray * col_left_array,
@@ -311,7 +311,7 @@ private:
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     bool executeConstRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
-        [[maybe_unused]] Block & block,
+        [[maybe_unused]] ColumnsWithTypeAndName & block,
         [[maybe_unused]] const ColumnNumbers & arguments,
         [[maybe_unused]] size_t result,
         [[maybe_unused]] const ColumnConst * col_left_const_array,
@@ -368,7 +368,7 @@ private:
     }
 
     template <typename T0, typename T1>
-    bool executeTyped(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    bool executeTyped(const ColumnUInt8 * cond_col, ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
         using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
@@ -418,7 +418,7 @@ private:
         return true;
     }
 
-    static bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    static bool executeString(const ColumnUInt8 * cond_col, ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result)
     {
         const IColumn * col_then_untyped = block[arguments[1]].column.get();
         const IColumn * col_else_untyped = block[arguments[2]].column.get();
@@ -509,7 +509,7 @@ private:
         return false;
     }
 
-    static bool executeGenericArray(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    static bool executeGenericArray(const ColumnUInt8 * cond_col, ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result)
     {
         /// For generic implementation, arrays must be of same type.
         if (!block[arguments[1]].type->equals(*block[arguments[2]].type))
@@ -550,7 +550,7 @@ private:
         return false;
     }
 
-    bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    bool executeTuple(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         /// Calculate function for each corresponding elements of tuples.
 
@@ -607,7 +607,7 @@ private:
     }
 
     static void executeGeneric(
-        const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+            const ColumnUInt8 * cond_col, ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         /// Convert both columns to the common type (if needed).
         const ColumnWithTypeAndName & arg1 = block[arguments[1]];
@@ -672,7 +672,7 @@ private:
         block[result].column = std::move(result_column);
     }
 
-    bool executeForConstAndNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+    bool executeForConstAndNullableCondition(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
     {
         const ColumnWithTypeAndName & arg_cond = block[arguments[0]];
         bool cond_is_null = arg_cond.column->onlyNull();
@@ -790,7 +790,7 @@ private:
         return column;
     }
 
-    bool executeForNullableThenElse(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    bool executeForNullableThenElse(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         const ColumnWithTypeAndName & arg_cond = block[arguments[0]];
         const ColumnWithTypeAndName & arg_then = block[arguments[1]];
@@ -869,7 +869,7 @@ private:
         return true;
     }
 
-    bool executeForNullThenElse(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    bool executeForNullThenElse(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         const ColumnWithTypeAndName & arg_cond = block[arguments[0]];
         const ColumnWithTypeAndName & arg_then = block[arguments[1]];
@@ -995,7 +995,7 @@ public:
         return getLeastSupertype({arguments[1], arguments[2]});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (executeForConstAndNullableCondition(block, arguments, result, input_rows_count)
             || executeForNullThenElse(block, arguments, result, input_rows_count)

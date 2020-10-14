@@ -25,7 +25,7 @@ private:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
         block[result].column = block[result].type->createColumnConst(input_rows_count, Impl::value);
     }

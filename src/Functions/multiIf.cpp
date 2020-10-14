@@ -106,7 +106,7 @@ public:
         return getLeastSupertype(types_of_branches);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) const override
     {
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.

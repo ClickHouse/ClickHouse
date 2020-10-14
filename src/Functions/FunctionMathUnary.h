@@ -113,7 +113,7 @@ private:
     }
 
     template <typename T, typename ReturnType>
-    static bool execute(Block & block, const ColumnVector<T> * col, const size_t result)
+    static bool execute(ColumnsWithTypeAndName & block, const ColumnVector<T> * col, const size_t result)
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
@@ -129,7 +129,7 @@ private:
     }
 
     template <typename T, typename ReturnType>
-    static bool execute(Block & block, const ColumnDecimal<T> * col, const size_t result)
+    static bool execute(ColumnsWithTypeAndName & block, const ColumnDecimal<T> * col, const size_t result)
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
@@ -150,7 +150,7 @@ private:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & col = block[arguments[0]];
 

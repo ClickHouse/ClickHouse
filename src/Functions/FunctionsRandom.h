@@ -74,7 +74,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<ToType>::create();
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();

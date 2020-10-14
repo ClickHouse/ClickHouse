@@ -340,7 +340,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
     {
         if constexpr (support_integer)
         {
@@ -393,7 +393,7 @@ public:
     }
 
     template <typename DataType>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeType(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result) const
     {
         auto * times = checkAndGetColumn<typename DataType::ColumnType>(block[arguments[0]].column.get());
         if (!times)

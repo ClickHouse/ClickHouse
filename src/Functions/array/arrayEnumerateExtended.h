@@ -56,7 +56,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -121,7 +121,7 @@ private:
 
 
 template <typename Derived>
-void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+void FunctionArrayEnumerateExtended<Derived>::executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
     const ColumnArray::Offsets * offsets = nullptr;
     size_t num_arguments = arguments.size();

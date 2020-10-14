@@ -121,7 +121,7 @@ private:
     }
 
     template <typename KeyType, bool is_str_key, typename ValType>
-    void execute2(Block & block, const size_t result, size_t row_count, TupleMaps & args, const DataTypeTuple & res_type) const
+    void execute2(ColumnsWithTypeAndName & block, const size_t result, size_t row_count, TupleMaps & args, const DataTypeTuple & res_type) const
     {
         MutableColumnPtr res_tuple = res_type.createColumn();
 
@@ -203,7 +203,7 @@ private:
     }
 
     template <typename KeyType, bool is_str_key>
-    void execute1(Block & block, const size_t result, size_t row_count, const DataTypeTuple & res_type, TupleMaps & args) const
+    void execute1(ColumnsWithTypeAndName & block, const size_t result, size_t row_count, const DataTypeTuple & res_type, TupleMaps & args) const
     {
         const auto & promoted_type = (assert_cast<const DataTypeArray *>(res_type.getElements()[1].get()))->getNestedType();
 #define MATCH_EXECUTE(is_str) \
@@ -226,7 +226,7 @@ private:
 #undef MATCH_EXECUTE
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         const DataTypeTuple * tup_type = checkAndGetDataType<DataTypeTuple>((block[arguments[0]]).type.get());
         const DataTypeArray * key_array_type = checkAndGetDataType<DataTypeArray>(tup_type->getElements()[0].get());

@@ -56,7 +56,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
     const Context & global_context;
@@ -85,7 +85,7 @@ DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAnd
 }
 
 
-void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+void FunctionHasColumnInTable::executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
     auto get_string_from_block = [&](size_t column_pos) -> String
     {

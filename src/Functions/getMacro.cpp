@@ -64,7 +64,7 @@ public:
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.
       */
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const IColumn * arg_column = block[arguments[0]].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);

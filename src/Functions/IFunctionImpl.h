@@ -31,14 +31,12 @@ using ExecutableFunctionLowCardinalityResultCachePtr = std::shared_ptr<Executabl
 class IExecutableFunctionImpl
 {
 public:
-    using Block = ColumnsWithTypeAndName;
-
     virtual ~IExecutableFunctionImpl() = default;
 
     virtual String getName() const = 0;
 
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
-    virtual void executeDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    virtual void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
+    virtual void executeDryRun(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         execute(block, arguments, result, input_rows_count);
     }
@@ -84,8 +82,6 @@ using ExecutableFunctionImplPtr = std::unique_ptr<IExecutableFunctionImpl>;
 class IFunctionBaseImpl
 {
 public:
-    using Block = ColumnsWithTypeAndName;
-
     virtual ~IFunctionBaseImpl() = default;
 
     virtual String getName() const = 0;
@@ -93,7 +89,7 @@ public:
     virtual const DataTypes & getArgumentTypes() const = 0;
     virtual const DataTypePtr & getReturnType() const = 0;
 
-    virtual ExecutableFunctionImplPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
+    virtual ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -129,7 +125,6 @@ using FunctionBaseImplPtr = std::unique_ptr<IFunctionBaseImpl>;
 class IFunctionOverloadResolverImpl
 {
 public:
-    using Block = ColumnsWithTypeAndName;
 
     virtual ~IFunctionOverloadResolverImpl() = default;
 
@@ -197,14 +192,13 @@ using FunctionOverloadResolverImplPtr = std::unique_ptr<IFunctionOverloadResolve
 class IFunction
 {
 public:
-    using Block = ColumnsWithTypeAndName;
 
     virtual ~IFunction() = default;
 
     virtual String getName() const = 0;
 
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const = 0;
-    virtual void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    virtual void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const = 0;
+    virtual void executeImplDryRun(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         executeImpl(block, arguments, result, input_rows_count);
     }

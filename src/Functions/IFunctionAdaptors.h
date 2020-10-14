@@ -148,11 +148,11 @@ public:
     String getName() const override { return function->getName(); }
 
 protected:
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
+    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
     {
         return function->executeImpl(block, arguments, result, input_rows_count);
     }
-    void executeDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
+    void executeDryRun(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
     {
         return function->executeImplDryRun(block, arguments, result, input_rows_count);
     }
@@ -185,7 +185,7 @@ public:
 
 #endif
 
-    ExecutableFunctionImplPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
     {
         return std::make_unique<DefaultExecutable>(function);
     }

@@ -396,7 +396,7 @@ public:
       * (they are vectors of Fields, which may represent the NULL value),
       * they do not require any preprocessing.
       */
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         ColumnPtr& ptr = block[arguments[0]].column;
 
@@ -492,7 +492,7 @@ private:
         const IColumn& left;
         const IColumn& right;
         const ColumnArray::Offsets& offsets;
-        Block & block;
+        ColumnsWithTypeAndName & block;
         size_t result_pos;
         NullMaps maps;
         ResultColumnPtr result { ResultColumnType::create() };
@@ -579,7 +579,7 @@ private:
 
 #define INTEGRAL_TPL_PACK UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64
 
-    void executeOnNonNullable(Block & block, const ColumnNumbers & arguments, size_t result) const
+    void executeOnNonNullable(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result) const
     {
         if (const auto* const left_arr = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get()))
         {
@@ -614,7 +614,7 @@ private:
      * @return {nullptr, null_map_item} if there are four arguments but the third is missing.
      * @return {null_map_data, null_map_item} if there are four arguments.
      */
-    static NullMaps getNullMaps(const Block & block, const ColumnNumbers & arguments) noexcept
+    static NullMaps getNullMaps(const ColumnsWithTypeAndName & block, const ColumnNumbers & arguments) noexcept
     {
         if (arguments.size() < 3)
             return {nullptr, nullptr};
@@ -637,7 +637,7 @@ private:
      * (s1, s1, s2, ...), (s2, s1, s2, ...), (s3, s1, s2, ...)
      */
     template <class ...Integral>
-    static inline bool executeIntegral(Block & block, const ColumnNumbers & arguments, size_t result_pos)
+    static inline bool executeIntegral(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result_pos)
     {
         const ColumnArray * const left = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get());
 
@@ -727,7 +727,7 @@ private:
      *
      * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
      */
-    static bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result)
+    static bool executeLowCardinality(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnArray * const col_array = checkAndGetColumn<ColumnArray>(
                 block[arguments[0]].column.get());
@@ -869,7 +869,7 @@ private:
 
 #undef INTEGRAL_TPL_PACK
 
-    static bool executeString(Block & block, const ColumnNumbers & arguments, size_t result_pos)
+    static bool executeString(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result_pos)
     {
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get());
 
@@ -954,7 +954,7 @@ private:
         return true;
     }
 
-    static bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
+    static bool executeConst(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(
                 block[arguments[0]].column.get());
@@ -1031,7 +1031,7 @@ private:
         return true;
     }
 
-    static bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result)
+    static bool executeGeneric(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnArray * col = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get());
 
