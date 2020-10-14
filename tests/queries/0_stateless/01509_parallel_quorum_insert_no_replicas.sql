@@ -35,6 +35,8 @@ INSERT INTO r1 VALUES(2, '2');
 
 ATTACH TABLE r2;
 
+SYSTEM SYNC REPLICA r2;
+
 SET insert_quorum=2, insert_quorum_parallel=1;
 
 INSERT INTO r1 VALUES(3, '3');

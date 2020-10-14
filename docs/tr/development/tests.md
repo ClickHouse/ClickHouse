@@ -203,7 +203,7 @@ Hata ayıklama sürümü `jemalloc` hata ayıklama oluşturmak için kullanılı
 ClickHouse fuzzing hem kullanılarak uygulanmaktadır [libFuzzer](https://llvm.org/docs/LibFuzzer.html) ve rastgele SQL sorguları.
 Tüm fuzz testleri sanitizers (Adres ve tanımsız) ile yapılmalıdır.
 
-LibFuzzer kütüphane kodu izole fuzz testi için kullanılır. Fuzzers test kodunun bir parçası olarak uygulanır ve “\_fuzzer” adı postfixes.
+LibFuzzer kütüphane kodu izole fuzz testi için kullanılır. Fuzzers test kodunun bir parçası olarak uygulanır ve “_fuzzer” adı postfixes.
 Fuzzer örneği bulunabilir `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer özgü yapılandırmalar, sözlükler ve corpus saklanır `tests/fuzz`.
 Kullanıcı girişini işleyen her işlevsellik için fuzz testleri yazmanızı öneririz.
 
