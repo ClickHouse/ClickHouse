@@ -142,8 +142,9 @@ struct AggregateFunctionWelchTTestData final
         return numerator / (denominator_first + denominator_second);
     }
 
-    static Float64 integrateSimpson(Float64 a, Float64 b, std::function<Float64(Float64)> func, size_t iterations = 1e6)
+    static Float64 integrateSimpson(Float64 a, Float64 b, std::function<Float64(Float64)> func)
     {
+        size_t iterations = std::max(1e6, 1e4 * std::abs(std::round(b)));
         double h = (b - a) / iterations;
         Float64 sum_odds = 0.0;
         for (size_t i = 1; i < iterations; i += 2)
@@ -170,7 +171,8 @@ struct AggregateFunctionWelchTTestData final
     }
 };
 
-/// Returns p-value
+/// Returns tuple of (t-statistic, p-value)
+/// https://cpb-us-w2.wpmucdn.com/voices.uchicago.edu/dist/9/1193/files/2016/01/05b-TandP.pdf
 template <typename X = Float64, typename Y = Float64>
 class AggregateFunctionWelchTTest : 
     public IAggregateFunctionDataHelper<AggregateFunctionWelchTTestData<X, Y>,AggregateFunctionWelchTTest<X, Y>>
@@ -183,7 +185,7 @@ public:
 
     String getName() const override
     {
-        return "WelchTTest";
+        return "welchTTest";
     }
 
     DataTypePtr getReturnType() const override

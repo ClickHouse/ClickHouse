@@ -98,8 +98,8 @@ struct AggregateFunctionStudentTTestData final
 
     Float64 getSSquared() const
     {
-        /// TODO: Update comment with Tex.
-        /// The original formulae looks like  ...
+        /// The original formulae looks like  
+        /// \frac{\sum_{i = 1}^{n_x}{(x_i - \bar{x}) ^ 2} + \sum_{i = 1}^{n_y}{(y_i - \bar{y}) ^ 2}}{n_x + n_y - 2}
         /// But we made some mathematical transformations not to store original sequences.
         /// Also we dropped sqrt, because later it will be squared later.
         const Float64 all_x = square_sum_x + size_x * std::pow(mean_x, 2) - 2 * mean_x * sum_x;
@@ -110,26 +110,19 @@ struct AggregateFunctionStudentTTestData final
 
     Float64 getTStatisticSquared() const
     {
-        if (size_x == 0 || size_y == 0)
-        {
-            throw Exception("Division by zero encountered in Aggregate function StudentTTest", ErrorCodes::BAD_ARGUMENTS);
-        }
-
         return std::pow(mean_x - mean_y, 2) / getStandartErrorSquared();
     }
 
     Float64 getTStatistic() const
     {
-        if (size_x == 0 || size_y == 0)
-        {
-            throw Exception("Division by zero encountered in Aggregate function StudentTTest", ErrorCodes::BAD_ARGUMENTS);
-        }
-
         return (mean_x - mean_y) / std::sqrt(getStandartErrorSquared());
     }
 
     Float64 getStandartErrorSquared() const
     {
+        if (size_x == 0 || size_y == 0)
+            throw Exception("Division by zero encountered in Aggregate function StudentTTest", ErrorCodes::BAD_ARGUMENTS);
+
         return getSSquared() * (1.0 / static_cast<Float64>(size_x) + 1.0 / static_cast<Float64>(size_y));
     }
 
@@ -138,9 +131,10 @@ struct AggregateFunctionStudentTTestData final
         return static_cast<Float64>(size_x + size_y - 2);
     }
 
-    static Float64 integrateSimpson(Float64 a, Float64 b, std::function<Float64(Float64)> func, size_t iterations = 1e6)
+    static Float64 integrateSimpson(Float64 a, Float64 b, std::function<Float64(Float64)> func)
     {
-        double h = (b - a) / iterations;
+        const size_t iterations = std::max(1e6, 1e4 * std::abs(std::round(b)));
+        const long double h = (b - a) / iterations;
         Float64 sum_odds = 0.0;
         for (size_t i = 1; i < iterations; i += 2)
             sum_odds += func(a + i * h);
@@ -154,13 +148,9 @@ struct AggregateFunctionStudentTTestData final
     {
         const Float64 v = getDegreesOfFreedom();
         const Float64 t = getTStatisticSquared();
-        std::cout << "getDegreesOfFreedom() " << getDegreesOfFreedom() << std::endl;
-        std::cout << "getTStatisticSquared() " << getTStatisticSquared() << std::endl;
         auto f = [&v] (double x) { return std::pow(x, v/2 - 1) / std::sqrt(1 - x); };
         Float64 numenator = integrateSimpson(0, v / (t + v), f);
         Float64 denominator = std::exp(std::lgammal(v/2) + std::lgammal(0.5) - std::lgammal(v/2 + 0.5));
-        std::cout << "numenator " << numenator << std::endl;
-        std::cout << "denominator " << denominator << std::endl;
         return numenator / denominator;
     }
 
@@ -184,7 +174,7 @@ public:
 
     String getName() const override
     {
-        return "StudentTTest";
+        return "studentTTest";
     }
 
     DataTypePtr getReturnType() const override
