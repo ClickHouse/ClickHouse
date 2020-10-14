@@ -106,7 +106,6 @@ void StorageMergeTree::startup()
     try
     {
         background_executor.start();
-        startBackgroundMovesIfNeeded();
     }
     catch (...)
     {
@@ -144,9 +143,6 @@ void StorageMergeTree::shutdown()
     parts_mover.moves_blocker.cancelForever();
 
     background_executor.finish();
-
-    if (moving_task_handle)
-        global_context.getBackgroundMovePool().removeTask(moving_task_handle);
 
     try
     {
@@ -500,18 +496,6 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     result.is_done = true;
     return result;
 }
-
-
-void StorageMergeTree::startBackgroundMovesIfNeeded()
-{
-    if (areBackgroundMovesNeeded() && !moving_task_handle)
-    {
-        auto & move_pool = global_context.getBackgroundMovePool();
-        moving_task_handle = move_pool.createTask([this] { return movePartsTask(); });
-        move_pool.startTask(moving_task_handle);
-    }
-}
-
 
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
 {
@@ -1528,6 +1512,11 @@ MutationCommands StorageMergeTree::getFirtsAlterMutationCommandsForPart(const Da
     if (it == current_mutations_by_version.end())
         return {};
     return it->second.commands;
+}
+
+void StorageMergeTree::startBackgroundMovesIfNeeded()
+{
+    background_executor.startMovingTaskIfNeeded();
 }
 
 }

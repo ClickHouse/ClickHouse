@@ -71,6 +71,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+    extern const Metric BackgroundMovePoolTask;
 }
 
 
@@ -3614,10 +3615,29 @@ bool MergeTreeData::selectPartsAndMove()
         return false;
 
     auto moving_tagger = selectPartsForMove();
-    if (moving_tagger.parts_to_move.empty())
+    if (moving_tagger->parts_to_move.empty())
         return false;
 
     return moveParts(std::move(moving_tagger));
+}
+
+std::optional<MergeTreeBackgroundJob> MergeTreeData::getDataMovingJob()
+{
+    if (parts_mover.moves_blocker.isCancelled())
+        return {};
+
+    auto moving_tagger = selectPartsForMove();
+    if (moving_tagger->parts_to_move.empty())
+        return {};
+
+    auto job = [this, moving_tagger{std::move(moving_tagger)}] () mutable
+    {
+        moveParts(moving_tagger);
+    };
+
+    MergeTreeBackgroundJob result_job(std::move(job), CurrentMetrics::BackgroundMovePoolTask, PoolType::MOVE);
+
+    return std::make_optional<MergeTreeBackgroundJob>(std::move(job), CurrentMetrics::BackgroundMovePoolTask, PoolType::MOVE);
 }
 
 bool MergeTreeData::areBackgroundMovesNeeded() const
@@ -3636,13 +3656,13 @@ bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr spa
         return false;
 
     auto moving_tagger = checkPartsForMove(parts, space);
-    if (moving_tagger.parts_to_move.empty())
+    if (moving_tagger->parts_to_move.empty())
         return false;
 
-    return moveParts(std::move(moving_tagger));
+    return moveParts(moving_tagger);
 }
 
-MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
+MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::selectPartsForMove()
 {
     MergeTreeMovingParts parts_to_move;
 
@@ -3665,10 +3685,10 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
     std::lock_guard moving_lock(moving_parts_mutex);
 
     parts_mover.selectPartsForMove(parts_to_move, can_move, moving_lock);
-    return CurrentlyMovingPartsTagger(std::move(parts_to_move), *this);
+    return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const DataPartsVector & parts, SpacePtr space)
+MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(const DataPartsVector & parts, SpacePtr space)
 {
     std::lock_guard moving_lock(moving_parts_mutex);
 
@@ -3693,14 +3713,14 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const
 
         parts_to_move.emplace_back(part, std::move(reservation));
     }
-    return CurrentlyMovingPartsTagger(std::move(parts_to_move), *this);
+    return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
+bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger)
 {
-    LOG_INFO(log, "Got {} parts to move.", moving_tagger.parts_to_move.size());
+    LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
-    for (const auto & moving_part : moving_tagger.parts_to_move)
+    for (const auto & moving_part : moving_tagger->parts_to_move)
     {
         Stopwatch stopwatch;
         DataPartPtr cloned_part;

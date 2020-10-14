@@ -98,6 +98,7 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
+    BackgroundJobsExecutor background_executor;
 
     /// For block numbers.
     SimpleIncrement increment{0};
@@ -119,10 +120,6 @@ private:
     std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     std::atomic<bool> shutdown_called {false};
-
-    /// Task handler for merges, mutations and moves.
-    BackgroundJobsExecutor background_executor;
-    BackgroundProcessingPool::TaskHandle moving_task_handle;
 
     void loadMutations();
 

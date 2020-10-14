@@ -197,6 +197,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , merger_mutator(*this, global_context.getSettingsRef().background_pool_size)
     , queue(*this)
     , fetcher(*this)
+    , background_executor(*this, global_context)
     , cleanup_thread(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
@@ -3530,12 +3531,9 @@ void StorageReplicatedMergeTree::startup()
         /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
         {
             auto lock = queue.lockQueue();
-            auto & pool = global_context.getBackgroundPool();
-            queue_task_handle = pool.createTask([this] { return queueTask(); });
-            pool.startTask(queue_task_handle);
+            background_executor.start();
         }
 
-        startBackgroundMovesIfNeeded();
     }
     catch (...)
     {
@@ -3566,14 +3564,11 @@ void StorageReplicatedMergeTree::shutdown()
 
     restarting_thread.shutdown();
 
-    if (queue_task_handle)
-        global_context.getBackgroundPool().removeTask(queue_task_handle);
-
     {
         /// Queue can trigger queue_task_handle itself. So we ensure that all
         /// queue processes finished and after that reset queue_task_handle.
         auto lock = queue.lockQueue();
-        queue_task_handle.reset();
+        background_executor.finish();
 
         /// Cancel logs pulling after background task were cancelled. It's still
         /// required because we can trigger pullLogsToQueue during manual OPTIMIZE,
@@ -5921,12 +5916,9 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 
     {
         auto lock = queue.lockQueue();
-        if (!queue_task_handle)
-            return false;
-
+        background_executor.triggerDataProcessing();
         /// This is significant, because the execution of this task could be delayed at BackgroundPool.
         /// And we force it to be executed.
-        queue_task_handle->signalReadyToRun();
     }
 
     Poco::Event target_size_event;
@@ -6032,15 +6024,9 @@ MutationCommands StorageReplicatedMergeTree::getFirtsAlterMutationCommandsForPar
     return queue.getFirstAlterMutationCommandsForPart(part);
 }
 
-
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
-    if (areBackgroundMovesNeeded() && !move_parts_task_handle)
-    {
-        auto & pool = global_context.getBackgroundMovePool();
-        move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
-        pool.startTask(move_parts_task_handle);
-    }
+    background_executor.startMovingTaskIfNeeded();
 }
 
 }
