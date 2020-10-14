@@ -210,8 +210,9 @@ void StorageMergeTree::drop()
     dropAllData();
 }
 
-void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder & lock_holder)
 {
+    lock_holder.release();
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
@@ -902,7 +903,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-std::optional<MergeTreeBackgroundJob> StorageMergeTree::getDataProcessingJob()
+ThreadPool::Job StorageMergeTree::getDataProcessingJob()
 {
     if (shutdown_called)
         return {};
@@ -919,18 +920,17 @@ std::optional<MergeTreeBackgroundJob> StorageMergeTree::getDataProcessingJob()
 
     if (merge_entry || mutate_entry)
     {
-        auto job = [this, metadata_snapshot, merge_entry{std::move(merge_entry)}, mutate_entry{std::move(mutate_entry)}] () mutable
+        return [this, metadata_snapshot, merge_entry{std::move(merge_entry)}, mutate_entry{std::move(mutate_entry)}] () mutable
         {
             if (merge_entry)
                 mergeSelectedParts(metadata_snapshot, false, *merge_entry);
             else if (mutate_entry)
                 mutateSelectedPart(metadata_snapshot, *mutate_entry);
         };
-        return std::make_optional<MergeTreeBackgroundJob>(std::move(job), CurrentMetrics::BackgroundPoolTask, PoolType::MERGE_MUTATE);
     }
     else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
     {
-        auto job = [this] ()
+        return [this] ()
         {
             {
                 auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
@@ -942,58 +942,8 @@ std::optional<MergeTreeBackgroundJob> StorageMergeTree::getDataProcessingJob()
             }
             clearOldMutations();
         };
-      
-        return std::make_optional<MergeTreeBackgroundJob>(std::move(job), 0, PoolType::MERGE_MUTATE);
     }
     return {};
-}
-
-BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
-{
-    if (shutdown_called)
-        return BackgroundProcessingPoolTaskResult::ERROR;
-
-    if (merger_mutator.merges_blocker.isCancelled())
-        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
-
-    try
-    {
-        /// Clear old parts. It is unnecessary to do it more than once a second.
-        if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
-        {
-            {
-                auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-                /// All use relative_data_path which changes during rename
-                /// so execute under share lock.
-                clearOldPartsFromFilesystem();
-                clearOldTemporaryDirectories();
-                clearOldWriteAheadLogs();
-            }
-            clearOldMutations();
-        }
-
-        auto metadata_snapshot = getInMemoryMetadataPtr();
-        auto merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr);
-        ///TODO: read deduplicate option from table config
-        if (merge_entry && mergeSelectedParts(metadata_snapshot, false, *merge_entry))
-            return BackgroundProcessingPoolTaskResult::SUCCESS;
-
-        auto mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
-        if (mutate_entry && mutateSelectedPart(metadata_snapshot, *mutate_entry))
-            return BackgroundProcessingPoolTaskResult::SUCCESS;
-
-        return BackgroundProcessingPoolTaskResult::ERROR;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::ABORTED)
-        {
-            LOG_INFO(log, e.message());
-            return BackgroundProcessingPoolTaskResult::ERROR;
-        }
-
-        throw;
-    }
 }
 
 Int64 StorageMergeTree::getCurrentMutationVersion(

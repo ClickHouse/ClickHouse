@@ -88,7 +88,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
-    std::optional<MergeTreeBackgroundJob> getDataProcessingJob() override;
+    ThreadPool::Job getDataProcessingJob() override;
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -155,8 +155,6 @@ private:
 
     std::optional<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason);
     bool mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry);
-
-    BackgroundProcessingPoolTaskResult mergeMutateTask();
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,

@@ -2601,7 +2601,7 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
 }
 
 
-std::optional<MergeTreeBackgroundJob> StorageReplicatedMergeTree::getDataProcessingJob()
+ThreadPool::Job StorageReplicatedMergeTree::getDataProcessingJob()
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
@@ -2615,42 +2615,11 @@ std::optional<MergeTreeBackgroundJob> StorageReplicatedMergeTree::getDataProcess
     if (!entry)
         return {};
 
-    auto job = [this, selected_entry{std::move(selected_entry)}] () mutable
+    return [this, selected_entry{std::move(selected_entry)}] () mutable
     {
         processQueueEntry(selected_entry);
     };
-
-    return std::make_optional<MergeTreeBackgroundJob>(std::move(job), CurrentMetrics::BackgroundPoolTask, PoolType::MERGE_MUTATE);
 }
-
-BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
-{
-    /// If replication queue is stopped exit immediately as we successfully executed the task
-    if (queue.actions_blocker.isCancelled())
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        return BackgroundProcessingPoolTaskResult::SUCCESS;
-    }
-
-    /// This object will mark the element of the queue as running.
-    ReplicatedMergeTreeQueue::SelectedEntry selected_entry = selectQueueEntry();
-
-    LogEntryPtr & entry = selected_entry.first;
-
-    if (!entry)
-        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
-
-    time_t prev_attempt_time = entry->last_attempt_time;
-
-    bool res = processQueueEntry(selected_entry);
-
-    /// We will go to sleep if the processing fails and if we have already processed this record recently.
-    bool need_sleep = !res && (entry->last_attempt_time - prev_attempt_time < 10);
-
-    /// If there was no exception, you do not need to sleep.
-    return need_sleep ? BackgroundProcessingPoolTaskResult::ERROR : BackgroundProcessingPoolTaskResult::SUCCESS;
-}
-
 
 bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
 {
@@ -3575,10 +3544,6 @@ void StorageReplicatedMergeTree::shutdown()
         /// MUTATE, etc. query.
         queue.pull_log_blocker.cancelForever();
     }
-
-    if (move_parts_task_handle)
-        global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
-    move_parts_task_handle.reset();
 
     if (data_parts_exchange_endpoint)
     {
