@@ -100,15 +100,15 @@ public:
 
     }
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IColumn * longitude = block[arguments[0]].column.get();
-        const IColumn * latitude = block[arguments[1]].column.get();
+        const IColumn * longitude = columns[arguments[0]].column.get();
+        const IColumn * latitude = columns[arguments[1]].column.get();
 
         const UInt64 precision_value = std::min<UInt64>(GEOHASH_MAX_TEXT_LENGTH,
-                arguments.size() == 3 ? block[arguments[2]].column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
+                arguments.size() == 3 ? columns[arguments[2]].column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
 
-        ColumnPtr & res_column = block[result].column;
+        ColumnPtr & res_column = columns[result].column;
 
         if (tryExecute<Float32, Float32>(longitude, latitude, precision_value, res_column) ||
             tryExecute<Float64, Float32>(longitude, latitude, precision_value, res_column) ||
@@ -121,7 +121,7 @@ public:
         {
             if (i != 0)
                 arguments_description += ", ";
-            arguments_description += block[arguments[i]].column->getName();
+            arguments_description += columns[arguments[i]].column->getName();
         }
 
         throw Exception("Unsupported argument types: " + arguments_description +

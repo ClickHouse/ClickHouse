@@ -50,9 +50,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr column = block[arguments[0]].column;
+        const ColumnPtr column = columns[arguments[0]].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnVector<ResultType>::create();
@@ -61,7 +61,7 @@ public:
             vec_res.resize(col->size());
             Impl::vector(col->getChars(), col->getOffsets(), vec_res);
 
-            block[result].column = std::move(col_res);
+            columns[result].column = std::move(col_res);
         }
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
@@ -70,7 +70,7 @@ public:
                 ResultType res = 0;
                 Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res);
 
-                block[result].column = block[result].type->createColumnConst(col_fixed->size(), toField(res));
+                columns[result].column = columns[result].type->createColumnConst(col_fixed->size(), toField(res));
             }
             else
             {
@@ -80,7 +80,7 @@ public:
                 vec_res.resize(col_fixed->size());
                 Impl::vectorFixedToVector(col_fixed->getChars(), col_fixed->getN(), vec_res);
 
-                block[result].column = std::move(col_res);
+                columns[result].column = std::move(col_res);
             }
         }
         else if (const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(column.get()))
@@ -91,10 +91,10 @@ public:
             vec_res.resize(col_arr->size());
             Impl::array(col_arr->getOffsets(), vec_res);
 
-            block[result].column = std::move(col_res);
+            columns[result].column = std::move(col_res);
         }
         else
-            throw Exception("Illegal column " + block[arguments[0]].column->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal column " + columns[arguments[0]].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };

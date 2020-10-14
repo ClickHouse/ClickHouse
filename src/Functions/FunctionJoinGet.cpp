@@ -17,15 +17,15 @@ namespace ErrorCodes
 }
 
 template <bool or_null>
-void ExecutableFunctionJoinGet<or_null>::execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t)
+void ExecutableFunctionJoinGet<or_null>::execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t)
 {
     ColumnsWithTypeAndName keys;
     for (size_t i = 2; i < arguments.size(); ++i)
     {
-        auto key = block[arguments[i]];
+        auto key = columns[arguments[i]];
         keys.emplace_back(std::move(key));
     }
-    block[result] = join->joinGet(keys, result_block);
+    columns[result] = join->joinGet(keys, result_columns);
 }
 
 template <bool or_null>

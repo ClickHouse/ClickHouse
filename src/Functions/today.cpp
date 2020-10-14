@@ -20,9 +20,9 @@ public:
 
     String getName() const override { return "today"; }
 
-    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block[result].column = DataTypeDate().createColumnConst(input_rows_count, day_value);
+        columns[result].column = DataTypeDate().createColumnConst(input_rows_count, day_value);
     }
 
 private:

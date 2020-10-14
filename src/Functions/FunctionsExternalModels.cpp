@@ -69,9 +69,9 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
     return type;
 }
 
-void FunctionModelEvaluate::executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+void FunctionModelEvaluate::executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
-    const auto * name_col = checkAndGetColumnConst<ColumnString>(block[arguments[0]].column.get());
+    const auto * name_col = checkAndGetColumnConst<ColumnString>(columns[arguments[0]].column.get());
     if (!name_col)
         throw Exception("First argument of function " + getName() + " must be a constant string",
                         ErrorCodes::ILLEGAL_COLUMN);
@@ -85,7 +85,7 @@ void FunctionModelEvaluate::executeImpl(ColumnsWithTypeAndName & block, const Co
     columns.reserve(arguments.size());
     for (auto arg : ext::range(1, arguments.size()))
     {
-        auto & column = block[arguments[arg]].column;
+        auto & column = columns[arguments[arg]].column;
         columns.push_back(column.get());
         if (auto full_column = column->convertToFullColumnIfConst())
         {
@@ -130,7 +130,7 @@ void FunctionModelEvaluate::executeImpl(ColumnsWithTypeAndName & block, const Co
             res = ColumnNullable::create(res, null_map);
     }
 
-    block[result].column = res;
+    columns[result].column = res;
 }
 
 void registerFunctionsExternalModels(FunctionFactory & factory)

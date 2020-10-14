@@ -48,18 +48,18 @@ struct FunctionPort : public IFunction
     }
 
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         UInt16 default_port = 0;
         if (arguments.size() == 2)
         {
-            const auto * port_column = checkAndGetColumn<ColumnConst>(block[arguments[1]].column.get());
+            const auto * port_column = checkAndGetColumn<ColumnConst>(columns[arguments[1]].column.get());
             if (!port_column)
                 throw Exception("Second argument for function " + getName() + " must be constant UInt16", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             default_port = port_column->getValue<UInt16>();
         }
 
-        const ColumnPtr url_column = block[arguments[0]].column;
+        const ColumnPtr url_column = columns[arguments[0]].column;
         if (const ColumnString * url_strs = checkAndGetColumn<ColumnString>(url_column.get()))
         {
             auto col_res = ColumnVector<UInt16>::create();
@@ -67,11 +67,11 @@ struct FunctionPort : public IFunction
             vec_res.resize(url_column->size());
 
             vector(default_port, url_strs->getChars(), url_strs->getOffsets(), vec_res);
-            block[result].column = std::move(col_res);
+            columns[result].column = std::move(col_res);
         }
         else
             throw Exception(
-                "Illegal column " + block[arguments[0]].column->getName() + " of argument of function " + getName(),
+                "Illegal column " + columns[arguments[0]].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 }
 

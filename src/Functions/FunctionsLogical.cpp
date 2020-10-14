@@ -290,8 +290,8 @@ private:
 
 
 /// Apply target function by feeding it "batches" of N columns
-/// Combining 10 columns per pass is the fastest for large block sizes.
-/// For small block sizes - more columns is faster.
+/// Combining 10 columns per pass is the fastest for large columns sizes.
+/// For small columns sizes - more columns is faster.
 template <
     typename Op, template <typename, size_t> typename OperationApplierImpl, size_t N = 10>
 struct OperationApplier
@@ -512,13 +512,13 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
 
 template <typename Impl, typename Name>
 void FunctionAnyArityLogical<Impl, Name>::executeImpl(
-        ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count) const
+        ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count) const
 {
     ColumnRawPtrs args_in;
     for (const auto arg_index : arguments)
-        args_in.push_back(block[arg_index].column.get());
+        args_in.push_back(columns[arg_index].column.get());
 
-    auto & result_info = block[result_index];
+    auto & result_info = columns[result_index];
     if (result_info.type->isNullable())
         executeForTernaryLogicImpl<Impl>(std::move(args_in), result_info, input_rows_count);
     else
@@ -554,9 +554,9 @@ DataTypePtr FunctionUnaryLogical<Impl, Name>::getReturnTypeImpl(const DataTypes 
 }
 
 template <template <typename> class Impl, typename T>
-bool functionUnaryExecuteType(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result)
+bool functionUnaryExecuteType(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result)
 {
-    if (auto col = checkAndGetColumn<ColumnVector<T>>(block[arguments[0]].column.get()))
+    if (auto col = checkAndGetColumn<ColumnVector<T>>(columns[arguments[0]].column.get()))
     {
         auto col_res = ColumnUInt8::create();
 
@@ -564,7 +564,7 @@ bool functionUnaryExecuteType(ColumnsWithTypeAndName & block, const ColumnNumber
         vec_res.resize(col->getData().size());
         UnaryOperationImpl<T, Impl<T>>::vector(col->getData(), vec_res);
 
-        block[result].column = std::move(col_res);
+        columns[result].column = std::move(col_res);
         return true;
     }
 
@@ -572,19 +572,19 @@ bool functionUnaryExecuteType(ColumnsWithTypeAndName & block, const ColumnNumber
 }
 
 template <template <typename> class Impl, typename Name>
-void FunctionUnaryLogical<Impl, Name>::executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+void FunctionUnaryLogical<Impl, Name>::executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
-    if (!(functionUnaryExecuteType<Impl, UInt8>(block, arguments, result)
-        || functionUnaryExecuteType<Impl, UInt16>(block, arguments, result)
-        || functionUnaryExecuteType<Impl, UInt32>(block, arguments, result)
-        || functionUnaryExecuteType<Impl, UInt64>(block, arguments, result)
-        || functionUnaryExecuteType<Impl, Int8>(block, arguments, result)
-        || functionUnaryExecuteType<Impl, Int16>(block, arguments, result)
-        || functionUnaryExecuteType<Impl, Int32>(block, arguments, result)
-        || functionUnaryExecuteType<Impl, Int64>(block, arguments, result)
-        || functionUnaryExecuteType<Impl, Float32>(block, arguments, result)
-        || functionUnaryExecuteType<Impl, Float64>(block, arguments, result)))
-       throw Exception("Illegal column " + block[arguments[0]].column->getName()
+    if (!(functionUnaryExecuteType<Impl, UInt8>(columns, arguments, result)
+        || functionUnaryExecuteType<Impl, UInt16>(columns, arguments, result)
+        || functionUnaryExecuteType<Impl, UInt32>(columns, arguments, result)
+        || functionUnaryExecuteType<Impl, UInt64>(columns, arguments, result)
+        || functionUnaryExecuteType<Impl, Int8>(columns, arguments, result)
+        || functionUnaryExecuteType<Impl, Int16>(columns, arguments, result)
+        || functionUnaryExecuteType<Impl, Int32>(columns, arguments, result)
+        || functionUnaryExecuteType<Impl, Int64>(columns, arguments, result)
+        || functionUnaryExecuteType<Impl, Float32>(columns, arguments, result)
+        || functionUnaryExecuteType<Impl, Float64>(columns, arguments, result)))
+       throw Exception("Illegal column " + columns[arguments[0]].column->getName()
             + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 }

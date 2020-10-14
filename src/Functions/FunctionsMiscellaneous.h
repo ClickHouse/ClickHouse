@@ -35,19 +35,19 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        DB::Block expr_block;
+        DB::Block expr_columns;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const auto & argument = block[arguments[i]];
+            const auto & argument = columns[arguments[i]];
             /// Replace column name with value from argument_names.
-            expr_block.insert({argument.column, argument.type, signature->argument_names[i]});
+            expr_columns.insert({argument.column, argument.type, signature->argument_names[i]});
         }
 
-        expression_actions->execute(expr_block);
+        expression_actions->execute(expr_columns);
 
-        block[result].column = expr_block.getByName(signature->return_name).column;
+        columns[result].column = expr_columns.getByName(signature->return_name).column;
     }
 
 bool useDefaultImplementationForNulls() const override { return false; }
@@ -119,7 +119,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -140,12 +140,12 @@ public:
         }
 
         for (const auto & argument : arguments)
-            columns.push_back(block[argument]);
+            columns.push_back(columns[argument]);
 
         auto function = std::make_unique<FunctionExpression>(expression_actions, types, names,
                                                              capture->return_type, capture->return_name);
         auto function_adaptor = std::make_shared<FunctionBaseAdaptor>(std::move(function));
-        block[result].column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns);
+        columns[result].column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns);
     }
 
 private:
@@ -205,7 +205,7 @@ public:
             const String & expression_return_name_)
         : expression_actions(std::move(expression_actions_))
     {
-        /// Check that expression does not contain unusual actions that will break blocks structure.
+        /// Check that expression does not contain unusual actions that will break columnss structure.
         for (const auto & action : expression_actions->getActions())
             if (action.type == ExpressionAction::Type::ARRAY_JOIN)
                 throw Exception("Expression with arrayJoin or other unusual action cannot be captured", ErrorCodes::BAD_ARGUMENTS);

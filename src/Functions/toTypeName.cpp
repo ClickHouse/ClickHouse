@@ -21,11 +21,11 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    /// Execute the function on the block.
-    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    /// Execute the function on the columns.
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        block[result].column
-            = DataTypeString().createColumnConst(input_rows_count, block[arguments[0]].type->getName());
+        columns[result].column
+            = DataTypeString().createColumnConst(input_rows_count, columns[arguments[0]].type->getName());
     }
 };
 

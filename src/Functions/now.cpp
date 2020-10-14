@@ -29,9 +29,9 @@ public:
 
     String getName() const override { return "now"; }
 
-    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block[result].column = DataTypeDateTime().createColumnConst(
+        columns[result].column = DataTypeDateTime().createColumnConst(
                 input_rows_count,
                 static_cast<UInt64>(time_value));
     }
