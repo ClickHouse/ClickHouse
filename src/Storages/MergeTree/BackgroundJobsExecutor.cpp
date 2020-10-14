@@ -57,7 +57,7 @@ void IBackgroundJobExecutor::scheduleTask(bool nothing_to_do)
     else if (nothing_to_do)
     {
         next_time_to_execute += 1000 * (sleep_settings.thread_sleep_seconds_if_nothing_to_do
-            + std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng)); 
+            + std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng));
     }
     else
     {
