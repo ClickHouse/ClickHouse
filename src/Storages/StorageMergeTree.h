@@ -98,6 +98,7 @@ private:
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
     BackgroundJobsExecutor background_executor;
+    BackgroundMovesExecutor background_moves_executor;
 
     /// For block numbers.
     SimpleIncrement increment{0};
