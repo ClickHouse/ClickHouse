@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 IBackgroundJobExecutor::IBackgroundJobExecutor(
         MergeTreeData & data_,
         Context & global_context_,
