@@ -1,7 +1,8 @@
 #include <map>
-#include <boost/algorithm/string.hpp>
 #include <cstdlib>
+#include <stdio.h>
 #include <iostream>
+#include <string>
 
 #include <pcg_random.hpp>
 #include <Core/Field.h>
@@ -16,6 +17,10 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
+#include <boost/algorithm/string.hpp>
+#include <boost/program_options.hpp>
+
+namespace po = boost::program_options;
 
 using ColumnType = uint32_t;
 using TableAndColumn = std::pair<std::string, std::string>;
@@ -1264,8 +1269,39 @@ TableList getTablesFromSelect(std::vector<std::string> queries)
     return result;
 }
 
-int main(int, char **)
+int main(int argc, const char *argv[])
 {
+    try
+    {
+        po::options_description desc("Allowed options");
+        desc.add_options()
+            ("help,h", "Display greeting and allowed options.")
+            ("input,i", po::value<std::string>(), "Input filename.")
+            ("output,o", po::value<std::string>(), "Output filename.");
+
+        po::variables_map vm;
+        po::store(po::parse_command_line(argc, argv, desc), vm);
+        po::notify(vm);
+
+        if (vm.count("help") || vm.count("h"))
+        {
+            std::cout << "Hello! It is datasets generator for ClickHouse's queries." << std::endl;
+            std::cout << "Put some query as an input and it will produce queries for table creating and filling." << std::endl;
+            std::cout << "After that your query could be executed on this tables." << std::endl;
+            std::cout << desc << std::endl;
+            return 1;
+        }
+        if (vm.count("input"))
+            freopen(vm["input"].as<std::string>().c_str(), "r", stdin);
+        if (vm.count("output"))
+            freopen(vm["output"].as<std::string>().c_str(), "w", stdout);
+    }
+    catch (...)
+    {
+        std::cerr << "Got error while parse command line arguments: " << DB::getCurrentExceptionMessage(true) << std::endl;
+        throw;
+    }
+
     handlers["plus"] = arithmeticFunc;
     handlers["minus"] = arithmeticFunc;
     handlers["like"] = likeFunc;
