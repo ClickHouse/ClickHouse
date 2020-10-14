@@ -47,6 +47,7 @@ public:
     void sync(int fd) const override;
     const String getType() const override { return delegate->getType(); }
     const String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
+    bool checkFile(const String & path) const override { return delegate->checkFile(path); }
 
 protected:
     DiskPtr delegate;

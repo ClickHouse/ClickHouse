@@ -112,6 +112,8 @@ public:
 
     const String getUniqueId(const String & path) const override;
 
+    bool checkFile(const String & path) const override;
+
 private:
     bool tryReserve(UInt64 bytes);
 

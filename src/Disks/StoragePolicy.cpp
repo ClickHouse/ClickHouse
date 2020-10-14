@@ -123,6 +123,17 @@ Disks StoragePolicy::getDisks() const
 }
 
 
+Disks StoragePolicy::getDisksByType(const String & type) const
+{
+    Disks res;
+    for (const auto & volume : volumes)
+        for (const auto & disk : volume->getDisks())
+            if (disk->getType() == type)
+                res.push_back(disk);
+    return res;
+}
+
+
 DiskPtr StoragePolicy::getAnyDisk() const
 {
     /// StoragePolicy must contain at least one Volume

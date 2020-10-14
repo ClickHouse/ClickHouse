@@ -41,6 +41,9 @@ public:
     /// Returns disks ordered by volumes priority
     Disks getDisks() const;
 
+    /// Returns disks by type ordered by volumes priority
+    Disks getDisksByType(const String & type) const;
+
     /// Returns any disk
     /// Used when it's not important, for example for
     /// mutations files
