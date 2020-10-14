@@ -14,7 +14,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-
 struct TaskSleepSettings
 {
     double thread_sleep_seconds = 10;
@@ -87,7 +86,6 @@ private:
     void jobExecutingTask();
     void scheduleTask(bool nothing_to_do);
 };
-
 
 class BackgroundJobsExecutor final : public IBackgroundJobExecutor
 {

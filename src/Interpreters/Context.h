@@ -110,6 +110,7 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
+struct TaskSleepSettings;
 
 
 #if USE_EMBEDDED_COMPILER
@@ -506,6 +507,8 @@ public:
       */
     void dropCaches() const;
 
+    TaskSleepSettings getBackgroundProcessingTaskSleepSettings();
+    TaskSleepSettings getBackgroundMoveTaskSleepSettings();
     BackgroundSchedulePool & getBufferFlushSchedulePool();
     BackgroundSchedulePool & getSchedulePool();
     BackgroundSchedulePool & getMessageBrokerSchedulePool();
