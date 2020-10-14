@@ -19,13 +19,7 @@ CREATE TABLE out_persons_00825 (uuid UUID,
                                 surname String,
                                 gender Enum8('male'=1, 'female'=0),
                                 birthDate Date,
-                                photo Nullable(String),<<<<<<< non_delimited_protobuf
-511
- 
-=======
-512
- 
-
+                                photo Nullable(String),
                                 phoneNumber Nullable(FixedString(13)),
                                 isOnline UInt8,
                                 visitTime Nullable(DateTime),
