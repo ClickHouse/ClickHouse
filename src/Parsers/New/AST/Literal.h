@@ -30,6 +30,7 @@ class Literal : public INode
         static PtrTo<StringLiteral> createString(const String& literal); // without quotes
 
         ASTPtr convertToOld() const override;
+        String toString() const override { return token; }
 
         bool is(LiteralType what) const { return type == what; }
 

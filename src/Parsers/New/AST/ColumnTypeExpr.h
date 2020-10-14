@@ -13,11 +13,13 @@ class EnumValue : public INode
     public:
         EnumValue(PtrTo<StringLiteral> name, PtrTo<NumberLiteral> value);
 
+        String toString() const override;
+
     private:
         enum ChildIndex : UInt8
         {
-            NAME = 0,
-            VALUE = 1,
+            NAME = 0,   // StringLiteral
+            VALUE = 1,  // NumberLiteral
         };
 };
 

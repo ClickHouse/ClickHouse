@@ -14,6 +14,11 @@ EnumValue::EnumValue(PtrTo<StringLiteral> name, PtrTo<NumberLiteral> value) : IN
 {
 }
 
+String EnumValue::toString() const
+{
+    return fmt::format("'{}' = {}", get(NAME)->toString(), get(VALUE)->toString());
+}
+
 // static
 PtrTo<ColumnTypeExpr> ColumnTypeExpr::createSimple(PtrTo<Identifier> identifier)
 {

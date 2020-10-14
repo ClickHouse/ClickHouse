@@ -59,6 +59,8 @@ class TableExpr : public INode
         ExprType expr_type;
 
         TableExpr(ExprType type, PtrList exprs);
+
+        String dumpInfo() const override;
 };
 
 class TableFunctionExpr : public INode

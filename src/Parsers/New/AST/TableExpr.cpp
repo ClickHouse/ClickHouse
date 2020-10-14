@@ -54,10 +54,6 @@ PtrTo<TableExpr> TableExpr::createSubquery(PtrTo<SelectUnionQuery> subquery)
     return PtrTo<TableExpr>(new TableExpr(ExprType::SUBQUERY, {subquery}));
 }
 
-TableExpr::TableExpr(TableExpr::ExprType type, PtrList exprs) : INode(exprs), expr_type(type)
-{
-}
-
 ASTPtr TableExpr::convertToOld() const
 {
     // TODO: SAMPLE and RATIO also goes here somehow
@@ -108,6 +104,22 @@ ASTPtr TableExpr::convertToOld() const
             return expr;
         }
     }
+}
+
+TableExpr::TableExpr(TableExpr::ExprType type, PtrList exprs) : INode(exprs), expr_type(type)
+{
+}
+
+String TableExpr::dumpInfo() const
+{
+    switch(expr_type)
+    {
+        case ExprType::ALIAS: return "ALIAS";
+        case ExprType::FUNCTION: return "FUNCTION";
+        case ExprType::IDENTIFIER: return "IDENTIFIER";
+        case ExprType::SUBQUERY: return "SUBQUERY";
+    }
+    __builtin_unreachable();
 }
 
 TableFunctionExpr::TableFunctionExpr(PtrTo<Identifier> name, PtrTo<TableArgList> args) : INode{name, args}

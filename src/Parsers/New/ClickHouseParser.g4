@@ -243,9 +243,9 @@ useStmt: USE databaseIdentifier;
 columnTypeExpr
     : identifier                                                                             # ColumnTypeExprSimple   // UInt64
     | identifier LPAREN identifier columnTypeExpr (COMMA identifier columnTypeExpr)* RPAREN  # ColumnTypeExprNested   // Nested
-    | identifier LPAREN columnExprList? RPAREN                                                # ColumnTypeExprParam    // FixedString(N)
     | identifier LPAREN enumValue (COMMA enumValue)* RPAREN                                  # ColumnTypeExprEnum     // Enum
     | identifier LPAREN columnTypeExpr (COMMA columnTypeExpr)* RPAREN                        # ColumnTypeExprComplex  // Array, Tuple
+    | identifier LPAREN columnExprList? RPAREN                                               # ColumnTypeExprParam    // FixedString(N)
     ;
 columnExprList: columnsExpr (COMMA columnsExpr)*;
 columnsExpr
@@ -362,7 +362,7 @@ keyword
     | WHERE | WITH | YEAR
     ;
 keywordForAlias
-    : ANY | ID
+    : ID
     ;
 alias: IDENTIFIER | interval | keywordForAlias;
 identifier: IDENTIFIER | interval | keyword;
