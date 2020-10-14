@@ -124,9 +124,9 @@ SRCS(
     bitTest.cpp
     bitWrapperFunc.cpp
     bitXor.cpp
-    columnsNumber.cpp
-    columnsSerializedSize.cpp
-    columnsSize.cpp
+    blockNumber.cpp
+    blockSerializedSize.cpp
+    blockSize.cpp
     buildId.cpp
     caseWithExpression.cpp
     cbrt.cpp
