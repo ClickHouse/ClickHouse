@@ -44,8 +44,6 @@ public:
         const DataTypePtr & return_type = columns[result].type;
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*return_type).getNestedType();
 
-        size_t columns_size = input_rows_count;
-
         /** If part of columns have not same type as common type of all elements of array,
             *  then convert them to common type.
             * If part of columns are constants,
@@ -53,7 +51,7 @@ public:
             */
 
         Columns columns_holder(num_elements);
-        ColumnRawPtrs columns(num_elements);
+        ColumnRawPtrs column_ptrs(num_elements);
 
         for (size_t i = 0; i < num_elements; ++i)
         {
@@ -67,7 +65,7 @@ public:
             preprocessed_column = preprocessed_column->convertToFullColumnIfConst();
 
             columns_holder[i] = std::move(preprocessed_column);
-            columns[i] = columns_holder[i].get();
+            column_ptrs[i] = columns_holder[i].get();
         }
 
         /// Create and fill the result array.
@@ -76,14 +74,14 @@ public:
         IColumn & out_data = out->getData();
         IColumn::Offsets & out_offsets = out->getOffsets();
 
-        out_data.reserve(columns_size * num_elements);
-        out_offsets.resize(columns_size);
+        out_data.reserve(input_rows_count * num_elements);
+        out_offsets.resize(input_rows_count);
 
         IColumn::Offset current_offset = 0;
-        for (size_t i = 0; i < columns_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             for (size_t j = 0; j < num_elements; ++j)
-                out_data.insertFrom(*columns[j], i);
+                out_data.insertFrom(*column_ptrs[j], i);
 
             current_offset += num_elements;
             out_offsets[i] = current_offset;
