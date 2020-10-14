@@ -89,12 +89,12 @@ public:
         Years
     };
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         StringRef maximum_unit_str;
-        if (block.size() == 2)
+        if (arguments.size() == 2)
         {
-            const ColumnPtr & maximum_unit_column = block[1].column;
+            const ColumnPtr & maximum_unit_column = block[arguments[1]].column;
             const ColumnConst * maximum_unit_const_col = checkAndGetColumnConstStringOrFixedString(maximum_unit_column.get());
             if (maximum_unit_const_col)
                 maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0);
@@ -132,7 +132,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// Virtual call is Ok (neglible comparing to the rest of calculations).
-            Float64 value = block[0].column->getFloat64(i);
+            Float64 value = block[arguments[0]].column->getFloat64(i);
 
             bool is_negative = value < 0;
             if (is_negative)

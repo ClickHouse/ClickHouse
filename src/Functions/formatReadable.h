@@ -49,28 +49,28 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        if (!(executeType<UInt8>(block, result)
-            || executeType<UInt16>(block, result)
-            || executeType<UInt32>(block, result)
-            || executeType<UInt64>(block, result)
-            || executeType<Int8>(block, result)
-            || executeType<Int16>(block, result)
-            || executeType<Int32>(block, result)
-            || executeType<Int64>(block, result)
-            || executeType<Float32>(block, result)
-            || executeType<Float64>(block, result)))
-            throw Exception("Illegal column " + block[0].column->getName()
+        if (!(executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)
+            || executeType<Float32>(block, arguments, result)
+            || executeType<Float64>(block, arguments, result)))
+            throw Exception("Illegal column " + block[arguments[0]].column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:
     template <typename T>
-    bool executeType(Block & block, size_t result) const
+    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block[0].column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block[arguments[0]].column.get()))
         {
             auto col_to = ColumnString::create();
 
