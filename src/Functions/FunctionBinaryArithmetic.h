@@ -1171,7 +1171,6 @@ class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op
 public:
     using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>;
     using Monotonicity = typename Base::Monotonicity;
-    using Block = typename Base::ColumnsWithTypeAndName;
 
     static FunctionPtr create(
         const ColumnWithTypeAndName & left_,
@@ -1191,7 +1190,7 @@ public:
     {
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (left.column && isColumnConst(*left.column) && arguments.size() == 1)
         {
