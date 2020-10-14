@@ -78,21 +78,21 @@ void FunctionModelEvaluate::executeImpl(ColumnsWithTypeAndName & columns, const 
 
     auto model = models_loader.getModel(name_col->getValue<String>());
 
-    ColumnRawPtrs columns;
+    ColumnRawPtrs column_ptrs;
     Columns materialized_columns;
     ColumnPtr null_map;
 
-    columns.reserve(arguments.size());
+    column_ptrs.reserve(arguments.size());
     for (auto arg : ext::range(1, arguments.size()))
     {
         auto & column = columns[arguments[arg]].column;
-        columns.push_back(column.get());
+        column_ptrs.push_back(column.get());
         if (auto full_column = column->convertToFullColumnIfConst())
         {
             materialized_columns.push_back(full_column);
-            columns.back() = full_column.get();
+            column_ptrs.back() = full_column.get();
         }
-        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(*columns.back()))
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(*column_ptrs.back()))
         {
             if (!null_map)
                 null_map = col_nullable->getNullMapColumnPtr();
@@ -110,11 +110,11 @@ void FunctionModelEvaluate::executeImpl(ColumnsWithTypeAndName & columns, const 
                 null_map = std::move(mut_null_map);
             }
 
-            columns.back() = &col_nullable->getNestedColumn();
+            column_ptrs.back() = &col_nullable->getNestedColumn();
         }
     }
 
-    auto res = model->evaluate(columns);
+    auto res = model->evaluate(column_ptrs);
 
     if (null_map)
     {
