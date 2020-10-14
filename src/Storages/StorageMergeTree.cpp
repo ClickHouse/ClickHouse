@@ -762,23 +762,6 @@ bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & p
     return currently_merging_mutating_parts.count(part);
 }
 
-
-BackgroundProcessingPoolTaskResult StorageMergeTree::movePartsTask()
-{
-    try
-    {
-        if (!selectPartsAndMove())
-            return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
-
-        return BackgroundProcessingPoolTaskResult::SUCCESS;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-        return BackgroundProcessingPoolTaskResult::ERROR;
-    }
-}
-
 std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String */* disable_reason */)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);

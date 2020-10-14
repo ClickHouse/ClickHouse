@@ -2626,23 +2626,6 @@ bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataP
     return queue.isVirtualPart(part);
 }
 
-BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movePartsTask()
-{
-    try
-    {
-        if (!selectPartsAndMove())
-            return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
-
-        return BackgroundProcessingPoolTaskResult::SUCCESS;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-        return BackgroundProcessingPoolTaskResult::ERROR;
-    }
-}
-
-
 void StorageReplicatedMergeTree::mergeSelectingTask()
 {
     if (!is_leader)
