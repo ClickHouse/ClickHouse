@@ -17,7 +17,7 @@ rankCorr(x, y)
 
 -   Returns a floating-point number.
 
-Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64-float32-float64).
+Type: [Float64](../../../sql-reference/data-types/float.md).
 
 **Example**
 
