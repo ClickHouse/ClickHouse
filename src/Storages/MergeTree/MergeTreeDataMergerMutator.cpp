@@ -159,15 +159,15 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge() const
 {
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 
-    return getMaxSourcePartsSizeForMerge(background_pool_size, busy_threads_in_pool == 0 ? 0 : busy_threads_in_pool - 1); /// 1 is current thread
+    return getMaxSourcePartsSizeForMerge(background_pool_size, busy_threads_in_pool);
 }
 
 
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used) const
 {
+    //LOG_DEBUG(&Poco::Logger::get("DEBUG"), "POOL SIZE {}, POOL USED {}", pool_size, pool_used);
     if (pool_used > pool_size)
     {
-        std::cerr << "POOLSIZE:" << pool_size << " POOL USED:" << pool_used << std::endl;
         throw Exception("Logical error: invalid arguments passed to getMaxSourcePartsSize: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
     }
 

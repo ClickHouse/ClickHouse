@@ -2,8 +2,9 @@
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/ThreadPool.h>
-#include <Storages/MergeTree/MergeTreeBackgroundJob.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Storages/MergeTree/BackgroundProcessingPool.h>
+#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -13,8 +14,12 @@ class BackgroundJobsExecutor
 private:
     MergeTreeData & data;
     Context & global_context;
+    size_t max_pool_size;
     ThreadPool data_processing_pool;
     ThreadPool move_pool;
+    std::atomic<size_t> errors_count{0};
+    pcg64 rng;
+    BackgroundProcessingPool::PoolSettings settings;
 
     BackgroundSchedulePool::TaskHolder data_processing_task;
     BackgroundSchedulePool::TaskHolder data_moving_task;

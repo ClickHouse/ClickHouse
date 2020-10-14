@@ -196,7 +196,7 @@ public:
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
 
-    std::optional<MergeTreeBackgroundJob> getDataProcessingJob() override;
+    ThreadPool::Job getDataProcessingJob() override;
 
 private:
 
@@ -423,14 +423,9 @@ private:
 
     bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntry & entry);
 
-    /** Performs actions from the queue.
-      */
-    BackgroundProcessingPoolTaskResult queueTask();
-
     /// Perform moves of parts to another disks.
     /// Local operation, doesn't interact with replicationg queue.
     BackgroundProcessingPoolTaskResult movePartsTask();
-
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)

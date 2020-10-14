@@ -3621,7 +3621,7 @@ bool MergeTreeData::selectPartsAndMove()
     return moveParts(std::move(moving_tagger));
 }
 
-std::optional<MergeTreeBackgroundJob> MergeTreeData::getDataMovingJob()
+ThreadPool::Job MergeTreeData::getDataMovingJob()
 {
     if (parts_mover.moves_blocker.isCancelled())
         return {};
@@ -3630,14 +3630,10 @@ std::optional<MergeTreeBackgroundJob> MergeTreeData::getDataMovingJob()
     if (moving_tagger->parts_to_move.empty())
         return {};
 
-    auto job = [this, moving_tagger{std::move(moving_tagger)}] () mutable
+    return [this, moving_tagger{std::move(moving_tagger)}] () mutable
     {
         moveParts(moving_tagger);
     };
-
-    MergeTreeBackgroundJob result_job(std::move(job), CurrentMetrics::BackgroundMovePoolTask, PoolType::MOVE);
-
-    return std::make_optional<MergeTreeBackgroundJob>(std::move(job), CurrentMetrics::BackgroundMovePoolTask, PoolType::MOVE);
 }
 
 bool MergeTreeData::areBackgroundMovesNeeded() const

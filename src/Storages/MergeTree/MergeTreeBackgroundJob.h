@@ -17,25 +17,16 @@ enum PoolType
 struct MergeTreeBackgroundJob
 {
     ThreadPool::Job job;
-    CurrentMetrics::Metric metric;
     PoolType execute_in_pool;
 
-    MergeTreeBackgroundJob(ThreadPool::Job && job_, CurrentMetrics::Metric metric_, PoolType execute_in_pool_)
-        : job(std::move(job_)), metric(metric_), execute_in_pool(execute_in_pool_)
+    MergeTreeBackgroundJob(ThreadPool::Job && job_, PoolType execute_in_pool_)
+        : job(std::move(job_)), execute_in_pool(execute_in_pool_)
     {}
 
     void operator()()
     try
     {
-        if (metric != 0)
-        {
-            CurrentMetrics::Increment metric_increment{metric};
-            job();
-        }
-        else
-        {
-            job();
-        }
+        job();
     }
     catch (...)
     {
