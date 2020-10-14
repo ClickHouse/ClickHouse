@@ -216,18 +216,24 @@ void BackgroundProcessingPool::threadFunction()
 
             if (task_result == TaskResult::SUCCESS)
                 task->count_no_work_done = 0;
-            else
+            else if (task_result == TaskResult::ERROR)
                 ++task->count_no_work_done;
+            /// NOTHING_TO_DO should not affect count_no_work_done counter
+            /// otherwise error after period of lack of activity (lot of NOTHING_TO_DO)
+            /// leads to 10 min replication hang
 
             /// If task has done work, it could be executed again immediately.
             /// If not, add delay before next run.
 
             Poco::Timestamp next_time_to_execute;   /// current time
             if (task_result == TaskResult::ERROR)
+            {
                 next_time_to_execute += 1000000 * (std::min(
                         settings.task_sleep_seconds_when_no_work_max,
                         settings.task_sleep_seconds_when_no_work_min * std::pow(settings.task_sleep_seconds_when_no_work_multiplier, task->count_no_work_done))
                     + std::uniform_real_distribution<double>(0, settings.task_sleep_seconds_when_no_work_random_part)(rng));
+                LOG_TRACE(logger, "task_result = ERROR, next_time_to_execute = " << next_time_to_execute.epochMicroseconds());
+            }
             else if (task_result == TaskResult::NOTHING_TO_DO)
                 next_time_to_execute += 1000000 * settings.thread_sleep_seconds_if_nothing_to_do;
 
