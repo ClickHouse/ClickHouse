@@ -645,6 +645,14 @@ bool ParserTimestampOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expe
     return true;
 }
 
+bool ParserIntervalOperatorExpression::stringToIntervalKind(const String & literal, ASTPtr & number, IntervalKind & interval_kind)
+{
+    Tokens tokens(literal.data(), literal.data() + literal.size());
+    Pos pos(tokens, 0);
+    Expected expected;
+    return (ParserNumber().parse(pos, number, expected) && parseIntervalKind(pos, expected, interval_kind));
+}
+
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto begin = pos;
@@ -653,12 +661,41 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!ParserKeyword("INTERVAL").ignore(pos, expected))
         return next_parser.parse(pos, node, expected);
 
+    ASTPtr string_literal;
+    if (ParserStringLiteral().parse(pos, string_literal, expected))
+    {
+        String literal;
+        if (string_literal->as<ASTLiteral &>().value.tryGet<String>(literal))
+        {
+            IntervalKind interval_kind;
+            ASTPtr number;
+
+            if (!stringToIntervalKind(literal, number, interval_kind))
+                return false;
+            auto function = std::make_shared<ASTFunction>();
+
+            /// function arguments
+            auto exp_list = std::make_shared<ASTExpressionList>();
+
+            /// the first argument of the function is the previous element, the second is the next one
+            function->name = interval_kind.toNameOfFunctionToIntervalDataType();
+            function->arguments = exp_list;
+            function->children.push_back(exp_list);
+
+            exp_list->children.push_back(number);
+
+            node = function;
+            return true;
+        }
+    }
+
     ASTPtr expr;
+
     /// Any expression can be inside, because operator surrounds it.
     if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
     {
-        pos = begin;
-        return next_parser.parse(pos, node, expected);
+            pos = begin;
+            return next_parser.parse(pos, node, expected);
     }
 
     IntervalKind interval_kind;
@@ -729,3 +766,4 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 }
 
 }
+
