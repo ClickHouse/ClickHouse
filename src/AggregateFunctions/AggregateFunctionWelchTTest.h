@@ -174,7 +174,7 @@ struct AggregateFunctionWelchTTestData final
 /// Returns tuple of (t-statistic, p-value)
 /// https://cpb-us-w2.wpmucdn.com/voices.uchicago.edu/dist/9/1193/files/2016/01/05b-TandP.pdf
 template <typename X = Float64, typename Y = Float64>
-class AggregateFunctionWelchTTest : 
+class AggregateFunctionWelchTTest :
     public IAggregateFunctionDataHelper<AggregateFunctionWelchTTestData<X, Y>,AggregateFunctionWelchTTest<X, Y>>
 {
 

@@ -163,7 +163,7 @@ struct AggregateFunctionStudentTTestData final
 /// Returns tuple of (t-statistic, p-value)
 /// https://cpb-us-w2.wpmucdn.com/voices.uchicago.edu/dist/9/1193/files/2016/01/05b-TandP.pdf
 template <typename X = Float64, typename Y = Float64>
-class AggregateFunctionStudentTTest : 
+class AggregateFunctionStudentTTest :
     public IAggregateFunctionDataHelper<AggregateFunctionStudentTTestData<X, Y>,AggregateFunctionStudentTTest<X, Y>>
 {
 

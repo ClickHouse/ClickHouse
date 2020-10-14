@@ -6,12 +6,8 @@
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
-
-// the return type is boolean (we use UInt8 as we do not have boolean in clickhouse)
-
 namespace ErrorCodes
 {
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int NOT_IMPLEMENTED;
 }
 
@@ -44,13 +40,10 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
 
     return res;
 }
-
 }
-
 
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("welchTTest", createAggregateFunctionWelchTTest, AggregateFunctionFactory::CaseInsensitive);
 }
-
 }
