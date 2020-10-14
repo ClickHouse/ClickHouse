@@ -313,13 +313,4 @@ namespace ZeroTraits
 }
 
 
-inline bool operator==(StringRef lhs, const char * rhs)
-{
-    for (size_t pos = 0; pos < lhs.size; ++pos)
-        if (!rhs[pos] || lhs.data[pos] != rhs[pos])
-            return false;
-
-    return true;
-}
-
 std::ostream & operator<<(std::ostream & os, const StringRef & str);
