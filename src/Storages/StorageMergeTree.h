@@ -13,7 +13,6 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Disks/StoragePolicy.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
@@ -130,8 +129,6 @@ private:
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
     ActionLock stopMergesAndWait();
-
-    BackgroundProcessingPoolTaskResult movePartsTask();
 
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
