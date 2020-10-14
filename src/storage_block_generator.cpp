@@ -23,6 +23,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/printPipeline.h>
 
 using namespace DB;
 
@@ -76,7 +77,7 @@ bool run()
         // context.setCurrentDatabase("test");
 
         ASTPtr query;
-        if (!parse(query, "select count() where i % 2 = 1 "))
+        if (!parse(query, "select * where i % 2 = 1 "))
         {
             //DUMP("parse error");
             return false;
@@ -96,6 +97,10 @@ bool run()
 
         pipeline.setOutputFormat(std::move(out));
 
+        //WriteBufferFromOwnString buf;
+        //printPipeline(QueryPipeline::getPipe(std::move(pipeline)).getProcessors(), buf);
+        //std::cerr << buf.str() << std::endl;
+
         auto executor = std::make_unique<PushingPipelineExecutor>(pipeline, *in);
 
         for (auto i = 0ul; i < 10; ++i)
@@ -104,7 +109,7 @@ bool run()
             auto columns = a.mutateColumns();
             columns[0]->insert(i);
             a.setColumns(std::move(columns));
-            std::cerr << a.dumpStructure() << std::endl;
+            std::cout << a.dumpStructure() << std::endl;
             if (!executor->push(a))
                 return false;
         }
