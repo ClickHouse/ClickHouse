@@ -182,7 +182,7 @@ private:
     {
         using namespace OpenSSLDetails;
 
-        const auto mode = block.getByPosition(arguments[0]).column->getDataAt(0);
+        const auto mode = block[arguments[0]].column->getDataAt(0);
 
         if (mode.size == 0 || !std::string_view(mode).starts_with("aes-"))
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
@@ -193,8 +193,8 @@ private:
 
         const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
 
-        const auto input_column = block.getByPosition(arguments[1]).column;
-        const auto key_column = block.getByPosition(arguments[2]).column;
+        const auto input_column = block[arguments[1]].column;
+        const auto key_column = block[arguments[2]].column;
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
@@ -203,7 +203,7 @@ private:
             result_column = doEncrypt(evp_cipher, input_rows_count, input_column, key_column, nullptr, nullptr);
         else
         {
-            const auto iv_column = block.getByPosition(arguments[3]).column;
+            const auto iv_column = block[arguments[3]].column;
             if (compatibility_mode != OpenSSLDetails::CompatibilityMode::MySQL && EVP_CIPHER_iv_length(evp_cipher) == 0)
                 throw Exception(mode.toString() + " does not support IV", ErrorCodes::BAD_ARGUMENTS);
 
@@ -216,12 +216,12 @@ private:
                 if (cipher_mode != EVP_CIPH_GCM_MODE)
                     throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
 
-                const auto aad_column = block.getByPosition(arguments[4]).column;
+                const auto aad_column = block[arguments[4]].column;
                 result_column = doEncrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
         }
 
-        block.getByPosition(result).column = std::move(result_column);
+        block[result].column = std::move(result_column);
     }
 
     template <typename InputColumnType, typename KeyColumnType, typename IvColumnType, typename AadColumnType>
@@ -458,7 +458,7 @@ private:
     {
         using namespace OpenSSLDetails;
 
-        const auto mode = block.getByPosition(arguments[0]).column->getDataAt(0);
+        const auto mode = block[arguments[0]].column->getDataAt(0);
         if (mode.size == 0 || !std::string_view(mode).starts_with("aes-"))
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
@@ -468,15 +468,15 @@ private:
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
-        const auto input_column = block.getByPosition(arguments[1]).column;
-        const auto key_column = block.getByPosition(arguments[2]).column;
+        const auto input_column = block[arguments[1]].column;
+        const auto key_column = block[arguments[2]].column;
 
         ColumnPtr result_column;
         if (arguments.size() <= 3)
             result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, nullptr, nullptr);
         else
         {
-            const auto iv_column = block.getByPosition(arguments[3]).column;
+            const auto iv_column = block[arguments[3]].column;
             if (compatibility_mode != OpenSSLDetails::CompatibilityMode::MySQL && EVP_CIPHER_iv_length(evp_cipher) == 0)
                 throw Exception(mode.toString() + " does not support IV", ErrorCodes::BAD_ARGUMENTS);
 
@@ -489,12 +489,12 @@ private:
                 if (EVP_CIPHER_mode(evp_cipher) != EVP_CIPH_GCM_MODE)
                     throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
 
-                const auto aad_column = block.getByPosition(arguments[4]).column;
+                const auto aad_column = block[arguments[4]].column;
                 result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
         }
 
-        block.getByPosition(result).column = std::move(result_column);
+        block[result].column = std::move(result_column);
     }
 
     template <typename InputColumnType, typename KeyColumnType, typename IvColumnType, typename AadColumnType>
