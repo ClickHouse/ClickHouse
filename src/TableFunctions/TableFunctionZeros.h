@@ -17,14 +17,11 @@ class TableFunctionZeros : public ITableFunction
 public:
     static constexpr auto name = multithreaded ? "zeros_mt" : "zeros";
     std::string getName() const override { return name; }
-    bool hasStaticStructure() const override { return true; }
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
     const char * getStorageTypeName() const override { return "SystemZeros"; }
 
     UInt64 evaluateArgument(const Context & context, ASTPtr & argument) const;
-
-    ColumnsDescription getActualTableStructure(const Context & context) const override;
 };
 
 
