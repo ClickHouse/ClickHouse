@@ -14,7 +14,7 @@ namespace
 class FunctionBlockSize : public IFunction
 {
 public:
-    static constexpr auto name = "columnsSize";
+    static constexpr auto name = "blockSize";
     static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionBlockSize>();
