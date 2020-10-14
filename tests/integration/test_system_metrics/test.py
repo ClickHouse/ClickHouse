@@ -43,20 +43,19 @@ def test_readonly_metrics(start_cluster):
     with PartitionManager() as pm:
         ## make node1 readonly -> heal -> readonly -> heal -> detach table -> heal -> attach table
         pm.drop_instance_zk_connections(node1)
-        time.sleep(3)
-        assert "1\n" == node1.query("SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'")
+        assert_eq_with_retry(node1, "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'", "1\n", retry_count=300, sleep_time=1)
 
         pm.heal_all()
-        time.sleep(3)
-        assert "0\n" == node1.query("SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'")
+        assert_eq_with_retry(node1, "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'", "0\n", retry_count=300, sleep_time=1)
 
         pm.drop_instance_zk_connections(node1)
-        time.sleep(3)
-        assert "1\n" == node1.query("SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'")
+        assert_eq_with_retry(node1, "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'", "1\n", retry_count=300, sleep_time=1)
+
+
         node1.query("DETACH TABLE test.test_table")
         assert "0\n" == node1.query("SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'")
 
         pm.heal_all()
         node1.query("ATTACH TABLE test.test_table")
-        time.sleep(5)
-        assert "0\n" == node1.query("SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'")
+        assert_eq_with_retry(node1, "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'", "0\n", retry_count=300, sleep_time=1)
+

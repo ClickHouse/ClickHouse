@@ -355,7 +355,7 @@ void ReplicatedMergeTreeRestartingThread::shutdown()
     task->deactivate();
     LOG_TRACE(log, "Restarting thread finished");
 
-    // For detach table query, we should reset the ReadonlyReplica metric.
+    /// For detach table query, we should reset the ReadonlyReplica metric.
     if (incr_readonly)
     {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
