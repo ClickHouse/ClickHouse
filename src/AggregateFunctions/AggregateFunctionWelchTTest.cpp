@@ -50,7 +50,7 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
 
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("WelchTTest", createAggregateFunctionWelchTTest, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("welchTTest", createAggregateFunctionWelchTTest, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

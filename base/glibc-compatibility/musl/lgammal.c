@@ -309,10 +309,10 @@ long double __lgammal_r(long double x, int *sg) {
 	return r;
 }
 
-int signgam;
+int signgam_lgammal;
 
 long double lgammal(long double x)
 {
-	return lgammal_r(x, &signgam);
+	return lgammal_r(x, &signgam_lgammal);
 }
 
