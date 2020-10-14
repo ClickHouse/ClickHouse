@@ -3,6 +3,7 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Core/Types.h>
 #include <ext/scope_guard.h>
+#include <map>
 #include <mutex>
 #include <set>
 
