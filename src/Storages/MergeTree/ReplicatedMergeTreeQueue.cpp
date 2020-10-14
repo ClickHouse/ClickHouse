@@ -1038,6 +1038,17 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             return false;
         }
 
+        auto replica_to_execute_merge = storage.pickReplicaToExecuteMerge(entry);
+
+        if (replica_to_execute_merge && !storage.isMergeFinishedByReplica(replica_to_execute_merge.value(), entry))
+        {
+            String reason = "Not executing merge for the part " + entry.new_part_name
+                +  ", waiting for " + replica_to_execute_merge.value() + " to execute merge.";
+            LOG_DEBUG(log, reason);
+            out_postpone_reason = reason;
+            return false;
+        }
+
         UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? merger_mutator.getMaxSourcePartsSizeForMerge()
                                                                            : merger_mutator.getMaxSourcePartSizeForMutation();
         /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),

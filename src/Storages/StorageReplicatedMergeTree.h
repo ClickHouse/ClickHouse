@@ -179,8 +179,16 @@ public:
 
     int getMetadataVersion() const { return metadata_version; }
 
-private:
+    /// see SingleReplicaPicker
+    /// returns the replica name in the case when feature is active
+    /// and it's not current replica should do the merge
+    /// used in shouldExecuteLogEntry and in tryExecuteMerge
+    std::optional<std::string> pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry);
 
+    /// checks (in zookeeper) if the picked replica finished the merge
+    bool isMergeFinishedByReplica(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
+
+private:
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
@@ -444,6 +452,8 @@ private:
       */
     String findReplicaHavingPart(const String & part_name, bool active);
 
+    bool checkReplicaHavePart(const String & replica, const String & part_name);
+
     /** Find replica having specified part or any part that covers it.
       * If active = true, consider only active replicas.
       * If found, returns replica name and set 'entry->actual_new_part_name' to name of found largest covering part.
@@ -534,6 +544,30 @@ private:
         const Strings & replicas, const String & mutation_id) const;
 
     StorageInMemoryMetadata getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const;
+
+    /// In some use cases merging can be more expensive than fetching
+    /// and it may be better to spread merges tasks across the replicas
+    /// instead of doing exactly the same merge cluster-wise
+    /// That object is used to help decide which replica should do the merge
+    /// and to cache the list of active replicas (to limit the number of zookeeper
+    /// operations)
+    struct SingleReplicaPicker
+    {
+        std::atomic<time_t> execute_merges_on_single_replica_time_threshold = 0;
+
+        std::mutex mutex;
+
+        // those 2 member accessed under the mutex, only when
+        // execute_merges_on_single_replica_time_threshold enabled
+        int current_replica_index = -1;
+        Strings active_replicas;
+    };
+
+    SingleReplicaPicker single_replica_picker;
+
+    /// updates SingleReplicaPicker every time we pull new merge event from
+    /// the zookeeper queue ( see queueUpdatingTask() )
+    void refreshSingleReplicaPicker();
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

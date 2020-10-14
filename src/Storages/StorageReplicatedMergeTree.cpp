@@ -56,7 +56,6 @@
 #include <future>
 
 #include <algorithm>
-#include <city.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -131,6 +130,8 @@ static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
+// minumum interval (seconds) between checks if chosen replica finished the merge.
+static const auto EXECUTE_MERGE_ON_SINGLE_REPLICA_RECHECK_PERIOD_SECONDS = 1;
 
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 {
@@ -1021,48 +1022,12 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     /// In some use cases merging can be more expensive than fetching
     /// and it may be better to spread merges tasks across the replicas
-    /// instead of doing exactly the same merges cluster-wise
-    if (
-        storage_settings_ptr->execute_merges_on_single_replica_time_threshold.totalSeconds() > 0
-        &&
-        ( entry.create_time + storage_settings_ptr->execute_merges_on_single_replica_time_threshold.totalSeconds() > time(nullptr) )
-       )
+    /// instead of doing exactly the same merge cluster-wise
+    auto replica_to_execute_merge = pickReplicaToExecuteMerge(entry);
+    if (replica_to_execute_merge)
     {
-        auto zookeeper = getZooKeeper();
-        auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-
-        // TODO: do we need that sort or we can rely that zookeeper will return them in deterministic order?
-        std::sort(all_replicas.begin(), all_replicas.end());
-
-        Strings active_replicas;
-
-        int current_replica_index = -1;
-
-        for (const String & replica : all_replicas)
-        {
-            if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
-            {
-                active_replicas.push_back(replica);
-                if (replica == replica_name)
-                {
-                    current_replica_index = active_replicas.size() - 1;
-                }
-            }
-        }
-
-        if (current_replica_index >= 0 && active_replicas.size() >= 1)
-        {
-            auto replica_index = static_cast<int>(CityHash_v1_0_2::CityHash64(entry.new_part_name.c_str(), entry.new_part_name.length()) % active_replicas.size());
-            if (replica_index != current_replica_index)
-            {
-                LOG_TRACE(log, "Will not run merge for the part " << entry.new_part_name << ", will wait for " << active_replicas.at(replica_index) << " to execute merge.");
-                return false;
-            }
-        }
-        else
-        {
-            LOG_ERROR(log, "Can't find current replica in the active replicas list!");
-        }
+        LOG_DEBUG(log, "Prefer fetching part " << entry.new_part_name << " from replica " << replica_to_execute_merge.value() << " due execute_merges_on_single_replica_time_threshold" );
+        return false;
     }
 
     if (!have_all_parts)
@@ -2163,6 +2128,10 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
         queue.pullLogsToQueue(getZooKeeper(), queue_updating_task->getWatchCallback());
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
+
+        auto[merges_count,mutations_count] = queue.countMergesAndPartMutations();
+        if (merges_count > 0)
+            refreshSingleReplicaPicker();
     }
     catch (const Coordination::Exception & e)
     {
@@ -2617,6 +2586,99 @@ void StorageReplicatedMergeTree::exitLeaderElection()
     leader_election = nullptr;
 }
 
+void StorageReplicatedMergeTree::refreshSingleReplicaPicker()
+{
+    auto threshold = getSettings()->execute_merges_on_single_replica_time_threshold.totalSeconds();
+
+    single_replica_picker.execute_merges_on_single_replica_time_threshold = threshold;
+
+    if (threshold == 0)
+        return;
+
+    auto zookeeper = getZooKeeper();
+    auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+
+    // TODO: do we need that sort or we can rely that zookeeper will return them in deterministic order?
+    std::sort(all_replicas.begin(), all_replicas.end());
+
+    Strings active_replicas;
+    int current_replica_index = -1;
+
+    for (const String & replica : all_replicas)
+    {
+        if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+        {
+            active_replicas.push_back(replica);
+            if (replica == replica_name)
+            {
+                current_replica_index = active_replicas.size() - 1;
+            }
+        }
+    }
+
+    if (current_replica_index < 0 || active_replicas.size() < 2)
+    {
+        LOG_ERROR(log, "Can't find current replica in the active replicas list, or too few active replicas to use execute_merges_on_single_replica_time_threshold!");
+        single_replica_picker.execute_merges_on_single_replica_time_threshold = 0;
+        return;
+    }
+
+    std::lock_guard lock(single_replica_picker.mutex);
+    single_replica_picker.current_replica_index = current_replica_index;
+    single_replica_picker.active_replicas = active_replicas;
+
+}
+
+// that will return the same replica name for LogEntry on all the replicas (if the replica set is the same).
+// that way each replica knows who is responsible for doing a certain merge.
+
+// in some corner cases (added / removed / deactivated replica)
+// nodes can pick different replicas to execute merge and wait for it (or to execute the same merge together)
+// but that doesn't have a significant impact (in one case it will wait for the execute_merges_on_single_replica_time_threshold,
+// in another just 2 replicas will do the merge)
+std::optional<std::string> StorageReplicatedMergeTree::pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry)
+{
+    time_t threshold = single_replica_picker.execute_merges_on_single_replica_time_threshold;
+    if (
+        threshold == 0 // feature turned off
+        || entry.type != LogEntry::MERGE_PARTS               // it is not a merge log
+        || (entry.create_time + threshold <= time(nullptr)) // too much time waited
+       )
+        return std::nullopt;
+
+    auto hash = entry.getHash();
+
+    std::lock_guard lock(single_replica_picker.mutex);
+
+    auto replica_index = static_cast<int>(hash % single_replica_picker.active_replicas.size());
+
+    if (replica_index == single_replica_picker.current_replica_index)
+        return std::nullopt;
+
+    return single_replica_picker.active_replicas.at(replica_index);
+}
+
+bool StorageReplicatedMergeTree::isMergeFinishedByReplica(const String & replica, const ReplicatedMergeTreeLogEntryData & entry)
+{
+    // those have only seconds resolution, so recheck period is quite rough
+    auto reference_timestamp = entry.last_postpone_time;
+    if (reference_timestamp == 0)
+        reference_timestamp = entry.create_time;
+
+    // we don't want to check zookeeper too frequent
+    if (time(nullptr) - reference_timestamp >= EXECUTE_MERGE_ON_SINGLE_REPLICA_RECHECK_PERIOD_SECONDS)
+    {
+        return checkReplicaHavePart(replica, entry.new_part_name);
+    }
+
+    return false;
+}
+
+bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, const String & part_name)
+{
+    auto zookeeper = getZooKeeper();
+    return zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name);
+}
 
 String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active)
 {
@@ -2632,7 +2694,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
         if (replica == replica_name)
             continue;
 
-        if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name) &&
+        if (checkReplicaHavePart(replica, part_name) &&
             (!active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active")))
             return replica;
 

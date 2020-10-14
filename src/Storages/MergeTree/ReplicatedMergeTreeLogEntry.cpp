@@ -6,7 +6,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
-
+#include <city.h>
 
 namespace DB
 {
@@ -222,6 +222,11 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     /// Optional field.
     if (!in.eof())
         in >> "quorum: " >> quorum >> "\n";
+}
+
+uint64_t ReplicatedMergeTreeLogEntryData::getHash() const
+{
+    return CityHash_v1_0_2::CityHash64(new_part_name.c_str(), new_part_name.length());
 }
 
 void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::writeText(WriteBuffer & out) const
