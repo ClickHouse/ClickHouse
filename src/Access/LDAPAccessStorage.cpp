@@ -84,7 +84,7 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
     auto role = typeid_cast<std::shared_ptr<const Role>>(entity);
     bool need_to_update_users = false;
 
-    if (role && default_role_names.find(role->getName()) != default_role_names.end())
+    if (role && default_role_names.count(role->getName()))
     {
         /// If a role was created with one of the `default_role_names` or renamed to one of the `default_role_names`,
         /// then set `need_to_update_users`.
@@ -124,7 +124,7 @@ void LDAPAccessStorage::checkAllDefaultRoleNamesFoundNoLock() const
 
     for (const auto & role_name : default_role_names)
     {
-        if (role_names_of_interest.find(role_name) == role_names_of_interest.end())
+        if (!role_names_of_interest.count(role_name))
             throwDefaultRoleNotFound(role_name);
     }
 }
