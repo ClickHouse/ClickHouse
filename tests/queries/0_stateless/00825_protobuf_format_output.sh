@@ -19,7 +19,13 @@ CREATE TABLE out_persons_00825 (uuid UUID,
                                 surname String,
                                 gender Enum8('male'=1, 'female'=0),
                                 birthDate Date,
-                                photo Nullable(String),
+                                photo Nullable(String),<<<<<<< non_delimited_protobuf
+511
+ 
+=======
+512
+ 
+
                                 phoneNumber Nullable(FixedString(13)),
                                 isOnline UInt8,
                                 visitTime Nullable(DateTime),
@@ -70,8 +76,8 @@ SELECT * FROM out_persons_00825 ORDER BY name LIMIT 1 FORMAT ProtobufSingle SETT
 SELECT 'SQUARES->';
 SELECT * FROM out_squares_00825 ORDER BY number LIMIT 1 FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:NumberAndSquare';
 
--- Code: 544, e.displayText() = DB::Exception: The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.
-SELECT * FROM out_persons_00825 ORDER BY name FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:Person'; -- { clientError 544 }
+-- Code: 546, e.displayText() = DB::Exception: The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.
+SELECT * FROM out_persons_00825 ORDER BY name FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:Person'; -- { clientError 546 }
 
 DROP TABLE IF EXISTS out_persons_00825;
 DROP TABLE IF EXISTS out_squares_00825;
