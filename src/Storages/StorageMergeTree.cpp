@@ -686,7 +686,7 @@ bool StorageMergeTree::merge(
             {
                 UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
                 selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                    future_part, disk_space, can_merge, partition_id, final, &is_single_merged_part, out_disable_reason);
+                    future_part, disk_space, can_merge, partition_id, final, &is_single_merged_part, metadata_snapshot, out_disable_reason);
 
                 /// If final - we will wait for currently processing merges to finish and continue.
                 /// TODO Respect query settings for timeout

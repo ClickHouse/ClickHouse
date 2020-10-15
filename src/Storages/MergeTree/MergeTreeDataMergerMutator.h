@@ -99,6 +99,7 @@ public:
         const String & partition_id,
         bool final,
         bool * is_single_merged_part,
+        const StorageMetadataPtr & metadata_snapshot,
         String * out_disable_reason = nullptr);
 
     /** Merge the parts.
