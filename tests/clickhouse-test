@@ -149,7 +149,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     command = pattern.format(**params)
 
-    print(command)
+    # print(command)
 
     proc = Popen(command, shell=True, env=os.environ)
     start_time = datetime.now()
