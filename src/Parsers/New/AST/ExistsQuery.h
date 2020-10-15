@@ -14,6 +14,11 @@ class ExistsQuery : public Query
         ASTPtr convertToOld() const override;
 
     private:
+        enum ChildIndex : UInt8
+        {
+            TABLE = 0,  // TableIdentifier
+        };
+
         const bool temporary;
 };
 

@@ -11,17 +11,19 @@ namespace DB::AST
 {
 
 // static
-PtrTo<DropQuery> DropQuery::createDropDatabase(bool if_exists, PtrTo<DatabaseIdentifier> identifier)
+PtrTo<DropQuery> DropQuery::createDropDatabase(bool detach, bool if_exists, PtrTo<DatabaseIdentifier> identifier)
 {
     auto query = PtrTo<DropQuery>(new DropQuery(QueryType::DATABASE, {identifier}));
+    query->detach = detach;
     query->if_exists = if_exists;
     return query;
 }
 
 // static
-PtrTo<DropQuery> DropQuery::createDropTable(bool if_exists, bool temporary, PtrTo<TableIdentifier> identifier)
+PtrTo<DropQuery> DropQuery::createDropTable(bool detach, bool if_exists, bool temporary, PtrTo<TableIdentifier> identifier)
 {
     auto query = PtrTo<DropQuery>(new DropQuery(QueryType::TABLE, {identifier}));
+    query->detach = detach;
     query->if_exists = if_exists;
     query->temporary = temporary;
     return query;
@@ -35,7 +37,7 @@ ASTPtr DropQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTDropQuery>();
 
-    query->kind = ASTDropQuery::Drop;
+    query->kind = detach ? ASTDropQuery::Detach : ASTDropQuery::Drop;
     query->if_exists = if_exists;
     query->temporary = temporary;
 
@@ -68,12 +70,12 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx)
 {
-    return DropQuery::createDropDatabase(!!ctx->EXISTS(), visit(ctx->databaseIdentifier()));
+    return DropQuery::createDropDatabase(!!ctx->DETACH(), !!ctx->EXISTS(), visit(ctx->databaseIdentifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx)
 {
-    return DropQuery::createDropTable(!!ctx->EXISTS(), !!ctx->TEMPORARY(), visit(ctx->tableIdentifier()));
+    return DropQuery::createDropTable(!!ctx->DETACH(), !!ctx->EXISTS(), !!ctx->TEMPORARY(), visit(ctx->tableIdentifier()));
 }
 
 }

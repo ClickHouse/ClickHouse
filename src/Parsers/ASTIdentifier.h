@@ -36,7 +36,7 @@ public:
         set.insert(name);
     }
 
-    bool compound() const { return !name_parts.empty(); }
+    bool compound() const { return !name_parts.empty() && name_parts.size() > 1; }
     bool isShort() const { return name_parts.empty() || name == name_parts.back(); }
 
     void setShortName(const String & new_name);

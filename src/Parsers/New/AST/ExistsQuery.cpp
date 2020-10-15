@@ -1,5 +1,7 @@
 #include <Parsers/New/AST/ExistsQuery.h>
 
+#include <Interpreters/StorageID.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -17,7 +19,11 @@ ASTPtr ExistsQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTExistsTableQuery>();
 
-    // TODO
+    // FIXME: this won't work if table doesn't exist
+    auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
+    query->database = table_id.database_name;
+    query->table = table_id.table_name;
+    query->uuid = table_id.uuid;
 
     return query;
 }

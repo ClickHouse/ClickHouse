@@ -64,10 +64,10 @@ class JoinExpr : public INode
     private:
         enum ChildIndex : UInt8
         {
-            TABLE = 0,
-            LEFT_EXPR = 0,
-            RIGHT_EXPR = 1,
-            CONSTRAINT = 2,
+            TABLE = 0,       // TableExpr
+            LEFT_EXPR = 0,   // JoinExpr
+            RIGHT_EXPR = 1,  // JoinExpr
+            CONSTRAINT = 2,  // JoinConstraintClause
         };
         enum class ExprType
         {

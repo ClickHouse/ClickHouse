@@ -35,11 +35,19 @@ ASTPtr CreateMaterializedViewQuery::convertToOld() const
         query->table = table_id.table_name;
         query->uuid = table_id.uuid;
     }
-    if (has(DESTINATION)) query->to_table_id = getTableIdentifier(get(DESTINATION)->convertToOld());
+
+    if (has(DESTINATION))
+        query->to_table_id = getTableIdentifier(get(DESTINATION)->convertToOld());
     else if (has(ENGINE))
     {
         query->set(query->storage, get(ENGINE)->convertToOld());
         query->is_populate = populate;
+    }
+
+    if (has(SCHEMA))
+    {
+        assert(get<SchemaClause>(SCHEMA)->getType() == SchemaClause::ClauseType::DESCRIPTION);
+        query->set(query->columns_list, get(SCHEMA)->convertToOld());
     }
 
     query->attach = attach;

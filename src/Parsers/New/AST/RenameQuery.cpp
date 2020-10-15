@@ -1,5 +1,7 @@
 #include <Parsers/New/AST/RenameQuery.h>
 
+#include <Interpreters/StorageID.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>
@@ -16,7 +18,22 @@ ASTPtr RenameQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTRenameQuery>();
 
-    // TODO
+    for (auto table = get<List<TableIdentifier>>(EXPRS)->begin(), end = get<List<TableIdentifier>>(EXPRS)->end(); table != end; ++table)
+    {
+        ASTRenameQuery::Element element;
+
+        if (auto database = (*table)->as<TableIdentifier>()->getDatabase())
+            element.from.database = database->getName();
+        element.from.table = (*table)->as<TableIdentifier>()->getName();
+
+        ++table;
+
+        if (auto database = (*table)->as<TableIdentifier>()->getDatabase())
+            element.to.database = database->getName();
+        element.to.table = (*table)->as<TableIdentifier>()->getName();
+
+        query->elements.push_back(element);
+    }
 
     return query;
 }
