@@ -76,7 +76,7 @@ public:
 
     void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
 
-    /// Changes the number of input ports if needed. Adds ResizeTransform.
+    /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
     /// Unite several pipelines together. Result pipeline would have common_header structure.
