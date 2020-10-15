@@ -645,12 +645,45 @@ bool ParserTimestampOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expe
     return true;
 }
 
-bool ParserIntervalOperatorExpression::stringToIntervalKind(const String & literal, ASTPtr & number, IntervalKind & interval_kind)
+bool ParserIntervalOperatorExpression::parseArgumentAndIntervalKind(
+    Pos & pos, ASTPtr & expr, IntervalKind & interval_kind, Expected & expected)
 {
-    Tokens tokens(literal.data(), literal.data() + literal.size());
-    Pos pos(tokens, 0);
-    Expected expected;
-    return (ParserNumber().parse(pos, number, expected) && parseIntervalKind(pos, expected, interval_kind));
+    auto begin = pos;
+    auto init_expected = expected;
+    ASTPtr string_literal;
+    //// A String literal followed INTERVAL keyword,
+    /// the literal can be a part of an expression or
+    /// include Number and INTERVAL TYPE at the same time
+    if (ParserStringLiteral{}.parse(pos, string_literal, expected))
+    {
+        String literal;
+        if (string_literal->as<ASTLiteral &>().value.tryGet(literal))
+        {
+            Tokens tokens(literal.data(), literal.data() + literal.size());
+            Pos token_pos(tokens, 0);
+            Expected token_expected;
+
+            if (!ParserNumber{}.parse(token_pos, expr, token_expected))
+                return false;
+            else
+            {
+                /// case: INTERVAL '1' HOUR
+                /// back to begin
+                if (!token_pos.isValid())
+                {
+                    pos = begin;
+                    expected = init_expected;
+                }
+                else
+                    /// case: INTERVAL '1 HOUR'
+                    return parseIntervalKind(token_pos, token_expected, interval_kind);
+            }
+        }
+    }
+    // case: INTERVAL expr HOUR
+    if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
+        return false;
+    return parseIntervalKind(pos, expected, interval_kind);
 }
 
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -661,44 +694,9 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!ParserKeyword("INTERVAL").ignore(pos, expected))
         return next_parser.parse(pos, node, expected);
 
-    ASTPtr string_literal;
-    if (ParserStringLiteral().parse(pos, string_literal, expected))
-    {
-        String literal;
-        if (string_literal->as<ASTLiteral &>().value.tryGet<String>(literal))
-        {
-            IntervalKind interval_kind;
-            ASTPtr number;
-
-            /// parse function arguments and interval kind from string literal
-            if (!stringToIntervalKind(literal, number, interval_kind))
-                return false;
-
-            auto function = std::make_shared<ASTFunction>();
-
-            auto exp_list = std::make_shared<ASTExpressionList>();
-
-            function->name = interval_kind.toNameOfFunctionToIntervalDataType();
-            function->arguments = exp_list;
-            function->children.push_back(exp_list);
-
-            exp_list->children.push_back(number);
-
-            node = function;
-            return true;
-        }
-    }
-
     ASTPtr expr;
-    /// Any expression can be inside, because operator surrounds it.
-    if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
-    {
-        pos = begin;
-        return next_parser.parse(pos, node, expected);
-    }
-
     IntervalKind interval_kind;
-    if (!parseIntervalKind(pos, expected, interval_kind))
+    if (!parseArgumentAndIntervalKind(pos, expr, interval_kind, expected))
     {
         pos = begin;
         return next_parser.parse(pos, node, expected);
