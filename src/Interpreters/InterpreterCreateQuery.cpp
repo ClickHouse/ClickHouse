@@ -217,7 +217,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (renamed)
         {
-            [[maybe_unused]] bool removed = fs::remove(metadata_file_tmp_path);
+            [[maybe_unused]] bool removed = fs::remove(metadata_file_path);
             assert(removed);
         }
         if (added)
