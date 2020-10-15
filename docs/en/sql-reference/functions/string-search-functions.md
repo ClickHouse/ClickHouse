@@ -380,7 +380,7 @@ The same thing as ‘like’, but negative.
 
 ## iLike {#ilike}
 
-Case insensitive variant of function `like`. It should respect UTF-8 and work similar to `positionCaseInsensitiveUTF8`.
+Case insensitive variant of [like](https://clickhouse.tech/docs/en/sql-reference/functions/string-search-functions/#function-like) function and works the same as the `ILIKE` operator.
 
 **Syntax**
 
@@ -391,12 +391,21 @@ ilike(haystack, pattern)
 **Parameters**
 
 -   `haystack` — Input string. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If pattern contains no groups, an exception is thrown. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `pattern` — If `pattern` doesn't contain percent signs or underscores, then the `pattern` only represents the string itself. An underscore (`_`) in `pattern` stands for (matches) any single character. A percent sign (`%`) matches any sequence of zero or more characters.
 
-**Returned value(s)**
+Some examples of the `pattern` type:
 
--   True, if the string matches the supplied pattern.
--   False, if the string doesn't match the supplied pattern.
+``` text
+'abc' ILIKE 'abc'    true
+'abc' ILIKE 'a%'     true
+'abc' ILIKE '_b_'    true
+'abc' ILIKE 'c'      false
+```
+
+**Returned values**
+
+-   True, if the string matches `pattern`.
+-   False, if the string doesn't match `pattern`.
 
 **Example**
 
