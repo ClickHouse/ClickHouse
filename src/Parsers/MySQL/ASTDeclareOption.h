@@ -59,8 +59,7 @@ public:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// Copy and paste from ParserIdentifier,
-/// the difference is that multiple tokens are glued if there is no whitespace ASCII between them
+/// identifier, string literal, binary keyword
 struct ParserCharsetOrCollateName : public IParserBase
 {
 protected:
