@@ -51,6 +51,8 @@ void registerFunctionLowCardinalityIndices(FunctionFactory &);
 void registerFunctionLowCardinalityKeys(FunctionFactory &);
 void registerFunctionsIn(FunctionFactory &);
 void registerFunctionJoinGet(FunctionFactory &);
+void registerFunctionFileExists(FunctionFactory &);
+void registerFunctionFileInc(FunctionFactory &);
 void registerFunctionFilesystem(FunctionFactory &);
 void registerFunctionEvalMLMethod(FunctionFactory &);
 void registerFunctionBasename(FunctionFactory &);
@@ -115,6 +117,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionLowCardinalityKeys(factory);
     registerFunctionsIn(factory);
     registerFunctionJoinGet(factory);
+    registerFunctionFileExists(factory);
+    registerFunctionFileInc(factory);
     registerFunctionFilesystem(factory);
     registerFunctionEvalMLMethod(factory);
     registerFunctionBasename(factory);

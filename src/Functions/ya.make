@@ -161,6 +161,8 @@ SRCS(
     extract.cpp
     extractGroups.cpp
     extractTimeZoneFromFunctionArguments.cpp
+    fileExists.cpp
+    fileInc.cpp
     filesystem.cpp
     finalizeAggregation.cpp
     formatDateTime.cpp
