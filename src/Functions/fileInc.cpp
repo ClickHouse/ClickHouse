@@ -43,7 +43,7 @@ public:
 
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const IColumn * arg_column = block.getByPosition(arguments[0]).column.get();
+        const IColumn * arg_column = block[arguments[0]].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
 
         Poco::Path file_path = Poco::Path(arg_string->getDataAt(0).toString());
