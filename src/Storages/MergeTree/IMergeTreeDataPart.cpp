@@ -410,6 +410,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
+    loadUUID();
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
@@ -482,8 +483,13 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     NameSet result = {"checksums.txt", "columns.txt"};
     String default_codec_path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+
     if (volume->getDisk()->exists(default_codec_path))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+
+    String uuid_path = getFullRelativePath() + UUID_FILE_NAME;
+    if (volume->getDisk()->exists(uuid_path))
+        result.emplace(UUID_FILE_NAME);
 
     return result;
 }
@@ -726,6 +732,19 @@ void IMergeTreeDataPart::loadTTLInfos()
     }
 }
 
+void IMergeTreeDataPart::loadUUID()
+{
+    String path = getFullRelativePath() + UUID_FILE_NAME;
+
+    if (volume->getDisk()->exists(path))
+    {
+        auto in = openForReading(volume->getDisk(), path);
+        readText(uuid, *in);
+        if (uuid == UUIDHelpers::Nil)
+            throw Exception("Unexpected empty " + String(UUID_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
 void IMergeTreeDataPart::loadColumns(bool require)
 {
     String path = getFullRelativePath() + "columns.txt";
@@ -894,6 +913,7 @@ void IMergeTreeDataPart::remove() const
             for (const auto & file : {"checksums.txt", "columns.txt"})
                 volume->getDisk()->remove(to + "/" + file);
 
+            volume->getDisk()->removeIfExists(to + "/" + UUID_FILE_NAME);
             volume->getDisk()->removeIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
             volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 

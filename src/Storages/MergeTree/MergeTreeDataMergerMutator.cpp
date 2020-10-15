@@ -1138,6 +1138,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         future_part.name, future_part.type, future_part.part_info, single_disk_volume, "tmp_mut_" + future_part.name);
 
     new_data_part->is_temp = true;
+    new_data_part->uuid = source_part->uuid;
     new_data_part->ttl_infos = source_part->ttl_infos;
 
     /// It shouldn't be changed by mutation.
@@ -1818,6 +1819,13 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     const CompressionCodecPtr & codec)
 {
     auto disk = new_data_part->volume->getDisk();
+
+    if (new_data_part->uuid != UUIDHelpers::Nil)
+    {
+        auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
+        writeUUIDText(new_data_part->uuid, *out);
+    }
+
     if (need_remove_expired_values)
     {
         /// Write a file with ttl infos in json format.
