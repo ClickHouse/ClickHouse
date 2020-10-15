@@ -32,9 +32,9 @@ public:
     static constexpr auto name = "fileExists";
     String getName() const override { return name; }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const IColumn * arg_column = block[arguments[0]].column.get();
+        const IColumn * arg_column = columns[arguments[0]].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
 
         Poco::Path file_path = Poco::Path(arg_string->getDataAt(0).toString());
@@ -44,7 +44,7 @@ public:
         if (!startsWith(file_path.toString(), user_files_path))
             throw Exception("File path " + file_path.toString() + " is not inside " + user_files_path, ErrorCodes::PATH_ACCESS_DENIED);
 
-        block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, Poco::File(file_path).exists());
+        columns[result].column = DataTypeUInt8().createColumnConst(input_rows_count, Poco::File(file_path).exists());
     }
 
 private:
@@ -64,15 +64,15 @@ public:
 
     const DataTypes & getArgumentTypes() const override
     {
-        DataTypes argument_types;
-        argument_types.emplace_back(std::make_shared<DataTypeString>());
+        DataTypes argument_types(1);
+        argument_types[0] = std::make_shared<DataTypeString>();
 
         return argument_types;
     }
 
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionFileExists>(user_files_path);
     }
