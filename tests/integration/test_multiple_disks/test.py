@@ -1367,7 +1367,10 @@ def test_move_across_policies_does_not_work(start_cluster):
         """.format(name=name))
 
         node1.query("""INSERT INTO {name} VALUES (1)""".format(name=name))
-        node1.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'jbod2'""".format(name=name))
+        try:
+            node1.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'jbod2'""".format(name=name))
+        except QueryRuntimeException:
+            """All parts of partition 'all' are already on disk 'jbod2'."""
 
         with pytest.raises(QueryRuntimeException, match='.*because disk does not belong to storage policy.*'):
             node1.query("""ALTER TABLE {name}2 ATTACH PARTITION tuple() FROM {name}""".format(name=name))
