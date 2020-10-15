@@ -1304,11 +1304,10 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         if (!out_projection)
             out_projection = createProjection(pipe, data);
 
-        /// If do_not_merge_across_partitions_select_final is true, there is only one part in partition and it's level > 0
-        /// then we won't merge this part.
+        /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
+        /// then we won't postprocess this part
         if (data_settings->do_not_merge_across_partitions_select_final &&
-            std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0)
+            std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1)
         {
             partition_pipes.emplace_back(std::move(pipe));
             continue;
