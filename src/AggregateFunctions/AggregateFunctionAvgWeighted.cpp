@@ -13,34 +13,43 @@ namespace ErrorCodes
 
 namespace
 {
-
-template <typename T>
-struct AvgWeighted
+constexpr bool allowTypes(const DataTypePtr& left, const DataTypePtr& right)
 {
-    using FieldType = std::conditional_t<
-        IsDecimalNumber<T>,
-        std::conditional_t<std::is_same_v<T, Decimal256>,
-            Decimal256,
-            Decimal128>,
-        NearestFieldType<T>>;
+    const WhichDataType l_dt(left), r_dt(right);
 
-    using Function = AggregateFunctionAvgWeighted<T, AggregateFunctionAvgData<FieldType, FieldType>>;
+    constexpr auto allow = [](WhichDataType t)
+    {
+        return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal();
+    };
+
+    return allow(l_dt) && allow(r_dt);
+}
+
+template <class U> struct BiggerType
+
+template <class U, class V> struct LargestType
+{
+    using Type = bool;
 };
 
-template <typename T>
-using AggregateFuncAvgWeighted = typename AvgWeighted<T>::Function;
 
-bool allowTypes(const DataTypePtr& left, const DataTypePtr& right)
+template <class U, class V> using AvgData = AggregateFunctionAvgData<
+    typename LargestType<U, V>::Type,
+    typename LargestType<U, V>::Type>;
+
+template <class U, class V> using Function = AggregateFunctionAvgWeighted<
+    U, V, typename LargestType<U, V>::Type, AvgData<U, V>>;
+
+template <typename... TArgs>
+static IAggregateFunction * create(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
 {
-    return (isInteger(left) || isFloat(left)) && (isInteger(right) || isFloat(right));
+
 }
 
 AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     assertBinary(name, argument_types);
-
-    AggregateFunctionPtr res;
 
     const auto data_type = static_cast<const DataTypePtr>(argument_types[0]);
     const auto data_type_weight = static_cast<const DataTypePtr>(argument_types[1]);
@@ -52,10 +61,8 @@ AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name
             " are non-conforming as arguments for aggregate function " + name,
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    if (isDecimal(data_type))
-        res.reset(createWithDecimalType<AggregateFuncAvgWeighted>(*data_type, *data_type, argument_types));
-    else
-        res.reset(createWithNumericType<AggregateFuncAvgWeighted>(*data_type, argument_types));
+    AggregateFunctionPtr res;
+    res.reset(create(*data_type, *data_type_weight, argument_types));
 
     if (!res)
         throw Exception("Illegal type " + data_type->getName() + " of argument for aggregate function " + name,
@@ -70,5 +77,4 @@ void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("avgWeighted", createAggregateFunctionAvgWeighted, AggregateFunctionFactory::CaseSensitive);
 }
-
 }

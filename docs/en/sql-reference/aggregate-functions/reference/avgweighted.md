@@ -42,3 +42,20 @@ Result:
 │                      8 │
 └────────────────────────┘
 ```
+
+**Example**
+
+Query:
+
+``` sql
+SELECT avgWeighted(x, w)
+FROM values('x Int8, w Float64', (4, 1), (1, 0), (10, 2))
+```
+
+Result:
+
+``` text
+┌─avgWeighted(x, weight)─┐
+│                      8 │
+└────────────────────────┘
+```
