@@ -619,6 +619,8 @@ add_library(
   ${BORINGSSL_SOURCE_DIR}/ssl/tls13_server.cc
   ${BORINGSSL_SOURCE_DIR}/ssl/tls_method.cc
   ${BORINGSSL_SOURCE_DIR}/ssl/tls_record.cc
+
+  ${BORINGSSL_SOURCE_DIR}/decrepit/ssl/ssl_decrepit.c
 )
 
 add_executable(
@@ -652,3 +654,7 @@ if(WIN32)
   target_link_libraries(bssl ws2_32)
 endif()
 
+target_include_directories(crypto SYSTEM PUBLIC ${BORINGSSL_SOURCE_DIR}/include)
+target_include_directories(ssl SYSTEM PUBLIC ${BORINGSSL_SOURCE_DIR}/include)
+
+target_compile_options(crypto PRIVATE -Wno-gnu-anonymous-struct)
