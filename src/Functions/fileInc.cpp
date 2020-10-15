@@ -41,9 +41,9 @@ public:
     static constexpr auto name = "fileInc";
     String getName() const override { return name; }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const IColumn * arg_column = block[arguments[0]].column.get();
+        const IColumn * arg_column = columns[arguments[0]].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
 
         Poco::Path file_path = Poco::Path(arg_string->getDataAt(0).toString());
@@ -79,7 +79,7 @@ public:
         WriteBufferFromFile file_wb(file_path.toString(), WRITE_HELPERS_MAX_INT_WIDTH);
         writeIntText(file_val, file_wb);
 
-        block[result].column = DataTypeInt64().createColumnConst(input_rows_count, file_val);
+        columns[result].column = DataTypeInt64().createColumnConst(input_rows_count, file_val);
     }
 
 private:
@@ -99,15 +99,15 @@ public:
 
     const DataTypes & getArgumentTypes() const override
     {
-        DataTypes argument_types;
-        argument_types.emplace_back(std::make_shared<DataTypeString>());
+        DataTypes argument_types(1);
+        argument_types[0] = std::make_shared<DataTypeString>();
 
         return argument_types;
     }
 
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionFileInc>(user_files_path);
     }
