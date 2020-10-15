@@ -35,7 +35,7 @@ class Literal : public INode
         bool is(LiteralType what) const { return type == what; }
 
     protected:
-        const String token; // STRING is stored without quotes
+        String token; // STRING is stored without quotes and interpolated with escape-sequences.
 
         Literal(LiteralType type, const String & token);
 
@@ -78,10 +78,7 @@ class NumberLiteral : public Literal
 class StringLiteral : public Literal
 {
     public:
-        explicit StringLiteral(antlr4::tree::TerminalNode * literal)
-            : Literal(LiteralType::STRING, literal->getSymbol()->getText().substr(1, literal->getSymbol()->getText().size() - 2))
-        {
-        }
+        explicit StringLiteral(antlr4::tree::TerminalNode * literal);
         explicit StringLiteral(const String & literal) : Literal(LiteralType::STRING, literal) {}
 
         template <typename T>

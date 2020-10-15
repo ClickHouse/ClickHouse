@@ -13,6 +13,7 @@ class EnumValue : public INode
     public:
         EnumValue(PtrTo<StringLiteral> name, PtrTo<NumberLiteral> value);
 
+        ASTPtr convertToOld() const override;
         String toString() const override;
 
     private:

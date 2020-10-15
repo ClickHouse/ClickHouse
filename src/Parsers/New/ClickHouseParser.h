@@ -1361,6 +1361,7 @@ public:
 
     antlr4::tree::TerminalNode *FULL();
     antlr4::tree::TerminalNode *OUTER();
+    antlr4::tree::TerminalNode *ALL();
     antlr4::tree::TerminalNode *ANY();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

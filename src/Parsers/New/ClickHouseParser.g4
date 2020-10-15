@@ -185,10 +185,10 @@ joinExpr
     ;
 joinOp
     : ((ALL | ANY | ASOF)? INNER | INNER (ALL | ANY | ASOF)? | (ALL | ANY | ASOF))  # JoinOpInner
-    | ( (OUTER | SEMI | ALL | ANTI | ANY | ASOF)? (LEFT | RIGHT)
-      | (LEFT | RIGHT) (OUTER | SEMI | ALL | ANTI | ANY | ASOF)?
+    | ( (SEMI | ALL | ANTI | ANY | ASOF)? (LEFT | RIGHT) OUTER?
+      | (LEFT | RIGHT) OUTER? (SEMI | ALL | ANTI | ANY | ASOF)?
       )                                                                             # JoinOpLeftRight
-    | ((OUTER | ANY)? FULL | FULL (OUTER | ANY)?)                                   # JoinOpFull
+    | ((ALL | ANY)? FULL OUTER? | FULL OUTER? (ALL | ANY)?)                         # JoinOpFull
     ;
 joinOpCross
     : (GLOBAL|LOCAL)? CROSS JOIN

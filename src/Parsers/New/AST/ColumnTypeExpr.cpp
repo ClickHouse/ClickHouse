@@ -14,6 +14,19 @@ EnumValue::EnumValue(PtrTo<StringLiteral> name, PtrTo<NumberLiteral> value) : IN
 {
 }
 
+ASTPtr EnumValue::convertToOld() const
+{
+    auto func = std::make_shared<ASTFunction>();
+
+    func->name = "equals";
+    func->arguments = std::make_shared<ASTExpressionList>();
+    func->arguments->children.push_back(get(NAME)->convertToOld());
+    func->arguments->children.push_back(get(VALUE)->convertToOld());
+    func->children.push_back(func->arguments);
+
+    return func;
+}
+
 String EnumValue::toString() const
 {
     return fmt::format("'{}' = {}", get(NAME)->toString(), get(VALUE)->toString());

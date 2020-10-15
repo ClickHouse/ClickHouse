@@ -100,13 +100,13 @@ ASTPtr JoinExpr::convertToOld() const
             case JoinOpType::FULL:
                 element->kind = ASTTableJoin::Kind::Full;
                 break;
+            case JoinOpType::FULL_ALL:
+                element->kind = ASTTableJoin::Kind::Full;
+                element->strictness = ASTTableJoin::Strictness::All;
+                break;
             case JoinOpType::FULL_ANY:
                 element->kind = ASTTableJoin::Kind::Full;
                 element->strictness = ASTTableJoin::Strictness::Any;
-                break;
-            case JoinOpType::FULL_OUTER:
-                element->kind = ASTTableJoin::Kind::Full;
-                // TODO: looks like not supported.
                 break;
             case JoinOpType::INNER:
                 element->kind = ASTTableJoin::Kind::Inner;
@@ -142,10 +142,6 @@ ASTPtr JoinExpr::convertToOld() const
                 element->kind = ASTTableJoin::Kind::Left;
                 element->strictness = ASTTableJoin::Strictness::Asof;
                 break;
-            case JoinOpType::LEFT_OUTER:
-                element->kind = ASTTableJoin::Kind::Left;
-                // TODO: looks like not supported.
-                break;
             case JoinOpType::LEFT_SEMI:
                 element->kind = ASTTableJoin::Kind::Left;
                 element->strictness = ASTTableJoin::Strictness::Semi;
@@ -168,10 +164,6 @@ ASTPtr JoinExpr::convertToOld() const
             case JoinOpType::RIGHT_ASOF:
                 element->kind = ASTTableJoin::Kind::Right;
                 element->strictness = ASTTableJoin::Strictness::Asof;
-                break;
-            case JoinOpType::RIGHT_OUTER:
-                element->kind = ASTTableJoin::Kind::Right;
-                // TODO: looks like not supported.
                 break;
             case JoinOpType::RIGHT_SEMI:
                 element->kind = ASTTableJoin::Kind::Right;
@@ -260,7 +252,7 @@ antlrcpp::Any ParseTreeVisitor::visitJoinOpCross(ClickHouseParser::JoinOpCrossCo
 
 antlrcpp::Any ParseTreeVisitor::visitJoinOpFull(ClickHouseParser::JoinOpFullContext *ctx)
 {
-    if (ctx->OUTER()) return JoinExpr::JoinOpType::FULL_OUTER;
+    if (ctx->ALL()) return JoinExpr::JoinOpType::FULL_ALL;
     if (ctx->ANY()) return JoinExpr::JoinOpType::FULL_ANY;
     return JoinExpr::JoinOpType::FULL;
 }
@@ -277,7 +269,6 @@ antlrcpp::Any ParseTreeVisitor::visitJoinOpLeftRight(ClickHouseParser::JoinOpLef
 {
     if (ctx->LEFT())
     {
-        if (ctx->OUTER()) return JoinExpr::JoinOpType::LEFT_OUTER;
         if (ctx->SEMI()) return JoinExpr::JoinOpType::LEFT_SEMI;
         if (ctx->ALL()) return JoinExpr::JoinOpType::LEFT_ALL;
         if (ctx->ANTI()) return JoinExpr::JoinOpType::LEFT_ANTI;
@@ -287,7 +278,6 @@ antlrcpp::Any ParseTreeVisitor::visitJoinOpLeftRight(ClickHouseParser::JoinOpLef
     }
     else if (ctx->RIGHT())
     {
-        if (ctx->OUTER()) return JoinExpr::JoinOpType::RIGHT_OUTER;
         if (ctx->SEMI()) return JoinExpr::JoinOpType::RIGHT_SEMI;
         if (ctx->ALL()) return JoinExpr::JoinOpType::RIGHT_ALL;
         if (ctx->ANTI()) return JoinExpr::JoinOpType::RIGHT_ANTI;

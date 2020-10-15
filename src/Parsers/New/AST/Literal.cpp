@@ -1,8 +1,9 @@
 #include <Parsers/New/AST/Literal.h>
 
-#include <Parsers/New/ParseTreeVisitor.h>
-
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/New/ParseTreeVisitor.h>
 
 
 namespace DB::AST
@@ -80,6 +81,17 @@ NumberLiteral::NumberLiteral(antlr4::tree::TerminalNode * literal) : Literal(Lit
 
 NumberLiteral::NumberLiteral(const String & literal) : Literal(LiteralType::NUMBER, literal)
 {
+}
+
+StringLiteral::StringLiteral(antlr4::tree::TerminalNode * literal) : Literal(LiteralType::STRING, literal->getSymbol()->getText())
+{
+    String s;
+    ReadBufferFromMemory in(token.data(), token.size());
+
+    readQuotedStringWithSQLStyle(s, in);
+
+    assert(in.count() == token.size());
+    token = s;
 }
 
 }
