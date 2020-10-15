@@ -31,7 +31,7 @@ ClickHouse زیر پشتیبانی می کند syntaxes برای `count`:
 
 **اطلاعات دقیق**
 
-تاتر از `COUNT(DISTINCT ...)` نحو. رفتار این ساخت و ساز بستگی به [ا\_فزونهها](../../operations/settings/settings.md#settings-count_distinct_implementation) تنظیمات. این تعریف می کند که کدام یک از [دانشگاه\*](#agg_function-uniq) توابع برای انجام عملیات استفاده می شود. به طور پیش فرض است [قرارداد اتحادیه](#agg_function-uniqexact) تابع.
+تاتر از `COUNT(DISTINCT ...)` نحو. رفتار این ساخت و ساز بستگی به [ا_فزونهها](../../operations/settings/settings.md#settings-count_distinct_implementation) تنظیمات. این تعریف می کند که کدام یک از [دانشگاه\*](#agg_function-uniq) توابع برای انجام عملیات استفاده می شود. به طور پیش فرض است [قرارداد اتحادیه](#agg_function-uniqexact) تابع.
 
 این `SELECT count() FROM table` پرس و جو بهینه سازی شده نیست, چرا که تعداد ورودی در جدول به طور جداگانه ذخیره نمی. این ستون کوچک را از جدول انتخاب می کند و تعداد مقادیر موجود را شمارش می کند.
 
@@ -721,7 +721,7 @@ uniqExact(x[, ...])
 -   [مخلوط نشده](#agg_function-uniqcombined)
 -   [یونقلل12](#agg_function-uniqhll12)
 
-## groupArray(x) groupArray(max\_size)(x) {#agg_function-grouparray}
+## groupArray(x) groupArray(max_size)(x) {#agg_function-grouparray}
 
 مجموعه ای از مقادیر استدلال را ایجاد می کند.
 مقادیر را می توان به ترتیب در هر (نامعین) اضافه کرد.
@@ -967,7 +967,7 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x) groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## groupUniqArray(x) groupUniqArray(max_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 مجموعه ای از مقادیر مختلف استدلال ایجاد می کند. مصرف حافظه همان است که برای `uniqExact` تابع.
 
