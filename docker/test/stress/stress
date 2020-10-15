@@ -30,6 +30,15 @@ def get_options(i):
         options += " --order=random"
     if i % 2 == 1:
         options += " --db-engine=Ordinary"
+
+    # If database name is not specified, new database is created for each functional test.
+    # Run some threads with one database for all tests.
+    if i % 3 == 1:
+        options += " --database=test_{}".format(i)
+
+    if i == 13:
+        options += " --client-option='memory_tracker_fault_probability=0.00001'"
+
     return options
 
 
