@@ -41,7 +41,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override;
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t) const override;
 
 private:
     template <typename T>
@@ -53,11 +53,11 @@ private:
 };
 
 
-void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const
+void FunctionArrayReverse::executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t) const
 {
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(block[arguments[0]].column.get());
+    const ColumnArray * array = checkAndGetColumn<ColumnArray>(columns[arguments[0]].column.get());
     if (!array)
-        throw Exception("Illegal column " + block[arguments[0]].column->getName() + " of first argument of function " + getName(),
+        throw Exception("Illegal column " + columns[arguments[0]].column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
     auto res_ptr = array->cloneEmpty();
@@ -96,7 +96,7 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
                 + " of null map of the first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-    block[result].column = std::move(res_ptr);
+    columns[result].column = std::move(res_ptr);
 }
 
 

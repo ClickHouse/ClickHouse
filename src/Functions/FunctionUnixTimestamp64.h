@@ -65,13 +65,13 @@ public:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         using SourceColumnType = typename SourceDataType::ColumnType;
         using ResultColumnType = typename ResultDataType::ColumnType;
 
-        const auto & src = block[arguments[0]];
-        auto & res = block[result];
+        const auto & src = columns[arguments[0]];
+        auto & res = columns[result];
         const auto & col = *src.column;
 
         const SourceColumnType * source_col_typed = checkAndGetColumn<SourceColumnType>(col);

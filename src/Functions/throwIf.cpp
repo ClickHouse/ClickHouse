@@ -65,34 +65,34 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         std::optional<String> custom_message;
         if (arguments.size() == 2)
         {
-            const auto * msg_column = checkAndGetColumnConst<ColumnString>(block[arguments[1]].column.get());
+            const auto * msg_column = checkAndGetColumnConst<ColumnString>(columns[arguments[1]].column.get());
             if (!msg_column)
                 throw Exception{"Second argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN};
             custom_message = msg_column->getValue<String>();
         }
 
-        const auto * in = block[arguments.front()].column.get();
+        const auto * in = columns[arguments.front()].column.get();
 
-        if (   !execute<UInt8>(block, in, result, custom_message)
-            && !execute<UInt16>(block, in, result, custom_message)
-            && !execute<UInt32>(block, in, result, custom_message)
-            && !execute<UInt64>(block, in, result, custom_message)
-            && !execute<Int8>(block, in, result, custom_message)
-            && !execute<Int16>(block, in, result, custom_message)
-            && !execute<Int32>(block, in, result, custom_message)
-            && !execute<Int64>(block, in, result, custom_message)
-            && !execute<Float32>(block, in, result, custom_message)
-            && !execute<Float64>(block, in, result, custom_message))
+        if (   !execute<UInt8>(columns, in, result, custom_message)
+            && !execute<UInt16>(columns, in, result, custom_message)
+            && !execute<UInt32>(columns, in, result, custom_message)
+            && !execute<UInt64>(columns, in, result, custom_message)
+            && !execute<Int8>(columns, in, result, custom_message)
+            && !execute<Int16>(columns, in, result, custom_message)
+            && !execute<Int32>(columns, in, result, custom_message)
+            && !execute<Int64>(columns, in, result, custom_message)
+            && !execute<Float32>(columns, in, result, custom_message)
+            && !execute<Float64>(columns, in, result, custom_message))
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
     template <typename T>
-    bool execute(Block & block, const IColumn * in_untyped, const size_t result, const std::optional<String> & message) const
+    bool execute(ColumnsWithTypeAndName & columns, const IColumn * in_untyped, const size_t result, const std::optional<String> & message) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {
@@ -102,7 +102,7 @@ public:
                                 ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO};
 
             /// We return non constant to avoid constant folding.
-            block[result].column = ColumnUInt8::create(in_data.size(), 0);
+            columns[result].column = ColumnUInt8::create(in_data.size(), 0);
             return true;
         }
 
