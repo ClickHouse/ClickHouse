@@ -185,4 +185,4 @@
 	branch = cyrus-sasl-2.1
 [submodule "contrib/boringssl"]
 	path = contrib/boringssl
-	url = https://github.com/google/boringssl.git
+	url = https://github.com/ClickHouse-Extras/boringssl.git
