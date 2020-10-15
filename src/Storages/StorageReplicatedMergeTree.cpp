@@ -3739,6 +3739,7 @@ bool StorageReplicatedMergeTree::optimize(
         };
 
         const auto storage_settings_ptr = getSettings();
+        auto metadata_snapshot = getInMemoryMetadataPtr();
 
         if (!partition && final)
         {
@@ -3766,7 +3767,7 @@ bool StorageReplicatedMergeTree::optimize(
                     /// and setting optimize_skip_merged_partitions is true
                     bool is_single_merged_part = false;
                     bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, true, &is_single_merged_part, nullptr);
+                        future_merged_part, disk_space, can_merge, partition_id, true, &is_single_merged_part, metadata_snapshot, nullptr);
 
                     if (!selected)
                     {
@@ -3821,7 +3822,7 @@ bool StorageReplicatedMergeTree::optimize(
                     UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
                     String partition_id = getPartitionIDFromQuery(partition, query_context);
                     selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, final, &is_single_merged_part, &disable_reason);
+                        future_merged_part, disk_space, can_merge, partition_id, final, &is_single_merged_part, metadata_snapshot, &disable_reason);
                 }
 
                 if (!selected)
