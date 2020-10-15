@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @TestFeature
 @Name("create role")
@@ -42,7 +42,9 @@ def feature(self, node="clickhouse1"):
             RQ_SRS_006_RBAC_Role_Create("1.0")]):
         role = "role0"
         with cleanup(role):
-            with When(f"I create role {role}"):
+            with Given(f"I have role {role}"):
+                node.query(f"CREATE ROLE {role}")
+            with When(f"I create role {role}, throws exception"):
                 exitcode, message = errors.cannot_insert_role(name=role)
                 node.query(f"CREATE ROLE {role}", exitcode=exitcode, message=message)
         del role

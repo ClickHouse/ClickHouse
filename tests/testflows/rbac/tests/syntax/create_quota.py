@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @TestFeature
 @Name("create quota")
@@ -14,7 +14,7 @@ def feature(self, node="clickhouse1"):
     ```sql
     CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
@@ -107,7 +107,7 @@ def feature(self, node="clickhouse1"):
                 with When("I create a quota for randomized interval"):
                     node.query("CREATE QUOTA quota9 FOR RANDOMIZED INTERVAL 1 DAY NO LIMITS")
 
-        intervals = ['SECOND', 'MINUTE', 'HOUR', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
+        intervals = ['SECOND', 'MINUTE', 'HOUR', 'DAY', 'MONTH']
         for i, interval in enumerate(intervals):
             with Scenario(f"I create quota for interval {interval}", flags=TE, requirements=[
                     RQ_SRS_006_RBAC_Quota_Create_Interval("1.0")]):

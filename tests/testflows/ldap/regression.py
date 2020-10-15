@@ -2,7 +2,7 @@
 import sys
 from testflows.core import *
 
-append_path(sys.path, "..") 
+append_path(sys.path, "..")
 
 from helpers.cluster import Cluster
 from helpers.argparser import argparser
@@ -33,13 +33,13 @@ xfails = {
     RQ_SRS_007_LDAP_Authentication("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path):
+def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """ClickHouse integration with LDAP regression module.
     """
     nodes = {
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
     }
- 
+
     with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
         self.context.cluster = cluster
 
