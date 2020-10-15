@@ -316,8 +316,8 @@ public:
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Makes full clone of part in detached/ on another disk
-    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
+    /// Makes full clone of part in specified directory on another disk
+    void makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
