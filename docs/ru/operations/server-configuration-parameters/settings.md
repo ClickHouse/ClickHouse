@@ -61,7 +61,21 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </compression>
 ```
 
-## default_database {#default-database}
+## custom_settings_prefixes {#custom_settings_prefixes}
+
+Список префиксов для [пользовательских настроек](../../operations/settings/index.md#custom_settings). Префиксы должны перечисляться через запятую.
+
+**Пример**
+
+```xml
+<custom_settings_prefixes>custom_</custom_settings_prefixes>
+```
+
+**См. также**
+
+-   [Пользовательские настройки](../../operations/settings/index.md#custom_settings)
+
+## default\_database {#default-database}
 
 База данных по умолчанию.
 
