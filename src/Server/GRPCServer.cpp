@@ -4,6 +4,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/SettingsChanges.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <IO/ConcatReadBuffer.h>
@@ -20,6 +21,7 @@
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
 
+
 using GRPCService = clickhouse::grpc::ClickHouse::AsyncService;
 using GRPCQueryInfo = clickhouse::grpc::QueryInfo;
 using GRPCResult = clickhouse::grpc::Result;
@@ -30,274 +32,320 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_DATABASE;
+    extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
+    extern const int UNKNOWN_DATABASE;
 }
-
 
 namespace
 {
-    class CommonCallData
+    /// Requests a connection and provides low-level interface for reading and writing.
+    class Responder
     {
     public:
-        GRPCService * grpc_service;
-        grpc::ServerCompletionQueue * notification_cq;
-        grpc::ServerCompletionQueue * new_call_cq;
-        grpc::ServerContext grpc_context;
-        IServer * iserver;
-        bool with_stacktrace = false;
-        Poco::Logger * log;
-        std::unique_ptr<CommonCallData> next_client;
+        Responder() : tag(this) {}
 
-        explicit CommonCallData(
-            GRPCService * grpc_service_,
-            grpc::ServerCompletionQueue * notification_cq_,
-            grpc::ServerCompletionQueue * new_call_cq_,
-            IServer * iserver_,
-            Poco::Logger * log_)
-            : grpc_service(grpc_service_), notification_cq(notification_cq_), new_call_cq(new_call_cq_), iserver(iserver_), log(log_)
+        void setTag(void * tag_) { tag = tag_; }
+
+        void start(GRPCService & grpc_service, grpc::ServerCompletionQueue & new_call_queue, grpc::ServerCompletionQueue & notification_queue)
         {
+            grpc_service.RequestExecuteQuery(&grpc_context, &reader_writer, &new_call_queue, &notification_queue, tag);
         }
-        virtual ~CommonCallData() = default;
-        virtual void respond() = 0;
-    };
 
-    class CallDataQuery : public CommonCallData
-    {
-    public:
-        CallDataQuery(
-            GRPCService * grpc_service_,
-            grpc::ServerCompletionQueue * notification_cq_,
-            grpc::ServerCompletionQueue * new_call_cq_,
-            IServer * iserver_,
-            Poco::Logger * log_)
-            : CommonCallData(grpc_service_, notification_cq_, new_call_cq_, iserver_, log_), responder(&grpc_context), context(iserver->context())
+        void read(GRPCQueryInfo & query_info_)
         {
-            details_status = SEND_TOTALS;
-            status = START_QUERY;
-            out = std::make_shared<WriteBufferFromGRPC>(&responder, static_cast<void *>(this), nullptr);
-            grpc_service->RequestExecuteQuery(&grpc_context, &responder, new_call_cq, notification_cq, this);
+            reader_writer.Read(&query_info_, tag);
         }
-        void parseQuery();
-        void parseData();
-        void readData();
-        void executeQuery();
-        void progressQuery();
-        void finishQuery();
 
-        enum DetailsStatus
+        /*void write(const GRPCResult & result)
         {
-            SEND_TOTALS,
-            SEND_EXTREMES,
-            //SEND_PROFILEINFO, //?
-            FINISH
-        };
-        void sendDetails();
+            reader_writer.Write(result, tag);
+        }*/
 
-        bool sendData(const Block & block);
-        bool sendProgress();
-        bool sendTotals(const Block & totals);
-        bool sendExtremes(const Block & extremes);
+        void writeAndFinish(const GRPCResult & result, const grpc::Status & status)
+        {
+            reader_writer.WriteAndFinish(result, {}, status, tag);
+        }
 
-        enum Status
+        Poco::Net::SocketAddress getClientAddress() const
         {
-            START_QUERY,
-            PARSE_QUERY,
-            READ_DATA,
-            PROGRESS,
-            FINISH_QUERY
-        };
-        virtual void respond() override;
-        virtual ~CallDataQuery() override
+            String peer = grpc_context.peer();
+            return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
+        }
+
+        grpc::ServerAsyncReaderWriter<GRPCResult, GRPCQueryInfo> & getReaderWriter()
         {
-            query_watch.stop();
-            progress_watch.stop();
-            query_context.reset();
-            query_scope.reset();
+            return reader_writer;
         }
 
     private:
-        GRPCQueryInfo request;
-        GRPCResult response;
-        grpc::ServerAsyncReaderWriter<GRPCResult, GRPCQueryInfo> responder;
-
-        Stopwatch progress_watch;
-        Stopwatch query_watch;
-        Progress progress;
-
-        DetailsStatus details_status;
-        Status status;
-
-        BlockIO io;
-        Context context;
-        std::shared_ptr<PullingAsyncPipelineExecutor> executor;
-        std::optional<Context> query_context;
-
-        std::shared_ptr<WriteBufferFromGRPC> out;
-        String format_output;
-        String format_input;
-        uint64_t interactive_delay;
-        std::optional<CurrentThread::QueryScope> query_scope;
+        grpc::ServerContext grpc_context;
+        grpc::ServerAsyncReaderWriter<GRPCResult, GRPCQueryInfo> reader_writer{&grpc_context};
+        void * tag;
     };
 
-    std::string parseGRPCPeer(const grpc::ServerContext & context_)
+
+    /// Handles a connection after a responder is started (i.e. after getting a new call).
+    class Call
     {
-        String info = context_.peer();
-        return info.substr(info.find(':') + 1);
+    public:
+        Call(std::unique_ptr<Responder> responder_, IServer & iserver_, Poco::Logger * log_);
+        ~Call();
+
+        void start(const std::function<void(void)> & on_finish_call_callback);
+        void sync(bool ok);
+
+    private:
+        void run();
+        void waitForSync();
+
+        void receiveQuery();
+        void executeQuery();
+        void processInput();
+        void generateOutput();
+        void generateOutputWithProcessors();
+        void finishQuery();
+        void onException(const Exception & exception);
+        void close();
+
+        void sendOutput(const Block & block);
+        void sendProgress();
+        void sendTotals(const Block & totals);
+        void sendExtremes(const Block & extremes);
+        void sendException(const Exception & exception);
+
+        std::unique_ptr<Responder> responder;
+        IServer & iserver;
+        Poco::Logger * log = nullptr;
+
+        std::optional<Context> query_context;
+        std::optional<CurrentThread::QueryScope> query_scope;
+        String query_text;
+        ASTPtr ast;
+        ASTInsertQuery * insert_query = nullptr;
+        String input_format;
+        String output_format;
+        uint64_t interactive_delay = 100000;
+        bool send_exception_with_stacktrace = true;
+
+        BlockIO io;
+        std::shared_ptr<WriteBufferFromGRPC> out;
+        Progress progress;
+
+        GRPCQueryInfo query_info; /// We reuse the same messages multiple times.
+        GRPCResult result;
+
+        ThreadFromGlobalPool call_thread;
+        std::condition_variable signal;
+        std::atomic<size_t> num_syncs_pending = 0;
+        std::atomic<bool> sync_failed = false;
+    };
+
+    Call::Call(std::unique_ptr<Responder> responder_, IServer & iserver_, Poco::Logger * log_)
+        : responder(std::move(responder_)), iserver(iserver_), log(log_)
+    {
+        responder->setTag(this);
+        out = std::make_shared<WriteBufferFromGRPC>(&responder->getReaderWriter(), this, nullptr);
     }
 
-    void CallDataQuery::respond()
+    Call::~Call()
+    {
+        if (call_thread.joinable())
+            call_thread.join();
+    }
+
+    void Call::start(const std::function<void(void)> & on_finish_call_callback)
+    {
+        auto runner_function = [this, on_finish_call_callback]
+        {
+            try
+            {
+                run();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("GRPCServer");
+            }
+            on_finish_call_callback();
+        };
+        call_thread = ThreadFromGlobalPool(runner_function);
+    }
+
+    void Call::sync(bool ok)
+    {
+        ++num_syncs_pending;
+        if (!ok)
+            sync_failed = true;
+        signal.notify_one();
+    }
+
+    void Call::waitForSync()
+    {
+        std::mutex mutex;
+        std::unique_lock lock{mutex};
+        signal.wait(lock, [&] { return (num_syncs_pending > 0) || sync_failed; });
+        if (sync_failed)
+            throw Exception("Client has gone away or network failure", ErrorCodes::NETWORK_ERROR);
+        --num_syncs_pending;
+    }
+
+    void Call::run()
     {
         try
         {
-            switch (status)
-            {
-                case START_QUERY: {
-                    new CallDataQuery(grpc_service, notification_cq, new_call_cq, iserver, log);
-                    status = PARSE_QUERY;
-                    responder.Read(&request, static_cast<void *>(this));
-                    break;
-                }
-                case PARSE_QUERY: {
-                    parseQuery();
-                    parseData();
-                    break;
-                }
-                case READ_DATA: {
-                    readData();
-                    break;
-                }
-                case PROGRESS: {
-                    progressQuery();
-                    break;
-                }
-                case FINISH_QUERY: {
-                    delete this;
-                }
-            }
+            receiveQuery();
+            executeQuery();
+            processInput();
+            generateOutput();
+            finishQuery();
         }
-        catch (...)
+        catch (Exception & exception)
         {
-            io.onException();
-
-            tryLogCurrentException(log);
-            auto & grpc_exception = *response.mutable_exception();
-            grpc_exception.set_code(getCurrentExceptionCode());
-            grpc_exception.set_message(getCurrentExceptionMessage(with_stacktrace, true));
-            status = FINISH_QUERY;
-            responder.WriteAndFinish(response, grpc::WriteOptions(), grpc::Status(), static_cast<void *>(this));
+            onException(exception);
+        }
+        catch (Poco::Exception & exception)
+        {
+            onException(Exception{Exception::CreateFromPocoTag{}, exception});
+        }
+        catch (std::exception & exception)
+        {
+            onException(Exception{Exception::CreateFromSTDTag{}, exception});
         }
     }
 
-    void CallDataQuery::parseQuery()
+    void Call::receiveQuery()
     {
-        LOG_TRACE(log, "Process query");
+        responder->read(query_info);
+        waitForSync();
+    }
 
-        Poco::Net::SocketAddress user_adress(parseGRPCPeer(grpc_context));
-        LOG_TRACE(log, "Request: {}", request.query());
+    void Call::executeQuery()
+    {
+        /// Retrieve user credentials.
+        std::string user = query_info.user_name();
+        std::string password = query_info.password();
+        std::string quota_key = query_info.quota();
+        Poco::Net::SocketAddress user_address = responder->getClientAddress();
 
-        std::string user = request.user_name();
-        std::string password = request.password();
-        std::string quota_key = request.quota();
-        format_output = "Values";
         if (user.empty())
         {
             user = "default";
             password = "";
         }
-        context.setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
 
-
-        query_context = context;
+        /// Create context.
+        query_context.emplace(iserver.context());
         query_scope.emplace(*query_context);
-        query_context->setUser(user, password, user_adress);
-        query_context->setCurrentQueryId(request.query_id());
+
+        /// Authentication.
+        query_context->setUser(user, password, user_address);
+        query_context->setCurrentQueryId(query_info.query_id());
         if (!quota_key.empty())
             query_context->setQuotaKey(quota_key);
 
-        if (!request.output_format().empty())
-        {
-            format_output = request.output_format();
-            query_context->setDefaultFormat(request.output_format());
-        }
-        if (!request.database().empty())
-        {
-            if (!DatabaseCatalog::instance().isDatabaseExist(request.database()))
-            {
-                Exception e("Database " + request.database() + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-            }
-            query_context->setCurrentDatabase(request.database());
-        }
+        /// Set client info.
+        ClientInfo & client_info = query_context->getClientInfo();
+        client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+        client_info.interface = ClientInfo::Interface::GRPC;
+        client_info.initial_user = client_info.current_user;
+        client_info.initial_query_id = client_info.current_query_id;
+        client_info.initial_address = client_info.current_address;
 
+        /// Prepare settings.
         SettingsChanges settings_changes;
-        for (const auto & [key, value] : request.settings())
+        for (const auto & [key, value] : query_info.settings())
         {
             settings_changes.push_back({key, value});
         }
         query_context->checkSettingsConstraints(settings_changes);
         query_context->applySettingsChanges(settings_changes);
-
-        interactive_delay = query_context->getSettingsRef().interactive_delay;
-
-        ClientInfo & client_info = query_context->getClientInfo();
-        client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-        client_info.interface = ClientInfo::Interface::GRPC;
-
-        client_info.initial_user = client_info.current_user;
-        client_info.initial_query_id = client_info.current_query_id;
-        client_info.initial_address = client_info.current_address;
-    }
-
-    void CallDataQuery::parseData()
-    {
-        LOG_TRACE(log, "ParseData");
-        const char * begin = request.query().data();
-        const char * end = begin + request.query().size();
         const Settings & settings = query_context->getSettingsRef();
 
+        /// Set the current database if specified.
+        if (!query_info.database().empty())
+        {
+            if (!DatabaseCatalog::instance().isDatabaseExist(query_info.database()))
+                throw Exception("Database " + query_info.database() + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+            query_context->setCurrentDatabase(query_info.database());
+        }
+
+        /// The interactive delay will be used to show progress.
+        interactive_delay = query_context->getSettingsRef().interactive_delay;
+        query_context->setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
+
+        /// Parse the query.
+        query_text = std::move(*query_info.mutable_query());
+        const char * begin = query_text.data();
+        const char * end = begin + query_text.size();
         ParserQuery parser(end);
-        ASTPtr ast = ::DB::parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
+        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
 
-        auto * insert_query = ast->as<ASTInsertQuery>();
+        /// Choose output format.
+        output_format = "Values";
+        if (!query_info.output_format().empty())
+        {
+            output_format = query_info.output_format();
+            query_context->setDefaultFormat(query_info.output_format());
+        }
+
+        /// Start executing the query.
+        insert_query = ast->as<ASTInsertQuery>();
         const auto * query_end = end;
-
         if (insert_query && insert_query->data)
         {
             query_end = insert_query->data;
         }
         String query(begin, query_end);
         io = ::DB::executeQuery(query, *query_context, false, QueryProcessingStage::Complete, true, true);
-        if (io.out)
+    }
+
+    void Call::processInput()
+    {
+        if (!io.out)
+            return;
+
+        bool has_data_to_insert = (insert_query && insert_query->data)
+                                  || !query_info.input_data().empty() || query_info.next_query_info();
+        if (!has_data_to_insert)
         {
-            if (!insert_query || !(insert_query->data || !request.input_data().empty() || request.next_query_info()))
-            {
-                Exception e("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::NO_DATA_TO_INSERT);
-            }
+            if (!insert_query)
+                throw Exception("Query requires data to insert, but it is not an INSERT query", ErrorCodes::NO_DATA_TO_INSERT);
+            else
+                throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+        }
 
-            format_input = insert_query->format;
-            if (format_input.empty())
-                format_input = "Values";
+        /// Choose input format.
+        if (insert_query)
+        {
+            input_format = insert_query->format;
+            if (input_format.empty())
+                input_format = "Values";
+        }
 
-            if (format_output.empty())
-                format_output = format_input;
-            ConcatReadBuffer::ReadBuffers buffers;
-            std::shared_ptr<ReadBufferFromMemory> data_in_query;
-            std::shared_ptr<ReadBufferFromMemory> data_in_insert_data;
-            if (insert_query->data)
-            {
-                data_in_query = std::make_shared<ReadBufferFromMemory>(insert_query->data, insert_query->end - insert_query->data);
-                buffers.push_back(data_in_query.get());
-            }
+        if (output_format.empty())
+            output_format = input_format;
 
-            if (!request.input_data().empty())
-            {
-                data_in_insert_data = std::make_shared<ReadBufferFromMemory>(request.input_data().data(), request.input_data().size());
-                buffers.push_back(data_in_insert_data.get());
-            }
-            auto input_buffer_contacenated = std::make_unique<ConcatReadBuffer>(buffers);
-            auto res_stream = query_context->getInputFormat(
-                format_input, *input_buffer_contacenated, io.out->getHeader(), query_context->getSettings().max_insert_block_size);
+        /// Prepare read buffer with data to insert.
+        ConcatReadBuffer::ReadBuffers buffers;
+        std::shared_ptr<ReadBufferFromMemory> insert_query_data_buffer;
+        std::shared_ptr<ReadBufferFromMemory> input_data_buffer;
+        if (insert_query && insert_query->data)
+        {
+            insert_query_data_buffer = std::make_shared<ReadBufferFromMemory>(insert_query->data, insert_query->end - insert_query->data);
+            buffers.push_back(insert_query_data_buffer.get());
+        }
+        if (!query_info.input_data().empty())
+        {
+            input_data_buffer = std::make_shared<ReadBufferFromMemory>(query_info.input_data().data(), query_info.input_data().size());
+            buffers.push_back(input_data_buffer.get());
+        }
+        auto input_buffer_contacenated = std::make_unique<ConcatReadBuffer>(buffers);
+        auto res_stream = query_context->getInputFormat(
+            input_format, *input_buffer_contacenated, io.out->getHeader(), query_context->getSettings().max_insert_block_size);
 
+        /// Add default values if necessary.
+        if (insert_query)
+        {
             auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
             if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
             {
@@ -306,127 +354,138 @@ namespace
                 if (!columns.empty())
                     res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, columns, *query_context);
             }
-            io.out->writePrefix();
-            while (auto block = res_stream->read())
-                io.out->write(block);
-            if (request.next_query_info())
+        }
+
+        /// Read input data.
+        io.out->writePrefix();
+
+        while (auto block = res_stream->read())
+            io.out->write(block);
+
+        while (query_info.next_query_info())
+        {
+            responder->read(query_info);
+            waitForSync();
+            if (!query_info.input_data().empty())
             {
-                status = READ_DATA;
-                responder.Read(&request, static_cast<void *>(this));
-                return;
+                const char * begin = query_info.input_data().data();
+                const char * end = begin + query_info.input_data().size();
+                ReadBufferFromMemory data_in(begin, end - begin);
+                res_stream = query_context->getInputFormat(
+                    input_format, data_in, io.out->getHeader(), query_context->getSettings().max_insert_block_size);
+
+                while (auto block = res_stream->read())
+                    io.out->write(block);
             }
-            io.out->writeSuffix();
         }
 
-        executeQuery();
+        io.out->writeSuffix();
     }
 
-    void CallDataQuery::readData()
+    void Call::generateOutput()
     {
-        if (!request.input_data().empty())
-        {
-            const char * begin = request.input_data().data();
-            const char * end = begin + request.input_data().size();
-            ReadBufferFromMemory data_in(begin, end - begin);
-            auto res_stream = query_context->getInputFormat(
-                format_input, data_in, io.out->getHeader(), query_context->getSettings().max_insert_block_size);
-
-            while (auto block = res_stream->read())
-                io.out->write(block);
-        }
-
-        if (request.next_query_info())
-        {
-            responder.Read(&request, static_cast<void *>(this));
-        }
-        else
-        {
-            io.out->writeSuffix();
-            executeQuery();
-        }
-    }
-
-    void CallDataQuery::executeQuery()
-    {
-        LOG_TRACE(log, "Execute Query");
         if (io.pipeline.initialized())
         {
-            query_watch.start();
-            progress_watch.start();
-            executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
-            progressQuery();
+            generateOutputWithProcessors();
+            return;
         }
-        else
+
+        if (!io.in)
+            return;
+
+        AsynchronousBlockInputStream async_in(io.in);
+        Stopwatch after_send_progress;
+
+        async_in.readPrefix();
+        while (true)
         {
-            finishQuery();
+            if (async_in.poll(interactive_delay / 1000))
+            {
+                const auto block = async_in.read();
+                if (!block)
+                    break;
+
+                if (!io.null_format)
+                    sendOutput(block);
+            }
+
+            if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
+            {
+                sendProgress();
+                after_send_progress.restart();
+            }
         }
+        async_in.readSuffix();
+
+        sendTotals(io.in->getTotals());
+        sendExtremes(io.in->getExtremes());
     }
 
-    void CallDataQuery::progressQuery()
+    void Call::generateOutputWithProcessors()
     {
-        status = PROGRESS;
-        bool sent = false;
+        if (!io.pipeline.initialized())
+            return;
+
+        auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
+        Stopwatch after_send_progress;
 
         Block block;
-        while (executor->pull(block, query_watch.elapsedMilliseconds()))
+        while (executor->pull(block, interactive_delay / 1000))
         {
             if (block)
             {
                 if (!io.null_format)
-                {
-                    sent = sendData(block);
-                    break; //?
-                }
+                    sendOutput(block);
             }
-            if (progress_watch.elapsedMilliseconds() >= interactive_delay)
+
+            if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
             {
-                progress_watch.restart();
-                sent = sendProgress();
-                break;
+                sendProgress();
+                after_send_progress.restart();
             }
-            query_watch.restart();
         }
-        if (!sent)
-        {
-            sendDetails();
-        }
+
+        sendTotals(executor->getTotalsBlock());
+        sendExtremes(executor->getExtremesBlock());
     }
 
-    void CallDataQuery::sendDetails()
-    {
-        bool sent = false;
-        while (!sent)
-        {
-            switch (details_status)
-            {
-                case SEND_TOTALS: {
-                    sent = sendTotals(executor->getTotalsBlock());
-                    details_status = SEND_EXTREMES;
-                    break;
-                }
-                case SEND_EXTREMES: {
-                    sent = sendExtremes(executor->getExtremesBlock());
-                    details_status = FINISH;
-                    break;
-                }
-                case FINISH: {
-                    sent = true;
-                    finishQuery();
-                    break;
-                }
-            }
-        }
-    }
-
-    void CallDataQuery::finishQuery()
+    void Call::finishQuery()
     {
         io.onFinish();
         query_scope->logPeakMemoryUsage();
-        status = FINISH_QUERY;
         out->finalize();
+        waitForSync();
     }
 
-    bool CallDataQuery::sendData(const Block & block)
+    void Call::onException(const Exception & exception)
+    {
+        io.onException();
+
+        if (responder)
+        {
+            try
+            {
+                sendException(exception);
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Couldn't send exception information to the client");
+            }
+        }
+
+        close();
+    }
+
+    void Call::close()
+    {
+        responder.reset();
+        io = {};
+        out.reset();
+        query_scope.reset();
+        query_context.reset();
+    }
+
+    void Call::sendOutput(const Block & block)
     {
         out->setResponse([](const String & buffer)
         {
@@ -434,14 +493,14 @@ namespace
             tmp_response.set_output(buffer);
             return tmp_response;
         });
-        auto my_block_out_stream = query_context->getOutputFormat(format_output, *out, block);
+        auto my_block_out_stream = query_context->getOutputFormat(output_format, *out, block);
         my_block_out_stream->write(block);
         my_block_out_stream->flush();
         out->next();
-        return true;
+        waitForSync();
     }
 
-    bool CallDataQuery::sendProgress()
+    void Call::sendProgress()
     {
         auto grpc_progress = [](const String & buffer)
         {
@@ -467,10 +526,10 @@ namespace
         auto increment = progress.fetchAndResetPiecewiseAtomically();
         increment.write(*out, DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO);
         out->next();
-        return true;
+        waitForSync();
     }
 
-    bool CallDataQuery::sendTotals(const Block & totals)
+    void Call::sendTotals(const Block & totals)
     {
         if (totals)
         {
@@ -480,16 +539,15 @@ namespace
                 tmp_response.set_totals(buffer);
                 return tmp_response;
             });
-            auto my_block_out_stream = query_context->getOutputFormat(format_output, *out, totals);
+            auto my_block_out_stream = query_context->getOutputFormat(output_format, *out, totals);
             my_block_out_stream->write(totals);
             my_block_out_stream->flush();
             out->next();
-            return true;
+            waitForSync();
         }
-        return false;
     }
 
-    bool CallDataQuery::sendExtremes(const Block & extremes)
+    void Call::sendExtremes(const Block & extremes)
     {
         if (extremes)
         {
@@ -499,97 +557,200 @@ namespace
                 tmp_response.set_extremes(buffer);
                 return tmp_response;
             });
-            auto my_block_out_stream = query_context->getOutputFormat(format_output, *out, extremes);
+            auto my_block_out_stream = query_context->getOutputFormat(output_format, *out, extremes);
             my_block_out_stream->write(extremes);
             my_block_out_stream->flush();
             out->next();
-            return true;
+            waitForSync();
         }
-        return false;
+    }
+
+    void Call::sendException(const Exception & exception)
+    {
+        auto & grpc_exception = *result.mutable_exception();
+        grpc_exception.set_code(exception.code());
+        grpc_exception.set_message(getExceptionMessage(exception, send_exception_with_stacktrace, true));
+        responder->writeAndFinish(result, {});
+        waitForSync();
     }
 }
 
 
-GRPCServer::GRPCServer(IServer & iserver_, Poco::ThreadPool & thread_pool_, const Poco::Net::SocketAddress & address_to_listen_)
-    : iserver(iserver_), thread_pool(thread_pool_), address_to_listen(address_to_listen_), log(&Poco::Logger::get("GRPCServer"))
+class GRPCServer::Runner
+{
+public:
+    explicit Runner(GRPCServer & owner_) : owner(owner_) {}
+
+    ~Runner()
+    {
+        if (queue_thread.joinable())
+            queue_thread.join();
+    }
+
+    void start()
+    {
+        startReceivingNewCalls();
+
+        /// We run queue in a separate thread.
+        auto runner_function = [this]
+        {
+            try
+            {
+                run();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("GRPCServer");
+            }
+        };
+        queue_thread = ThreadFromGlobalPool{runner_function};
+    }
+
+    void stop() { stopReceivingNewCalls(); }
+
+    size_t getNumCurrentCalls() const
+    {
+        std::lock_guard lock{mutex};
+        return current_calls.size();
+    }
+
+private:
+    void startReceivingNewCalls()
+    {
+        std::lock_guard lock{mutex};
+        makeResponderForNewCall();
+    }
+
+    void makeResponderForNewCall()
+    {
+        /// `mutex` is already locked.
+        responder_for_new_call = std::make_unique<Responder>();
+        responder_for_new_call->start(owner.grpc_service, *owner.queue, *owner.queue);
+    }
+
+    void stopReceivingNewCalls()
+    {
+        std::lock_guard lock{mutex};
+        should_stop = true;
+    }
+
+    void onNewCall(bool responder_started)
+    {
+        /// `mutex` is already locked.
+        auto responder = std::move(responder_for_new_call);
+        if (should_stop)
+            return;
+        makeResponderForNewCall();
+        if (responder_started)
+        {
+            /// Connection established and the responder has been started.
+            /// So we pass this responder to a Call and make another responder for next connection.
+            auto new_call = std::make_unique<Call>(std::move(responder), owner.iserver, owner.log);
+            auto * new_call_ptr = new_call.get();
+            current_calls[new_call_ptr] = std::move(new_call);
+            new_call_ptr->start([this, new_call_ptr]() { onFinishCall(new_call_ptr); });
+        }
+    }
+
+    void onFinishCall(Call * call)
+    {
+        /// Called on call_thread. That's why we can't destroy the `call` right now
+        /// (thread can't join to itself). Thus here we only move the `call` from
+        /// `current_call` to `finished_calls` and run() will actually destroy the `call`.
+        std::lock_guard lock{mutex};
+        auto it = current_calls.find(call);
+        finished_calls.push_back(std::move(it->second));
+        current_calls.erase(it);
+    }
+
+    void run()
+    {
+        while (true)
+        {
+            {
+                std::lock_guard lock{mutex};
+                finished_calls.clear(); /// Destroy finished calls.
+
+                /// If (should_stop == true) we continue processing until there is no active calls.
+                if (should_stop && current_calls.empty() && !responder_for_new_call)
+                    break;
+            }
+
+            bool ok = false;
+            void * tag = nullptr;
+            if (!owner.queue->Next(&tag, &ok))
+            {
+                /// Queue shutted down.
+                break;
+            }
+
+            {
+                std::lock_guard lock{mutex};
+                if (tag == responder_for_new_call.get())
+                {
+                    onNewCall(ok);
+                    continue;
+                }
+            }
+
+            /// Continue handling a Call.
+            auto call = static_cast<Call *>(tag);
+            call->sync(ok);
+        }
+    }
+
+    GRPCServer & owner;
+    ThreadFromGlobalPool queue_thread;
+    std::unique_ptr<Responder> responder_for_new_call;
+    std::map<Call *, std::unique_ptr<Call>> current_calls;
+    std::vector<std::unique_ptr<Call>> finished_calls;
+    bool should_stop = false;
+    mutable std::mutex mutex;
+};
+
+
+GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
+    : iserver(iserver_), address_to_listen(address_to_listen_), log(&Poco::Logger::get("GRPCServer"))
 {}
 
-GRPCServer::~GRPCServer() = default;
+GRPCServer::~GRPCServer()
+{
+    /// Server should be shutdown before CompletionQueue.
+    if (grpc_server)
+        grpc_server->Shutdown();
+
+    /// Completion Queue should be shutdown before destroying the runner,
+    /// because the runner is now probably executing CompletionQueue::Next() on queue_thread
+    /// which is blocked until an event is available or the queue is shutting down.
+    if (queue)
+        queue->Shutdown();
+
+    runner.reset();
+}
 
 void GRPCServer::start()
 {
     grpc::ServerBuilder builder;
     builder.AddListeningPort(address_to_listen.toString(), grpc::InsecureServerCredentials());
-    //keepalive pings default values
     builder.RegisterService(&grpc_service);
     builder.SetMaxReceiveMessageSize(INT_MAX);
-    notification_cq = builder.AddCompletionQueue();
-    new_call_cq = builder.AddCompletionQueue();
+
+    queue = builder.AddCompletionQueue();
     grpc_server = builder.BuildAndStart();
-    thread_pool.start(*this);
+    runner = std::make_unique<Runner>(*this);
+    runner->start();
 }
+
 
 void GRPCServer::stop()
 {
-    grpc_server->Shutdown();
-    notification_cq->Shutdown();
-    new_call_cq->Shutdown();
+    /// Stop receiving new calls.
+    runner->stop();
 }
 
 size_t GRPCServer::currentConnections() const
 {
-    return 0; //TODO
-}
-
-void GRPCServer::run()
-{
-    HandleRpcs();
-}
-
-void GRPCServer::HandleRpcs()
-{
-    new CallDataQuery(&grpc_service, notification_cq.get(), new_call_cq.get(), &iserver, log);
-
-    // rpc event "read done / write done / close(already connected)" call-back by this completion queue
-    auto handle_calls_completion = [&]()
-    {
-        void * tag;
-        bool ok;
-        while (true)
-        {
-            GPR_ASSERT(new_call_cq->Next(&tag, &ok));
-            if (!ok)
-            {
-                LOG_WARNING(log, "Client has gone away.");
-                delete static_cast<CallDataQuery *>(tag);
-                continue;
-            }
-            auto thread = ThreadFromGlobalPool{&CallDataQuery::respond, static_cast<CallDataQuery *>(tag)};
-            thread.detach();
-        }
-    };
-    // rpc event "new connection / close(waiting for connect)" call-back by this completion queue
-    auto handle_requests_completion = [&] {
-        void * tag;
-        bool ok;
-        while (true)
-        {
-            GPR_ASSERT(notification_cq->Next(&tag, &ok));
-            if (!ok)
-            {
-                LOG_WARNING(log, "Client has gone away.");
-                delete static_cast<CallDataQuery *>(tag);
-                continue;
-            }
-            auto thread = ThreadFromGlobalPool{&CallDataQuery::respond, static_cast<CallDataQuery *>(tag)};
-            thread.detach();
-        }
-    };
-
-    auto notification_cq_thread = ThreadFromGlobalPool{handle_requests_completion};
-    auto new_call_cq_thread = ThreadFromGlobalPool{handle_calls_completion};
-    notification_cq_thread.detach();
-    new_call_cq_thread.detach();
+    return runner->getNumCurrentCalls();
 }
 
 }
