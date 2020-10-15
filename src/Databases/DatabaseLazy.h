@@ -22,6 +22,10 @@ public:
 
     String getEngineName() const override { return "Lazy"; }
 
+    bool canContainMergeTreeTables() const override { return false; }
+
+    bool canContainDistributedTables() const override { return false; }
+
     void loadStoredObjects(
         Context & context,
         bool has_force_restore_data_flag, bool force_attach) override;
