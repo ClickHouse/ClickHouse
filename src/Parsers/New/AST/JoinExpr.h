@@ -23,6 +23,21 @@ class JoinConstraintClause : public SimpleClause<ColumnExprList>
         const ConstraintType type;
 };
 
+class SampleClause : public INode
+{
+    public:
+        SampleClause(PtrTo<RatioExpr> ratio_, PtrTo<RatioExpr> offset_);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            RATIO = 0,   // RatioExpr
+            OFFSET = 1,  // RatioExpr (optional)
+        };
+};
+
 class JoinExpr : public INode
 {
     public:
@@ -56,7 +71,7 @@ class JoinExpr : public INode
             LOCAL,
         };
 
-        static PtrTo<JoinExpr> createTableExpr(PtrTo<TableExpr> expr, bool final);
+        static PtrTo<JoinExpr> createTableExpr(PtrTo<TableExpr> expr, PtrTo<SampleClause> clause, bool final);
         static PtrTo<JoinExpr> createJoinOp(PtrTo<JoinExpr> left_expr, PtrTo<JoinExpr> right_expr, JoinOpType op, JoinOpMode mode, PtrTo<JoinConstraintClause> clause);
 
         ASTPtr convertToOld() const override;  // returns topologically sorted elements as ASTExpressionList
@@ -65,6 +80,7 @@ class JoinExpr : public INode
         enum ChildIndex : UInt8
         {
             TABLE = 0,       // TableExpr
+            SAMPLE = 1,      // SampleClause (optional)
             LEFT_EXPR = 0,   // JoinExpr
             RIGHT_EXPR = 1,  // JoinExpr
             CONSTRAINT = 2,  // JoinConstraintClause
@@ -75,10 +91,10 @@ class JoinExpr : public INode
             JOIN_OP,
         };
 
-        ExprType expr_type;
-        JoinOpType op_type = JoinOpType::INNER;
-        JoinOpMode op_mode = JoinOpMode::DEFAULT;
-        bool final = false;
+        const ExprType expr_type;
+        const JoinOpType op_type = JoinOpType::INNER;
+        const JoinOpMode op_mode = JoinOpMode::DEFAULT;
+        const bool final = false;
 
         JoinExpr(ExprType type, bool final, PtrList exprs);
         JoinExpr(ExprType type, JoinOpType op, JoinOpMode mode, PtrList exprs);

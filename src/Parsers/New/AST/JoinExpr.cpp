@@ -1,10 +1,10 @@
 #include <Parsers/New/AST/JoinExpr.h>
 
-#include <Parsers/New/AST/TableExpr.h>
-#include <Parsers/New/ParseTreeVisitor.h>
-
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/New/AST/RatioExpr.h>
+#include <Parsers/New/AST/TableExpr.h>
+#include <Parsers/New/ParseTreeVisitor.h>
 
 
 namespace DB::ErrorCodes
@@ -19,14 +19,29 @@ JoinConstraintClause::JoinConstraintClause(ConstraintType type_, PtrTo<ColumnExp
 {
 }
 
-// static
-PtrTo<JoinExpr> JoinExpr::createTableExpr(PtrTo<TableExpr> expr, bool final)
+SampleClause::SampleClause(PtrTo<RatioExpr> ratio, PtrTo<RatioExpr> offset) : INode{ratio, offset}
 {
-    return PtrTo<JoinExpr>(new JoinExpr(JoinExpr::ExprType::TABLE, final, {expr}));
+}
+
+ASTPtr SampleClause::convertToOld() const
+{
+    auto list = std::make_shared<ASTExpressionList>();
+
+    list->children.push_back(get(RATIO)->convertToOld());
+    if (has(OFFSET)) list->children.push_back(get(OFFSET)->convertToOld());
+
+    return list;
 }
 
 // static
-PtrTo<JoinExpr> JoinExpr::createJoinOp(PtrTo<JoinExpr> left_expr, PtrTo<JoinExpr> right_expr, JoinOpType op, JoinOpMode mode, PtrTo<JoinConstraintClause> clause)
+PtrTo<JoinExpr> JoinExpr::createTableExpr(PtrTo<TableExpr> expr, PtrTo<SampleClause> clause, bool final)
+{
+    return PtrTo<JoinExpr>(new JoinExpr(JoinExpr::ExprType::TABLE, final, {expr, clause}));
+}
+
+// static
+PtrTo<JoinExpr> JoinExpr::createJoinOp(
+    PtrTo<JoinExpr> left_expr, PtrTo<JoinExpr> right_expr, JoinOpType op, JoinOpMode mode, PtrTo<JoinConstraintClause> clause)
 {
     return PtrTo<JoinExpr>(new JoinExpr(ExprType::JOIN_OP, op, mode, {left_expr, right_expr, clause}));
 }
@@ -67,6 +82,19 @@ ASTPtr JoinExpr::convertToOld() const
         element->children.emplace_back(get(TABLE)->convertToOld());
         element->table_expression = element->children.back();
         element->table_expression->as<ASTTableExpression>()->final = final;
+        if (has(SAMPLE))
+        {
+            auto old_list = get(SAMPLE)->convertToOld();
+
+            element->table_expression->as<ASTTableExpression>()->sample_size = old_list->children[0];
+            element->table_expression->children.push_back(element->table_expression->as<ASTTableExpression>()->sample_size);
+
+            if (old_list->children.size() > 1)
+            {
+                element->table_expression->as<ASTTableExpression>()->sample_offset = old_list->children[0];
+                element->table_expression->children.push_back(element->table_expression->as<ASTTableExpression>()->sample_offset);
+            }
+        }
 
         list->children.emplace_back(element);
     }
@@ -236,7 +264,8 @@ antlrcpp::Any ParseTreeVisitor::visitJoinExprParens(ClickHouseParser::JoinExprPa
 
 antlrcpp::Any ParseTreeVisitor::visitJoinExprTable(ClickHouseParser::JoinExprTableContext *ctx)
 {
-    return JoinExpr::createTableExpr(visit(ctx->tableExpr()), !!ctx->FINAL());
+    auto sample = ctx->sampleClause() ? visit(ctx->sampleClause()).as<PtrTo<SampleClause>>() : nullptr;
+    return JoinExpr::createTableExpr(visit(ctx->tableExpr()), sample, !!ctx->FINAL());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinOpCross(ClickHouseParser::JoinOpCrossContext *ctx)
@@ -286,6 +315,12 @@ antlrcpp::Any ParseTreeVisitor::visitJoinOpLeftRight(ClickHouseParser::JoinOpLef
         return JoinExpr::JoinOpType::RIGHT;
     }
     __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitSampleClause(ClickHouseParser::SampleClauseContext *ctx)
+{
+    auto offset = ctx->ratioExpr().size() > 1 ? visit(ctx->ratioExpr(1)).as<PtrTo<RatioExpr>>() : nullptr;
+    return std::make_shared<SampleClause>(visit(ctx->ratioExpr(0)), offset);
 }
 
 }

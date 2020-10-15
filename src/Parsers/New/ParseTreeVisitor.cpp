@@ -84,7 +84,7 @@ antlrcpp::Any ParseTreeVisitor::visitShowDatabasesStmt(ClickHouseParser::ShowDat
 
     auto system = std::make_shared<DatabaseIdentifier>(std::make_shared<Identifier>("system"));
     auto databases = std::make_shared<TableIdentifier>(system, std::make_shared<Identifier>("databases"));
-    auto system_tables = JoinExpr::createTableExpr(TableExpr::createIdentifier(databases), false);
+    auto system_tables = JoinExpr::createTableExpr(TableExpr::createIdentifier(databases), nullptr, false);
 
     select_stmt->setFromClause(std::make_shared<FromClause>(system_tables));
 
@@ -123,7 +123,7 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
 
     auto system = std::make_shared<DatabaseIdentifier>(std::make_shared<Identifier>("system"));
     auto tables = std::make_shared<TableIdentifier>(system, std::make_shared<Identifier>("tables"));
-    auto system_tables = JoinExpr::createTableExpr(TableExpr::createIdentifier(tables), false);
+    auto system_tables = JoinExpr::createTableExpr(TableExpr::createIdentifier(tables), nullptr, false);
 
     select_stmt->setFromClause(std::make_shared<FromClause>(system_tables));
     select_stmt->setWhereClause(

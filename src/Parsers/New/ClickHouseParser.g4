@@ -152,7 +152,6 @@ selectStmt:
     withClause?
     SELECT DISTINCT? columnExprList
     fromClause?
-    sampleClause?
     arrayJoinClause?
     prewhereClause?
     whereClause?
@@ -166,7 +165,6 @@ selectStmt:
 
 withClause: WITH columnExprList;
 fromClause: FROM joinExpr;
-sampleClause: SAMPLE ratioExpr (OFFSET ratioExpr)?;
 arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 prewhereClause: PREWHERE columnExpr;
 whereClause: WHERE columnExpr;
@@ -180,7 +178,7 @@ settingsClause: SETTINGS settingExprList;
 joinExpr
     : joinExpr (GLOBAL | LOCAL)? joinOp? JOIN joinExpr joinConstraintClause  # JoinExprOp
     | joinExpr joinOpCross joinExpr                                          # JoinExprCrossOp
-    | tableExpr FINAL?                                                       # JoinExprTable
+    | tableExpr FINAL? sampleClause?                                         # JoinExprTable
     | LPAREN joinExpr RPAREN                                                 # JoinExprParens
     ;
 joinOp
@@ -200,6 +198,7 @@ joinConstraintClause
     | USING columnExprList
     ;
 
+sampleClause: SAMPLE ratioExpr (OFFSET ratioExpr)?;
 limitExpr: INTEGER_LITERAL ((COMMA | OFFSET) INTEGER_LITERAL)?;
 orderExprList: orderExpr (COMMA orderExpr)*;
 orderExpr: columnExpr (ASCENDING | DESCENDING | DESC)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;

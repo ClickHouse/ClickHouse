@@ -28,16 +28,6 @@ ASTPtr FromClause::convertToOld() const
     return old_tables;
 }
 
-// SAMPLE Clause
-
-SampleClause::SampleClause(PtrTo<RatioExpr> ratio_) : ratio(ratio_)
-{
-}
-
-SampleClause::SampleClause(PtrTo<RatioExpr> ratio_, PtrTo<RatioExpr> offset_) : ratio(ratio_), offset(offset_)
-{
-}
-
 // ARRAY JOIN Clause
 
 ArrayJoinClause::ArrayJoinClause(PtrTo<ColumnExprList> expr_list, bool left_) : INode{expr_list}, left(left_)
@@ -114,11 +104,6 @@ void SelectStmt::setFromClause(PtrTo<FromClause> clause)
     set(FROM, clause);
 }
 
-void SelectStmt::setSampleClause(PtrTo<SampleClause> clause)
-{
-    set(SAMPLE, clause);
-}
-
 void SelectStmt::setArrayJoinClause(PtrTo<ArrayJoinClause> clause)
 {
     set(ARRAY_JOIN, clause);
@@ -174,7 +159,6 @@ ASTPtr SelectStmt::convertToOld() const
 
     if (has(WITH)) old_select->setExpression(ASTSelectQuery::Expression::WITH, get(WITH)->convertToOld());
     if (has(FROM)) old_select->setExpression(ASTSelectQuery::Expression::TABLES, get(FROM)->convertToOld());
-    // TODO: SAMPLE
     if (has(ARRAY_JOIN)) old_select->tables()->children.push_back(get(ARRAY_JOIN)->convertToOld());
     if (has(PREWHERE)) old_select->setExpression(ASTSelectQuery::Expression::PREWHERE, get(PREWHERE)->convertToOld());
     if (has(WHERE)) old_select->setExpression(ASTSelectQuery::Expression::WHERE, get(WHERE)->convertToOld());
@@ -249,12 +233,6 @@ antlrcpp::Any ParseTreeVisitor::visitFromClause(ClickHouseParser::FromClauseCont
     return std::make_shared<FromClause>(visit(ctx->joinExpr()).as<PtrTo<JoinExpr>>());
 }
 
-antlrcpp::Any ParseTreeVisitor::visitSampleClause(ClickHouseParser::SampleClauseContext *ctx)
-{
-    if (ctx->OFFSET()) return std::make_shared<SampleClause>(visit(ctx->ratioExpr(0)), visit(ctx->ratioExpr(1)));
-    else return std::make_shared<SampleClause>(visit(ctx->ratioExpr(0)).as<PtrTo<RatioExpr>>());
-}
-
 antlrcpp::Any ParseTreeVisitor::visitArrayJoinClause(ClickHouseParser::ArrayJoinClauseContext *ctx)
 {
     return std::make_shared<ArrayJoinClause>(visit(ctx->columnExprList()), !!ctx->LEFT());
@@ -306,7 +284,6 @@ antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCont
 
     if (ctx->withClause()) select_stmt->setWithClause(visit(ctx->withClause()));
     if (ctx->fromClause()) select_stmt->setFromClause(visit(ctx->fromClause()));
-    if (ctx->sampleClause()) select_stmt->setSampleClause(visit(ctx->sampleClause()));
     if (ctx->arrayJoinClause()) select_stmt->setArrayJoinClause(visit(ctx->arrayJoinClause()));
     if (ctx->prewhereClause()) select_stmt->setPrewhereClause(visit(ctx->prewhereClause()));
     if (ctx->whereClause()) select_stmt->setWhereClause(visit(ctx->whereClause()));

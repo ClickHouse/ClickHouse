@@ -140,8 +140,6 @@ public:
 
     virtual antlrcpp::Any visitFromClause(ClickHouseParser::FromClauseContext *context) = 0;
 
-    virtual antlrcpp::Any visitSampleClause(ClickHouseParser::SampleClauseContext *context) = 0;
-
     virtual antlrcpp::Any visitArrayJoinClause(ClickHouseParser::ArrayJoinClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitPrewhereClause(ClickHouseParser::PrewhereClauseContext *context) = 0;
@@ -177,6 +175,8 @@ public:
     virtual antlrcpp::Any visitJoinOpCross(ClickHouseParser::JoinOpCrossContext *context) = 0;
 
     virtual antlrcpp::Any visitJoinConstraintClause(ClickHouseParser::JoinConstraintClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitSampleClause(ClickHouseParser::SampleClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitLimitExpr(ClickHouseParser::LimitExprContext *context) = 0;
 

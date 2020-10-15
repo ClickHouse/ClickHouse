@@ -26,7 +26,7 @@ public:
 
     Rational ratio;
 
-    ASTSampleRatio(Rational & ratio_) : ratio(ratio_) {}
+    explicit ASTSampleRatio(const Rational & ratio_) : ratio(ratio_) {}
 
     String getID(char delim) const override { return "SampleRatio" + (delim + toString(ratio)); }
 

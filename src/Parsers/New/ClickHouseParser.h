@@ -60,11 +60,11 @@ public:
     RuleDescribeStmt = 23, RuleDropStmt = 24, RuleExistsStmt = 25, RuleInsertStmt = 26, 
     RuleColumnsClause = 27, RuleDataClause = 28, RuleOptimizeStmt = 29, 
     RuleRenameStmt = 30, RuleSelectUnionStmt = 31, RuleSelectStmtWithParens = 32, 
-    RuleSelectStmt = 33, RuleWithClause = 34, RuleFromClause = 35, RuleSampleClause = 36, 
-    RuleArrayJoinClause = 37, RulePrewhereClause = 38, RuleWhereClause = 39, 
-    RuleGroupByClause = 40, RuleHavingClause = 41, RuleOrderByClause = 42, 
-    RuleLimitByClause = 43, RuleLimitClause = 44, RuleSettingsClause = 45, 
-    RuleJoinExpr = 46, RuleJoinOp = 47, RuleJoinOpCross = 48, RuleJoinConstraintClause = 49, 
+    RuleSelectStmt = 33, RuleWithClause = 34, RuleFromClause = 35, RuleArrayJoinClause = 36, 
+    RulePrewhereClause = 37, RuleWhereClause = 38, RuleGroupByClause = 39, 
+    RuleHavingClause = 40, RuleOrderByClause = 41, RuleLimitByClause = 42, 
+    RuleLimitClause = 43, RuleSettingsClause = 44, RuleJoinExpr = 45, RuleJoinOp = 46, 
+    RuleJoinOpCross = 47, RuleJoinConstraintClause = 48, RuleSampleClause = 49, 
     RuleLimitExpr = 50, RuleOrderExprList = 51, RuleOrderExpr = 52, RuleRatioExpr = 53, 
     RuleSettingExprList = 54, RuleSettingExpr = 55, RuleSetStmt = 56, RuleShowStmt = 57, 
     RuleSystemStmt = 58, RuleTruncateStmt = 59, RuleUseStmt = 60, RuleColumnTypeExpr = 61, 
@@ -124,7 +124,6 @@ public:
   class SelectStmtContext;
   class WithClauseContext;
   class FromClauseContext;
-  class SampleClauseContext;
   class ArrayJoinClauseContext;
   class PrewhereClauseContext;
   class WhereClauseContext;
@@ -138,6 +137,7 @@ public:
   class JoinOpContext;
   class JoinOpCrossContext;
   class JoinConstraintClauseContext;
+  class SampleClauseContext;
   class LimitExprContext;
   class OrderExprListContext;
   class OrderExprContext;
@@ -1098,7 +1098,6 @@ public:
     WithClauseContext *withClause();
     antlr4::tree::TerminalNode *DISTINCT();
     FromClauseContext *fromClause();
-    SampleClauseContext *sampleClause();
     ArrayJoinClauseContext *arrayJoinClause();
     PrewhereClauseContext *prewhereClause();
     WhereClauseContext *whereClause();
@@ -1142,21 +1141,6 @@ public:
   };
 
   FromClauseContext* fromClause();
-
-  class  SampleClauseContext : public antlr4::ParserRuleContext {
-  public:
-    SampleClauseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *SAMPLE();
-    std::vector<RatioExprContext *> ratioExpr();
-    RatioExprContext* ratioExpr(size_t i);
-    antlr4::tree::TerminalNode *OFFSET();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  SampleClauseContext* sampleClause();
 
   class  ArrayJoinClauseContext : public antlr4::ParserRuleContext {
   public:
@@ -1317,6 +1301,7 @@ public:
 
     TableExprContext *tableExpr();
     antlr4::tree::TerminalNode *FINAL();
+    SampleClauseContext *sampleClause();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -1425,6 +1410,21 @@ public:
   };
 
   JoinConstraintClauseContext* joinConstraintClause();
+
+  class  SampleClauseContext : public antlr4::ParserRuleContext {
+  public:
+    SampleClauseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *SAMPLE();
+    std::vector<RatioExprContext *> ratioExpr();
+    RatioExprContext* ratioExpr(size_t i);
+    antlr4::tree::TerminalNode *OFFSET();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  SampleClauseContext* sampleClause();
 
   class  LimitExprContext : public antlr4::ParserRuleContext {
   public:

@@ -10,6 +10,8 @@ class RatioExpr : public INode
 {
     public:
         explicit RatioExpr(PtrTo<NumberLiteral> num1, PtrTo<NumberLiteral> num2 = nullptr);
+
+        // TODO: ASTPtr convertToOld() const override;
 };
 
 }

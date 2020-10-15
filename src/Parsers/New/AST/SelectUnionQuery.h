@@ -28,16 +28,6 @@ class FromClause : public INode
         };
 };
 
-class SampleClause : public INode
-{
-    public:
-        explicit SampleClause(PtrTo<RatioExpr> ratio_);
-        SampleClause(PtrTo<RatioExpr> ratio_, PtrTo<RatioExpr> offset_);
-
-    private:
-        PtrTo<RatioExpr> ratio, offset;
-};
-
 class ArrayJoinClause : public INode
 {
     public:
@@ -102,7 +92,6 @@ class SelectStmt : public INode
 
         void setWithClause(PtrTo<WithClause> clause);
         void setFromClause(PtrTo<FromClause> clause);
-        void setSampleClause(PtrTo<SampleClause> clause);
         void setArrayJoinClause(PtrTo<ArrayJoinClause> clause);
         void setPrewhereClause(PtrTo<PrewhereClause> clause);
         void setWhereClause(PtrTo<WhereClause> clause);
@@ -121,7 +110,6 @@ class SelectStmt : public INode
             COLUMNS = 0,  // ColumnExprList
             WITH,         // WithClause (optional)
             FROM,         // FromClause (optional)
-            SAMPLE,       // SampleClause (optional)
             ARRAY_JOIN,   // ArrayJoinClause (optional)
             PREWHERE,     // PrewhereClause (optional)
             WHERE,        // WhereClause (optional)
