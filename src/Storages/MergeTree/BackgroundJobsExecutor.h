@@ -51,8 +51,6 @@ struct JobAndPool
 
 class IBackgroundJobExecutor
 {
-protected:
-    MergeTreeData & data;
     Context & global_context;
 private:
     String task_name;
@@ -67,13 +65,6 @@ private:
     BackgroundSchedulePool::TaskHolder scheduling_task;
 
 public:
-    IBackgroundJobExecutor(
-        MergeTreeData & data_,
-        Context & global_context_,
-        const String & task_name_,
-        const TaskSleepSettings & sleep_settings_,
-        const std::vector<PoolConfig> & pools_configs_);
-
     void start();
     void triggerTask();
     void finish();
@@ -81,7 +72,14 @@ public:
     virtual ~IBackgroundJobExecutor();
 
 protected:
+    IBackgroundJobExecutor(
+        Context & global_context_,
+        const TaskSleepSettings & sleep_settings_,
+        const std::vector<PoolConfig> & pools_configs_);
+
+    virtual String getBackgroundJobName() const = 0;
     virtual std::optional<JobAndPool> getBackgroundJob() = 0;
+
 private:
     void jobExecutingTask();
     void scheduleTask(bool nothing_to_do);
@@ -89,23 +87,29 @@ private:
 
 class BackgroundJobsExecutor final : public IBackgroundJobExecutor
 {
+private:
+    MergeTreeData & data;
 public:
     BackgroundJobsExecutor(
         MergeTreeData & data_,
         Context & global_context_);
 
 protected:
+    String getBackgroundJobName() const override;
     std::optional<JobAndPool> getBackgroundJob() override;
 };
 
 class BackgroundMovesExecutor final : public IBackgroundJobExecutor
 {
+private:
+    MergeTreeData & data;
 public:
     BackgroundMovesExecutor(
         MergeTreeData & data_,
         Context & global_context_);
 
 protected:
+    String getBackgroundJobName() const override;
     std::optional<JobAndPool> getBackgroundJob() override;
 };
 

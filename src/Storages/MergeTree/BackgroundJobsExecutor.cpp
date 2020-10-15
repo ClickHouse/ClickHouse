@@ -9,14 +9,10 @@ namespace DB
 {
 
 IBackgroundJobExecutor::IBackgroundJobExecutor(
-        MergeTreeData & data_,
         Context & global_context_,
-        const String & task_name_,
         const TaskSleepSettings & sleep_settings_,
         const std::vector<PoolConfig> & pools_configs_)
-    : data(data_)
-    , global_context(global_context_)
-    , task_name(task_name_)
+    : global_context(global_context_)
     , sleep_settings(sleep_settings_)
     , rng(randomSeed())
 {
@@ -30,7 +26,7 @@ IBackgroundJobExecutor::IBackgroundJobExecutor(
 namespace
 {
 
-bool incrementIfLess(std::atomic<long> & atomic_value, long max_value)
+bool incrementIfLess(std::atomic<Int64> & atomic_value, Int64 max_value)
 {
     auto value = atomic_value.load(std::memory_order_relaxed);
     while (value < max_value)
@@ -120,7 +116,7 @@ void IBackgroundJobExecutor::start()
     if (!scheduling_task)
     {
         scheduling_task = global_context.getSchedulePool().createTask(
-            data.getStorageID().getFullTableName() + task_name, [this]{ jobExecutingTask(); });
+            getBackgroundJobName(), [this]{ jobExecutingTask(); });
     }
 
     scheduling_task->activateAndSchedule();
@@ -151,12 +147,16 @@ BackgroundJobsExecutor::BackgroundJobsExecutor(
        MergeTreeData & data_,
        Context & global_context_)
     : IBackgroundJobExecutor(
-        data_,
         global_context_,
-        "(dataProcessingTask)",
         global_context_.getBackgroundProcessingTaskSleepSettings(),
         {PoolConfig{PoolType::MERGE_MUTATE, global_context_.getSettingsRef().background_pool_size, CurrentMetrics::BackgroundPoolTask}})
+    , data(data_)
 {
+}
+
+String BackgroundJobsExecutor::getBackgroundJobName() const
+{
+    return data.getStorageID().getFullTableName() + " (dataProcessingTask)";
 }
 
 std::optional<JobAndPool> BackgroundJobsExecutor::getBackgroundJob()
@@ -171,12 +171,16 @@ BackgroundMovesExecutor::BackgroundMovesExecutor(
        MergeTreeData & data_,
        Context & global_context_)
     : IBackgroundJobExecutor(
-        data_,
         global_context_,
-        "(dataMovingTask)",
         global_context_.getBackgroundMoveTaskSleepSettings(),
-        {PoolConfig{PoolType::MOVE, global_context_.getSettingsRef().background_move_pool_size, CurrentMetrics::BackgroundMovePoolTask}})
+      {PoolConfig{PoolType::MOVE, global_context_.getSettingsRef().background_move_pool_size, CurrentMetrics::BackgroundMovePoolTask}})
+    , data(data_)
 {
+}
+
+String BackgroundMovesExecutor::getBackgroundJobName() const
+{
+    return data.getStorageID().getFullTableName() + " (dataMovingTask)";
 }
 
 std::optional<JobAndPool> BackgroundMovesExecutor::getBackgroundJob()
