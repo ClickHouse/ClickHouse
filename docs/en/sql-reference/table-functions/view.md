@@ -5,7 +5,7 @@ toc_title: view
 
 ## view {#view}
 
-Turns an subquery into a table. Used for implementing views (for more information, see the `CREATE VIEW query`). It does not store data, but only stores the specified `SELECT` query. When reading from a table, it runs this query (and deletes all unnecessary columns from the query).
+Turns a subquery into a table. The function implements views (for more information, see the [CREATE VIEW](https://clickhouse.tech/docs/en/sql-reference/statements/create/view/#create-view). The resulting table doesn't store data, but only stores the specified `SELECT` query. When reading from the table, ClickHouse executes the query and deletes all unnecessary columns from the result.
 
 **Syntax**
 
@@ -15,7 +15,7 @@ view(subquery)
 
 **Parameters**
 
--   `subquery` — Subquery of the `SELECT` type only.
+-   `subquery` — `SELECT` query.
 
 **Returned value**
 
@@ -51,7 +51,7 @@ Result:
 └──────────┘
 ```
 
-Function `view` can be used in `remote` or `cluster` table functions:
+You can use the `view` function as a parameter of the [remote](https://clickhouse.tech/docs/en/sql-reference/table-functions/remote/#remote-remotesecure) and [cluster](https://clickhouse.tech/docs/en/sql-reference/table-functions/cluster/#cluster-clusterallreplicas) table functions:
 
 ``` sql
 SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name))
