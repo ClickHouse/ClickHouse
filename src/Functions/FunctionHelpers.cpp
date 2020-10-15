@@ -51,7 +51,7 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
 }
 
 
-static ColumnsWithTypeAndName createBlockWithNestedColumnsImpl(const ColumnsWithTypeAndName & columns, const std::unordered_set<size_t> & args)
+static ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns)
 {
     ColumnsWithTypeAndName res;
     size_t num_columns = columns.size();
@@ -86,20 +86,6 @@ static ColumnsWithTypeAndName createBlockWithNestedColumnsImpl(const ColumnsWith
     }
 
     return res;
-}
-
-
-ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns, const ColumnNumbers & args)
-{
-    std::unordered_set<size_t> args_set(args.begin(), args.end());
-    return createBlockWithNestedColumnsImpl(columns, args_set);
-}
-
-ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns, const ColumnNumbers & args, size_t result)
-{
-    std::unordered_set<size_t> args_set(args.begin(), args.end());
-    args_set.insert(result);
-    return createBlockWithNestedColumnsImpl(columns, args_set);
 }
 
 void validateArgumentType(const IFunction & func, const DataTypes & arguments,

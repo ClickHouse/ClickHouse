@@ -35,10 +35,10 @@ public:
 
     virtual String getName() const = 0;
 
-    virtual void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
-    virtual void executeDryRun(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    virtual ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,  size_t input_rows_count) = 0;
+    virtual ColumnPtr executeDryRun(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
     {
-        execute(columns, arguments, result, input_rows_count);
+        return execute(arguments, result_type, input_rows_count);
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
@@ -87,9 +87,9 @@ public:
     virtual String getName() const = 0;
 
     virtual const DataTypes & getArgumentTypes() const = 0;
-    virtual const DataTypePtr & getReturnType() const = 0;
+    virtual const DataTypePtr & getResultType() const = 0;
 
-    virtual ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & sample_columns, const ColumnNumbers & arguments, size_t result) const = 0;
+    virtual ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -130,7 +130,7 @@ public:
 
     virtual String getName() const = 0;
 
-    virtual FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const = 0;
+    virtual FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const = 0;
 
     virtual DataTypePtr getReturnType(const DataTypes & /*arguments*/) const
     {
@@ -197,10 +197,10 @@ public:
 
     virtual String getName() const = 0;
 
-    virtual void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const = 0;
-    virtual void executeImplDryRun(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    virtual ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+    virtual ColumnPtr executeImplDryRun(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        executeImpl(columns, arguments, result, input_rows_count);
+        return executeImpl(arguments, result_type, input_rows_count);
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
