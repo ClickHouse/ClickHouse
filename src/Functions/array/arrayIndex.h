@@ -497,7 +497,7 @@ private:
         NullMaps maps;
         ResultColumnPtr result { ResultColumnType::create() };
 
-        inline void move_result() { block[result_pos].column = std::move(result); }
+        inline void moveResult() { block[result_pos].column = std::move(result); }
     };
 
     static inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
@@ -649,7 +649,8 @@ private:
         if (!left)
             return false;
 
-        const IColumn& right = *block[arguments[1]].column.get();
+        const ColumnPtr right_converted_ptr = block[arguments[1]].column->convertToFullColumnIfLowCardinality();
+        const IColumn& right = *right_converted_ptr.get();
 
         ExecutionData data = {
             left->getData(),
@@ -715,7 +716,7 @@ private:
         else
             return false;
 
-        data.move_result();
+        data.moveResult();
         return true;
     }
 
@@ -868,7 +869,7 @@ private:
             data.result->getData(),
             data.maps.first, data.maps.second);
 
-        data.move_result();
+        data.moveResult();
         return true;
     }
 
@@ -886,7 +887,8 @@ private:
         if (!left)
             return false;
 
-        const IColumn & right = *block[arguments[1]].column.get();
+        const ColumnPtr right_ptr = block[arguments[1]].column->convertToFullColumnIfLowCardinality();
+        const IColumn & right = *right_ptr.get();
 
         ExecutionData data = {
             *left, right, array->getOffsets(),
@@ -955,7 +957,7 @@ private:
         else
             return false;
 
-        data.move_result();
+        data.moveResult();
         return true;
     }
 
@@ -969,7 +971,8 @@ private:
 
         Array arr = col_array->getValue<Array>();
 
-        const IColumn * item_arg = block[arguments[1]].column.get();
+        const ColumnPtr right_ptr = block[arguments[1]].column->convertToFullColumnIfLowCardinality();
+        const IColumn * item_arg = right_ptr.get();
 
         if (isColumnConst(*item_arg))
         {
@@ -1044,7 +1047,9 @@ private:
             return false;
 
         const IColumn & col_nested = col->getData();
-        const IColumn & item_arg = *block[arguments[1]].column;
+
+        const ColumnPtr right_ptr = block[arguments[1]].column->convertToFullColumnIfLowCardinality();
+        const IColumn & item_arg = *right_ptr.get();
 
         auto col_res = ResultColumnType::create();
 
