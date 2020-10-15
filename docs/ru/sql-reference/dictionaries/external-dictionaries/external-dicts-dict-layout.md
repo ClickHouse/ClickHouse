@@ -2,7 +2,7 @@
 
 Словари можно размещать в памяти множеством способов.
 
-Рекомендуем [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) и [complex\_key\_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
+Рекомендуем [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
 
 Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе «[cache](#cache)».
 
@@ -47,14 +47,14 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
--   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
 -   [direct](#direct)
--   [range\_hashed](#range-hashed)
--   [complex\_key\_hashed](#complex-key-hashed)
--   [complex\_key\_cache](#complex-key-cache)
--   [complex\_key\_direct](#complex-key-direct)
--   [ip\_trie](#ip-trie)
+-   [range_hashed](#range-hashed)
+-   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_cache](#complex-key-cache)
+-   [complex_key_direct](#complex-key-direct)
+-   [ip_trie](#ip-trie)
 
 ### flat {#flat}
 
@@ -100,7 +100,7 @@ LAYOUT(FLAT())
 LAYOUT(HASHED())
 ```
 
-### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Аналогичен `hashed`, но при этом занимает меньше места в памяти и генерирует более высокую загрузку CPU.
 
@@ -118,7 +118,7 @@ LAYOUT(HASHED())
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex\_key\_hashed {#complex-key-hashed}
+### complex_key_hashed {#complex-key-hashed}
 
 Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `hashed`.
 
@@ -136,7 +136,7 @@ LAYOUT(SPARSE_HASHED())
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### range\_hashed {#range-hashed}
+### range_hashed {#range-hashed}
 
 Словарь хранится в оперативной памяти в виде хэш-таблицы с упорядоченным массивом диапазонов и соответствующих им значений.
 
@@ -290,7 +290,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 !!! warning "Warning"
     Не используйте в качестве источника ClickHouse, поскольку он медленно обрабатывает запросы со случайным чтением.
 
-### complex\_key\_cache {#complex-key-cache}
+### complex_key_cache {#complex-key-cache}
 
 Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `cache`.
 
@@ -316,11 +316,11 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 LAYOUT(DIRECT())
 ```
 
-### complex\_key\_direct {#complex-key-direct}
+### complex_key_direct {#complex-key-direct}
 
 Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `direct`.
 
-### ip\_trie {#ip-trie}
+### ip_trie {#ip-trie}
 
 Тип размещения предназначен для сопоставления префиксов сети (IP адресов) с метаданными, такими как ASN.
 

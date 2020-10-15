@@ -1,10 +1,8 @@
-#include <gtest/gtest.h>
-
 #include <Functions/abtesting.h>
 
 #if !defined(ARCADIA_BUILD) && USE_STATS
 
-#   include <stdio.h>
+#    include <gtest/gtest.h>
 
 using namespace DB;
 

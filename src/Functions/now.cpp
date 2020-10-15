@@ -29,9 +29,9 @@ public:
 
     String getName() const override { return "now"; }
 
-    void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block[result].column = DataTypeDateTime().createColumnConst(
+        columns[result].column = DataTypeDateTime().createColumnConst(
                 input_rows_count,
                 static_cast<UInt64>(time_value));
     }
@@ -58,7 +58,7 @@ public:
         return return_type;
     }
 
-    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionNow>(time_value);
     }

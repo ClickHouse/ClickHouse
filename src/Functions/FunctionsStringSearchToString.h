@@ -58,10 +58,10 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr column = block[arguments[0]].column;
-        const ColumnPtr column_needle = block[arguments[1]].column;
+        const ColumnPtr column = columns[arguments[0]].column;
+        const ColumnPtr column_needle = columns[arguments[1]].column;
 
         const ColumnConst * col_needle = typeid_cast<const ColumnConst *>(&*column_needle);
         if (!col_needle)
@@ -75,11 +75,11 @@ public:
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
             Impl::vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
 
-            block[result].column = std::move(col_res);
+            columns[result].column = std::move(col_res);
         }
         else
             throw Exception(
-                "Illegal column " + block[arguments[0]].column->getName() + " of argument of function " + getName(),
+                "Illegal column " + columns[arguments[0]].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
