@@ -352,16 +352,18 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
     /// where storage can be placed. See loadMutations().
     auto disk = getStoragePolicy()->getAnyDisk();
     Int64 version;
-    std::lock_guard lock(currently_processing_in_background_mutex);
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get());
-    version = increment.get();
-    entry.commit(version);
-    mutation_file_name = entry.file_name;
-    auto insertion = current_mutations_by_id.emplace(mutation_file_name, std::move(entry));
-    current_mutations_by_version.emplace(version, insertion.first->second);
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get());
+        version = increment.get();
+        entry.commit(version);
+        mutation_file_name = entry.file_name;
+        auto insertion = current_mutations_by_id.emplace(mutation_file_name, std::move(entry));
+        current_mutations_by_version.emplace(version, insertion.first->second);
 
-    LOG_INFO(log, "Added mutation: {}", mutation_file_name);
+        LOG_INFO(log, "Added mutation: {}", mutation_file_name);
+    }
     background_executor.triggerTask();
     return version;
 }
