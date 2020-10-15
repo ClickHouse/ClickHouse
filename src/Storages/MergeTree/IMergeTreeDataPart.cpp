@@ -1092,7 +1092,7 @@ void IMergeTreeDataPart::lockSharedData(const String & zookeeper_path, const Str
     if (id.empty())
         throw Exception("Can't lock part on S3 storage", ErrorCodes::LOGICAL_ERROR);
     
-    String zookeeper_node = zookeeper_path + "/zero_copy_s3/" + id + "/" + replica_name;
+    String zookeeper_node = zookeeper_path + "/zero_copy_s3/shared/" + id + "/" + replica_name;
 
     LOG_TRACE(storage.log, "Set zookeeper lock {}", id);
 
@@ -1112,7 +1112,7 @@ bool IMergeTreeDataPart::unlockSharedData(const String & zookeeper_path, const S
     if (id.empty())
         return true;
 
-    String zookeeper_part_node = zookeeper_path + "/zero_copy_s3/" + id;
+    String zookeeper_part_node = zookeeper_path + "/zero_copy_s3/shared/" + id;
     String zookeeper_node = zookeeper_part_node + "/" + replica_name;
 
     LOG_TRACE(storage.log, "Remove zookeeper lock for {}", id);
