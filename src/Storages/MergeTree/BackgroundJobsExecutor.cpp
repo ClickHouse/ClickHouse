@@ -138,7 +138,7 @@ void IBackgroundJobExecutor::finish()
     }
 }
 
-void IBackgroundJobExecutor::triggerDataProcessing()
+void IBackgroundJobExecutor::triggerTask()
 {
     std::lock_guard lock(task_mutex);
     if (scheduling_task)

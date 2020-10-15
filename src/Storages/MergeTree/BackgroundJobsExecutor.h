@@ -76,7 +76,7 @@ public:
         const std::vector<PoolConfig> & pools_configs_);
 
     void start();
-    void triggerDataProcessing();
+    void triggerTask();
     void finish();
 
     virtual ~IBackgroundJobExecutor();
