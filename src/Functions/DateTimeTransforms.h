@@ -683,25 +683,25 @@ struct Transformer
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeTransformImpl
 {
-    static void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/, const Transform & transform = {})
+    static void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/, const Transform & transform = {})
     {
         using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>;
 
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(columns, arguments, 1, 0);
 
-        const ColumnPtr source_col = block[arguments[0]].column;
+        const ColumnPtr source_col = columns[arguments[0]].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
-            auto mutable_result_col = block[result].type->createColumn();
+            auto mutable_result_col = columns[result].type->createColumn();
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
             Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
 
-            block[result].column = std::move(mutable_result_col);
+            columns[result].column = std::move(mutable_result_col);
         }
         else
         {
-            throw Exception("Illegal column " + block[arguments[0]].column->getName()
+            throw Exception("Illegal column " + columns[arguments[0]].column->getName()
                 + " of first argument of function " + Transform::name,
                 ErrorCodes::ILLEGAL_COLUMN);
         }

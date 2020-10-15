@@ -152,3 +152,4 @@
 00738_lock_for_inner_table
 01515_force_data_skipping_indices
 01526_complex_key_dict_direct_layout
+01509_dictionary_preallocate

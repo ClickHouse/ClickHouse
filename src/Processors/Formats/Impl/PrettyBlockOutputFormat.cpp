@@ -403,7 +403,7 @@ void registerOutputFormatProcessorPretty(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Pretty", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings);
@@ -412,7 +412,7 @@ void registerOutputFormatProcessorPretty(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettyNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         FormatSettings changed_settings = format_settings;
