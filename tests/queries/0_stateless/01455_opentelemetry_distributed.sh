@@ -63,14 +63,24 @@ check_log
 echo "===sampled==="
 query_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
-for _ in {1..200}
+for i in {1..200}
 do
     ${CLICKHOUSE_CLIENT} \
         --opentelemetry_start_trace_probability=0.1 \
-        --query_id "$query_id" \
-        --query "select 1 from remote('127.0.0.2', system, one) format Null"
-done
+        --query_id "$query_id-$i" \
+        --query "select 1 from remote('127.0.0.2', system, one) format Null" \
+        &
 
+    # clickhouse-client is slow to start, so run them in parallel, but not too
+    # much.
+    if [[ $((i % 10)) -eq 0 ]]
+    then
+        wait
+    fi
+done
+wait
+
+${CLICKHOUSE_CLIENT} -q "system flush logs"
 ${CLICKHOUSE_CLIENT} -q "
     with count(*) as c
     -- expect 200 * 0.1 = 20 sampled events on average
@@ -78,6 +88,8 @@ ${CLICKHOUSE_CLIENT} -q "
     from system.opentelemetry_log
         array join attribute.names as name, attribute.values as value
     where name = 'clickhouse.query_id'
-        and value = '$query_id'
+        and operation_name = 'query'
+        and parent_span_id = 0  -- only account for the initial queries
+        and value like '$query_id-%'
     ;
 "
