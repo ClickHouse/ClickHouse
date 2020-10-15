@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.200731.1222107.
+# document by TestFlows v1.6.200917.1194158.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Requirement
@@ -3333,9 +3333,9 @@ RQ_SRS_006_RBAC_Quota_Create_Interval = Requirement(
         '`FOR INTERVAL` clause in the `CREATE QUOTA` statement.\n'
         '\n'
         'This statement SHALL also support a number and a time period which will be one\n'
-        'of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:\n'
+        'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
         '\n'
-        '`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some real number\n'
+        '`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some real number\n'
         'to define the interval.\n'
         ),
         link=None
@@ -3354,9 +3354,9 @@ RQ_SRS_006_RBAC_Quota_Create_Interval_Randomized = Requirement(
         '`FOR RANDOMIZED INTERVAL` clause in the `CREATE QUOTA` statement.\n'
         '\n'
         'This statement SHALL also support a number and a time period which will be one\n'
-        'of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:\n'
+        'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
         '\n'
-        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some\n'
+        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some\n'
         'real number to define the interval.\n'
         ),
         link=None
@@ -3590,7 +3590,7 @@ RQ_SRS_006_RBAC_Quota_Create_Syntax = Requirement(
         '```sql\n'
         'CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]\n'
         "    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]\n"
-        '    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}\n'
+        '    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}\n'
         '        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |\n'
         '         NO LIMITS | TRACKING ONLY} [,...]]\n'
         '    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]\n'
@@ -3669,9 +3669,9 @@ RQ_SRS_006_RBAC_Quota_Alter_Interval = Requirement(
         '`FOR INTERVAL` clause in the `ALTER QUOTA` statement.\n'
         '\n'
         'This statement SHALL also support a number and a time period which will be one\n'
-        'of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:\n'
+        'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
         '\n'
-        '`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some real number\n'
+        '`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some real number\n'
         'to define the interval.\n'
         ),
         link=None
@@ -3690,9 +3690,9 @@ RQ_SRS_006_RBAC_Quota_Alter_Interval_Randomized = Requirement(
         '`FOR RANDOMIZED INTERVAL` clause in the `ALTER QUOTA` statement.\n'
         '\n'
         'This statement SHALL also support a number and a time period which will be one\n'
-        'of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:\n'
+        'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
         '\n'
-        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some\n'
+        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some\n'
         'real number to define the interval.\n'
         ),
         link=None
@@ -4734,6 +4734,496 @@ RQ_SRS_006_RBAC_RowPolicy_ShowRowPolicies_Syntax = Requirement(
         link=None
     )
 
+RQ_SRS_006_RBAC_Table_PublicTables = Requirement(
+        name='RQ.SRS-006.RBAC.Table.PublicTables',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support that a user without any privileges will be able to access the following tables\n'
+        '\n'
+        '* system.one\n'
+        '* system.numbers\n'
+        '* system.contributors\n'
+        '* system.functions\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Table_ShowTables = Requirement(
+        name='RQ.SRS-006.RBAC.Table.ShowTables',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL add a table to the list of tables accessible through `SHOW TABLES` by a user if and only if\n'
+        'that user has any privilege on that table, either directly or through a role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Table_DistributedTable_Create = Requirement(
+        name='RQ.SRS-006.RBAC.Table.DistributedTable.Create',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL successfully `CREATE` a distributed table if and only if\n'
+        'the user has **create table** privilege on the table and **remote** privilege on *.*.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Table_DistributedTable_Select = Requirement(
+        name='RQ.SRS-006.RBAC.Table.DistributedTable.Select',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL successfully `SELECT` from a distributed table if and only if\n'
+        'the user has **select** privilege on the table and on the remote table specified in the `CREATE` query of the distributed table.\n'
+        '\n'
+        'Does not require **select** privilege for the remote table if the remote table does not exist on the same server as the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Table_DistributedTable_Insert = Requirement(
+        name='RQ.SRS-006.RBAC.Table.DistributedTable.Insert',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL successfully `INSERT` into a distributed table if and only if\n'
+        'the user has **insert** privilege on the table and on the remote table specified in the `CREATE` query of the distributed table.\n'
+        '\n'
+        'Does not require **insert** privilege for the remote table if the remote table does not exist on the same server as the user,\n'
+        'insert executes into the remote table on a different server.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Table_DistributedTable_SpecialTables = Requirement(
+        name='RQ.SRS-006.RBAC.Table.DistributedTable.SpecialTables',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL successfully execute a query using a distributed table that uses one of the special tables if and only if\n'
+        'the user has the necessary privileges to interact with that special table, either granted directly or through a role.\n'
+        'Special tables include:\n'
+        '* materialized view\n'
+        '* distributed table\n'
+        '* source table of a materialized view\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Table_DistributedTable_LocalUser = Requirement(
+        name='RQ.SRS-006.RBAC.Table.DistributedTable.LocalUser',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL successfully execute a query using a distributed table from\n'
+        'a user present locally, but not remotely.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Table_DistributedTable_SameUserDifferentNodesDifferentPrivileges = Requirement(
+        name='RQ.SRS-006.RBAC.Table.DistributedTable.SameUserDifferentNodesDifferentPrivileges',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL successfully execute a query using a distributed table by a user that exists on multiple nodes\n'
+        'if and only if the user has the required privileges on the node the query is being executed from.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_View = Requirement(
+        name='RQ.SRS-006.RBAC.View',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to **create**, **select** and **drop**\n'
+        'privileges for a view for users or roles.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_View_Create = Requirement(
+        name='RQ.SRS-006.RBAC.View.Create',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully execute a `CREATE VIEW` command if and only if\n'
+        'the user has **create view** privilege either explicitly or through roles.\n'
+        '\n'
+        'If the stored query includes one or more source tables, the user must have **select** privilege\n'
+        'on all the source tables either explicitly or through a role.\n'
+        'For example,\n'
+        '```sql\n'
+        'CREATE VIEW view AS SELECT * FROM source_table\n'
+        'CREATE VIEW view AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))\n'
+        'CREATE VIEW view AS SELECT * FROM table0 JOIN table1 USING column\n'
+        'CREATE VIEW view AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2\n'
+        'CREATE VIEW view AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))\n'
+        'CREATE VIEW view0 AS SELECT column FROM view1 UNION ALL SELECT column FROM view2\n'
+        '```\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_View_Select = Requirement(
+        name='RQ.SRS-006.RBAC.View.Select',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully `SELECT` from a view if and only if\n'
+        'the user has **select** privilege for that view either explicitly or through a role.\n'
+        '\n'
+        'If the stored query includes one or more source tables, the user must have **select** privilege\n'
+        'on all the source tables either explicitly or through a role.\n'
+        'For example,\n'
+        '```sql\n'
+        'CREATE VIEW view AS SELECT * FROM source_table\n'
+        'CREATE VIEW view AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))\n'
+        'CREATE VIEW view AS SELECT * FROM table0 JOIN table1 USING column\n'
+        'CREATE VIEW view AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2\n'
+        'CREATE VIEW view AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))\n'
+        'CREATE VIEW view0 AS SELECT column FROM view1 UNION ALL SELECT column FROM view2\n'
+        '\n'
+        'SELECT * FROM view\n'
+        '```\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_View_Drop = Requirement(
+        name='RQ.SRS-006.RBAC.View.Drop',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully execute a `DROP VIEW` command if and only if\n'
+        'the user has **drop view** privilege on that view either explicitly or through a role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_MaterializedView = Requirement(
+        name='RQ.SRS-006.RBAC.MaterializedView',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to **create**, **select**, **alter** and **drop**\n'
+        'privileges for a materialized view for users or roles.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_MaterializedView_Create = Requirement(
+        name='RQ.SRS-006.RBAC.MaterializedView.Create',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully execute a `CREATE MATERIALIZED VIEW` command if and only if\n'
+        'the user has **create view** privilege either explicitly or through roles.\n'
+        '\n'
+        'If `POPULATE` is specified, the user must have `INSERT` privilege on the view,\n'
+        'either explicitly or through roles.\n'
+        'For example,\n'
+        '```sql\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory POPULATE AS SELECT * FROM source_table\n'
+        '```\n'
+        '\n'
+        'If the stored query includes one or more source tables, the user must have **select** privilege\n'
+        'on all the source tables either explicitly or through a role.\n'
+        'For example,\n'
+        '```sql\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM source_table\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 JOIN table1 USING column\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))\n'
+        'CREATE MATERIALIZED VIEW view0 ENGINE = Memory AS SELECT column FROM view1 UNION ALL SELECT column FROM view2\n'
+        '```\n'
+        '\n'
+        'If the materialized view has a target table explicitly declared in the `TO` clause, the user must have\n'
+        '**insert** and **select** privilege on the target table.\n'
+        'For example,\n'
+        '```sql\n'
+        'CREATE MATERIALIZED VIEW view TO target_table AS SELECT * FROM source_table\n'
+        '```\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_MaterializedView_Select = Requirement(
+        name='RQ.SRS-006.RBAC.MaterializedView.Select',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully `SELECT` from a materialized view if and only if\n'
+        'the user has **select** privilege for that view either explicitly or through a role.\n'
+        '\n'
+        'If the stored query includes one or more source tables, the user must have **select** privilege\n'
+        'on all the source tables either explicitly or through a role.\n'
+        'For example,\n'
+        '```sql\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM source_table\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 JOIN table1 USING column\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2\n'
+        'CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))\n'
+        'CREATE MATERIALIZED VIEW view0 ENGINE = Memory AS SELECT column FROM view1 UNION ALL SELECT column FROM view2\n'
+        '\n'
+        'SELECT * FROM view\n'
+        '```\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_MaterializedView_Select_TargetTable = Requirement(
+        name='RQ.SRS-006.RBAC.MaterializedView.Select.TargetTable',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully `SELECT` from the target table, implicit or explicit, of a materialized view if and only if\n'
+        'the user has `SELECT` privilege for the table, either explicitly or through a role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_MaterializedView_Select_SourceTable = Requirement(
+        name='RQ.SRS-006.RBAC.MaterializedView.Select.SourceTable',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully `SELECT` from the source table of a materialized view if and only if\n'
+        'the user has `SELECT` privilege for the table, either explicitly or through a role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_MaterializedView_Drop = Requirement(
+        name='RQ.SRS-006.RBAC.MaterializedView.Drop',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully execute a `DROP VIEW` command if and only if\n'
+        'the user has **drop view** privilege on that view either explicitly or through a role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_MaterializedView_ModifyQuery = Requirement(
+        name='RQ.SRS-006.RBAC.MaterializedView.ModifyQuery',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully execute a `MODIFY QUERY` command if and only if\n'
+        'the user has **modify query** privilege on that view either explicitly or through a role.\n'
+        '\n'
+        'If the new query includes one or more source tables, the user must have **select** privilege\n'
+        'on all the source tables either explicitly or through a role.\n'
+        'For example,\n'
+        '```sql\n'
+        'ALTER TABLE view MODIFY QUERY SELECT * FROM source_table\n'
+        '```\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_MaterializedView_Insert = Requirement(
+        name='RQ.SRS-006.RBAC.MaterializedView.Insert',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only succesfully `INSERT` into a materialized view if and only if\n'
+        'the user has `INSERT` privilege on the view, either explicitly or through a role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_MaterializedView_Insert_SourceTable = Requirement(
+        name='RQ.SRS-006.RBAC.MaterializedView.Insert.SourceTable',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only succesfully `INSERT` into a source table of a materialized view if and only if\n'
+        'the user has `INSERT` privilege on the source table, either explicitly or through a role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_MaterializedView_Insert_TargetTable = Requirement(
+        name='RQ.SRS-006.RBAC.MaterializedView.Insert.TargetTable',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only succesfully `INSERT` into a target table of a materialized view if and only if\n'
+        'the user has `INSERT` privelege on the target table, either explicitly or through a role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_LiveView = Requirement(
+        name='RQ.SRS-006.RBAC.LiveView',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to **create**, **select**, **alter** and **drop**\n'
+        'privileges for a live view for users or roles.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_LiveView_Create = Requirement(
+        name='RQ.SRS-006.RBAC.LiveView.Create',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully execute a `CREATE LIVE VIEW` command if and only if\n'
+        'the user has **create view** privilege either explicitly or through roles.\n'
+        '\n'
+        'If the stored query includes one or more source tables, the user must have **select** privilege\n'
+        'on all the source tables either explicitly or through a role.\n'
+        'For example,\n'
+        '```sql\n'
+        'CREATE LIVE VIEW view AS SELECT * FROM source_table\n'
+        'CREATE LIVE VIEW view AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))\n'
+        'CREATE LIVE VIEW view AS SELECT * FROM table0 JOIN table1 USING column\n'
+        'CREATE LIVE VIEW view AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2\n'
+        'CREATE LIVE VIEW view AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))\n'
+        'CREATE LIVE VIEW view0 AS SELECT column FROM view1 UNION ALL SELECT column FROM view2\n'
+        '```\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_LiveView_Select = Requirement(
+        name='RQ.SRS-006.RBAC.LiveView.Select',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully `SELECT` from a live view if and only if\n'
+        'the user has **select** privilege for that view either explicitly or through a role.\n'
+        '\n'
+        'If the stored query includes one or more source tables, the user must have **select** privilege\n'
+        'on all the source tables either explicitly or through a role.\n'
+        'For example,\n'
+        '```sql\n'
+        'CREATE LIVE VIEW view AS SELECT * FROM source_table\n'
+        'CREATE LIVE VIEW view AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))\n'
+        'CREATE LIVE VIEW view AS SELECT * FROM table0 JOIN table1 USING column\n'
+        'CREATE LIVE VIEW view AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2\n'
+        'CREATE LIVE VIEW view AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))\n'
+        'CREATE LIVE VIEW view0 AS SELECT column FROM view1 UNION ALL SELECT column FROM view2\n'
+        '\n'
+        'SELECT * FROM view\n'
+        '```\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_LiveView_Drop = Requirement(
+        name='RQ.SRS-006.RBAC.LiveView.Drop',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully execute a `DROP VIEW` command if and only if\n'
+        'the user has **drop view** privilege on that view either explicitly or through a role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_LiveView_Refresh = Requirement(
+        name='RQ.SRS-006.RBAC.LiveView.Refresh',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL only successfully execute an `ALTER LIVE VIEW REFRESH` command if and only if\n'
+        'the user has **refresh** privilege on that view either explicitly or through a role.\n'
+        ),
+        link=None
+    )
+
 RQ_SRS_006_RBAC_Privileges_Usage = Requirement(
         name='RQ.SRS-006.RBAC.Privileges.Usage',
         version='1.0',
@@ -4756,7 +5246,7 @@ RQ_SRS_006_RBAC_Privileges_Select = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support changing access to the **select** privilege\n'
+        '[ClickHouse] SHALL support controlling access to the **select** privilege\n'
         'for a database or a specific table to one or more **users** or **roles**.\n'
         'Any `SELECT INTO` statements SHALL not to be executed, unless the user\n'
         'has the **select** privilege for the destination table\n'
@@ -4877,100 +5367,31 @@ RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Revoke = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Privileges_Select_MergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Select.MergeTree',
+RQ_SRS_006_RBAC_Privileges_Select_TableEngines = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.TableEngines',
         version='1.0',
         priority=None,
         group=None,
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
-        'created using the MergeTree engine.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Select_ReplacingMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Select.ReplacingMergeTree',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
-        'created using the ReplacingMergeTree engine.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Select_SummingMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Select.SummingMergeTree',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
-        'created using the SummingMergeTree engine.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Select_AggregatingMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Select.AggregatingMergeTree',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
-        'created using the AggregatingMergeTree engine.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Select_CollapsingMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Select.CollapsingMergeTree',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
-        'created using the CollapsingMergeTree engine.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Select_VersionedCollapsingMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Select.VersionedCollapsingMergeTree',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
-        'created using the VersionedCollapsingMergeTree engine.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Select_GraphiteMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Select.GraphiteMergeTree',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
-        'created using the GraphiteMergeTree engine.\n'
+        '[ClickHouse] SHALL support controlling access to the **select** privilege\n'
+        'on tables created using the following engines\n'
+        '\n'
+        '* MergeTree\n'
+        '* ReplacingMergeTree\n'
+        '* SummingMergeTree\n'
+        '* AggregatingMergeTree\n'
+        '* CollapsingMergeTree\n'
+        '* VersionedCollapsingMergeTree\n'
+        '* GraphiteMergeTree\n'
+        '* ReplicatedMergeTree\n'
+        '* ReplicatedSummingMergeTree\n'
+        '* ReplicatedReplacingMergeTree\n'
+        '* ReplicatedAggregatingMergeTree\n'
+        '* ReplicatedCollapsingMergeTree\n'
+        '* ReplicatedVersionedCollapsingMergeTree\n'
+        '* ReplicatedGraphiteMergeTree\n'
         ),
         link=None
     )
@@ -4983,7 +5404,7 @@ RQ_SRS_006_RBAC_Privileges_Insert = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support changing access to the **insert** privilege\n'
+        '[ClickHouse] SHALL support controlling access to the **insert** privilege\n'
         'for a database or a specific table to one or more **users** or **roles**.\n'
         'Any `INSERT INTO` statements SHALL not to be executed, unless the user\n'
         'has the **insert** privilege for the destination table\n'
@@ -5104,100 +5525,755 @@ RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Revoke = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Privileges_Insert_MergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Insert.MergeTree',
+RQ_SRS_006_RBAC_Privileges_Insert_TableEngines = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.TableEngines',
         version='1.0',
         priority=None,
         group=None,
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
-        'created using the MergeTree engine.\n'
+        '[ClickHouse] SHALL support controlling access to the **insert** privilege\n'
+        'on tables created using the following engines\n'
+        '\n'
+        '* MergeTree\n'
+        '* ReplacingMergeTree\n'
+        '* SummingMergeTree\n'
+        '* AggregatingMergeTree\n'
+        '* CollapsingMergeTree\n'
+        '* VersionedCollapsingMergeTree\n'
+        '* GraphiteMergeTree\n'
+        '* ReplicatedMergeTree\n'
+        '* ReplicatedSummingMergeTree\n'
+        '* ReplicatedReplacingMergeTree\n'
+        '* ReplicatedAggregatingMergeTree\n'
+        '* ReplicatedCollapsingMergeTree\n'
+        '* ReplicatedVersionedCollapsingMergeTree\n'
+        '* ReplicatedGraphiteMergeTree\n'
         ),
         link=None
     )
 
-RQ_SRS_006_RBAC_Privileges_Insert_ReplacingMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Insert.ReplacingMergeTree',
+RQ_SRS_006_RBAC_Privileges_AlterColumn = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterColumn',
         version='1.0',
         priority=None,
         group=None,
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
-        'created using the ReplacingMergeTree engine.\n'
+        '[ClickHouse] SHALL support controlling access to the **AlterColumn** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL\n'
+        'return an error, unless the user has the **alter column** privilege for\n'
+        'the destination table either because of the explicit grant or through one of\n'
+        'the roles assigned to the user.\n'
         ),
         link=None
     )
 
-RQ_SRS_006_RBAC_Privileges_Insert_SummingMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Insert.SummingMergeTree',
+RQ_SRS_006_RBAC_Privileges_AlterColumn_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterColumn.Grant',
         version='1.0',
         priority=None,
         group=None,
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
-        'created using the SummingMergeTree engine.\n'
+        '[ClickHouse] SHALL support granting **alter column** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
         ),
         link=None
     )
 
-RQ_SRS_006_RBAC_Privileges_Insert_AggregatingMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Insert.AggregatingMergeTree',
+RQ_SRS_006_RBAC_Privileges_AlterColumn_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterColumn.Revoke',
         version='1.0',
         priority=None,
         group=None,
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
-        'created using the AggregatingMergeTree engine.\n'
+        '[ClickHouse] SHALL support revoking **alter column** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
         ),
         link=None
     )
 
-RQ_SRS_006_RBAC_Privileges_Insert_CollapsingMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Insert.CollapsingMergeTree',
+RQ_SRS_006_RBAC_Privileges_AlterColumn_Column = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterColumn.Column',
         version='1.0',
         priority=None,
         group=None,
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
-        'created using the CollapsingMergeTree engine.\n'
+        '[ClickHouse] SHALL support granting or revoking **alter column** privilege\n'
+        'for one or more specified columns in a table to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL return an error,\n'
+        ' unless the user has the **alter column** privilege for the destination column\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
         ),
         link=None
     )
 
-RQ_SRS_006_RBAC_Privileges_Insert_VersionedCollapsingMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Insert.VersionedCollapsingMergeTree',
+RQ_SRS_006_RBAC_Privileges_AlterColumn_Cluster = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterColumn.Cluster',
         version='1.0',
         priority=None,
         group=None,
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
-        'created using the VersionedCollapsingMergeTree engine.\n'
+        '[ClickHouse] SHALL support granting or revoking **alter column** privilege\n'
+        'on a specified cluster to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN`\n'
+        'statements SHALL succeed only on nodes where the table exists and privilege was granted.\n'
         ),
         link=None
     )
 
-RQ_SRS_006_RBAC_Privileges_Insert_GraphiteMergeTree = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Insert.GraphiteMergeTree',
+RQ_SRS_006_RBAC_Privileges_AlterColumn_GrantOption = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterColumn.GrantOption',
         version='1.0',
         priority=None,
         group=None,
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
-        'created using the GraphiteMergeTree engine.\n'
+        '[ClickHouse] SHALL support granting **alter column** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        'with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to\n'
+        'change access to the **alter column** privilege by another user or role\n'
+        'on the same or smaller scope that they have access to.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterColumn_GrantOption_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterColumn.GrantOption.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'granting **alter column** privilege to other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to.\n'
+        'Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL\n'
+        'succeed when done by a user with privilege granted by a user with\n'
+        '`GRANT OPTION`, either directly or through an assigned role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterColumn_GrantOption_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterColumn.GrantOption.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'revoking **alter column** privilege from other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to. Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL fail\n'
+        'when done by a user with privilege revoke by a user with `GRANT OPTION`,\n'
+        'either directly or through an assigned role, unless they have access otherwise.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterColumn_TableEngines = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterColumn.TableEngines',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to the **alter column** privilege\n'
+        'on tables created using the following engines\n'
+        '\n'
+        '* MergeTree\n'
+        '* ReplacingMergeTree\n'
+        '* SummingMergeTree\n'
+        '* AggregatingMergeTree\n'
+        '* CollapsingMergeTree\n'
+        '* VersionedCollapsingMergeTree\n'
+        '* GraphiteMergeTree\n'
+        '* ReplicatedMergeTree\n'
+        '* ReplicatedSummingMergeTree\n'
+        '* ReplicatedReplacingMergeTree\n'
+        '* ReplicatedAggregatingMergeTree\n'
+        '* ReplicatedCollapsingMergeTree\n'
+        '* ReplicatedVersionedCollapsingMergeTree\n'
+        '* ReplicatedGraphiteMergeTree\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterIndex = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterIndex',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to the **alter index** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX` statements SHALL\n'
+        'return an error, unless the user has the **alter index** privilege for\n'
+        'the destination table either because of the explicit grant or through one of\n'
+        'the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterIndex_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterIndex.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **alter index** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterIndex_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterIndex.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support revoking **alter index** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterIndex_Cluster = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterIndex.Cluster',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **alter index** privilege\n'
+        'on a specified cluster to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX`\n'
+        'statements SHALL succeed only on nodes where the table exists and privilege was granted.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterIndex.GrantOption',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **alter index** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        'with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to\n'
+        'change access to the **alter index** privilege by another user or role\n'
+        'on the same or smaller scope that they have access to.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterIndex.GrantOption.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'granting **alter index** privilege to other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to.\n'
+        'Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX` statements SHALL\n'
+        'succeed when done by a user with privilege granted by a user with\n'
+        '`GRANT OPTION`, either directly or through an assigned role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterIndex.GrantOption.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'revoking **alter index** privilege from other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to.\n'
+        'Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX` statements\n'
+        'SHALL fail when done by a user with privilege revoke by a user with `GRANT OPTION`,\n'
+        'either directly or through an assigned role, unless they have access otherwise.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterIndex_TableEngines = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterIndex.TableEngines',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to the **alter index** privilege\n'
+        'on tables created using the following engines\n'
+        '\n'
+        '* MergeTree\n'
+        '* ReplacingMergeTree\n'
+        '* SummingMergeTree\n'
+        '* AggregatingMergeTree\n'
+        '* CollapsingMergeTree\n'
+        '* VersionedCollapsingMergeTree\n'
+        '* GraphiteMergeTree\n'
+        '* ReplicatedMergeTree\n'
+        '* ReplicatedSummingMergeTree\n'
+        '* ReplicatedReplacingMergeTree\n'
+        '* ReplicatedAggregatingMergeTree\n'
+        '* ReplicatedCollapsingMergeTree\n'
+        '* ReplicatedVersionedCollapsingMergeTree\n'
+        '* ReplicatedGraphiteMergeTree\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterConstraint = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterConstraint',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to the **alter constraint** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... ADD|DROP CONSTRAINT` statements SHALL\n'
+        'return an error, unless the user has the **alter constraint** privilege for\n'
+        'the destination table either because of the explicit grant or through one of\n'
+        'the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterConstraint_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterConstraint.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **alter constraint** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterConstraint_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterConstraint.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support revoking **alter constraint** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterConstraint_Cluster = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterConstraint.Cluster',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **alter constraint** privilege\n'
+        'on a specified cluster to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... ADD|DROP CONSTRAINT`\n'
+        'statements SHALL succeed only on nodes where the table exists and privilege was granted.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterConstraint_GrantOption = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterConstraint.GrantOption',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **alter constraint** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        'with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to\n'
+        'change access to the **alter constraint** privilege by another user or role\n'
+        'on the same or smaller scope that they have access to.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterConstraint_GrantOption_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterConstraint.GrantOption.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'granting **alter constraint** privilege to other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to.\n'
+        'Any `ALTER TABLE ... ADD|DROP CONSTRAINT` statements SHALL\n'
+        'succeed when done by a user with privilege granted by a user with\n'
+        '`GRANT OPTION`, either directly or through an assigned role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterConstraint_GrantOption_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterConstraint.GrantOption.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'revoking **alter constraint** privilege from other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to.\n'
+        'Any `ALTER TABLE ... ADD|DROP CONSTRAINT` statements\n'
+        'SHALL fail when done by a user with privilege revoke by a user with `GRANT OPTION`,\n'
+        'either directly or through an assigned role, unless they have access otherwise.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterConstraint_TableEngines = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterConstraint.TableEngines',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to the **alter constraint** privilege\n'
+        'on tables created using the following engines\n'
+        '\n'
+        '* MergeTree\n'
+        '* ReplacingMergeTree\n'
+        '* SummingMergeTree\n'
+        '* AggregatingMergeTree\n'
+        '* CollapsingMergeTree\n'
+        '* VersionedCollapsingMergeTree\n'
+        '* GraphiteMergeTree\n'
+        '* ReplicatedMergeTree\n'
+        '* ReplicatedSummingMergeTree\n'
+        '* ReplicatedReplacingMergeTree\n'
+        '* ReplicatedAggregatingMergeTree\n'
+        '* ReplicatedCollapsingMergeTree\n'
+        '* ReplicatedVersionedCollapsingMergeTree\n'
+        '* ReplicatedGraphiteMergeTree\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterTTL = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterTTL',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to the **alter ttl** or **alter materialize ttl** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... ALTER TTL | ALTER MATERIALIZE TTL` statements SHALL\n'
+        'return an error, unless the user has the **alter ttl** or **alter materialize ttl** privilege for\n'
+        'the destination table either because of the explicit grant or through one of\n'
+        'the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterTTL_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterTTL.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **alter ttl** or **alter materialize ttl** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterTTL_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterTTL.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support revoking **alter ttl** or **alter materialize ttl** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterTTL_Cluster = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterTTL.Cluster',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **alter ttl** or **alter materialize ttl** privilege\n'
+        'on a specified cluster to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... ALTER TTL | ALTER MATERIALIZE TTL`\n'
+        'statements SHALL succeed only on nodes where the table exists and privilege was granted.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterTTL.GrantOption',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **alter ttl** or **alter materialize ttl** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        'with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to\n'
+        'change access to the **alter ttl** or **alter materialize ttl** privilege by another user or role\n'
+        'on the same or smaller scope that they have access to.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterTTL.GrantOption.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'granting **alter ttl** or **alter materialize ttl** privilege to other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to.\n'
+        'Any `ALTER TABLE ... ALTER TTL | ALTER MATERIALIZE TTL` statements SHALL\n'
+        'succeed when done by a user with privilege granted by a user with\n'
+        '`GRANT OPTION`, either directly or through an assigned role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterTTL.GrantOption.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'revoking **alter ttl** or **alter materialize ttl** privilege from other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to.\n'
+        'Any `ALTER TABLE ... ALTER TTL | ALTER MATERIALIZE TTL` statements\n'
+        'SHALL fail when done by a user with privilege revoke by a user with `GRANT OPTION`,\n'
+        'either directly or through an assigned role, unless they have access otherwise.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterTTL_TableEngines = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterTTL.TableEngines',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to the **alter ttl** or **alter materialize ttl** privilege\n'
+        'on tables created using the following engines\n'
+        '\n'
+        '* MergeTree\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterSettings = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterSettings',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to the **alter settings** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... MODIFY SETTING setting` statements SHALL\n'
+        'return an error, unless the user has the **alter settings** privilege for\n'
+        'the destination table either because of the explicit grant or through one of\n'
+        'the roles assigned to the user. The **alter settings** privilege allows\n'
+        'modifying table engine settings. It doesn’t affect settings or server configuration parameters.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterSettings_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterSettings.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **alter settings** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterSettings_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterSettings.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support revoking **alter settings** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterSettings_Cluster = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterSettings.Cluster',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **alter settings** privilege\n'
+        'on a specified cluster to one or more **users** or **roles**.\n'
+        'Any `ALTER TABLE ... MODIFY SETTING setting`\n'
+        'statements SHALL succeed only on nodes where the table exists and privilege was granted.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterSettings_GrantOption = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterSettings.GrantOption',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **alter settings** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        'with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to\n'
+        'change access to the **alter settings** privilege by another user or role\n'
+        'on the same or smaller scope that they have access to.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterSettings_GrantOption_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterSettings.GrantOption.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'granting **alter settings** privilege to other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to.\n'
+        'Any `ALTER TABLE ... MODIFY SETTING setting` statements SHALL\n'
+        'succeed when done by a user with privilege granted by a user with\n'
+        '`GRANT OPTION`, either directly or through an assigned role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterSettings_GrantOption_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterSettings.GrantOption.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'revoking **alter settings** privilege from other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to.\n'
+        'Any `ALTER TABLE ... MODIFY SETTING setting` statements\n'
+        'SHALL fail when done by a user with privilege revoke by a user with `GRANT OPTION`,\n'
+        'either directly or through an assigned role, unless they have access otherwise.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AlterSettings_TableEngines = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AlterSettings.TableEngines',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support controlling access to the **alter settings** privilege\n'
+        'on tables created using the following engines\n'
+        '\n'
+        '* MergeTree\n'
+        '* ReplacingMergeTree\n'
+        '* SummingMergeTree\n'
+        '* AggregatingMergeTree\n'
+        '* CollapsingMergeTree\n'
+        '* VersionedCollapsingMergeTree\n'
+        '* GraphiteMergeTree\n'
+        '* ReplicatedMergeTree\n'
+        '* ReplicatedSummingMergeTree\n'
+        '* ReplicatedReplacingMergeTree\n'
+        '* ReplicatedAggregatingMergeTree\n'
+        '* ReplicatedCollapsingMergeTree\n'
+        '* ReplicatedVersionedCollapsingMergeTree\n'
+        '* ReplicatedGraphiteMergeTree\n'
         ),
         link=None
     )
