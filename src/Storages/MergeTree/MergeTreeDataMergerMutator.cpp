@@ -641,8 +641,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
-
-
     if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
