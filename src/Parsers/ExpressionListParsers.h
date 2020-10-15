@@ -233,7 +233,7 @@ protected:
 
     const char * getName() const  override { return "INTERVAL operator expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    bool stringToIntervalKind(const String & literal, ASTPtr & number, IntervalKind & interval_kind);
+    bool parseArgumentAndIntervalKind(Pos & pos, ASTPtr & expr, IntervalKind & interval_kind, Expected & expected);
 };
 
 class ParserAdditiveExpression : public IParserBase
