@@ -113,6 +113,7 @@ catch (...) /// Exception while we looking for a task
 
 void IBackgroundJobExecutor::start()
 {
+    std::lock_guard lock(scheduling_task_mutex);
     if (!scheduling_task)
     {
         scheduling_task = global_context.getSchedulePool().createTask(
@@ -124,6 +125,7 @@ void IBackgroundJobExecutor::start()
 
 void IBackgroundJobExecutor::finish()
 {
+    std::lock_guard lock(scheduling_task_mutex);
     if (scheduling_task)
     {
         scheduling_task->deactivate();
@@ -134,6 +136,7 @@ void IBackgroundJobExecutor::finish()
 
 void IBackgroundJobExecutor::triggerTask()
 {
+    std::lock_guard lock(scheduling_task_mutex);
     if (scheduling_task)
         scheduling_task->schedule();
 }
