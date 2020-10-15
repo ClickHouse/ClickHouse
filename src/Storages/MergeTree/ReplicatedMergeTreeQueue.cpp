@@ -584,7 +584,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
                 LOG_DEBUG(log, "Pulled {} entries to queue.", copied_entries.size());
         }
 
-        storage.background_executor.triggerDataProcessing();
+        storage.background_executor.triggerTask();
     }
 
     return stat.version;
@@ -668,7 +668,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
     }
 
     if (some_active_mutations_were_killed)
-        storage.background_executor.triggerDataProcessing();
+        storage.background_executor.triggerTask();
 
     if (!entries_to_load.empty())
     {
@@ -792,7 +792,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
     }
 
     if (mutation_was_active)
-        storage.background_executor.triggerDataProcessing();
+        storage.background_executor.triggerTask();
 
     return entry;
 }

@@ -5868,7 +5868,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 
     {
         auto lock = queue.lockQueue();
-        background_executor.triggerDataProcessing();
+        background_executor.triggerTask();
         /// This is significant, because the execution of this task could be delayed at BackgroundPool.
         /// And we force it to be executed.
     }
