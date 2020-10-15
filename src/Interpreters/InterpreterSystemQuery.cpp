@@ -135,11 +135,15 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
 
     if (table_id)
     {
+        auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
         context.checkAccess(getRequiredAccessType(action_type), table_id);
         if (start)
-            manager->remove(table_id, action_type);
+        {
+            manager->remove(table, action_type);
+            table->onActionLockRemove(action_type);
+        }
         else
-            manager->add(table_id, action_type);
+            manager->add(table, action_type);
     }
     else
     {
@@ -164,7 +168,10 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 }
 
                 if (start)
+                {
                     manager->remove(table, action_type);
+                    table->onActionLockRemove(action_type);
+                }
                 else
                     manager->add(table, action_type);
             }
