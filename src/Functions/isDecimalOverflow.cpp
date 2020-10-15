@@ -60,16 +60,16 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
     {
-        const auto & src_column = block[arguments[0]];
+        const auto & src_column = columns[arguments[0]];
         if (!src_column.column)
             throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         UInt32 precision = 0;
         if (arguments.size() == 2)
         {
-            const auto & precision_column = block[arguments[1]];
+            const auto & precision_column = columns[arguments[1]];
             if (!precision_column.column)
                 throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -112,7 +112,7 @@ public:
             throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
                             ErrorCodes::ILLEGAL_COLUMN);
 
-        block[result_pos].column = std::move(result_column);
+        columns[result_pos].column = std::move(result_column);
     }
 
 private:
