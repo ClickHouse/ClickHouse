@@ -63,8 +63,18 @@ ASTPtr ArrayJoinClause::convertToOld() const
 
 // LIMIT By Clause
 
-LimitByClause::LimitByClause(PtrTo<LimitExpr> expr, PtrTo<ColumnExprList> expr_list) : limit(expr), by(expr_list)
+LimitByClause::LimitByClause(PtrTo<LimitExpr> expr, PtrTo<ColumnExprList> expr_list) : INode{expr, expr_list}
 {
+}
+
+ASTPtr LimitByClause::convertToOld() const
+{
+    auto list = std::make_shared<ASTExpressionList>();
+
+    list->children.push_back(get(LIMIT)->convertToOld());
+    list->children.push_back(get(EXPRS)->convertToOld());
+
+    return list;
 }
 
 // SETTINGS Clause
@@ -171,7 +181,14 @@ ASTPtr SelectStmt::convertToOld() const
     if (has(GROUP_BY)) old_select->setExpression(ASTSelectQuery::Expression::GROUP_BY, get(GROUP_BY)->convertToOld());
     if (has(HAVING)) old_select->setExpression(ASTSelectQuery::Expression::HAVING, get(HAVING)->convertToOld());
     if (has(ORDER_BY)) old_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, get(ORDER_BY)->convertToOld());
-    // TODO: LIMIT BY
+    if (has(LIMIT_BY))
+    {
+        auto old_list = get(LIMIT_BY)->convertToOld();
+        old_select->setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(old_list->children[1]));
+        old_select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(old_list->children[0]->children[0]));
+        if (old_list->children[0]->children.size() > 1)
+            old_select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(old_list->children[0]->children[1]));
+    }
     if (has(LIMIT))
     {
         auto old_list = get(LIMIT)->convertToOld();

@@ -67,9 +67,14 @@ class LimitByClause : public INode
     public:
         LimitByClause(PtrTo<LimitExpr> expr, PtrTo<ColumnExprList> expr_list);
 
+        ASTPtr convertToOld() const override;
+
     private:
-        PtrTo<LimitExpr> limit;
-        PtrTo<ColumnExprList> by;
+        enum ChildIndex : UInt8
+        {
+            LIMIT = 0,  // LimitExpr
+            EXPRS = 1,   // ColumnExprList
+        };
 };
 
 using LimitClause = SimpleClause<LimitExpr>;
