@@ -274,6 +274,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     for (const auto & pair : log_pointers_candidate_lost_replicas)
     {
         String replica = pair.first;
+        LOG_WARNING(log, "Will mark replica {} as lost, because it has stale log pointer: {}", replica, pair.second);
         Coordination::Requests ops;
         /// If host changed version we can not mark replicas, because replica started to be active.
         ops.emplace_back(zkutil::makeCheckRequest(

@@ -58,8 +58,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
-        const auto * col_resolution = block.getByPosition(arguments[1]).column.get();
+        const auto * col_hindex = block[arguments[0]].column.get();
+        const auto * col_resolution = block[arguments[1]].column.get();
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
         auto & dst_data = dst->getData();
@@ -99,7 +99,7 @@ public:
             dst_offsets[row] = current_offset;
         }
 
-        block.getByPosition(result).column = std::move(dst);
+        block[result].column = std::move(dst);
     }
 };
 

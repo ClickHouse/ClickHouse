@@ -317,7 +317,7 @@ std::string getName() const override { return "Memory"; }
 class StorageMemory : public IStorage
 ```
 
-**4.** `using` 的命名方式与类相同，或者以\_\_t\`命名。
+**4.** `using` 的命名方式与类相同，或者以__t\`命名。
 
 **5.** 模板类型参数的名称：在简单的情况下，使用`T`; `T`，`U`; `T1`，`T2`。
 
@@ -389,7 +389,7 @@ FileQueueProcessor(
 timer (not m_timer)
 ```
 
-**14.** 对于 `enum` 中的常量，请使用带大写字母的驼峰标识。ALL\_CAPS 也可以接受。如果 `enum` 是非本地的，请使用 `enum class`。
+**14.** 对于 `enum` 中的常量，请使用带大写字母的驼峰标识。ALL_CAPS 也可以接受。如果 `enum` 是非本地的，请使用 `enum class`。
 
 ``` cpp
 enum class CompressionMethod
@@ -702,7 +702,7 @@ auto s = std::string{"Hello"};
 
 **4.** 操作系统：Linux Ubuntu，不比 Precise 早。
 
-**5.** 代码是为x86\_64 CPU架构编写的。
+**5.** 代码是为x86_64 CPU架构编写的。
 
 CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2。
 

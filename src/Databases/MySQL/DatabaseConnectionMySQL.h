@@ -8,6 +8,7 @@
 #include <Core/MultiEnum.h>
 #include <Common/ThreadPool.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/MySQL/ConnectionMySQLSettings.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <atomic>
@@ -36,7 +37,8 @@ public:
 
     DatabaseConnectionMySQL(
         const Context & context, const String & database_name, const String & metadata_path,
-        const ASTStorage * database_engine_define, const String & database_name_in_mysql, mysqlxx::Pool && pool);
+        const ASTStorage * database_engine_define, const String & database_name_in_mysql, std::unique_ptr<ConnectionMySQLSettings> settings_,
+        mysqlxx::Pool && pool);
 
     String getEngineName() const override { return "MySQL"; }
 
@@ -76,9 +78,7 @@ private:
     String metadata_path;
     ASTPtr database_engine_define;
     String database_name_in_mysql;
-    // Cache setting for later from query context upon creation,
-    // so column types depend on the settings set at query-level.
-    MultiEnum<MySQLDataTypesSupport> mysql_datatypes_support_level;
+    std::unique_ptr<ConnectionMySQLSettings> database_settings;
 
     std::atomic<bool> quit{false};
     std::condition_variable cond;

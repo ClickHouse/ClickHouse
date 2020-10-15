@@ -52,7 +52,7 @@ $ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 Если бюджет позволяет, лучше выбрать RAID-10.
 
 На более чем 4 дисках вместо RAID-5 нужно использовать RAID-6 (предпочтительнее) или RAID-50.
-При использовании RAID-5, RAID-6 или RAID-50, нужно всегда увеличивать stripe\_cache\_size, так как значение по умолчанию выбрано не самым удачным образом.
+При использовании RAID-5, RAID-6 или RAID-50, нужно всегда увеличивать stripe_cache_size, так как значение по умолчанию выбрано не самым удачным образом.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
