@@ -221,13 +221,16 @@ Pipes StorageBuffer::read(
                     columns_intersection, destination_metadata_snapshot, query_info,
                     context, processed_stage, max_block_size, num_streams);
 
-                for (auto & pipe : pipes_from_dst)
+                if (!pipes_from_dst.empty())
                 {
-                    pipe.addSimpleTransform(std::make_shared<AddingMissedTransform>(
-                            pipe.getHeader(), header_after_adding_defaults, metadata_snapshot->getColumns(), context));
+                    for (auto & pipe : pipes_from_dst)
+                    {
+                        pipe.addSimpleTransform(std::make_shared<AddingMissedTransform>(
+                                pipe.getHeader(), header_after_adding_defaults, metadata_snapshot->getColumns(), context));
 
-                    pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-                            pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
+                        pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
+                                pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
+                    }
                 }
             }
         }
