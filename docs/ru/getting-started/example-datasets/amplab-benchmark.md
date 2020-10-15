@@ -3,7 +3,7 @@
 См. https://amplab.cs.berkeley.edu/benchmark/
 
 Зарегистрируйте бесплатную учетную запись на https://aws.amazon.com - понадобится кредитная карта, email и номер телефона
-Получите новый ключ доступа на https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
+Получите новый ключ доступа на https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential
 
 Выполните следующее в консоли:
 
