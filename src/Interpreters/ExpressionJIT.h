@@ -45,7 +45,7 @@ public:
 
     const DataTypePtr & getReturnType() const override { return originals.back()->getReturnType(); }
 
-    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override;
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override;
 
     bool isDeterministic() const override;
 
