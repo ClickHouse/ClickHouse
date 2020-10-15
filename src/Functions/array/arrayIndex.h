@@ -384,7 +384,7 @@ public:
 
     /**
       * If one or both arguments passed to this function are nullable,
-      * we create a new columns that contains non-nullable arguments:
+      * we create a new column that contains non-nullable arguments:
       *
       * - if the 1st argument is a non-constant array of nullable values,
       * it is turned into a non-constant array of ordinary values + a null
@@ -497,7 +497,7 @@ private:
         NullMaps maps;
         ResultColumnPtr result { ResultColumnType::create() };
 
-        inline void moveResult() { block[result_pos].column = std::move(result); }
+        inline void moveResult() { columns[result_pos].column = std::move(result); }
     };
 
     static inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
@@ -649,7 +649,7 @@ private:
         if (!left)
             return false;
 
-        const ColumnPtr right_converted_ptr = block[arguments[1]].column->convertToFullColumnIfLowCardinality();
+        const ColumnPtr right_converted_ptr = columns[arguments[1]].column->convertToFullColumnIfLowCardinality();
         const IColumn& right = *right_converted_ptr.get();
 
         ExecutionData data = {
