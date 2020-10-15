@@ -17,7 +17,7 @@ static std::atomic<Int64> counter{0};
 class TestJobExecutor : public IBackgroundJobExecutor
 {
 public:
-    TestJobExecutor(Context & context)
+    explicit TestJobExecutor(Context & context)
         :IBackgroundJobExecutor(
             context,
             TaskSleepSettings{},
@@ -40,7 +40,7 @@ using TestExecutorPtr = std::unique_ptr<TestJobExecutor>;
 
 TEST(BackgroundExecutor, TestMetric)
 {
-    auto & context_holder = getContext();
+    const auto & context_holder = getContext();
     std::vector<TestExecutorPtr> executors;
     for (size_t i = 0; i < 100; ++i)
         executors.emplace_back(std::make_unique<TestJobExecutor>(const_cast<Context &>(context_holder.context)));
