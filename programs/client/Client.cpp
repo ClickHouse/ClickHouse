@@ -218,6 +218,8 @@ private:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
+    std::optional<Suggest> suggest;
+
     /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
     std::vector<std::pair<String, String>> query_id_formats;
 
@@ -577,10 +579,11 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
+            suggest.emplace();
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
             {
                 /// Load suggestion data from the server.
-                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
+                suggest->load(connection_parameters, config().getInt("suggestion_limit"));
             }
 
             /// Load command history if present.
@@ -607,7 +610,7 @@ private:
                 highlight_callback = highlight;
 
             ReplxxLineReader lr(
-                Suggest::instance(),
+                *suggest,
                 history_file,
                 config().has("multiline"),
                 query_extenders,
@@ -615,7 +618,7 @@ private:
                 highlight_callback);
 
 #elif defined(USE_READLINE) && USE_READLINE
-            ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
+            ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
             LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
