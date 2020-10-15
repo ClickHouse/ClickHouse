@@ -57,7 +57,7 @@ private:
     TaskSleepSettings sleep_settings;
     pcg64 rng;
 
-    std::atomic<size_t> errors_count{0};
+    std::atomic<size_t> no_work_done_count{0};
 
     std::unordered_map<PoolType, ThreadPool> pools;
     std::unordered_map<PoolType, PoolConfig> pools_configs;
@@ -83,7 +83,7 @@ protected:
 
 private:
     void jobExecutingTask();
-    void scheduleTask(bool nothing_to_do);
+    void scheduleTask();
 };
 
 class BackgroundJobsExecutor final : public IBackgroundJobExecutor

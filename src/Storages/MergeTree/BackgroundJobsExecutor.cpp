@@ -39,21 +39,17 @@ bool incrementIfLess(std::atomic<Int64> & atomic_value, Int64 max_value)
 
 }
 
-void IBackgroundJobExecutor::scheduleTask(bool nothing_to_do)
+void IBackgroundJobExecutor::scheduleTask()
 {
-    auto errors = errors_count.load(std::memory_order_relaxed);
-    size_t next_time_to_execute = 0;
-    if (errors != 0)
+    auto no_work_done_times = no_work_done_count.load(std::memory_order_relaxed);
+    if (no_work_done_times != 0)
     {
-        next_time_to_execute += 1000 * (std::min(
+        auto next_time_to_execute = 1000 * (std::min(
                 sleep_settings.task_sleep_seconds_when_no_work_max,
-                sleep_settings.task_sleep_seconds_when_no_work_min * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, errors))
+                sleep_settings.task_sleep_seconds_when_no_work_min * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
             + std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng));
-    }
-    else if (nothing_to_do)
-    {
-        next_time_to_execute += 1000 * (sleep_settings.thread_sleep_seconds_if_nothing_to_do
-            + std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng));
+
+         scheduling_task->scheduleAfter(next_time_to_execute);
     }
     else
     {
@@ -61,7 +57,6 @@ void IBackgroundJobExecutor::scheduleTask(bool nothing_to_do)
         return;
     }
 
-     scheduling_task->scheduleAfter(next_time_to_execute);
 }
 
 void IBackgroundJobExecutor::jobExecutingTask()
@@ -82,11 +77,11 @@ try
                     {
                         job();
                         CurrentMetrics::values[pool_config.tasks_metric]--;
-                        errors_count = 0;
+                        no_work_done_count = 0;
                     }
                     catch (...)
                     {
-                        errors_count++;
+                        no_work_done_count++;
                         tryLogCurrentException(__PRETTY_FUNCTION__);
                         CurrentMetrics::values[pool_config.tasks_metric]--;
                     }
@@ -94,21 +89,24 @@ try
             }
             catch (...)
             {
+                no_work_done_count++;
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 CurrentMetrics::values[pool_config.tasks_metric]--;
             }
         }
-        scheduleTask(false);
     }
     else /// Nothing to do, no jobs
     {
-        scheduleTask(true);
+        no_work_done_count++;
     }
+
+    scheduleTask();
 }
 catch (...) /// Exception while we looking for a task
 {
+    no_work_done_count++;
     tryLogCurrentException(__PRETTY_FUNCTION__);
-    scheduleTask(true);
+    scheduleTask();
 }
 
 void IBackgroundJobExecutor::start()
