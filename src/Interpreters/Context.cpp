@@ -1376,7 +1376,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
     return *shared->buffer_flush_schedule_pool;
 }
 
-TaskSleepSettings Context::getBackgroundProcessingTaskSleepSettings()
+TaskSleepSettings Context::getBackgroundProcessingTaskSleepSettings() const
 {
     TaskSleepSettings task_settings;
 
@@ -1391,7 +1391,7 @@ TaskSleepSettings Context::getBackgroundProcessingTaskSleepSettings()
     return task_settings;
 }
 
-TaskSleepSettings Context::getBackgroundMoveTaskSleepSettings()
+TaskSleepSettings Context::getBackgroundMoveTaskSleepSettings() const
 {
     TaskSleepSettings task_settings;
 

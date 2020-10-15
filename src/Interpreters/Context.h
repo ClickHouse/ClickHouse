@@ -507,8 +507,8 @@ public:
       */
     void dropCaches() const;
 
-    TaskSleepSettings getBackgroundProcessingTaskSleepSettings();
-    TaskSleepSettings getBackgroundMoveTaskSleepSettings();
+    TaskSleepSettings getBackgroundProcessingTaskSleepSettings() const;
+    TaskSleepSettings getBackgroundMoveTaskSleepSettings() const;
     BackgroundSchedulePool & getBufferFlushSchedulePool();
     BackgroundSchedulePool & getSchedulePool();
     BackgroundSchedulePool & getMessageBrokerSchedulePool();

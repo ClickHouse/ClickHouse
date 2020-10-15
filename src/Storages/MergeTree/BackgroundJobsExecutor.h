@@ -65,6 +65,7 @@ private:
     std::unordered_map<PoolType, PoolConfig> pools_configs;
 
     BackgroundSchedulePool::TaskHolder scheduling_task;
+    std::mutex task_mutex;
 
 public:
     IBackgroundJobExecutor(
