@@ -124,9 +124,6 @@
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl.git
-[submodule "contrib/openssl"]
-	path = contrib/openssl
-	url = https://github.com/ClickHouse-Extras/openssl.git
 [submodule "contrib/icudata"]
 	path = contrib/icudata
 	url = https://github.com/ClickHouse-Extras/icudata.git
