@@ -60,9 +60,9 @@ namespace
                     {
                         type = check_type;
 
-                        if (check_type == Authentication::LDAP_SERVER)
+                        if (check_type == Authentication::LDAP)
                             expect_ldap_server_name = true;
-                        else if (check_type == Authentication::KERBEROS_REALM)
+                        else if (check_type == Authentication::KERBEROS)
                             expect_kerberos_realm = true;
                         else if (check_type != Authentication::NO_PASSWORD)
                             expect_password = true;
@@ -95,13 +95,27 @@ namespace
             }
 
             String value;
-            if (expect_password || expect_hash || expect_ldap_server_name || expect_kerberos_realm)
+            if (expect_password || expect_hash)
             {
                 ASTPtr ast;
                 if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
                     return false;
 
                 value = ast->as<const ASTLiteral &>().value.safeGet<String>();
+            }
+            else if (expect_ldap_server_name)
+            {
+                ASTPtr ast;
+                if (!ParserKeyword{"SERVER"}.ignore(pos, expected))
+                    return false;
+
+                value = ast->as<const ASTLiteral &>().value.safeGet<String>();
+            }
+            else if (expect_kerberos_realm)
+            {
+                ASTPtr ast;
+                if (ParserKeyword{"REALM"}.ignore(pos, expected))
+                    value = ast->as<const ASTLiteral &>().value.safeGet<String>();
             }
 
             authentication = Authentication{*type};

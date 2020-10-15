@@ -97,14 +97,14 @@ namespace
             if (ldap_server_name.empty())
                 throw Exception("LDAP server name cannot be empty for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-            user->authentication = Authentication{Authentication::LDAP_SERVER};
+            user->authentication = Authentication{Authentication::LDAP};
             user->authentication.setLDAPServerName(ldap_server_name);
         }
         else if (has_kerberos)
         {
             const auto realm = config.getString(user_config + ".kerberos.realm", "");
 
-            user->authentication = Authentication{Authentication::KERBEROS_REALM};
+            user->authentication = Authentication{Authentication::KERBEROS};
             user->authentication.setKerberosRealm(realm);
         }
 

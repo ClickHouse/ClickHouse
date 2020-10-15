@@ -41,8 +41,8 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
     if (!has_server)
         throw Exception("Missing 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
-    const auto ldap_server_cfg = config.getString(prefix_str + "server");
-    if (ldap_server_cfg.empty())
+    const auto ldap_server_name_cfg = config.getString(prefix_str + "server");
+    if (ldap_server_name_cfg.empty())
         throw Exception("Empty 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
     std::set<String> roles_cfg;
@@ -56,7 +56,7 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
     }
 
     access_control_manager = access_control_manager_;
-    ldap_server = ldap_server_cfg;
+    ldap_server_name = ldap_server_name_cfg;
     default_role_names.swap(roles_cfg);
     roles_of_interest.clear();
     role_change_subscription = access_control_manager->subscribeForChanges<Role>(
@@ -126,7 +126,7 @@ String LDAPAccessStorage::getStorageParamsJSON() const
 {
     Poco::JSON::Object params_json;
 
-    params_json.set("server", ldap_server);
+    params_json.set("server", ldap_server_name);
     params_json.set("roles", default_role_names);
 
     std::ostringstream oss;
@@ -243,8 +243,8 @@ UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::N
             // User does not exist, so we create one, and will add it if authentication is successful.
             auto user = std::make_shared<User>();
             user->setName(credentials.getUserName());
-            user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
-            user->authentication.setLDAPServerName(ldap_server);
+            user->authentication = Authentication(Authentication::Type::LDAP);
+            user->authentication.setLDAPServerName(ldap_server_name);
 
             if (isAddressAllowedImpl(*user, address) && areCredentialsValidImpl(*user, credentials, external_authenticators))
             {

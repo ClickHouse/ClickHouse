@@ -42,10 +42,10 @@ public:
         DOUBLE_SHA1_PASSWORD,
 
         /// Password is checked by a [remote] LDAP server. Connection will be made at each authentication attempt.
-        LDAP_SERVER,
+        LDAP,
 
         /// Kerberos authentication performed through GSS-API negotiation loop.
-        KERBEROS_REALM,
+        KERBEROS,
 
         MAX_TYPE,
     };
@@ -99,11 +99,11 @@ public:
     /// Allowed to use for Type::NO_PASSWORD, Type::PLAINTEXT_PASSWORD, Type::DOUBLE_SHA1_PASSWORD.
     Digest getPasswordDoubleSHA1() const;
 
-    /// Sets the server name for authentication type LDAP_SERVER.
+    /// Sets the server name for authentication type LDAP.
     const String & getLDAPServerName() const;
     void setLDAPServerName(const String & name);
 
-    /// Sets the realm name for authentication type KERBEROS_REALM.
+    /// Sets the realm name for authentication type KERBEROS.
     const String & getKerberosRealm() const;
     void setKerberosRealm(const String & realm);
 
@@ -158,14 +158,14 @@ inline const Authentication::TypeInfo & Authentication::TypeInfo::get(Type type_
             static const auto info = make_info("DOUBLE_SHA1_PASSWORD");
             return info;
         }
-        case LDAP_SERVER:
+        case LDAP:
         {
-            static const auto info = make_info("LDAP_SERVER");
+            static const auto info = make_info("LDAP");
             return info;
         }
-        case KERBEROS_REALM:
+        case KERBEROS:
         {
-            static const auto info = make_info("KERBEROS_REALM");
+            static const auto info = make_info("KERBEROS");
             return info;
         }
         case MAX_TYPE:
@@ -229,8 +229,8 @@ inline void Authentication::setPassword(const String & password_)
             return setPasswordHashBinary(encodeDoubleSHA1(password_));
 
         case NO_PASSWORD:
-        case LDAP_SERVER:
-        case KERBEROS_REALM:
+        case LDAP:
+        case KERBEROS:
             throw Exception("Cannot specify password for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
         case MAX_TYPE:
@@ -258,10 +258,7 @@ inline void Authentication::setPasswordHashHex(const String & hash)
 
 inline String Authentication::getPasswordHashHex() const
 {
-    if (
-        type == LDAP_SERVER ||
-        type == KERBEROS_REALM
-    )
+    if (type == LDAP || type == KERBEROS)
         throw Exception("Cannot get password hex hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
     String hex;
@@ -304,8 +301,8 @@ inline void Authentication::setPasswordHashBinary(const Digest & hash)
         }
 
         case NO_PASSWORD:
-        case LDAP_SERVER:
-        case KERBEROS_REALM:
+        case LDAP:
+        case KERBEROS:
             throw Exception("Cannot specify password binary hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
         case MAX_TYPE:

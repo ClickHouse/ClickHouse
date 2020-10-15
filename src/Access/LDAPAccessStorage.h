@@ -22,7 +22,7 @@ class AccessControlManager;
 
 /// Implementation of IAccessStorage which allows attaching users from a remote LDAP server.
 /// Currently, any user name will be treated as a name of an existing remote user,
-/// a user info entity will be created, with LDAP_SERVER authentication type.
+/// a user info entity will be created, with LDAP authentication type.
 class LDAPAccessStorage : public IAccessStorage
 {
 public:
@@ -57,7 +57,7 @@ private:
 
     mutable std::recursive_mutex mutex;
     AccessControlManager * access_control_manager = nullptr;
-    String ldap_server;
+    String ldap_server_name;
     std::set<String> default_role_names;
     mutable std::set<UUID> roles_of_interest;
     ext::scope_guard role_change_subscription;

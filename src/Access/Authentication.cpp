@@ -40,8 +40,8 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
             return password_hash;
 
         case SHA256_PASSWORD:
-        case LDAP_SERVER:
-        case KERBEROS_REALM:
+        case LDAP:
+        case KERBEROS:
             throw Exception("Cannot get password double SHA1 hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
         case MAX_TYPE:
@@ -67,10 +67,10 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
             case PLAINTEXT_PASSWORD:
             case SHA256_PASSWORD:
             case DOUBLE_SHA1_PASSWORD:
-            case LDAP_SERVER:
+            case LDAP:
                 throw Require<BasicCredentials>("ClickHouse Basic Authentication");
 
-            case KERBEROS_REALM:
+            case KERBEROS:
             {
                 if (gss_acceptor_context->isFailed())
                     return false;
@@ -119,7 +119,7 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
                 return encodeSHA1(first_sha1) == password_hash;
             }
 
-            case LDAP_SERVER:
+            case LDAP:
             {
                 auto ldap_client_params = external_authenticators.getLDAPClientParamsBlueprint(ldap_server_name);
                 ldap_client_params.user = credentials.getUserName();
@@ -129,7 +129,7 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
                 return ldap_client.check();
             }
 
-            case KERBEROS_REALM:
+            case KERBEROS:
                 throw Require<GSSAcceptorContext>(kerberos_realm);
 
             case MAX_TYPE:
