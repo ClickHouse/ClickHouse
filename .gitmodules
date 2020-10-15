@@ -210,4 +210,4 @@
 	url = https://github.com/fastfloat/fast_float
 [submodule "contrib/boringssl"]
 	path = contrib/boringssl
-	url = https://github.com/google/boringssl.git
+	url = https://github.com/ClickHouse-Extras/boringssl.git
