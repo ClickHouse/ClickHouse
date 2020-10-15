@@ -138,6 +138,8 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
+    void onActionLockRemove(StorageActionBlockType action_type) override;
+
     /// Wait when replication queue size becomes less or equal than queue_size
     /// If timeout is exceeded returns false
     bool waitForShrinkingQueueSize(size_t queue_size = 0, UInt64 max_wait_milliseconds = 0);

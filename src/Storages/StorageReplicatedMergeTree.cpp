@@ -5852,6 +5852,15 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
     return {};
 }
 
+void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::PartsMerge || action_type == ActionLocks::PartsTTLMerge
+        || action_type == ActionLocks::PartsFetch || action_type == ActionLocks::PartsSend
+        || action_type == ActionLocks::ReplicationQueue)
+        background_executor.triggerTask();
+    else if (action_type == ActionLocks::PartsMove)
+        background_moves_executor.triggerTask();
+}
 
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
 {

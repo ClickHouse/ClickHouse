@@ -1388,6 +1388,14 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
     return {};
 }
 
+void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::PartsMerge ||  action_type == ActionLocks::PartsTTLMerge)
+        background_executor.triggerTask();
+    else if (action_type == ActionLocks::PartsMove)
+        background_moves_executor.triggerTask();
+}
+
 CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & context)
 {
     CheckResults results;

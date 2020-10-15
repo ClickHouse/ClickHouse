@@ -21,9 +21,9 @@ struct TaskSleepSettings
     double thread_sleep_seconds_if_nothing_to_do = 0.1;
 
     /// For exponential backoff.
-    double task_sleep_seconds_when_no_work_min = 10;
-    double task_sleep_seconds_when_no_work_max = 600;
-    double task_sleep_seconds_when_no_work_multiplier = 1.1;
+    double task_sleep_seconds_when_no_work_min = 5;
+    double task_sleep_seconds_when_no_work_max = 300;
+    double task_sleep_seconds_when_no_work_multiplier = 1.01;
 
     double task_sleep_seconds_when_no_work_random_part = 1.0;
 };

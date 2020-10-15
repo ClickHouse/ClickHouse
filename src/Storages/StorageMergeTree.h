@@ -85,6 +85,8 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
+    void onActionLockRemove(StorageActionBlockType action_type) override;
+
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
     ThreadPool::Job getDataProcessingJob() override;

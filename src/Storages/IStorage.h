@@ -428,6 +428,8 @@ public:
         return {};
     }
 
+    virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
+
     std::atomic<bool> is_dropped{false};
 
     /// Does table support index for IN sections
