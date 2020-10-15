@@ -210,7 +210,7 @@ set(ALL_SRCS
     # ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/rc4.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des3.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c
+    #${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/sha256.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/hmac.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/pbkdf2.c
@@ -218,7 +218,7 @@ set(ALL_SRCS
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/stubs.c
     # ${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_crc32.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_evp.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/openssl/des/des_keys.c
+    # ${KRB5_SOURCE_DIR}/lib/crypto/openssl/des/des_keys.c
     ${KRB5_SOURCE_DIR}/util/support/fake-addrinfo.c
     ${KRB5_SOURCE_DIR}/util/support/k5buf.c
     ${KRB5_SOURCE_DIR}/util/support/hex.c
