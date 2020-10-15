@@ -10,11 +10,11 @@ namespace DB
 namespace
 {
 
-/** Incremental block number among calls of this function. */
+/** Incremental columns number among calls of this function. */
 class FunctionBlockNumber : public IFunction
 {
 private:
-    mutable std::atomic<size_t> block_number{0};
+    mutable std::atomic<size_t> columns_number{0};
 
 public:
     static constexpr auto name = "blockNumber";
@@ -51,10 +51,10 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        size_t current_block_number = block_number++;
-        block[result].column = ColumnUInt64::create(input_rows_count, current_block_number);
+        size_t current_columns_number = columns_number++;
+        columns[result].column = ColumnUInt64::create(input_rows_count, current_columns_number);
     }
 };
 
