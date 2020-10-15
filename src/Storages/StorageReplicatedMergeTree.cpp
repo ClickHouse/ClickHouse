@@ -3482,10 +3482,7 @@ void StorageReplicatedMergeTree::startup()
 
         /// If we don't separate create/start steps, race condition will happen
         /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
-        {
-            auto lock = queue.lockQueue();
-            background_executor.start();
-        }
+        background_executor.start();
         if (areBackgroundMovesNeeded())
             background_moves_executor.start();
 
@@ -3518,13 +3515,10 @@ void StorageReplicatedMergeTree::shutdown()
     parts_mover.moves_blocker.cancelForever();
 
     restarting_thread.shutdown();
+    background_executor.finish();
 
     {
-        /// Queue can trigger queue_task_handle itself. So we ensure that all
-        /// queue processes finished and after that reset queue_task_handle.
         auto lock = queue.lockQueue();
-        background_executor.finish();
-
         /// Cancel logs pulling after background task were cancelled. It's still
         /// required because we can trigger pullLogsToQueue during manual OPTIMIZE,
         /// MUTATE, etc. query.
@@ -5866,12 +5860,9 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeper());
 
-    {
-        auto lock = queue.lockQueue();
-        background_executor.triggerTask();
-        /// This is significant, because the execution of this task could be delayed at BackgroundPool.
-        /// And we force it to be executed.
-    }
+    /// This is significant, because the execution of this task could be delayed at BackgroundPool.
+    /// And we force it to be executed.
+    background_executor.triggerTask();
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)
