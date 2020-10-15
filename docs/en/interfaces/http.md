@@ -45,7 +45,7 @@ Date: Wed, 27 Nov 2019 10:30:18 GMT
 Connection: Close
 Content-Type: text/tab-separated-values; charset=UTF-8
 X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
-X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
+X-Clickhouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
 X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 
 1
