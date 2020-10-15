@@ -135,10 +135,10 @@ Roleは、ユーザーアカウントに付与できるaccessエンティティ�
 
 -   設定ディレクトリ構成を保管します。
 
-    ClickHouseは、アクセスエンティティ設定を [access\_control\_path](server-configuration-parameters/settings.md#access_control_path) サーバー構成パラメータ。
+    ClickHouseは、アクセスエンティティ設定を [access_control_path](server-configuration-parameters/settings.md#access_control_path) サーバー構成パラメータ。
 
 -   SQL駆動型のアクセス制御とアカウント管理を有効にします。
 
-    デフォルトのSQL型のアクセス制御及び特別口座の口座管理オのすべてのユーザー ユーザーを設定する必要があります。 `users.xml` に1を割り当てます。 [access\_management](settings/settings-users.md#access_management-user-setting) 設定。
+    デフォルトのSQL型のアクセス制御及び特別口座の口座管理オのすべてのユーザー ユーザーを設定する必要があります。 `users.xml` に1を割り当てます。 [access_management](settings/settings-users.md#access_management-user-setting) 設定。
 
 [元の記事](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->
