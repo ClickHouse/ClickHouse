@@ -63,6 +63,16 @@ Names ExpressionAction::getNeededColumns() const
     return res;
 }
 
+ExpressionAction ExpressionAction::tupleFlatten(
+    const std::vector<std::string> & argument_names_,
+    std::string result_name_)
+{
+    ExpressionAction a;
+    a.type = TUPLE_FLATTEN;
+    a.result_name = result_name_;
+    a.argument_names = argument_names_;
+    return a;
+}
 
 ExpressionAction ExpressionAction::applyFunction(
     const FunctionOverloadResolverPtr & function_,
@@ -326,7 +336,16 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
             break;
         }
+        case TUPLE_FLATTEN:
+            break;
     }
+}
+
+void ExpressionActions::removeTupleFlattenActions()
+{
+    actions.erase(
+        std::remove_if(actions.begin(), actions.end(), [](const auto & action) { return action.type == ExpressionAction::TUPLE_FLATTEN; }),
+        actions.end());
 }
 
 void ExpressionAction::execute(Block & block, bool dry_run) const
@@ -437,6 +456,9 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             }
 
             break;
+
+        case TUPLE_FLATTEN:
+            break;
     }
 }
 
@@ -490,6 +512,9 @@ std::string ExpressionAction::toString() const
                 if (!projection[i].second.empty() && projection[i].second != projection[i].first)
                     ss << " AS " << projection[i].second;
             }
+            break;
+
+        case TUPLE_FLATTEN:
             break;
     }
 
@@ -575,7 +600,7 @@ void ExpressionActions::add(const ExpressionAction & action)
 
 void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
 {
-    if (!action.result_name.empty())
+    if (action.type != ExpressionAction::TUPLE_FLATTEN && !action.result_name.empty())
         new_names.push_back(action.result_name);
 
     /// Compiled functions are custom functions and they don't need building
@@ -1207,6 +1232,8 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
             break;
         case ADD_ALIASES:
             break;
+        case TUPLE_FLATTEN:
+            break;
     }
     UInt128 result;
     hash.get128(result.low, result.high);
@@ -1276,6 +1303,8 @@ void ExpressionActionsChain::finalize()
     /// Finalize all steps. Right to left to define unnecessary input columns.
     for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
     {
+        if (typeid_cast<const ExpressionActionsChain::ExpressionActionsStep *>(steps[i].get()) && steps[i]->getExpression())
+            steps[i]->getExpression()->removeTupleFlattenActions();
         Names required_output = steps[i]->required_output;
         std::unordered_map<String, size_t> required_output_indexes;
         for (size_t j = 0; j < required_output.size(); ++j)
@@ -1466,6 +1495,16 @@ ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
     return *it->second;
 }
 
+const ActionsDAG::Node & ActionsDAG::addTupleFlatten(const std::string & name, const std::vector<std::string> & flattened_names)
+{
+    Node node;
+    node.type = Type::TUPLE_FLATTEN;
+    node.result_name = name;
+    node.flattened_names = flattened_names;
+
+    return addNode(std::move(node));
+}
+
 const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type)
 {
     Node node;
@@ -1559,6 +1598,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
+        argument.name = argument_names[i];
         argument.column = child.column;
         argument.type = child.result_type;
 
@@ -1757,6 +1797,9 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
                 break;
             case Type::ALIAS:
                 expressions->add(ExpressionAction::copyColumn(argument_names.at(0), node->result_name, cur.renamed_child != nullptr));
+                break;
+            case Type::TUPLE_FLATTEN:
+                expressions->add(ExpressionAction::tupleFlatten(node->flattened_names, node->result_name));
                 break;
             case Type::ARRAY_JOIN:
                 /// Here we copy argument because arrayJoin removes source column.

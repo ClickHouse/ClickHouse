@@ -153,6 +153,7 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
+    tupleFlatten.cpp
 
 )
 

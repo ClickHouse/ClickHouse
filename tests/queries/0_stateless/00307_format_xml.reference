@@ -20,7 +20,7 @@
 			</column>
 			<column>
 				<name>tpl</name>
-				<type>Tuple(String, DateTime)</type>
+				<type>Tuple(`'Hello &amp; world'` String, `toDateTime('2001-02-03 04:05:06')` DateTime)</type>
 			</column>
 		</columns>
 	</meta>

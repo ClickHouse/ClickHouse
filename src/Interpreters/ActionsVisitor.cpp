@@ -38,6 +38,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/tupleFlatten.h>
 
 namespace DB
 {
@@ -458,6 +459,12 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
     throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
+void ScopeStack::addTupleFlatten(const std::string & name, const std::vector<std::string> & flattened_names)
+{
+    // auto level = getColumnLevel(name);
+    stack.back().actions->addTupleFlatten(name, flattened_names);
+}
+
 void ScopeStack::addColumn(ColumnWithTypeAndName column)
 {
     const auto & node = stack[0].actions->addColumn(std::move(column));
@@ -466,10 +473,10 @@ void ScopeStack::addColumn(ColumnWithTypeAndName column)
         stack[j].actions->addInput({node.column, node.result_type, node.result_name});
 }
 
-void ScopeStack::addAlias(const std::string & name, std::string alias)
+void ScopeStack::addAlias(const std::string & name, std::string alias, bool can_replace)
 {
     auto level = getColumnLevel(name);
-    const auto & node = stack[level].actions->addAlias(name, std::move(alias));
+    const auto & node = stack[level].actions->addAlias(name, std::move(alias), can_replace);
 
     for (size_t j = level + 1; j < stack.size(); ++j)
         stack[j].actions->addInput({node.column, node.result_type, node.result_name});
@@ -646,7 +653,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     FunctionOverloadResolverPtr function_builder;
     try
     {
-        function_builder = FunctionFactory::instance().get(node.name, data.context);
+        if (node.name != "tupleFlatten")
+            function_builder = FunctionFactory::instance().get(node.name, data.context);
     }
     catch (DB::Exception & e)
     {
@@ -762,6 +770,52 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (data.only_consts && !arguments_present)
         return;
+
+    /// Function tupleFlatten.
+    if (node.name == "tupleFlatten")
+    {
+        if (const ASTWithAlias * ast_with_alias = dynamic_cast<const ASTWithAlias *>(ast.get()))
+        {
+            if (!ast_with_alias->alias.empty())
+                throw Exception("tupleFlatten cannot have alias", ErrorCodes::UNEXPECTED_EXPRESSION);
+        }
+
+        bool flattened = false;
+        if (argument_types.size() == 1 && arguments_present && !data.only_consts)
+        {
+            if (const auto * data_type_tuple = typeid_cast<const DataTypeTuple *>(argument_types[0].get()))
+            {
+                if (data_type_tuple->haveExplicitNames())
+                {
+                    const Strings & names = data_type_tuple->getElementNames();
+                    flattened = true;
+
+                    size_t tuple_size = names.size();
+                    for (size_t i = 0; i < tuple_size; ++i)
+                    {
+                        auto tuple_index_resolver = std::make_unique<TupleElementWithIndexOverloadResolver>(i + 1);
+                        auto result_name = tuple_index_resolver->getName() + "(";
+                        for (size_t j = 0; j < argument_names.size(); ++j)
+                        {
+                            if (j)
+                                result_name += ", ";
+                            result_name += argument_names[j];
+                        }
+                        result_name += ")";
+                        data.addFunction(
+                            std::make_shared<FunctionOverloadResolverAdaptor>(std::move(tuple_index_resolver)),
+                            argument_names,
+                            result_name);
+                        data.addAlias(result_name, names[i], true);
+                    }
+                    data.addTupleFlatten(column_name.get(ast), names);
+                }
+            }
+        }
+        if (!flattened)
+            throw Exception("tupleFlatten requires exactly 1 argument: a named tuple", ErrorCodes::TYPE_MISMATCH);
+        return;
+    }
 
     if (has_lambda_arguments && !data.only_consts)
     {

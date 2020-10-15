@@ -81,8 +81,9 @@ struct ScopeStack
 
     size_t getColumnLevel(const std::string & name);
 
+    void addTupleFlatten(const std::string & name, const std::vector<std::string> & flattened_names);
     void addColumn(ColumnWithTypeAndName column);
-    void addAlias(const std::string & name, std::string alias);
+    void addAlias(const std::string & name, std::string alias, bool can_replace = false);
     void addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name);
     void addFunction(
             const FunctionOverloadResolverPtr & function,
@@ -140,9 +141,14 @@ public:
             actions_stack.addColumn(std::move(column));
         }
 
-        void addAlias(const std::string & name, std::string alias)
+        void addAlias(const std::string & name, std::string alias, bool can_replace = false)
         {
-            actions_stack.addAlias(name, std::move(alias));
+            actions_stack.addAlias(name, std::move(alias), can_replace);
+        }
+
+        void addTupleFlatten(const std::string & name, const std::vector<std::string> & flattened_names)
+        {
+            actions_stack.addTupleFlatten(name, flattened_names);
         }
 
         void addArrayJoin(const std::string & source_name, std::string result_name)

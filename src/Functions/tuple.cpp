@@ -3,6 +3,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 #include <memory>
+#include <ext/map.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -52,12 +54,21 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return std::make_shared<DataTypeTuple>(arguments);
+        try
+        {
+            return std::make_shared<DataTypeTuple>(
+                    ext::map<DataTypes>(arguments, [&](const auto & arg) { return arg.type; }),
+                    ext::map<Strings>(arguments, [&](const auto & arg) { return arg.name; }));
+        }
+        catch (...) // Fallback to unnamed tuple
+        {
+            return std::make_shared<DataTypeTuple>(ext::map<DataTypes>(arguments, [&](const auto & arg) { return arg.type; }));
+        }
     }
 
     void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override

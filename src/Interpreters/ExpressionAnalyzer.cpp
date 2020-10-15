@@ -940,8 +940,41 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendProjectResult(Expressi
         }
     }
 
+    std::unordered_map<String, std::vector<String>> flattened_columns;
+    for (auto & s : chain.steps)
+    {
+        if (typeid_cast<const ExpressionActionsChain::ExpressionActionsStep *>(s.get()) && s->getExpression())
+            for (const auto & action : s->getExpression()->getActions())
+            {
+                if (action.type == ExpressionAction::TUPLE_FLATTEN)
+                    flattened_columns.emplace(action.result_name, action.argument_names);
+            }
+        Names new_required_output;
+        for (const auto & name : s->required_output)
+        {
+            auto it = flattened_columns.find(name);
+            if (it == flattened_columns.end())
+                new_required_output.emplace_back(name);
+            else
+                new_required_output.insert(new_required_output.end(), it->second.begin(), it->second.end());
+        }
+        swap(new_required_output, s->required_output);
+    }
+
+    NamesWithAliases new_result_columns;
+    for (const auto & pair : result_columns)
+    {
+        auto it = flattened_columns.find(pair.first);
+        if (it == flattened_columns.end())
+            new_result_columns.emplace_back(pair);
+        else
+        {
+            for (const auto & name : it->second)
+                new_result_columns.emplace_back(name, name);
+        }
+    }
     auto actions = chain.getLastActions();
-    actions->add(ExpressionAction::project(result_columns));
+    actions->add(ExpressionAction::project(new_result_columns));
     return actions;
 }
 

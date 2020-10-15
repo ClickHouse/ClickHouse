@@ -16,6 +16,7 @@ namespace DB
 {
 
 /** A nested table. For example, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
+  * It can also be used to parse a named tuple, such as tuple(i int, j int)
   */
 class ParserNestedTable : public IParserBase
 {

@@ -73,6 +73,8 @@ public:
         PROJECT,
         /// Add columns with alias names. This columns are the same as non-aliased. PROJECT columns if you need to modify them.
         ADD_ALIASES,
+
+        TUPLE_FLATTEN,
     };
 
     Type type{};
@@ -105,6 +107,8 @@ public:
 
     /// For PROJECT.
     NamesWithAliases projection;
+
+    static ExpressionAction tupleFlatten(const std::vector<std::string> & argument_names_, std::string result_name_);
 
     /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
     static ExpressionAction applyFunction(
@@ -155,6 +159,7 @@ public:
         /// Function arrayJoin. Specially separated because it changes the number of rows.
         ARRAY_JOIN,
         FUNCTION,
+        TUPLE_FLATTEN,
     };
 
     struct Node
@@ -167,6 +172,8 @@ public:
 
         std::string result_name;
         DataTypePtr result_type;
+
+        std::vector<std::string> flattened_names;
 
         std::string unique_column_name_for_array_join;
 
@@ -203,6 +210,7 @@ public:
     Names getNames() const;
     std::string dumpNames() const;
 
+    const Node & addTupleFlatten(const std::string & name, const std::vector<std::string> & flattened_names);
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
     const Node & addColumn(ColumnWithTypeAndName column);
@@ -277,6 +285,8 @@ public:
     }
 
     const NamesAndTypesList & getRequiredColumnsWithTypes() const { return input_columns; }
+
+    void removeTupleFlattenActions();
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
