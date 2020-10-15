@@ -18,9 +18,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 class FunctionDemangle : public IFunction
 {
 public:
@@ -63,7 +60,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr & column = block[arguments[0]].column;
+        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnString * column_concrete = checkAndGetColumn<ColumnString>(column.get());
 
         if (!column_concrete)
@@ -85,11 +82,9 @@ public:
             }
         }
 
-        block[result].column = std::move(result_column);
+        block.getByPosition(result).column = std::move(result_column);
     }
 };
-
-}
 
 void registerFunctionDemangle(FunctionFactory & factory)
 {

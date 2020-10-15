@@ -5,25 +5,16 @@
 #include <Columns/ColumnVector.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Core/MySQL/Authentication.h>
-#include <Core/MySQL/PacketsGeneric.h>
-#include <Core/MySQL/PacketsConnection.h>
-#include <Core/MySQL/PacketsProtocolText.h>
+#include <Core/MySQLProtocol.h>
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/copyData.h>
 #include <Interpreters/executeQuery.h>
-#include <IO/copyData.h>
-#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <Storages/IStorage.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <regex>
-#include <Access/User.h>
-#include <Access/AccessControlManager.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -34,16 +25,12 @@
 #    include <Poco/Crypto/RSAKey.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
-
 #endif
 
 namespace DB
 {
 
 using namespace MySQLProtocol;
-using namespace MySQLProtocol::Generic;
-using namespace MySQLProtocol::ProtocolText;
-using namespace MySQLProtocol::ConnectionPhase;
 
 #if USE_SSL
 using Poco::Net::SecureStreamSocket;
@@ -57,10 +44,6 @@ namespace ErrorCodes
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int SUPPORT_IS_DISABLED;
 }
-
-
-static const size_t PACKET_HEADER_SIZE = 4;
-static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 
 static String selectEmptyReplacementQuery(const String & query);
 static String showTableStatusReplacementQuery(const String & query);
@@ -91,13 +74,12 @@ void MySQLHandler::run()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
-    packet_endpoint = std::make_shared<PacketEndpoint>(*in, *out, connection_context.mysql.sequence_id);
+    packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.mysql.sequence_id);
 
     try
     {
-        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME,
-            auth_plugin->getName(), auth_plugin->getAuthPluginData(), CharacterSet::utf8_general_ci);
-        packet_endpoint->sendPacket<Handshake>(handshake, true);
+        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME, auth_plugin->getName(), auth_plugin->getAuthPluginData());
+        packet_sender->sendPacket<Handshake>(handshake, true);
 
         LOG_TRACE(log, "Sent handshake");
 
@@ -135,16 +117,16 @@ void MySQLHandler::run()
         catch (const Exception & exc)
         {
             log->log(exc);
-            packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
+            packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
         }
 
-        OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
-        packet_endpoint->sendPacket(ok_packet, true);
+        OK_Packet ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
+        packet_sender->sendPacket(ok_packet, true);
 
         while (true)
         {
-            packet_endpoint->resetSequenceId();
-            MySQLPacketPayloadReadBuffer payload = packet_endpoint->getPayload();
+            packet_sender->resetSequenceId();
+            PacketPayloadReadBuffer payload = packet_sender->getPayload();
 
             char command = 0;
             payload.readStrict(command);
@@ -184,7 +166,7 @@ void MySQLHandler::run()
             }
             catch (...)
             {
-                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
+                packet_sender->sendPacket(ERR_Packet(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
             }
         }
     }
@@ -198,7 +180,7 @@ void MySQLHandler::run()
  *  Reading is performed from socket instead of ReadBuffer to prevent reading part of SSL handshake.
  *  If we read it from socket, it will be impossible to start SSL connection using Poco. Size of SSLRequest packet payload is 32 bytes, thus we can read at most 36 bytes.
  */
-void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResponse & packet)
+void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
 {
     size_t packet_size = PACKET_HEADER_SIZE + SSL_REQUEST_PAYLOAD_SIZE;
 
@@ -233,11 +215,11 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
         packet_size = PACKET_HEADER_SIZE + payload_size;
         WriteBufferFromOwnString buf_for_handshake_response;
         buf_for_handshake_response.write(buf, pos);
-        copyData(*packet_endpoint->in, buf_for_handshake_response, packet_size - pos);
+        copyData(*packet_sender->in, buf_for_handshake_response, packet_size - pos);
         ReadBufferFromString payload(buf_for_handshake_response.str());
         payload.ignore(PACKET_HEADER_SIZE);
-        packet.readPayloadWithUnpacked(payload);
-        packet_endpoint->sequence_id++;
+        packet.readPayload(payload);
+        packet_sender->sequence_id++;
     }
 }
 
@@ -254,15 +236,15 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
         }
 
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
-        auth_plugin->authenticate(user_name, auth_response, connection_context, packet_endpoint, secure_connection, socket().peerAddress());
+        auth_plugin->authenticate(user_name, auth_response, connection_context, packet_sender, secure_connection, socket().peerAddress());
     }
     catch (const Exception & exc)
     {
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
-        packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
+        packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
         throw;
     }
-    LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
+    LOG_INFO(log, "Authentication for user {} succeeded.", user_name);
 }
 
 void MySQLHandler::comInitDB(ReadBuffer & payload)
@@ -271,13 +253,13 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
     connection_context.setCurrentDatabase(database);
-    packet_endpoint->sendPacket(OKPacket(0, client_capability_flags, 0, 0, 1), true);
+    packet_sender->sendPacket(OK_Packet(0, client_capability_flags, 0, 0, 1), true);
 }
 
 void MySQLHandler::comFieldList(ReadBuffer & payload)
 {
     ComFieldList packet;
-    packet.readPayloadWithUnpacked(payload);
+    packet.readPayload(payload);
     String database = connection_context.getCurrentDatabase();
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, connection_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
@@ -286,14 +268,14 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
         ColumnDefinition column_definition(
             database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
         );
-        packet_endpoint->sendPacket(column_definition);
+        packet_sender->sendPacket(column_definition);
     }
-    packet_endpoint->sendPacket(OKPacket(0xfe, client_capability_flags, 0, 0, 0), true);
+    packet_sender->sendPacket(OK_Packet(0xfe, client_capability_flags, 0, 0, 0), true);
 }
 
 void MySQLHandler::comPing()
 {
-    packet_endpoint->sendPacket(OKPacket(0x0, client_capability_flags, 0, 0, 0), true);
+    packet_sender->sendPacket(OK_Packet(0x0, client_capability_flags, 0, 0, 0), true);
 }
 
 static bool isFederatedServerSetupSetCommand(const String & query);
@@ -306,7 +288,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     // As Clickhouse doesn't support these statements, we just send OK packet in response.
     if (isFederatedServerSetupSetCommand(query))
     {
-        packet_endpoint->sendPacket(OKPacket(0x00, client_capability_flags, 0, 0, 0), true);
+        packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
     }
     else
     {
@@ -336,7 +318,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         );
 
         if (!with_output)
-            packet_endpoint->sendPacket(OKPacket(0x00, client_capability_flags, 0, 0, 0), true);
+            packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
     }
 }
 
@@ -345,9 +327,7 @@ void MySQLHandler::authPluginSSL()
     throw Exception("ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.", ErrorCodes::SUPPORT_IS_DISABLED);
 }
 
-void MySQLHandler::finishHandshakeSSL(
-    [[maybe_unused]] size_t packet_size, [[maybe_unused]] char * buf, [[maybe_unused]] size_t pos,
-    [[maybe_unused]] std::function<void(size_t)> read_bytes, [[maybe_unused]] MySQLProtocol::ConnectionPhase::HandshakeResponse & packet)
+void MySQLHandler::finishHandshakeSSL([[maybe_unused]] size_t packet_size, [[maybe_unused]] char * buf, [[maybe_unused]] size_t pos, [[maybe_unused]] std::function<void(size_t)> read_bytes, [[maybe_unused]] MySQLProtocol::HandshakeResponse & packet)
 {
     throw Exception("Client requested SSL, while it is disabled.", ErrorCodes::SUPPORT_IS_DISABLED);
 }
@@ -364,15 +344,13 @@ void MySQLHandlerSSL::authPluginSSL()
     auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(public_key, private_key, log);
 }
 
-void MySQLHandlerSSL::finishHandshakeSSL(
-    size_t packet_size, char *buf, size_t pos, std::function<void(size_t)> read_bytes,
-    MySQLProtocol::ConnectionPhase::HandshakeResponse & packet)
+void MySQLHandlerSSL::finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::HandshakeResponse & packet)
 {
     read_bytes(packet_size); /// Reading rest SSLRequest.
     SSLRequest ssl_request;
     ReadBufferFromMemory payload(buf, pos);
     payload.ignore(PACKET_HEADER_SIZE);
-    ssl_request.readPayloadWithUnpacked(payload);
+    ssl_request.readPayload(payload);
     connection_context.mysql.client_capabilities = ssl_request.capability_flags;
     connection_context.mysql.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
     secure_connection = true;
@@ -380,8 +358,9 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
     connection_context.mysql.sequence_id = 2;
-    packet_endpoint = std::make_shared<PacketEndpoint>(*in, *out, connection_context.mysql.sequence_id);
-    packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
+    packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.mysql.sequence_id);
+    packet_sender->max_packet_size = connection_context.mysql.max_packet_size;
+    packet_sender->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
 }
 
 #endif
@@ -394,7 +373,6 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
-        "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
         , std::regex::icase};
     return 1 == std::regex_match(query, expr);
