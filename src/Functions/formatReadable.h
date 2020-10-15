@@ -49,28 +49,28 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        if (!(executeType<UInt8>(block, arguments, result)
-            || executeType<UInt16>(block, arguments, result)
-            || executeType<UInt32>(block, arguments, result)
-            || executeType<UInt64>(block, arguments, result)
-            || executeType<Int8>(block, arguments, result)
-            || executeType<Int16>(block, arguments, result)
-            || executeType<Int32>(block, arguments, result)
-            || executeType<Int64>(block, arguments, result)
-            || executeType<Float32>(block, arguments, result)
-            || executeType<Float64>(block, arguments, result)))
-            throw Exception("Illegal column " + block[arguments[0]].column->getName()
-                + " of argument of function " + getName(),
+        if (!(executeType<UInt8>(columns, arguments, result)
+            || executeType<UInt16>(columns, arguments, result)
+            || executeType<UInt32>(columns, arguments, result)
+            || executeType<UInt64>(columns, arguments, result)
+            || executeType<Int8>(columns, arguments, result)
+            || executeType<Int16>(columns, arguments, result)
+            || executeType<Int32>(columns, arguments, result)
+            || executeType<Int64>(columns, arguments, result)
+            || executeType<Float32>(columns, arguments, result)
+            || executeType<Float64>(columns, arguments, result)))
+            throw Exception("Illegal column " + columns[arguments[0]].column->getName()
+                            + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:
     template <typename T>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeType(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result) const
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block[arguments[0]].column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(columns[arguments[0]].column.get()))
         {
             auto col_to = ColumnString::create();
 
@@ -91,7 +91,7 @@ private:
             }
 
             buf_to.finalize();
-            block[result].column = std::move(col_to);
+            columns[result].column = std::move(col_to);
             return true;
         }
 

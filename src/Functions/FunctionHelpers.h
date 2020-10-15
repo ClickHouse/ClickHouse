@@ -82,7 +82,7 @@ inline std::enable_if_t<IsDecimalNumber<T>, Field> toField(const T & x, UInt32 s
 Columns convertConstTupleToConstantElements(const ColumnConst & column);
 
 
-/// Returns the copy of a given block in which each column specified in
+/// Returns the copy of a given columns in which each column specified in
 /// the "arguments" parameter is replaced with its respective nested
 /// column if it is nullable.
 ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns, const ColumnNumbers & args);
