@@ -1,4 +1,4 @@
-#include "TestHint.h"
+#include "TestReturnStatus.h"
 #include "ConnectionParameters.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
@@ -924,8 +924,9 @@ private:
         const bool test_mode = config().has("testmode");
 
         {   /// disable logs if expects errors
-            TestHint test_hint(test_mode, all_queries_text);
-            if (test_hint.clientError() || test_hint.serverError())
+            TestReturnStatus test_return_status(test_mode, all_queries_text);
+
+            if (test_return_status.clientError() || test_return_status.serverError())
                 processTextAsSingleQuery("SET send_logs_level = 'none'");
         }
 
@@ -986,15 +987,11 @@ private:
 
                 /// Try find test hint for syntax error
                 const char * end_of_line = find_first_symbols<'\n'>(this_query_begin,all_queries_end);
-                TestHint hint(true, String(this_query_end, end_of_line - this_query_end));
-                if (hint.serverError()) /// Syntax errors are considered as client errors
+
+                TestReturnStatus status(true, String(this_query_end, end_of_line - this_query_end));
+
+                if (!status.checkIfIsQueryParseSyntaxError(e))
                     throw;
-                if (hint.clientError() != e.code())
-                {
-                    if (hint.clientError())
-                        e.addMessage("\nExpected clinet error: " + std::to_string(hint.clientError()));
-                    throw;
-                }
 
                 /// It's expected syntax error, skip the line
                 this_query_begin = end_of_line;
@@ -1047,9 +1044,11 @@ private:
 
             // Look for the hint in the text of query + insert data, if any.
             // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-            TestHint test_hint(test_mode, full_query);
-            expected_client_error = test_hint.clientError();
-            expected_server_error = test_hint.serverError();
+            TestReturnStatus test_return_status(test_mode, full_query);
+            expected_client_error = test_return_status.clientError();
+            expected_server_error = test_return_status.serverError();
+
+            /// We do not check result validity as it will be checked at line 1088.
 
             try
             {
@@ -1069,13 +1068,19 @@ private:
             catch (...)
             {
                 last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+
                 actual_client_error = last_exception_received_from_server->code();
+
                 if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                    std::cerr << "Error on processing query: " << full_query << std::endl << last_exception_received_from_server->message();
+                    std::cerr << "Error on processing query: " << full_query << std::endl
+                              << last_exception_received_from_server->message();
+
                 received_exception_from_server = true;
             }
 
-            if (!test_hint.checkActual(actual_server_error, actual_client_error, received_exception_from_server, last_exception_received_from_server))
+            if (!test_return_status.mayContinueWithoutReconnect(
+                    actual_server_error, actual_client_error,
+                    received_exception_from_server, last_exception_received_from_server))
                 connection->forceConnected(connection_parameters.timeouts);
 
             if (received_exception_from_server && !ignore_error)

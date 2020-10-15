@@ -39,13 +39,25 @@ The name of the test starts with a five-digit prefix followed by a descriptive n
 
 Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that requires server to listen `127.0.0.*`; `distributed` or `global` have the same meaning. `long` is for tests that run slightly longer that one second. You can disable these groups of tests using `--no-zookeeper`, `--no-shard` and `--no-long` options, respectively. Make sure to add a proper prefix to your test name if it needs ZooKeeper or distributed queries.
 
-### Checking for an Error that Must Occur
+### Checking for an error that must occur
 
 Sometimes you want to test that a server error occurs for an incorrect query. We support special annotations for this in SQL tests, in the following form:
+
 ```
-select x; -- { serverError 49 }
+SELECT x; -- { serverError 49 }
 ```
+
 This test ensures that the server returns an error with code 49 about unknown column `x`. If there is no error, or the error is different, the test will fail. If you want to ensure that an error occurs on the client side, use `clientError` annotation instead.
+
+You also can provide a second parameter representing a wanted error message (it may be a regular expression).
+If the received message won't match (in terms of `re2::RE2::FullMatch`) the provided one, the test will also fail.
+The provided message should be enclosed in double braces.
+
+**Example:**
+
+```
+SELECT * FROM invalid; -- { serverError 88 "DB::Exception *" }
+```
 
 ### Testing a Distributed Query
 
