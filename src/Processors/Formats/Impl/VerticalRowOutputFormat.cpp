@@ -11,8 +11,8 @@ namespace DB
 {
 
 VerticalRowOutputFormat::VerticalRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_)
+    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
@@ -168,10 +168,10 @@ void registerOutputFormatProcessorVertical(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Vertical", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<VerticalRowOutputFormat>(buf, sample, callback, settings);
+        return std::make_shared<VerticalRowOutputFormat>(buf, sample, params, settings);
     });
 }
 

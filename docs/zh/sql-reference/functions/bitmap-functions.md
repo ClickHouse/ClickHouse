@@ -46,7 +46,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapSubsetInRange {#bitmapsubsetinrange}
 
-将位图指定范围（不包含range\_end）转换为另一个位图。
+将位图指定范围（不包含range_end）转换为另一个位图。
 
     bitmapSubsetInRange(bitmap, range_start, range_end)
 
@@ -259,7 +259,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapMin {#bitmapmin}
 
-返回一个UInt64类型的数值，表示位图中的最小值。如果位图为空则返回UINT32\_MAX。
+返回一个UInt64类型的数值，表示位图中的最小值。如果位图为空则返回UINT32_MAX。
 
     bitmapMin(bitmap)
 
