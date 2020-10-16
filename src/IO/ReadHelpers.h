@@ -700,7 +700,7 @@ UInt128 stringToUUID(const String & str);
 template <typename ReturnType = void>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
-/** In YYYY-MM-DD hh:mm:ss format, according to specified time zone.
+/** In YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
 template <typename ReturnType = void>
@@ -709,12 +709,21 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     /** Read 10 characters, that could represent unix timestamp.
       * Only unix timestamp of 5-10 characters is supported.
       * Then look at 5th character. If it is a number - treat whole as unix timestamp.
-      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss format.
+      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
       */
 
     /// Optimistic path, when whole value is in buffer.
     const char * s = buf.position();
-    if (s + 19 <= buf.buffer().end())
+
+    /// YYYY-MM-DD hh:mm:ss
+    static constexpr auto DateTimeStringInputSize = 19;
+    bool optimistic_path_for_date_time_input = s + DateTimeStringInputSize <= buf.buffer().end();
+
+    /// YYYY-MM-DD
+    static constexpr auto DateStringInputSize = 10;
+    bool optimistic_path_for_date_input = s + DateStringInputSize <= buf.buffer().end();
+
+    if (optimistic_path_for_date_time_input || optimistic_path_for_date_input)
     {
         if (s[4] < '0' || s[4] > '9')
         {
@@ -722,16 +731,23 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
             UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-            UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
-            UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
-            UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
+            UInt8 hour = 0;
+            UInt8 minute = 0;
+            UInt8 second = 0;
+
+            if (optimistic_path_for_date_time_input)
+            {
+                hour = (s[11] - '0') * 10 + (s[12] - '0');
+                minute = (s[14] - '0') * 10 + (s[15] - '0');
+                second = (s[17] - '0') * 10 + (s[18] - '0');
+            }
 
             if (unlikely(year == 0))
                 datetime = 0;
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
-            buf.position() += 19;
+            buf.position() += optimistic_path_for_date_time_input ? DateTimeStringInputSize : DateStringInputSize;
             return ReturnType(true);
         }
         else
