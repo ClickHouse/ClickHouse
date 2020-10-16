@@ -49,10 +49,10 @@ public:
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        const IDataType & type = *block[result].type;
-        block[result].column = type.createColumnConst(input_rows_count, type.getDefault());
+        const IDataType & type = *columns[result].type;
+        columns[result].column = type.createColumnConst(input_rows_count, type.getDefault());
     }
 };
 
