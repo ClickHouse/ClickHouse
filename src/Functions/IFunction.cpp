@@ -526,10 +526,10 @@ DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(
         }
         if (null_presence.has_nullable)
         {
-            Block nested_block = createBlockWithNestedColumns(
+            Block nested_columns = createBlockWithNestedColumns(
                 arguments,
                 ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
-            auto return_type = impl->getReturnType(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
+            auto return_type = impl->getReturnType(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
             return makeNullable(return_type);
         }
     }
@@ -586,14 +586,14 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
                 values[i] = [value = b.CreateExtractValue(value, {0})]() { return value; };
             }
             auto * result = b.CreateInsertValue(zero, compileImpl(builder, *denulled, std::move(values)), {0});
-            auto * result_block = b.GetInsertBlock();
+            auto * result_columns = b.GetInsertBlock();
             b.CreateBr(join);
             b.SetInsertPoint(fail);
             auto * null = b.CreateInsertValue(zero, b.getTrue(), {1});
             b.CreateBr(join);
             b.SetInsertPoint(join);
             auto * phi = b.CreatePHI(result->getType(), 2);
-            phi->addIncoming(result, result_block);
+            phi->addIncoming(result, result_columns);
             phi->addIncoming(null, fail);
             return phi;
         }
