@@ -197,7 +197,7 @@ public:
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
 
-    ThreadPool::Job getDataProcessingJob() override;
+    std::optional<JobAndPool> getDataProcessingJob() override;
 
 private:
 

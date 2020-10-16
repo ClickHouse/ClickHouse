@@ -2601,8 +2601,7 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     });
 }
 
-
-ThreadPool::Job StorageReplicatedMergeTree::getDataProcessingJob()
+std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
@@ -2616,10 +2615,10 @@ ThreadPool::Job StorageReplicatedMergeTree::getDataProcessingJob()
     if (!entry)
         return {};
 
-    return [this, selected_entry{std::move(selected_entry)}] () mutable
+    return JobAndPool{[this, selected_entry{std::move(selected_entry)}] () mutable
     {
         processQueueEntry(selected_entry);
-    };
+    }, PoolType::MERGE_MUTATE};
 }
 
 bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const

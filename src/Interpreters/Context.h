@@ -110,7 +110,7 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
-struct TaskSleepSettings;
+struct BackgroundTaskSchedulingSettings;
 
 
 #if USE_EMBEDDED_COMPILER
@@ -507,8 +507,10 @@ public:
       */
     void dropCaches() const;
 
-    TaskSleepSettings getBackgroundProcessingTaskSleepSettings() const;
-    TaskSleepSettings getBackgroundMoveTaskSleepSettings() const;
+    /// Settings for MergeTree background tasks stored in config.xml
+    BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
+    BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
+
     BackgroundSchedulePool & getBufferFlushSchedulePool();
     BackgroundSchedulePool & getSchedulePool();
     BackgroundSchedulePool & getMessageBrokerSchedulePool();

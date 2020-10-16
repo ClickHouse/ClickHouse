@@ -428,6 +428,7 @@ public:
         return {};
     }
 
+    /// Call when lock from previous method removed
     virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
 
     std::atomic<bool> is_dropped{false};

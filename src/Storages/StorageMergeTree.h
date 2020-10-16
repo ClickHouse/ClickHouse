@@ -89,7 +89,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
-    ThreadPool::Job getDataProcessingJob() override;
+    std::optional<JobAndPool> getDataProcessingJob() override;
 private:
 
     /// Mutex and condvar for synchronous mutations wait

@@ -893,7 +893,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-ThreadPool::Job StorageMergeTree::getDataProcessingJob()
+std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
 {
     if (shutdown_called)
         return {};
@@ -910,17 +910,17 @@ ThreadPool::Job StorageMergeTree::getDataProcessingJob()
 
     if (merge_entry || mutate_entry)
     {
-        return [this, metadata_snapshot, merge_entry{std::move(merge_entry)}, mutate_entry{std::move(mutate_entry)}] () mutable
+        return JobAndPool{[this, metadata_snapshot, merge_entry{std::move(merge_entry)}, mutate_entry{std::move(mutate_entry)}] () mutable
         {
             if (merge_entry)
                 mergeSelectedParts(metadata_snapshot, false, *merge_entry);
             else if (mutate_entry)
                 mutateSelectedPart(metadata_snapshot, *mutate_entry);
-        };
+        }, PoolType::MERGE_MUTATE};
     }
     else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
     {
-        return [this] ()
+        return JobAndPool{[this] ()
         {
             {
                 auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
@@ -931,7 +931,7 @@ ThreadPool::Job StorageMergeTree::getDataProcessingJob()
                 clearOldWriteAheadLogs();
             }
             clearOldMutations();
-        };
+        }, PoolType::MERGE_MUTATE};
     }
     return {};
 }
