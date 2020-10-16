@@ -1,12 +1,15 @@
 #if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
 #    include "config_formats.h"
 #endif
 
 #if USE_PROTOBUF
 #    include <Formats/FormatSchemaInfo.h>
+#    include <Formats/ProtobufHDFSSourceTree.h>
 #    include <Formats/ProtobufSchemas.h>
 #    include <google/protobuf/compiler/importer.h>
 #    include <Common/Exception.h>
+#    include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -26,9 +29,20 @@ ProtobufSchemas & ProtobufSchemas::instance()
 class ProtobufSchemas::ImporterWithSourceTree : public google::protobuf::compiler::MultiFileErrorCollector
 {
 public:
-    explicit ImporterWithSourceTree(const String & schema_directory) : importer(&disk_source_tree, this)
+    explicit ImporterWithSourceTree(const String & schema_directory)
     {
-        disk_source_tree.MapPath("", schema_directory);
+#if USE_HDFS
+        if (startsWith(schema_directory, "hdfs://"))
+        {
+            importer = std::make_unique<google::protobuf::compiler::Importer>(&hdfs_source_tree, this);
+            hdfs_source_tree.init(schema_directory);
+        }
+        else
+#endif
+        {
+            importer = std::make_unique<google::protobuf::compiler::Importer>(&disk_source_tree, this);
+            disk_source_tree.MapPath("", schema_directory);
+        }
     }
 
     ~ImporterWithSourceTree() override = default;
@@ -36,11 +50,11 @@ public:
     const google::protobuf::Descriptor * import(const String & schema_path, const String & message_name)
     {
         // Search the message type among already imported ones.
-        const auto * descriptor = importer.pool()->FindMessageTypeByName(message_name);
+        const auto * descriptor = importer->pool()->FindMessageTypeByName(message_name);
         if (descriptor)
             return descriptor;
 
-        const auto * file_descriptor = importer.Import(schema_path);
+        const auto * file_descriptor = importer->Import(schema_path);
         // If there are parsing errors AddError() throws an exception and in this case the following line
         // isn't executed.
         assert(file_descriptor);
@@ -64,7 +78,10 @@ private:
     }
 
     google::protobuf::compiler::DiskSourceTree disk_source_tree;
-    google::protobuf::compiler::Importer importer;
+#if USE_HDFS
+    ProtobufHDFSSourceTree hdfs_source_tree;
+#endif
+    std::unique_ptr<google::protobuf::compiler::Importer> importer;
 };
 
 

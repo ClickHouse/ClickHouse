@@ -20,6 +20,7 @@ SRCS(
     NullFormat.cpp
     ParsedTemplateFormatString.cpp
     ProtobufColumnMatcher.cpp
+    ProtobufHDFSSourceTree.cpp
     ProtobufReader.cpp
     ProtobufSchemas.cpp
     ProtobufWriter.cpp

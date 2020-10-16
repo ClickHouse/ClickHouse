@@ -450,6 +450,7 @@ class IColumn;
     M(Float, input_format_allow_errors_ratio, 0, "Maximum relative amount of errors while reading text formats (like CSV, TSV). In case of error, if at least absolute or relative amount of errors is lower than corresponding value, will skip until next line and continue.", 0) \
     \
     M(String, format_schema, "", "Schema identifier (used by schema-based formats)", 0) \
+    M(String, query_format_schema_path, "", "Query level schema path (used by schema-based formats)", 0) \
     M(String, format_template_resultset, "", "Path to file which contains format string for result set (for Template format)", 0) \
     M(String, format_template_row, "", "Path to file which contains format string for rows (for Template format)", 0) \
     M(String, format_template_rows_between_delimiter, "\n", "Delimiter between rows (for Template format)", 0) \

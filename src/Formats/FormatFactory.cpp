@@ -64,7 +64,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
     format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
     format_settings.schema.format_schema = settings.format_schema;
-    format_settings.schema.format_schema_path = context.getFormatSchemaPath();
+    format_settings.schema.format_schema_path = settings.query_format_schema_path.changed ? settings.query_format_schema_path : context.getFormatSchemaPath();
     format_settings.schema.is_server = context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.custom.result_before_delimiter = settings.format_custom_result_before_delimiter;
     format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
@@ -117,7 +117,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.schema.format_schema = settings.format_schema;
-    format_settings.schema.format_schema_path = context.getFormatSchemaPath();
+    format_settings.schema.format_schema_path = settings.query_format_schema_path.changed ? settings.query_format_schema_path : context.getFormatSchemaPath();
     format_settings.schema.is_server = context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.custom.result_before_delimiter = settings.format_custom_result_before_delimiter;
     format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;

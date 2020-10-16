@@ -2,7 +2,11 @@
 #include <Poco/Path.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils/StringUtils.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 namespace DB
 {
@@ -56,6 +60,10 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
 
     auto default_schema_directory = [&format_schema_path]()
     {
+#if USE_HDFS
+        if (startsWith(format_schema_path, "hdfs://"))
+            return format_schema_path;
+#endif
         static const String str = Poco::Path(format_schema_path).makeAbsolute().makeDirectory().toString();
         return str;
     };
