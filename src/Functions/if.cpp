@@ -160,7 +160,7 @@ struct NumIfImpl<A, B, NumberTraits::Error>
 private:
     [[noreturn]] static void throwError()
     {
-        throw Exception("Invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception("Incompatible types of arguments corresponding to two conditional branches", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 public:
     template <typename... Args> static void vectorVector(Args &&...) { throwError(); }
