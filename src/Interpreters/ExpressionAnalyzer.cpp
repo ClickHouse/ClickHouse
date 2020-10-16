@@ -830,8 +830,16 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 
     getRootActions(select_query->select(), only_types, step.actions());
 
-//    for (const auto & child : select_query->select()->children)
-//        step.required_output.push_back(child->getColumnName());
+    for (const auto & child : select_query->select()->children)
+    {
+        if (const auto * function = child->as<ASTFunction>())
+        {
+            if (function->name == "tupleFlatten")
+                continue;
+        }
+
+        step.required_output.push_back(child->getColumnName());
+    }
 }
 
 bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
