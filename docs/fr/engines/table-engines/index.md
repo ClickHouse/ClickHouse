@@ -62,7 +62,7 @@ Moteurs dans la famille:
 -   [Distribué](special/distributed.md#distributed)
 -   [MaterializedView](special/materializedview.md#materializedview)
 -   [Dictionnaire](special/dictionary.md#dictionary)
--   \[Fusion\](spécial/de fusion.md\#fusion
+-   \[Fusion\](spécial/de fusion.md#fusion
 -   [Fichier](special/file.md#file)
 -   [NULL](special/null.md#null)
 -   [Définir](special/set.md#set)

@@ -1,3 +1,4 @@
+#pragma once
 #include <common/DateLUTImpl.h>
 
 #include <DataTypes/DataTypeDate.h>
@@ -304,7 +305,7 @@ private:
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeAddIntervalImpl
 {
-    static void execute(Transform transform, Block & block, const ColumnNumbers & arguments, size_t result)
+    static void execute(Transform transform, ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result)
     {
         using FromValueType = typename FromDataType::FieldType;
         using FromColumnType = typename FromDataType::ColumnType;
@@ -312,16 +313,16 @@ struct DateTimeAddIntervalImpl
 
         auto op = Adder<Transform>{std::move(transform)};
 
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(columns, arguments, 2, 0);
 
-        const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
+        const ColumnPtr source_col = columns[arguments[0]].column;
 
-        auto result_col = block.getByPosition(result).type->createColumn();
+        auto result_col = columns[result].type->createColumn();
         auto col_to = assert_cast<ToColumnType *>(result_col.get());
 
         if (const auto * sources = checkAndGetColumn<FromColumnType>(source_col.get()))
         {
-            const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
+            const IColumn & delta_column = *columns[arguments[1]].column;
 
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
                 op.vectorConstant(sources->getData(), col_to->getData(), delta_const_column->getInt(0), time_zone);
@@ -333,16 +334,16 @@ struct DateTimeAddIntervalImpl
             op.constantVector(
                 sources_const->template getValue<FromValueType>(),
                 col_to->getData(),
-                *block.getByPosition(arguments[1]).column, time_zone);
+                *columns[arguments[1]].column, time_zone);
         }
         else
         {
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + columns[arguments[0]].column->getName()
                 + " of first argument of function " + Transform::name,
                 ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        block.getByPosition(result).column = std::move(result_col);
+        columns[result].column = std::move(result_col);
     }
 };
 
@@ -462,28 +463,28 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = columns[arguments[0]].type.get();
         WhichDataType which(from_type);
 
         if (which.isDate())
         {
             DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(
-                Transform{}, block, arguments, result);
+                Transform{}, columns, arguments, result);
         }
         else if (which.isDateTime())
         {
             DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
-                Transform{}, block, arguments, result);
+                Transform{}, columns, arguments, result);
         }
         else if (const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type))
         {
             DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
-                Transform{datetime64_type->getScale()}, block, arguments, result);
+                Transform{datetime64_type->getScale()}, columns, arguments, result);
         }
         else
-            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of first argument of function " + getName(),
+            throw Exception("Illegal type " + columns[arguments[0]].type->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };

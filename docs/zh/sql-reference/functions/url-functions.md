@@ -38,19 +38,19 @@
 
 ### pathFull {#pathfull}
 
-与上面相同，但包括请求参数和fragment。例如：/top/news.html?page=2\#comments
+与上面相同，但包括请求参数和fragment。例如：/top/news.html?page=2#comments
 
 ### 查询字符串 {#querystring}
 
-返回请求参数。例如：page=1&lr=213。请求参数不包含问号已经\# 以及\# 之后所有的内容。
+返回请求参数。例如：page=1&lr=213。请求参数不包含问号已经# 以及# 之后所有的内容。
 
 ### 片段 {#fragment}
 
-返回URL的fragment标识。fragment不包含\#。
+返回URL的fragment标识。fragment不包含#。
 
 ### querystring andfragment {#querystringandfragment}
 
-返回请求参数和fragment标识。例如：page=1\#29390。
+返回请求参数和fragment标识。例如：page=1#29390。
 
 ### extractURLParameter(URL,name) {#extracturlparameterurl-name}
 
@@ -105,11 +105,11 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 
 ### cutFragment {#cutfragment}
 
-删除fragment标识。\#同样也会被删除。
+删除fragment标识。#同样也会被删除。
 
 ### cutquerystring andfragment {#cutquerystringandfragment}
 
-删除请求参数以及fragment标识。问号以及\#也会被删除。
+删除请求参数以及fragment标识。问号以及#也会被删除。
 
 ### cutURLParameter(URL,name) {#cuturlparameterurl-name}
 

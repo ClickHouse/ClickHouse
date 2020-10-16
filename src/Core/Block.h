@@ -152,6 +152,12 @@ public:
 private:
     void eraseImpl(size_t position);
     void initializeIndexByName();
+
+    /// This is needed to allow function execution over data.
+    /// It is safe because functions does not change column names, so index is unaffected.
+    /// It is temporary.
+    friend struct ExpressionAction;
+    friend class ActionsDAG;
 };
 
 using Blocks = std::vector<Block>;
