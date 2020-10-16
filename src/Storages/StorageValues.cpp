@@ -34,6 +34,7 @@ Pipe StorageValues::read(
 
     /// Get only required columns.
     Block block;
+
     for (const auto & name : column_names)
         block.insert(res_block.getByName(name));
 
