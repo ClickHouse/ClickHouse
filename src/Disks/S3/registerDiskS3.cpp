@@ -1,3 +1,4 @@
+#include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/WriteHelpers.h>
@@ -122,6 +123,9 @@ void registerDiskS3(DiskFactory & factory)
         auto proxy_config = getProxyConfiguration(config_prefix, config);
         if (proxy_config)
             cfg.perRequestConfiguration = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
+
+        cfg.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(
+            config.getUInt(config_prefix + ".retry_attempts", 10));
 
         auto client = S3::ClientFactory::instance().create(
             cfg,
