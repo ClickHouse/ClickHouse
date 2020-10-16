@@ -822,25 +822,7 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
 
 
     if (update_unit_ptr->current_exception)
-    {
-        // There might have been a single update unit for multiple callers in
-        // independent threads, and current_exception will be the same for them.
-        // Don't just rethrow it, because sharing the same exception object
-        // between multiple threads can lead to weird effects if they decide to
-        // modify it, for example, by adding some error context.
-        try
-        {
-            std::rethrow_exception(update_unit_ptr->current_exception);
-        }
-        catch (...)
-        {
-            throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
-                "Update failed for dictionary '{}': {}",
-                getDictionaryID().getNameForLogs(),
-                getCurrentExceptionMessage(true /*with stack trace*/,
-                    true /*check embedded stack trace*/));
-        }
-    }
+        std::rethrow_exception(update_unit_ptr->current_exception);
 }
 
 void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const

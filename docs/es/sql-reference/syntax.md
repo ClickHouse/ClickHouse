@@ -15,9 +15,9 @@ El `INSERT` consulta utiliza ambos analizadores:
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-El `INSERT INTO t VALUES` fragmento es analizado por el analizador completo, y los datos `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` es analizado por el analizador de flujo rápido. También puede activar el analizador completo de los datos mediante el [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) configuración. Cuando `input_format_values_interpret_expressions = 1`, ClickHouse primero intenta analizar valores con el analizador de flujo rápido. Si falla, ClickHouse intenta usar el analizador completo para los datos, tratándolo como un SQL [expresion](#syntax-expressions).
+El `INSERT INTO t VALUES` fragmento es analizado por el analizador completo, y los datos `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` es analizado por el analizador de flujo rápido. También puede activar el analizador completo de los datos mediante el [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) configuración. Cuando `input_format_values_interpret_expressions = 1`, ClickHouse primero intenta analizar valores con el analizador de flujo rápido. Si falla, ClickHouse intenta usar el analizador completo para los datos, tratándolo como un SQL [expresion](#syntax-expressions).
 
-Los datos pueden tener cualquier formato. Cuando se recibe una consulta, el servidor no calcula más de [max_query_size](../operations/settings/settings.md#settings-max_query_size) bytes de la solicitud en RAM (por defecto, 1 MB), y el resto se analiza la secuencia.
+Los datos pueden tener cualquier formato. Cuando se recibe una consulta, el servidor no calcula más de [max\_query\_size](../operations/settings/settings.md#settings-max_query_size) bytes de la solicitud en RAM (por defecto, 1 MB), y el resto se analiza la secuencia.
 Permite evitar problemas con grandes `INSERT` consulta.
 
 Cuando se utiliza el `Values` formato en un `INSERT` consulta, puede parecer que los datos se analizan igual que las expresiones en un `SELECT` consulta, pero esto no es cierto. El `Values` formato es mucho más limitado.

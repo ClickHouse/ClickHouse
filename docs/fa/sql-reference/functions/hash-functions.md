@@ -317,7 +317,7 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 می پذیرد دو استدلال: یک کلید بین 64 نوع و تعداد سطل. بازده Int32.
 برای کسب اطلاعات بیشتر به لینک مراجعه کنید: [مورد احترام](https://arxiv.org/pdf/1406.2294.pdf)
 
-## سوفلش2_32, سوفلشه2_64 {#murmurhash2-32-murmurhash2-64}
+## سوفلش2\_32, سوفلشه2\_64 {#murmurhash2-32-murmurhash2-64}
 
 تولید یک [زمزمه 2](https://github.com/aappleby/smhasher) مقدار هش.
 
@@ -385,7 +385,7 @@ SELECT
 └──────────────────────┴─────────────────────┘
 ```
 
-## سوفلش3_32, سوفلشه3_64 {#murmurhash3-32-murmurhash3-64}
+## سوفلش3\_32, سوفلشه3\_64 {#murmurhash3-32-murmurhash3-64}
 
 تولید یک [سوفلهاش3](https://github.com/aappleby/smhasher) مقدار هش.
 
@@ -415,7 +415,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └─────────────┴────────┘
 ```
 
-## سوفلش3_128 {#murmurhash3-128}
+## سوفلش3\_128 {#murmurhash3-128}
 
 تولید 128 بیتی [سوفلهاش3](https://github.com/aappleby/smhasher) مقدار هش.
 

@@ -11,7 +11,7 @@ toc_title: "\u0130stemci Kitapl\u0131klar\u0131"
     Yandex yapar **değil** Aşağıda listelenen kütüphaneleri koruyun ve kalitelerini sağlamak için kapsamlı bir test yapmadınız.
 
 -   Piton
-    -   [ınfi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [ınfi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
     -   [clickhouse-sürücü](https://github.com/mymarilyn/clickhouse-driver)
     -   [clickhouse-müşteri](https://github.com/yurial/clickhouse-client)
     -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
@@ -47,7 +47,7 @@ toc_title: "\u0130stemci Kitapl\u0131klar\u0131"
     -   [clickhouse-Scala-istemci](https://github.com/crobox/clickhouse-scala-client)
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
--   C#
+-   C\#
     -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)   
     -   [ClickHouse.Gürültü](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Müşteri](https://github.com/DarkWanderer/ClickHouse.Client)

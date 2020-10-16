@@ -10,13 +10,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 /** Get scalar value of sub queries from query context via IAST::Hash.
   */
@@ -51,9 +49,9 @@ public:
         return scalar.type;
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        columns[result].column = ColumnConst::create(scalar.column, input_rows_count);
+        block.getByPosition(result).column = ColumnConst::create(scalar.column, input_rows_count);
     }
 
 private:
@@ -61,7 +59,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionGetScalar(FunctionFactory & factory)
 {

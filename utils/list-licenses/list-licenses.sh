@@ -7,7 +7,7 @@ ls -1 -d ${LIBS_PATH}/*/ | grep -F -v -- '-cmake' | while read LIB; do
     LIB_NAME=$(basename $LIB)
 
     LIB_LICENSE=$(
-        LC_ALL=C find "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
+        LC_ALL=C find "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' ')' -and -not -iname '*.html' -printf "%d\t%p\n" |
             awk '
                 BEGIN { IGNORECASE=1; min_depth = 0 }
                 /LICENSE/ { if (!min_depth || $1 <= min_depth) { min_depth = $1; license = $2 } }

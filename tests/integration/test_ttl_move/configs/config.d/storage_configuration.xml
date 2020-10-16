@@ -83,18 +83,6 @@
                 </main>
             </volumes>
         </only_jbod2>
-
-        <jbod_without_instant_ttl_move>
-            <volumes>
-                <main>
-                    <disk>jbod1</disk>
-                </main>
-                <external>
-                    <disk>external</disk>
-                    <perform_ttl_move_on_insert>false</perform_ttl_move_on_insert>
-                </external>
-            </volumes>
-        </jbod_without_instant_ttl_move>
     </policies>
 
 </storage_configuration>
