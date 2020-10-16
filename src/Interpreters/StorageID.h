@@ -68,6 +68,7 @@ struct StorageID
         return uuid != UUIDHelpers::Nil;
     }
 
+    bool operator==(const StorageID & rhs) const;
     bool operator<(const StorageID & rhs) const;
 
     void assertNotEmpty() const
