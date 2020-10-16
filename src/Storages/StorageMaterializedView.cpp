@@ -21,6 +21,7 @@
 #include <Storages/SelectQueryDescription.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 
 
@@ -319,11 +320,13 @@ void StorageMaterializedView::shutdown()
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
+    checkStackSize();
     return DatabaseCatalog::instance().getTable(target_table_id, global_context);
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
+    checkStackSize();
     return DatabaseCatalog::instance().tryGetTable(target_table_id, global_context);
 }
 
