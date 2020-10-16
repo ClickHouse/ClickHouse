@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int EXPECTED_ALL_OR_ANY;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 namespace
@@ -267,8 +268,14 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
                     }
                 }
                 if (!found)
-                    throw Exception("No columns in nested table " + source_name, ErrorCodes::EMPTY_NESTED_TABLE);
+                    throw Exception("No columns in nested table " + backQuote(source_name) + " cannot ARRAY JOIN", ErrorCodes::EMPTY_NESTED_TABLE);
             }
+        }
+        else
+        {
+            for (const auto & [_, source_name] : result.array_join_result_to_source)
+                if (!source_columns_set.count(source_name))
+                    throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} not found, cannot ARRAY JOIN", backQuote(source_name));
         }
     }
 }
