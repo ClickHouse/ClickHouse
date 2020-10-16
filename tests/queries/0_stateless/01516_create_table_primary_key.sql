@@ -40,6 +40,8 @@ CREATE TABLE primary_key_test(v1 Int32, v2 Int32, PRIMARY KEY(v1, v2), PRIMARY K
 
 CREATE TABLE primary_key_test(v1 Int32, v2 Int32, PRIMARY KEY(v1, v2)) ENGINE=ReplacingMergeTree ORDER BY (v1, v2) PRIMARY KEY(v1, v2); -- { clientError 36; }
 
+CREATE TABLE primary_key_test(v1 Int64, v2 Int32, v3 String, PRIMARY KEY(v1, gcd(v1, v2))) ENGINE=ReplacingMergeTree ORDER BY v1; -- { serverError 36; }
+
 CREATE TABLE primary_key_test(v1 Int64, v2 Int32, v3 String, PRIMARY KEY(v1, gcd(v1, v2))) ENGINE=ReplacingMergeTree ORDER BY (v1, gcd(v1, v2));
 
 INSERT INTO primary_key_test VALUES(7, 14, 'hello'), (2, 2, 'world'), (7, 14, 'duplicate');
