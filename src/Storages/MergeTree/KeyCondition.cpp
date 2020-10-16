@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/FieldToDataType.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -454,14 +453,14 @@ static Field applyFunctionForField(
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
-    ColumnsWithTypeAndName columns
+    Block block
     {
         { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
         { nullptr, func->getReturnType(), "y" }
     };
 
-    func->execute(columns, {0}, 1, 1);
-    return (*columns[1].column)[0];
+    func->execute(block, {0}, 1, 1);
+    return (*block.safeGetByPosition(1).column)[0];
 }
 
 /// The case when arguments may have types different than in the primary key.
@@ -476,15 +475,15 @@ static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
 
     DataTypePtr return_type = func_base->getReturnType();
 
-    ColumnsWithTypeAndName columns
+    Block block
     {
         std::move(argument),
         { nullptr, return_type, "result" }
     };
 
-    func_base->execute(columns, {0}, 1, 1);
+    func_base->execute(block, {0}, 1, 1);
 
-    Field result = (*columns[1].column)[0];
+    Field result = (*block.safeGetByPosition(1).column)[0];
 
     return {std::move(result), std::move(return_type)};
 }
@@ -497,22 +496,18 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
         return applyFunctionForField(func, current_type, field);
 
     String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
-    const auto & columns = field.columns;
-    size_t result_idx = columns->size();
-
-    for (size_t i = 0; i < result_idx; ++i)
+    size_t result_idx;
+    const auto & block = field.block;
+    if (!block->has(result_name))
     {
-        if ((*columns)[i].name == result_name)
-            result_idx = i;
+        result_idx = block->columns();
+        field.block->insert({nullptr, func->getReturnType(), result_name});
+        func->execute(*block, {field.column_idx}, result_idx, block->rows());
     }
+    else
+        result_idx = block->getPositionByName(result_name);
 
-    if (result_idx == columns->size())
-    {
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getReturnType(), result_name});
-        func->execute(*columns, {field.column_idx}, result_idx, columns->front().column->size());
-    }
-
-    return {field.columns, field.row_idx, result_idx};
+    return {field.block, field.row_idx, result_idx};
 }
 
 void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
@@ -716,26 +711,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
-        const auto & args = (*it)->arguments->children;
         auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
-        ColumnsWithTypeAndName arguments;
-        if (args.size() == 2)
-        {
-            if (const auto * arg_left = args[0]->as<ASTLiteral>())
-            {
-                auto left_arg_type = applyVisitor(FieldToDataType(), arg_left->value);
-                arguments.push_back({ left_arg_type->createColumnConst(0, arg_left->value), left_arg_type, "" });
-                arguments.push_back({ nullptr, key_column_type, "" });
-            }
-            else if (const auto * arg_right = args[1]->as<ASTLiteral>())
-            {
-                arguments.push_back({ nullptr, key_column_type, "" });
-                auto right_arg_type = applyVisitor(FieldToDataType(), arg_right->value);
-                arguments.push_back({ right_arg_type->createColumnConst(0, arg_right->value), right_arg_type, "" });
-            }
-        }
-        else
-            arguments.push_back({ nullptr, key_column_type, "" });
+        ColumnsWithTypeAndName arguments{{ nullptr, key_column_type, "" }};
         auto func = func_builder->build(arguments);
 
         if (!func || !func->hasInformationAboutMonotonicity())
@@ -773,27 +750,12 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     if (const auto * func = node->as<ASTFunction>())
     {
         const auto & args = func->arguments->children;
-        if (args.size() > 2 || args.empty())
+        if (args.size() != 1)
             return false;
 
         out_functions_chain.push_back(func);
-        bool ret = false;
-        if (args.size() == 2)
-        {
-            if (args[0]->as<ASTLiteral>())
-            {
-                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[1], out_key_column_num, out_key_column_type, out_functions_chain);
-            }
-            else if (args[1]->as<ASTLiteral>())
-            {
-                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
-            }
-        }
-        else
-        {
-            ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
-        }
-        return ret;
+
+        return isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
     }
 
     return false;

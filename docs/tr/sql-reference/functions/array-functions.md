@@ -1028,7 +1028,7 @@ Sonuç:
 
 ## arrayAUC {#arrayauc}
 
-Auc'yi hesaplayın (makine öğreniminde bir kavram olan eğrinin altındaki alan, daha fazla ayrıntıya bakın: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
+Auc'yi hesaplayın (makine öğreniminde bir kavram olan eğrinin altındaki alan, daha fazla ayrıntıya bakın: https://en.wikipedia.org/wiki/Receiver\_operating\_characteristic\#Area\_under\_the\_curve).
 
 **Sözdizimi**
 
