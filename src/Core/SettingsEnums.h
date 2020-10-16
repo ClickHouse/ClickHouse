@@ -83,7 +83,6 @@ DECLARE_SETTING_ENUM(DistributedProductMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeOutputFormat)
 
 enum class LogsLevel
 {
