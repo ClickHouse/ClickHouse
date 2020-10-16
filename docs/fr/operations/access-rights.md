@@ -134,10 +134,10 @@ Gestion des requêtes:
 
 -   Configurez un répertoire pour le stockage des configurations.
 
-    Clickhouse stocke les configurations d'entité d'accès dans le dossier défini dans [access_control_path](server-configuration-parameters/settings.md#access_control_path) paramètre de configuration du serveur.
+    Clickhouse stocke les configurations d'entité d'accès dans le dossier défini dans [access\_control\_path](server-configuration-parameters/settings.md#access_control_path) paramètre de configuration du serveur.
 
 -   Activez le contrôle D'accès piloté par SQL et la gestion de compte pour au moins un compte d'utilisateur.
 
-    Par défaut, le contrôle D'accès piloté par SQL et la gestion des comptes sont activés pour tous les utilisateurs. Vous devez configurer au moins un utilisateur dans le `users.xml` fichier de configuration et affecter 1 au [access_management](settings/settings-users.md#access_management-user-setting) paramètre.
+    Par défaut, le contrôle D'accès piloté par SQL et la gestion des comptes sont activés pour tous les utilisateurs. Vous devez configurer au moins un utilisateur dans le `users.xml` fichier de configuration et affecter 1 au [access\_management](settings/settings-users.md#access_management-user-setting) paramètre.
 
 [Article Original](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

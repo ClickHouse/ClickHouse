@@ -10,6 +10,7 @@ ForkProcessor::Status ForkProcessor::prepare()
 
     /// Check can output.
 
+    bool all_finished = true;
     bool all_can_push = true;
     size_t num_active_outputs = 0;
 
@@ -17,6 +18,7 @@ ForkProcessor::Status ForkProcessor::prepare()
     {
         if (!output.isFinished())
         {
+            all_finished = false;
             ++num_active_outputs;
 
             /// The order is important.
@@ -25,7 +27,7 @@ ForkProcessor::Status ForkProcessor::prepare()
         }
     }
 
-    if (0 == num_active_outputs)
+    if (all_finished)
     {
         input.close();
         return Status::Finished;

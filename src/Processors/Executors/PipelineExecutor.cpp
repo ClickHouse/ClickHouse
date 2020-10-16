@@ -566,7 +566,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
             }
 
             if (node->exception)
-                cancel();
+                finish();
 
             if (finished)
                 break;

@@ -494,6 +494,6 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
 
-## sumMapFiltered(keys_to_keep)(کلید ارزش ها) {#summapfilteredkeys-to-keepkeys-values}
+## sumMapFiltered(keys\_to\_keep)(کلید ارزش ها) {#summapfilteredkeys-to-keepkeys-values}
 
 رفتار مشابه [& سواپ](reference.md#agg_functions-summap) جز این که مجموعه ای از کلید به عنوان یک پارامتر منتقل می شود. این می تواند مفید باشد به خصوص در هنگام کار با یک کارت از کلید های بالا.

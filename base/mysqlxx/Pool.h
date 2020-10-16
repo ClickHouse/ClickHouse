@@ -3,7 +3,6 @@
 #include <list>
 #include <memory>
 #include <mutex>
-#include <atomic>
 
 #include <Poco/Exception.h>
 #include <mysqlxx/Connection.h>
@@ -36,9 +35,7 @@ protected:
     struct Connection
     {
         mysqlxx::Connection conn;
-        /// Ref count modified in constructor/descructor of Entry
-        /// but also read in pool code.
-        std::atomic<int> ref_count = 0;
+        int ref_count = 0;
     };
 
 public:
