@@ -149,12 +149,7 @@ template <typename Type>
 void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (settings.tsv.input_format_enum_as_number)
-    {
-        FieldType x;
-        readText(x, istr);
-        static_cast<void>(getNameForValue(x));
-        assert_cast<ColumnType &>(column).getData().push_back(x);
-    }
+        assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
     else
     {
         /// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
@@ -182,12 +177,7 @@ template <typename Type>
 void DataTypeEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (settings.tsv.input_format_enum_as_number)
-    {
-        FieldType x;
-        readText(x, istr);
-        static_cast<void>(getNameForValue(x));
-        assert_cast<ColumnType &>(column).getData().push_back(x);
-    }
+        assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
     else
     {
         std::string field_name;
@@ -211,13 +201,8 @@ void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num
 template <typename Type>
 void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    if (*istr.position() != '"')
-    {
-        FieldType x;
-        readText(x, istr);
-        static_cast<void>(getNameForValue(x));
-        assert_cast<ColumnType &>(column).getData().push_back(x);
-    }
+    if (!istr.eof() && *istr.position() != '"')
+        assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
     else
     {
         std::string field_name;
@@ -236,12 +221,7 @@ template <typename Type>
 void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (settings.csv.input_format_enum_as_number)
-    {
-        FieldType x;
-        readText(x, istr);
-        static_cast<void>(getNameForValue(x));
-        assert_cast<ColumnType &>(column).getData().push_back(x);
-    }
+        assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
     else
     {
         std::string field_name;
