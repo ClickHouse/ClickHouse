@@ -9,7 +9,7 @@ namespace DB
 namespace
 {
 
-/** blockSize() - get the block size in number of rows.
+/** columnsSize() - get the columns size in number of rows.
   */
 class FunctionBlockSize : public IFunction
 {
@@ -43,9 +43,9 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block[result].column = ColumnUInt64::create(input_rows_count, input_rows_count);
+        columns[result].column = ColumnUInt64::create(input_rows_count, input_rows_count);
     }
 };
 
