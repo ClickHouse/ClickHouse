@@ -75,7 +75,7 @@ ClickHouse не удаляет данные из таблица автомати
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
 -   `thread_numbers` ([Array(UInt32)](../../sql-reference/data-types/array.md)) — количество потоков, участвующих в обработке запросов.
--   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(\#system\_tables-events
+-   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(#system_tables-events
 -   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
 -   `Settings.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
 -   `Settings.Values` ([Array(String)](../../sql-reference/data-types/array.md)) — Значения настроек, которые перечислены в столбце `Settings.Names`.

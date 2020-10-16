@@ -1,8 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import subprocess
 import threading
-import Queue as queue
+import queue as queue
 import os
 import sys
 

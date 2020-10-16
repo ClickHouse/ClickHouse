@@ -44,7 +44,7 @@ public:
         return 0;
     }
 
-    bool isInjective(const Block &) const override
+    bool isInjective(const ColumnsWithTypeAndName &) const override
     {
         return true;
     }
@@ -60,7 +60,7 @@ public:
         return std::make_shared<DataTypeTuple>(arguments);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);
@@ -70,9 +70,9 @@ public:
               *  convert all to non-constant columns,
               *  because many places in code expect all non-constant columns in non-constant tuple.
               */
-            tuple_columns[i] = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
+            tuple_columns[i] = columns[arguments[i]].column->convertToFullColumnIfConst();
         }
-        block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
+        columns[result].column = ColumnTuple::create(tuple_columns);
     }
 };
 
