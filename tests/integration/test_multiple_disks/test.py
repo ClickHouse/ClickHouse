@@ -969,6 +969,9 @@ def test_detach_attach(start_cluster, name, engine):
 ])
 def test_mutate_to_another_disk(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 s1 String
@@ -1006,7 +1009,13 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
 
 
     finally:
+        print("Before cleanup")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container(["bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        print("After cleanup")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container(["bash", "-c", f"find {p} | xargs -n1 du -sh"]))
 
 
 @pytest.mark.parametrize("name,engine", [
