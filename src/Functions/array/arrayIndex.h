@@ -384,7 +384,7 @@ public:
 
     /**
       * If one or both arguments passed to this function are nullable,
-      * we create a new columns that contains non-nullable arguments:
+      * we create a new column that contains non-nullable arguments:
       *
       * - if the 1st argument is a non-constant array of nullable values,
       * it is turned into a non-constant array of ordinary values + a null
@@ -497,7 +497,7 @@ private:
         NullMaps maps;
         ResultColumnPtr result { ResultColumnType::create() };
 
-        inline void move_result() { columns[result_pos].column = std::move(result); }
+        inline void moveResult() { columns[result_pos].column = std::move(result); }
     };
 
     static inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
@@ -524,9 +524,11 @@ private:
             const DataTypePtr array_nullable_nested =
                 checkAndGetDataType<DataTypeNullable>(array_inner_type.get())->getNestedType();
 
+            // We also allow Nullable(T) and LC(U) if the Nullable(T) and U are allowed,
+            // the LC(U) will be converted to U.
             return allowNested(
                     array_nullable_nested,
-                    arg_or_arg_nullable_nested);
+                    recursiveRemoveLowCardinality(arg_or_arg_nullable_nested));
         }
         else if (arg_is_nullable) // cannot compare Array(T) elem (namely, T) and Nullable(T)
             return false;
@@ -573,6 +575,9 @@ private:
             else // Comparing LC(T) and U (U neither Nullable nor LC)
                 return allowNested(array_lc_nested_or_lc_nullable_nested, arg);
         }
+
+        if (arg_is_lc) // Allow T and LC(U) if U and T are allowed (the low cardinality column will be converted).
+            return allowNested(array_inner_type, arg_lc_inner_type);
 
         return false;
     }
@@ -644,7 +649,8 @@ private:
         if (!left)
             return false;
 
-        const IColumn& right = *columns[arguments[1]].column.get();
+        const ColumnPtr right_converted_ptr = columns[arguments[1]].column->convertToFullColumnIfLowCardinality();
+        const IColumn& right = *right_converted_ptr.get();
 
         ExecutionData data = {
             left->getData(),
@@ -710,7 +716,7 @@ private:
         else
             return false;
 
-        data.move_result();
+        data.moveResult();
         return true;
     }
 
@@ -863,7 +869,7 @@ private:
             data.result->getData(),
             data.maps.first, data.maps.second);
 
-        data.move_result();
+        data.moveResult();
         return true;
     }
 
@@ -881,7 +887,8 @@ private:
         if (!left)
             return false;
 
-        const IColumn & right = *columns[arguments[1]].column.get();
+        const ColumnPtr right_ptr = columns[arguments[1]].column->convertToFullColumnIfLowCardinality();
+        const IColumn & right = *right_ptr.get();
 
         ExecutionData data = {
             *left, right, array->getOffsets(),
@@ -950,7 +957,7 @@ private:
         else
             return false;
 
-        data.move_result();
+        data.moveResult();
         return true;
     }
 
@@ -964,7 +971,8 @@ private:
 
         Array arr = col_array->getValue<Array>();
 
-        const IColumn * item_arg = columns[arguments[1]].column.get();
+        const ColumnPtr right_ptr = columns[arguments[1]].column->convertToFullColumnIfLowCardinality();
+        const IColumn * item_arg = right_ptr.get();
 
         if (isColumnConst(*item_arg))
         {
@@ -1039,7 +1047,9 @@ private:
             return false;
 
         const IColumn & col_nested = col->getData();
-        const IColumn & item_arg = *columns[arguments[1]].column;
+
+        const ColumnPtr right_ptr = columns[arguments[1]].column->convertToFullColumnIfLowCardinality();
+        const IColumn & item_arg = *right_ptr.get();
 
         auto col_res = ResultColumnType::create();
 
