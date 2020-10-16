@@ -83,6 +83,8 @@ private:
     BackgroundSchedulePool::TaskHolder scheduling_task;
     /// Mutex for thread safety
     std::mutex scheduling_task_mutex;
+    /// Mutex for pcg random generator thread safety
+    std::mutex random_mutex;
 
 public:
     /// These three functions are thread safe
@@ -114,6 +116,8 @@ private:
     void jobExecutingTask();
     /// Recalculate timeouts when we have to check for a new job
     void scheduleTask();
+    /// Return random add for sleep in case of error
+    double getSleepRandomAdd();
 };
 
 /// Main jobs executor: merges, mutations, fetches and so on

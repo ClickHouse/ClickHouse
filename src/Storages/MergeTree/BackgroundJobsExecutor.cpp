@@ -29,6 +29,11 @@ IBackgroundJobExecutor::IBackgroundJobExecutor(
     }
 }
 
+double IBackgroundJobExecutor::getSleepRandomAdd()
+{
+    std::lock_guard random_lock(random_mutex);
+    return std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
+}
 
 void IBackgroundJobExecutor::scheduleTask()
 {
@@ -39,7 +44,7 @@ void IBackgroundJobExecutor::scheduleTask()
         auto next_time_to_execute = 1000 * (std::min(
                 sleep_settings.task_sleep_seconds_when_no_work_max,
                 sleep_settings.task_sleep_seconds_when_no_work_min * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
-            + std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng));
+            + getSleepRandomAdd());
 
          scheduling_task->scheduleAfter(next_time_to_execute);
     }
