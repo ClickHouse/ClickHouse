@@ -239,15 +239,13 @@ Pipe StorageEmbeddedRocksdb::read(
     {
         std::vector<rocksdb::Slice> slices_keys;
         std::vector<String> values;
+        std::vector<WriteBufferFromOwnString> wbs(keys.size());
 
-        WriteBufferFromOwnString wb;
-        UInt64 offset = 0;
-        for (const auto & key : keys)
+        for (size_t i = 0; i < keys.size(); ++i)
         {
-            sample_block.getByName(primary_key).type->serializeBinary(key, wb);
-            auto str_ref = wb.stringRef();
-            slices_keys.emplace_back(str_ref.data + offset, str_ref.size - offset);
-            offset = str_ref.size;
+            sample_block.getByName(primary_key).type->serializeBinary(keys[i], wbs[i]);
+            auto str_ref = wbs[i].stringRef();
+            slices_keys.emplace_back(str_ref.data, str_ref.size);
         }
 
         auto statuses = rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
