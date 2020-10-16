@@ -417,7 +417,7 @@ ORDER BY h ASC
 Transforms a value according to the explicitly defined mapping of some elements to other ones.
 There are two variations of this function:
 
-### transform(x, array\_from, array\_to, default) {#transformx-array-from-array-to-default}
+### transform(x, array_from, array_to, default) {#transformx-array-from-array-to-default}
 
 `x` – What to transform.
 
@@ -437,7 +437,7 @@ Types:
 Where the same letter is indicated (T or U), for numeric types these might not be matching types, but types that have a common type.
 For example, the first argument can have the Int64 type, while the second has the Array(UInt16) type.
 
-If the ‘x’ value is equal to one of the elements in the ‘array\_from’ array, it returns the existing element (that is numbered the same) from the ‘array\_to’ array. Otherwise, it returns ‘default’. If there are multiple matching elements in ‘array\_from’, it returns one of the matches.
+If the ‘x’ value is equal to one of the elements in the ‘array_from’ array, it returns the existing element (that is numbered the same) from the ‘array_to’ array. Otherwise, it returns ‘default’. If there are multiple matching elements in ‘array_from’, it returns one of the matches.
 
 Example:
 
@@ -459,10 +459,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array\_from, array\_to) {#transformx-array-from-array-to}
+### transform(x, array_from, array_to) {#transformx-array-from-array-to}
 
 Differs from the first variation in that the ‘default’ argument is omitted.
-If the ‘x’ value is equal to one of the elements in the ‘array\_from’ array, it returns the matching element (that is numbered the same) from the ‘array\_to’ array. Otherwise, it returns ‘x’.
+If the ‘x’ value is equal to one of the elements in the ‘array_from’ array, it returns the matching element (that is numbered the same) from the ‘array_to’ array. Otherwise, it returns ‘x’.
 
 Types:
 
@@ -536,6 +536,51 @@ SELECT
 │     4567000000 │ 4.57 billion      │
 │ 98765432101234 │ 98.77 trillion    │
 └────────────────┴───────────────────┘
+```
+
+## formatReadableTimeDelta {#formatreadabletimedelta}
+
+Accepts the time delta in seconds. Returns a time delta with (year, month, day, hour, minute, second) as a string.
+
+**Syntax**
+
+``` sql
+formatReadableTimeDelta(column[, maximum_unit])
+```
+
+**Parameters**
+
+-   `column` — A column with numeric time delta.
+-   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years. 
+
+Example:
+
+``` sql
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed) AS time_delta
+```
+
+``` text
+┌────elapsed─┬─time_delta ─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                         │
+│      12345 │ 3 hours, 25 minutes and 45 seconds                              │
+│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
+└────────────┴─────────────────────────────────────────────────────────────────┘
+```
+
+``` sql
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
+```
+
+``` text
+┌────elapsed─┬─time_delta ─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                         │
+│      12345 │ 205 minutes and 45 seconds                                      │
+│  432546534 │ 7209108 minutes and 54 seconds                                  │
+└────────────┴─────────────────────────────────────────────────────────────────┘
 ```
 
 ## least(a, b) {#leasta-b}
@@ -1248,7 +1293,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Returns list of values corresponded to list of keys.
 
-If certain doesn’t exist in source table then `0` or `null` will be returned based on [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+If certain doesn’t exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
 
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
 
@@ -1287,15 +1332,15 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model\_name, …) {#function-modelevaluate}
+## modelEvaluate(model_name, …) {#function-modelevaluate}
 
 Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
-## throwIf(x\[, custom\_message\]) {#throwifx-custom-message}
+## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
 
 Throw an exception if the argument is non zero.
-custom\_message - is an optional parameter: a constant string, provides an error message
+custom_message - is an optional parameter: a constant string, provides an error message
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -1495,13 +1540,13 @@ Result:
 
 Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings).
 
-**Syntax** 
+**Syntax**
 
 ```sql
-getSetting('custom_setting');    
+getSetting('custom_setting');
 ```
 
-**Parameter** 
+**Parameter**
 
 -   `custom_setting` — The setting name. [String](../../sql-reference/data-types/string.md).
 
@@ -1513,7 +1558,7 @@ getSetting('custom_setting');
 
 ```sql
 SET custom_a = 123;
-SELECT getSetting('custom_a');    
+SELECT getSetting('custom_a');
 ```
 
 **Result**
@@ -1522,9 +1567,84 @@ SELECT getSetting('custom_a');
 123
 ```
 
-**See Also** 
+**See Also**
 
 -   [Custom Settings](../../operations/settings/index.md#custom_settings)
 
+## isDecimalOverflow {#is-decimal-overflow}
+
+Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is out of its (or specified) precision.
+
+**Syntax**
+
+``` sql
+isDecimalOverflow(d, [p])
+```
+
+**Parameters**
+
+-   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
+-   `p` — precision. Optional. If omitted, the initial presicion of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Returned values**
+
+-   `1` — Decimal value has more digits then it's precision allow,
+-   `0` — Decimal value satisfies the specified precision.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(1000000000, 0)),
+       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(-1000000000, 0));
+```
+
+Result:
+
+``` text
+1	1	1	1
+```
+
+## countDigits {#count-digits}
+
+Returns number of decimal digits you need to represent the value.
+
+**Syntax**
+
+``` sql
+countDigits(x)
+```
+
+**Parameters**
+
+-   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
+
+**Returned value**
+
+Number of digits.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+ !!! note "Note"
+    For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
+       countDigits(toDecimal64(1, 18)), countDigits(toDecimal64(-1, 18)),
+       countDigits(toDecimal128(1, 38)), countDigits(toDecimal128(-1, 38));
+```
+
+Result:
+
+``` text
+10	10	19	19	39	39
+```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
