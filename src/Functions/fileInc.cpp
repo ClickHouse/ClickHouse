@@ -89,22 +89,15 @@ private:
 class FunctionBaseFileInc : public IFunctionBaseImpl
 {
 public:
-    explicit FunctionBaseFileInc(const String & user_files_path_, DataTypePtr return_type_)
-        : user_files_path(user_files_path_), return_type(return_type_)
-    {
-    }
+    explicit FunctionBaseFileInc(const String & user_files_path_, DataTypes argument_types_, DataTypePtr return_type_)
+        : user_files_path(user_files_path_)
+        , argument_types(std::move(argument_types_))
+        , return_type(std::move(return_type_)) {}
 
     static constexpr auto name = "fileInc";
     String getName() const override { return name; }
 
-    const DataTypes & getArgumentTypes() const override
-    {
-        DataTypes argument_types(1);
-        argument_types[0] = std::make_shared<DataTypeString>();
-
-        return argument_types;
-    }
-
+    const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
     ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
@@ -114,6 +107,7 @@ public:
 
 private:
     const String user_files_path;
+    DataTypes argument_types;
     DataTypePtr return_type;
 };
 
@@ -140,7 +134,10 @@ public:
         if (!checkColumnConst<ColumnString>(arguments.at(0).column.get()))
             throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
-        return std::make_unique<FunctionBaseFileInc>(user_files_path, return_type);
+        DataTypes argument_types;
+        argument_types.emplace_back(arguments.at(0).type);
+
+        return std::make_unique<FunctionBaseFileInc>(user_files_path, argument_types, return_type);
     }
 
 private:
@@ -149,7 +146,7 @@ private:
 
 void registerFunctionFileInc(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionOverloadResolverFileInc>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionOverloadResolverFileInc>();
 }
 
 }
