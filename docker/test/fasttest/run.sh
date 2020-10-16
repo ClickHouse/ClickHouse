@@ -191,63 +191,65 @@ stop_server ||:
 start_server
 
 TESTS_TO_SKIP=(
-    parquet
-    avro
-    h3
-    odbc
-    mysql
-    sha256
-    _orc_
-    arrow
-    01098_temporary_and_external_tables
-    01083_expressions_in_engine_arguments
-    hdfs
-    00911_tautological_compare
-    protobuf
-    capnproto
-    java_hash
-    hashing
-    secure
-    00490_special_line_separators_and_characters_outside_of_bmp
-    00436_convert_charset
     00105_shard_collations
-    01354_order_by_tuple_collate_const
-    01292_create_user
-    01098_msgpack_format
-    00929_multi_match_edit_distance
-    00926_multimatch
-    00834_cancel_http_readonly_queries_on_client_close
-    brotli
-    parallel_alter
+    00109_shard_totals_after_having
+    00110_external_sort
     00302_http_compression
     00417_kill_query
-    01294_lazy_database_concurrent
-    01193_metadata_loading
-    base64
-    01031_mutations_interpreter_and_context
-    json
-    client
-    01305_replica_create_drop_zookeeper
-    01092_memory_profiler
-    01355_ilike
-    01281_unsucceeded_insert_select_queries_counter
-    live_view
-    limit_memory
-    memory_limit
-    memory_leak
-    00110_external_sort
+    00436_convert_charset
+    00490_special_line_separators_and_characters_outside_of_bmp
+    00652_replicated_mutations_zookeeper
     00682_empty_parts_merge
     00701_rollup
-    00109_shard_totals_after_having
-    ddl_dictionaries
+    00834_cancel_http_readonly_queries_on_client_close
+    00911_tautological_compare
+    00926_multimatch
+    00929_multi_match_edit_distance
+    01031_mutations_interpreter_and_context
+    01053_ssd_dictionary # this test mistakenly requires acces to /var/lib/clickhouse -- can't run this locally, disabled
+    01083_expressions_in_engine_arguments
+    01092_memory_profiler
+    01098_msgpack_format
+    01098_temporary_and_external_tables
+    01103_check_cpu_instructions_at_startup # avoid dependency on qemu -- invonvenient when running locally
+    01193_metadata_loading
+    01238_http_memory_tracking              # max_memory_usage_for_user can interfere another queries running concurrently
     01251_dict_is_in_infinite_loop
     01259_dictionary_custom_settings_ddl
     01268_dictionary_direct_layout
     01280_ssd_complex_key_dictionary
-    00652_replicated_mutations_zookeeper
-    01411_bayesian_ab_testing
-    01238_http_memory_tracking              # max_memory_usage_for_user can interfere another queries running concurrently
     01281_group_by_limit_memory_tracking    # max_memory_usage_for_user can interfere another queries running concurrently
+    01281_unsucceeded_insert_select_queries_counter
+    01292_create_user
+    01294_lazy_database_concurrent
+    01305_replica_create_drop_zookeeper
+    01354_order_by_tuple_collate_const
+    01355_ilike
+    01411_bayesian_ab_testing
+    _orc_
+    arrow
+    avro
+    base64
+    brotli
+    capnproto
+    client
+    ddl_dictionaries
+    h3
+    hashing
+    hdfs
+    java_hash
+    json
+    limit_memory
+    live_view
+    memory_leak
+    memory_limit
+    mysql
+    odbc
+    parallel_alter
+    parquet
+    protobuf
+    secure
+    sha256
 
     # Not sure why these two fail even in sequential mode. Disabled for now
     # to make some progress.
@@ -258,7 +260,7 @@ TESTS_TO_SKIP=(
     01460_DistributedFilesToInsert
 )
 
-time clickhouse-test -j 8 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
+time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
 
 # substr is to remove semicolon after test name
 readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
@@ -281,7 +283,7 @@ then
 
     echo "Going to run again: ${FAILED_TESTS[*]}"
 
-    clickhouse-test --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
+    clickhouse-test --order=random --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
 else
     echo "No failed tests"
 fi

@@ -57,7 +57,6 @@ RUN apt-get update \
         python3-lxml \
         python3-requests \
         python3-termcolor \
-        qemu-user-static \
         rename \
         software-properties-common \
         tzdata \
