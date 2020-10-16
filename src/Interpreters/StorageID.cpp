@@ -79,6 +79,15 @@ bool StorageID::operator<(const StorageID & rhs) const
         return !hasUUID();
 }
 
+bool StorageID::operator==(const StorageID & rhs) const
+{
+    assertNotEmpty();
+    if (!hasUUID() && !rhs.hasUUID())
+        return std::tie(database_name, table_name) == std::tie(rhs.database_name, rhs.table_name);
+    else
+        return hasUUID() && rhs.hasUUID() && uuid == rhs.uuid;
+}
+
 String StorageID::getFullTableName() const
 {
     return backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name);
