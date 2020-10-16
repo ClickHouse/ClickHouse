@@ -53,7 +53,7 @@ Crédits: Andrey Krasichkov et Evgeny Sidorov de Yandex Information Security Tea
 
 ### CVE-2018-14668 {#cve-2018-14668}
 
-“remote” la fonction de table a permis des symboles arbitraires dans “user”, “password” et “default\_database” champs qui ont conduit à des attaques de falsification de requêtes inter-protocoles.
+“remote” la fonction de table a permis des symboles arbitraires dans “user”, “password” et “default_database” champs qui ont conduit à des attaques de falsification de requêtes inter-protocoles.
 
 Crédits: Andrey Krasichkov de L'équipe de sécurité de L'Information Yandex
 

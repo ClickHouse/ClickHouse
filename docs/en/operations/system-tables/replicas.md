@@ -63,7 +63,7 @@ Columns:
 -   `parts_to_check` (`UInt32`) - The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged.
 -   `zookeeper_path` (`String`) - Path to table data in ZooKeeper.
 -   `replica_name` (`String`) - Replica name in ZooKeeper. Different replicas of the same table have different names.
--   `replica_path` (`String`) - Path to replica data in ZooKeeper. The same as concatenating ‘zookeeper\_path/replicas/replica\_path’.
+-   `replica_path` (`String`) - Path to replica data in ZooKeeper. The same as concatenating ‘zookeeper_path/replicas/replica_path’.
 -   `columns_version` (`Int32`) - Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven’t made all of the ALTERs yet.
 -   `queue_size` (`UInt32`) - Size of the queue for operations waiting to be performed. Operations include inserting blocks of data, merges, and certain other actions. It usually coincides with `future_parts`.
 -   `inserts_in_queue` (`UInt32`) - Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If this number is large, it means something is wrong.
@@ -84,7 +84,7 @@ The next 4 columns have a non-zero value only where there is an active session w
 -   `active_replicas` (`UInt8`) - The number of replicas of this table that have a session in ZooKeeper (i.e., the number of functioning replicas).
 
 If you request all the columns, the table may work a bit slowly, since several reads from ZooKeeper are made for each row.
-If you don’t request the last 4 columns (log\_max\_index, log\_pointer, total\_replicas, active\_replicas), the table works quickly.
+If you don’t request the last 4 columns (log_max_index, log_pointer, total_replicas, active_replicas), the table works quickly.
 
 For example, you can check that everything is working correctly like this:
 

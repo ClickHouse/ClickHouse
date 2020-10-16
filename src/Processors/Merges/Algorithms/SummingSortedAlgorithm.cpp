@@ -440,7 +440,7 @@ static void setRow(Row & row, const ColumnRawPtrs & raw_columns, size_t row_num,
             if (i < column_names.size())
                 column_name = column_names[i];
 
-            throw Exception("MergingSortedBlockInputStream failed to read row " + toString(row_num)
+            throw Exception("SummingSortedAlgorithm failed to read row " + toString(row_num)
                             + " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
                             ErrorCodes::CORRUPTED_DATA);
         }
