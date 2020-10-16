@@ -10,6 +10,7 @@
 #include <Parsers/DumpASTNode.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/IColumn.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -829,8 +830,8 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 
     getRootActions(select_query->select(), only_types, step.actions());
 
-    for (const auto & child : select_query->select()->children)
-        step.required_output.push_back(child->getColumnName());
+//    for (const auto & child : select_query->select()->children)
+//        step.required_output.push_back(child->getColumnName());
 }
 
 bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
@@ -905,6 +906,31 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendProjectResult(Expressi
     ASTs asts = select_query->select()->children;
     for (const auto & ast : asts)
     {
+        if (const auto * function = ast->as<ASTFunction>())
+        {
+            if (function->name == "tupleFlatten")
+            {
+                auto tuple_name = function->arguments->children.at(0)->getColumnName();
+
+                const auto & tuple_type = step.actions()->getIndex().find(tuple_name)->second->result_type;
+                const auto & tuple_names = assert_cast<const DataTypeTuple *>(tuple_type.get())->getElementNames();
+
+                for (size_t i = 0; i < tuple_names.size(); ++i)
+                {
+                    const auto & result_name = tuple_names[i];
+                    if (required_result_columns.empty() || required_result_columns.count(result_name))
+                    {
+                        std::string source_name = "TupleElementWithIndex_" + std::to_string(i + 1) + "(" + tuple_name + ")";
+
+                        result_columns.emplace_back(source_name, result_name);
+                        step.required_output.push_back(result_columns.back().second);
+                    }
+                }
+
+                continue;
+            }
+        }
+
         String result_name = ast->getAliasOrColumnName();
         if (required_result_columns.empty() || required_result_columns.count(result_name))
         {
@@ -940,41 +966,8 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendProjectResult(Expressi
         }
     }
 
-    std::unordered_map<String, std::vector<String>> flattened_columns;
-    for (auto & s : chain.steps)
-    {
-        if (typeid_cast<const ExpressionActionsChain::ExpressionActionsStep *>(s.get()) && s->getExpression())
-            for (const auto & action : s->getExpression()->getActions())
-            {
-                if (action.type == ExpressionAction::TUPLE_FLATTEN)
-                    flattened_columns.emplace(action.result_name, action.argument_names);
-            }
-        Names new_required_output;
-        for (const auto & name : s->required_output)
-        {
-            auto it = flattened_columns.find(name);
-            if (it == flattened_columns.end())
-                new_required_output.emplace_back(name);
-            else
-                new_required_output.insert(new_required_output.end(), it->second.begin(), it->second.end());
-        }
-        swap(new_required_output, s->required_output);
-    }
-
-    NamesWithAliases new_result_columns;
-    for (const auto & pair : result_columns)
-    {
-        auto it = flattened_columns.find(pair.first);
-        if (it == flattened_columns.end())
-            new_result_columns.emplace_back(pair);
-        else
-        {
-            for (const auto & name : it->second)
-                new_result_columns.emplace_back(name, name);
-        }
-    }
     auto actions = chain.getLastActions();
-    actions->add(ExpressionAction::project(new_result_columns));
+    actions->add(ExpressionAction::project(result_columns));
     return actions;
 }
 

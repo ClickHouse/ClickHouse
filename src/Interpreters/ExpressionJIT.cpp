@@ -619,8 +619,6 @@ static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependen
                 }
                 break;
             }
-            case ExpressionAction::TUPLE_FLATTEN:
-                break;
         }
     }
     return dependents;

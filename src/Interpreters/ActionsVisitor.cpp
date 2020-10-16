@@ -459,12 +459,6 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
     throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
-void ScopeStack::addTupleFlatten(const std::string & name, const std::vector<std::string> & flattened_names)
-{
-    // auto level = getColumnLevel(name);
-    stack.back().actions->addTupleFlatten(name, flattened_names);
-}
-
 void ScopeStack::addColumn(ColumnWithTypeAndName column)
 {
     const auto & node = stack[0].actions->addColumn(std::move(column));
@@ -473,10 +467,10 @@ void ScopeStack::addColumn(ColumnWithTypeAndName column)
         stack[j].actions->addInput({node.column, node.result_type, node.result_name});
 }
 
-void ScopeStack::addAlias(const std::string & name, std::string alias, bool can_replace)
+void ScopeStack::addAlias(const std::string & name, std::string alias)
 {
     auto level = getColumnLevel(name);
-    const auto & node = stack[level].actions->addAlias(name, std::move(alias), can_replace);
+    const auto & node = stack[level].actions->addAlias(name, std::move(alias));
 
     for (size_t j = level + 1; j < stack.size(); ++j)
         stack[j].actions->addInput({node.column, node.result_type, node.result_name});
@@ -806,9 +800,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                             std::make_shared<FunctionOverloadResolverAdaptor>(std::move(tuple_index_resolver)),
                             argument_names,
                             result_name);
-                        data.addAlias(result_name, names[i], true);
+                        data.addAlias(result_name, names[i]);
                     }
-                    data.addTupleFlatten(column_name.get(ast), names);
                 }
             }
         }
