@@ -494,6 +494,6 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 
 [Artículo Original](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
 
-## sumMapFiltered(keys\_to\_keep)(claves, valores) {#summapfilteredkeys-to-keepkeys-values}
+## sumMapFiltered(keys_to_keep)(claves, valores) {#summapfilteredkeys-to-keepkeys-values}
 
 El mismo comportamiento que [sumMap](reference.md#agg_functions-summap) excepto que una matriz de claves se pasa como un parámetro. Esto puede ser especialmente útil cuando se trabaja con una alta cardinalidad de claves.

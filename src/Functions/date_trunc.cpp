@@ -117,33 +117,33 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName temp_block = block;
+        ColumnsWithTypeAndName temp_columns = columns;
 
         const UInt16 interval_value = 1;
         const ColumnPtr interval_column = ColumnConst::create(ColumnInt64::create(1, interval_value), input_rows_count);
 
-        const size_t interval_pos = temp_block.size();
-        temp_block.emplace_back(ColumnWithTypeAndName{interval_column, std::make_shared<DataTypeInterval>(datepart_kind), ""});
+        const size_t interval_pos = temp_columns.size();
+        temp_columns.emplace_back(ColumnWithTypeAndName{interval_column, std::make_shared<DataTypeInterval>(datepart_kind), ""});
 
         if (arguments.size() == 2)
         {
             auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context)->build(
-                {temp_block[arguments[1]], temp_block[interval_pos]});
+                {temp_columns[arguments[1]], temp_columns[interval_pos]});
 
-            to_start_of_interval->execute(temp_block, {arguments[1], interval_pos}, result, input_rows_count);
+            to_start_of_interval->execute(temp_columns, {arguments[1], interval_pos}, result, input_rows_count);
         }
         else
         {
             auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context)->build(
-                {temp_block[arguments[1]], temp_block[interval_pos],
-                    temp_block[arguments[2]]});
+                {temp_columns[arguments[1]], temp_columns[interval_pos],
+                    temp_columns[arguments[2]]});
 
-            to_start_of_interval->execute(temp_block, {arguments[1], interval_pos, arguments[2]}, result, input_rows_count);
+            to_start_of_interval->execute(temp_columns, {arguments[1], interval_pos, arguments[2]}, result, input_rows_count);
         }
 
-        block[result].column = std::move(temp_block[result].column);
+        columns[result].column = std::move(temp_columns[result].column);
     }
 
     bool hasInformationAboutMonotonicity() const override

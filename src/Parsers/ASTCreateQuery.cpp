@@ -282,13 +282,23 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (as_table_function)
     {
+        if (columns_list)
+        {
+            frame.expression_list_always_start_on_new_line = true;
+            settings.ostr << (settings.one_line ? " (" : "\n(");
+            FormatStateStacked frame_nested = frame;
+            columns_list->formatImpl(settings, state, frame_nested);
+            settings.ostr << (settings.one_line ? ")" : "\n)");
+            frame.expression_list_always_start_on_new_line = false;
+        }
+
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
         as_table_function->formatImpl(settings, state, frame);
     }
 
     frame.expression_list_always_start_on_new_line = true;
 
-    if (columns_list)
+    if (columns_list && !as_table_function)
     {
         settings.ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
