@@ -40,6 +40,7 @@ class AlterCommands;
 class MergeTreePartsMover;
 class MutationCommands;
 class Context;
+struct JobAndPool;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -710,8 +711,10 @@ public:
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
 
-    virtual ThreadPool::Job getDataProcessingJob() = 0;
-    ThreadPool::Job getDataMovingJob();
+    /// Return main processing background job, like merge/mutate/fetch and so on
+    virtual std::optional<JobAndPool> getDataProcessingJob() = 0;
+    /// Return job to move parts between disks/volumes and so on.
+    std::optional<JobAndPool> getDataMovingJob();
     bool areBackgroundMovesNeeded() const;
 
 protected:

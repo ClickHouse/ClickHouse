@@ -1376,9 +1376,9 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
     return *shared->buffer_flush_schedule_pool;
 }
 
-TaskSleepSettings Context::getBackgroundProcessingTaskSleepSettings() const
+BackgroundTaskSchedulingSettings Context::getBackgroundProcessingTaskSchedulingSettings() const
 {
-    TaskSleepSettings task_settings;
+    BackgroundTaskSchedulingSettings task_settings;
 
     const auto & config = getConfigRef();
     task_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
@@ -1391,9 +1391,9 @@ TaskSleepSettings Context::getBackgroundProcessingTaskSleepSettings() const
     return task_settings;
 }
 
-TaskSleepSettings Context::getBackgroundMoveTaskSleepSettings() const
+BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSettings() const
 {
-    TaskSleepSettings task_settings;
+    BackgroundTaskSchedulingSettings task_settings;
 
     const auto & config = getConfigRef();
     task_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
