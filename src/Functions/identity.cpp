@@ -31,9 +31,9 @@ public:
         return arguments.front();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        columns[result].column = columns[arguments.front()].column;
+        block.getByPosition(result).column = block.getByPosition(arguments.front()).column;
     }
 };
 

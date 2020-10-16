@@ -19,7 +19,7 @@ public:
     JSONRowOutputFormat(
         WriteBuffer & out_,
         const Block & header,
-        const RowOutputFormatParams & params_,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & settings_,
         bool yield_strings_);
 

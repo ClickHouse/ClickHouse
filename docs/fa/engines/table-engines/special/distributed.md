@@ -85,13 +85,13 @@ logs – The cluster name in the server's config file.
 
 پارامترها `host`, `port` و در صورت تمایل `user`, `password`, `secure`, `compression` برای هر سرور مشخص شده است:
 - `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn't start. If you change the DNS record, restart the server.
-- `port` – The TCP port for messenger activity (‘tcp_port’ در پیکربندی, معمولا به مجموعه 9000). نه اشتباه آن را با http_port.
+- `port` – The TCP port for messenger activity (‘tcp\_port’ در پیکربندی, معمولا به مجموعه 9000). نه اشتباه آن را با http\_port.
 - `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [حقوق دسترسی](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
 - `secure` - استفاده از اس اس ال برای اتصال, معمولا شما همچنین باید تعریف `port` = 9440. سرور باید گوش کند `<tcp_port_secure>9440</tcp_port_secure>` و گواهی صحیح.
 - `compression` - استفاده از فشرده سازی داده ها. مقدار پیش فرض: درست.
 
-When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [_تبالسازی](../../../operations/settings/settings.md#settings-load_balancing) تنظیمات.
+When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [\_تبالسازی](../../../operations/settings/settings.md#settings-load_balancing) تنظیمات.
 اگر ارتباط با سرور ایجاد نشده است, وجود خواهد داشت تلاش برای ارتباط با یک ایست کوتاه. اگر اتصال شکست خورده, ماکت بعدی انتخاب خواهد شد, و به همین ترتیب برای همه کپی. اگر تلاش اتصال برای تمام کپی شکست خورده, تلاش تکرار خواهد شد به همان شیوه, چندین بار.
 این کار به نفع حالت ارتجاعی, اما تحمل گسل کامل را فراهم نمی کند: یک سرور از راه دور ممکن است اتصال قبول, اما ممکن است کار نمی کند, و یا کار ضعیف.
 
@@ -113,13 +113,13 @@ The Distributed engine requires writing clusters to the config file. Clusters fr
 
 هر سفال می تواند وزن تعریف شده در فایل پیکربندی داشته باشد. به طور پیش فرض, وزن به یک برابر است. داده ها در سراسر خرده ریز در مقدار متناسب با وزن سفال توزیع. مثلا, اگر دو خرده ریز وجود دارد و برای اولین بار دارای وزن 9 در حالی که دوم دارای وزن 10, برای اولین بار ارسال خواهد شد 9 / 19 بخش هایی از ردیف, و دوم ارسال خواهد شد 10 / 19.
 
-هر سفال می تواند داشته باشد ‘internal_replication’ پارامتر تعریف شده در فایل پیکربندی.
+هر سفال می تواند داشته باشد ‘internal\_replication’ پارامتر تعریف شده در فایل پیکربندی.
 
 اگر این پارامتر قرار است به ‘true’ عملیات نوشتن اولین ماکت سالم را انتخاب می کند و داده ها را می نویسد. با استفاده از این جایگزین اگر جدول توزیع شده “looks at” جداول تکرار. به عبارت دیگر اگر جدول ای که داده ها نوشته می شود خود را تکرار می کند.
 
 اگر قرار است ‘false’ (به طور پیش فرض), داده ها به تمام کپی نوشته شده. در اصل این بدان معنی است که توزیع جدول تکرار داده های خود را. این بدتر از استفاده از جداول تکرار شده است زیرا سازگاری کپی ها بررسی نشده است و در طول زمان حاوی اطلاعات کمی متفاوت خواهد بود.
 
-برای انتخاب سفال که یک ردیف از داده های فرستاده شده به sharding بیان تجزيه و تحليل است و آن باقی مانده است از تقسیم آن با وزن کلی خرده ریز. ردیف به سفال که مربوط به نیمه فاصله از باقی مانده از ارسال ‘prev_weight’ به ‘prev_weights + weight’ کجا ‘prev_weights’ وزن کل خرده ریز با کمترین تعداد است, و ‘weight’ وزن این سفال است. مثلا, اگر دو خرده ریز وجود دارد, و برای اولین بار دارای یک وزن 9 در حالی که دوم دارای وزن 10, ردیف خواهد شد به سفال اول برای باقی مانده از محدوده ارسال \[0, 9), و دوم برای باقی مانده از محدوده \[9, 19).
+برای انتخاب سفال که یک ردیف از داده های فرستاده شده به sharding بیان تجزيه و تحليل است و آن باقی مانده است از تقسیم آن با وزن کلی خرده ریز. ردیف به سفال که مربوط به نیمه فاصله از باقی مانده از ارسال ‘prev\_weight’ به ‘prev\_weights + weight’ کجا ‘prev\_weights’ وزن کل خرده ریز با کمترین تعداد است, و ‘weight’ وزن این سفال است. مثلا, اگر دو خرده ریز وجود دارد, و برای اولین بار دارای یک وزن 9 در حالی که دوم دارای وزن 10, ردیف خواهد شد به سفال اول برای باقی مانده از محدوده ارسال \[0, 9), و دوم برای باقی مانده از محدوده \[9, 19).
 
 بیان شاردینگ می تواند هر عبارت از ثابت ها و ستون های جدول که یک عدد صحیح را برمی گرداند. برای مثال شما می توانید با استفاده از بیان ‘rand()’ برای توزیع تصادفی داده ها یا ‘UserID’ برای توزیع توسط باقی مانده از تقسیم شناسه کاربر (سپس داده ها از یک کاربر تنها بر روی یک سفال تنها اقامت, که ساده در حال اجرا در و پیوستن به کاربران). اگر یکی از ستون ها به طور مساوی توزیع نشده باشد می توانید در یک تابع هش قرار دهید: اینتاش64 (شناسه).
 
@@ -136,7 +136,7 @@ SELECT queries are sent to all the shards and work regardless of how data is dis
 
 اگر سرور متوقف به وجود داشته باشد و یا راه اندازی مجدد خشن بود (مثلا, پس از یک شکست دستگاه) پس از قرار دادن به یک جدول توزیع, داده های درج شده ممکن است از دست داده. اگر بخشی از داده های خراب شده در دایرکتوری جدول شناسایی شود به ‘broken’ دایرکتوری فرعی و دیگر استفاده می شود.
 
-پردازش پرس و جو در سراسر تمام کپی در یک سفال واحد موازی است زمانی که گزینه حداکثر_پرورالهراپیلاس فعال است. برای کسب اطلاعات بیشتر به بخش مراجعه کنید [بیشینه_راپرال_راپیکال](../../../operations/settings/settings.md#settings-max_parallel_replicas).
+پردازش پرس و جو در سراسر تمام کپی در یک سفال واحد موازی است زمانی که گزینه حداکثر\_پرورالهراپیلاس فعال است. برای کسب اطلاعات بیشتر به بخش مراجعه کنید [بیشینه\_راپرال\_راپیکال](../../../operations/settings/settings.md#settings-max_parallel_replicas).
 
 ## ستونهای مجازی {#virtual-columns}
 

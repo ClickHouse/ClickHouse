@@ -1,8 +1,5 @@
-#pragma once
-
 /// Original is here https://github.com/cerevra/int
-/// Distributed under the Boost Software License, Version 1.0.
-/// (See at http://www.boost.org/LICENSE_1_0.txt)
+#pragma once
 
 #include "throwError.h"
 

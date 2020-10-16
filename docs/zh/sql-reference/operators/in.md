@@ -69,7 +69,7 @@ IN子句中的子查询始终只在单个服务器上运行一次。 没有依�
 
 ## 空处理 {#in-null-processing}
 
-在请求处理过程中， `IN` 运算符假定运算的结果 [NULL](../../sql-reference/syntax.md#null-literal) 总是等于 `0`，无论是否 `NULL` 位于操作员的右侧或左侧。 `NULL` 值不包含在任何数据集中，彼此不对应，并且在以下情况下无法进行比较 [transform_null_in=0](../../operations/settings/settings.md#transform_null_in).
+在请求处理过程中， `IN` 运算符假定运算的结果 [NULL](../../sql-reference/syntax.md#null-literal) 总是等于 `0`，无论是否 `NULL` 位于操作员的右侧或左侧。 `NULL` 值不包含在任何数据集中，彼此不对应，并且在以下情况下无法进行比较 [transform\_null\_in=0](../../operations/settings/settings.md#transform_null_in).
 
 下面是一个例子 `t_null` 表:
 
@@ -117,9 +117,9 @@ FROM t_null
 
 在使用子查询时要小心 `IN` / `JOIN` 用于分布式查询处理的子句。
 
-让我们来看看一些例子。 假设集群中的每个服务器都有一个正常的 **local_table**. 每个服务器还具有 **distributed_table** 表与 **分布** 类型，它查看群集中的所有服务器。
+让我们来看看一些例子。 假设集群中的每个服务器都有一个正常的 **local\_table**. 每个服务器还具有 **distributed\_table** 表与 **分布** 类型，它查看群集中的所有服务器。
 
-对于查询 **distributed_table**，查询将被发送到所有远程服务器，并使用以下命令在其上运行 **local_table**.
+对于查询 **distributed\_table**，查询将被发送到所有远程服务器，并使用以下命令在其上运行 **local\_table**.
 
 例如，查询
 
@@ -153,7 +153,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SEL
 
 如果您已经为此情况做好准备，并且已经将数据分散到群集服务器上，以便单个用户Id的数据完全驻留在单个服务器上，则这将正常和最佳地工作。 在这种情况下，所有必要的数据将在每台服务器上本地提供。 否则，结果将是不准确的。 我们将查询的这种变体称为 “local IN”.
 
-若要更正数据在群集服务器上随机传播时查询的工作方式，可以指定 **distributed_table** 在子查询中。 查询如下所示:
+若要更正数据在群集服务器上随机传播时查询的工作方式，可以指定 **distributed\_table** 在子查询中。 查询如下所示:
 
 ``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
