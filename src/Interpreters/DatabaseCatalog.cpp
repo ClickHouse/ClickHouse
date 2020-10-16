@@ -417,8 +417,10 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, DatabasePtr database, St
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto [_, inserted] = map_part.map.try_emplace(uuid, std::move(database), std::move(table));
+    /// Normally this should never happen, but it's possible when the same UUIDs are explicitly specified in different CREATE queries,
+    /// so it's not LOGICAL_ERROR
     if (!inserted)
-        throw Exception("Mapping for table with UUID=" + toString(uuid) + " already exists", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Mapping for table with UUID=" + toString(uuid) + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
