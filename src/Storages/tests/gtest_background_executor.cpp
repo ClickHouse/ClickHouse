@@ -20,14 +20,14 @@ public:
     explicit TestJobExecutor(Context & context)
         :IBackgroundJobExecutor(
             context,
-            TaskSleepSettings{},
+            BackgroundTaskSchedulingSettings{},
             {PoolConfig{PoolType::MERGE_MUTATE, 4, CurrentMetrics::BackgroundPoolTask}})
         {}
 
 protected:
-    String getBackgroundJobName() const override
+    String getBackgroundTaskName() const override
     {
-        return "TestJob";
+        return "TestTask";
     }
 
     std::optional<JobAndPool> getBackgroundJob() override
