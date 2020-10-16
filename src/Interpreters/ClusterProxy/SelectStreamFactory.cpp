@@ -97,6 +97,7 @@ auto createLocalPipe(
     /* Now we don't need to materialize constants, because RemoteBlockInputStream will ignore constant and take it from header.
      * So, streams from different threads will always have the same header.
      */
+    /// return std::make_shared<MaterializingBlockInputStream>(stream);
 
     pipeline.setMaxThreads(1);
     return QueryPipeline::getPipe(std::move(pipeline));
@@ -159,7 +160,8 @@ void SelectStreamFactory::createForShard(
 
         if (table_func_ptr)
         {
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
+            const auto * table_function = table_func_ptr->as<ASTFunction>();
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
             main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
         }
         else

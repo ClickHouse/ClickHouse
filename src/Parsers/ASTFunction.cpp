@@ -123,7 +123,6 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.expression_list_prepend_whitespace = false;
     FormatStateStacked nested_need_parens = frame;
     FormatStateStacked nested_dont_need_parens = frame;
     nested_need_parens.need_parens = true;

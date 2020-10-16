@@ -19,8 +19,6 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     const RemoteHostFilter & remote_host_filter;
 
     PocoHTTPClientConfiguration(const Aws::Client::ClientConfiguration & cfg, const RemoteHostFilter & remote_host_filter_);
-
-    void updateSchemeAndRegion();
 };
 
 class PocoHTTPClient : public Aws::Http::HttpClient
@@ -39,7 +37,7 @@ public:
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const override;
 
 private:
-    void makeRequestInternal(
+    void MakeRequestInternal(
         Aws::Http::HttpRequest & request,
         std::shared_ptr<Aws::Http::Standard::StandardHttpResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
