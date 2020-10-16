@@ -166,7 +166,7 @@ def test_move_failover(cluster):
     # First attempt should be failed with expected error.
     exception = node.query("""
         SELECT exception FROM system.part_log 
-        WHERE event_type='MovePart' AND table='s3_failover_test'
+        WHERE event_type='MovePart' AND table='s3_failover_test' AND notEmpty(exception)
         ORDER BY event_time
         LIMIT 1
         """)
