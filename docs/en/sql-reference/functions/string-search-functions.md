@@ -378,9 +378,9 @@ For other regular expressions, the code is the same as for the ‘match’ funct
 
 The same thing as ‘like’, but negative.
 
-## iLike {#ilike}
+## ilike {#ilike}
 
-Case insensitive variant of [like](https://clickhouse.tech/docs/en/sql-reference/functions/string-search-functions/#function-like) function and works the same as the `ILIKE` operator.
+Case insensitive variant of [like](https://clickhouse.tech/docs/en/sql-reference/functions/string-search-functions/#function-like) function. You can use `ILIKE` operator instead of the `ilike` function.
 
 **Syntax**
 
@@ -393,7 +393,7 @@ ilike(haystack, pattern)
 -   `haystack` — Input string. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `pattern` — If `pattern` doesn't contain percent signs or underscores, then the `pattern` only represents the string itself. An underscore (`_`) in `pattern` stands for (matches) any single character. A percent sign (`%`) matches any sequence of zero or more characters.
 
-Some examples of the `pattern` type:
+Some `pattern` examples:
 
 ``` text
 'abc' ILIKE 'abc'    true
