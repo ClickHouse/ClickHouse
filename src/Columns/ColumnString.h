@@ -49,7 +49,10 @@ private:
     struct lessWithCollation;
 
     ColumnString() = default;
-    ColumnString(const ColumnString & src);
+
+    ColumnString(const ColumnString & src)
+        : offsets(src.offsets.begin(), src.offsets.end()),
+        chars(src.chars.begin(), src.chars.end()) {}
 
 public:
     const char * getFamilyName() const override { return "String"; }

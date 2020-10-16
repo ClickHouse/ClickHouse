@@ -27,10 +27,10 @@ toc_title: "\u062F\u0627\u062F\u0647\u0647\u0627\u06CC \u062E\u0627\u0631\u062C\
 **–file** – Path to the file with the table dump, or -, which refers to stdin.
 فقط یک جدول را می توان از استدین بازیابی.
 
-پارامترهای زیر اختیاری هستند: **–name**– Name of the table. If omitted, _data is used.
+پارامترهای زیر اختیاری هستند: **–name**– Name of the table. If omitted, \_data is used.
 **–format** – Data format in the file. If omitted, TabSeparated is used.
 
-یکی از پارامترهای زیر مورد نیاز است:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, …
+یکی از پارامترهای زیر مورد نیاز است:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named \_1, \_2, …
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. تعریف نام ستون و انواع.
 
 فایل های مشخص شده در ‘file’ خواهد شد با فرمت مشخص شده در تجزیه ‘format’ با استفاده از انواع داده های مشخص شده در ‘types’ یا ‘structure’. جدول خواهد شد به سرور ارسال شده و در دسترس وجود دارد به عنوان یک جدول موقت با نام در ‘name’.
@@ -48,7 +48,7 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/sync       1
 ```
 
-هنگام استفاده از رابط اچ تی پی, داده های خارجی در قالب چند/فرم داده به تصویب رسید. هر جدول به عنوان یک فایل جداگانه منتقل می شود. نام جدول از نام فایل گرفته شده است. این ‘query_string’ پارامترهای منتقل می شود ‘name_format’, ‘name_types’ و ‘name_structure’ کجا ‘name’ نام جدول که این پارامترها به مطابقت است. معنای پارامترهای همان است که در هنگام استفاده از مشتری خط فرمان است.
+هنگام استفاده از رابط اچ تی پی, داده های خارجی در قالب چند/فرم داده به تصویب رسید. هر جدول به عنوان یک فایل جداگانه منتقل می شود. نام جدول از نام فایل گرفته شده است. این ‘query\_string’ پارامترهای منتقل می شود ‘name\_format’, ‘name\_types’ و ‘name\_structure’ کجا ‘name’ نام جدول که این پارامترها به مطابقت است. معنای پارامترهای همان است که در هنگام استفاده از مشتری خط فرمان است.
 
 مثال:
 

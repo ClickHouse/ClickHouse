@@ -35,7 +35,7 @@ ClickHouse toplar:
 -   Sunucunun hesaplama kaynaklarını nasıl kullandığına dair farklı metrikler.
 -   Sorgu işleme ile ilgili ortak istatistikler.
 
-Metrikleri şu adreste bulabilirsiniz: [sistem.metrik](../operations/system-tables.md#system_tables-metrics), [sistem.etkinlik](../operations/system-tables.md#system_tables-events), ve [sistem.asynchronous_metrics](../operations/system-tables.md#system_tables-asynchronous_metrics) Tablolar.
+Metrikleri şu adreste bulabilirsiniz: [sistem.metrik](../operations/system-tables.md#system_tables-metrics), [sistem.etkinlik](../operations/system-tables.md#system_tables-events), ve [sistem.asynchronous\_metrics](../operations/system-tables.md#system_tables-asynchronous_metrics) Tablolar.
 
 Clickhouse'u metrikleri dışa aktaracak şekilde yapılandırabilirsiniz [Grafit](https://github.com/graphite-project). Görmek [Graf sectionit bölümü](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) ClickHouse sunucu yapılandırma dosyasında. Metriklerin dışa aktarımını yapılandırmadan önce, grafit'i resmi olarak takip ederek ayarlamanız gerekir [kılavuz](https://graphite.readthedocs.io/en/latest/install.html).
 
@@ -43,4 +43,4 @@ Clickhouse'u metrikleri dışa aktaracak şekilde yapılandırabilirsiniz [Prome
 
 Ayrıca, http API aracılığıyla sunucu kullanılabilirliğini izleyebilirsiniz. Sen sendd the `HTTP GET` istek için `/ping`. Sunucu mevcutsa, yanıt verir `200 OK`.
 
-Bir küme yapılandırmasındaki sunucuları izlemek için [max_replica_delay_for_distributed_queries](settings/settings.md#settings-max_replica_delay_for_distributed_queries) parametre ve HTTP kaynağını kullanın `/replicas_status`. Bir istek için `/replicas_status` dönüşler `200 OK` çoğaltma kullanılabilir ve diğer yinelemeler gecikmiş değil. Bir çoğaltma gecikirse, döndürür `503 HTTP_SERVICE_UNAVAILABLE` boşluk hakkında bilgi ile.
+Bir küme yapılandırmasındaki sunucuları izlemek için [max\_replica\_delay\_for\_distributed\_queries](settings/settings.md#settings-max_replica_delay_for_distributed_queries) parametre ve HTTP kaynağını kullanın `/replicas_status`. Bir istek için `/replicas_status` dönüşler `200 OK` çoğaltma kullanılabilir ve diğer yinelemeler gecikmiş değil. Bir çoğaltma gecikirse, döndürür `503 HTTP_SERVICE_UNAVAILABLE` boşluk hakkında bilgi ile.

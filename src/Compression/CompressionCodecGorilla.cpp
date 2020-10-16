@@ -3,7 +3,6 @@
 #include <Compression/CompressionFactory.h>
 #include <common/unaligned.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTIdentifier.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
@@ -222,7 +221,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     }
 }
 
-UInt8 getDataBytesSize(const IDataType * column_type)
+UInt8 getDataBytesSize(DataTypePtr column_type)
 {
     if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is not applicable for {} because the data type is not of fixed size",
@@ -242,7 +241,6 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("Gorilla");
 }
 
 uint8_t CompressionCodecGorilla::getMethodByte() const
@@ -250,10 +248,9 @@ uint8_t CompressionCodecGorilla::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Gorilla);
 }
 
-void CompressionCodecGorilla::updateHash(SipHash & hash) const
+String CompressionCodecGorilla::getCodecDesc() const
 {
-    getCodecDesc()->updateTreeHash(hash);
-    hash.update(data_bytes_size);
+    return "Gorilla";
 }
 
 UInt32 CompressionCodecGorilla::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -325,16 +322,21 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
     }
 }
 
+void CompressionCodecGorilla::useInfoAboutType(const DataTypePtr & data_type)
+{
+    data_bytes_size = getDataBytesSize(data_type);
+}
+
 void registerCodecGorilla(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Gorilla);
     factory.registerCompressionCodecWithType("Gorilla", method_code,
-        [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
+        [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
     {
         if (arguments)
             throw Exception("Codec Gorilla does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
 
-        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;   /// Maybe postponed to the call to "useInfoAboutType"
         return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
     });
 }

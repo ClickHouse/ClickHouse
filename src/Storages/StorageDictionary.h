@@ -16,7 +16,7 @@ public:
 
     void checkTableCanBeDropped() const override;
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -29,7 +29,6 @@ public:
     static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
     const String & dictionaryName() const { return dictionary_name; }
-    String resolvedDictionaryName() const;
 
     /// Specifies where the table is located relative to the dictionary.
     enum class Location

@@ -88,15 +88,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...)
-  */
-class ParserColumnsTransformers : public IParserBase
-{
-protected:
-    const char * getName() const override { return "COLUMNS transformers"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 /** A function, for example, f(x, y + 1, g(z)).
   * Or an aggregate function: sum(x + f(y)), corr(x, y). The syntax is the same as the usual function.
   * Or a parametric aggregate function: quantile(0.9)(x + y).
@@ -359,7 +350,7 @@ protected:
 };
 
 /** Parser for function with arguments like KEY VALUE (space separated)
-  * no commas allowed, just space-separated pairs.
+  * no commas alowed, just space-separated pairs.
   */
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {

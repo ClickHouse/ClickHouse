@@ -7,8 +7,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function assumeNotNull which takes 1 argument and works as follows:
 /// - if the argument is a nullable column, return its embedded column;
@@ -39,10 +37,10 @@ public:
         return removeNullable(arguments[0]);
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        const ColumnPtr & col = columns[arguments[0]].column;
-        ColumnPtr & res_col = columns[result].column;
+        const ColumnPtr & col = block.getByPosition(arguments[0]).column;
+        ColumnPtr & res_col = block.getByPosition(result).column;
 
         if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
             res_col = nullable_col->getNestedColumnPtr();
@@ -51,7 +49,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionAssumeNotNull(FunctionFactory & factory)
 {

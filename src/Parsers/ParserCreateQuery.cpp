@@ -416,12 +416,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
 
         if (!storage_p.parse(pos, storage, expected) && !is_temporary)
-        {
-            if (!s_as.ignore(pos, expected))
-                return false;
-            if (!table_function_p.parse(pos, as_table_function, expected))
-                return false;
-        }
+            return false;
     }
     else
     {
@@ -432,8 +427,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
         {
-            /// ENGINE can not be specified for table functions.
-            if (storage || !table_function_p.parse(pos, as_table_function, expected))
+            if (!table_function_p.parse(pos, as_table_function, expected))
             {
                 /// AS [db.]table
                 if (!name_p.parse(pos, as_table, expected))

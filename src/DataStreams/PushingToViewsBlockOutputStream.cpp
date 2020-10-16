@@ -1,7 +1,6 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -13,7 +12,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
-
 
 namespace DB
 {
@@ -34,9 +32,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       *  but it's clear that here is not the best place for this functionality.
       */
     addTableLock(
-        storage->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
+            storage->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
 
-    /// If the "root" table deduplicates blocks, there are no need to make deduplication for children
+    /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
     bool disable_deduplication_for_children = false;
     if (!context.getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
@@ -58,9 +56,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             insert_context->setSetting("insert_deduplicate", false);
 
         // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
-        if (insert_settings.min_insert_block_size_rows_for_materialized_views)
+        if (insert_settings.min_insert_block_size_rows_for_materialized_views.changed)
             insert_context->setSetting("min_insert_block_size_rows", insert_settings.min_insert_block_size_rows_for_materialized_views.value);
-        if (insert_settings.min_insert_block_size_bytes_for_materialized_views)
+        if (insert_settings.min_insert_block_size_bytes_for_materialized_views.changed)
             insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
     }
 
@@ -75,7 +73,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
             addTableLock(
-                materialized_view->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
+                    materialized_view->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
@@ -87,17 +85,15 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             /// Get list of columns we get from select query.
             auto header = InterpreterSelectQuery(query, *select_context, SelectQueryOptions().analyze())
-                .getSampleBlock();
+                    .getSampleBlock();
 
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
             const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
-            for (const auto & column : header)
-            {
+            for (auto & column : header)
                 /// But skip columns which storage doesn't have.
                 if (inner_table_columns.hasPhysical(column.name))
                     list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
-            }
 
             insert->columns = std::move(list);
 
