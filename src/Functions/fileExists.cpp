@@ -98,7 +98,7 @@ public:
     {
         if (!checkColumnConst<ColumnString>(arguments.at(0).column.get()))
             throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
-            
+
         DataTypes argument_types;
         argument_types.emplace_back(arguments.at(0).type);
 
