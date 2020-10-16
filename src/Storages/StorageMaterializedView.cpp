@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
@@ -72,7 +73,9 @@ StorageMaterializedView::StorageMaterializedView(
     setInMemoryMetadata(storage_metadata);
 
     if (!has_inner_table)
+    {
         target_table_id = query.to_table_id;
+    }
     else if (attach_)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
@@ -97,6 +100,9 @@ StorageMaterializedView::StorageMaterializedView(
 
         target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, global_context)->getStorageID();
     }
+
+    if (target_table_id == getStorageID())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot point to itself", getStorageID().getFullTableName());
 
     if (!select.select_table_id.empty())
         DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
