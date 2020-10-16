@@ -2,73 +2,95 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-
 #include <AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB
 {
-namespace ErrorCodes
-{
-}
+template <class T>
+using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
-template <typename T, typename Denominator>
-struct AggregateFunctionAvgData
+/// A type-fixed rational fraction represented by a pair of #Numerator and #Denominator.
+template <class Numerator, class Denominator>
+struct RationalFraction
 {
-    using NumeratorType = T;
+    using NumeratorType = Numerator;
     using DenominatorType = Denominator;
 
-    T numerator{0};
+    Numerator numerator{0};
     Denominator denominator{0};
 
-    template <typename ResultT>
-    ResultT NO_SANITIZE_UNDEFINED result() const
+    /// Calculate the fraction as a #Result.
+    template <class Result>
+    Result NO_SANITIZE_UNDEFINED result() const
     {
-        if constexpr (std::is_floating_point_v<ResultT>)
-            if constexpr (std::numeric_limits<ResultT>::is_iec559)
+        if constexpr (std::is_floating_point_v<Result>)
+            if constexpr (std::numeric_limits<Result>::is_iec559)
             {
                 if constexpr (is_big_int_v<Denominator>)
-                    return static_cast<ResultT>(numerator) / static_cast<ResultT>(denominator);
+                    return static_cast<Result>(numerator) / static_cast<Result>(denominator);
                 else
-                    return static_cast<ResultT>(numerator) / denominator; /// allow division by zero
+                    return static_cast<Result>(numerator) / denominator; /// allow division by zero
             }
 
         if (denominator == static_cast<Denominator>(0))
-            return static_cast<ResultT>(0);
+            return static_cast<Result>(0);
 
-        if constexpr (std::is_same_v<T, Decimal256>)
-            return static_cast<ResultT>(numerator / static_cast<T>(denominator));
+        if constexpr (std::is_same_v<Numerator, Decimal256>)
+            return static_cast<Result>(numerator / static_cast<Numerator>(denominator));
         else
-            return static_cast<ResultT>(numerator / denominator);
+            return static_cast<Result>(numerator / denominator);
     }
 };
 
-/// Calculates arithmetic mean of numbers.
-template <typename T, typename Data, typename Derived>
-class AggregateFunctionAvgBase : public IAggregateFunctionDataHelper<Data, Derived>
+template <class, class = void>
+struct AvgTraits
+{
+    using ResultType = Float64;
+    using ResultDataType = DataTypeNumber<Float64>;
+    using ResultVectorType = ColumnVector<Float64>;
+};
+
+template <class T>
+struct AvgTraits<T, std::enable_if_t<IsDecimalNumber<T>>>
+{
+    using ResultType = T;
+    using ResultDataType = DataTypeDecimal<T>;
+    using ResultVectorType = ColumnDecimal<T>;
+};
+
+/**
+ * @tparam DesiredResult The type that we want to be used for resulting column. "Desired" as the real type in most cases
+ *                       would be not DesiredResult, but Float64.
+ * @tparam Numerator The type that the initial numerator column would have (needed to cast the input IColumn to
+ *                   appropriate type).
+ * @tparam Denominator The type that the initial denominator column would have.
+ *
+ * @tparam Derived When deriving from this class, use the child class name as in CRTP, e.g.
+ *         class Self : Agg<char, bool, bool, Self>.
+ */
+template <class DesiredResult, class Numerator, class Denominator, class Derived>
+class AggregateFunctionAvgBase : public IAggregateFunctionDataHelper<RationalFraction<Numerator, Denominator>, Derived>
 {
 public:
-    using ResultType = std::conditional_t<IsDecimalNumber<T>, T, Float64>;
-    using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<T>, DataTypeNumber<Float64>>;
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<Float64>>;
+    using Base = IAggregateFunctionDataHelper<RationalFraction<Numerator, Denominator>, Derived>;
+    using Traits = AvgTraits<DesiredResult>;
 
     /// ctor for native types
-    AggregateFunctionAvgBase(const DataTypes & argument_types_) : IAggregateFunctionDataHelper<Data, Derived>(argument_types_, {}), scale(0) {}
+    explicit AggregateFunctionAvgBase(const DataTypes & argument_types_): Base(argument_types_, {}), scale(0) {}
 
     /// ctor for Decimals
     AggregateFunctionAvgBase(const IDataType & data_type, const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, Derived>(argument_types_, {}), scale(getDecimalScale(data_type))
-    {
-    }
+        : Base(argument_types_, {}), scale(getDecimalScale(data_type)) {}
 
     DataTypePtr getReturnType() const override
     {
-        if constexpr (IsDecimalNumber<T>)
+        using ResultDataType = typename Traits::ResultDataType;
+
+        if constexpr (IsDecimalNumber<DesiredResult>)
             return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
         else
             return std::make_shared<ResultDataType>();
@@ -84,7 +106,7 @@ public:
     {
         writeBinary(this->data(place).numerator, buf);
 
-        if constexpr (std::is_unsigned_v<typename Data::DenominatorType>)
+        if constexpr (std::is_unsigned_v<Denominator>)
             writeVarUInt(this->data(place).denominator, buf);
         else /// Floating point denominator type can be used
             writeBinary(this->data(place).denominator, buf);
@@ -94,7 +116,7 @@ public:
     {
         readBinary(this->data(place).numerator, buf);
 
-        if constexpr (std::is_unsigned_v<typename Data::DenominatorType>)
+        if constexpr (std::is_unsigned_v<Denominator>)
             readVarUInt(this->data(place).denominator, buf);
         else /// Floating point denominator type can be used
             readBinary(this->data(place).denominator, buf);
@@ -102,29 +124,32 @@ public:
 
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
-        auto & column = static_cast<ColVecResult &>(to);
-        column.getData().push_back(this->data(place).template result<ResultType>());
+        using ResultType = typename Traits::ResultType;
+        using ResultVectorType = typename Traits::ResultVectorType;
+
+        static_cast<ResultVectorType &>(to).getData().push_back(this->data(place).template result<ResultType>());
     }
 
 protected:
     UInt32 scale;
 };
 
-template <typename T, typename Data>
-class AggregateFunctionAvg final : public AggregateFunctionAvgBase<T, Data, AggregateFunctionAvg<T, Data>>
+template <class Large, class Numerator, class Denominator>
+class AggregateFunctionAvg final :
+    public AggregateFunctionAvgBase<Large, Numerator, Denominator,
+        AggregateFunctionAvg<Large, Numerator, Denominator>>
 {
 public:
-    using AggregateFunctionAvgBase<T, Data, AggregateFunctionAvg<T, Data>>::AggregateFunctionAvgBase;
+    using AggregateFunctionAvgBase<Large, Numerator, Denominator,
+        AggregateFunctionAvg<Large, Numerator, Denominator>>::AggregateFunctionAvgBase;
 
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        const auto & column = static_cast<const ColVecType &>(*columns[0]);
+        const auto & column = static_cast<const DecimalOrVectorCol<Large> &>(*columns[0]);
         this->data(place).numerator += column.getData()[row_num];
         this->data(place).denominator += 1;
     }
 
-    String getName() const override { return "avg"; }
+    String getName() const final { return "avg"; }
 };
-
 }

@@ -13,19 +13,16 @@ namespace ErrorCodes
 
 namespace
 {
+template <class T>
+using AvgNumerator = std::conditional_t<
+    IsDecimalNumber<T>,
+    std::conditional_t<std::is_same_v<T, Decimal256>,
+        Decimal256,
+        Decimal128>,
+    NearestFieldType<T>>;
 
 template <typename T>
-struct Avg
-{
-    using FieldType = std::conditional_t<IsDecimalNumber<T>,
-                                        std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
-                                        NearestFieldType<T>>;
-    // using FieldType = std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>;
-    using Function = AggregateFunctionAvg<T, AggregateFunctionAvgData<FieldType, UInt64>>;
-};
-
-template <typename T>
-using AggregateFuncAvg = typename Avg<T>::Function;
+using AggregateFuncAvg = AggregateFunctionAvg<T, AvgNumerator<T>, UInt64>;
 
 AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
@@ -34,6 +31,7 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
 
     AggregateFunctionPtr res;
     DataTypePtr data_type = argument_types[0];
+
     if (isDecimal(data_type))
         res.reset(createWithDecimalType<AggregateFuncAvg>(*data_type, *data_type, argument_types));
     else
@@ -44,12 +42,10 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     return res;
 }
-
 }
 
 void registerAggregateFunctionAvg(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("avg", createAggregateFunctionAvg, AggregateFunctionFactory::CaseInsensitive);
 }
-
 }

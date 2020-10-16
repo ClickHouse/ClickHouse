@@ -5,30 +5,27 @@
 namespace DB
 {
 
-template <typename Value, typename Weight, typename Largest, typename Data>
+template <class Large, class Numerator, class Denominator>
 class AggregateFunctionAvgWeighted final :
-    public AggregateFunctionAvgBase<Largest, Data, AggregateFunctionAvgWeighted<Value, Weight, Largest, Data>>
+    public AggregateFunctionAvgBase<Large, Numerator, Denominator,
+        AggregateFunctionAvgWeighted<Large, Numerator, Denominator>>
 {
 public:
-    using AggregateFunctionAvgBase<Largest, Data,
-        AggregateFunctionAvgWeighted<Value, Weight, Largest, Data>>::AggregateFunctionAvgBase;
-
-    template <class T>
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using AggregateFunctionAvgBase<Large, Numerator, Denominator,
+        AggregateFunctionAvgWeighted<Large, Numerator, Denominator>>::AggregateFunctionAvgBase;
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const auto & values = static_cast<const ColVecType<Value> &>(*columns[0]);
-        const auto & weights = static_cast<const ColVecType<Weight> &>(*columns[1]);
+        const auto & values = static_cast<const DecimalOrVectorCol<Numerator> &>(*columns[0]);
+        const auto & weights = static_cast<const DecimalOrVectorCol<Denominator> &>(*columns[1]);
 
-        const auto value = values.getData()[row_num];
+        const Numerator value = static_cast<Numerator>(values.getData()[row_num]);
         const auto weight = weights.getData()[row_num];
 
-        this->data(place).numerator += static_cast<typename Data::NumeratorType>(value) * weight;
+        this->data(place).numerator += value * weight;
         this->data(place).denominator += weight;
     }
 
     String getName() const override { return "avgWeighted"; }
 };
-
 }

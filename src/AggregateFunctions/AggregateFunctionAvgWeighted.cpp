@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionAvgWeighted.h>
 #include <AggregateFunctions/Helpers.h>
@@ -25,20 +26,14 @@ constexpr bool allowTypes(const DataTypePtr& left, const DataTypePtr& right)
     return allow(l_dt) && allow(r_dt);
 }
 
-template <class U> struct BiggerType
+// TODO signed to unsigned
+template <class U, class V, class = void> struct LargestType { using Type = V; };
 
-template <class U, class V> struct LargestType
-{
-    using Type = bool;
-};
+template <class U, class V>
+struct LargestType<U, V, std::enable_if_t<(sizeof(U) > sizeof(V))>> { using Type = typename LargestType<V, U>::Type; };
 
-
-template <class U, class V> using AvgData = AggregateFunctionAvgData<
-    typename LargestType<U, V>::Type,
-    typename LargestType<U, V>::Type>;
-
-template <class U, class V> using Function = AggregateFunctionAvgWeighted<
-    U, V, typename LargestType<U, V>::Type, AvgData<U, V>>;
+template <class U, class V> using LargestTypeT = typename LargestType<U, V>::Type;
+template <class U, class V> using Function = AggregateFunctionAvgWeighted<LargestTypeT<U, V>, U, V>;
 
 template <typename... TArgs>
 static IAggregateFunction * create(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
@@ -70,7 +65,6 @@ AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name
 
     return res;
 }
-
 }
 
 void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory & factory)
