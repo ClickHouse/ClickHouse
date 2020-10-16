@@ -222,7 +222,7 @@ class Cluster(object):
 
                 # clean up any stale open shells for threads that have exited
                 active_thread_names = {thread.name for thread in threading.enumerate()}
-                
+
                 for bash_id in list(self._bash.keys()):
                     thread_name, node_name = bash_id.rsplit("-", 1)
                     if thread_name not in active_thread_names:
@@ -278,7 +278,7 @@ class Cluster(object):
                     else:
                         self._bash[id] = shell
         finally:
-            return self.command(None, f"{self.docker_compose} down", bash=bash, timeout=timeout)
+            return self.command(None, f"{self.docker_compose} down --timeout 60", bash=bash, timeout=timeout)
 
     def up(self, timeout=30*60):
         if self.local:
