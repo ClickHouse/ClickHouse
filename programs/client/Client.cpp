@@ -1202,8 +1202,15 @@ private:
                 }
                 catch (...)
                 {
+                    // Some functions (e.g. protocol parsers) don't throw, but
+                    // set last_exception instead, so we'll also do it here for
+                    // uniformity.
                     last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     received_exception_from_server = true;
+                }
+
+                if (received_exception_from_server)
+                {
                     fmt::print(stderr, "Error on processing query '{}': {}\n",
                         ast_to_process->formatForErrorMessage(),
                         last_exception_received_from_server->message());
@@ -1213,29 +1220,30 @@ private:
                 {
                     // Probably the server is dead because we found an assertion
                     // failure. Fail fast.
+                    fmt::print(stderr, "Lost connection to the server\n");
                     return begin;
                 }
 
+                // The server is still alive so we're going to continue fuzzing.
+                // Determine what we're going to use as the starting AST.
                 if (received_exception_from_server)
                 {
-                    // Query completed with error, ignore it and fuzz again.
-                    fprintf(stderr, "Got error, will fuzz again\n");
-
+                    // Query completed with error, keep the previous starting AST.
+                    // Also discard the exception that we now know to be non-fatal,
+                    // so that it doesn't influence the exit code.
+                    last_exception_received_from_server.reset(nullptr);
                     received_exception_from_server = false;
-                    last_exception_received_from_server.reset();
-
-                    continue;
                 }
                 else if (ast_to_process->formatForErrorMessage().size() > 500)
                 {
                     // ast too long, start from original ast
-                    fprintf(stderr, "current ast too long, won't elaborate\n");
+                    fprintf(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
                     fuzz_base = orig_ast;
                 }
                 else
                 {
                     // fuzz starting from this successful query
-                    fprintf(stderr, "using this ast as etalon\n");
+                    fprintf(stderr, "Query succeeded, using this AST as a start\n");
                     fuzz_base = ast_to_process;
                 }
             }
