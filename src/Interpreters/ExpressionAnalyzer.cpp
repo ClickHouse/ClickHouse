@@ -915,15 +915,12 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendProjectResult(Expressi
                 const auto & tuple_type = step.actions()->getIndex().find(tuple_name)->second->result_type;
                 const auto & tuple_names = assert_cast<const DataTypeTuple *>(tuple_type.get())->getElementNames();
 
-                for (size_t i = 0; i < tuple_names.size(); ++i)
+                for (const auto & result_name : tuple_names)
                 {
-                    const auto & result_name = tuple_names[i];
                     if (required_result_columns.empty() || required_result_columns.count(result_name))
                     {
-                        std::string source_name = "TupleElementWithIndex_" + std::to_string(i + 1) + "(" + tuple_name + ")";
-
-                        result_columns.emplace_back(source_name, result_name);
-                        step.required_output.push_back(result_columns.back().second);
+                        result_columns.emplace_back(result_name, "");
+                        step.required_output.push_back(result_name);
                     }
                 }
 
