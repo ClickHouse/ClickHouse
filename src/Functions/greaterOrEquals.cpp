@@ -13,7 +13,7 @@ void registerFunctionGreaterOrEquals(FunctionFactory & factory)
 }
 
 template <>
-void FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+void FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTupleImpl(ColumnsWithTypeAndName & columns, size_t result, const ColumnsWithTypeAndName & x,
                                                                                   const ColumnsWithTypeAndName & y, size_t tuple_size,
                                                                                   size_t input_rows_count) const
 {
@@ -23,7 +23,7 @@ void FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTupleImp
         FunctionFactory::instance().get("and", context),
         FunctionFactory::instance().get("or", context),
         FunctionFactory::instance().get("equals", context),
-        block, result, x, y, tuple_size, input_rows_count);
+        columns, result, x, y, tuple_size, input_rows_count);
 }
 
 }

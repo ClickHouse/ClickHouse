@@ -19,6 +19,7 @@ class PartitionManager:
 
     def __init__(self):
         self._iptables_rules = []
+        _NetworkManager.get()
 
     def drop_instance_zk_connections(self, instance, action='DROP'):
         self._check_instance(instance)
@@ -165,6 +166,17 @@ class _NetworkManager:
                     self._container.remove(force=True)
                 except docker.errors.NotFound:
                     pass
+
+            # for some reason docker api may hang if image doesn't exist, so we download it
+            # before running
+            for i in range(5):
+                try:
+                    subprocess.check_call("docker pull yandex/clickhouse-integration-helper", shell=True)
+                    break
+                except:
+                    time.sleep(i)
+            else:
+                raise Exception("Cannot pull yandex/clickhouse-integration-helper image")
 
             self._container = self._docker_client.containers.run('yandex/clickhouse-integration-helper',
                                                                  auto_remove=True,

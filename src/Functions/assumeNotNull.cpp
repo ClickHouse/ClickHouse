@@ -39,10 +39,10 @@ public:
         return removeNullable(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        const ColumnPtr & col = block.getByPosition(arguments[0]).column;
-        ColumnPtr & res_col = block.getByPosition(result).column;
+        const ColumnPtr & col = columns[arguments[0]].column;
+        ColumnPtr & res_col = columns[result].column;
 
         if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
             res_col = nullable_col->getNestedColumnPtr();

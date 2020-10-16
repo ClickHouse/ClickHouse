@@ -51,9 +51,9 @@ public:
         return scalar.type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = ColumnConst::create(scalar.column, input_rows_count);
+        columns[result].column = ColumnConst::create(scalar.column, input_rows_count);
     }
 
 private:
