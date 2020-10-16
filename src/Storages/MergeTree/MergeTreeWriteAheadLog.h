@@ -28,6 +28,19 @@ public:
         DROP_PART = 1,
     };
 
+    struct ActionMetadata
+    {
+        /// The minimum version of WAL reader that can understand metadata written by current ClickHouse version.
+        /// This field must be increased when making backwards incompatible changes.
+        ///
+        /// The same approach can be used recursively inside metadata.
+        UInt8 min_compatible_version = 0;
+
+        void write(WriteBuffer & meta_out) const;
+        void read(ReadBuffer & meta_in);
+    };
+
+    constexpr static UInt8 WAL_VERSION = 0;
     constexpr static auto WAL_FILE_NAME = "wal";
     constexpr static auto WAL_FILE_EXTENSION = ".bin";
     constexpr static auto DEFAULT_WAL_FILE_NAME = "wal.bin";

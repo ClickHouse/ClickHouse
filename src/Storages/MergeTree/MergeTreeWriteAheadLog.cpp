@@ -64,7 +64,7 @@ void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_na
     min_block_number = std::min(min_block_number, part_info.min_block);
     max_block_number = std::max(max_block_number, part_info.max_block);
 
-    writeIntBinary(static_cast<UInt8>(0), *out); /// version
+    writeIntBinary(WAL_VERSION, *out);
     writeIntBinary(static_cast<UInt8>(ActionType::ADD_PART), *out);
     writeStringBinary(part_name, *out);
     block_out->write(block);
@@ -80,7 +80,7 @@ void MergeTreeWriteAheadLog::dropPart(const String & part_name)
 {
     std::unique_lock lock(write_mutex);
 
-    writeIntBinary(static_cast<UInt8>(0), *out);
+    writeIntBinary(WAL_VERSION, *out);
     writeIntBinary(static_cast<UInt8>(ActionType::DROP_PART), *out);
     writeStringBinary(part_name, *out);
     out->next();
@@ -116,9 +116,13 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
 
         try
         {
+            ActionMetadata metadata;
+
             readIntBinary(version, *in);
-            if (version != 0)
-                throw Exception("Unknown WAL format version: " + toString(version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
+            if (version > 0)
+            {
+                metadata.read(*in);
+            }
 
             readIntBinary(action_type, *in);
             readStringBinary(part_name, *in);
@@ -233,4 +237,29 @@ MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(const String & filename)
     return std::make_pair(min_block, max_block);
 }
 
+void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)
+{
+    readIntBinary(min_compatible_version, meta_in);
+    if (min_compatible_version > WAL_VERSION)
+        throw Exception("WAL metadata version " + toString(min_compatible_version)
+                        + " is not compatible with this ClickHouse version", ErrorCodes::UNKNOWN_FORMAT_VERSION);
+
+    size_t metadata_size;
+    readVarUInt(metadata_size, meta_in);
+
+    UInt32 metadata_start = meta_in.offset();
+
+    /// For the future: read metadata here.
+
+
+    /// Skip extra fields if any. If min_compatible_version is lower than WAL_VERSION it means
+    /// that the fields are not critical for the correctness.
+    meta_in.ignore(metadata_size - (meta_in.offset() - metadata_start));
+}
+
+void MergeTreeWriteAheadLog::ActionMetadata::write(WriteBuffer & meta_out) const
+{
+    writeIntBinary(min_compatible_version, meta_out);
+    writeVarUInt(static_cast<UInt32>(0), meta_out);
+}
 }
