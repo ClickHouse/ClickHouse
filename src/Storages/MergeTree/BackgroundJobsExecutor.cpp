@@ -54,7 +54,6 @@ void IBackgroundJobExecutor::scheduleTask()
     else
     {
         scheduling_task->schedule();
-        return;
     }
 
 }
@@ -85,6 +84,7 @@ try
                         tryLogCurrentException(__PRETTY_FUNCTION__);
                         CurrentMetrics::values[pool_config.tasks_metric]--;
                     }
+                    scheduleTask();
                 });
             }
             catch (...)
@@ -92,15 +92,16 @@ try
                 no_work_done_count++;
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 CurrentMetrics::values[pool_config.tasks_metric]--;
+                scheduleTask();
             }
         }
     }
     else /// Nothing to do, no jobs
     {
         no_work_done_count++;
+        scheduleTask();
     }
 
-    scheduleTask();
 }
 catch (...) /// Exception while we looking for a task
 {
