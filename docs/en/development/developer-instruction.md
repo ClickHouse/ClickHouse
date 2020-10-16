@@ -40,7 +40,7 @@ In the command line terminal run:
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Note: please, substitute *your\_github\_username* with what is appropriate!
+Note: please, substitute *your_github_username* with what is appropriate!
 
 This command will create a directory `ClickHouse` containing the working copy of the project.
 
@@ -150,7 +150,7 @@ Now that you are ready to build ClickHouse we recommend you to create a separate
     mkdir build
     cd build
 
-You can have several different directories (build\_release, build\_debug, etc.) for different types of build.
+You can have several different directories (build_release, build_debug, etc.) for different types of build.
 
 While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 9 gcc compiler in this example).
 

@@ -138,8 +138,6 @@ void BackgroundProcessingPool::workLoopFunc()
     }
 
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
-    if (auto * const memory_tracker = CurrentThread::getMemoryTracker())
-        memory_tracker->setMetric(settings.memory_metric);
 
     pcg64 rng(randomSeed());
     std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, settings.thread_sleep_seconds_random_part)(rng)));
@@ -219,8 +217,11 @@ void BackgroundProcessingPool::workLoopFunc()
 
             if (task_result == TaskResult::SUCCESS)
                 task->count_no_work_done = 0;
-            else
+            else if (task_result == TaskResult::ERROR)
                 ++task->count_no_work_done;
+            /// NOTHING_TO_DO should not increment count_no_work_done
+            /// otherwise error after period of inactivity (lot of NOTHING_TO_DO)
+            /// leads to 5-10 min replication hang
 
             /// If task has done work, it could be executed again immediately.
             /// If not, add delay before next run.

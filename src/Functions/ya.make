@@ -112,6 +112,7 @@ SRCS(
     bitBoolMaskAnd.cpp
     bitBoolMaskOr.cpp
     bitCount.cpp
+    bitmaskToList.cpp
     bitNot.cpp
     bitOr.cpp
     bitRotateLeft.cpp
@@ -163,6 +164,9 @@ SRCS(
     filesystem.cpp
     finalizeAggregation.cpp
     formatDateTime.cpp
+    formatReadableQuantity.cpp
+    formatReadableSize.cpp
+    formatReadableTimeDelta.cpp
     formatRow.cpp
     formatString.cpp
     fromUnixTimestamp64Micro.cpp
@@ -177,7 +181,6 @@ SRCS(
     FunctionsEmbeddedDictionaries.cpp
     FunctionsExternalDictionaries.cpp
     FunctionsExternalModels.cpp
-    FunctionsFormatting.cpp
     FunctionsHashing.cpp
     FunctionsJSON.cpp
     FunctionsLogical.cpp
@@ -267,6 +270,7 @@ SRCS(
     log10.cpp
     log2.cpp
     log.cpp
+    logTrace.cpp
     lowCardinalityIndices.cpp
     lowCardinalityKeys.cpp
     lower.cpp
@@ -334,6 +338,7 @@ SRCS(
     registerFunctionsConsistentHashing.cpp
     registerFunctions.cpp
     registerFunctionsDateTime.cpp
+    registerFunctionsFormatting.cpp
     registerFunctionsGeo.cpp
     registerFunctionsHigherOrder.cpp
     registerFunctionsIntrospection.cpp
@@ -388,6 +393,7 @@ SRCS(
     TargetSpecific.cpp
     tgamma.cpp
     throwIf.cpp
+    tid.cpp
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp

@@ -37,7 +37,7 @@ class ClickHouseServer:
 
             s.connect(('localhost', port))
         except socket.error as socketerror:
-            print "Error: ", socketerror
+            print("Error: ", socketerror)
             raise
 
     def shutdown(self, timeout=10):

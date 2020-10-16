@@ -3,7 +3,7 @@ import argparse
 import csv
 import socket
 import ssl
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 # Decorator used to see if authentication works for external dictionary who use a HTTP source.
@@ -29,7 +29,7 @@ def start_server(server_address, data_path, schema, cert_path, address_family):
         @check_auth
         def do_POST(self):
             ids = self.__read_and_decode_post_ids()
-            print "ids=", ids
+            print("ids=", ids)
             self.__send_headers()
             self.__send_data(ids)
 
@@ -43,26 +43,26 @@ def start_server(server_address, data_path, schema, cert_path, address_family):
                 reader = csv.reader(fl, delimiter='\t')
                 for row in reader:
                     if not only_ids or (row[0] in only_ids):
-                        self.wfile.write('\t'.join(row) + '\n')
+                        self.wfile.write(('\t'.join(row) + '\n').encode())
 
         def __read_and_decode_post_ids(self):
             data = self.__read_and_decode_post_data()
-            return filter(None, data.split())
+            return [_f for _f in data.split() if _f]
 
         def __read_and_decode_post_data(self):
             transfer_encoding = self.headers.get("Transfer-encoding")
             decoded = "";
             if transfer_encoding == "chunked":
                 while True:
-                    s = self.rfile.readline()
+                    s = self.rfile.readline().decode()
                     chunk_length = int(s, 16)
                     if not chunk_length:
                         break
-                    decoded += self.rfile.read(chunk_length)
-                    self.rfile.readline()
+                    decoded += self.rfile.read(chunk_length).decode()
+                    self.rfile.readline().decode()
             else:
                 content_length = int(self.headers.get("Content-Length", 0))
-                decoded = self.rfile.read(content_length)
+                decoded = self.rfile.read(content_length).decode()
             return decoded
 
     if address_family == "ipv6":

@@ -42,7 +42,8 @@ def setup_module(module):
     dictionaries = []
     main_configs = []
     main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
-    
+    main_configs.append(os.path.join('configs', 'log_conf.xml'))
+   
     for fname in os.listdir(DICT_CONFIG_PATH):
         dictionaries.append(os.path.join(DICT_CONFIG_PATH, fname))
 
@@ -69,14 +70,20 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+# We have a lot of race conditions in cassandra library
+# https://github.com/ClickHouse/ClickHouse/issues/15754.
+# TODO fix them and enable tests as soon as possible.
 @pytest.mark.parametrize("layout_name", LAYOUTS_SIMPLE)
 def test_simple(started_cluster, layout_name):
-    simple_tester.execute(layout_name, node)
+    if not node.is_built_with_thread_sanitizer():
+        simple_tester.execute(layout_name, node)
 
 @pytest.mark.parametrize("layout_name", LAYOUTS_COMPLEX)
 def test_complex(started_cluster, layout_name):
-    complex_tester.execute(layout_name, node)
+    if not node.is_built_with_thread_sanitizer():
+        complex_tester.execute(layout_name, node)
     
 @pytest.mark.parametrize("layout_name", LAYOUTS_RANGED)
 def test_ranged(started_cluster, layout_name):
-    ranged_tester.execute(layout_name, node)
+    if not node.is_built_with_thread_sanitizer():
+        ranged_tester.execute(layout_name, node)

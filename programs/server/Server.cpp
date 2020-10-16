@@ -267,12 +267,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerDictionaries();
     registerDisks();
 
-#if !defined(ARCADIA_BUILD)
-#if USE_OPENCL
-    BitonicSort::getInstance().configure();
-#endif
-#endif
-
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 

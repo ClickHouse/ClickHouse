@@ -14,6 +14,7 @@
 
 #include <Access/AccessFlags.h>
 
+#include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -245,6 +246,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
+    if (context->getSettingsRef().enable_global_with_statement)
+        ApplyWithAliasVisitor().visit(query_ptr);
     ApplyWithSubqueryVisitor().visit(query_ptr);
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
@@ -1111,6 +1114,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
         && storage
+        && storage->getName() != "MaterializeMySQL"
         && !filter_info
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
