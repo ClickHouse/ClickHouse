@@ -465,6 +465,8 @@ unset IFS
 # The comparison script might be bound to one NUMA node for better test
 # stability, and the calculation runs out of memory because of this. Use
 # all nodes.
+numactl --show
+numactl --all numactl --show
 numactl --all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
