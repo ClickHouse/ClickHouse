@@ -68,17 +68,17 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IColumn & src = *block[arguments[0]].column;
-        MutableColumnPtr dst = block[result].type->createColumn();
+        const IColumn & src = *columns[arguments[0]].column;
+        MutableColumnPtr dst = columns[result].type->createColumn();
 
         if (ColumnString * dst_concrete = typeid_cast<ColumnString *>(dst.get()))
             executeToString(src, *dst_concrete);
         else
             throw Exception("Illegal column " + src.getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block[result].column = std::move(dst);
+        columns[result].column = std::move(dst);
     }
 };
 
