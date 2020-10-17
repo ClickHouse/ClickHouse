@@ -40,7 +40,7 @@ Example configuration:
 </dictionary>
 ```
 
-Tne corresponding [DDL-query](../../../sql-reference/statements/create.md#create-dictionary-query):
+Tne corresponding [DDL-query](../../../sql-reference/statements/dictionary.md#create-dictionary-query):
 ``` sql
 CREATE DICTIONARY polygon_dict_name (
     key Array(Array(Array(Array(Float64)))),
