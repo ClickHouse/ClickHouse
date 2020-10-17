@@ -315,15 +315,14 @@ private:
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
             {
-                // in GCM mode IV can be of arbitrary size (>0).
-                if ((mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size == 0)
-                    || (mode != CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size != iv_size))
+                // in GCM mode IV can be of arbitrary size (>0), IV is optional for other modes.
+                if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size == 0)
                 {
                     throw Exception("Invalid IV size " + std::to_string(iv_value.size) + " != expected size " + std::to_string(iv_size),
                             DB::ErrorCodes::BAD_ARGUMENTS);
                 }
 
-                if (key_value.size != key_size)
+                if (mode != CipherMode::RFC5116_AEAD_AES_GCM && key_value.size != key_size)
                 {
                     throw Exception("Invalid key size " + std::to_string(key_value.size) + " != expected size " + std::to_string(key_size),
                             DB::ErrorCodes::BAD_ARGUMENTS);
@@ -589,6 +588,22 @@ private:
                             "should contain at least {} bytes of a tag.",
                             input_value.size, block_size, tag_size), ErrorCodes::BAD_ARGUMENTS);
                 input_value.size -= tag_size;
+            }
+
+            if constexpr (mode != CipherMode::MySQLCompatibility)
+            {
+                // in GCM mode IV can be of arbitrary size (>0), for other modes IV is optional.
+                if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size == 0)
+                {
+                    throw Exception("Invalid IV size " + std::to_string(iv_value.size) + " != expected size " + std::to_string(iv_size),
+                            DB::ErrorCodes::BAD_ARGUMENTS);
+                }
+
+                if (key_value.size != key_size)
+                {
+                    throw Exception("Invalid key size " + std::to_string(key_value.size) + " != expected size " + std::to_string(key_size),
+                            DB::ErrorCodes::BAD_ARGUMENTS);
+                }
             }
 
             // Avoid extra work on empty ciphertext/plaintext for some ciphers
