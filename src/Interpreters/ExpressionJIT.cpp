@@ -275,7 +275,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
+    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
     {
         auto col_res = block[result].type->createColumn();
 
@@ -484,7 +484,7 @@ llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlacehol
     return it->second(builder, values);
 }
 
-ExecutableFunctionImplPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
+ExecutableFunctionImplPtr LLVMFunction::prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
 
 bool LLVMFunction::isDeterministic() const
 {
