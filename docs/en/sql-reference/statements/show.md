@@ -23,7 +23,11 @@ Syntax:
 SHOW DATABASES [LIKE '<pattern>'] [ILIKE '<pattern>'] [NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
-This statement is identical to `SELECT name FROM system.databases [WHERE name LIKE '<pattern>'] [WHERE name ILIKE '<pattern>'] [WHERE name NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]`.
+This statement is identical to the query:
+
+```sql
+SELECT name FROM system.databases [WHERE name LIKE '<pattern>'] [WHERE name ILIKE '<pattern>'] [WHERE name NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+```
 
 ### SHOW DATABASES LIKE {#show-databases-like}
 
@@ -125,7 +129,11 @@ SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>'] [ILIKE '<pattern>'
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
 
-This statement is identical to `SELECT name FROM system.tables [WHERE name LIKE '<pattern>'] [WHERE name ILIKE '<pattern>'] [WHERE name NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]`
+This statement is identical to the query:
+
+```sql
+SELECT name FROM system.tables [WHERE name LIKE '<pattern>'] [WHERE name ILIKE '<pattern>'] [WHERE name NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
 
 ### SHOW TABLES LIKE {#show-tables-like}
 
