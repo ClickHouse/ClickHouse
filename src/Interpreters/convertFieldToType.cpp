@@ -251,6 +251,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const Map & src_map = src.get<Map>();
             size_t src_map_size = src_map.size();
 
+            // Check weather it's already converted.
+            if (src_map_size == 2 && src_map[0].getType() == DB::Field::Types::Array)
+                return src;
+
             size_t count = src_map_size / 2;
             if (src_map_size % 2)
                 throw Exception("Bad size of map in In or VALUES section, Expected size must %2==0", ErrorCodes::BAD_ARGUMENTS);

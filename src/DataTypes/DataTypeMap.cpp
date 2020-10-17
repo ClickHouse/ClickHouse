@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_READ_MAP_FROM_TEXT;
 }
 
 
@@ -113,14 +114,106 @@ void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuf
     writeChar('}', ostr);
 }
 
+template <typename Reader>
+static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool need_safe_get_int_key, Reader && read_kv)
+{
+    ColumnArray & key_column_array = assert_cast<ColumnArray &>(extractElementColumn(column, 0));
+    ColumnArray::Offsets & key_offsets = key_column_array.getOffsets();
+    IColumn & key_column = key_column_array.getData();
+
+    ColumnArray & value_column_array = assert_cast<ColumnArray &>(extractElementColumn(column, 1));
+    ColumnArray::Offsets & value_offsets = value_column_array.getOffsets();
+    IColumn & value_column = value_column_array.getData();
+
+    size_t size = 0;
+    assertChar('{', istr);
+
+    try
+    {
+        bool first = true;
+        while (!istr.eof() && *istr.position() != '}')
+        {
+            if (!first)
+            {
+                if (*istr.position() == ',')
+                    ++istr.position();
+                else
+                    throw Exception("Cannot read Map from text", ErrorCodes::CANNOT_READ_MAP_FROM_TEXT);
+            }
+
+            first = false;
+
+            skipWhitespaceIfAny(istr);
+
+            if (*istr.position() == '}')
+                break;
+
+            if (need_safe_get_int_key)
+            {
+                ReadBuffer::Position tmp = istr.position();
+                while (*tmp != ':' && *tmp != '}')
+                    ++tmp;
+                *tmp = ' ';
+                read_kv(key_column, true);
+            }
+            else
+            {
+                read_kv(key_column, true);
+                skipWhitespaceIfAny(istr);
+                assertChar(':', istr);
+            }
+            ++size;
+            skipWhitespaceIfAny(istr);
+            read_kv(value_column, false);
+
+            skipWhitespaceIfAny(istr);
+        }
+
+        key_offsets.push_back(key_offsets.back() + size);
+        value_offsets.push_back(value_offsets.back() + size);
+        assertChar('}', istr);
+    }
+    catch (...)
+    {
+        throw;
+    }
+}
+
 void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    assertChar('{', istr);
-    keys->deserializeAsTextQuoted(extractElementColumn(column, 0), istr, settings);
-    assertChar(',', istr);
-    values->deserializeAsTextQuoted(extractElementColumn(column, 1), istr, settings);
-    assertChar('}', istr);
+    // need_safe_get_int_key is set for Interger to prevent to readIntTextUnsafe
+    bool  need_safe_get_int_key = false;
+
+    switch (key_type->getTypeId())
+    {
+        case DB::TypeIndex::UInt8:
+        case DB::TypeIndex::UInt16:
+        case DB::TypeIndex::UInt32:
+        case DB::TypeIndex::UInt64:
+        case DB::TypeIndex::UInt128:
+        case DB::TypeIndex::UInt256:
+        case DB::TypeIndex::Int8:
+        case DB::TypeIndex::Int16:
+        case DB::TypeIndex::Int32:
+        case DB::TypeIndex::Int64:
+        case DB::TypeIndex::Int128:
+        case DB::TypeIndex::Int256:
+            need_safe_get_int_key = true;
+            break;
+        default:
+            break;
+    }
+
+    deserializeTextImpl(column, istr, need_safe_get_int_key,
+        [&](IColumn & nested_column, bool is_key)
+        {
+            if (is_key)
+                key_type->deserializeAsTextQuoted(nested_column, istr, settings);
+            else
+                value_type->deserializeAsTextQuoted(nested_column, istr, settings);
+        });
 }
+
 
 void DataTypeMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
