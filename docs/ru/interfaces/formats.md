@@ -1174,6 +1174,7 @@ ${CLICKHOUSE_CLIENT} -n --query "SELECT * FROM t FORMAT RawBLOB" | md5sum
 
 ${CLICKHOUSE_CLIENT} --query "
 DROP TABLE t;
+"
 ```
 
 Результат:
