@@ -1,3 +1,9 @@
+---
+toc_priority: 46
+toc_title: Polygon Dictionaries With Grids 
+---
+
+
 # Polygon dictionaries {#polygon-dictionaries}
 
 Polygon dictionaries allow you to efficiently search for the polygon that these points fall into amongst a difference of polygons.
