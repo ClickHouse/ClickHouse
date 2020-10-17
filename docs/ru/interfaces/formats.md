@@ -1182,5 +1182,4 @@ DROP TABLE t;
 f9725a22f9191e064120d718e26862a9  -
 ```
 
-
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/formats/) <!--hide-->
