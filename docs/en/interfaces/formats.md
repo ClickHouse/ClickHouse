@@ -1344,7 +1344,7 @@ Result:
 This format slurps all input data into a single value. This format can only parse a table with a single field of type [String](../sql-reference/data-types/string.md) or similar.
 When an empty value is passed to the input, ClickHouse generates an exception:
  
- ``` text
+``` text
 Code: 108. DB::Exception: No data to insert
 ```
 

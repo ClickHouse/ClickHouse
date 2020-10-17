@@ -1149,7 +1149,7 @@ SELECT * FROM line_as_string;
 Этот формат объединяет все входные данные в одно значение. Этот формат может парсить только таблицу с одним полем типа [String](../sql-reference/data-types/string.md) или подобным ему. 
 При передаче на вход пустого значения ClickHouse сгенерирует исключение:
  
- ``` text
+``` text
 Code: 108. DB::Exception: No data to insert
 ```
 
