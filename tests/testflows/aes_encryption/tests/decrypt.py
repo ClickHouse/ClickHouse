@@ -276,7 +276,7 @@ def invalid_key_or_iv_length_for_gcm(self, mode, key_len, iv_len, aad):
     else:
         with When("iv is not specified"):
             ciphertext = "unhex('1CD4EC93A4B0C687926E8F8C2AA3B4CE1943D006DAE3A774CB1AE5')"
-            decrypt(ciphertext=ciphertext, key=f"'{key[:key_len]}'", mode=mode, exitcode=198, message="DB::Exception: Failed to set custom IV length to 0")
+            decrypt(ciphertext=ciphertext, key=f"'{key[:key_len]}'", mode=mode, exitcode=36, message="DB::Exception: Invalid IV size 0 != expected size 12")
 
 @TestScenario
 @Requirements(
