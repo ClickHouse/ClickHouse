@@ -15,12 +15,87 @@ Returns a single `String`-type ‘statement’ column, which contains a single v
 
 ## SHOW DATABASES {#show-databases}
 
-``` sql
-SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
+Prints a list of all databases. 
+
+Syntax:
+
+```sql
+SHOW DATABASES [LIKE '<pattern>'] [ILIKE '<pattern>'] [NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Prints a list of all databases.
-This query is identical to `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
+This statement is identical to `SELECT name FROM system.databases [WHERE name LIKE '<pattern>'] [WHERE name ILIKE '<pattern>'] [WHERE name NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]`.
+
+### SHOW DATABASES LIKE {#show-databases-like}
+
+Syntax:
+
+``` sql
+SHOW DATABASES LIKE '%de%'
+```
+
+Result:
+
+``` text
+┌─name────┐
+│ default │
+└─────────┘
+```
+
+### SHOW DATABASES ILIKE {#show-databases-ilike}
+
+Syntax:
+
+``` sql
+SHOW DATABASES ILIKE '%DE%'
+```
+
+Result:
+
+``` text
+┌─name────┐
+│ default │
+└─────────┘
+```
+
+### SHOW DATABASES NOT LIKE {#show-databases-not-like}
+
+Syntax:
+
+``` sql
+SHOW DATABASES NOT LIKE '%de%'
+```
+
+Result:
+
+``` text
+┌─name───────────────────────────┐
+│ _temporary_and_external_tables │
+│ system                         │
+│ test                           │
+│ tutorial                       │
+└────────────────────────────────┘
+```
+
+### SHOW DATABASES LIMIT {#show-databases-limit}
+
+Syntax:
+
+``` sql
+SHOW DATABASES LIMIT 2
+```
+
+Result:
+
+``` text
+┌─name───────────────────────────┐
+│ _temporary_and_external_tables │
+│ default                        │
+└────────────────────────────────┘
+```
+
+### See Also
+
+-   [CREATE DATABASE](https://clickhouse.tech/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -42,32 +117,89 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 
 Displays a list of tables.
 
-``` sql
-SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+Syntax:
+
+```sql
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>'] [ILIKE '<pattern>'] [NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
 
-You can get the same results as the `SHOW TABLES` query in the following way:
+This statement is identical to `SELECT name FROM system.tables [WHERE name LIKE '<pattern>'] [WHERE name ILIKE '<pattern>'] [WHERE name NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]`
+
+### SHOW TABLES LIKE {#show-tables-like}
+
+Syntax:
 
 ``` sql
-SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW TABLES FROM system LIKE '%user%'
 ```
 
-**Example**
+Result:
 
-The following query selects the first two rows from the list of tables in the `system` database, whose names contain `co`.
+``` text
+┌─name─────────────┐
+│ user_directories │
+│ users            │
+└──────────────────┘
+```
+
+### SHOW TABLES ILIKE {#show-tables-ilike}
+
+Syntax:
 
 ``` sql
-SHOW TABLES FROM system LIKE '%co%' LIMIT 2
+SHOW TABLES FROM system ILIKE '%USER%'
 ```
+
+Result:
+
+``` text
+┌─name─────────────┐
+│ user_directories │
+│ users            │
+└──────────────────┘
+```
+
+### SHOW TABLES NOT LIKE {#show-tables-not-like}
+
+Syntax:
+
+``` sql
+SHOW TABLES FROM system NOT LIKE '%s%'
+```
+
+Result:
+
+``` text
+┌─name─────────┐
+│ metric_log   │
+│ metric_log_0 │
+│ metric_log_1 │
+└──────────────┘
+```
+
+### SHOW TABLES LIMIT {#show-tables-limit}
+
+Syntax:
+
+``` sql
+SHOW TABLES FROM system LIMIT 2
+```
+
+Result:
 
 ``` text
 ┌─name───────────────────────────┐
 │ aggregate_function_combinators │
-│ collations                     │
+│ asynchronous_metric_log        │
 └────────────────────────────────┘
 ```
+
+### See Also
+
+-   [Create Tables](https://clickhouse.tech/docs/en/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.tech/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
