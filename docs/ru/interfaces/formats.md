@@ -39,6 +39,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [XML](#xml)                                                     | ✗      | ✔      |
 | [CapnProto](#capnproto)                                         | ✔      | ✗      |
 | [LineAsString](#lineasstring)                                   | ✔      | ✗      |
+| [RawBLOB](#rawblob)                                             | ✔      | ✔      |
 
 Вы можете регулировать некоторые параметры работы с форматами с помощью настроек ClickHouse. За дополнительной информацией обращайтесь к разделу [Настройки](../operations/settings/settings.md).
 
@@ -1141,6 +1142,43 @@ SELECT * FROM line_as_string;
 ┌─field─────────────────────────────────────────────┐
 │ "I love apple", "I love banana", "I love orange"; │
 └───────────────────────────────────────────────────┘
+```
+
+## RawBLOB {#rawblob}
+
+Этот формат объединяет все входные данные в одно значение. Этот формат может парсить только таблицу с одним полем типа [String](../sql-reference/data-types/string.md) или подобным ему. 
+При передаче на вход пустого значения ClickHouse сгенерирует исключение:
+ 
+ ``` text
+Code: 108. DB::Exception: No data to insert
+```
+
+Результат выводится в двоичном формате без разделителей и экранирования. При выводе более одного значения формат неоднозначен и будет невозможно прочитать данные снова.
+
+**Пример**
+
+``` bash
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$CURDIR"/../shell_config.sh
+
+${CLICKHOUSE_CLIENT} -n --query "
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (a LowCardinality(Nullable(String))) ENGINE = Memory;
+
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t FORMAT RawBLOB" < ${BASH_SOURCE[0]}
+
+cat ${BASH_SOURCE[0]} | md5sum
+
+${CLICKHOUSE_CLIENT} -n --query "SELECT * FROM t FORMAT RawBLOB" | md5sum
+
+${CLICKHOUSE_CLIENT} --query "
+DROP TABLE t;
+```
+
+Результат:
+
+``` text
+f9725a22f9191e064120d718e26862a9  -
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/formats/) <!--hide-->
