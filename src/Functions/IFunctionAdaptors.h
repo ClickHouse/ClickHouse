@@ -44,9 +44,9 @@ public:
     const DataTypes & getArgumentTypes() const final { return impl->getArgumentTypes(); }
     const DataTypePtr & getReturnType() const final { return impl->getReturnType(); }
 
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & sample_block, const ColumnNumbers & arguments, size_t result) const final
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & sample_columns, const ColumnNumbers & arguments, size_t result) const final
     {
-        ColumnsWithTypeAndName columns(const_cast<ColumnsWithTypeAndName &>(sample_block));
+        ColumnsWithTypeAndName columns(const_cast<ColumnsWithTypeAndName &>(sample_columns));
         return std::make_shared<ExecutableFunctionAdaptor>(impl->prepare(columns, arguments, result));
     }
 
@@ -69,7 +69,7 @@ public:
         return impl->getResultIfAlwaysReturnsConstantAndHasArguments(columns, arguments);
     }
 
-    bool isInjective(const ColumnsWithTypeAndName & sample_block) const final { return impl->isInjective(sample_block); }
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const final { return impl->isInjective(sample_columns); }
     bool isDeterministic() const final { return impl->isDeterministic(); }
     bool isDeterministicInScopeOfQuery() const final { return impl->isDeterministicInScopeOfQuery(); }
     bool hasInformationAboutMonotonicity() const final { return impl->hasInformationAboutMonotonicity(); }
@@ -148,13 +148,13 @@ public:
     String getName() const override { return function->getName(); }
 
 protected:
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
     {
-        return function->executeImpl(block, arguments, result, input_rows_count);
+        return function->executeImpl(columns, arguments, result, input_rows_count);
     }
-    void executeDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
+    void executeDryRun(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
     {
-        return function->executeImplDryRun(block, arguments, result, input_rows_count);
+        return function->executeImplDryRun(columns, arguments, result, input_rows_count);
     }
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
@@ -185,7 +185,7 @@ public:
 
 #endif
 
-    ExecutableFunctionImplPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
     {
         return std::make_unique<DefaultExecutable>(function);
     }
@@ -198,7 +198,7 @@ public:
 
     bool isStateful() const override { return function->isStateful(); }
 
-    bool isInjective(const ColumnsWithTypeAndName & sample_block) const override { return function->isInjective(sample_block); }
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
     bool isDeterministic() const override { return function->isDeterministic(); }
 

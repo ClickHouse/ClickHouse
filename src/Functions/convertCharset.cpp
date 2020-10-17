@@ -184,11 +184,11 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & arg_from = block[arguments[0]];
-        const ColumnWithTypeAndName & arg_charset_from = block[arguments[1]];
-        const ColumnWithTypeAndName & arg_charset_to = block[arguments[2]];
+        const ColumnWithTypeAndName & arg_from = columns[arguments[0]];
+        const ColumnWithTypeAndName & arg_charset_from = columns[arguments[1]];
+        const ColumnWithTypeAndName & arg_charset_to = columns[arguments[2]];
 
         const ColumnConst * col_charset_from = checkAndGetColumnConstStringOrFixedString(arg_charset_from.column.get());
         const ColumnConst * col_charset_to = checkAndGetColumnConstStringOrFixedString(arg_charset_to.column.get());
@@ -204,7 +204,7 @@ public:
         {
             auto col_to = ColumnString::create();
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets());
-            block[result].column = std::move(col_to);
+            columns[result].column = std::move(col_to);
         }
         else
             throw Exception("Illegal column passed as first argument of function " + getName() + " (must be ColumnString).",
