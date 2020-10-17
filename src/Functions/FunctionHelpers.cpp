@@ -7,7 +7,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -54,13 +53,9 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
 ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns)
 {
     ColumnsWithTypeAndName res;
-    size_t num_columns = columns.size();
-
-    for (size_t i = 0; i < num_columns; ++i)
+    for (const auto & col : columns)
     {
-        const auto & col = columns[i];
-
-        if (args.count(i) && col.type->isNullable())
+        if (col.type->isNullable())
         {
             const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(*col.type).getNestedType();
 
