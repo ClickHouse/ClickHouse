@@ -113,7 +113,7 @@ private:
     }
 
     template <typename T, typename ReturnType>
-    static bool execute(ColumnsWithTypeAndName & columns, const ColumnVector<T> * col, const size_t result)
+    static ColumnPtr execute(const ColumnVector<T> * col)
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
@@ -124,12 +124,11 @@ private:
 
         executeInIterations(src_data.data(), dst_data.data(), size);
 
-        columns[result].column = std::move(dst);
-        return true;
+        return dst;
     }
 
     template <typename T, typename ReturnType>
-    static bool execute(ColumnsWithTypeAndName & columns, const ColumnDecimal<T> * col, const size_t result)
+    static ColumnPtr execute(const ColumnDecimal<T> * col)
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
@@ -144,15 +143,15 @@ private:
 
         executeInIterations(dst_data.data(), dst_data.data(), size);
 
-        columns[result].column = std::move(dst);
-        return true;
+        return dst;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & col = columns[arguments[0]];
+        const ColumnWithTypeAndName & col = arguments[0];
+        ColumnPtr res;
 
         auto call = [&](const auto & types) -> bool
         {
@@ -162,12 +161,14 @@ private:
             using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
-            return execute<Type, ReturnType>(columns, col_vec, result);
+            return (res = execute<Type, ReturnType>(col_vec));
         };
 
         if (!callOnBasicType<void, true, true, true, false>(col.type->getTypeId(), call))
             throw Exception{"Illegal column " + col.column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
+
+        return res;
     }
 };
 
