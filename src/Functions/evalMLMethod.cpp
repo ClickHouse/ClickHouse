@@ -62,12 +62,12 @@ public:
         return type->getReturnTypeToPredict();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
 
-        const auto * model = columns[arguments[0]].column.get();
+        const auto * model = arguments[0].column.get();
 
         if (const auto * column_with_states = typeid_cast<const ColumnConst *>(model))
             model = column_with_states->getDataColumnPtr().get();
@@ -75,10 +75,10 @@ public:
         const auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(model);
 
         if (!agg_function)
-            throw Exception("Illegal column " + columns[arguments[0]].column->getName()
+            throw Exception("Illegal column " + arguments[0].column->getName()
                             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        columns[result].column = agg_function->predictValues(columns, arguments, context);
+        return agg_function->predictValues(arguments, context);
     }
 
     const Context & context;
