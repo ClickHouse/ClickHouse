@@ -1348,6 +1348,7 @@ When an empty value is passed to the input, ClickHouse generates an exception:
 Code: 108. DB::Exception: No data to insert
 ```
 
+
 The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
 
 **Example**
