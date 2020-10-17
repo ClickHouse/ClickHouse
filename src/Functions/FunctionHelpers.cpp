@@ -51,7 +51,7 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
 }
 
 
-static ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns)
+ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns)
 {
     ColumnsWithTypeAndName res;
     size_t num_columns = columns.size();
