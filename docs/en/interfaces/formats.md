@@ -57,6 +57,7 @@ The supported formats are:
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
+| [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -1336,6 +1337,43 @@ Result:
 ┌─field─────────────────────────────────────────────┐
 │ "I love apple", "I love banana", "I love orange"; │
 └───────────────────────────────────────────────────┘
+```
+
+## RawBLOB {#rawblob}
+
+This format slurps all input data into a single value. This format can only parse a table with a single field of type [String](../sql-reference/data-types/string.md) or similar.
+When an empty value is passed to the input, ClickHouse generates an exception:
+ 
+ ``` text
+Code: 108. DB::Exception: No data to insert
+```
+
+The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
+
+**Example**
+
+``` bash
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$CURDIR"/../shell_config.sh
+
+${CLICKHOUSE_CLIENT} -n --query "
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (a LowCardinality(Nullable(String))) ENGINE = Memory;
+
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t FORMAT RawBLOB" < ${BASH_SOURCE[0]}
+
+cat ${BASH_SOURCE[0]} | md5sum
+
+${CLICKHOUSE_CLIENT} -n --query "SELECT * FROM t FORMAT RawBLOB" | md5sum
+
+${CLICKHOUSE_CLIENT} --query "
+DROP TABLE t;
+```
+
+Result:
+
+``` text
+f9725a22f9191e064120d718e26862a9  -
 ```
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
