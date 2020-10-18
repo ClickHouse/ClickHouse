@@ -138,3 +138,4 @@
 01455_time_zones
 01456_ast_optimizations_over_distributed
 01460_DistributedFilesToInsert
+01526_complex_key_dict_direct_layout
