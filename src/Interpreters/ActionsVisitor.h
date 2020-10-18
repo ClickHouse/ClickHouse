@@ -118,6 +118,7 @@ public:
         bool no_makeset;
         bool only_consts;
         bool no_storage_or_local;
+        std::unordered_map<String, std::vector<String>> & untuple_map;
         size_t visit_depth;
         ScopeStack actions_stack;
 
@@ -128,10 +129,19 @@ public:
          */
         int next_unique_suffix;
 
-        Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-                const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
-                PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_);
+        Data(
+            const Context & context_,
+            SizeLimits set_size_limit_,
+            size_t subquery_depth_,
+            const NamesAndTypesList & source_columns_,
+            ActionsDAGPtr actions,
+            PreparedSets & prepared_sets_,
+            SubqueriesForSets & subqueries_for_sets_,
+            bool no_subqueries_,
+            bool no_makeset_,
+            bool only_consts_,
+            bool no_storage_or_local_,
+            std::unordered_map<String, std::vector<String>> & untuple_map_);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;

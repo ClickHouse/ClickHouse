@@ -392,9 +392,19 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
-    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
-                                   sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
-                                   no_subqueries, false, only_consts, !isRemoteStorage());
+    ActionsVisitor::Data visitor_data(
+        context,
+        settings.size_limits_for_set,
+        subquery_depth,
+        sourceColumns(),
+        std::move(actions),
+        prepared_sets,
+        subqueries_for_sets,
+        no_subqueries,
+        false,
+        only_consts,
+        !isRemoteStorage(),
+        untuple_map);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -403,9 +413,19 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
 void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
-    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
-                                   sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
-                                   no_subqueries, true, only_consts, !isRemoteStorage());
+    ActionsVisitor::Data visitor_data(
+        context,
+        settings.size_limits_for_set,
+        subquery_depth,
+        sourceColumns(),
+        std::move(actions),
+        prepared_sets,
+        subqueries_for_sets,
+        no_subqueries,
+        true,
+        only_consts,
+        !isRemoteStorage(),
+        untuple_map);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -831,15 +851,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
     getRootActions(select_query->select(), only_types, step.actions());
 
     for (const auto & child : select_query->select()->children)
-    {
-        if (const auto * function = child->as<ASTFunction>())
-        {
-            if (function->name == "tupleFlatten")
-                continue;
-        }
-
         step.required_output.push_back(child->getColumnName());
-    }
 }
 
 bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
@@ -914,28 +926,6 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendProjectResult(Expressi
     ASTs asts = select_query->select()->children;
     for (const auto & ast : asts)
     {
-        if (const auto * function = ast->as<ASTFunction>())
-        {
-            if (function->name == "tupleFlatten")
-            {
-                auto tuple_name = function->arguments->children.at(0)->getColumnName();
-
-                const auto & tuple_type = step.actions()->getIndex().find(tuple_name)->second->result_type;
-                const auto & tuple_names = assert_cast<const DataTypeTuple *>(tuple_type.get())->getElementNames();
-
-                for (const auto & result_name : tuple_names)
-                {
-                    if (required_result_columns.empty() || required_result_columns.count(result_name))
-                    {
-                        result_columns.emplace_back(result_name, "");
-                        step.required_output.push_back(result_name);
-                    }
-                }
-
-                continue;
-            }
-        }
-
         String result_name = ast->getAliasOrColumnName();
         if (required_result_columns.empty() || required_result_columns.count(result_name))
         {

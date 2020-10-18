@@ -48,6 +48,7 @@ struct ExpressionAnalyzerData
 {
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
+    std::unordered_map<String, std::vector<String>> untuple_map;
 
     /// Columns after ARRAY JOIN. It there is no ARRAY JOIN, it's source_columns.
     NamesAndTypesList columns_after_array_join;
@@ -261,6 +262,8 @@ public:
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
+
+    const std::unordered_map<String, std::vector<String>> & getUntupleMap() const { return untuple_map; }
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const TemporaryTablesMapping & getExternalTables() const { return external_tables; }

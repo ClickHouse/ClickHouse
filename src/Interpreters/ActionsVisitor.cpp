@@ -383,10 +383,18 @@ SetPtr makeExplicitSet(
 }
 
 ActionsMatcher::Data::Data(
-    const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-    const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
-    PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-    bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_)
+    const Context & context_,
+    SizeLimits set_size_limit_,
+    size_t subquery_depth_,
+    const NamesAndTypesList & source_columns_,
+    ActionsDAGPtr actions,
+    PreparedSets & prepared_sets_,
+    SubqueriesForSets & subqueries_for_sets_,
+    bool no_subqueries_,
+    bool no_makeset_,
+    bool only_consts_,
+    bool no_storage_or_local_,
+    std::unordered_map<String, std::vector<String>> & untuple_map_)
     : context(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -397,6 +405,7 @@ ActionsMatcher::Data::Data(
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
     , no_storage_or_local(no_storage_or_local_)
+    , untuple_map(untuple_map_)
     , visit_depth(0)
     , actions_stack(std::move(actions), context)
     , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
@@ -647,8 +656,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     FunctionOverloadResolverPtr function_builder;
     try
     {
-        if (node.name != "tupleFlatten")
-            function_builder = FunctionFactory::instance().get(node.name, data.context);
+        function_builder = FunctionFactory::instance().get(node.name, data.context);
     }
     catch (DB::Exception & e)
     {
@@ -765,49 +773,47 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (data.only_consts && !arguments_present)
         return;
 
-    /// Function tupleFlatten.
-    if (node.name == "tupleFlatten")
+    if (node.name == "untuple")
     {
-        if (const ASTWithAlias * ast_with_alias = dynamic_cast<const ASTWithAlias *>(ast.get()))
+        auto name = node.tryGetAlias();
+        if (name.empty())
+            throw Exception("untuple should have alias attached for now", ErrorCodes::LOGICAL_ERROR);
+
+        String prefix = "_";
+
+        if (argument_types.size() != 1 && argument_types.size() != 2)
+            throw Exception("Function untuple requires one or two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (argument_types.size() == 2)
         {
-            if (!ast_with_alias->alias.empty())
-                throw Exception("tupleFlatten cannot have alias", ErrorCodes::UNEXPECTED_EXPRESSION);
+            const auto * as_literal = node.arguments->children.at(1)->as<ASTLiteral>();
+            if (!as_literal || !as_literal->value.tryGet<String>(prefix))
+                throw Exception("Second argument of function untuple must be a constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        bool flattened = false;
-        if (argument_types.size() == 1 && arguments_present && !data.only_consts)
-        {
-            if (const auto * data_type_tuple = typeid_cast<const DataTypeTuple *>(argument_types[0].get()))
-            {
-                if (data_type_tuple->haveExplicitNames())
-                {
-                    const Strings & names = data_type_tuple->getElementNames();
-                    flattened = true;
+        const auto * data_type_tuple = typeid_cast<const DataTypeTuple *>(argument_types[0].get());
+        if (!data_type_tuple || !data_type_tuple->haveExplicitNames())
+            throw Exception("First argument of function untuple must be a named tuple", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-                    size_t tuple_size = names.size();
-                    for (size_t i = 0; i < tuple_size; ++i)
-                    {
-                        auto tuple_index_resolver = std::make_unique<TupleElementWithIndexOverloadResolver>(i + 1);
-                        auto result_name = tuple_index_resolver->getName() + "(";
-                        for (size_t j = 0; j < argument_names.size(); ++j)
-                        {
-                            if (j)
-                                result_name += ", ";
-                            result_name += argument_names[j];
-                        }
-                        result_name += ")";
-                        data.addFunction(
-                            std::make_shared<FunctionOverloadResolverAdaptor>(std::move(tuple_index_resolver)),
-                            argument_names,
-                            result_name);
-                        data.addAlias(result_name, names[i]);
-                    }
-                }
-            }
+        auto it = data.untuple_map.find(name);
+        if (it != data.untuple_map.end())
+            throw Exception("untuple alias clashed", ErrorCodes::LOGICAL_ERROR);
+
+        auto names = data_type_tuple->getElementNames();
+        for (auto & element_name : names)
+            element_name = prefix + element_name;
+        size_t tuple_size = names.size();
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            auto tuple_index_resolver = std::make_unique<TupleElementWithIndexOverloadResolver>(i + 1);
+            auto result_name = tuple_index_resolver->getName() + "(" + argument_names[0] + ")";
+            data.addFunction(
+                std::make_shared<FunctionOverloadResolverAdaptor>(std::move(tuple_index_resolver)),
+                {argument_names[0]},
+                result_name);
+            data.addAlias(result_name, names[i]);
         }
-        if (!flattened)
-            throw Exception("tupleFlatten requires exactly 1 argument: a named tuple", ErrorCodes::TYPE_MISMATCH);
-        return;
+        data.untuple_map.emplace(name, std::move(names));
     }
 
     if (has_lambda_arguments && !data.only_consts)

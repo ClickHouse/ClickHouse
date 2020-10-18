@@ -30,6 +30,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/UntupleVisitor.h>
 
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -425,6 +426,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Filter block in WHERE instead to get better performance
         query.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
+        need_analyze_again = true;
+    }
+
+    const auto & untuple_map = query_analyzer->getUntupleMap();
+    if (!untuple_map.empty())
+    {
+        UntupleReplaceVisitorData visitor_data(untuple_map);
+        UntupleReplaceVisitor visitor(visitor_data);
+        visitor.visit(query_ptr);
         need_analyze_again = true;
     }
 

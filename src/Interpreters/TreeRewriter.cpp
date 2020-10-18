@@ -18,6 +18,7 @@
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
+#include <Interpreters/UntupleVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -124,6 +125,24 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
     /// This may happen after expansion of COLUMNS('regexp').
     if (select_query.select()->children.empty())
         throw Exception("Empty list of columns in SELECT query", ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
+}
+
+/// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
+void addUntupleAlias(ASTPtr & query)
+{
+    LogAST log;
+    UntupleAddAliasVisitorData visitor_data;
+    UntupleAddAliasVisitor visitor(visitor_data, log.stream());
+    visitor.visit(query);
+}
+
+/// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
+void replaceUntupleFunctions(ASTPtr & query)
+{
+    LogAST log;
+    UntupleReplaceVisitorData visitor_data({});
+    UntupleReplaceVisitor visitor(visitor_data, log.stream());
+    visitor.visit(query);
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
@@ -579,6 +598,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     else /// TODO: remove. For now ExpressionAnalyzer expects some not empty object here
         result.analyzed_join = std::make_shared<TableJoin>();
 
+    addUntupleAlias(query);
+
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
 
@@ -590,6 +611,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
+
+    replaceUntupleFunctions(query);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
