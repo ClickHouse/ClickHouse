@@ -1114,6 +1114,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
         && storage
+        && storage->getName() != "MaterializeMySQL"
         && !filter_info
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()

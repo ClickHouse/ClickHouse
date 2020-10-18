@@ -70,12 +70,12 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         static const auto MAX_GROUPS_COUNT = 128;
 
-        const ColumnPtr column_haystack = block[arguments[0]].column;
-        const ColumnPtr column_needle = block[arguments[1]].column;
+        const ColumnPtr column_haystack = columns[arguments[0]].column;
+        const ColumnPtr column_needle = columns[arguments[1]].column;
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
@@ -234,7 +234,7 @@ public:
 
         ColumnArray::MutablePtr nested_array_col = ColumnArray::create(std::move(data_col), std::move(nested_offsets_col));
         ColumnArray::MutablePtr root_array_col = ColumnArray::create(std::move(nested_array_col), std::move(root_offsets_col));
-        block[result].column = std::move(root_array_col);
+        columns[result].column = std::move(root_array_col);
     }
 };
 
