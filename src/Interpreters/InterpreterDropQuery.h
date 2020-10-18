@@ -29,7 +29,7 @@ private:
     ASTPtr query_ptr;
     Context & context;
 
-    BlockIO executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists);
+    BlockIO executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists, bool no_delay);
 
     BlockIO executeToTable(const StorageID & table_id, const ASTDropQuery & query);
 
