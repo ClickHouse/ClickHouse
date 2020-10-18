@@ -68,10 +68,6 @@
 #include <Server/HTTPServer.h>
 #include <Server/TCPServer.h>
 
-#if USE_ARROW
-#   include <Server/ArrowFlightServer.h>
-#endif
-
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
 #   include "Common/config_version.h"
@@ -83,6 +79,10 @@
 #if defined(OS_LINUX)
 #    include <sys/mman.h>
 #    include <Common/hasLinuxCapability.h>
+#endif
+
+#if USE_ARROW
+#   include <Server/ArrowFlightServer.h>
 #endif
 
 #if USE_SSL
