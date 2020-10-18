@@ -1244,8 +1244,18 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         ++pos;
 
         String func_name;
+        String prefix;
         if (!parseIdentifierOrStringLiteral(pos, expected, func_name))
             return false;
+
+        if (pos->type == TokenType::Comma)
+        {
+            ++pos;
+            ASTPtr expr;
+            if (!ParserStringLiteral().parse(pos, expr, expected))
+                return false;
+            prefix = expr->as<ASTLiteral &>().value.safeGet<String>();
+        }
 
         if (pos->type != TokenType::ClosingRoundBracket)
             return false;
@@ -1253,6 +1263,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
         auto res = std::make_shared<ASTColumnsApplyTransformer>();
         res->func_name = func_name;
+        res->prefix = prefix;
         node = std::move(res);
         return true;
     }

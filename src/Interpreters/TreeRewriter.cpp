@@ -18,6 +18,7 @@
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
+#include <Interpreters/UntupleReplaceVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -124,6 +125,14 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
     /// This may happen after expansion of COLUMNS('regexp').
     if (select_query.select()->children.empty())
         throw Exception("Empty list of columns in SELECT query", ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
+}
+
+void untupleReplace(ASTPtr & query)
+{
+    LogAST log;
+    UntupleReplaceVisitor::Data visitor_data;
+    UntupleReplaceVisitor visitor(visitor_data, log.stream());
+    visitor.visit(query);
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
@@ -590,6 +599,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
+
+    untupleReplace(query);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();

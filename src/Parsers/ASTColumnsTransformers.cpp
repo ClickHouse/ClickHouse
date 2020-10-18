@@ -32,14 +32,28 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
 
 void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << "(" << func_name << ")";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << "(" << func_name
+                  << (prefix.empty() ? "" : ", " + prefix) << ")";
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 {
     for (auto & column : nodes)
     {
+        String name;
+        auto alias = column->tryGetAlias();
+        if (!alias.empty())
+            name = alias;
+        else
+        {
+            if (const auto * id = column->as<ASTIdentifier>())
+                name = id->shortName();
+            else
+                name = column->getColumnName();
+        }
         column = makeASTFunction(func_name, column);
+        if (!prefix.empty())
+            column->setAlias(prefix + name);
     }
 }
 
