@@ -334,7 +334,7 @@ endif ()
 
 #FIXME: make it optional
 #if (USE_ARROW)
-    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
+    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${ARROW_INCLUDE_DIR})
     if (USE_STATIC_LIBRARIES)
         dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
     endif()
