@@ -18,6 +18,7 @@ class Context;
 class StorageEmbeddedRocksdb final : public ext::shared_ptr_helper<StorageEmbeddedRocksdb>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageEmbeddedRocksdb>;
+    friend class EmbeddedRocksdbSource;
     friend class EmbeddedRocksdbBlockOutputStream;
 public:
     std::string getName() const override { return "EmbeddedRocksdb"; }
@@ -33,6 +34,13 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
+
+    bool supportsParallelInsert() const override { return true; }
+    bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(const ASTPtr & node, const Context & /*query_context*/, const StorageMetadataPtr & /*metadata_snapshot*/) const override
+    {
+        return node->getColumnName() == primary_key;
+    }
 
 protected:
     StorageEmbeddedRocksdb(const StorageID & table_id_,
