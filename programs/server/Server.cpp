@@ -65,9 +65,12 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 
 #include <Server/IRoutineServer.h>
-#include <Server/ArrowFlightServer.h>
 #include <Server/HTTPServer.h>
 #include <Server/TCPServer.h>
+
+#if USE_ARROW
+#   include <Server/ArrowFlightServer.h>
+#endif
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -1036,10 +1039,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             create_server("arrow_flight_port", [&](UInt16 port)
             {
+#if USE_ARROW
                 auto arrow_flight_server = std::make_unique<DB::ArrowFlightServer>(*this, listen_host, port);
                 std::string location = arrow_flight_server->getLocation();
                 servers.emplace_back(std::move(arrow_flight_server));
                 LOG_INFO(log, "Listening for Arrow Flight compatibility protocol: ", location);
+#else
+                UNUSED(port);
+                throw Exception{"Arrow Flight compatibility protocol is disabled because ClickHouse was built without Arrow support.",
+                                ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
             });
 
             /// Prometheus (if defined and not setup yet with http_port)
