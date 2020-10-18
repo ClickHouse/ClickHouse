@@ -272,6 +272,7 @@ TESTS_TO_SKIP=(
 
     # Looks at MemoryTracking
     01540_MemoryTracking
+    01541_max_memory_usage_for_user
 )
 
 time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
