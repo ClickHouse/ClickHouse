@@ -96,7 +96,7 @@ private:
     template <typename DataType>
     static bool executeMappedKeyNumber(const ColumnArray * column, Field & index, std::vector<int> &matched_idxs);
 
-    static bool getMappedKey(const ColumnArray * col_keys_untyped, Field & index, std::vector<int> &matched_idxs);
+    static bool getMappedKey(const ColumnArray * column, Field & index, std::vector<int> &matched_idxs);
 
     template <typename DataType>
     static bool executeMappedValueNumber(const ColumnArray * column, std::vector<int> matched_idxs,
@@ -108,8 +108,7 @@ private:
     static bool executeMappedValueArray(const ColumnArray * column, std::vector<int> matched_idxs,
         IColumn * col_res_untyped);
 
-    static bool getMappedValue(const ColumnArray * col_values_untyped,
-        std::vector<int> matched_idxs, /*const DB::TypeIndex value_type, */IColumn * col_res_untyped);
+    static bool getMappedValue(const ColumnArray * column, std::vector<int> matched_idxs, IColumn * col_res_untyped);
 
     static bool executeMap(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count);
 };
