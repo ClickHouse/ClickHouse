@@ -210,14 +210,15 @@ void MemoryTracker::free(Int64 size)
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
     }
 
+    Int64 accounted_size = size;
     if (level == VariableContext::Thread)
     {
         /// Could become negative if memory allocated in this thread is freed in another one
-        amount.fetch_sub(size, std::memory_order_relaxed);
+        amount.fetch_sub(accounted_size, std::memory_order_relaxed);
     }
     else
     {
-        Int64 new_amount = amount.fetch_sub(size, std::memory_order_relaxed) - size;
+        Int64 new_amount = amount.fetch_sub(accounted_size, std::memory_order_relaxed) - accounted_size;
 
         /** Sometimes, query could free some data, that was allocated outside of query context.
           * Example: cache eviction.
@@ -228,7 +229,7 @@ void MemoryTracker::free(Int64 size)
         if (unlikely(new_amount < 0))
         {
             amount.fetch_sub(new_amount);
-            size += new_amount;
+            accounted_size += new_amount;
         }
     }
 
@@ -236,7 +237,7 @@ void MemoryTracker::free(Int64 size)
         loaded_next->free(size);
 
     if (metric != CurrentMetrics::end())
-        CurrentMetrics::sub(metric, size);
+        CurrentMetrics::sub(metric, accounted_size);
 }
 
 
