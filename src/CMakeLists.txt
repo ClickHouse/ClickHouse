@@ -332,13 +332,10 @@ if (USE_CAPNP)
     dbms_target_link_libraries (PRIVATE ${CAPNP_LIBRARIES})
 endif ()
 
-#FIXME: make it optional
-#if (USE_ARROW)
+if (USE_ARROW)
     dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${ARROW_INCLUDE_DIR})
-    if (USE_STATIC_LIBRARIES)
-        dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
-    endif()
-#endif ()
+    dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
+endif ()
 
 if (USE_PARQUET)
     dbms_target_link_libraries(PRIVATE ${PARQUET_LIBRARY})
