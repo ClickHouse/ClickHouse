@@ -40,6 +40,8 @@ private:
     void updatePeak(Int64 will_be);
     void logMemoryUsage(Int64 current) const;
 
+    void free(Int64 size, VariableContext parent_level);
+
 public:
     MemoryTracker(VariableContext level_ = VariableContext::Thread);
     MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);

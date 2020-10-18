@@ -175,7 +175,7 @@ void MemoryTracker::updatePeak(Int64 will_be)
 }
 
 
-void MemoryTracker::free(Int64 size)
+void MemoryTracker::free(Int64 size, VariableContext parent_level)
 {
     if (blocker.isCancelled())
         return;
@@ -187,7 +187,7 @@ void MemoryTracker::free(Int64 size)
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
     }
 
-    if (level == VariableContext::Thread)
+    if (parent_level == VariableContext::Thread)
     {
         /// Could become negative if memory allocated in this thread is freed in another one
         amount.fetch_sub(size, std::memory_order_relaxed);
@@ -210,10 +210,15 @@ void MemoryTracker::free(Int64 size)
     }
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-        loaded_next->free(size);
+        loaded_next->free(size, parent_level);
 
     if (metric != CurrentMetrics::end())
         CurrentMetrics::sub(metric, size);
+}
+
+void MemoryTracker::free(Int64 size)
+{
+    return free(size, level);
 }
 
 
