@@ -6,7 +6,7 @@
 
 #if USE_MYSQL
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/PoolWithFailover.h>
@@ -32,7 +32,8 @@ struct MaterializeMetadata
     String binlog_ignore_db;
     String executed_gtid_set;
 
-    size_t version = 1;
+    size_t data_version = 1;
+    size_t meta_version = 2;
     std::unordered_map<String, String> need_dumping_tables;
 
     void fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection);

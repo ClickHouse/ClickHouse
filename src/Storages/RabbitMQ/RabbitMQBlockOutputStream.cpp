@@ -33,6 +33,9 @@ Block RabbitMQBlockOutputStream::getHeader() const
 
 void RabbitMQBlockOutputStream::writePrefix()
 {
+    if (!storage.exchangeRemoved())
+        storage.unbindExchange();
+
     buffer = storage.createWriteBuffer();
     if (!buffer)
         throw Exception("Failed to create RabbitMQ producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
@@ -43,7 +46,9 @@ void RabbitMQBlockOutputStream::writePrefix()
             storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & /* columns */, size_t /* rows */)
             {
                 buffer->countRow();
-            });
+            },
+            /* ignore_no_row_delimiter = */ true
+            );
 }
 
 
@@ -56,6 +61,9 @@ void RabbitMQBlockOutputStream::write(const Block & block)
 void RabbitMQBlockOutputStream::writeSuffix()
 {
     child->writeSuffix();
+
+    if (buffer)
+        buffer->updateMaxWait();
 }
 
 }

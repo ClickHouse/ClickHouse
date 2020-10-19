@@ -89,7 +89,8 @@ EOT
 fi
 
 if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
-    $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG &
+    # Listen only on localhost until the initialization is done
+    $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG -- --listen_host=127.0.0.1 &
     pid="$!"
 
     # check if clickhouse is ready to accept connections

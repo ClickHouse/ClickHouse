@@ -37,7 +37,7 @@ using ConstAggregateDataPtr = const char *;
 class ProtobufWriter : private boost::noncopyable
 {
 public:
-    ProtobufWriter(WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names);
+    ProtobufWriter(WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names, const bool use_length_delimiters_);
     ~ProtobufWriter();
 
     /// Should be called at the beginning of writing a message.
@@ -65,8 +65,8 @@ public:
     bool writeNumber(Int128 value) { return writeValueIfPossible(&IConverter::writeInt128, value); }
     bool writeNumber(UInt128 value) { return writeValueIfPossible(&IConverter::writeUInt128, value); }
 
-    bool writeNumber(bInt256 value) { return writeValueIfPossible(&IConverter::writebInt256, value); }
-    bool writeNumber(bUInt256 value) { return writeValueIfPossible(&IConverter::writebUInt256, value); }
+    bool writeNumber(Int256 value) { return writeValueIfPossible(&IConverter::writeInt256, value); }
+    bool writeNumber(UInt256 value) { return writeValueIfPossible(&IConverter::writeUInt256, value); }
 
     bool writeNumber(Float32 value) { return writeValueIfPossible(&IConverter::writeFloat32, value); }
     bool writeNumber(Float64 value) { return writeValueIfPossible(&IConverter::writeFloat64, value); }
@@ -89,7 +89,7 @@ private:
     class SimpleWriter
     {
     public:
-        SimpleWriter(WriteBuffer & out_);
+        SimpleWriter(WriteBuffer & out_, const bool use_length_delimiters_);
         ~SimpleWriter();
 
         void startMessage();
@@ -138,6 +138,7 @@ private:
         size_t current_piece_start;
         size_t num_bytes_skipped;
         std::vector<NestedInfo> nested_infos;
+        const bool use_length_delimiters;
     };
 
     class IConverter
@@ -156,8 +157,8 @@ private:
         virtual void writeInt128(Int128) = 0;
         virtual void writeUInt128(const UInt128 &) = 0;
 
-        virtual void writebInt256(const bInt256 &) = 0;
-        virtual void writebUInt256(const bUInt256 &) = 0;
+        virtual void writeInt256(const Int256 &) = 0;
+        virtual void writeUInt256(const UInt256 &) = 0;
 
         virtual void writeFloat32(Float32) = 0;
         virtual void writeFloat64(Float64) = 0;
@@ -267,8 +268,8 @@ public:
     bool writeNumber(UInt64 /* value */) { return false; }
     bool writeNumber(Int128 /* value */) { return false; }
     bool writeNumber(UInt128 /* value */) { return false; }
-    bool writeNumber(bInt256 /* value */) { return false; }
-    bool writeNumber(bUInt256 /* value */) { return false; }
+    bool writeNumber(Int256 /* value */) { return false; }
+    bool writeNumber(UInt256 /* value */) { return false; }
     bool writeNumber(Float32 /* value */) { return false; }
     bool writeNumber(Float64 /* value */) { return false; }
     bool writeString(const StringRef & /* value */) { return false; }

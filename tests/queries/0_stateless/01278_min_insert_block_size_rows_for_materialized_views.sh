@@ -78,7 +78,7 @@ insert into data_01278 select
 from numbers(100000); -- { serverError 241; }
 EOL
     } | {
-        execute --max_memory_usage=$TEST_01278_MEMORY "$@"
+        execute --max_memory_usage=$TEST_01278_MEMORY --optimize_trivial_insert_select='false' "$@"
     }
     echo 'select count() from out_01278' | execute
 }

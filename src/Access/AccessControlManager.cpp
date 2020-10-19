@@ -181,6 +181,15 @@ void AccessControlManager::addUsersConfigStorage(
     const String & preprocessed_dir_,
     const zkutil::GetZooKeeper & get_zookeeper_function_)
 {
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
+        {
+            if (users_config_storage->isPathEqual(users_config_path_))
+                return;
+        }
+    }
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
     new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
@@ -210,17 +219,36 @@ void AccessControlManager::startPeriodicReloadingUsersConfigs()
 
 void AccessControlManager::addDiskStorage(const String & directory_, bool readonly_)
 {
-    addStorage(std::make_shared<DiskAccessStorage>(directory_, readonly_));
+    addDiskStorage(DiskAccessStorage::STORAGE_TYPE, directory_, readonly_);
 }
 
 void AccessControlManager::addDiskStorage(const String & storage_name_, const String & directory_, bool readonly_)
 {
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto disk_storage = typeid_cast<std::shared_ptr<DiskAccessStorage>>(storage))
+        {
+            if (disk_storage->isPathEqual(directory_))
+            {
+                if (readonly_)
+                    disk_storage->setReadOnly(readonly_);
+                return;
+            }
+        }
+    }
     addStorage(std::make_shared<DiskAccessStorage>(storage_name_, directory_, readonly_));
 }
 
 
 void AccessControlManager::addMemoryStorage(const String & storage_name_)
 {
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto memory_storage = typeid_cast<std::shared_ptr<MemoryAccessStorage>>(storage))
+            return;
+    }
     addStorage(std::make_shared<MemoryAccessStorage>(storage_name_));
 }
 
@@ -281,43 +309,40 @@ void AccessControlManager::addStoragesFromMainConfig(
     String config_dir = std::filesystem::path{config_path}.remove_filename().string();
     String dbms_dir = config.getString("path", DBMS_DEFAULT_PATH);
     String include_from_path = config.getString("include_from", "/etc/metrika.xml");
+    bool has_user_directories = config.has("user_directories");
 
-    if (config.has("user_directories"))
+    /// If path to users' config isn't absolute, try guess its root (current) dir.
+    /// At first, try to find it in dir of main config, after will use current dir.
+    String users_config_path = config.getString("users_config", "");
+    if (users_config_path.empty())
     {
-        if (config.has("users_config"))
-            LOG_WARNING(getLogger(), "<user_directories> is specified, the path from <users_config> won't be used: " + config.getString("users_config"));
-        if (config.has("access_control_path"))
-            LOG_WARNING(getLogger(), "<access_control_path> is specified, the path from <access_control_path> won't be used: " + config.getString("access_control_path"));
-
-        addStoragesFromUserDirectoriesConfig(
-            config,
-            "user_directories",
-            config_dir,
-            dbms_dir,
-            include_from_path,
-            get_zookeeper_function);
-    }
-    else
-    {
-        /// If path to users' config isn't absolute, try guess its root (current) dir.
-        /// At first, try to find it in dir of main config, after will use current dir.
-        String users_config_path = config.getString("users_config", "");
-        if (users_config_path.empty())
+        if (!has_user_directories)
             users_config_path = config_path;
-        else if (std::filesystem::path{users_config_path}.is_relative() && std::filesystem::exists(config_dir + users_config_path))
-            users_config_path = config_dir + users_config_path;
+    }
+    else if (std::filesystem::path{users_config_path}.is_relative() && std::filesystem::exists(config_dir + users_config_path))
+        users_config_path = config_dir + users_config_path;
 
+    if (!users_config_path.empty())
+    {
         if (users_config_path != config_path)
             checkForUsersNotInMainConfig(config, config_path, users_config_path, getLogger());
 
         addUsersConfigStorage(users_config_path, include_from_path, dbms_dir, get_zookeeper_function);
-
-        String disk_storage_dir = config.getString("access_control_path", "");
-        if (!disk_storage_dir.empty())
-            addDiskStorage(disk_storage_dir);
     }
+
+    String disk_storage_dir = config.getString("access_control_path", "");
+    if (!disk_storage_dir.empty())
+        addDiskStorage(disk_storage_dir);
+
+    if (has_user_directories)
+        addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);
 }
 
+
+UUID AccessControlManager::login(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const
+{
+    return MultipleAccessStorage::login(user_name, password, address, *external_authenticators);
+}
 
 void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {

@@ -401,7 +401,7 @@ void ProcessList::killAllQueries()
 
 QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
-    QueryStatusInfo res;
+    QueryStatusInfo res{};
 
     res.query             = query;
     res.client_info       = client_info;
@@ -431,7 +431,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     }
 
     if (get_settings && query_context)
-        res.query_settings = std::make_shared<Settings>(query_context->getSettingsRef());
+        res.query_settings = std::make_shared<Settings>(query_context->getSettings());
 
     return res;
 }

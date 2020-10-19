@@ -5,6 +5,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Returns global default value for type of passed argument (example: 0 for numeric types, '' for String).
 class FunctionDefaultValueOfArgumentType : public IFunction
@@ -34,19 +36,20 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IDataType & type = *block.getByPosition(arguments[0]).type;
-        block.getByPosition(result).column = type.createColumnConst(input_rows_count, type.getDefault());
+        const IDataType & type = *columns[arguments[0]].type;
+        columns[result].column = type.createColumnConst(input_rows_count, type.getDefault());
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments) const override
     {
-        const IDataType & type = *block.getByPosition(arguments[0]).type;
+        const IDataType & type = *columns[arguments[0]].type;
         return type.createColumnConst(1, type.getDefault());
     }
 };
 
+}
 
 void registerFunctionDefaultValueOfArgumentType(FunctionFactory & factory)
 {

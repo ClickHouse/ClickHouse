@@ -7,6 +7,7 @@
 #include <Core/BigInt.h>
 
 #include <common/unaligned.h>
+#include <ext/scope_guard.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -61,7 +62,7 @@ StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, cha
     else
     {
         char * pos = arena.allocContinue(BigInt<T>::size, begin);
-        return BigInt<bInt256>::serialize(data[n], pos);
+        return BigInt<Int256>::serialize(data[n], pos);
     }
 }
 
@@ -75,8 +76,8 @@ const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
     }
     else
     {
-        data.push_back(BigInt<bInt256>::deserialize(pos));
-        return pos + BigInt<bInt256>::size;
+        data.push_back(BigInt<Int256>::deserialize(pos));
+        return pos + BigInt<Int256>::size;
     }
 }
 
@@ -142,25 +143,31 @@ void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn:
 }
 
 template <typename T>
-void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (limit >= data.size() || limit >= equal_range.back().second)
+    if (equal_ranges.empty())
+        return;
+
+    if (limit >= data.size() || limit >= equal_ranges.back().second)
         limit = 0;
 
-    size_t n = equal_range.size();
+    size_t number_of_ranges = equal_ranges.size();
     if (limit)
-        --n;
+        --number_of_ranges;
 
     EqualRanges new_ranges;
-    for (size_t i = 0; i < n; ++i)
+    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
     {
-        const auto& [first, last] = equal_range[i];
+        const auto& [first, last] = equal_ranges[i];
         if (reverse)
             std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
             std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] < data[b]; });
+
         auto new_first = first;
         for (auto j = first + 1; j < last; ++j)
         {
@@ -178,13 +185,20 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
 
     if (limit)
     {
-        const auto& [first, last] = equal_range.back();
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
         if (reverse)
             std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
             std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] < data[b]; });
+
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {
@@ -208,7 +222,6 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
         if (new_last - new_first > 1)
             new_ranges.emplace_back(new_first, new_last);
     }
-    equal_range = std::move(new_ranges);
 }
 
 template <typename T>
@@ -273,7 +286,7 @@ void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
     }
     else
     {
-        data.push_back(BigInt<bInt256>::deserialize(src));
+        data.push_back(BigInt<Int256>::deserialize(src));
     }
 }
 

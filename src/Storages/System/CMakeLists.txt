@@ -29,6 +29,7 @@ endif()
 add_dependencies(generate-source generate-contributors)
 
 set(GENERATED_LICENSES_SRC ${CMAKE_CURRENT_BINARY_DIR}/StorageSystemLicenses.generated.cpp)
+set(GENERATED_TIMEZONES_SRC ${CMAKE_CURRENT_BINARY_DIR}/StorageSystemTimeZones.generated.cpp)
 
 add_custom_command(
     OUTPUT StorageSystemLicenses.generated.cpp
@@ -36,6 +37,8 @@ add_custom_command(
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 list (APPEND storages_system_sources ${GENERATED_LICENSES_SRC})
+list (APPEND storages_system_sources ${GENERATED_TIMEZONES_SRC})
+
 # Overlength strings
 set_source_files_properties(${GENERATED_LICENSES_SRC} PROPERTIES COMPILE_FLAGS -w)
 

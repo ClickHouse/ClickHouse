@@ -1,5 +1,4 @@
 #pragma once
-// Moved Decimal-related functions out from Core/Types.h to reduce compilation time.
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
@@ -36,7 +35,7 @@ inline auto scaleMultiplier(UInt32 scale)
         return common::exp10_i64(scale);
     else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, Decimal128>)
         return common::exp10_i128(scale);
-    else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, Decimal256>)
+    else if constexpr (std::is_same_v<T, Int256> || std::is_same_v<T, Decimal256>)
         return common::exp10_i256(scale);
 }
 
@@ -153,12 +152,14 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
 {
     using T = typename DecimalType::NativeType;
 
-    T result = decimal.value;
+    /// There's UB with min integer value here. But it does not matter for Decimals cause they use not full integer ranges.
+    /// Anycase we make modulo before compare to make scale_multiplier > 1 unaffected.
+    T result = decimal.value % scale_multiplier;
     if constexpr (!keep_sign)
         if (result < T(0))
             result = -result;
 
-    return result % scale_multiplier;
+    return result;
 }
 
 /** Get fractional part from decimal

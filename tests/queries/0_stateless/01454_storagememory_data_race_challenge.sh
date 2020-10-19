@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS mem"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE mem (x UInt64) engine = Memory"
 
 function f {
-  for _ in $(seq 1 1000); do
+  for _ in $(seq 1 300); do
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM (SELECT * FROM mem SETTINGS max_threads=2) FORMAT Null;"
   done
 }
@@ -34,6 +34,6 @@ function g {
 export -f f;
 export -f g;
 
-bash -c f > /dev/null &
-bash -c g > /dev/null &
+timeout 30 bash -c f > /dev/null &
+timeout 30 bash -c g > /dev/null &
 wait

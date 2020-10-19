@@ -15,17 +15,9 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
+#include <ext/scope_guard.h>
 #include <pdqsort.h>
-#include <numeric>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#    if USE_OPENCL
-#        include "Common/BitonicSort.h" // Y_IGNORE
-#    endif
-#else
-#undef USE_OPENCL
-#endif
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -38,7 +30,6 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int OPENCL_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -146,29 +137,6 @@ namespace
     };
 }
 
-template <typename T>
-void ColumnVector<T>::getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
-                                            IColumn::SpecialSort special_sort) const
-{
-    if (special_sort == IColumn::SpecialSort::OPENCL_BITONIC)
-    {
-#if !defined(ARCADIA_BUILD)
-#if USE_OPENCL
-        if (!limit || limit >= data.size())
-        {
-            res.resize(data.size());
-
-            if (data.empty() || BitonicSort::getInstance().sort(data, res, !reverse))
-                return;
-        }
-#else
-        throw DB::Exception("'special_sort = bitonic' specified but OpenCL not available", DB::ErrorCodes::OPENCL_ERROR);
-#endif
-#endif
-    }
-
-    getPermutation(reverse, limit, nan_direction_hint, res);
-}
 
 template <typename T>
 void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
@@ -243,10 +211,14 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 template <typename T>
 void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
+    if (equal_range.empty())
+        return;
+
     if (limit >= data.size() || limit >= equal_range.back().second)
         limit = 0;
 
     EqualRanges new_ranges;
+    SCOPE_EXIT({equal_range = std::move(new_ranges);});
 
     for (size_t i = 0; i < equal_range.size() - bool(limit); ++i)
     {
@@ -275,6 +247,12 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
     if (limit)
     {
         const auto & [first, last] = equal_range.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then, we are working inside the interval.
+
         if (reverse)
             std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
         else
@@ -307,7 +285,6 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
             new_ranges.emplace_back(new_first, new_last);
         }
     }
-    equal_range = std::move(new_ranges);
 }
 
 template <typename T>
@@ -598,13 +575,13 @@ template class ColumnVector<UInt16>;
 template class ColumnVector<UInt32>;
 template class ColumnVector<UInt64>;
 template class ColumnVector<UInt128>;
-template class ColumnVector<bUInt256>;
+template class ColumnVector<UInt256>;
 template class ColumnVector<Int8>;
 template class ColumnVector<Int16>;
 template class ColumnVector<Int32>;
 template class ColumnVector<Int64>;
 template class ColumnVector<Int128>;
-template class ColumnVector<bInt256>;
+template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
 }

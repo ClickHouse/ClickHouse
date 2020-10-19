@@ -99,12 +99,19 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
 
-        if (first)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FIRST " << (settings.hilite ? hilite_none : "");
-        else if (column)    /// AFTER
+        if (!remove_property.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
-            column->formatImpl(settings, state, frame);
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE " << remove_property;
+        }
+        else
+        {
+            if (first)
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FIRST " << (settings.hilite ? hilite_none : "");
+            else if (column)    /// AFTER
+            {
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
+                column->formatImpl(settings, state, frame);
+            }
         }
     }
     else if (type == ASTAlterCommand::COMMENT_COLUMN)
@@ -118,6 +125,11 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY ORDER BY " << (settings.hilite ? hilite_none : "");
         order_by->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_SAMPLE_BY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY SAMPLE BY " << (settings.hilite ? hilite_none : "");
+        sample_by->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::ADD_INDEX)
     {
@@ -274,6 +286,10 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
         ttl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::REMOVE_TTL)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REMOVE TTL" << (settings.hilite ? hilite_none : "");
     }
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {

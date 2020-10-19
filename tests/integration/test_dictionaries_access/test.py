@@ -9,7 +9,7 @@ instance = cluster.add_instance('instance')
 def started_cluster():
     try:
         cluster.start()
-        
+
         instance.query("CREATE USER mira")
         instance.query("CREATE TABLE test_table(x Int32, y Int32) ENGINE=Log")
         instance.query("INSERT INTO test_table VALUES (5,6)")

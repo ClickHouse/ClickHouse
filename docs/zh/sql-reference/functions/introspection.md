@@ -16,11 +16,11 @@ toc_title: "\u81EA\u7701"
 
 -   安装 `clickhouse-common-static-dbg` 包。
 
--   设置 [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) 设置为1。
+-   设置 [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) 设置为1。
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse将探查器报告保存到 [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) 系统表. 确保正确配置了表和探查器。
+ClickHouse将探查器报告保存到 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) 系统表. 确保正确配置了表和探查器。
 
 ## addressToLine {#addresstoline}
 

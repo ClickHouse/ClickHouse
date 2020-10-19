@@ -5,7 +5,7 @@
 #include <vector>
 #include <type_traits>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Block.h>
 #include <Common/Exception.h>
@@ -33,6 +33,7 @@ using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+struct AggregateFunctionProperties;
 
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
@@ -113,7 +114,7 @@ public:
     virtual void predictValues(
         ConstAggregateDataPtr /* place */,
         IColumn & /*to*/,
-        Block & /*block*/,
+        ColumnsWithTypeAndName & /*block*/,
         size_t /*offset*/,
         size_t /*limit*/,
         const ColumnNumbers & /*arguments*/,
@@ -186,7 +187,8 @@ public:
      *  arguments and params are for nested_function.
      */
     virtual AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
+        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/,
+        const Array & /*params*/, const AggregateFunctionProperties & /*properties*/) const
     {
         return nullptr;
     }

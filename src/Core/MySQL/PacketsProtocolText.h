@@ -63,32 +63,6 @@ enum ColumnType
     MYSQL_TYPE_GEOMETRY = 0xff
 };
 
-enum Command
-{
-    COM_SLEEP = 0x0,
-    COM_QUIT = 0x1,
-    COM_INIT_DB = 0x2,
-    COM_QUERY = 0x3,
-    COM_FIELD_LIST = 0x4,
-    COM_CREATE_DB = 0x5,
-    COM_DROP_DB = 0x6,
-    COM_REFRESH = 0x7,
-    COM_SHUTDOWN = 0x8,
-    COM_STATISTICS = 0x9,
-    COM_PROCESS_INFO = 0xa,
-    COM_CONNECT = 0xb,
-    COM_PROCESS_KILL = 0xc,
-    COM_DEBUG = 0xd,
-    COM_PING = 0xe,
-    COM_TIME = 0xf,
-    COM_DELAYED_INSERT = 0x10,
-    COM_CHANGE_USER = 0x11,
-    COM_BINLOG_DUMP = 0x12,
-    COM_REGISTER_SLAVE = 0x15,
-    COM_RESET_CONNECTION = 0x1f,
-    COM_DAEMON = 0x1d
-};
-
 class ResultSetRow : public IMySQLWritePacket
 {
 protected:
