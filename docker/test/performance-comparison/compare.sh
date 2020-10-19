@@ -466,8 +466,8 @@ unset IFS
 # stability, and the calculation runs out of memory because of this. Use
 # all nodes.
 numactl --show
-numactl --all numactl --show
-numactl --all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+numactl --cpunodebind=all --membind=all numactl --show
+numactl --cpunodebind=all --membind=all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
