@@ -1464,7 +1464,7 @@ MutationCommands StorageMergeTree::getFirtsAlterMutationCommandsForPart(const Da
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()
 {
-    background_executor.start();
+    background_moves_executor.start();
 }
 
 }
