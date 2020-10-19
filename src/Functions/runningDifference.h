@@ -165,23 +165,19 @@ public:
         return res;
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto & src = columns[arguments.at(0)];
-        const auto & res_type = columns[result].type;
+        auto & src = arguments.at(0);
 
         /// When column is constant, its difference is zero.
         if (isColumnConst(*src.column))
-        {
-            columns[result].column = res_type->createColumnConstWithDefaultValue(input_rows_count);
-            return;
-        }
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto res_column = removeNullable(res_type)->createColumn();
-        auto * src_column = src.column.get();
+        auto res_column = removeNullable(result_type)->createColumn();
+        const auto * src_column = src.column.get();
         ColumnPtr null_map_column = nullptr;
         const NullMap * null_map = nullptr;
-        if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(src_column))
+        if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(src_column))
         {
             src_column = &nullable_column->getNestedColumn();
             null_map_column = nullable_column->getNullMapColumnPtr();
@@ -197,9 +193,9 @@ public:
         });
 
         if (null_map_column)
-            columns[result].column = ColumnNullable::create(std::move(res_column), null_map_column);
+            return ColumnNullable::create(std::move(res_column), null_map_column);
         else
-            columns[result].column = std::move(res_column);
+            return std::move(res_column);
     }
 };
 

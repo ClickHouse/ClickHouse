@@ -69,7 +69,7 @@ public:
         }
         else
             throw Exception(
-                "Illegal column " + columns[arguments[0]].column->getName() + " of argument of function " + getName(),
+                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
