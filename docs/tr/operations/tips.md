@@ -59,7 +59,7 @@ RAID-10 oluştururken, `far` düzen.
 Bütçeniz izin veriyorsa, RAID-10'u seçin.
 
 4'ten fazla diskiniz varsa, RAID-5 yerine RAID-6 (tercih edilen) veya RAID-50 kullanın.
-RAID-5, RAID-6 veya RAID-50 kullanırken, varsayılan değer genellikle en iyi seçenek olmadığından daima stripe_cache_size değerini artırın.
+RAID-5, RAID-6 veya RAID-50 kullanırken, varsayılan değer genellikle en iyi seçenek olmadığından daima stripe\_cache\_size değerini artırın.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size

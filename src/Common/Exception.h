@@ -22,14 +22,10 @@ public:
     Exception() = default;
     Exception(const std::string & msg, int code);
 
-    Exception(int code, const std::string & message)
-        : Exception(message, code)
-    {}
-
     // Format message with fmt::format, like the logging functions.
-    template <typename ...Args>
-    Exception(int code, const std::string & fmt, Args&&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+    template <typename ...Fmt>
+    Exception(int code, Fmt&&... fmt)
+        : Exception(fmt::format(std::forward<Fmt>(fmt)...), code)
     {}
 
     struct CreateFromPocoTag {};
@@ -44,16 +40,7 @@ public:
     const char * what() const throw() override { return message().data(); }
 
     /// Add something to the existing message.
-    template <typename ...Args>
-    void addMessage(const std::string& format, Args&&... args)
-    {
-        extendedMessage(fmt::format(format, std::forward<Args>(args)...));
-    }
-
-    void addMessage(const std::string& message)
-    {
-        extendedMessage(message);
-    }
+    void addMessage(const std::string & arg) { extendedMessage(arg); }
 
     std::string getStackTraceString() const;
 

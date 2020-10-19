@@ -25,8 +25,6 @@ namespace ErrorCodes
 
 using namespace GatherUtils;
 
-namespace
-{
 
 template <typename Name, bool is_injective>
 class ConcatImpl : public IFunction
@@ -42,7 +40,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
+    bool isInjective(const Block &) const override { return is_injective; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -72,25 +70,25 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         /// Format function is not proven to be faster for two arguments.
         /// Actually there is overhead of 2 to 5 extra instructions for each string for checking empty strings in FormatImpl.
         /// Though, benchmarks are really close, for most examples we saw executeBinary is slightly faster (0-3%).
         /// For 3 and more arguments FormatImpl is much faster (up to 50-60%).
         if (arguments.size() == 2)
-            executeBinary(columns, arguments, result, input_rows_count);
+            executeBinary(block, arguments, result, input_rows_count);
         else
-            executeFormatImpl(columns, arguments, result, input_rows_count);
+            executeFormatImpl(block, arguments, result, input_rows_count);
     }
 
 private:
     const Context & context;
 
-    void executeBinary(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
+    void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
     {
-        const IColumn * c0 = columns[arguments[0]].column.get();
-        const IColumn * c1 = columns[arguments[1]].column.get();
+        const IColumn * c0 = block.getByPosition(arguments[0]).column.get();
+        const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
 
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
@@ -108,14 +106,14 @@ private:
         else
         {
             /// Fallback: use generic implementation for not very important cases.
-            executeFormatImpl(columns, arguments, result, input_rows_count);
+            executeFormatImpl(block, arguments, result, input_rows_count);
             return;
         }
 
-        columns[result].column = std::move(c_res);
+        block.getByPosition(result).column = std::move(c_res);
     }
 
-    void executeFormatImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
+    void executeFormatImpl(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
     {
         const size_t num_arguments = arguments.size();
         assert(num_arguments >= 2);
@@ -129,7 +127,7 @@ private:
         bool has_column_fixed_string = false;
         for (size_t i = 0; i < num_arguments; ++i)
         {
-            const ColumnPtr & column = columns[arguments[i]].column;
+            const ColumnPtr & column = block.getByPosition(arguments[i]).column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
             {
                 has_column_string = true;
@@ -169,7 +167,7 @@ private:
             c_res->getOffsets(),
             input_rows_count);
 
-        columns[result].column = std::move(c_res);
+        block.getByPosition(result).column = std::move(c_res);
     }
 };
 
@@ -227,7 +225,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionsConcat(FunctionFactory & factory)
 {

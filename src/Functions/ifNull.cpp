@@ -10,8 +10,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function ifNull which takes 2 arguments and returns
 /// the value of the 1st argument if it is not null. Otherwise it returns
@@ -49,52 +47,51 @@ public:
         return getLeastSupertype({removeNullable(arguments[0]), arguments[1]});
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         /// Always null.
-        if (columns[arguments[0]].type->onlyNull())
+        if (block.getByPosition(arguments[0]).type->onlyNull())
         {
-            columns[result].column = columns[arguments[1]].column;
+            block.getByPosition(result).column = block.getByPosition(arguments[1]).column;
             return;
         }
 
         /// Could not contain nulls, so nullIf makes no sense.
-        if (!columns[arguments[0]].type->isNullable())
+        if (!block.getByPosition(arguments[0]).type->isNullable())
         {
-            columns[result].column = columns[arguments[0]].column;
+            block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
             return;
         }
 
         /// ifNull(col1, col2) == if(isNotNull(col1), assumeNotNull(col1), col2)
 
-        ColumnsWithTypeAndName temp_columns = columns;
+        Block temp_block = block;
 
-        size_t is_not_null_pos = temp_columns.size();
-        temp_columns.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});
-        size_t assume_not_null_pos = temp_columns.size();
-        temp_columns.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(columns[arguments[0]].type), ""});
+        size_t is_not_null_pos = temp_block.columns();
+        temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
+        size_t assume_not_null_pos = temp_block.columns();
+        temp_block.insert({nullptr, removeNullable(block.getByPosition(arguments[0]).type), ""});
 
         auto is_not_null = FunctionFactory::instance().get("isNotNull", context)->build(
-            {temp_columns[arguments[0]]});
+            {temp_block.getByPosition(arguments[0])});
 
         auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context)->build(
-            {temp_columns[arguments[0]]});
+            {temp_block.getByPosition(arguments[0])});
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {temp_columns[is_not_null_pos], temp_columns[assume_not_null_pos], temp_columns[arguments[1]]}); //-V557
+            {temp_block.getByPosition(is_not_null_pos), temp_block.getByPosition(assume_not_null_pos), temp_block.getByPosition(arguments[1])});
 
-        is_not_null->execute(temp_columns, {arguments[0]}, is_not_null_pos, input_rows_count);
-        assume_not_null->execute(temp_columns, {arguments[0]}, assume_not_null_pos, input_rows_count);
-        func_if->execute(temp_columns, {is_not_null_pos, assume_not_null_pos, arguments[1]}, result, input_rows_count);
+        is_not_null->execute(temp_block, {arguments[0]}, is_not_null_pos, input_rows_count);
+        assume_not_null->execute(temp_block, {arguments[0]}, assume_not_null_pos, input_rows_count);
+        func_if->execute(temp_block, {is_not_null_pos, assume_not_null_pos, arguments[1]}, result, input_rows_count);
 
-        columns[result].column = std::move(temp_columns[result].column);
+        block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
     }
 
 private:
     const Context & context;
 };
 
-}
 
 void registerFunctionIfNull(FunctionFactory & factory)
 {
