@@ -4,25 +4,24 @@
 
 #if !defined(ARCADIA_BUILD) && USE_STATS
 
+#    include <common/types.h>
+#    include <Common/PODArray.h>
 
-#include <iostream>
-#include <vector>
-#include <algorithm>
-
-#include <common/types.h>
-#include <Common/PODArray.h>
+#    include <algorithm>
+#    include <iostream>
+#    include <vector>
 
 
 namespace DB
 {
 
-typedef struct _Variant
+struct Variant
 {
     Float64 x;
     Float64 y;
     Float64 beats_control;
     Float64 best;
-} Variant;
+};
 
 using Variants = PODArray<Variant>;
 

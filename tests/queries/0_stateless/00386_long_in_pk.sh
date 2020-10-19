@@ -5,5 +5,5 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # We should have correct env vars from shell_config.sh to run this test
 
-python "$CURDIR"/00386_long_in_pk.python
+python3 "$CURDIR"/00386_long_in_pk.python
 

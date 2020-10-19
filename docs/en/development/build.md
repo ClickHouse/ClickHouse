@@ -7,7 +7,7 @@ toc_title: Build on Linux
 
 Supported platforms:
 
--   x86\_64
+-   x86_64
 -   AArch64
 -   Power9 (experimental)
 
@@ -116,7 +116,7 @@ ninja
 Example for Fedora Rawhide:
 ``` bash
 sudo yum update
-yum --nogpg install git cmake make gcc-c++ python2
+yum --nogpg install git cmake make gcc-c++ python3
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse

@@ -28,4 +28,30 @@ Ways to configure settings, in order of priority:
 
 Settings that can only be made in the server config file are not covered in this section.
 
+## Custom Settings {#custom_settings}
+
+In addition to the common [settings](../../operations/settings/settings.md), users can define custom settings. 
+
+A custom setting name must begin with one of predefined prefixes. The list of these prefixes must be declared in the [custom_settings_prefixes](../../operations/server-configuration-parameters/settings.md#custom_settings_prefixes) parameter in the server configuration file.
+
+```xml
+<custom_settings_prefixes>custom_</custom_settings_prefixes>
+```
+
+To define a custom setting use `SET` command:
+
+```sql
+SET custom_a = 123;
+```
+
+To get the current value of a custom setting use `getSetting()` function:
+
+```sql
+SELECT getSetting('custom_a');    
+```
+
+**See Also**
+
+-   [Server Configuration Settings](../../operations/server-configuration-parameters/settings.md)
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->
