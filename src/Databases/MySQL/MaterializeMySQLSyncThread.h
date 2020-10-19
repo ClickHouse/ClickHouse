@@ -60,8 +60,6 @@ private:
     String mysql_database_name;
 
     DatabaseWithMySQLConnection * database;
-//    mutable mysqlxx::Pool pool;
-//    mutable MySQLClient client;
     MaterializeMySQLSettings * settings;
     String query_prefix;
 
