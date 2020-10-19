@@ -13,22 +13,60 @@
     This UI should look as lightweight, clean and fast as possible.
     All UI elements must be aligned in pixel-perfect way.
     There should not be any animations.
+    No unexpected changes in positions of elements while the page is loading.
+    Navigation by keyboard should work.
+    64-bit numbers must display correctly.
 
     -->
 
     <style type="text/css">
+        :root {
+            --background-color: #DDF8FF; /* Or #FFFBEF; actually many pastel colors look great for light theme. */
+            --element-background-color: #FFF;
+            --border-color: #EEE;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+            --button-color: #FFAA00;
+            --text-color: #000;
+            --button-active-color: #F00;
+            --button-active-text-color: #FFF;
+            --misc-text-color: #888;
+            --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
+            --table-header-color: #F8F8F8;
+            --table-hover-color: #FFF8EF;
+            --null-color: #A88;
+        }
+
+        [data-theme="dark"] {
+            --background-color: #000;
+            --element-background-color: #102030;
+            --border-color: #111;
+            --shadow-color: rgba(255, 255, 255, 0.1);
+            --text-color: #CCC;
+            --button-color: #FFAA00;
+            --button-text-color: #000;
+            --button-active-color: #F00;
+            --button-active-text-color: #FFF;
+            --misc-text-color: #888;
+            --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
+            --table-header-color: #102020;
+            --table-hover-color: #003333;
+            --null-color: #A88;
+        }
+
         html, body
         {
             /* Personal choice. */
             font-family: Sans-Serif;
-            /* Or #FFFBEF; actually many pastel colors look great for light theme. TODO Provide dark theme. */
-            background: #DDF8FF;
+            background: var(--background-color);
+            color: var(--text-color);
         }
 
         /* Otherwise Webkit based browsers will display ugly border on focus. */
-        textarea, input
+        textarea, input, button
         {
             outline: none;
+            border: none;
+            color: var(--text-color);
         }
 
         /* Otherwise scrollbar may appear dynamically and it will alter viewport height,
@@ -53,16 +91,16 @@
 
         .shadow
         {
-            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.1);
+            box-shadow: 0 0 1rem var(--shadow-color);
         }
 
         input, textarea
         {
-            border: 1px solid #EEE;
+            border: 1px solid var(--border-color);
             /* The font must be not too small (to be inclusive) and not too large (it's less practical and make general feel of insecurity) */
             font-size: 11pt;
             padding: 0.25rem;
-            background-color: #FFF;
+            background-color: var(--element-background-color);
         }
 
         #query
@@ -101,28 +139,36 @@
         /* Orange on light-cyan is especially good. */
         #run
         {
-            color: #000;
-            background-color: #FFAA00;
+            color: var(--button-text-color);
+            background-color: var(--button-color);
             padding: 0.25rem 1rem;
             cursor: pointer;
             font-weight: bold;
+            font-size: 100%; /* Otherwise button element will have lower font size. */
         }
 
-        #run:hover
+        #run:hover, #run:focus
         {
-            color: #FFF;
-            background-color: #F00;
+            color: var(--button-active-text-color);
+            background-color: var(--button-active-color);
         }
 
         #stats
         {
             float: right;
-            color: #888;
+            color: var(--misc-text-color);
+        }
+
+        #toggle-light, #toggle-dark
+        {
+            float: right;
+            padding-right: 0.5rem;
+            cursor: pointer;
         }
 
         .hint
         {
-            color: #888;
+            color: var(--misc-text-color);
         }
 
         #data_div
@@ -138,16 +184,25 @@
             min-width: calc(100vw - 2rem);
         }
 
+        /* Will be displayed when user specified custom format. */
+        #data-unparsed
+        {
+            background-color: var(--element-background-color);
+            margin-top: 0rem;
+            padding: 0.25rem 0.5rem;
+            display: none;
+        }
+
         td
         {
-            background-color: #FFF;
+            background-color: var(--element-background-color);
             white-space: nowrap;
             /* For wide tables any individual column will be no more than 50% of page width. */
             max-width: 50vw;
             /* The content is cut unless you hover. */
             overflow: hidden;
             padding: 0.25rem 0.5rem;
-            border: 1px solid #EEE;
+            border: 1px solid var(--border-color);
             white-space: pre;
         }
 
@@ -160,14 +215,14 @@
         {
             padding: 0.25rem 0.5rem;
             text-align: middle;
-            background-color: #F8F8F8;
-            border: 1px solid #EEE;
+            background-color: var(--table-header-color);
+            border: 1px solid var(--border-color);
         }
 
         /* The row under mouse pointer is highlight for better legibility. */
         tr:hover, tr:hover td
         {
-            background-color: #FFF8EF;
+            background-color: var(--table-hover-color);
         }
 
         tr:hover
@@ -175,10 +230,9 @@
             box-shadow: 0 0 1rem rgba(0, 0, 0, 0.1);
         }
 
-        /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
         #error
         {
-            background: #FEE;
+            background: var(--error-color);
             white-space: pre-wrap;
             padding: 0.5rem 1rem;
             display: none;
@@ -194,7 +248,7 @@
         /* The style for SQL NULL */
         .null
         {
-            color: #A88;
+            color: var(--null-color);
         }
     </style>
 </head>
@@ -204,33 +258,41 @@
         <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" /><input class="monospace shadow" id="user" type="text" value="default" /><input class="monospace shadow" id="password" type="password" />
     </div>
     <div>
-        <textarea class="monospace shadow" id="query"></textarea>
+        <textarea autofocus spellcheck="false" class="monospace shadow" id="query"></textarea>
     </div>
     <div id="run_div">
-        <span class="shadow" id="run">Run</span>
+        <button class="shadow" id="run">Run</button>
         <span class="hint">&nbsp;(Ctrl+Enter)</span>
         <span id="stats"></span>
+        <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
     </div>
     <div id="data_div">
-        <table class="monospace shadow" id="data-table">
-        </table>
+        <table class="monospace shadow" id="data-table"></table>
+        <pre class="monospace shadow" id="data-unparsed"></pre>
     </div>
     <p id="error" class="monospace shadow">
     </p>
 </body>
 
 <script type="text/javascript">
+
+    /// Substitute the address of the server where the page is served.
+    if (location.protocol != 'file:') {
+        document.getElementById('url').value = location.origin;
+    }
+
     function post()
     {
         var url = document.getElementById('url').value +
+            /// Ask server to allow cross-domain requests.
             '?add_http_cors_header=1' +
             '&user=' + encodeURIComponent(document.getElementById('user').value) +
             '&password=' + encodeURIComponent(document.getElementById('password').value) +
             '&default_format=JSONCompact' +
+            /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
         var query = document.getElementById('query').value;
-
         var xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
@@ -240,12 +302,18 @@
         {
             if (this.readyState === XMLHttpRequest.DONE) {
                 if (this.status === 200) {
-                    renderResult(JSON.parse(this.response));
+                    var json;
+                    try { json = JSON.parse(this.response); } catch (e) {}
+                    if (json !== undefined && json.statistics !== undefined) {
+                        renderResult(json);
+                    } else {
+                        renderUnparsedResult(this.response);
+                    }
                 } else {
                     renderError(this.response);
                 }
             } else {
-                console.log(this);
+                //console.log(this);
             }
         }
     }
@@ -269,8 +337,13 @@
             table.removeChild(table.lastChild);
         }
 
+        document.getElementById('data-unparsed').innerText = '';
+        document.getElementById('data-unparsed').style.display = 'none';
+
         document.getElementById('error').innerText = '';
         document.getElementById('error').style.display = 'none';
+
+        document.getElementById('stats').innerText = '';
     }
 
     function renderResult(response)
@@ -289,6 +362,8 @@
             thead.appendChild(th);
         }
 
+        /// To prevent hanging the browser, limit the number of cells in a table.
+        /// It's important to have the limit on number of cells, not just rows, because tables may be wide or narrow.
         var max_rows = 10000 / response.meta.length;
         var row_num = 0;
 
@@ -320,11 +395,41 @@
         table.appendChild(tbody);
     }
 
+    function renderUnparsedResult(response)
+    {
+        clear();
+        var data = document.getElementById('data-unparsed')
+        data.innerText = response;
+        /// inline-block make width adjust to the size of content.
+        data.style.display = 'inline-block';
+    }
+
     function renderError(response)
     {
         clear();
         document.getElementById('error').innerText = response;
         document.getElementById('error').style.display = 'block';
+    }
+
+    function setColorScheme(scheme)
+    {
+        window.localStorage.setItem('scheme', scheme);
+        document.documentElement.setAttribute('data-theme', scheme);
+    }
+
+    var scheme = window.localStorage.getItem('scheme');
+    if (scheme) {
+        setColorScheme(scheme);
+    }
+
+    document.getElementById('toggle-light').onclick = function()
+    {
+        setColorScheme('light');
+    }
+
+    document.getElementById('toggle-dark').onclick = function()
+    {
+        setColorScheme('dark');
     }
 </script>
 </html>
