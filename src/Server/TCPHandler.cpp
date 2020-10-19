@@ -903,14 +903,6 @@ void TCPHandler::receiveQuery()
     /// Set fields, that are known apriori.
     client_info.interface = ClientInfo::Interface::TCP;
 
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        /// 'Current' fields was set at receiveHello.
-        client_info.initial_user = client_info.current_user;
-        client_info.initial_query_id = client_info.current_query_id;
-        client_info.initial_address = client_info.current_address;
-    }
-
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
     auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
@@ -998,6 +990,15 @@ void TCPHandler::receiveQuery()
     // controls when we start a new trace. It can be changed via Native protocol,
     // so we have to apply the changes first.
     query_context->setCurrentQueryId(state.query_id);
+
+    // Set parameters of initial query.
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        /// 'Current' fields was set at receiveHello.
+        client_info.initial_user = client_info.current_user;
+        client_info.initial_query_id = client_info.current_query_id;
+        client_info.initial_address = client_info.current_address;
+    }
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),

@@ -310,9 +310,11 @@ void HTTPHandler::processQuery(
             session->release();
     });
 
-    std::string query_id = params.get("query_id", "");
-    context.setCurrentQueryId(query_id);
+    // Set the query id supplied by the user, if any.
+    context.setCurrentQueryId(params.get("query_id",
+        request.get("X-ClickHouse-Query-Id", "")));
 
+    // Parse the OpenTelemetry traceparent header.
     if (request.has("traceparent"))
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
