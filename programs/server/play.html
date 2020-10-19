@@ -1,16 +1,39 @@
-<html>
+<html> <!-- TODO If I write DOCTYPE HTML something changes but I don't know what. -->
 <head>
     <meta charset="UTF-8">
     <title>ClickHouse Query</title>
 
+    <!-- Code style:
+
+    Do not use any JavaScript or CSS frameworks or preprocessors.
+    This HTML page should not require any build systems (node.js, npm, gulp, etc.)
+    This HTML page should not be minified, instead it should be reasonably minimalistic by itself.
+    This HTML page should not load any external resources
+    (CSS and JavaScript must be embedded directly to the page. No external fonts or images should be loaded).
+    This UI should look as lightweight, clean and fast as possible.
+    All UI elements must be aligned in pixel-perfect way.
+    There should not be any animations.
+
+    -->
+
     <style type="text/css">
         html, body
         {
+            /* Personal choice. */
             font-family: Sans-Serif;
-            background: #DDF8FF; /*#FFFBEF;*/
+            /* Or #FFFBEF; actually many pastel colors look great for light theme. TODO Provide dark theme. */
+            background: #DDF8FF;
         }
 
-/*        html
+        /* Otherwise Webkit based browsers will display ugly border on focus. */
+        textarea, input
+        {
+            outline: none;
+        }
+
+        /* Otherwise scrollbar may appear dynamically and it will alter viewport height,
+           then relative heights of elements will change suddenly, and it will break overall impression. */
+        /* html
         {
             overflow-x: scroll;
         }*/
@@ -22,6 +45,9 @@
 
         .monospace
         {
+            /* Prefer fonts that have full hinting info. This is important for non-retina displays.
+               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant).
+            */
             font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, Monospace;
         }
 
@@ -33,6 +59,7 @@
         input, textarea
         {
             border: 1px solid #EEE;
+            /* The font must be not too small (to be inclusive) and not too large (it's less practical and make general feel of insecurity) */
             font-size: 11pt;
             padding: 0.25rem;
             background-color: #FFF;
@@ -40,6 +67,7 @@
 
         #query
         {
+            /* Make enough space for even huge queries. */
             height: 20%;
             width: 100%;
         }
@@ -70,6 +98,7 @@
             margin-top: 1rem;
         }
 
+        /* Orange on light-cyan is especially good. */
         #run
         {
             color: #000;
@@ -105,15 +134,17 @@
         {
             border-collapse: collapse;
             border-spacing: 0;
+            /* I need pixel-perfect alignment but not sure the following is correct, please help */
             min-width: calc(100vw - 2rem);
-            /*z-index: -1;*/
         }
 
         td
         {
             background-color: #FFF;
             white-space: nowrap;
+            /* For wide tables any individual column will be no more than 50% of page width. */
             max-width: 50vw;
+            /* The content is cut unless you hover. */
             overflow: hidden;
             padding: 0.25rem 0.5rem;
             border: 1px solid #EEE;
@@ -133,6 +164,7 @@
             border: 1px solid #EEE;
         }
 
+        /* The row under mouse pointer is highlight for better legibility. */
         tr:hover, tr:hover td
         {
             background-color: #FFF8EF;
@@ -143,6 +175,7 @@
             box-shadow: 0 0 1rem rgba(0, 0, 0, 0.1);
         }
 
+        /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
         #error
         {
             background: #FEE;
@@ -151,11 +184,14 @@
             display: none;
         }
 
+        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut.
+           TODO Find a way to make it work on touch devices. */
         td.left:hover
         {
             white-space: pre-wrap;
         }
 
+        /* The style for SQL NULL */
         .null
         {
             color: #A88;
@@ -221,7 +257,7 @@
 
     document.getElementById('query').onkeypress = function(event)
     {
-        if (event.ctrlKey && event.charCode == 13) {
+        if (event.ctrlKey && (event.charCode == 13 || event.charCode == 10)) {
             post();
         }
     }
