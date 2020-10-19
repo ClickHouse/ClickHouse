@@ -12,6 +12,7 @@ class SystemQuery : public Query
         static PtrTo<SystemQuery> createDistributed(bool stop, PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createFetches(bool stop, PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createFlush(PtrTo<TableIdentifier> identifier);
+        static PtrTo<SystemQuery> createLogs();
         static PtrTo<SystemQuery> createMerges(bool stop, PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createSync(PtrTo<TableIdentifier> identifier);
 
@@ -23,6 +24,7 @@ class SystemQuery : public Query
             DISTRIBUTED,
             FETCHES,
             FLUSH,
+            LOGS,
             MERGES,
             SYNC,
         };

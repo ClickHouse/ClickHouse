@@ -81,6 +81,8 @@ class List : public INode {
 
         String toString() const override
         {
+            if (!size()) return {};
+
             auto string = (*begin())->toString();
 
             for (auto next = ++begin(); next != end(); ++next)

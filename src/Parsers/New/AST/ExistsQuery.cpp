@@ -25,6 +25,8 @@ ASTPtr ExistsQuery::convertToOld() const
     query->table = table_id.table_name;
     query->uuid = table_id.uuid;
 
+    query->temporary = temporary;
+
     return query;
 }
 

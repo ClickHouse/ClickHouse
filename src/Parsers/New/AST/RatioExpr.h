@@ -9,9 +9,16 @@ namespace DB::AST
 class RatioExpr : public INode
 {
     public:
-        explicit RatioExpr(PtrTo<NumberLiteral> num1, PtrTo<NumberLiteral> num2 = nullptr);
+        RatioExpr(PtrTo<NumberLiteral> num1, PtrTo<NumberLiteral> num2);
 
-        // TODO: ASTPtr convertToOld() const override;
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            NUMERATOR = 0,    // NumberLiteral
+            DENOMINATOR = 1,  // NumberLiteral (optional)
+        };
 };
 
 }

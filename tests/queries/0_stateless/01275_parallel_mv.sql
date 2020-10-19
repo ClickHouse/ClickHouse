@@ -16,3 +16,8 @@ select count() from testX;
 select count() from testXA;
 select count() from testXB;
 select count() from testXC;
+
+drop table testX;
+drop table testXA;
+drop table testXB;
+drop table testXC;

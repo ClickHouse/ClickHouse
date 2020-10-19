@@ -1,5 +1,6 @@
 #include <Parsers/New/AST/RatioExpr.h>
 
+#include <Parsers/ASTSampleRatio.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
@@ -11,6 +12,21 @@ RatioExpr::RatioExpr(PtrTo<NumberLiteral> num1, PtrTo<NumberLiteral> num2) : INo
 {
 }
 
+ASTPtr RatioExpr::convertToOld() const
+{
+    auto numerator = get(NUMERATOR)->as<NumberLiteral>()->convertToOldRational();
+
+    if (has(DENOMINATOR))
+    {
+        auto denominator = get(DENOMINATOR)->as<NumberLiteral>()->convertToOldRational();
+
+        numerator.numerator = numerator.numerator * denominator.denominator;
+        numerator.denominator = numerator.denominator * denominator.numerator;
+    }
+
+    return std::make_shared<ASTSampleRatio>(numerator);
+}
+
 }
 
 namespace DB
@@ -20,10 +36,8 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitRatioExpr(ClickHouseParser::RatioExprContext *ctx)
 {
-    if (ctx->numberLiteral().size() == 2)
-        return std::make_shared<RatioExpr>(visit(ctx->numberLiteral(0)), visit(ctx->numberLiteral(1)));
-    else
-        return std::make_shared<RatioExpr>(visit(ctx->numberLiteral(0)).as<PtrTo<NumberLiteral>>());
+    auto denominator = ctx->numberLiteral().size() == 2 ? visit(ctx->numberLiteral(1)).as<PtrTo<NumberLiteral>>() : nullptr;
+    return std::make_shared<RatioExpr>(visit(ctx->numberLiteral(0)), denominator);
 }
 
 }

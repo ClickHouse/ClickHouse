@@ -20,13 +20,16 @@ ASTPtr OrderExpr::convertToOld() const
 
     expr->children.push_back(get(EXPR)->convertToOld());
     expr->direction = asc ? 1 : -1;
-    expr->nulls_direction = (nulls == NULLS_LAST) ? 1 : -1;
     expr->nulls_direction_was_explicitly_specified = (nulls != NATURAL);
+    if (nulls == NATURAL) expr->nulls_direction = expr->direction;
+    else expr->nulls_direction = (nulls == NULLS_LAST) ? expr->direction : -expr->direction;
+
     if (has(COLLATE))
     {
         expr->collation = get(COLLATE)->convertToOld();
         expr->children.push_back(expr->collation);
     }
+
     // TODO: WITH FILL?
 
     return expr;

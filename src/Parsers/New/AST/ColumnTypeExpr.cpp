@@ -113,6 +113,7 @@ String ColumnTypeExpr::toString() const
         case ExprType::NESTED:
             return get(NAME)->toString() + "(" + (has(LIST) ? get(LIST)->toString() : "") + ")";
     }
+    __builtin_unreachable();
 }
 
 }

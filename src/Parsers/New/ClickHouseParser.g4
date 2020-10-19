@@ -223,6 +223,7 @@ showStmt
 
 systemStmt
     : SYSTEM FLUSH DISTRIBUTED tableIdentifier
+    | SYSTEM FLUSH LOGS
     | SYSTEM (START | STOP) (DISTRIBUTED SENDS | FETCHES | MERGES) tableIdentifier
     | SYSTEM SYNC REPLICA tableIdentifier
     ;
@@ -363,7 +364,7 @@ keyword
 keywordForAlias
     : ID
     ;
-alias: IDENTIFIER | interval | keywordForAlias;
+alias: IDENTIFIER | keywordForAlias;
 identifier: IDENTIFIER | interval | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
 unaryOp: DASH | NOT;

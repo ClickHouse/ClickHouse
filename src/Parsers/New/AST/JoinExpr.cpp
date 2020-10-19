@@ -91,7 +91,7 @@ ASTPtr JoinExpr::convertToOld() const
 
             if (old_list->children.size() > 1)
             {
-                element->table_expression->as<ASTTableExpression>()->sample_offset = old_list->children[0];
+                element->table_expression->as<ASTTableExpression>()->sample_offset = old_list->children[1];
                 element->table_expression->children.push_back(element->table_expression->as<ASTTableExpression>()->sample_offset);
             }
         }
@@ -319,7 +319,7 @@ antlrcpp::Any ParseTreeVisitor::visitJoinOpLeftRight(ClickHouseParser::JoinOpLef
 
 antlrcpp::Any ParseTreeVisitor::visitSampleClause(ClickHouseParser::SampleClauseContext *ctx)
 {
-    auto offset = ctx->ratioExpr().size() > 1 ? visit(ctx->ratioExpr(1)).as<PtrTo<RatioExpr>>() : nullptr;
+    auto offset = ctx->ratioExpr().size() == 2 ? visit(ctx->ratioExpr(1)).as<PtrTo<RatioExpr>>() : nullptr;
     return std::make_shared<SampleClause>(visit(ctx->ratioExpr(0)), offset);
 }
 

@@ -3,6 +3,7 @@
 #include <Parsers/New/AST/INode.h>
 
 #include <Core/Field.h>
+#include <Parsers/ASTSampleRatio.h>
 
 #include <Token.h>
 #include <tree/TerminalNode.h>
@@ -51,8 +52,7 @@ class Literal : public INode
             return number;
         }
 
-        template <typename T>
-        std::optional<T> asString() const { return token; }
+        auto asString() const { return token; }
 
     private:
         LiteralType type;
@@ -71,6 +71,8 @@ class NumberLiteral : public Literal
 
         template <typename T> std::optional<T> as() const { return asNumber<T>(minus); }
 
+        ASTSampleRatio::Rational convertToOldRational() const;
+
     private:
         bool minus = false;
 };
@@ -84,13 +86,7 @@ class StringLiteral : public Literal
         template <typename T>
         T as() const
         {
-            return asString<T>();
-        }
-
-        template<>
-        String as() const
-        {
-            return asString<String>().value();
+            return asString();
         }
 };
 

@@ -291,7 +291,7 @@ Block createBlockForSet(
 {
     auto get_tuple_type_from_ast = [&context](const auto & func) -> DataTypePtr
     {
-        if (func && (func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
+        if (func && (func->name == "tuple" || func->name == "array") && func->arguments && !func->arguments->children.empty())
         {
             /// Won't parse all values of outer tuple.
             auto element = func->arguments->children.at(0);
@@ -324,7 +324,7 @@ Block createBlockForSet(
                             ". Must be subquery or set of elements with type " + left_arg_type->getName() + ".",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        elements_ast = set_func->arguments;
+        elements_ast = set_func->arguments ? set_func->arguments : std::make_shared<ASTExpressionList>();
     }
     else
         throw Exception("Invalid types for IN function: "

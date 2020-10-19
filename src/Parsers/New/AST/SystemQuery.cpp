@@ -31,6 +31,12 @@ PtrTo<SystemQuery> SystemQuery::createFlush(PtrTo<TableIdentifier> identifier)
 }
 
 // static
+PtrTo<SystemQuery> SystemQuery::createLogs()
+{
+    return PtrTo<SystemQuery>(new SystemQuery(QueryType::LOGS, {}));
+}
+
+// static
 PtrTo<SystemQuery> SystemQuery::createMerges(bool stop, PtrTo<TableIdentifier> identifier)
 {
     PtrTo<SystemQuery> query(new SystemQuery(QueryType::MERGES, {identifier}));
@@ -72,6 +78,7 @@ antlrcpp::Any ParseTreeVisitor::visitSystemStmt(ClickHouseParser::SystemStmtCont
     if (ctx->FETCHES()) return SystemQuery::createFetches(!!ctx->STOP(), visit(ctx->tableIdentifier()));
     if (ctx->DISTRIBUTED()) return SystemQuery::createDistributed(!!ctx->STOP(), visit(ctx->tableIdentifier()));
     if (ctx->FLUSH()) return SystemQuery::createFlush(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
+    if (ctx->LOGS()) return SystemQuery::createLogs();
     __builtin_unreachable();
 }
 
