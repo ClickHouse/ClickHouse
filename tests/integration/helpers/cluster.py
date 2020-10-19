@@ -24,6 +24,7 @@ import xml.dom.minidom
 from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
 from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
+from kazoo.retry import KazooRetry
 from kazoo.exceptions import KazooException
 from minio import Minio
 
@@ -771,7 +772,8 @@ class ClickHouseCluster:
         if zoo_instance_name not in self.kazoo_connections:
             kazoo_logger = logging.getLogger("kazoo_logger")
             kazoo_logger.setLevel(logging.WARNING)
-            self.kazoo_connections[zoo_instance_name] = KazooClient(hosts=self.get_instance_ip(zoo_instance_name), logger=kazoo_logger)
+            retry = KazooRetry(max_tries=5)
+            self.kazoo_connections[zoo_instance_name] = KazooClient(hosts=self.get_instance_ip(zoo_instance_name), logger=kazoo_logger, connection_retry=retry)
             self.kazoo_connections[zoo_instance_name].start()
         else:
             self.kazoo_connections[zoo_instance_name].restart()
