@@ -17,9 +17,6 @@ using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<
 template <class Numerator, class Denominator>
 struct RationalFraction
 {
-    using NumeratorType = Numerator;
-    using DenominatorType = Denominator;
-
     Numerator numerator{0};
     Denominator denominator{0};
 
