@@ -54,7 +54,7 @@ class ClickHouseNode(Node):
                     continue
                 assert False, "container is not healthy"
 
-    def restart(self, timeout=300, safe=True):
+    def restart(self, timeout=300, safe=True, wait_healthy=True):
         """Restart node.
         """
         if safe:
@@ -74,7 +74,8 @@ class ClickHouseNode(Node):
 
         self.cluster.command(None, f'{self.cluster.docker_compose} restart {self.name}', timeout=timeout)
 
-        self.wait_healthy(timeout)
+        if wait_healthy:
+            self.wait_healthy(timeout)
 
     def query(self, sql, message=None, exitcode=None, steps=True, no_checks=False,
               raise_on_exception=False, step=By, settings=None, *args, **kwargs):
