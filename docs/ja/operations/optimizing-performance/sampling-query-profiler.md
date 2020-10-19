@@ -11,11 +11,11 @@ ClickHouse運転サンプリングプロファイラでの分析クエリを実�
 
 Profilerを使用するには:
 
--   セットアップ [trace\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) サーバー構成のセクション。
+-   セットアップ [trace_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) サーバー構成のセクション。
 
-    このセクションでは、 [trace\_log](../../operations/system-tables.md#system_tables-trace_log) プロファイラ機能の結果を含むシステムテーブル。 これは既定で構成されています。 この表のデータは、実行中のサーバーに対してのみ有効です。 後、サーバを再起動ClickHouseないクリーンのテーブルに格納された仮想メモリアドレスが無効になります。
+    このセクションでは、 [trace_log](../../operations/system-tables.md#system_tables-trace_log) プロファイラ機能の結果を含むシステムテーブル。 これは既定で構成されています。 この表のデータは、実行中のサーバーに対してのみ有効です。 後、サーバを再起動ClickHouseないクリーンのテーブルに格納された仮想メモリアドレスが無効になります。
 
--   セットアップ [query\_profiler\_cpu\_time\_period\_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) または [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) 設定。 両方の設定を同時に使用できます。
+-   セットアップ [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) または [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) 設定。 両方の設定を同時に使用できます。
 
     これらの設定を許可する設定プロファイラータイマー. これらはセッション設定であるため、サーバー全体、個々のユーザーまたはユーザープロファイル、対話式セッション、および個々のクエリごとに異なるサンプリング周波数
 
@@ -25,7 +25,7 @@ Profilerを使用するには:
 
 -   インストール `clickhouse-common-static-dbg` パッケージ。 見る [DEBパッケージから](../../getting-started/install.md#install-from-deb-packages).
 
--   によるイントロスペクション関数を許可する。 [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) 設定。
+-   によるイントロスペクション関数を許可する。 [allow_introspection_functions](../settings/settings.md#settings-allow_introspection_functions) 設定。
 
     セキュリティ上の理由から、introspection関数は既定で無効になっています。
 

@@ -76,7 +76,7 @@ public:
 
     void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
 
-    /// Changes the number of input ports if needed. Adds ResizeTransform.
+    /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
     /// Unite several pipelines together. Result pipeline would have common_header structure.
@@ -101,7 +101,7 @@ public:
 
     const Block & getHeader() const { return pipe.getHeader(); }
 
-    void addTableLock(const TableLockHolder & lock) { pipe.addTableLock(lock); }
+    void addTableLock(TableLockHolder lock) { pipe.addTableLock(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<Context> context) { pipe.addInterpreterContext(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
     void addQueryPlan(std::unique_ptr<QueryPlan> plan) { pipe.addQueryPlan(std::move(plan)); }

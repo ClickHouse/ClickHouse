@@ -113,7 +113,7 @@ private:
     }
 
     template <typename T, typename ReturnType>
-    static bool execute(Block & block, const ColumnVector<T> * col, const size_t result)
+    static bool execute(ColumnsWithTypeAndName & columns, const ColumnVector<T> * col, const size_t result)
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
@@ -124,12 +124,12 @@ private:
 
         executeInIterations(src_data.data(), dst_data.data(), size);
 
-        block.getByPosition(result).column = std::move(dst);
+        columns[result].column = std::move(dst);
         return true;
     }
 
     template <typename T, typename ReturnType>
-    static bool execute(Block & block, const ColumnDecimal<T> * col, const size_t result)
+    static bool execute(ColumnsWithTypeAndName & columns, const ColumnDecimal<T> * col, const size_t result)
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
@@ -144,15 +144,15 @@ private:
 
         executeInIterations(dst_data.data(), dst_data.data(), size);
 
-        block.getByPosition(result).column = std::move(dst);
+        columns[result].column = std::move(dst);
         return true;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & col = columns[arguments[0]];
 
         auto call = [&](const auto & types) -> bool
         {
@@ -162,7 +162,7 @@ private:
             using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
-            return execute<Type, ReturnType>(block, col_vec, result);
+            return execute<Type, ReturnType>(columns, col_vec, result);
         };
 
         if (!callOnBasicType<void, true, true, true, false>(col.type->getTypeId(), call))

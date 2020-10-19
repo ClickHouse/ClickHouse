@@ -45,6 +45,8 @@ struct FormatSettings
         UInt64 max_value_width = 10000;
         bool color = true;
 
+        bool output_format_pretty_row_numbers = false;
+
         enum class Charset
         {
             UTF8,
@@ -96,6 +98,15 @@ struct FormatSettings
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
+
+    enum class DateTimeOutputFormat
+    {
+        Simple,
+        ISO,
+        UnixTimestamp
+    };
+
+    DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;

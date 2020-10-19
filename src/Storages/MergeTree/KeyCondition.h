@@ -36,13 +36,13 @@ struct FieldRef : public Field
     FieldRef(T && value) : Field(std::forward<T>(value)) {}
 
     /// Create as reference to field in block.
-    FieldRef(Block * block_, size_t row_idx_, size_t column_idx_)
-        : Field((*block_->getByPosition(column_idx_).column)[row_idx_]),
-        block(block_), row_idx(row_idx_), column_idx(column_idx_) {}
+    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
+        : Field((*(*columns_)[column_idx_].column)[row_idx_]),
+          columns(columns_), row_idx(row_idx_), column_idx(column_idx_) {}
 
-    bool isExplicit() const { return block == nullptr; }
+    bool isExplicit() const { return columns == nullptr; }
 
-    Block * block = nullptr;
+    ColumnsWithTypeAndName * columns = nullptr;
     size_t row_idx = 0;
     size_t column_idx = 0;
 };

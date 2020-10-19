@@ -8,6 +8,7 @@
 #include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <DataStreams/NativeBlockInputStream.h>
@@ -107,6 +108,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ?
                                      FormatSettings::Pretty::Charset::ASCII :
                                      FormatSettings::Pretty::Charset::UTF8;
+    format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
@@ -126,6 +128,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
     format_settings.avro.output_codec = settings.output_format_avro_codec;
     format_settings.avro.output_sync_interval = settings.output_format_avro_sync_interval;
+    format_settings.date_time_output_format = settings.date_time_output_format;
 
     return format_settings;
 }
@@ -201,7 +204,7 @@ BlockInputStreamPtr FormatFactory::getInput(
 
 
 BlockOutputStreamPtr FormatFactory::getOutput(
-    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const bool ignore_no_row_delimiter) const
 {
     if (!getCreators(name).output_processor_creator)
     {
@@ -219,7 +222,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(
                 output_getter(buf, sample, std::move(callback), format_settings), sample);
     }
 
-    auto format = getOutputFormat(name, buf, sample, context, std::move(callback));
+    auto format = getOutputFormat(name, buf, sample, context, std::move(callback), ignore_no_row_delimiter);
     return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
@@ -258,7 +261,7 @@ InputFormatPtr FormatFactory::getInputFormat(
 
 
 OutputFormatPtr FormatFactory::getOutputFormat(
-    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const bool ignore_no_row_delimiter) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
@@ -267,10 +270,14 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     const Settings & settings = context.getSettingsRef();
     FormatSettings format_settings = getOutputFormatSetting(settings, context);
 
+    RowOutputFormatParams params;
+    params.ignore_no_row_delimiter = ignore_no_row_delimiter;
+    params.callback = std::move(callback);
+
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    auto format = output_getter(buf, sample, std::move(callback), format_settings);
+    auto format = output_getter(buf, sample, params, format_settings);
 
     /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
     if (format_settings.enable_streaming)

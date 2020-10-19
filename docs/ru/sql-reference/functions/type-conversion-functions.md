@@ -6,7 +6,7 @@
 
 Поведение ClickHouse при конвертировании похоже на [поведение C++ программ](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-## toInt(8\|16\|32\|64) {#toint8163264}
+## toInt(8\|16\|32\|64\|128\|256) {#toint8163264}
 
 Преобразует входное значение к типу [Int](../../sql-reference/functions/type-conversion-functions.md). Семейство функций включает:
 
@@ -14,6 +14,8 @@
 -   `toInt16(expr)` — возвращает значение типа `Int16`.
 -   `toInt32(expr)` — возвращает значение типа `Int32`.
 -   `toInt64(expr)` — возвращает значение типа `Int64`.
+-   `toInt128(expr)` — возвращает значение типа `Int128`.
+-   `toInt256(expr)` — возвращает значение типа `Int256`.
 
 **Параметры**
 
@@ -21,7 +23,7 @@
 
 **Возвращаемое значение**
 
-Целое число типа `Int8`, `Int16`, `Int32` или `Int64`.
+Целое число типа `Int8`, `Int16`, `Int32`, `Int64`, `Int128` или `Int256`.
 
 Функции используют [округление к нулю](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), т.е. обрезают дробную часть числа.
 
@@ -39,9 +41,9 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 └──────────────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
-## toInt(8\|16\|32\|64)OrZero {#toint8163264orzero}
+## toInt(8\|16\|32\|64\|128\|256)OrZero {#toint8163264orzero}
 
-Принимает аргумент типа String и пытается его распарсить в Int(8\|16\|32\|64). Если не удалось - возвращает 0.
+Принимает аргумент типа String и пытается его распарсить в Int(8\|16\|32\|64\|128\|256). Если не удалось - возвращает 0.
 
 **Пример**
 
@@ -55,9 +57,9 @@ select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
 └─────────────────────────┴───────────────────────────┘
 ```
 
-## toInt(8\|16\|32\|64)OrNull {#toint8163264ornull}
+## toInt(8\|16\|32\|64\|128\|256)OrNull {#toint8163264ornull}
 
-Принимает аргумент типа String и пытается его распарсить в Int(8\|16\|32\|64). Если не удалось - возвращает NULL.
+Принимает аргумент типа String и пытается его распарсить в Int(8\|16\|32\|64\|128\|256). Если не удалось - возвращает NULL.
 
 **Пример**
 
@@ -71,7 +73,7 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 └─────────────────────────┴───────────────────────────┘
 ```
 
-## toUInt(8\|16\|32\|64) {#touint8163264}
+## toUInt(8\|16\|32\|64\|256) {#touint8163264}
 
 Преобраует входное значение к типу [UInt](../../sql-reference/functions/type-conversion-functions.md). Семейство функций включает:
 
@@ -79,6 +81,7 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 -   `toUInt16(expr)` — возвращает значение типа `UInt16`.
 -   `toUInt32(expr)` — возвращает значение типа `UInt32`.
 -   `toUInt64(expr)` — возвращает значение типа `UInt64`.
+-   `toUInt256(expr)` — возвращает значение типа `UInt256`.
 
 **Параметры**
 
@@ -86,7 +89,7 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 
 **Возвращаемое значение**
 
-Целое число типа `UInt8`, `UInt16`, `UInt32` или `UInt64`.
+Целое число типа `UInt8`, `UInt16`, `UInt32`, `UInt64` или `UInt256`.
 
 Функции используют [округление к нулю](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), т.е. обрезают дробную часть числа.
 
@@ -104,9 +107,9 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 └─────────────────────┴───────────────┴────────────────┴──────────────┘
 ```
 
-## toUInt(8\|16\|32\|64)OrZero {#touint8163264orzero}
+## toUInt(8\|16\|32\|64\|256)OrZero {#touint8163264orzero}
 
-## toUInt(8\|16\|32\|64)OrNull {#touint8163264ornull}
+## toUInt(8\|16\|32\|64\|256)OrNull {#touint8163264ornull}
 
 ## toFloat(32\|64) {#tofloat3264}
 
@@ -126,21 +129,23 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 ## toDateTimeOrNull {#todatetimeornull}
 
-## toDecimal(32\|64\|128) {#todecimal3264128}
+## toDecimal(32\|64\|128\|256) {#todecimal3264128}
 
 Преобразует `value` к типу данных [Decimal](../../sql-reference/functions/type-conversion-functions.md) с точностью `S`. `value` может быть числом или строкой. Параметр `S` (scale) задаёт число десятичных знаков.
 
 -   `toDecimal32(value, S)`
 -   `toDecimal64(value, S)`
 -   `toDecimal128(value, S)`
+-   `toDecimal256(value, S)`
 
-## toDecimal(32\|64\|128)OrNull {#todecimal3264128ornull}
+## toDecimal(32\|64\|128\|256)OrNull {#todecimal3264128ornull}
 
 Преобразует входную строку в значение с типом данных [Nullable (Decimal (P, S))](../../sql-reference/functions/type-conversion-functions.md). Семейство функций включает в себя:
 
 -   `toDecimal32OrNull(expr, S)` — Возвращает значение типа `Nullable(Decimal32(S))`.
 -   `toDecimal64OrNull(expr, S)` — Возвращает значение типа `Nullable(Decimal64(S))`.
 -   `toDecimal128OrNull(expr, S)` — Возвращает значение типа `Nullable(Decimal128(S))`.
+-   `toDecimal256OrNull(expr, S)` — Возвращает значение типа `Nullable(Decimal256(S))`.
 
 Эти функции следует использовать вместо функций `toDecimal*()`, если при ошибке обработки входного значения вы хотите получать `NULL` вместо исключения.
 
@@ -178,13 +183,14 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 └──────┴────────────────────────────────────────────────────┘
 ```
 
-## toDecimal(32\|64\|128)OrZero {#todecimal3264128orzero}
+## toDecimal(32\|64\|128\|256)OrZero {#todecimal3264128orzero}
 
 Преобразует тип входного значения в [Decimal (P, S)](../../sql-reference/functions/type-conversion-functions.md). Семейство функций включает в себя:
 
 -   `toDecimal32OrZero( expr, S)` — возвращает значение типа `Decimal32(S)`.
 -   `toDecimal64OrZero( expr, S)` — возвращает значение типа `Decimal64(S)`.
 -   `toDecimal128OrZero( expr, S)` — возвращает значение типа `Decimal128(S)`.
+-   `toDecimal256OrZero( expr, S)` — возвращает значение типа `Decimal256(S)`.
 
 Эти функции следует использовать вместо функций `toDecimal*()`, если при ошибке обработки входного значения вы хотите получать `0` вместо исключения.
 
@@ -239,7 +245,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-В качестве исключения, если делается преобразование из числа типа UInt32, Int32, UInt64, Int64 в Date, и если число больше или равно 65536, то число рассматривается как unix timestamp (а не как число дней) и округляется до даты. Это позволяет поддержать распространённый случай, когда пишут toDate(unix\_timestamp), что иначе было бы ошибкой и требовало бы написания более громоздкого toDate(toDateTime(unix\_timestamp))
+В качестве исключения, если делается преобразование из числа типа UInt32, Int32, UInt64, Int64 в Date, и если число больше или равно 65536, то число рассматривается как unix timestamp (а не как число дней) и округляется до даты. Это позволяет поддержать распространённый случай, когда пишут toDate(unix_timestamp), что иначе было бы ошибкой и требовало бы написания более громоздкого toDate(toDateTime(unix_timestamp))
 
 Преобразование между датой и датой-с-временем производится естественным образом: добавлением нулевого времени или отбрасыванием времени.
 
@@ -355,6 +361,10 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 │ Nullable(UInt16)                        │
 └─────────────────────────────────────────┘
 ```
+
+**См. также**
+
+-   Настройка [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable)
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 
@@ -717,4 +727,44 @@ SELECT toLowCardinality('1')
 └───────────────────────┘
 ```
 
+## formatRow {#formatrow}
+
+Преобразует произвольные выражения в строку заданного формата.
+
+**Синтаксис** 
+
+``` sql
+formatRow(format, x, y, ...)
+```
+
+**Параметры**
+
+-   `format` — Текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Выражения.
+
+**Возвращаемое значение**
+
+-   Отформатированная строка (в текстовых форматах обычно с завершающим переводом строки).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT formatRow('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Ответ:
+
+``` text
+┌─formatRow('CSV', number, 'good')─┐
+│ 0,"good"
+                         │
+│ 1,"good"
+                         │
+│ 2,"good"
+                         │
+└──────────────────────────────────┘
+```
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->
