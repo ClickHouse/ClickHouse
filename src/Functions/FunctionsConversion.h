@@ -101,7 +101,7 @@ struct ConvertImpl
     using ToFieldType = typename ToDataType::FieldType;
 
     template <typename Additions = void *>
-    static void NO_SANITIZE_UNDEFINED execute(
+    static ColumnPtr NO_SANITIZE_UNDEFINED execute(
         ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/,
         Additions additions [[maybe_unused]] = Additions())
     {
@@ -333,7 +333,7 @@ struct ToDateTime64Transform
 
     const DateTime64::NativeType scale_multiplier = 1;
 
-    explicit ToDateTime64Transform(UInt32 scale = 0)
+    ToDateTime64Transform(UInt32 scale = 0)
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
@@ -363,7 +363,7 @@ struct FromDateTime64Transform
 
     const DateTime64::NativeType scale_multiplier = 1;
 
-    explicit FromDateTime64Transform(UInt32 scale)
+    FromDateTime64Transform(UInt32 scale)
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
@@ -1268,6 +1268,8 @@ private:
                 throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
+
+        return result_column;
     }
 };
 

@@ -25,7 +25,12 @@ public:
 
         void execute(ColumnsWithTypeAndName & columns, size_t rows) const
         {
-            function->execute(columns, arg_positions, result_pos, rows, false);
+            ColumnsWithTypeAndName args;
+            args.reserve(arg_positions.size());
+            for (auto pos : arg_positions)
+                args.emplace_back(columns[pos]);
+
+            columns[result_pos].column = function->execute(columns, columns[result_pos].type, rows, false);
         }
     };
 

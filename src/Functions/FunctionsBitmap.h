@@ -146,7 +146,7 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr executeBitmapData(ColumnsWithTypeAndName & arguments, DataTypes & argument_types) const
+    ColumnPtr executeBitmapData(DataTypes & argument_types, ColumnsWithTypeAndName & arguments) const
     {
         // input data
         const ColumnArray * array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
