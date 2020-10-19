@@ -1026,6 +1026,7 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+    """ Touching the test """
 
 
 def test_simple_replication_and_moves(start_cluster):
