@@ -715,6 +715,10 @@ class ClickHouseCluster:
                     sanitizer_assert_instance = line.split('|')[0].strip()
                     break
 
+        for zoo_client in self.kazoo_connections.values():
+            zoo_client.stop()
+            zoo_client.close()
+
         if kill:
             try:
                 subprocess_check_call(self.base_cmd + ['kill'])
@@ -735,9 +739,6 @@ class ClickHouseCluster:
             instance.ip_address = None
             instance.client = None
 
-        for zoo_client in self.kazoo_connections.values():
-            zoo_client.stop()
-            zoo_client.close()
 
         if not self.zookeeper_use_tmpfs:
             for i in range(1, 4):
