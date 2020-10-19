@@ -24,7 +24,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int PATH_ACCESS_DENIED;
 }
 
-/** fileInc(x[,y=1]) - read integer from file 'x', increment it by 'y' and write it down. Create file with '0' if it doesn't exist.
+/** fileInc(x) - read integer from file, increment it and write it down. Create file with '0' if it doesn't exist.
   * Returns incremented integer
   */
 class ExecutableFunctionFileInc : public IExecutableFunctionImpl
