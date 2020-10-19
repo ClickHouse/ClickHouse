@@ -51,7 +51,7 @@ public:
 
         auto increment = Increment(file_path);
 
-        columns[result].column = DataTypeUInt64().createColumnConst(input_rows_count, increment.peek(true));
+        columns[result].column = DataTypeUInt64().createColumnConst(input_rows_count, increment.get(true));
     }
 
 private:
