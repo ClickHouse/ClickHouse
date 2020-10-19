@@ -89,6 +89,15 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
 
+        {
+            if (!is_unlimited_query && settings.max_concurrent_queries_for_all_users
+                && processes.size() > settings.max_concurrent_queries_for_all_users)
+                throw Exception(
+                    "Too many simultaneous queries for all users. Current: " + toString(processes.size())
+                    + ", maximum: " + settings.max_concurrent_queries_for_all_users.toString(),
+                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+        }
+
         /** Why we use current user?
           * Because initial one is passed by client and credentials for it is not verified,
           *  and using initial_user for limits will be insecure.
