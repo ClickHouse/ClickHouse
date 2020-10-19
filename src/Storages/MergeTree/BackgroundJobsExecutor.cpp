@@ -35,12 +35,17 @@ double IBackgroundJobExecutor::getSleepRandomAdd()
     return std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 }
 
-void IBackgroundJobExecutor::scheduleTask()
+void IBackgroundJobExecutor::scheduleTask(bool job_done_or_has_job_to_do)
 {
-    auto no_work_done_times = no_work_done_count.load(std::memory_order_relaxed);
-    /// If we have no jobs or some errors than sleep with backoff
-    if (no_work_done_times != 0)
+    if (job_done_or_has_job_to_do)
     {
+        no_work_done_count = 0;
+        /// We have background jobs, schedule task as soon as possible
+        scheduling_task->schedule();
+    }
+    else
+    {
+        auto no_work_done_times = no_work_done_count.fetch_add(1, std::memory_order_relaxed);
         auto next_time_to_execute = 1000 * (std::min(
                 sleep_settings.task_sleep_seconds_when_no_work_max,
                 sleep_settings.task_sleep_seconds_when_no_work_min * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
@@ -48,12 +53,6 @@ void IBackgroundJobExecutor::scheduleTask()
 
          scheduling_task->scheduleAfter(next_time_to_execute);
     }
-    else
-    {
-        /// We have background jobs, schedule task as soon as possible
-        scheduling_task->schedule();
-    }
-
 }
 
 namespace
@@ -79,7 +78,7 @@ void IBackgroundJobExecutor::jobExecutingTask()
 try
 {
     auto job_and_pool = getBackgroundJob();
-    if (job_and_pool) /// If we have job, than try to assign into background pool
+    if (job_and_pool) /// If we have job, then try to assign into background pool
     {
         auto & pool_config = pools_configs[job_and_pool->pool_type];
         /// If corresponding pool is not full increment metric and assign new job
@@ -94,44 +93,43 @@ try
                         job();
                         /// Job done, decrement metric and reset no_work counter
                         CurrentMetrics::values[pool_config.tasks_metric]--;
-                        no_work_done_count = 0;
+                        /// Job done, new empty space in pool, schedule background task
+                        scheduleTask(true);
                     }
                     catch (...)
                     {
-                        no_work_done_count++;
                         tryLogCurrentException(__PRETTY_FUNCTION__);
                         CurrentMetrics::values[pool_config.tasks_metric]--;
+                        scheduleTask(false);
                     }
-                    /// Job done, new empty space in pool, schedule background task
-                    scheduleTask();
                 });
+                /// We've scheduled task in then background pool and when it will finish we will be triggered again. But this task can be
+                /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselfs here.
+                scheduleTask(true);
             }
             catch (...)
             {
-                /// With our Pool settings scheduleOrThrowOnError shouldn't throw exceptions, but for safety add catch here
-                no_work_done_count++;
+                /// With our Pool settings scheduleOrThrowOnError shouldn't throw exceptions, but for safety catch added here
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 CurrentMetrics::values[pool_config.tasks_metric]--;
-                scheduleTask();
+                scheduleTask(false);
             }
         }
-        else /// Pool is full and we have some work to do, let's try to schedule without backoff
+        else /// Pool is full and we have some work to do, let's schedule our task as fast as possible
         {
-            scheduleTask();
+            scheduleTask(true);
         }
     }
     else /// Nothing to do, no jobs
     {
-        no_work_done_count++;
-        scheduleTask();
+        scheduleTask(false);
     }
 
 }
 catch (...) /// Exception while we looking for a task, reschedule
 {
-    no_work_done_count++;
     tryLogCurrentException(__PRETTY_FUNCTION__);
-    scheduleTask();
+    scheduleTask(false);
 }
 
 void IBackgroundJobExecutor::start()
