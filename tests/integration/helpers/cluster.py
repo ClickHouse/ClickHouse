@@ -907,7 +907,7 @@ class ClickHouseInstance:
         return "-fsanitize=thread" in build_opts
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
+    def query(self, sql, stdin=None, timeout=30, settings=None, user=None, password=None, database=None,
               ignore_error=False):
         return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password,
                                  database=database, ignore_error=ignore_error)
