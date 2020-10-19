@@ -49,9 +49,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr & input_column = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & input_column = columns[arguments[0]].column;
 
         if (const ColumnNullable * input_column_nullable = checkAndGetColumn<ColumnNullable>(input_column.get()))
         {
@@ -66,7 +66,7 @@ public:
                 {
                     auto res = ColumnUInt8::create(input_rows_count);
                     processNullable(column.getData(), null_map, res->getData(), input_rows_count);
-                    block.getByPosition(result).column = std::move(res);
+                    columns[result].column = std::move(res);
                     return true;
                 }))
             {
@@ -83,7 +83,7 @@ public:
                 {
                     auto res = ColumnUInt8::create(input_rows_count);
                     processNotNullable(column.getData(), res->getData(), input_rows_count);
-                    block.getByPosition(result).column = std::move(res);
+                    columns[result].column = std::move(res);
                     return true;
                 }))
             {

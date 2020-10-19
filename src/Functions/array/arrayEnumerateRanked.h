@@ -1,3 +1,4 @@
+#pragma once
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -115,7 +116,7 @@ public:
         return type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -149,7 +150,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
 
 template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
-    Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+        ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
     size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns;
@@ -160,7 +161,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     ColumnsWithTypeAndName args;
 
     for (size_t i = 0; i < arguments.size(); ++i)
-        args.emplace_back(block.getByPosition(arguments[i]));
+        args.emplace_back(columns[arguments[i]]);
 
     const ArraysDepths arrays_depths = getArraysDepths(args);
 
@@ -185,7 +186,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const auto * array = get_array_column(block.getByPosition(arguments[i]).column.get());
+        const auto * array = get_array_column(columns[arguments[i]].column.get());
         if (!array)
             continue;
 
@@ -257,7 +258,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     for (ssize_t depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
         result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
 
-    block.getByPosition(result).column = result_nested_array;
+    columns[result].column = result_nested_array;
 }
 
 /*

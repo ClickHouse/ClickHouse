@@ -59,7 +59,7 @@ Al crear RAID-10, seleccione el `far` diseño.
 Si su presupuesto lo permite, elija RAID-10.
 
 Si tiene más de 4 discos, utilice RAID-6 (preferido) o RAID-50, en lugar de RAID-5.
-Cuando use RAID-5, RAID-6 o RAID-50, siempre aumente stripe\_cache\_size, ya que el valor predeterminado generalmente no es la mejor opción.
+Cuando use RAID-5, RAID-6 o RAID-50, siempre aumente stripe_cache_size, ya que el valor predeterminado generalmente no es la mejor opción.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size

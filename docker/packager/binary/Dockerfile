@@ -1,7 +1,7 @@
 #  docker build -t yandex/clickhouse-binary-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -11,7 +11,7 @@ RUN apt-get update \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-11 main" >> \
+    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list
 
 # initial packages
@@ -27,35 +27,36 @@ RUN apt-get update \
 RUN apt-get update \
     && apt-get install \
         bash \
-        build-essential \
+        cmake \
         ccache \
-        clang-${LLVM_VERSION} \
-        clang-11 \
-        clang-tidy-${LLVM_VERSION} \
-        clang-tidy-11 \
-        cmake \
-        cmake \
         curl \
-        g++-9 \
         gcc-9 \
-        gdb \
-        git \
-        gperf \
-        gperf \
-        intel-opencl-icd \
-        libicu-dev \
-        libreadline-dev \
-        lld-${LLVM_VERSION} \
+        g++-9 \
+        clang-10 \
+        clang-tidy-10 \
+        lld-10 \
+        llvm-10 \
+        llvm-10-dev \
+        clang-11 \
+        clang-tidy-11 \
         lld-11 \
-        llvm-${LLVM_VERSION} \
         llvm-11 \
         llvm-11-dev \
-        moreutils \
+        libicu-dev \
+        libreadline-dev \
         ninja-build \
-        ocl-icd-libopencl1 \
+        gperf \
+        git \
         opencl-headers \
-        rename \
+        ocl-icd-libopencl1 \
+        intel-opencl-icd \
         tzdata \
+        gperf \
+        cmake \
+        gdb \
+        rename \
+        build-essential \
+        moreutils \
         --yes --no-install-recommends
 
 # This symlink required by gcc to find lld compiler

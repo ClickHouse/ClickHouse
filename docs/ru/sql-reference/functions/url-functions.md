@@ -116,11 +116,11 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### pathFull {#pathfull}
 
-То же самое, но включая query string и fragment. Пример: /top/news.html?page=2\#comments
+То же самое, но включая query string и fragment. Пример: /top/news.html?page=2#comments
 
 ### queryString {#querystring}
 
-Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также \# и всё, что после \#.
+Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также # и всё, что после #.
 
 ### fragment {#fragment}
 
@@ -128,7 +128,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Возвращает query string и fragment identifier. Пример: страница=1\#29390.
+Возвращает query string и fragment identifier. Пример: страница=1#29390.
 
 ### extractURLParameter(URL, name) {#extracturlparameterurl-name}
 

@@ -10,7 +10,7 @@ toc_title: "\u0646\u062D\u0648\u0647 \u0633\u0627\u062E\u062A \u06A9\u0644\u06CC
 
 راهنمای زیر بر اساس سیستم لینوکس اوبونتو است.
 با تغییرات مناسب, همچنین باید بر روی هر توزیع لینوکس دیگر کار.
-سیستم عامل های پشتیبانی شده: ایکس86\_64 و عاشق64. پشتیبانی از قدرت9 تجربی است.
+سیستم عامل های پشتیبانی شده: ایکس86_64 و عاشق64. پشتیبانی از قدرت9 تجربی است.
 
 ## شرح متنی (توضیحات سایت) در صفحات شما دیده نمی شود {#install-git-cmake-python-and-ninja}
 
@@ -103,7 +103,7 @@ $ cd ..
 به عنوان مثال برای فدورا پوست دباغی نشده:
 
     sudo yum update
-    yum --nogpg install git cmake make gcc-c++ python2
+    yum --nogpg install git cmake make gcc-c++ python3
     git clone --recursive https://github.com/ClickHouse/ClickHouse.git
     mkdir build && cd build
     cmake ../ClickHouse

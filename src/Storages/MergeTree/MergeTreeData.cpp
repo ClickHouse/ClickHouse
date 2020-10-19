@@ -49,6 +49,7 @@
 #include <Poco/DirectoryIterator.h>
 
 #include <boost/range/adaptor/filtered.hpp>
+#include <boost/algorithm/string/join.hpp>
 
 #include <algorithm>
 #include <iomanip>
@@ -632,7 +633,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                                   std::back_inserter(names_intersection));
 
             if (!names_intersection.empty())
-                throw Exception("Columns: " + Nested::createCommaSeparatedStringFrom(names_intersection) +
+                throw Exception("Columns: " + boost::algorithm::join(names_intersection, ", ") +
                 " listed both in columns to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
         }
     }
@@ -1330,6 +1331,44 @@ bool isSafeForPartitionKeyConversion(const IDataType * from, const IDataType * t
     return false;
 }
 
+/// Special check for alters of VersionedCollapsingMergeTree version column
+void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataType * new_type, const String column_name)
+{
+    /// Check new type can be used as version
+    if (!new_type->canBeUsedAsVersion())
+        throw Exception("Cannot alter version column " + backQuoteIfNeed(column_name) +
+            " to type " + new_type->getName() +
+            " because version column must be of an integer type or of type Date or DateTime"
+            , ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+
+    auto which_new_type = WhichDataType(new_type);
+    auto which_old_type = WhichDataType(old_type);
+
+    /// Check alter to different sign or float -> int and so on
+    if ((which_old_type.isInt() && !which_new_type.isInt())
+        || (which_old_type.isUInt() && !which_new_type.isUInt())
+        || (which_old_type.isDate() && !which_new_type.isDate())
+        || (which_old_type.isDateTime() && !which_new_type.isDateTime())
+        || (which_old_type.isFloat() && !which_new_type.isFloat()))
+    {
+        throw Exception("Cannot alter version column " + backQuoteIfNeed(column_name) +
+            " from type " + old_type->getName() +
+            " to type " + new_type->getName() + " because new type will change sort order of version column." +
+            " The only possible conversion is expansion of the number of bytes of the current type."
+            , ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+    }
+
+    /// Check alter to smaller size: UInt64 -> UInt32 and so on
+    if (new_type->getSizeOfValueInMemory() < old_type->getSizeOfValueInMemory())
+    {
+        throw Exception("Cannot alter version column " + backQuoteIfNeed(column_name) +
+            " from type " + old_type->getName() +
+            " to type " + new_type->getName() + " because new type is smaller than current in the number of bytes." +
+            " The only possible conversion is expansion of the number of bytes of the current type."
+            , ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+    }
+}
+
 }
 
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const
@@ -1414,6 +1453,18 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         if (command.partition)
         {
             getPartitionIDFromQuery(command.partition, global_context);
+        }
+
+        /// Some type changes for version column is allowed despite it's a part of sorting key
+        if (command.type == AlterCommand::MODIFY_COLUMN && command.column_name == merging_params.version_column)
+        {
+            const IDataType * new_type = command.data_type.get();
+            const IDataType * old_type = old_types[command.column_name];
+
+            checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
+
+            /// No other checks required
+            continue;
         }
 
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
@@ -2987,28 +3038,31 @@ ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, SpacePtr spa
     return space->reserve(expected_size);
 }
 
-ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_size,
-        const IMergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t time_of_move,
-        size_t min_volume_index,
-        bool is_insert) const
+ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(
+    const StorageMetadataPtr & metadata_snapshot,
+    UInt64 expected_size,
+    const IMergeTreeDataPart::TTLInfos & ttl_infos,
+    time_t time_of_move,
+    size_t min_volume_index,
+    bool is_insert) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move, min_volume_index, is_insert);
+    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(metadata_snapshot, expected_size, ttl_infos, time_of_move, min_volume_index, is_insert);
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
-ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_size,
-        const IMergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t time_of_move,
-        size_t min_volume_index,
-        bool is_insert) const
+ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
+    const StorageMetadataPtr & metadata_snapshot,
+    UInt64 expected_size,
+    const IMergeTreeDataPart::TTLInfos & ttl_infos,
+    time_t time_of_move,
+    size_t min_volume_index,
+    bool is_insert) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
     ReservationPtr reservation;
 
     auto move_ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_move, true);
