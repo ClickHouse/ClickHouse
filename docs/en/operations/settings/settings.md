@@ -2034,18 +2034,18 @@ Default value: `120` seconds.
 
 Enables or disables keeping of the `Nullable` data type in [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) operations.
 
-If set, `CAST(something_nullable AS Type)` returns `Nullable(Type)`.
+When the setting is enabled and the argument of `CAST` function is `Nullable`, the result is also transformed to `Nullable` type. When the setting is disabled, the result always has the destination type exactly.
 
 Possible values:
 
--  0 — The final type of `CAST` exactly the destination data type specified.
--  1 — The final type of `CAST` becomes `Nullable(DestinationDataType)`. 
+-  0 — The `CAST` result has exactly the destination type specified.
+-  1 — If the argument type is `Nullable`, the `CAST` result is transformed to `Nullable(DestinationDataType)`. 
 
 Default value: `0`.
 
 **Examples** 
 
-The following query exactly results in the destination data type:
+The following query results in the destination data type exactly:
 
 ```sql
 SET cast_keep_nullable = 0;
@@ -2077,7 +2077,7 @@ Result:
 
 **See Also** 
 
--   [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) operator
+-   [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function
 
 ## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
 

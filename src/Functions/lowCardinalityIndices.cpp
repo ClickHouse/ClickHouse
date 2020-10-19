@@ -41,11 +41,11 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         auto arg_num = arguments[0];
-        const auto & arg = block[arg_num];
-        auto & res = block[result];
+        const auto & arg = columns[arg_num];
+        auto & res = columns[result];
         auto indexes_col = typeid_cast<const ColumnLowCardinality *>(arg.column.get())->getIndexesPtr();
         auto new_indexes_col = ColumnUInt64::create(indexes_col->size());
         auto & data = new_indexes_col->getData();

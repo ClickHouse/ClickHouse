@@ -46,7 +46,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
         auto column = ColumnUInt64::create();
         auto & data = column->getData();
@@ -54,7 +54,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
             data[i] = i;
 
-        block[result].column = std::move(column);
+        columns[result].column = std::move(column);
     }
 };
 

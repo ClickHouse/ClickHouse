@@ -53,18 +53,18 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t /*input_rows_count*/) const override
     {
-        if (!(executeType<UInt8>(block, result)
-            || executeType<UInt16>(block, result)
-            || executeType<UInt32>(block, result)
-            || executeType<UInt64>(block, result)
-            || executeType<Int8>(block, result)
-            || executeType<Int16>(block, result)
-            || executeType<Int32>(block, result)
-            || executeType<Int64>(block, result)))
-            throw Exception("Illegal column " + block[0].column->getName()
-                + " of argument of function " + getName(),
+        if (!(executeType<UInt8>(columns, result)
+            || executeType<UInt16>(columns, result)
+            || executeType<UInt32>(columns, result)
+            || executeType<UInt64>(columns, result)
+            || executeType<Int8>(columns, result)
+            || executeType<Int16>(columns, result)
+            || executeType<Int32>(columns, result)
+            || executeType<Int64>(columns, result)))
+            throw Exception("Illegal column " + columns[0].column->getName()
+                            + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
@@ -89,9 +89,9 @@ private:
     }
 
     template <typename T>
-    bool executeType(Block & block, size_t result) const
+    bool executeType(ColumnsWithTypeAndName & columns, size_t result) const
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block[0].column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(columns[0].column.get()))
         {
             auto col_to = ColumnString::create();
 
@@ -112,7 +112,7 @@ private:
             }
 
             buf_to.finalize();
-            block[result].column = std::move(col_to);
+            columns[result].column = std::move(col_to);
         }
         else
         {
