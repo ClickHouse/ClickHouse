@@ -99,6 +99,12 @@ if (COMPILER_CLANG)
 
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
+    # Warn if linker have to build a binary with executable stack (security issue).
+    # add_link_options(LINKER:--warn-execstack)
+    # Unfortunately CH contains many assembler files without `.section       .note.GNU-stack,"",@progbits`
+    # That's why we just enforce non-executable stack.
+    add_link_options(LINKER:-z,noexecstack)
+    add_link_options(LINKER:--fatal-warnings)
 elseif (COMPILER_GCC)
     # Add compiler options only to c++ compiler
     function(add_cxx_compile_options option)
@@ -196,4 +202,10 @@ elseif (COMPILER_GCC)
         # For some reason (bug in gcc?) macro 'GCC diagnostic ignored "-Wstringop-overflow"' doesn't help.
         add_cxx_compile_options(-Wno-stringop-overflow)
     endif()
+    # Warn if linker have to build a binary with executable stack (security issue).
+    # add_link_options(LINKER:--warn-execstack)
+    # Unfortunately CH contains many assembler files without `.section       .note.GNU-stack,"",@progbits`
+    # That's why we just enforce non-executable stack.
+    add_link_options(LINKER:-z,noexecstack)
+    add_link_options(LINKER:--fatal-warnings)
 endif ()
