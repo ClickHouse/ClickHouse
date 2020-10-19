@@ -1,6 +1,6 @@
 # ClickHouse S3 Zero Copy Replication
 
-Говнокод просто для теста, не production-ready ни разу.
+Код просто для теста, не production-ready ни разу.
 
 [Ветка](https://github.com/ianton-ru/ClickHouse/tree/s3_zero_copy_replication)
 
