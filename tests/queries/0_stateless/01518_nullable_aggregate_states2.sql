@@ -2,11 +2,11 @@ DROP TABLE IF EXISTS testNullableStates;
 DROP TABLE IF EXISTS testNullableStatesAgg;
 
 CREATE TABLE testNullableStates (
-   ts DateTime, 
-   id String, 
-   string Nullable(String), 
-   float64 Nullable(Float64), 
-   float32 Nullable(Float32), 
+   ts DateTime,
+   id String,
+   string Nullable(String),
+   float64 Nullable(Float64),
+   float32 Nullable(Float32),
    decimal325 Nullable(Decimal32(5)),
    date Nullable(Date),
    datetime Nullable(DateTime),
@@ -100,47 +100,47 @@ ORDER BY id;
 
 insert into testNullableStatesAgg
 select
-   ts DateTime, 
-   id String, 
-   minState(string) stringMin, 
-   maxState(string) stringMax, 
-   minState(float64) float64Min, 
-   maxState(float64) float64Max, 
-   avgState(float64) float64Avg, 
-   sumState(float64) float64Sum, 
-   minState(float32) float32Min, 
-   maxState(float32) float32Max, 
-   avgState(float32) float32Avg, 
-   sumState(float32) float32Sum, 
-   minState(decimal325) decimal325Min, 
-   maxState(decimal325) decimal325Max, 
-   avgState(decimal325) decimal325Avg, 
-   sumState(decimal325) decimal325Sum, 
-   minState(date) dateMin, 
-   maxState(date) dateMax, 
-   minState(datetime) datetimeMin, 
-   maxState(datetime) datetimeMax, 
-   minState(datetime64) datetime64Min, 
-   maxState(datetime64) datetime64Max, 
-   minState(int64) int64Min, 
-   maxState(int64) int64Max, 
-   avgState(int64) int64Avg, 
-   sumState(int64) int64Sum, 
-   minState(int32) int32Min, 
-   maxState(int32) int32Max, 
-   avgState(int32) int32Avg, 
-   sumState(int32) int32Sum, 
-   minState(int16) int16Min, 
-   maxState(int16) int16Max, 
-   avgState(int16) int16Avg, 
-   sumState(int16) int16Sum, 
-   minState(int8) int8Min, 
-   maxState(int8) int8Max, 
-   avgState(int8) int8Avg, 
+   ts DateTime,
+   id String,
+   minState(string) stringMin,
+   maxState(string) stringMax,
+   minState(float64) float64Min,
+   maxState(float64) float64Max,
+   avgState(float64) float64Avg,
+   sumState(float64) float64Sum,
+   minState(float32) float32Min,
+   maxState(float32) float32Max,
+   avgState(float32) float32Avg,
+   sumState(float32) float32Sum,
+   minState(decimal325) decimal325Min,
+   maxState(decimal325) decimal325Max,
+   avgState(decimal325) decimal325Avg,
+   sumState(decimal325) decimal325Sum,
+   minState(date) dateMin,
+   maxState(date) dateMax,
+   minState(datetime) datetimeMin,
+   maxState(datetime) datetimeMax,
+   minState(datetime64) datetime64Min,
+   maxState(datetime64) datetime64Max,
+   minState(int64) int64Min,
+   maxState(int64) int64Max,
+   avgState(int64) int64Avg,
+   sumState(int64) int64Sum,
+   minState(int32) int32Min,
+   maxState(int32) int32Max,
+   avgState(int32) int32Avg,
+   sumState(int32) int32Sum,
+   minState(int16) int16Min,
+   maxState(int16) int16Max,
+   avgState(int16) int16Avg,
+   sumState(int16) int16Sum,
+   minState(int8) int8Min,
+   maxState(int8) int8Max,
+   avgState(int8) int8Avg,
    sumState(int8) int8Sum
 from testNullableStates
 group by ts, id;
-    
+
 OPTIMIZE TABLE testNullableStatesAgg FINAL;
 
 select count() from testNullableStates;
@@ -152,14 +152,14 @@ select ' ---- select without states ---- ';
 SELECT id, count(),
     min(string),
     max(string),
-    min(float64),
-    max(float64),
-    avg(float64),
-    sum(float64),
-    min(float32),
-    max(float32),
-    avg(float32),
-    sum(float32),
+    floor(min(float64),5),
+    floor(max(float64),5),
+    floor(avg(float64),5),
+    floor(sum(float64),5),
+    floor(min(float32),5),
+    floor(max(float32),5),
+    floor(avg(float32),5),
+    floor(sum(float32),5),
     min(decimal325),
     max(decimal325),
     avg(decimal325),
@@ -185,8 +185,8 @@ SELECT id, count(),
     min(int8),
     max(int8),
     avg(int8),
-    sum(int8)                
-FROM testNullableStates 
+    sum(int8)
+FROM testNullableStates
 GROUP BY id
 ORDER BY id ASC;
 
@@ -195,14 +195,14 @@ select ' ---- select with states ---- ';
 SELECT id, count(),
     minMerge(stringMin),
     maxMerge(stringMax),
-    minMerge(float64Min),
-    maxMerge(float64Max),
-    avgMerge(float64Avg),
-    sumMerge(float64Sum),
-    minMerge(float32Min),
-    maxMerge(float32Max),
-    avgMerge(float32Avg),
-    sumMerge(float32Sum),
+    floor(minMerge(float64Min),5),
+    floor(maxMerge(float64Max),5),
+    floor(avgMerge(float64Avg),5),
+    floor(sumMerge(float64Sum),5),
+    floor(minMerge(float32Min),5),
+    floor(maxMerge(float32Max),5),
+    floor(avgMerge(float32Avg),5),
+    floor(sumMerge(float32Sum),5),
     minMerge(decimal325Min),
     maxMerge(decimal325Max),
     avgMerge(decimal325Avg),
@@ -228,8 +228,8 @@ SELECT id, count(),
     minMerge(int8Min),
     maxMerge(int8Max),
     avgMerge(int8Avg),
-    sumMerge(int8Sum)              
-FROM testNullableStatesAgg   
+    sumMerge(int8Sum)
+FROM testNullableStatesAgg
 GROUP BY id
 ORDER BY id ASC;
 
@@ -239,14 +239,14 @@ select ' ---- select row with nulls without states ---- ';
 SELECT id, count(),
     min(string),
     max(string),
-    min(float64),
-    max(float64),
-    avg(float64),
-    sum(float64),
-    min(float32),
-    max(float32),
-    avg(float32),
-    sum(float32),
+    floor(min(float64),5),
+    floor(max(float64),5),
+    floor(avg(float64),5),
+    floor(sum(float64),5),
+    floor(min(float32),5),
+    floor(max(float32),5),
+    floor(avg(float32),5),
+    floor(sum(float32),5),
     min(decimal325),
     max(decimal325),
     avg(decimal325),
@@ -272,8 +272,8 @@ SELECT id, count(),
     min(int8),
     max(int8),
     avg(int8),
-    sum(int8)                
-FROM testNullableStates 
+    sum(int8)
+FROM testNullableStates
 WHERE id = '-2'
 GROUP BY id
 ORDER BY id ASC;
@@ -283,14 +283,14 @@ select ' ---- select row with nulls with states ---- ';
 SELECT id, count(),
     minMerge(stringMin),
     maxMerge(stringMax),
-    minMerge(float64Min),
-    maxMerge(float64Max),
-    avgMerge(float64Avg),
-    sumMerge(float64Sum),
-    minMerge(float32Min),
-    maxMerge(float32Max),
-    avgMerge(float32Avg),
-    sumMerge(float32Sum),
+    floor(minMerge(float64Min),5),
+    floor(maxMerge(float64Max),5),
+    floor(avgMerge(float64Avg),5),
+    floor(sumMerge(float64Sum),5),
+    floor(minMerge(float32Min),5),
+    floor(maxMerge(float32Max),5),
+    floor(avgMerge(float32Avg),5),
+    floor(sumMerge(float32Sum),5),
     minMerge(decimal325Min),
     maxMerge(decimal325Max),
     avgMerge(decimal325Avg),
@@ -316,8 +316,8 @@ SELECT id, count(),
     minMerge(int8Min),
     maxMerge(int8Max),
     avgMerge(int8Avg),
-    sumMerge(int8Sum)              
-FROM testNullableStatesAgg  
+    sumMerge(int8Sum)
+FROM testNullableStatesAgg
 WHERE id = '-2'
 GROUP BY id
 ORDER BY id ASC;
@@ -328,14 +328,14 @@ select ' ---- select no rows without states ---- ';
 SELECT count(),
     min(string),
     max(string),
-    min(float64),
-    max(float64),
-    avg(float64),
-    sum(float64),
-    min(float32),
-    max(float32),
-    avg(float32),
-    sum(float32),
+    floor(min(float64),5),
+    floor(max(float64),5),
+    floor(avg(float64),5),
+    floor(sum(float64),5),
+    floor(min(float32),5),
+    floor(max(float32),5),
+    floor(avg(float32),5),
+    floor(sum(float32),5),
     min(decimal325),
     max(decimal325),
     avg(decimal325),
@@ -361,8 +361,8 @@ SELECT count(),
     min(int8),
     max(int8),
     avg(int8),
-    sum(int8)                
-FROM testNullableStates 
+    sum(int8)
+FROM testNullableStates
 WHERE id = '-22';
 
 select ' ---- select no rows with states ---- ';
@@ -370,14 +370,14 @@ select ' ---- select no rows with states ---- ';
 SELECT count(),
     minMerge(stringMin),
     maxMerge(stringMax),
-    minMerge(float64Min),
-    maxMerge(float64Max),
-    avgMerge(float64Avg),
-    sumMerge(float64Sum),
-    minMerge(float32Min),
-    maxMerge(float32Max),
-    avgMerge(float32Avg),
-    sumMerge(float32Sum),
+    floor(minMerge(float64Min),5),
+    floor(maxMerge(float64Max),5),
+    floor(avgMerge(float64Avg),5),
+    floor(sumMerge(float64Sum),5),
+    floor(minMerge(float32Min),5),
+    floor(maxMerge(float32Max),5),
+    floor(avgMerge(float32Avg),5),
+    floor(sumMerge(float32Sum),5),
     minMerge(decimal325Min),
     maxMerge(decimal325Max),
     avgMerge(decimal325Avg),
@@ -403,10 +403,9 @@ SELECT count(),
     minMerge(int8Min),
     maxMerge(int8Max),
     avgMerge(int8Avg),
-    sumMerge(int8Sum)              
-FROM testNullableStatesAgg   
+    sumMerge(int8Sum)
+FROM testNullableStatesAgg
 WHERE id = '-22';
 
 DROP TABLE testNullableStates;
 DROP TABLE testNullableStatesAgg;
-
