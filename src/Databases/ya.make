@@ -19,11 +19,11 @@ SRCS(
     MySQL/ConnectionMySQLSettings.cpp
     MySQL/DatabaseConnectionMySQL.cpp
     MySQL/DatabaseMaterializeMySQL.cpp
+    MySQL/DatabaseWithMySQLConnection.cpp
     MySQL/FetchTablesColumnsList.cpp
     MySQL/MaterializeMetadata.cpp
     MySQL/MaterializeMySQLSettings.cpp
     MySQL/MaterializeMySQLSyncThread.cpp
-    MySQL/DatabaseWithMySQLConnection.cpp
 
 )
 
