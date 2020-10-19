@@ -49,7 +49,7 @@ public:
 
         Poco::File(file_path.parent()).createDirectories();
 
-        auto increment = Increment(file_path);
+        auto increment = Increment(file_path.toString());
 
         columns[result].column = DataTypeUInt64().createColumnConst(input_rows_count, increment.get(true));
     }
