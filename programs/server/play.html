@@ -1,0 +1,294 @@
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>ClickHouse Query</title>
+
+    <style type="text/css">
+        html, body
+        {
+            font-family: Sans-Serif;
+            background: #DDF8FF; /*#FFFBEF;*/
+        }
+
+/*        html
+        {
+            overflow-x: scroll;
+        }*/
+
+        div
+        {
+            width: 100%;
+        }
+
+        .monospace
+        {
+            font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, Monospace;
+        }
+
+        .shadow
+        {
+            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.1);
+        }
+
+        input, textarea
+        {
+            border: 1px solid #EEE;
+            font-size: 11pt;
+            padding: 0.25rem;
+            background-color: #FFF;
+        }
+
+        #query
+        {
+            height: 20%;
+            width: 100%;
+        }
+
+        #inputs
+        {
+            white-space: nowrap;
+            width: 100%;
+        }
+
+        #url
+        {
+            width: 70%;
+        }
+
+        #user
+        {
+            width: 15%;
+        }
+
+        #password
+        {
+            width: 15%;
+        }
+
+        #run_div
+        {
+            margin-top: 1rem;
+        }
+
+        #run
+        {
+            color: #000;
+            background-color: #FFAA00;
+            padding: 0.25rem 1rem;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #run:hover
+        {
+            color: #FFF;
+            background-color: #F00;
+        }
+
+        #stats
+        {
+            float: right;
+            color: #888;
+        }
+
+        .hint
+        {
+            color: #888;
+        }
+
+        #data_div
+        {
+            margin-top: 1rem;
+        }
+
+        #data-table
+        {
+            border-collapse: collapse;
+            border-spacing: 0;
+            min-width: calc(100vw - 2rem);
+            /*z-index: -1;*/
+        }
+
+        td
+        {
+            background-color: #FFF;
+            white-space: nowrap;
+            max-width: 50vw;
+            overflow: hidden;
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #EEE;
+            white-space: pre;
+        }
+
+        td.right
+        {
+            text-align: right;
+        }
+
+        th
+        {
+            padding: 0.25rem 0.5rem;
+            text-align: middle;
+            background-color: #F8F8F8;
+            border: 1px solid #EEE;
+        }
+
+        tr:hover, tr:hover td
+        {
+            background-color: #FFF8EF;
+        }
+
+        tr:hover
+        {
+            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.1);
+        }
+
+        #error
+        {
+            background: #FEE;
+            white-space: pre-wrap;
+            padding: 0.5rem 1rem;
+            display: none;
+        }
+
+        td.left:hover
+        {
+            white-space: pre-wrap;
+        }
+
+        .null
+        {
+            color: #A88;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="inputs">
+        <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" /><input class="monospace shadow" id="user" type="text" value="default" /><input class="monospace shadow" id="password" type="password" />
+    </div>
+    <div>
+        <textarea class="monospace shadow" id="query"></textarea>
+    </div>
+    <div id="run_div">
+        <span class="shadow" id="run">Run</span>
+        <span class="hint">&nbsp;(Ctrl+Enter)</span>
+        <span id="stats"></span>
+    </div>
+    <div id="data_div">
+        <table class="monospace shadow" id="data-table">
+        </table>
+    </div>
+    <p id="error" class="monospace shadow">
+    </p>
+</body>
+
+<script type="text/javascript">
+    function post()
+    {
+        var url = document.getElementById('url').value +
+            '?add_http_cors_header=1' +
+            '&user=' + encodeURIComponent(document.getElementById('user').value) +
+            '&password=' + encodeURIComponent(document.getElementById('password').value) +
+            '&default_format=JSONCompact' +
+            '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
+
+        var query = document.getElementById('query').value;
+
+        var xhr = new XMLHttpRequest;
+
+        xhr.open('POST', url, true);
+        xhr.send(query);
+
+        xhr.onreadystatechange = function()
+        {
+            if (this.readyState === XMLHttpRequest.DONE) {
+                if (this.status === 200) {
+                    renderResult(JSON.parse(this.response));
+                } else {
+                    renderError(this.response);
+                }
+            } else {
+                console.log(this);
+            }
+        }
+    }
+
+    document.getElementById('run').onclick = function()
+    {
+        post();
+    }
+
+    document.getElementById('query').onkeypress = function(event)
+    {
+        if (event.ctrlKey && event.charCode == 13) {
+            post();
+        }
+    }
+
+    function clear()
+    {
+        var table = document.getElementById('data-table');
+        while (table.firstChild) {
+            table.removeChild(table.lastChild);
+        }
+
+        document.getElementById('error').innerText = '';
+        document.getElementById('error').style.display = 'none';
+    }
+
+    function renderResult(response)
+    {
+        //console.log(response);
+        clear();
+
+        var stats = document.getElementById('stats');
+        stats.innerText = 'Elapsed: ' + response.statistics.elapsed.toFixed(3) + " sec, read " + response.statistics.rows_read + " rows.";
+
+        var thead = document.createElement('thead');
+        for (var idx in response.meta) {
+            var th = document.createElement('th');
+            var name = document.createTextNode(response.meta[idx].name);
+            th.appendChild(name);
+            thead.appendChild(th);
+        }
+
+        var max_rows = 10000 / response.meta.length;
+        var row_num = 0;
+
+        var tbody = document.createElement('tbody');
+        for (var row_idx in response.data) {
+            var tr = document.createElement('tr');
+            for (var col_idx in response.data[row_idx]) {
+                var td = document.createElement('td');
+                var cell = response.data[row_idx][col_idx];
+                var is_null = (cell === null);
+                var content = document.createTextNode(is_null ? 'ᴺᵁᴸᴸ' : cell);
+                td.appendChild(content);
+                td.className = response.meta[col_idx].type.match(/^(U?Int|Decimal|Float)/) ? 'right' : 'left';
+                if (is_null) {
+                    td.className += ' null';
+                }
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+
+            ++row_num;
+            if (row_num >= max_rows) {
+                break;
+            }
+        }
+
+        var table = document.getElementById('data-table');
+        table.appendChild(thead);
+        table.appendChild(tbody);
+    }
+
+    function renderError(response)
+    {
+        clear();
+        document.getElementById('error').innerText = response;
+        document.getElementById('error').style.display = 'block';
+    }
+</script>
+</html>
