@@ -105,7 +105,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 -   تنظیمات نقطه پایانی.
 
-    بررسی [_نوست فهرست](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) و [_صادر کردن](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) تنظیمات.
+    بررسی [\_نوست فهرست](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) و [\_صادر کردن](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) تنظیمات.
 
     سرور کلیک می پذیرد اتصالات مجنون تنها به طور پیش فرض.
 
@@ -117,7 +117,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
     بررسی:
 
-    -   این [_شروع مجدد](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) تنظیمات.
+    -   این [\_شروع مجدد](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) تنظیمات.
     -   تنظیمات برای [SSL sertificates](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     استفاده از پارامترهای مناسب در حالی که اتصال. برای مثال با استفاده از `port_secure` پارامتر با `clickhouse_client`.

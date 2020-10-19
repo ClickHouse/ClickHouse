@@ -57,7 +57,7 @@ Motor fromlardan `*Log` aile başarısızlık otomatik veri kurtarma sağlamaz. 
 Tablo bozuksa, bozuk olmayan verileri başka bir tabloya kopyalayabilirsiniz. Bunu yapmak için :
 
 1.  Bozuk tablo ile aynı yapıya sahip yeni bir tablo oluşturun. Bunu yapmak için sorguyu yürütün `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  Ayarla... [max_threads](../../operations/settings/settings.md#settings-max_threads) bir sonraki sorguyu tek bir iş parçacığında işlemek için 1 değeri. Bunu yapmak için sorguyu çalıştırın `SET max_threads = 1`.
+2.  Ayarla... [max\_threads](../../operations/settings/settings.md#settings-max_threads) bir sonraki sorguyu tek bir iş parçacığında işlemek için 1 değeri. Bunu yapmak için sorguyu çalıştırın `SET max_threads = 1`.
 3.  Sorgu yürütme `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. Bu istek bozuk olmayan verileri bozuk tablodan başka bir tabloya kopyalar. Yalnızca bozuk parçadan önceki veriler kopyalanır.
 4.  Yeniden Başlat `clickhouse-client` sıfırlamak için `max_threads` değer.
 
@@ -253,7 +253,7 @@ Bu `OPTMIZE` sorgu için de desteklenmektedir [MaterializedView](../../engines/t
 
 Ne zaman `OPTIMIZE` ile kullanılır [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) Tablo motorları ailesi, ClickHouse birleştirme için bir görev oluşturur ve tüm düğümlerde yürütülmeyi bekler (eğer `replication_alter_partitions_sync` ayar etkinse) ' dir.
 
--   Eğer `OPTIMIZE` herhangi bir nedenle bir birleştirme gerçekleştirmez, müşteriye bildirmez. Bildirimleri etkinleştirmek için [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) ayar.
+-   Eğer `OPTIMIZE` herhangi bir nedenle bir birleştirme gerçekleştirmez, müşteriye bildirmez. Bildirimleri etkinleştirmek için [optimize\_throw\_if\_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) ayar.
 -   Belirtir aseniz bir `PARTITION`, sadece belirtilen bölüm optimize edilmiştir. [Bölüm ifadesi nasıl ayarlanır](alter.md#alter-how-to-specify-part-expr).
 -   Belirtir specifyseniz `FINAL`, optimizasyon, tüm veriler zaten bir parçada olsa bile gerçekleştirilir.
 -   Belirtir specifyseniz `DEDUPLICATE`, sonra tamamen aynı satırlar tekilleştirilecektir (tüm sütunlar karşılaştırılır), sadece MergeTree motoru için anlamlıdır.

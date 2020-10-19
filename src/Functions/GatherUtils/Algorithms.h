@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/FieldVisitors.h>
 #include "Sources.h"
 #include "Sinks.h"
@@ -12,15 +12,10 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GatherUtils
 {
-
-inline constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
-
 
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
 
@@ -35,28 +30,10 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 template <typename T, typename U>
 void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
-    using NativeU = typename NativeType<U>::Type;
-
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
-        const auto & src = slice.data[i];
-        auto & dst = sink.elements[sink.current_offset];
-
-        if constexpr (OverBigInt<T> || OverBigInt<U>)
-        {
-            if constexpr (std::is_same_v<U, UInt128>)
-            {
-                throw Exception("No conversion between UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
-            }
-            else if constexpr (IsDecimalNumber<T>)
-                dst = bigint_cast<NativeU>(src.value);
-            else
-                dst = bigint_cast<NativeU>(src);
-        }
-        else
-            dst = static_cast<NativeU>(src);
-
+        sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
         ++sink.current_offset;
     }
 }
@@ -558,7 +535,7 @@ bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
 {
     /// TODO: Decimal scale
     if constexpr (IsDecimalNumber<T> && IsDecimalNumber<U>)
-        return accurate::equalsOp(first.data[first_ind].value, second.data[second_ind].value);
+        return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename U::NativeType(second.data[second_ind]));
     else if constexpr (IsDecimalNumber<T> || IsDecimalNumber<U>)
         return false;
     else
@@ -588,7 +565,7 @@ bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                           size_t second_ind [[maybe_unused]])
 {
     if constexpr (IsDecimalNumber<T>)
-        return accurate::equalsOp(first.data[first_ind].value, first.data[second_ind].value);
+        return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename T::NativeType(first.data[second_ind]));
     else
         return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);
 }
@@ -696,10 +673,6 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             if (size >= 0)
             {
                 auto length = static_cast<size_t>(size);
-                if (length > MAX_ARRAY_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
-                        length, MAX_ARRAY_SIZE);
-
                 if (array_size <= length)
                 {
                     writeSlice(array_source.getWhole(), sink);
@@ -712,10 +685,6 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             else
             {
                 auto length = static_cast<size_t>(-size);
-                if (length > MAX_ARRAY_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
-                        length, MAX_ARRAY_SIZE);
-
                 if (array_size <= length)
                 {
                     for (size_t i = array_size; i < length; ++i)
@@ -745,10 +714,6 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         if (size >= 0)
         {
             auto length = static_cast<size_t>(size);
-            if (length > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
-                    length, MAX_ARRAY_SIZE);
-
             if (array_size <= length)
             {
                 writeSlice(array_source.getWhole(), sink);
@@ -761,10 +726,6 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         else
         {
             auto length = static_cast<size_t>(-size);
-            if (length > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
-                    length, MAX_ARRAY_SIZE);
-
             if (array_size <= length)
             {
                 for (size_t i = array_size; i < length; ++i)
@@ -782,4 +743,3 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
 }
 
 }
-
