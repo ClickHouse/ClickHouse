@@ -115,14 +115,25 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const auto & mysql_user_name = safeGetLiteralValue<String>(arguments[2], engine_name);
         const auto & mysql_user_password = safeGetLiteralValue<String>(arguments[3], engine_name);
 
+        const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
+
+        MySQLConnectionArgs args
+        {
+            .hostname = remote_host_name,
+            .port = remote_port,
+            .database_name = mysql_database_name,
+            .username = mysql_user_name,
+            .user_password = mysql_user_password
+        };
+
         try
         {
-            const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
-            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
+
+//            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
 
             if (engine_name == "MaterializeMySQL")
             {
-                MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
+//                MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
 
                 auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
 
@@ -130,8 +141,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                     materialize_mode_settings->loadFromQuery(*engine_define);
 
                 return std::make_shared<DatabaseMaterializeMySQL>(
-                    context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_pool), std::move(client)
-                    , std::move(materialize_mode_settings));
+                    context, database_name, metadata_path, engine_define, std::move(materialize_mode_settings), args);
             }
 
             auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
@@ -140,7 +150,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
 
             return std::make_shared<DatabaseConnectionMySQL>(
-                context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_database_settings), std::move(mysql_pool));
+                context, database_name, metadata_path, engine_define, std::move(mysql_database_settings), args);
         }
         catch (...)
         {

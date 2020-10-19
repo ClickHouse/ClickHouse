@@ -6,9 +6,9 @@
 
 #include <mysqlxx/Pool.h>
 #include <Core/MySQL/MySQLClient.h>
-#include <Databases/IDatabase.h>
 #include <Databases/MySQL/MaterializeMySQLSettings.h>
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#include <Databases/MySQL/DatabaseWithMySQLConnection.h>
 
 namespace DB
 {
@@ -17,13 +17,12 @@ namespace DB
  *
  *  All table structure and data will be written to the local file system
  */
-class DatabaseMaterializeMySQL : public IDatabase
+class DatabaseMaterializeMySQL : public DatabaseWithMySQLConnection
 {
 public:
     DatabaseMaterializeMySQL(
         const Context & context, const String & database_name_, const String & metadata_path_,
-        const IAST * database_engine_define_, const String & mysql_database_name_, mysqlxx::Pool && pool_,
-        MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_);
+        const IAST * database_engine_define_, std::unique_ptr<MaterializeMySQLSettings> settings_, const MySQLConnectionArgs & args_);
 
     void rethrowExceptionIfNeed() const;
 

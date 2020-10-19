@@ -25,6 +25,7 @@
 
 #    include <Poco/DirectoryIterator.h>
 #    include <Poco/File.h>
+#include <cstring>
 
 
 namespace DB
@@ -45,17 +46,14 @@ static constexpr const std::chrono::seconds cleaner_sleep_time{30};
 static const std::chrono::seconds lock_acquire_timeout{10};
 
 DatabaseConnectionMySQL::DatabaseConnectionMySQL(const Context & context, const String & database_name_, const String & metadata_path_,
-    const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, std::unique_ptr<ConnectionMySQLSettings> settings_, mysqlxx::Pool && pool)
-    : IDatabase(database_name_)
+    const ASTStorage * database_engine_define_, std::unique_ptr<ConnectionMySQLSettings> settings_, const MySQLConnectionArgs & args_)
+    : DatabaseWithMySQLConnection(database_name_, args_)
     , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
-    , database_name_in_mysql(database_name_in_mysql_)
+    , database_name_in_mysql(args_.database_name)
     , database_settings(std::move(settings_))
-    , mysql_pool(std::move(pool))
 {
-    empty(); /// test database is works fine.
-    thread = ThreadFromGlobalPool{&DatabaseConnectionMySQL::cleanOutdatedTables, this};
 }
 
 bool DatabaseConnectionMySQL::empty() const
@@ -239,7 +237,7 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(const std::map
         }
 
         local_tables_cache[table_name] = std::make_pair(table_modification_time, StorageMySQL::create(
-            StorageID(database_name, table_name), std::move(mysql_pool), database_name_in_mysql, table_name,
+            StorageID(database_name, table_name), std::move(getMySQLConnectionPool()), database_name_in_mysql, table_name,
             false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, global_context));
     }
 }
@@ -260,7 +258,7 @@ std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTim
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(getMySQLConnectionPool().get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
 
     while (Block block = result.read())
     {
@@ -280,7 +278,7 @@ std::map<String, NamesAndTypesList> DatabaseConnectionMySQL::fetchTablesColumnsL
     const auto & settings = context.getSettingsRef();
 
     return DB::fetchTablesColumnsList(
-            mysql_pool,
+            getMySQLConnectionPool(),
             database_name_in_mysql,
             tables_name,
             settings.external_table_functions_use_nulls,
@@ -377,21 +375,42 @@ String DatabaseConnectionMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseConnectionMySQL::loadStoredObjects(Context &, bool, bool /*force_attach*/)
+void DatabaseConnectionMySQL::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
-
-    std::lock_guard<std::mutex> lock{mutex};
-    Poco::DirectoryIterator iterator(getMetadataPath());
-
-    for (Poco::DirectoryIterator end; iterator != end; ++iterator)
+    try
     {
-        if (iterator->isFile() && endsWith(iterator.name(), suffix))
         {
-            const auto & filename = iterator.name();
-            const auto & table_name = unescapeForFileName(filename.substr(0, filename.size() - strlen(suffix)));
-            remove_or_detach_tables.emplace(table_name);
+            std::lock_guard<std::mutex> lock{mutex};
+
+            DatabaseWithMySQLConnection::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
+
+            Poco::DirectoryIterator iterator(getMetadataPath());
+            for (Poco::DirectoryIterator end; iterator != end; ++iterator)
+            {
+                if (iterator->isFile() && endsWith(iterator.name(), suffix))
+                {
+                    const auto & filename = iterator.name();
+                    const auto & table_name = unescapeForFileName(filename.substr(0, filename.size() - strlen(suffix)));
+                    remove_or_detach_tables.emplace(table_name);
+                }
+            }
         }
+
+        empty(); /// test database is works fine.
+        thread = ThreadFromGlobalPool{&DatabaseConnectionMySQL::cleanOutdatedTables, this};
     }
+    catch (...)
+    {
+//        tryLogCurrentException(log, "Cannot load MySQL database stored objects.");
+
+        if (!force_attach)
+            throw;
+    }
+}
+
+bool DatabaseConnectionMySQL::shouldBeEmptyOnDetach() const
+{
+    return false;
 }
 
 void DatabaseConnectionMySQL::dropTable(const Context &, const String & table_name, bool /*no_delay*/)

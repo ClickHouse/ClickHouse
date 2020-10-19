@@ -16,6 +16,7 @@
 #    include <Databases/IDatabase.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
+#    include <Databases/MySQL/DatabaseWithMySQLConnection.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <mysqlxx/Pool.h>
 #    include <mysqlxx/PoolWithFailover.h>
@@ -42,8 +43,8 @@ public:
     ~MaterializeMySQLSyncThread();
 
     MaterializeMySQLSyncThread(
-        const Context & context, const String & database_name_, const String & mysql_database_name_
-        , mysqlxx::Pool && pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_);
+        const Context & context, const String & database_name_, const String & mysql_database_name_,
+        DatabaseWithMySQLConnection * database_, MaterializeMySQLSettings * settings_);
 
     void stopSynchronization();
 
@@ -58,8 +59,9 @@ private:
     String database_name;
     String mysql_database_name;
 
-    mutable mysqlxx::Pool pool;
-    mutable MySQLClient client;
+    DatabaseWithMySQLConnection * database;
+//    mutable mysqlxx::Pool pool;
+//    mutable MySQLClient client;
     MaterializeMySQLSettings * settings;
     String query_prefix;
 

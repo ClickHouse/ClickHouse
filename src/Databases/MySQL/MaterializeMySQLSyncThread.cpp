@@ -152,9 +152,9 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
 
 MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     const Context & context, const String & database_name_, const String & mysql_database_name_,
-    mysqlxx::Pool && pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_)
+    DatabaseWithMySQLConnection * database_, MaterializeMySQLSettings * settings_)
     : log(&Poco::Logger::get("MaterializeMySQLSyncThread")), global_context(context.getGlobalContext()), database_name(database_name_)
-    , mysql_database_name(mysql_database_name_), pool(std::move(pool_)), client(std::move(client_)), settings(settings_)
+    , mysql_database_name(mysql_database_name_), database(database_), settings(settings_)
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 }
@@ -174,7 +174,8 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
             {
                 /// TODO: add gc task for `sign = -1`(use alter table delete, execute by interval. need final state)
                 UInt64 max_flush_time = settings->max_flush_data_time;
-                BinlogEventPtr binlog_event = client.readOneBinlogEvent(std::max(UInt64(1), max_flush_time - watch.elapsedMilliseconds()));
+                BinlogEventPtr binlog_event = database->getMySQLReplicaClient().readOneBinlogEvent(
+                    std::max(UInt64(1), max_flush_time - watch.elapsedMilliseconds()));
 
                 {
                     if (binlog_event)
@@ -196,8 +197,9 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
     }
     catch (...)
     {
-        client.disconnect();
         tryLogCurrentException(log);
+
+        database->getMySQLReplicaClient().disconnect();
         getDatabase(database_name).setException(std::current_exception());
     }
 }
@@ -208,13 +210,14 @@ void MaterializeMySQLSyncThread::stopSynchronization()
     {
         sync_quit = true;
         background_thread_pool->join();
-        client.disconnect();
+        database->getMySQLReplicaClient().disconnect();
     }
 }
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
-    const auto & mysql_server_version = checkVariableAndGetVersion(pool.get());
+    const auto & connection = database->getMySQLConnectionPool().get();
+    const auto & mysql_server_version = checkVariableAndGetVersion(connection);
 
     background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
         [this, mysql_server_version = mysql_server_version]() { synchronization(mysql_server_version); });
@@ -309,7 +312,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
     {
         try
         {
-            connection = pool.get();
+            connection = database->getMySQLConnectionPool().get();
             opened_transaction = false;
 
             MaterializeMetadata metadata(
@@ -339,8 +342,8 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             if (opened_transaction)
                 connection->query("COMMIT").execute();
 
-            client.connect();
-            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set);
+            database->getMySQLReplicaClient().connect();
+            database->getMySQLReplicaClient().startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set);
             return metadata;
         }
         catch (...)
@@ -367,13 +370,14 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
 
 void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata)
 {
-    metadata.transaction(client.getPosition(), [&]() { buffers.commit(global_context); });
+    metadata.transaction(database->getMySQLReplicaClient().getPosition(), [&]() { buffers.commit(global_context); });
 
     const auto & position_message = [&]()
     {
-        WriteBufferFromOwnString buf;
-        client.getPosition().dump(buf);
-        return buf.str();
+        std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
+        database->getMySQLReplicaClient().getPosition().dump(ss);
+        return ss.str();
     };
     LOG_INFO(log, "MySQL executed position: \n {}", position_message());
 }

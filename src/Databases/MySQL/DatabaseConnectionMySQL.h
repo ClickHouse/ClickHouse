@@ -8,6 +8,7 @@
 #include <Core/MultiEnum.h>
 #include <Common/ThreadPool.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/MySQL/DatabaseWithMySQLConnection.h>
 #include <Databases/MySQL/ConnectionMySQLSettings.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -30,15 +31,15 @@ enum class MySQLDataTypesSupport;
  *  It doesn't make any manipulations with filesystem.
  *  All tables are created by calling code after real-time pull-out structure from remote MySQL
  */
-class DatabaseConnectionMySQL final : public IDatabase
+class DatabaseConnectionMySQL final : public DatabaseWithMySQLConnection
 {
 public:
     ~DatabaseConnectionMySQL() override;
 
     DatabaseConnectionMySQL(
         const Context & context, const String & database_name, const String & metadata_path,
-        const ASTStorage * database_engine_define, const String & database_name_in_mysql, std::unique_ptr<ConnectionMySQLSettings> settings_,
-        mysqlxx::Pool && pool);
+        const ASTStorage * database_engine_define, std::unique_ptr<ConnectionMySQLSettings> settings_,
+        const MySQLConnectionArgs & args_);
 
     String getEngineName() const override { return "MySQL"; }
 
@@ -76,6 +77,8 @@ public:
 
     void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
+    bool shouldBeEmptyOnDetach() const override;
+
 protected:
     ASTPtr getCreateTableQueryImpl(const String & name, const Context & context, bool throw_on_error) const override;
 
@@ -89,10 +92,10 @@ private:
     std::atomic<bool> quit{false};
     std::condition_variable cond;
 
-    using MySQLPool = mysqlxx::Pool;
+//    using MySQLPool = mysqlxx::Pool;
     using ModifyTimeAndStorage = std::pair<UInt64, StoragePtr>;
 
-    mutable MySQLPool mysql_pool;
+//    mutable MySQLPool mysql_pool;
     mutable std::vector<StoragePtr> outdated_tables;
     mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
 
