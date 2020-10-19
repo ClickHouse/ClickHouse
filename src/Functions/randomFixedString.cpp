@@ -52,16 +52,16 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const size_t n = assert_cast<const ColumnConst &>(*block[arguments[0]].column).getValue<UInt64>();
+        const size_t n = assert_cast<const ColumnConst &>(*columns[arguments[0]].column).getValue<UInt64>();
 
         auto col_to = ColumnFixedString::create(n);
         ColumnFixedString::Chars & data_to = col_to->getChars();
 
         if (input_rows_count == 0)
         {
-            block[result].column = std::move(col_to);
+            columns[result].column = std::move(col_to);
             return;
         }
 
@@ -73,7 +73,7 @@ public:
         data_to.resize(total_size);
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), total_size);
 
-        block[result].column = std::move(col_to);
+        columns[result].column = std::move(col_to);
     }
 };
 
@@ -91,9 +91,9 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);
+        selector.selectAndExecute(columns, arguments, result, input_rows_count);
     }
 
     static FunctionPtr create(const Context & context)

@@ -5,7 +5,7 @@ machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 
 # 設定 {#settings}
 
-## distributed\_product\_mode {#distributed-product-mode}
+## distributed_product_mode {#distributed-product-mode}
 
 の動作を変更します [分散サブクエリ](../../sql-reference/operators/in.md).
 
@@ -25,7 +25,7 @@ ClickHouse applies this setting when the query contains the product of distribut
 -   `global` — Replaces the `IN`/`JOIN` クエリ `GLOBAL IN`/`GLOBAL JOIN.`
 -   `allow` — Allows the use of these types of subqueries.
 
-## enable\_optimize\_predicate\_expression {#enable-optimize-predicate-expression}
+## enable_optimize_predicate_expression {#enable-optimize-predicate-expression}
 
 述語プッシュダウンをオンにする `SELECT` クエリ。
 
@@ -49,7 +49,7 @@ ClickHouse applies this setting when the query contains the product of distribut
 
 もし `enable_optimize_predicate_expression = 0` 次に、第二のクエリの実行時間ははるかに長くなります。 `WHERE` 句は、サブクエリの終了後にすべてのデータに適用されます。
 
-## フォールバック\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
+## フォールバック_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
 更新されたデータが使用できない場合は、クエリを古いレプリカに強制します。 見る [複製](../../engines/table-engines/mergetree-family/replication.md).
 
@@ -59,7 +59,7 @@ ClickHouseは、テーブルの古いレプリカから最も関連性の高い�
 
 デフォルトでは、1(有効)です。
 
-## force\_index\_by\_date {#settings-force_index_by_date}
+## force_index_by_date {#settings-force_index_by_date}
 
 インデックスを日付で使用できない場合は、クエリの実行を無効にします。
 
@@ -67,7 +67,7 @@ MergeTreeファミリ内のテーブルで動作します。
 
 もし `force_index_by_date=1`,ClickHouseは、クエリにデータ範囲を制限するために使用できる日付キー条件があるかどうかをチェックします。 適切な条件がない場合は、例外をスローします。 ただし、条件によって読み取るデータ量が減少するかどうかはチェックされません。 たとえば、次の条件 `Date != ' 2000-01-01 '` テーブル内のすべてのデータと一致する場合でも許容されます（つまり、クエリを実行するにはフルスキャンが必要です）。 MergeTreeテーブル内のデータ範囲の詳細については、以下を参照してください [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md).
 
-## force\_primary\_key {#force-primary-key}
+## force_primary_key {#force-primary-key}
 
 主キーによる索引付けが不可能な場合は、クエリの実行を無効にします。
 
@@ -75,17 +75,17 @@ MergeTreeファミリ内のテーブルで動作します。
 
 もし `force_primary_key=1`,ClickHouseは、クエリにデータ範囲を制限するために使用できる主キー条件があるかどうかを確認します。 適切な条件がない場合は、例外をスローします。 ただし、条件によって読み取るデータ量が減少するかどうかはチェックされません。 MergeTreeテーブルのデータ範囲の詳細については、以下を参照してください [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md).
 
-## format\_schema {#format-schema}
+## format_schema {#format-schema}
 
 このパラメーターは、次のようなスキーマ定義を必要とする形式を使用している場合に便利です [Cap'N Proto](https://capnproto.org/) または [プロトブフ](https://developers.google.com/protocol-buffers/). 値は形式によって異なります。
 
-## fsync\_metadata {#fsync-metadata}
+## fsync_metadata {#fsync-metadata}
 
 有効または無効にします [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) 書くとき `.sql` ファイル 既定で有効になっています。
 
 ことは、あってはならないことで無効にすることもできれば、サーバは、数百万の小さなテーブルが続々と生まれてくると破壊されました。
 
-## enable\_http\_compression {#settings-enable_http_compression}
+## enable_http_compression {#settings-enable_http_compression}
 
 HTTP要求に対する応答のデータ圧縮を有効または無効にします。
 
@@ -98,15 +98,15 @@ HTTP要求に対する応答のデータ圧縮を有効または無効にしま�
 
 デフォルト値は0です。
 
-## http\_zlib\_compression\_level {#settings-http_zlib_compression_level}
+## http_zlib_compression_level {#settings-http_zlib_compression_level}
 
-HTTP要求に対する応答のデータ圧縮のレベルを次の場合に設定します [enable\_http\_compression=1](#settings-enable_http_compression).
+HTTP要求に対する応答のデータ圧縮のレベルを次の場合に設定します [enable_http_compression=1](#settings-enable_http_compression).
 
 可能な値:1から9までの数値。
 
 デフォルト値は3です。
 
-## http\_native\_compression\_disable\_checksumming\_on\_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
+## http_native_compression_disable_checksumming_on_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
 
 クライア ClickHouseネイティブ圧縮フォーマットにのみ使用されます( `gzip` または `deflate`).
 
@@ -119,7 +119,7 @@ HTTP要求に対する応答のデータ圧縮のレベルを次の場合に設�
 
 デフォルト値は0です。
 
-## send\_progress\_in\_http\_headers {#settings-send_progress_in_http_headers}
+## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 有効または無効にします `X-ClickHouse-Progress` HTTP応答ヘッダー `clickhouse-server` 応答。
 
@@ -132,7 +132,7 @@ HTTP要求に対する応答のデータ圧縮のレベルを次の場合に設�
 
 デフォルト値は0です。
 
-## max\_http\_get\_redirects {#setting-max_http_get_redirects}
+## max_http_get_redirects {#setting-max_http_get_redirects}
 
 HTTP GETリダイレクトホップの最大数を制限します。 [URL](../../engines/table-engines/special/url.md)-エンジンテーブル。 この設定は、両方のタイプのテーブルに適用されます。 [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) クエリとによって [url](../../sql-reference/table-functions/url.md) テーブル関数。
 
@@ -143,7 +143,7 @@ HTTP GETリダイレクトホップの最大数を制限します。 [URL](../..
 
 デフォルト値は0です。
 
-## input\_format\_allow\_errors\_num {#settings-input_format_allow_errors_num}
+## input_format_allow_errors_num {#settings-input_format_allow_errors_num}
 
 テキスト形式（CSV、TSVなど）から読み取るときに許容されるエラーの最大数を設定します。).
 
@@ -155,7 +155,7 @@ HTTP GETリダイレクトホップの最大数を制限します。 [URL](../..
 
 両方の場合 `input_format_allow_errors_num` と `input_format_allow_errors_ratio` を超えた場合、ClickHouseは例外をスローします。
 
-## input\_format\_allow\_errors\_ratio {#settings-input_format_allow_errors_ratio}
+## input_format_allow_errors_ratio {#settings-input_format_allow_errors_ratio}
 
 テキスト形式（CSV、TSVなど）から読み取るときに許容されるエラーの最大割合を設定します。).
 エラーの割合は、0から1の間の浮動小数点数として設定されます。
@@ -168,7 +168,7 @@ HTTP GETリダイレクトホップの最大数を制限します。 [URL](../..
 
 両方の場合 `input_format_allow_errors_num` と `input_format_allow_errors_ratio` を超えた場合、ClickHouseは例外をスローします。
 
-## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
+## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
 を有効または無効にしのSQLのパーサの場合の高速ストリームのパーサで構文解析のデータです。 この設定は、 [値](../../interfaces/formats.md#data-format-values) データ挿入時の書式。 構文解析の詳細については、以下を参照してください [構文](../../sql-reference/syntax.md) セクション
 
@@ -218,7 +218,7 @@ INSERT INTO datetime_t SELECT now()
 Ok.
 ```
 
-## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
+## input_format_values_deduce_templates_of_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
 SQL式のテンプレート控除を有効または無効にします。 [値](../../interfaces/formats.md#data-format-values) 形式。 この解析と解釈表現 `Values` 連続する行の式が同じ構造を持つ場合、はるかに高速です。 ClickHouseは式のテンプレートを推論し、このテンプレートを使用して次の行を解析し、正常に解析された行のバッチで式を評価しようとします。
 
@@ -239,7 +239,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 -   もし `input_format_values_interpret_expressions=0` と `format_values_deduce_templates_of_expressions=1`、第一、第二および第三の行の式は、テンプレートを使用して解析されます `lower(String)` そして一緒に解釈されると、forth行の式は別のテンプレートで解析されます (`upper(String)`).
 -   もし `input_format_values_interpret_expressions=1` と `format_values_deduce_templates_of_expressions=1`、前の場合と同じですが、テンプレートを推論できない場合は、式を別々に解釈することもできます。
 
-## input\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
+## input_format_values_accurate_types_of_literals {#settings-input-format-values-accurate-types-of-literals}
 
 この設定は次の場合にのみ使用されます `input_format_values_deduce_templates_of_expressions = 1`. いくつかの列の式は同じ構造を持ちますが、異なる型の数値リテラルが含まれています。
 
@@ -261,7 +261,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 デフォルト値:1。
 
-## input\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
+## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
 実行するとき `INSERT` 省略された入力列の値を、それぞれの列のデフォルト値に置き換えます。 このオプションは [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) と [TabSeparated](../../interfaces/formats.md#tabseparated) フォーマット。
 
@@ -275,17 +275,17 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 デフォルト値:1。
 
-## input\_format\_tsv\_empty\_as\_default {#settings-input-format-tsv-empty-as-default}
+## input_format_tsv_empty_as_default {#settings-input-format-tsv-empty-as-default}
 
 有効にすると、TSVの空の入力フィールドを既定値に置き換えます。 複雑な既定の式の場合 `input_format_defaults_for_omitted_fields` 有効にする必要があります。
 
 既定では無効です。
 
-## input\_format\_null\_as\_default {#settings-input-format-null-as-default}
+## input_format_null_as_default {#settings-input-format-null-as-default}
 
 を有効または無効にし用のデフォルト値が入力データを含む `NULL` しかし、notの対応する列のデータ型 `Nullable(T)` （テキスト入力形式の場合）。
 
-## input\_format\_skip\_unknown\_fields {#settings-input-format-skip-unknown-fields}
+## input_format_skip_unknown_fields {#settings-input-format-skip-unknown-fields}
 
 追加データのスキップ挿入を有効または無効にします。
 
@@ -305,7 +305,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 デフォルト値は0です。
 
-## input\_format\_import\_nested\_json {#settings-input_format_import_nested_json}
+## input_format_import_nested_json {#settings-input_format_import_nested_json}
 
 を有効または無効にし、挿入のJSONデータをネストしたオブジェクト。
 
@@ -324,7 +324,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 -   [入れ子構造の使用](../../interfaces/formats.md#jsoneachrow-nested) と `JSONEachRow` 形式。
 
-## input\_format\_with\_names\_use\_header {#settings-input-format-with-names-use-header}
+## input_format_with_names_use_header {#settings-input-format-with-names-use-header}
 
 データ挿入時の列順序の確認を有効または無効にします。
 
@@ -342,7 +342,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 デフォルト値:1。
 
-## date\_time\_input\_format {#settings-date_time_input_format}
+## date_time_input_format {#settings-date_time_input_format}
 
 日付と時刻のテキスト表現のパーサーを選択できます。
 
@@ -365,7 +365,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 -   [DateTimeデータ型。](../../sql-reference/data-types/datetime.md)
 -   [日付と時刻を操作するための関数。](../../sql-reference/functions/date-time-functions.md)
 
-## join\_default\_strictness {#settings-join_default_strictness}
+## join_default_strictness {#settings-join_default_strictness}
 
 デフォルトの厳密さを [結合句](../../sql-reference/statements/select/join.md#select-join).
 
@@ -378,7 +378,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 デフォルト値: `ALL`.
 
-## join\_any\_take\_last\_row {#settings-join_any_take_last_row}
+## join_any_take_last_row {#settings-join_any_take_last_row}
 
 結合操作の動作を `ANY` 厳密さ。
 
@@ -396,9 +396,9 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 -   [JOIN句](../../sql-reference/statements/select/join.md#select-join)
 -   [結合テーブルエンジン](../../engines/table-engines/special/join.md)
--   [join\_default\_strictness](#settings-join_default_strictness)
+-   [join_default_strictness](#settings-join_default_strictness)
 
-## join\_use\_nulls {#join_use_nulls}
+## join_use_nulls {#join_use_nulls}
 
 のタイプを設定します。 [JOIN](../../sql-reference/statements/select/join.md) 行動。 際融合のテーブル、空細胞が表示される場合があります。 ClickHouseは、この設定に基づいて異なる塗りつぶします。
 
@@ -409,7 +409,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 デフォルト値は0です。
 
-## max\_block\_size {#setting-max_block_size}
+## max_block_size {#setting-max_block_size}
 
 ClickHouseでは、データはブロック（列部分のセット）によって処理されます。 単一ブロックの内部処理サイクルは十分に効率的ですが、各ブロックには顕著な支出があります。 その `max_block_size` 設定は、テーブルからロードするブロックのサイズ（行数）の推奨事項です。 ブロックサイズは小さすぎるので、各ブロックの支出はまだ目立ちますが、最初のブロックの後に完了したLIMITのクエリがすばやく処理されるよう 目標は、複数のスレッドで多数の列を抽出するときにメモリを消費するのを避け、少なくともいくつかのキャッシュの局所性を保持することです。
 
@@ -417,13 +417,13 @@ ClickHouseでは、データはブロック（列部分のセット）によっ�
 
 ブロックのサイズ `max_block_size` ていないから読み込まれます。 場合ことは明らかであることなくデータを取得され、さらに小型のブロックを処理します。
 
-## preferred\_block\_size\_bytes {#preferred-block-size-bytes}
+## preferred_block_size_bytes {#preferred-block-size-bytes}
 
 と同じ目的のために使用される `max_block_size` しかし、ブロック内の行数に適応させることによって、推奨されるブロックサイズをバイト単位で設定します。
 ただし、ブロックサイズは次のようになります `max_block_size` 行。
 既定では、1,000,000です。 MergeTreeエンジンから読み取るときにのみ動作します。
 
-## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
+## merge_tree_min_rows_for_concurrent_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
 のファイルから読み込まれる行数が [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md) テーブル超過 `merge_tree_min_rows_for_concurrent_read` その後ClickHouseしようとして行な兼職の状況からの読み出しこのファイルに複数のスレッド）。
 
@@ -433,7 +433,7 @@ ClickHouseでは、データはブロック（列部分のセット）によっ�
 
 デフォルト値は163840です。
 
-## merge\_tree\_min\_bytes\_for\_concurrent\_read {#setting-merge-tree-min-bytes-for-concurrent-read}
+## merge_tree_min_bytes_for_concurrent_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
 のファイルから読み取るバイト数が [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md)-エンジン表超過 `merge_tree_min_bytes_for_concurrent_read` 次に、ClickHouseはこのファイルから複数のスレッドで同時に読み取ろうとします。
 
@@ -443,7 +443,7 @@ ClickHouseでは、データはブロック（列部分のセット）によっ�
 
 デフォルト値は251658240です。
 
-## merge\_tree\_min\_rows\_for\_seek {#setting-merge-tree-min-rows-for-seek}
+## merge_tree_min_rows_for_seek {#setting-merge-tree-min-rows-for-seek}
 
 一つのファイルに読み込まれる二つのデータブロック間の距離が `merge_tree_min_rows_for_seek` その後、ClickHouseはファイルをシークせず、データを順番に読み込みます。
 
@@ -453,7 +453,7 @@ ClickHouseでは、データはブロック（列部分のセット）によっ�
 
 デフォルト値は0です。
 
-## merge\_tree\_min\_bytes\_for\_seek {#setting-merge-tree-min-bytes-for-seek}
+## merge_tree_min_bytes_for_seek {#setting-merge-tree-min-bytes-for-seek}
 
 一つのファイルに読み込まれる二つのデータブロック間の距離が `merge_tree_min_bytes_for_seek` その後、ClickHouseは両方のブロックを含むファイルの範囲を順番に読み込むため、余分なシークを避けます。
 
@@ -463,7 +463,7 @@ ClickHouseでは、データはブロック（列部分のセット）によっ�
 
 デフォルト値は0です。
 
-## merge\_tree\_coarse\_index\_granularity {#setting-merge-tree-coarse-index-granularity}
+## merge_tree_coarse_index_granularity {#setting-merge-tree-coarse-index-granularity}
 
 する場合のデータClickHouseチェックのデータにファイルです。 必要なキーがある範囲にあることをClickHouseが検出すると、この範囲を次のように分割します `merge_tree_coarse_index_granularity` 必要なキーを再帰的に検索します。
 
@@ -473,11 +473,11 @@ ClickHouseでは、データはブロック（列部分のセット）によっ�
 
 デフォルト値:8。
 
-## merge\_tree\_max\_rows\_to\_use\_cache {#setting-merge-tree-max-rows-to-use-cache}
+## merge_tree_max_rows_to_use_cache {#setting-merge-tree-max-rows-to-use-cache}
 
 ClickHouseがより多くを読むべきであれば `merge_tree_max_rows_to_use_cache` あるクエリでは、非圧縮ブロックのキャッシュを使用しません。
 
-のキャッシュされた、圧縮解除されたブロックの店舗データを抽出したためます。 ClickHouseこのキャッシュの高速化対応小の繰り返します。 この設定は、大量のデータを読み取るクエリによってキャッシュが破損するのを防ぎます。 その [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) サーバー設定は、非圧縮ブロックのキャッシュのサイズを定義します。
+のキャッシュされた、圧縮解除されたブロックの店舗データを抽出したためます。 ClickHouseこのキャッシュの高速化対応小の繰り返します。 この設定は、大量のデータを読み取るクエリによってキャッシュが破損するのを防ぎます。 その [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) サーバー設定は、非圧縮ブロックのキャッシュのサイズを定義します。
 
 可能な値:
 
@@ -485,11 +485,11 @@ ClickHouseがより多くを読むべきであれば `merge_tree_max_rows_to_use
 
 Default value: 128 ✕ 8192.
 
-## merge\_tree\_max\_bytes\_to\_use\_cache {#setting-merge-tree-max-bytes-to-use-cache}
+## merge_tree_max_bytes_to_use_cache {#setting-merge-tree-max-bytes-to-use-cache}
 
 ClickHouseがより多くを読むべきであれば `merge_tree_max_bytes_to_use_cache` 一つのクエリでは、非圧縮ブロックのキャッシュを使用しません。
 
-のキャッシュされた、圧縮解除されたブロックの店舗データを抽出したためます。 ClickHouseこのキャッシュの高速化対応小の繰り返します。 この設定は、大量のデータを読み取るクエリによってキャッシュが破損するのを防ぎます。 その [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) サーバー設定は、非圧縮ブロックのキャッシュのサイズを定義します。
+のキャッシュされた、圧縮解除されたブロックの店舗データを抽出したためます。 ClickHouseこのキャッシュの高速化対応小の繰り返します。 この設定は、大量のデータを読み取るクエリによってキャッシュが破損するのを防ぎます。 その [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) サーバー設定は、非圧縮ブロックのキャッシュのサイズを定義します。
 
 可能な値:
 
@@ -497,7 +497,7 @@ ClickHouseがより多くを読むべきであれば `merge_tree_max_bytes_to_us
 
 既定値:2013265920。
 
-## min\_bytes\_to\_use\_direct\_io {#settings-min-bytes-to-use-direct-io}
+## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 ストレージディスクへの直接I/Oアクセスを使用するために必要な最小データ量。
 
@@ -510,11 +510,11 @@ ClickHouseこの設定からデータを読み込むときます。 読み取る
 
 デフォルト値は0です。
 
-## log\_queries {#settings-log-queries}
+## log_queries {#settings-log-queries}
 
 クエリログの設定。
 
-この設定でClickHouseに送信されたクエリは、 [query\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) サーバー構成パラメータ。
+この設定でClickHouseに送信されたクエリは、 [query_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) サーバー構成パラメータ。
 
 例:
 
@@ -522,7 +522,7 @@ ClickHouseこの設定からデータを読み込むときます。 読み取る
 log_queries=1
 ```
 
-## log\_queries\_min\_type {#settings-log-queries-min-type}
+## log_queries_min_type {#settings-log-queries-min-type}
 
 `query_log` ログに記録する最小タイプ。
 
@@ -540,11 +540,11 @@ log_queries=1
 log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 
-## log\_query\_threads {#settings-log-query-threads}
+## log_query_threads {#settings-log-query-threads}
 
 クエリスレッドログの設定。
 
-この設定でClickHouseによって実行されたクエリのスレッドは、 [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) サーバー構成パラメータ。
+この設定でClickHouseによって実行されたクエリのスレッドは、 [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) サーバー構成パラメータ。
 
 例:
 
@@ -552,19 +552,19 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 log_query_threads=1
 ```
 
-## max\_insert\_block\_size {#settings-max_insert_block_size}
+## max_insert_block_size {#settings-max_insert_block_size}
 
 テーブルに挿入するために形成するブロックのサイズ。
 この設定は、サーバーがブロックを形成する場合にのみ適用されます。
 たとえば、HTTPインターフェイスを介した挿入の場合、サーバーはデータ形式を解析し、指定されたサイズのブロックを形成します。
-しかし、clickhouse-clientを使用すると、クライアントはデータ自体を解析し、 ‘max\_insert\_block\_size’ サーバーでの設定は、挿入されたブロックのサイズには影響しません。
+しかし、clickhouse-clientを使用すると、クライアントはデータ自体を解析し、 ‘max_insert_block_size’ サーバーでの設定は、挿入されたブロックのサイズには影響しません。
 データはSELECT後に形成されるのと同じブロックを使用して挿入されるため、INSERT SELECTを使用するときにもこの設定には目的がありません。
 
 既定値は1,048,576です。
 
 デフォルトは、 `max_block_size`. この理由は、特定のテーブルエンジンが原因です (`*MergeTree`）挿入されたブロックごとにディスク上にデータ部分を形成します。 同様に, `*MergeTree` テーブルデータを並べ替え時の挿入やるのに十分な大きさのブロックサイズを選別データにアプリです。
 
-## min\_insert\_block\_size\_rows {#min-insert-block-size-rows}
+## min_insert_block_size_rows {#min-insert-block-size-rows}
 
 テーブルに挿入できるブロック内の最小行数を設定します。 `INSERT` クエリ。 小さめサイズのブロックをつぶし入ります。
 
@@ -575,7 +575,7 @@ log_query_threads=1
 
 デフォルト値は1048576です。
 
-## min\_insert\_block\_size\_bytes {#min-insert-block-size-bytes}
+## min_insert_block_size_bytes {#min-insert-block-size-bytes}
 
 テーブルに挿入できるブロック内の最小バイト数を設定します。 `INSERT` クエリ。 小さめサイズのブロックをつぶし入ります。
 
@@ -586,7 +586,7 @@ log_query_threads=1
 
 デフォルト値:268435456。
 
-## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
+## max_replica_delay_for_distributed_queries {#settings-max_replica_delay_for_distributed_queries}
 
 分散クエリの遅延レプリカを無効にします。 見る [複製](../../engines/table-engines/mergetree-family/replication.md).
 
@@ -596,22 +596,22 @@ log_query_threads=1
 
 実行時使用 `SELECT` 複製されたテーブルを指す分散テーブルから。
 
-## max\_threads {#settings-max_threads}
+## max_threads {#settings-max_threads}
 
-リモートサーバーからデータを取得するためのスレッドを除く、クエリ処理スレッドの最大数 ‘max\_distributed\_connections’ 変数）。
+リモートサーバーからデータを取得するためのスレッドを除く、クエリ処理スレッドの最大数 ‘max_distributed_connections’ 変数）。
 
 このパラメータに適用されるスレッドは、それらのスレッドが同じ段階での問合せ処理パイプライン。
-たとえば、テーブルから読み込むときに、関数で式を評価することができる場合は、少なくともを使用してWHEREとGROUP BYの事前集計を並列に使用してフィル ‘max\_threads’ その後、スレッドの数 ‘max\_threads’ 使用されます。
+たとえば、テーブルから読み込むときに、関数で式を評価することができる場合は、少なくともを使用してWHEREとGROUP BYの事前集計を並列に使用してフィル ‘max_threads’ その後、スレッドの数 ‘max_threads’ 使用されます。
 
 デフォルト値:物理CPUコアの数。
 
 サーバーで同時に実行されるSELECTクエリが通常より少ない場合は、このパラメーターを実際のプロセッサコア数よりわずかに小さい値に設定します。
 
-制限のために迅速に完了するクエリの場合は、低い値を設定できます ‘max\_threads’. たとえば、必要な数のエントリがすべてのブロックにあり、max\_threads=8の場合、8つのブロックが取得されます。
+制限のために迅速に完了するクエリの場合は、低い値を設定できます ‘max_threads’. たとえば、必要な数のエントリがすべてのブロックにあり、max_threads=8の場合、8つのブロックが取得されます。
 
 小さいほど `max_threads` 値は、より少ないメモリが消費されます。
 
-## max\_insert\_threads {#settings-max-insert-threads}
+## max_insert_threads {#settings-max-insert-threads}
 
 実行するスレッドの最大数 `INSERT SELECT` クエリ。
 
@@ -622,61 +622,61 @@ log_query_threads=1
 
 デフォルト値は0です。
 
-平行 `INSERT SELECT` のみ効果があります。 `SELECT` パーツは並列で実行されます。 [max\_threads](#settings-max_threads) 設定。
+平行 `INSERT SELECT` のみ効果があります。 `SELECT` パーツは並列で実行されます。 [max_threads](#settings-max_threads) 設定。
 値を大きくすると、メモリ使用量が増えます。
 
-## max\_compress\_block\_size {#max-compress-block-size}
+## max_compress_block_size {#max-compress-block-size}
 
 テーブルに書き込むための圧縮前の非圧縮データのブロックの最大サイズ。 既定では、1,048,576(1MiB)です。 サイズを小さくすると、圧縮率が大幅に低下し、キャッシュの局所性のために圧縮と解凍の速度がわずかに増加し、メモリ消費が減少します。 通常、この設定を変更する理由はありません。
 
 圧縮のためのブロック（バイトで構成されるメモリの塊）とクエリ処理のためのブロック（テーブルからの行のセット）を混同しないでください。
 
-## min\_compress\_block\_size {#min-compress-block-size}
+## min_compress_block_size {#min-compress-block-size}
 
-のために [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md)"テーブル。 削減のため、遅延が処理クエリーのブロックの圧縮を書くとき、次のマークがそのサイズは少なくとも ‘min\_compress\_block\_size’. 既定では、65,536です。
+のために [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md)"テーブル。 削減のため、遅延が処理クエリーのブロックの圧縮を書くとき、次のマークがそのサイズは少なくとも ‘min_compress_block_size’. 既定では、65,536です。
 
-圧縮されていないデータが以下の場合、ブロックの実際のサイズ ‘max\_compress\_block\_size’ は、この値以上であり、一つのマークのデータ量以上である。
+圧縮されていないデータが以下の場合、ブロックの実際のサイズ ‘max_compress_block_size’ は、この値以上であり、一つのマークのデータ量以上である。
 
-例を見てみましょう。 仮定すると ‘index\_granularity’ テーブル作成時に8192に設定されました。
+例を見てみましょう。 仮定すると ‘index_granularity’ テーブル作成時に8192に設定されました。
 
-UInt32型の列（値あたり4バイト）を書いています。 8192行を書き込むと、合計は32KBのデータになります。 Min\_compress\_block\_size=65,536ので、圧縮されたブロックはすべてのマークに対して形成されます。
+UInt32型の列（値あたり4バイト）を書いています。 8192行を書き込むと、合計は32KBのデータになります。 Min_compress_block_size=65,536ので、圧縮されたブロックはすべてのマークに対して形成されます。
 
 文字列タイプ（値あたり60バイトの平均サイズ）のURL列を作成しています。 8192行を書き込むと、平均は500KBのデータよりわずかに小さくなります。 これは65,536以上であるため、各マークに圧縮されたブロックが形成されます。 この場合、単一のマークの範囲でディスクからデータを読み取るとき、余分なデータは解凍されません。
 
 通常、この設定を変更する理由はありません。
 
-## max\_query\_size {#settings-max_query_size}
+## max_query_size {#settings-max_query_size}
 
 SQLパーサーを使用して解析するためにRAMに取り込むことができるクエリの最大部分。
 INSERTクエリには、別のストリームパーサー(O(1)RAMを消費する)によって処理されるINSERTのデータも含まれていますが、この制限には含まれていません。
 
 デフォルト値:256KiB。
 
-## interactive\_delay {#interactive-delay}
+## interactive_delay {#interactive-delay}
 
 区間マイクロ秒単位で確認を行うための要求実行中止となり、送信を行います。
 
 デフォルト値:100,000(キャンセルをチェックし、進行状況を秒単位で送信します)。
 
-## connect\_timeout,receive\_timeout,send\_timeout {#connect-timeout-receive-timeout-send-timeout}
+## connect_timeout,receive_timeout,send_timeout {#connect-timeout-receive-timeout-send-timeout}
 
 クライアントとの通信に使用されるソケットの秒単位のタイムアウト。
 
 デフォルト値:10,300,300。
 
-## cancel\_http\_readonly\_queries\_on\_client\_close {#cancel-http-readonly-queries-on-client-close}
+## cancel_http_readonly_queries_on_client_close {#cancel-http-readonly-queries-on-client-close}
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
 デフォルト値:0
 
-## poll\_interval {#poll-interval}
+## poll_interval {#poll-interval}
 
 指定された秒数の待機ループをロックします。
 
 デフォルト値は10です。
 
-## max\_distributed\_connections {#max-distributed-connections}
+## max_distributed_connections {#max-distributed-connections}
 
 単一の分散テーブルへの単一のクエリの分散処理のためのリモートサーバーとの同時接続の最大数。 クラスター内のサーバー数以上の値を設定することをお勧めします。
 
@@ -684,20 +684,20 @@ Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connectio
 
 次のパラメーターは、分散テーブルを作成するとき(およびサーバーを起動するとき)にのみ使用されるため、実行時に変更する理由はありません。
 
-## distributed\_connections\_pool\_size {#distributed-connections-pool-size}
+## distributed_connections_pool_size {#distributed-connections-pool-size}
 
 単一の分散テーブルに対するすべてのクエリの分散処理のためのリモートサーバーとの同時接続の最大数。 クラスター内のサーバー数以上の値を設定することをお勧めします。
 
 デフォルト値:1024。
 
-## connect\_timeout\_with\_failover\_ms {#connect-timeout-with-failover-ms}
+## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 分散テーブルエンジンのリモートサーバーに接続するためのタイムアウト時間(ミリ秒)。 ‘shard’ と ‘replica’ セクションは、クラスタ定義で使用されます。
 失敗した場合は、さまざまなレプリカへの接続が試行されます。
 
 デフォルト値は50です。
 
-## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
+## connections_with_failover_max_tries {#connections-with-failover-max-tries}
 
 分散テーブルエンジンの各レプリカとの接続試行の最大数。
 
@@ -708,33 +708,33 @@ Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connectio
 極端な値(クエリ結果の列の最小値と最大値)を数えるかどうか。 0または1を受け入れます。 既定では、0(無効)です。
 詳細については “Extreme values”.
 
-## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
+## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
 非圧縮ブロックのキャッシュを使用するかどうか。 0または1を受け入れます。 既定では、0(無効)です。
-非圧縮キャッシュ(MergeTreeファミリ内のテーブルのみ)を使用すると、多数の短いクエリを処理する場合に、待ち時間を大幅に削減してスループットを向上させ この設定を有効にユーザーに送信頻繁に短います。 またに注意を払って下さい [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+非圧縮キャッシュ(MergeTreeファミリ内のテーブルのみ)を使用すると、多数の短いクエリを処理する場合に、待ち時間を大幅に削減してスループットを向上させ この設定を有効にユーザーに送信頻繁に短います。 またに注意を払って下さい [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
-少なくとも幾分大きな量のデータ（百万行以上）を読み取るクエリの場合、圧縮されていないキャッシュは自動的に無効になり、本当に小さなクエリの これは保つことができることを意味する ‘use\_uncompressed\_cache’ 設定は常に1に設定します。
+少なくとも幾分大きな量のデータ（百万行以上）を読み取るクエリの場合、圧縮されていないキャッシュは自動的に無効になり、本当に小さなクエリの これは保つことができることを意味する ‘use_uncompressed_cache’ 設定は常に1に設定します。
 
-## replace\_running\_query {#replace-running-query}
+## replace_running_query {#replace-running-query}
 
-HTTPインターフェイスを使用する場合、 ‘query\_id’ 変数は渡すことができます。 これは、クエリ識別子として機能する任意の文字列です。
-同じユーザーからのクエリが同じ場合 ‘query\_id’ この時点で既に存在しているので、動作は ‘replace\_running\_query’ パラメータ。
+HTTPインターフェイスを使用する場合、 ‘query_id’ 変数は渡すことができます。 これは、クエリ識別子として機能する任意の文字列です。
+同じユーザーからのクエリが同じ場合 ‘query_id’ この時点で既に存在しているので、動作は ‘replace_running_query’ パラメータ。
 
-`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query\_id’ すでに実行されています）。
+`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query_id’ すでに実行されています）。
 
 `1` – Cancel the old query and start running the new one.
 
 Yandex.Metricaこのパラメータセットが1の実施のための提案のための分割ます。 次の文字を入力した後、古いクエリがまだ終了していない場合は、キャンセルする必要があります。
 
-## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
+## stream_flush_interval_ms {#stream-flush-interval-ms}
 
-作品のテーブルストリーミングの場合はタイムアウトした場合、またはスレッドを生成す [max\_insert\_block\_size](#settings-max_insert_block_size) 行。
+作品のテーブルストリーミングの場合はタイムアウトした場合、またはスレッドを生成す [max_insert_block_size](#settings-max_insert_block_size) 行。
 
 既定値は7500です。
 
 値が小さいほど、データがテーブルにフラッシュされる頻度が高くなります。 値を小さく設定すると、パフォーマンスが低下します。
 
-## load\_balancing {#settings-load_balancing}
+## load_balancing {#settings-load_balancing}
 
 分散クエリ処理に使用されるレプリカ選択のアルゴリズムを指定します。
 
@@ -787,31 +787,31 @@ load_balancing = first_or_random
 
 その `first_or_random` アルゴリズムはの問題を解決します `in_order` アルゴリズム と `in_order` あるレプリカがダウンした場合、残りのレプリカは通常のトラフィック量を処理しますが、次のレプリカは二重負荷を受けます。 を使用する場合 `first_or_random` アルゴリズムでは、負荷はまだ利用可能なレプリカ間で均等に分散されます。
 
-## prefer\_localhost\_replica {#settings-prefer-localhost-replica}
+## prefer_localhost_replica {#settings-prefer-localhost-replica}
 
 を有効/無効にしが好ましいのlocalhostレプリカ処理時に分布します。
 
 可能な値:
 
 -   1 — ClickHouse always sends a query to the localhost replica if it exists.
--   0 — ClickHouse uses the balancing strategy specified by the [load\_balancing](#settings-load_balancing) 設定。
+-   0 — ClickHouse uses the balancing strategy specified by the [load_balancing](#settings-load_balancing) 設定。
 
 デフォルト値:1。
 
 !!! warning "警告"
-    使用する場合は、この設定を無効にします [max\_parallel\_replicas](#settings-max_parallel_replicas).
+    使用する場合は、この設定を無効にします [max_parallel_replicas](#settings-max_parallel_replicas).
 
-## totals\_mode {#totals-mode}
+## totals_mode {#totals-mode}
 
-有するときの合計の計算方法、およびmax\_rows\_to\_group\_byおよびgroup\_by\_overflow\_mode= ‘any’ 存在する。
+有するときの合計の計算方法、およびmax_rows_to_group_byおよびgroup_by_overflow_mode= ‘any’ 存在する。
 セクションを参照 “WITH TOTALS modifier”.
 
-## totals\_auto\_threshold {#totals-auto-threshold}
+## totals_auto_threshold {#totals-auto-threshold}
 
 のしきい値 `totals_mode = 'auto'`.
 セクションを参照 “WITH TOTALS modifier”.
 
-## max\_parallel\_replicas {#settings-max_parallel_replicas}
+## max_parallel_replicas {#settings-max_parallel_replicas}
 
 クエリ実行時の各シャードのレプリカの最大数。
 のための一貫性を異なる部分に同じデータを分割)、このオプションにしているときだけサンプリングキーを設定します。
@@ -824,7 +824,7 @@ load_balancing = first_or_random
 コンパイルは、クエリ処理パイプラインの一部にのみ使用されます。
 この部分のパイプラインのためのクエリを実行するアによる展開の短サイクルinlining集計機能。 複数の単純な集計関数を使用するクエリでは、最大のパフォーマンスの向上が見られます。 通常、性能は軽微であります。 非常に珍しい例で遅くなクエリを実行します。
 
-## min\_count\_to\_compile {#min-count-to-compile}
+## min_count_to_compile {#min-count-to-compile}
 
 り方を潜在的に利用コチャンクのコードの実行前に作成する。 デフォルトでは3.
 For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
@@ -833,27 +833,27 @@ For testing, the value can be set to 0: compilation runs synchronously and the q
 コンパイルされたコードは、クエリで使用される集計関数とGROUP BY句内のキーの種類のそれぞれの異なる組み合わせに必要です。
 The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
-## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
+## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 値がtrueの場合、json\*Int64およびUInt64形式（ほとんどのJavaScript実装との互換性のため）を使用するときに整数が引用符で表示されます。
 
-## format\_csv\_delimiter {#settings-format_csv_delimiter}
+## format_csv_delimiter {#settings-format_csv_delimiter}
 
 CSVデータの区切り文字として解釈される文字。 デフォルトでは、区切り文字は `,`.
 
-## input\_format\_csv\_unquoted\_null\_literal\_as\_null {#settings-input_format_csv_unquoted_null_literal_as_null}
+## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 CSV入力形式の場合、引用符なしの解析を有効または無効にします `NULL` リテラルとして(のシノニム `\N`).
 
-## output\_format\_csv\_crlf\_end\_of\_line {#settings-output-format-csv-crlf-end-of-line}
+## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 CSVでは、UNIXスタイル（LF）の代わりにDOS/Windowsスタイルの行区切り記号（CRLF）を使用します。
 
-## output\_format\_tsv\_crlf\_end\_of\_line {#settings-output-format-tsv-crlf-end-of-line}
+## output_format_tsv_crlf_end_of_line {#settings-output-format-tsv-crlf-end-of-line}
 
 TSVでは、UNIXスタイル(LF)の代わりにDOC/Windowsスタイルの行区切り記号(CRLF)を使用します。
 
-## insert\_quorum {#settings-insert_quorum}
+## insert_quorum {#settings-insert_quorum}
 
 を決議の定足数を書き込みます.
 
@@ -868,7 +868,7 @@ TSVでは、UNIXスタイル(LF)の代わりにDOC/Windowsスタイルの行区�
 
 クォーラム内のすべてのレプリカは一貫性があります。 `INSERT` クエリ。 その `INSERT` シーケンスは線形化されます。
 
-から書き込まれたデータを読み取ると `insert_quorum` を使用することができます [select\_sequential\_consistency](#settings-select_sequential_consistency) オプション
+から書き込まれたデータを読み取ると `insert_quorum` を使用することができます [select_sequential_consistency](#settings-select_sequential_consistency) オプション
 
 ClickHouseは例外を生成します
 
@@ -877,10 +877,10 @@ ClickHouseは例外を生成します
 
 も参照。:
 
--   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
--   [select\_sequential\_consistency](#settings-select_sequential_consistency)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
+## insert_quorum_timeout {#settings-insert_quorum_timeout}
 
 書き込み数が定員タイムアウトを秒で指定します。 タイムアウトが経過し、まだ書き込みが行われていない場合、ClickHouseは例外を生成し、クライアントは同じまたは他のレプリカに同じブロックを書き込む
 
@@ -888,10 +888,10 @@ ClickHouseは例外を生成します
 
 も参照。:
 
--   [insert\_quorum](#settings-insert_quorum)
--   [select\_sequential\_consistency](#settings-select_sequential_consistency)
+-   [insert_quorum](#settings-insert_quorum)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
 
-## select\_sequential\_consistency {#settings-select_sequential_consistency}
+## select_sequential_consistency {#settings-select_sequential_consistency}
 
 の順次整合性を有効または無効にします `SELECT` クエリ:
 
@@ -908,10 +908,10 @@ ClickHouseは例外を生成します
 
 も参照。:
 
--   [insert\_quorum](#settings-insert_quorum)
--   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
-## insert\_deduplicate {#settings-insert-deduplicate}
+## insert_deduplicate {#settings-insert-deduplicate}
 
 重複除外のブロックを有効または無効にします。 `INSERT` (複製された\*テーブルの場合)。
 
@@ -924,7 +924,7 @@ ClickHouseは例外を生成します
 
 デフォルトでは、ブロックは `INSERT` ステートメントは重複排除されます [データ複製](../../engines/table-engines/mergetree-family/replication.md)).
 
-## deduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
+## deduplicate_blocks_in_dependent_materialized_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
 を有効または無効にし、重複排除圧縮をチェックを実現し意見を受け取るデータから複製\*ます。
 
@@ -942,7 +942,7 @@ ClickHouseは例外を生成します
 同時に、この動作 “breaks” `INSERT` べき等性。 もし `INSERT` メインテーブルに成功したと `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` この動作を変更できます。 再試行すると、マテリアライズドビューは繰り返し挿入を受け取り、重複除外チェックを単独で実行します,
 ソーステーブルのチェック結果を無視し、最初の失敗のために失われた行を挿入します。
 
-## max\_network\_bytes {#settings-max-network-bytes}
+## max_network_bytes {#settings-max-network-bytes}
 
 クエリの実行時にネットワーク経由で受信または送信されるデータ量(バイト単位)を制限します。 この設定は、個々のクエリごとに適用されます。
 
@@ -953,7 +953,7 @@ ClickHouseは例外を生成します
 
 デフォルト値は0です。
 
-## max\_network\_bandwidth {#settings-max-network-bandwidth}
+## max_network_bandwidth {#settings-max-network-bandwidth}
 
 ネットワーク上でのデータ交換の速度を毎秒バイト単位で制限します。 この設定はすべての照会に適用されます。
 
@@ -964,7 +964,7 @@ ClickHouseは例外を生成します
 
 デフォルト値は0です。
 
-## max\_network\_bandwidth\_for\_user {#settings-max-network-bandwidth-for-user}
+## max_network_bandwidth_for_user {#settings-max-network-bandwidth-for-user}
 
 ネットワーク上でのデータ交換の速度を毎秒バイト単位で制限します。 この設定は、単一ユーザーが同時に実行するすべてのクエリに適用されます。
 
@@ -975,7 +975,7 @@ ClickHouseは例外を生成します
 
 デフォルト値は0です。
 
-## max\_network\_bandwidth\_for\_all\_users {#settings-max-network-bandwidth-for-all-users}
+## max_network_bandwidth_for_all_users {#settings-max-network-bandwidth-for-all-users}
 
 ネットワーク経由でデータが交換される速度を毎秒バイト単位で制限します。 この設定が適用されるのはすべての同時走行に関するお問い合わせます。
 
@@ -986,7 +986,7 @@ ClickHouseは例外を生成します
 
 デフォルト値は0です。
 
-## count\_distinct\_implementation {#settings-count_distinct_implementation}
+## count_distinct_implementation {#settings-count_distinct_implementation}
 
 これは、 `uniq*` を実行するために使用する必要があります。 [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) 建設。
 
@@ -1000,7 +1000,7 @@ ClickHouseは例外を生成します
 
 デフォルト値: `uniqExact`.
 
-## skip\_unavailable\_shards {#settings-skip_unavailable_shards}
+## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
 を有効または無効にし静キの不可欠片.
 
@@ -1030,13 +1030,13 @@ ClickHouseは例外を生成します
 
 デフォルト値は0です。
 
-## optimize\_skip\_unused\_shards {#settings-optimize_skip_unused_shards}
+## optimize_skip_unused_shards {#settings-optimize_skip_unused_shards}
 
 PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未使用のシャードのスキップを有効または無効にします(データがシャーディングキーによって配布される
 
 デフォルト値:0
 
-## force\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
+## force_optimize_skip_unused_shards {#settings-force_optimize_skip_unused_shards}
 
 を有効または無効にしクエリの実行の場合 [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) 未使用のシャードを有効にしてスキップすることはできません。 スキップが不可能で、設定が有効になっている場合は例外がスローされます。
 
@@ -1048,7 +1048,7 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 デフォルト値:0
 
-## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
+## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
 例外のスローを有効または無効にします。 [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) クエリがマージを実行しませんでした。
 
@@ -1066,7 +1066,7 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 -   タイプ:秒
 -   デフォルト値:60秒
 
-分散テーブルのエラーをゼロにする速度を制御します。 レプリカがしばらく使用できず、5つのエラーが蓄積され、distributed\_replica\_error\_half\_lifeが1秒に設定されている場合、レプリカは最後のエラーの3秒後に正常と見なされま
+分散テーブルのエラーをゼロにする速度を制御します。 レプリカがしばらく使用できず、5つのエラーが蓄積され、distributed_replica_error_half_lifeが1秒に設定されている場合、レプリカは最後のエラーの3秒後に正常と見なされま
 
 も参照。:
 
@@ -1085,7 +1085,7 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 -   [分散テーブルエンジン](../../engines/table-engines/special/distributed.md)
 -   [ディストリビューター](#settings-distributed_replica_error_half_life)
 
-## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
 の基本区間 [分散](../../engines/table-engines/special/distributed.md) データを送信する表エンジン。 実際の間隔は、エラーが発生した場合に指数関数的に増加します。
 
@@ -1095,9 +1095,9 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 既定値は100ミリ秒です。
 
-## distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-の最大間隔 [分散](../../engines/table-engines/special/distributed.md) データを送信する表エンジン。 の区間の指数関数的成長を制限する。 [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) 設定。
+の最大間隔 [分散](../../engines/table-engines/special/distributed.md) データを送信する表エンジン。 の区間の指数関数的成長を制限する。 [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) 設定。
 
 可能な値:
 
@@ -1105,7 +1105,7 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 デフォルト値:30000ミリ秒(30秒)。
 
-## distributed\_directory\_monitor\_batch\_inserts {#distributed_directory_monitor_batch_inserts}
+## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
 
 挿入されたデータのバッチ送信を有効または無効にします。
 
@@ -1118,7 +1118,7 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 デフォルト値は0です。
 
-## os\_thread\_priority {#setting-os-thread-priority}
+## os_thread_priority {#setting-os-thread-priority}
 
 優先度を設定します ([ニース](https://en.wikipedia.org/wiki/Nice_(Unix)))クエリを実行するスレッドの場合。 OSスケジューラは、使用可能な各CPUコアで実行する次のスレッドを選択する際に、この優先順位を考慮します。
 
@@ -1133,7 +1133,7 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 デフォルト値は0です。
 
-## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
 の実クロックタイマーの期間を設定します。 [クエリプロファイラ](../../operations/optimizing-performance/sampling-query-profiler.md). リアルクロックタイマーカウント壁掛時計。
 
@@ -1154,9 +1154,9 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 も参照。:
 
--   システム表 [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   システム表 [trace_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
 のCPUクロックタイマーの期間を設定します。 [クエリプロファイラ](../../operations/optimizing-performance/sampling-query-profiler.md). このタイマーカウントのみのCPU時間。
 
@@ -1177,9 +1177,9 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 も参照。:
 
--   システム表 [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   システム表 [trace_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## allow\_introspection\_functions {#settings-allow_introspection_functions}
+## allow_introspection_functions {#settings-allow_introspection_functions}
 
 ディスエーブルの有効 [イントロスペクション関数](../../sql-reference/functions/introspection.md) クエリプロファイル用。
 
@@ -1193,23 +1193,23 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 **も参照。**
 
 -   [サンプリングクロファイラ](../optimizing-performance/sampling-query-profiler.md)
--   システム表 [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   システム表 [trace_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
+## input_format_parallel_parsing {#input-format-parallel-parsing}
 
 -   タイプ:bool
 -   既定値:True
 
 データ形式の順序保持並列解析を有効にします。 TSV、TKSV、CSVおよびJSONEachRow形式でのみサポートされます。
 
-## min\_chunk\_bytes\_for\_parallel\_parsing {#min-chunk-bytes-for-parallel-parsing}
+## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
 -   型:unsigned int
 -   デフォルト値:1MiB
 
 各スレッドが並列に解析する最小チャンクサイズをバイト単位で表します。
 
-## output\_format\_avro\_codec {#settings-output_format_avro_codec}
+## output_format_avro_codec {#settings-output_format_avro_codec}
 
 出力Avroファイルに使用する圧縮コーデックを設定します。
 
@@ -1223,7 +1223,7 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 デフォルト値: `snappy` （利用可能な場合）または `deflate`.
 
-## output\_format\_avro\_sync\_interval {#settings-output_format_avro_sync_interval}
+## output_format_avro_sync_interval {#settings-output_format_avro_sync_interval}
 
 出力Avroファイルの同期マーカー間の最小データサイズ(バイト単位)を設定します。
 
@@ -1233,7 +1233,7 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 デフォルト値:32768(32KiB)
 
-## format\_avro\_schema\_registry\_url {#settings-format_avro_schema_registry_url}
+## format_avro_schema_registry_url {#settings-format_avro_schema_registry_url}
 
 使用するConfluentスキーマレジストリURLを設定します [アブロコンフルエント](../../interfaces/formats.md#data-format-avro-confluent) 形式
 
@@ -1241,7 +1241,7 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 既定値:空
 
-## background\_pool\_size {#background_pool_size}
+## background_pool_size {#background_pool_size}
 
 セットのスレッド数を行う背景事業のテーブルエンジン（例えば、合併に [MergeTreeエンジン](../../engines/table-engines/mergetree-family/index.md) テーブル）。 この設定はClickHouseサーバーの起動時に適用され、ユーザーセッションでは変更できません。 この設定を調整することで、CPUとディスクの負荷を管理します。 小さなプールサイズを以下のCPUやディスクの資源が背景のプロセスの事前の遅れが影響をクエリす。
 

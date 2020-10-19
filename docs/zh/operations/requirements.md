@@ -7,7 +7,7 @@ toc_title: "要求"
 
 ## CPU {#cpu}
 
-对于从预构建的deb包进行安装，请使用具有x86\_64架构并支持SSE4.2指令的CPU。 要使用不支持SSE4.2或具有AArch64或PowerPC64LE体系结构的处理器运行ClickHouse，您应该从源代码构建ClickHouse。
+对于从预构建的deb包进行安装，请使用具有x86_64架构并支持SSE4.2指令的CPU。 要使用不支持SSE4.2或具有AArch64或PowerPC64LE体系结构的处理器运行ClickHouse，您应该从源代码构建ClickHouse。
 
 ClickHouse实现并行数据处理并使用所有可用的硬件资源。 在选择处理器时，考虑到ClickHouse在具有大量内核但时钟速率较低的配置中的工作效率要高于具有较少内核和较高时钟速率的配置。 例如，具有2600MHz的16核心优于具有3600MHz的8核心。
 
