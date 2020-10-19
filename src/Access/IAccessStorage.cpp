@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_STORAGE_READONLY;
+    extern const int WRONG_PASSWORD;
+    extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int AUTHENTICATION_FAILED;
     extern const int LOGICAL_ERROR;
 }
@@ -418,9 +420,21 @@ void IAccessStorage::notify(const Notifications & notifications)
 UUID IAccessStorage::login(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
-    const ExternalAuthenticators & external_authenticators) const
+    const ExternalAuthenticators & external_authenticators,
+    bool replace_exception_with_cannot_authenticate) const
 {
-    return loginImpl(credentials, address, external_authenticators);
+    try
+    {
+        return loginImpl(credentials, address, external_authenticators);
+    }
+    catch (...)
+    {
+        if (!replace_exception_with_cannot_authenticate)
+            throw;
+
+        tryLogCurrentException(getLogger(), credentials.getUserName() + ": Authentication failed");
+        throwCannotAuthenticate(credentials.getUserName());
+    }
 }
 
 
@@ -433,11 +447,16 @@ UUID IAccessStorage::loginImpl(
     {
         if (auto user = tryRead<User>(*id))
         {
-            if (areCredentialsValidImpl(*user, credentials, external_authenticators) && isAddressAllowedImpl(*user, address))
-                return *id;
+            if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
+                throwInvalidCredentials();
+
+            if (!isAddressAllowedImpl(*user, address))
+                throwAddressNotAllowed(address);
+
+            return *id;
         }
     }
-    throwCannotAuthenticate(credentials.getUserName());
+    throwNotFound(EntityType::USER, credentials.getUserName());
 }
 
 
@@ -453,6 +472,18 @@ bool IAccessStorage::areCredentialsValidImpl(
 bool IAccessStorage::isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const
 {
     return user.allowed_client_hosts.contains(address);
+}
+
+
+UUID IAccessStorage::getIDOfLoggedUser(const String & user_name) const
+{
+    return getIDOfLoggedUserImpl(user_name);
+}
+
+
+UUID IAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
+{
+    return getID<User>(user_name);
 }
 
 
@@ -545,6 +576,15 @@ void IAccessStorage::throwReadonlyCannotRemove(EntityType type, const String & n
         ErrorCodes::ACCESS_STORAGE_READONLY);
 }
 
+void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
+{
+    throw Exception("Connections from " + address.toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+}
+
+void IAccessStorage::throwInvalidCredentials()
+{
+    throw Exception("Invalid credentials", ErrorCodes::WRONG_PASSWORD);
+}
 
 void IAccessStorage::throwCannotAuthenticate(const String & user_name)
 {

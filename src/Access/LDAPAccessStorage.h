@@ -3,6 +3,7 @@
 #include <Access/MemoryAccessStorage.h>
 #include <common/types.h>
 #include <ext/scope_guard.h>
+#include <map>
 #include <mutex>
 #include <set>
 
@@ -50,16 +51,20 @@ private: // IAccessStorage implementations.
     virtual bool hasSubscriptionImpl(const UUID & id) const override;
     virtual bool hasSubscriptionImpl(EntityType type) const override;
     virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
+    virtual UUID getIDOfLoggedUserImpl(const String & user_name) const override;
 
 private:
     void setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
+    void checkAllDefaultRoleNamesFoundNoLock() const;
+
+    [[noreturn]] static void throwDefaultRoleNotFound(const String & role_name);
 
     mutable std::recursive_mutex mutex;
     AccessControlManager * access_control_manager = nullptr;
     String ldap_server_name;
     std::set<String> default_role_names;
-    mutable std::set<UUID> roles_of_interest;
+    std::map<UUID, String> roles_of_interest;
     ext::scope_guard role_change_subscription;
     mutable MemoryAccessStorage memory_storage;
 };

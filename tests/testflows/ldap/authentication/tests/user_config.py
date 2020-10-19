@@ -54,8 +54,8 @@ def empty_server_not_defined(self, timeout=20):
         "auth_dn_prefix": "cn=", "auth_dn_suffix": ",ou=users,dc=company,dc=com"
     }}
     users = [{"server": "foo", "username": "user1", "password": "user1", "login": True,
-        "errorcode": 36,
-        "message": "DB::Exception: LDAP server 'foo' is not configured"
+        "errorcode": 4,
+        "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name"
     }]
     login(servers, *users)
 

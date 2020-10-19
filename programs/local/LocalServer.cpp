@@ -210,7 +210,7 @@ try
 
     /// Maybe useless
     if (config().has("macros"))
-        context->setMacros(std::make_unique<Macros>(config(), "macros"));
+        context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
     /// Skip networking
 

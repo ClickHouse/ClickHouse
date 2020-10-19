@@ -10,6 +10,8 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <boost/range/algorithm/copy.hpp>
+#include <iterator>
 #include <sstream>
 
 
@@ -30,10 +32,10 @@ LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl
 
 void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
+    std::scoped_lock lock(mutex);
+
     // TODO: switch to passing config as a ConfigurationView and remove this extra prefix once a version of Poco with proper implementation is available.
     const String prefix_str = (prefix.empty() ? "" : prefix + ".");
-
-    std::scoped_lock lock(mutex);
 
     const bool has_server = config.has(prefix_str + "server");
     const bool has_roles = config.has(prefix_str + "roles");
@@ -65,53 +67,66 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
             return this->processRoleChange(id, entity);
         }
     );
+
+    /// Update `roles_of_interests` with initial values.
+    for (const auto & role_name : default_role_names)
+    {
+        if (auto role_id = access_control_manager->find<Role>(role_name))
+            roles_of_interest.emplace(*role_id, role_name);
+    }
 }
 
 
 void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr & entity)
 {
-    auto role_ptr = typeid_cast<std::shared_ptr<const Role>>(entity);
-    if (role_ptr)
-    {
-        if (default_role_names.find(role_ptr->getName()) != default_role_names.end())
-        {
-            auto update_func = [&id](const AccessEntityPtr & cached_entity) -> AccessEntityPtr
-            {
-                auto user_ptr = typeid_cast<std::shared_ptr<const User>>(cached_entity);
-                if (user_ptr && user_ptr->granted_roles.roles.find(id) == user_ptr->granted_roles.roles.end())
-                {
-                    auto clone = user_ptr->clone();
-                    auto user_clone_ptr = typeid_cast<std::shared_ptr<User>>(clone);
-                    user_clone_ptr->granted_roles.grant(id);
-                    return user_clone_ptr;
-                }
-                return cached_entity;
-            };
+    std::scoped_lock lock(mutex);
 
-            memory_storage.update(memory_storage.findAll<User>(), update_func);
-            roles_of_interest.insert(id);
-        }
+    /// Update `roles_of_interests`.
+    auto role = typeid_cast<std::shared_ptr<const Role>>(entity);
+    bool need_to_update_users = false;
+
+    if (role && default_role_names.count(role->getName()))
+    {
+        /// If a role was created with one of the `default_role_names` or renamed to one of the `default_role_names`,
+        /// then set `need_to_update_users`.
+        need_to_update_users = roles_of_interest.insert_or_assign(id, role->getName()).second;
     }
     else
     {
-        if (roles_of_interest.find(id) != roles_of_interest.end())
-        {
-            auto update_func = [&id](const AccessEntityPtr & cached_entity) -> AccessEntityPtr
-            {
-                auto user_ptr = typeid_cast<std::shared_ptr<const User>>(cached_entity);
-                if (user_ptr && user_ptr->granted_roles.roles.find(id) != user_ptr->granted_roles.roles.end())
-                {
-                    auto clone = user_ptr->clone();
-                    auto user_clone_ptr = typeid_cast<std::shared_ptr<User>>(clone);
-                    user_clone_ptr->granted_roles.revoke(id);
-                    return user_clone_ptr;
-                }
-                return cached_entity;
-            };
+        /// If a role was removed or renamed to a name which isn't contained in the `default_role_names`,
+        /// then set `need_to_update_users`.
+        need_to_update_users = roles_of_interest.erase(id) > 0;
+    }
 
-            memory_storage.update(memory_storage.findAll<User>(), update_func);
-            roles_of_interest.erase(id);
-        }
+    /// Update users which have been created.
+    if (need_to_update_users)
+    {
+        auto update_func = [this] (const AccessEntityPtr & entity_) -> AccessEntityPtr
+        {
+            if (auto user = typeid_cast<std::shared_ptr<const User>>(entity_))
+            {
+                auto changed_user = typeid_cast<std::shared_ptr<User>>(user->clone());
+                auto & granted_roles = changed_user->granted_roles.roles;
+                granted_roles.clear();
+                boost::range::copy(roles_of_interest | boost::adaptors::map_keys, std::inserter(granted_roles, granted_roles.end()));
+                return changed_user;
+            }
+            return entity_;
+        };
+        memory_storage.update(memory_storage.findAll<User>(), update_func);
+    }
+}
+
+
+void LDAPAccessStorage::checkAllDefaultRoleNamesFoundNoLock() const
+{
+    boost::container::flat_set<std::string_view> role_names_of_interest;
+    boost::range::copy(roles_of_interest | boost::adaptors::map_values, std::inserter(role_names_of_interest, role_names_of_interest.end()));
+
+    for (const auto & role_name : default_role_names)
+    {
+        if (!role_names_of_interest.count(role_name))
+            throwDefaultRoleNotFound(role_name);
     }
 }
 
@@ -124,6 +139,7 @@ const char * LDAPAccessStorage::getStorageType() const
 
 String LDAPAccessStorage::getStorageParamsJSON() const
 {
+    std::scoped_lock lock(mutex);
     Poco::JSON::Object params_json;
 
     params_json.set("server", ldap_server_name);
@@ -138,30 +154,35 @@ String LDAPAccessStorage::getStorageParamsJSON() const
 
 std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & name) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.find(type, name);
 }
 
 
 std::vector<UUID> LDAPAccessStorage::findAllImpl(EntityType type) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.findAll(type);
 }
 
 
 bool LDAPAccessStorage::existsImpl(const UUID & id) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.exists(id);
 }
 
 
 AccessEntityPtr LDAPAccessStorage::readImpl(const UUID & id) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.read(id);
 }
 
 
 String LDAPAccessStorage::readNameImpl(const UUID & id) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.readName(id);
 }
 
@@ -180,6 +201,7 @@ UUID LDAPAccessStorage::insertImpl(const AccessEntityPtr & entity, bool)
 
 void LDAPAccessStorage::removeImpl(const UUID & id)
 {
+    std::scoped_lock lock(mutex);
     auto entity = read(id);
     throwReadonlyCannotRemove(entity->getType(), entity->getName());
 }
@@ -187,6 +209,7 @@ void LDAPAccessStorage::removeImpl(const UUID & id)
 
 void LDAPAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 {
+    std::scoped_lock lock(mutex);
     auto entity = read(id);
     throwReadonlyCannotUpdate(entity->getType(), entity->getName());
 }
@@ -194,77 +217,98 @@ void LDAPAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 
 ext::scope_guard LDAPAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.subscribeForChanges(id, handler);
 }
 
 
 ext::scope_guard LDAPAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.subscribeForChanges(type, handler);
 }
 
 
 bool LDAPAccessStorage::hasSubscriptionImpl(const UUID & id) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.hasSubscription(id);
 }
 
 
 bool LDAPAccessStorage::hasSubscriptionImpl(EntityType type) const
 {
+    std::scoped_lock lock(mutex);
     return memory_storage.hasSubscription(type);
 }
 
 UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
 {
     std::scoped_lock lock(mutex);
-    try
+    auto id = memory_storage.find<User>(credentials.getUserName());
+    if (id)
     {
-        auto id = memory_storage.find<User>(credentials.getUserName());
-        if (id)
-        {
-            // We try to re-authenticate the existing user, and if not successful, we will remove it, since that would mean
-            // something changed and the user we authenticated previously cannot be authenticated anymore.
-            auto user = memory_storage.tryRead<User>(*id);
-            try
-            {
-                if (user && isAddressAllowedImpl(*user, address) && areCredentialsValidImpl(*user, credentials, external_authenticators))
-                    return *id;
-            }
-            catch (...)
-            {
-                memory_storage.remove(*id);
-                throw;
-            }
-            memory_storage.remove(*id);
-        }
-        else
-        {
-            // User does not exist, so we create one, and will add it if authentication is successful.
-            auto user = std::make_shared<User>();
-            user->setName(credentials.getUserName());
-            user->authentication = Authentication(Authentication::Type::LDAP);
-            user->authentication.setLDAPServerName(ldap_server_name);
+        auto user = memory_storage.read<User>(*id);
 
-            if (isAddressAllowedImpl(*user, address) && areCredentialsValidImpl(*user, credentials, external_authenticators))
-            {
-                for (const auto& role_name : default_role_names)
-                {
-                    std::optional<UUID> role_id = access_control_manager->find<Role>(role_name);
-                    if (!role_id)
-                        throw Exception("One of the default roles, the role '" + role_name + "', is not found", IAccessEntity::TypeInfo::get(IAccessEntity::Type::ROLE).not_found_error_code);
-                    roles_of_interest.insert(role_id.value());
-                    user->granted_roles.grant(role_id.value());
-                }
-                return memory_storage.insert(user);
-            }
-        }
+        if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
+            throwInvalidCredentials();
+
+        if (!isAddressAllowedImpl(*user, address))
+            throwAddressNotAllowed(address);
+
+        return *id;
     }
-    catch (...)
+    else
     {
-        tryLogCurrentException(getLogger(), "Authentication failed for user '" + credentials.getUserName() + "' from access storage '" + access_control_manager->getStorageName() + "'");
+        // User does not exist, so we create one, and will add it if authentication is successful.
+        auto user = std::make_shared<User>();
+        user->setName(credentials.getUserName());
+        user->authentication = Authentication(Authentication::Type::LDAP);
+        user->authentication.setLDAPServerName(ldap_server_name);
+
+        if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
+            throwInvalidCredentials();
+
+        if (!isAddressAllowedImpl(*user, address))
+            throwAddressNotAllowed(address);
+
+        checkAllDefaultRoleNamesFoundNoLock();
+
+        auto & granted_roles = user->granted_roles.roles;
+        boost::range::copy(roles_of_interest | boost::adaptors::map_keys, std::inserter(granted_roles, granted_roles.end()));
+
+        return memory_storage.insert(user);
     }
-    throwCannotAuthenticate(credentials.getUserName());
+}
+
+UUID LDAPAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
+{
+    std::scoped_lock lock(mutex);
+    auto id = memory_storage.find<User>(user_name);
+    if (id)
+    {
+        return *id;
+    }
+    else
+    {
+        // User does not exist, so we create one, and add it pretending that the authentication is successful.
+        auto user = std::make_shared<User>();
+        user->setName(user_name);
+        user->authentication = Authentication(Authentication::Type::LDAP);
+        user->authentication.setLDAPServerName(ldap_server_name);
+
+        checkAllDefaultRoleNamesFoundNoLock();
+
+        auto & granted_roles = user->granted_roles.roles;
+        boost::range::copy(roles_of_interest | boost::adaptors::map_keys, std::inserter(granted_roles, granted_roles.end()));
+
+        return memory_storage.insert(user);
+    }
+}
+
+void LDAPAccessStorage::throwDefaultRoleNotFound(const String & role_name)
+{
+    throw Exception("One of the default roles, the role '" + role_name + "', is not found", IAccessEntity::TypeInfo::get(IAccessEntity::Type::ROLE).not_found_error_code);
 }
 
 }

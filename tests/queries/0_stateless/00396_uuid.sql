@@ -5,3 +5,9 @@ SELECT hex(UUIDStringToNum(materialize('01234567-89ab-cdef-0123-456789abcdef')))
 SELECT '01234567-89ab-cdef-0123-456789abcdef' AS str, UUIDNumToString(UUIDStringToNum(str)), UUIDNumToString(UUIDStringToNum(toFixedString(str, 36)));
 SELECT materialize('01234567-89ab-cdef-0123-456789abcdef') AS str, UUIDNumToString(UUIDStringToNum(str)), UUIDNumToString(UUIDStringToNum(toFixedString(str, 36)));
 SELECT toString(toUUID('3f1ed72e-f7fe-4459-9cbe-95fe9298f845'));
+
+-- conversion back and forth to big-endian hex string
+with generateUUIDv4() as uuid,
+    identity(lower(hex(reverse(reinterpretAsString(uuid))))) as str,
+    reinterpretAsUUID(reverse(unhex(str))) as uuid2
+select uuid = uuid2;

@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <ext/range.h>
 #include <boost/range/adaptor/map.hpp>
+#include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/find.hpp>
 
@@ -28,6 +29,15 @@ MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
 {
 }
 
+MultipleAccessStorage::~MultipleAccessStorage()
+{
+    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
+    const auto storages = getStoragesPtr();
+    for (const auto & storage : *storages | boost::adaptors::reversed)
+    {
+        removeStorage(storage);
+    }
+}
 
 void MultipleAccessStorage::setStorages(const std::vector<StoragePtr> & storages)
 {
@@ -401,7 +411,7 @@ UUID MultipleAccessStorage::loginImpl(const Credentials & credentials, const Poc
     {
         try
         {
-            auto id = storage->login(credentials, address, external_authenticators);
+            auto id = storage->login(credentials, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
             std::lock_guard lock{mutex};
             ids_cache.set(id, storage);
             return id;
@@ -417,7 +427,34 @@ UUID MultipleAccessStorage::loginImpl(const Credentials & credentials, const Poc
             throw;
         }
     }
-    throwCannotAuthenticate(credentials.getUserName());
+    throwNotFound(EntityType::USER, credentials.getUserName());
+}
+
+
+UUID MultipleAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        try
+        {
+            auto id = storage->getIDOfLoggedUser(user_name);
+            std::lock_guard lock{mutex};
+            ids_cache.set(id, storage);
+            return id;
+        }
+        catch (...)
+        {
+            if (!storage->find(EntityType::USER, user_name))
+            {
+                /// The authentication failed because there no users with such name in the `storage`
+                /// thus we can try to search in other nested storages.
+                continue;
+            }
+            throw;
+        }
+    }
+    throwNotFound(EntityType::USER, user_name);
 }
 
 }

@@ -56,6 +56,7 @@ public:
 
         enum class SASLMechanism
         {
+            UNKNOWN,
             SIMPLE
         };
 
@@ -98,7 +99,6 @@ public:
 protected:
     MAYBE_NORETURN void diag(const int rc);
     MAYBE_NORETURN void openConnection();
-    int openConnection(const bool graceful_bind_failure = false);
     void closeConnection() noexcept;
 
 protected:

@@ -864,7 +864,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         }
 
         processQuery(*request_context, request, params, response, used_output);
-        LOG_INFO(log, (request_credentials ? "Authentication in progress..." : "Done processing query"));
+        LOG_DEBUG(log, (request_credentials ? "Authentication in progress..." : "Done processing query"));
     }
     catch (...)
     {

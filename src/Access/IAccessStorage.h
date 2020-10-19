@@ -145,7 +145,11 @@ public:
 
     /// Finds a user, check the provided credentials and returns the ID of the user if they are valid.
     /// Throws an exception if no such user or credentials are invalid.
-    UUID login(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
+    UUID login(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
+
+    /// Returns the ID of an user who has logged in (maybe on another node).
+    /// The function assumes that the password has been already checked somehow, so we can skip checking it now.
+    UUID getIDOfLoggedUser(const String & user_name) const;
 
 protected:
     virtual std::optional<UUID> findImpl(EntityType type, const String & name) const = 0;
@@ -164,6 +168,7 @@ protected:
     virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
     virtual bool areCredentialsValidImpl(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
     virtual bool isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const;
+    virtual UUID getIDOfLoggedUserImpl(const String & user_name) const;
 
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
@@ -178,6 +183,8 @@ protected:
     [[noreturn]] void throwReadonlyCannotInsert(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotUpdate(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotRemove(EntityType type, const String & name) const;
+    [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
+    [[noreturn]] static void throwInvalidCredentials();
     [[noreturn]] static void throwCannotAuthenticate(const String & user_name);
 
     using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;

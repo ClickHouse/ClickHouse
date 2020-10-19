@@ -45,6 +45,7 @@ def regression(self, local, clickhouse_binary_path):
 
         Scenario(run=load("ldap.authentication.tests.sanity", "scenario"))
         Scenario(run=load("ldap.external_user_directory.tests.simple", "scenario"))
+        Feature(run=load("ldap.external_user_directory.tests.restart", "feature"))
         Feature(run=load("ldap.external_user_directory.tests.server_config", "feature"))
         Feature(run=load("ldap.external_user_directory.tests.external_user_directory_config", "feature"))
         Feature(run=load("ldap.external_user_directory.tests.connections", "feature"))

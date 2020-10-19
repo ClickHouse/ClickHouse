@@ -632,6 +632,7 @@ public:
 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
     ReservationPtr reserveSpacePreferringTTLRules(
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move,
@@ -639,6 +640,7 @@ public:
         bool is_insert = false) const;
 
     ReservationPtr tryReserveSpacePreferringTTLRules(
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move,
@@ -717,6 +719,8 @@ protected:
 
     bool require_part_metadata;
 
+    /// Relative path data, changes during rename for ordinary databases use
+    /// under lockForShare if rename is possible.
     String relative_data_path;
 
 

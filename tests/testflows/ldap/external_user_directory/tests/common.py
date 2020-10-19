@@ -5,11 +5,26 @@ from contextlib import contextmanager
 import testflows.settings as settings
 from testflows.core import *
 from testflows.asserts import error
-from ldap.authentication.tests.common import getuid, Config, ldap_servers, add_config
+from ldap.authentication.tests.common import getuid, Config, ldap_servers, add_config, restart
 from ldap.authentication.tests.common import xmltree, xml_indent, xml_append, xml_with_utf8
 from ldap.authentication.tests.common import ldap_user, ldap_users, add_user_to_ldap, delete_user_from_ldap
 from ldap.authentication.tests.common import change_user_password_in_ldap, change_user_cn_in_ldap
 from ldap.authentication.tests.common import randomword
+
+def join(tasks, timeout):
+    """Join async tasks by waiting for their completion.
+    """
+    task_exc = None
+
+    for task in tasks:
+        try:
+            task.get(timeout=timeout)
+        except Exception as exc:
+            if task_exc is None:
+                task_exc = exc
+
+    if task_exc is not None:
+        raise task_exc
 
 @contextmanager
 def table(name, create_statement, on_cluster=False):
@@ -31,14 +46,14 @@ def rbac_users(*users):
     try:
         with Given("I have local users"):
             for user in users:
-                with By(f"creating user {user}"):
-                    node.query(f"CREATE USER OR REPLACE {user} IDENTIFIED WITH PLAINTEXT_PASSWORD BY '{user}'")
+                with By(f"creating user {user['cn']}", format_name=False):
+                    node.query(f"CREATE USER OR REPLACE {user['cn']} IDENTIFIED WITH PLAINTEXT_PASSWORD BY '{user['userpassword']}'")
         yield users
     finally:
         with Finally("I drop local users"):
             for user in users:
-                with By(f"dropping user {user}", flags=TE):
-                    node.query(f"DROP USER IF EXISTS {user}")
+                with By(f"dropping user {user['cn']}", flags=TE, format_name=False):
+                    node.query(f"DROP USER IF EXISTS {user['cn']}")
 
 @contextmanager
 def rbac_roles(*roles):
@@ -179,3 +194,11 @@ def login(servers, directory_server, *users, config=None):
                                 settings=[("user", user["username"]), ("password", user["password"])],
                                 exitcode=user.get("exitcode", None),
                                 message=user.get("message", None))
+
+@TestStep(When)
+@Name("I login as {username} and execute query")
+def login_and_execute_query(self, username, password, exitcode=None, message=None, steps=True, timeout=60):
+    self.context.node.query("SELECT 1",
+        settings=[("user", username), ("password", password)],
+        exitcode=exitcode or 0,
+        message=message, steps=steps, timeout=timeout)

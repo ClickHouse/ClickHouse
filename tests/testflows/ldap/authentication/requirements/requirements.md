@@ -524,9 +524,6 @@ used to authenticate users using an [LDAP] server.
 ## References
 
 * **ClickHouse:** https://clickhouse.tech
-* **GitHub repository:** https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/requirements/requirements.md
-* **Revision history:** https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/requirements/requirements.md
-* **Git:** https://git-scm.com/
 
 [Anonymous Authentication Mechanism of Simple Bind]: https://ldapwiki.com/wiki/Simple%20Authentication#section-Simple+Authentication-AnonymousAuthenticationMechanismOfSimpleBind
 [Unauthenticated Authentication Mechanism of Simple Bind]: https://ldapwiki.com/wiki/Simple%20Authentication#section-Simple+Authentication-UnauthenticatedAuthenticationMechanismOfSimpleBind
@@ -539,6 +536,6 @@ used to authenticate users using an [LDAP] server.
 [LDAP]: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
 [ClickHouse]: https://clickhouse.tech
 [GitHub]: https://github.com
-[GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/requirements/requirements.md
-[Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/requirements/requirements.md
+[GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/authentication/requirements/requirements.md
+[Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/authentication/requirements/requirements.md
 [Git]: https://git-scm.com/

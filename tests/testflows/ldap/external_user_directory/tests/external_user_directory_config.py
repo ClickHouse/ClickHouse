@@ -5,7 +5,7 @@ from ldap.external_user_directory.requirements import *
 
 @TestScenario
 @Requirements(
-    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_LDAPUserDirectory_MoreThanOne("1.0")
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_LDAPUserDirectory_MoreThanOne("2.0")
 )
 def more_than_one_user_directory(self, timeout=20):
     """Check when more than one LDAP user directory is
@@ -36,7 +36,17 @@ def more_than_one_user_directory(self, timeout=20):
     with ldap_servers(servers):
         with rbac_roles(role) as roles:
             config = create_entries_ldap_external_user_directory_config_content(entries)
-            invalid_ldap_external_user_directory_config(server=None, roles=None, message=message, timeout=timeout, config=config)
+
+            with ldap_external_user_directory(server=None, roles=None, restart=True, config=config):
+                    with When(f"I login as {users[0]['username']} authenticated using openldap1"):
+                        current().context.node.query(f"SELECT 1",
+                        settings=[("user", users[0]["username"]), ("password", users[0]["password"])])
+
+                    with And(f"I login as {users[1]['username']} authenticated using openldap2"):
+                        current().context.node.query(f"SELECT 1",
+                        settings=[("user", users[1]["username"]), ("password", users[1]["password"])])
+
+
 
 @TestScenario
 @Requirements(
@@ -132,7 +142,7 @@ def invalid_server(self, timeout=20):
                 with When(f"I login as {user['username']} and execute query"):
                     current().context.node.query("SELECT 1",
                     settings=[("user", user["username"]), ("password", user["password"])],
-                    exitcode=36, message="DB::Exception: LDAP server 'openldap2' is not configured")
+                    exitcode=4, message="DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name.")
 
 @TestScenario
 @Requirements(
