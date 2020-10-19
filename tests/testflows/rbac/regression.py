@@ -76,17 +76,17 @@ xfails = {
         [(Fail, issue_15165)],
     "privileges/distributed table/cluster tests/cluster=:/special cases/insert with table on source table of materialized view privilege granted directly or via role/:":
         [(Fail, issue_14810)],
-    "/rbac/views/materialized view/select from implicit target table privilege granted directly or via role/select from implicit target table, privilege granted directly":
+    "views/materialized view/select from implicit target table privilege granted directly or via role/select from implicit target table, privilege granted directly":
         [(Fail, ".inner table is not created as expected")],
-    "/rbac/views/materialized view/insert on target table privilege granted directly or via role/insert on target table, privilege granted through a role":
+    "views/materialized view/insert on target table privilege granted directly or via role/insert on target table, privilege granted through a role":
         [(Fail, ".inner table is not created as expected")],
-    "/rbac/views/materialized view/select from implicit target table privilege granted directly or via role/select from implicit target table, privilege granted through a role":
+    "views/materialized view/select from implicit target table privilege granted directly or via role/select from implicit target table, privilege granted through a role":
         [(Fail, ".inner table is not created as expected")],
-    "/rbac/views/materialized view/insert on target table privilege granted directly or via role/insert on target table, privilege granted directly":
+    "views/materialized view/insert on target table privilege granted directly or via role/insert on target table, privilege granted directly":
         [(Fail, ".inner table is not created as expected")],
-    "/rbac/views/materialized view/select from source table privilege granted directly or via role/select from implicit target table, privilege granted directly":
+    "views/materialized view/select from source table privilege granted directly or via role/select from implicit target table, privilege granted directly":
         [(Fail, ".inner table is not created as expected")],
-    "/rbac/views/materialized view/select from source table privilege granted directly or via role/select from implicit target table, privilege granted through a role":
+    "views/materialized view/select from source table privilege granted directly or via role/select from implicit target table, privilege granted through a role":
         [(Fail, ".inner table is not created as expected")],
 }
 
