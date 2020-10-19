@@ -421,11 +421,17 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
         aggregate.argument_names.resize(arguments.size());
         DataTypes types(arguments.size());
 
+        const auto & index = actions->getIndex();
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             getRootActionsNoMakeSet(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
-            types[i] = actions->getIndex().find(name)->second->result_type;
+
+            auto it = index.find(name);
+            if (it == index.end())
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in aggregate function '{}'): {}", node->name, name);
+
+            types[i] = it->second->result_type;
             aggregate.argument_names[i] = name;
         }
 
