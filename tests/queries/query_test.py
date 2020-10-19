@@ -14,11 +14,11 @@ def run_client(bin_prefix, port, query, reference, replace_map={}):
     result, error = client.communicate(query)
     assert client.returncode is not None, "Client should exit after processing all queries"
 
-    for old, new in replace_map.items():
+    for old, new in replace_map.iteritems():
         result = result.replace(old, new)
 
     if client.returncode != 0:
-        print(error, file=sys.stderr)
+        print >> sys.stderr, error
         pytest.fail('Client died unexpectedly with code {code}'.format(code=client.returncode), pytrace=False)
     elif result != reference:
         pytest.fail("Query output doesn't match reference:{eol}{diff}".format(

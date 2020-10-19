@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS slow_log;
 DROP TABLE IF EXISTS expected_times;
 
 CREATE TABLE expected_times (QUERY_GROUP_ID String, max_query_duration_ms UInt64) Engine=Memory;
-INSERT INTO expected_times VALUES('main_dashboard_top_query', 500), ('main_dashboard_bottom_query', 500);
+INSERT INTO expected_times VALUES('main_dashboard_top_query', 100), ('main_dashboard_bottom_query', 100);
 
 SET log_queries=1;
 SELECT 1;
@@ -25,8 +25,8 @@ CREATE MATERIALIZED VIEW slow_log Engine=Memory AS
 SELECT 1 /* QUERY_GROUP_ID:main_dashboard_top_query */;
 SELECT 1 /* QUERY_GROUP_ID:main_dashboard_bottom_query */;
 
-SELECT 1 WHERE not ignore(sleep(0.520)) /* QUERY_GROUP_ID:main_dashboard_top_query */;
-SELECT 1 WHERE not ignore(sleep(0.520)) /* QUERY_GROUP_ID:main_dashboard_bottom_query */;
+SELECT 1 WHERE not ignore(sleep(0.105)) /* QUERY_GROUP_ID:main_dashboard_top_query */;
+SELECT 1 WHERE not ignore(sleep(0.105)) /* QUERY_GROUP_ID:main_dashboard_bottom_query */;
 
 SET log_queries=0;
 SYSTEM FLUSH LOGS;

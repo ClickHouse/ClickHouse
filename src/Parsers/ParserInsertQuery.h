@@ -33,13 +33,4 @@ public:
     ParserInsertQuery(const char * end_) : end(end_) {}
 };
 
-/** Insert accepts an identifier and an asterisk with variants.
-  */
-class ParserInsertElement : public IParserBase
-{
-protected:
-    const char * getName() const override { return "insert element"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 }
