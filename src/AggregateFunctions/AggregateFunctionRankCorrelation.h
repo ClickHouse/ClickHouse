@@ -138,11 +138,6 @@ public:
         const auto & value = this->data(place).values;
         size_t size = this->data(place).size_x;
 
-        if (size < 2)
-        {
-            throw Exception("Aggregate function " + getName() + " requires samples to be of size > 1", ErrorCodes::BAD_ARGUMENTS);
-        }
-
         //create a copy of values not to format data
         PODArrayWithStackMemory<std::pair<Float64, Float64>, 32> tmp_values;
         tmp_values.resize(size);
