@@ -85,6 +85,20 @@
  *
  */
 
+#include <stdint.h>
+#include <math.h>
+#include "libm.h"
+
+
+#if LDBL_MANT_DIG == 53 && LDBL_MAX_EXP == 1024
+double lgamma_r(double x, int *sg);
+
+long double lgammal_r(long double x, int *sg)
+{
+	return lgamma_r(x, sg);
+}
+#elif LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384
+
 static const long double pi = 3.14159265358979323846264L,
 
 /* lgam(1+x) = 0.5 x + x a(x)/b(x)
@@ -187,11 +201,8 @@ w5 =  8.412723297322498080632E-4L,
 w6 = -1.880801938119376907179E-3L,
 w7 =  4.885026142432270781165E-3L;
 
-#include <stdint.h>
-#include <math.h>
-#include "libm.h"
 
-long double __lgammal_r(long double x, int *sg) {
+long double lgammal_r(long double x, int *sg) {
 	long double t, y, z, nadj, p, p1, p2, q, r, w;
 	union ldshape u = {x};
 	uint32_t ix = (u.i.se & 0x7fffU)<<16 | u.i.m>>48;
@@ -308,6 +319,16 @@ long double __lgammal_r(long double x, int *sg) {
 		r = nadj - r;
 	return r;
 }
+#elif LDBL_MANT_DIG == 113 && LDBL_MAX_EXP == 16384
+// TODO: broken implementation to make things compile
+double lgamma_r(double x, int *sg);
+
+long double lgammal_r(long double x, int *sg)
+{
+	return lgamma_r(x, sg);
+}
+#endif
+
 
 int signgam_lgammal;
 
