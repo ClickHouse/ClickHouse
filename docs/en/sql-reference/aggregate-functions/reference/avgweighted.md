@@ -14,17 +14,25 @@ avgWeighted(x, weight)
 
 **Parameters**
 
--   `x` — Values. [Integer](../../../sql-reference/data-types/int-uint.md) or [floating-point](../../../sql-reference/data-types/float.md).
--   `weight` — Weights of the values. [Integer](../../../sql-reference/data-types/int-uint.md) or [floating-point](../../../sql-reference/data-types/float.md).
+-   `x` — Values.
+-   `weight` — Weights of the values.
 
-Type of `x` and `weight` may be different.
+`x` and `weight` must both be
+[Integer](../../../sql-reference/data-types/int-uint.md),
+[floating-point](../../../sql-reference/data-types/float.md), or 
+[Decimal](../../../sql-reference/data-types/decimal.md),
+but may have different types.
 
 **Returned value**
 
--   Weighted mean.
 -   `NaN`. If all the weights are equal to 0.
+-   Weighted mean otherwise.
 
-Type: [Float64](../../../sql-reference/data-types/float.md).
+**Return type**
+
+- `Decimal` if both types are [Decimal](../../../sql-reference/data-types/decimal.md) (largest type taken).
+(depending on the largest type).
+- [Float64](../../../sql-reference/data-types/float.md) otherwise.
 
 **Example**
 

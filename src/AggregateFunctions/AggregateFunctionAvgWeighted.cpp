@@ -26,19 +26,59 @@ constexpr bool allowTypes(const DataTypePtr& left, const DataTypePtr& right)
     return allow(l_dt) && allow(r_dt);
 }
 
-// TODO signed to unsigned
-template <class U, class V, class = void> struct LargestType { using Type = V; };
+template <class U, class V> using Biggest = std::conditional_t<(sizeof(U) > sizeof(V)), U, V>;
 
 template <class U, class V>
-struct LargestType<U, V, std::enable_if_t<(sizeof(U) > sizeof(V))>> { using Type = typename LargestType<V, U>::Type; };
+struct LargestType
+{
+    using Biggest = Biggest<U, V>;
+    static constexpr bool UDecimal = IsDecimalNumber<U>;
+    static constexpr bool VDecimal = IsDecimalNumber<V>;
+
+    using TypeIfBothDecimal = std::conditional_t<std::is_same_v<Biggest, Decimal256>,
+          Decimal256,
+          Decimal128>;
+
+    using Type = std::conditional_t<UDecimal && VDecimal,
+          TypeIfBothDecimal,
+          Float64>;
+};
 
 template <class U, class V> using LargestTypeT = typename LargestType<U, V>::Type;
 template <class U, class V> using Function = AggregateFunctionAvgWeighted<LargestTypeT<U, V>, U, V>;
 
-template <typename... TArgs>
+
+#define AT_SWITCH(LINE) \
+    switch (which.idx) \
+    { \
+        LINE(Int8); LINE(Int16); LINE(Int32); LINE(Int64); LINE(Int128); LINE(Int256); \
+        LINE(UInt8); LINE(UInt16); LINE(UInt32); LINE(UInt64); LINE(UInt128); LINE(UInt256); \
+        LINE(Decimal32); LINE(Decimal64); LINE(Decimal128); LINE(Decimal256); \
+        LINE(Float32); LINE(Float64); \
+        default: return nullptr; \
+    }
+
+template <class First, class ... TArgs>
+static IAggregateFunction * create(const IDataType & second_type, TArgs && ... args)
+{
+    const WhichDataType which(second_type);
+
+#define LINE(Type) \
+    case TypeIndex::Type:       return new Function<First, Type>(std::forward<TArgs>(args)...)
+    AT_SWITCH(LINE)
+#undef LINE
+}
+
+// Not using helper functions because there are no templates for binary decimal/numeric function.
+template <class... TArgs>
 static IAggregateFunction * create(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
 {
+    const WhichDataType which(first_type);
 
+#define LINE(Type) \
+    case TypeIndex::Type:       return create<Type, TArgs...>(second_type, std::forward<TArgs>(args)...)
+    AT_SWITCH(LINE)
+#undef LINE
 }
 
 AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & argument_types, const Array & parameters)
@@ -59,10 +99,7 @@ AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name
     AggregateFunctionPtr res;
     res.reset(create(*data_type, *data_type_weight, argument_types));
 
-    if (!res)
-        throw Exception("Illegal type " + data_type->getName() + " of argument for aggregate function " + name,
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
+    assert(res); // type checking should be done in allowTypes.
     return res;
 }
 }
