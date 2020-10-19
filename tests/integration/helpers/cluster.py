@@ -772,7 +772,7 @@ class ClickHouseCluster:
         if zoo_instance_name not in self.kazoo_connections:
             kazoo_logger = logging.getLogger("kazoo_logger")
             kazoo_logger.setLevel(logging.WARNING)
-            retry = KazooRetry(max_tries=5)
+            retry = KazooRetry(max_tries=3)
             self.kazoo_connections[zoo_instance_name] = KazooClient(hosts=self.get_instance_ip(zoo_instance_name), logger=kazoo_logger, connection_retry=retry)
             self.kazoo_connections[zoo_instance_name].start()
         else:
