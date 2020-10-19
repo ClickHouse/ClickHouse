@@ -81,7 +81,7 @@ public:
         const ASTPtr & query_,
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_)
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false)
+    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
     {}
 
     void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
@@ -112,7 +112,8 @@ protected:
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
         size_t subquery_depth_,
-        bool do_global_);
+        bool do_global_,
+        SubqueriesForSets subqueries_for_sets_);
 
     ASTPtr query;
     const Context & context;
@@ -231,8 +232,9 @@ public:
         const Context & context_,
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
-        const SelectQueryOptions & options_ = {})
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
+        const SelectQueryOptions & options_ = {},
+        SubqueriesForSets subqueries_for_sets_ = {})
+    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_, std::move(subqueries_for_sets_))
     ,   required_result_columns(required_result_columns_), query_options(options_)
     {
     }

@@ -295,6 +295,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     max_streams = settings.max_threads;
     ASTSelectQuery & query = getSelectQuery();
 
+    SubqueriesForSets subquery_for_sets;
+
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
@@ -309,7 +311,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, *context,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
-                !options.only_analyze, options);
+                !options.only_analyze, options, std::move(subquery_for_sets));
 
         if (!options.only_analyze)
         {
@@ -396,6 +398,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (need_analyze_again)
     {
+        subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
         analyze(/* try_move_to_prewhere = */ false);
