@@ -63,7 +63,7 @@ class ServerThread(threading.Thread):
                 try:
                     time.sleep(ServerThread.DEFAULT_SERVER_DELAY)
                     s = socket.create_connection(('localhost', self.tcp_port), ServerThread.DEFAULT_CONNECTION_TIMEOUT)
-                    s.sendall('G')  # trigger expected "bad" HELLO response
+                    s.sendall(b'G')  # trigger expected "bad" HELLO response
                     print('Successful server response:', s.recv(1024))  # FIXME: read whole buffered response
                     s.shutdown(socket.SHUT_RDWR)
                     s.close()

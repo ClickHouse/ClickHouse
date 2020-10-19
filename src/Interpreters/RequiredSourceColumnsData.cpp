@@ -27,7 +27,7 @@ void RequiredSourceColumnsData::addColumnIdentifier(const ASTIdentifier & node)
 
     /// There should be no complex cases after query normalization. Names to aliases: one-to-many.
     String alias = node.tryGetAlias();
-    required_names[node.name].addInclusion(alias);
+    required_names[node.name()].addInclusion(alias);
 }
 
 bool RequiredSourceColumnsData::addArrayJoinAliasIfAny(const IAST & ast)
@@ -42,7 +42,7 @@ bool RequiredSourceColumnsData::addArrayJoinAliasIfAny(const IAST & ast)
 
 void RequiredSourceColumnsData::addArrayJoinIdentifier(const ASTIdentifier & node)
 {
-    array_join_columns.insert(node.name);
+    array_join_columns.insert(node.name());
 }
 
 size_t RequiredSourceColumnsData::nameInclusion(const String & name) const

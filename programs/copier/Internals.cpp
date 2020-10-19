@@ -168,11 +168,11 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
     throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 }
 
-/// Wraps only identifiers with backticks. 
+/// Wraps only identifiers with backticks.
 std::string wrapIdentifiersWithBackticks(const ASTPtr & root)
 {
     if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(root))
-        return backQuote(identifier->name);
+        return backQuote(identifier->name());
 
     if (auto function = std::dynamic_pointer_cast<ASTFunction>(root))
         return function->name + '(' + wrapIdentifiersWithBackticks(function->arguments) + ')';
@@ -214,7 +214,7 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
         /// Column name could be represented as a f_1(f_2(...f_n(column_name))).
-        /// Each f_i could take one or more parameters. 
+        /// Each f_i could take one or more parameters.
         /// We will wrap identifiers with backticks to allow non-standart identifier names.
         String sorting_key_column = sorting_key_expr_list->children[i]->getColumnName();
 
