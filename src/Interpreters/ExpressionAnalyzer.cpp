@@ -117,11 +117,14 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const TreeRewriterResultPtr & syntax_analyzer_result_,
     const Context & context_,
     size_t subquery_depth_,
-    bool do_global)
+    bool do_global,
+    SubqueriesForSets subqueries_for_sets_)
     : query(query_), context(context_), settings(context.getSettings())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
 {
+    subqueries_for_sets = std::move(subqueries_for_sets_);
+
     /// external_tables, subqueries_for_sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
     initGlobalSubqueriesAndExternalTables(do_global);
