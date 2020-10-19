@@ -172,23 +172,6 @@ struct NullPresence
     bool has_null_constant = false;
 };
 
-NullPresence getNullPresense(const ColumnsWithTypeAndName & columns, const ColumnNumbers & args)
-{
-    NullPresence res;
-
-    for (const auto & arg : args)
-    {
-        const auto & elem = columns[arg];
-
-        if (!res.has_nullable)
-            res.has_nullable = elem.type->isNullable();
-        if (!res.has_null_constant)
-            res.has_null_constant = elem.type->onlyNull();
-    }
-
-    return res;
-}
-
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
 {
     NullPresence res;
@@ -386,17 +369,6 @@ static void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
         column.column = recursiveRemoveLowCardinality(column.column);
         column.type = recursiveRemoveLowCardinality(column.type);
     }
-}
-
-static ColumnsWithTypeAndName cloneWithEmptyColumns(const ColumnsWithTypeAndName & columns)
-{
-    ColumnsWithTypeAndName res;
-
-    size_t num_columns = columns.size();
-    for (size_t i = 0; i < num_columns; ++i)
-        res.emplace_back(ColumnWithTypeAndName{ nullptr, columns[i].type, columns[i].name });
-
-    return res;
 }
 
 ColumnPtr ExecutableFunctionAdaptor::execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run)

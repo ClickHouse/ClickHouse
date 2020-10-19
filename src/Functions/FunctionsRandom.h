@@ -102,9 +102,9 @@ public:
     #endif
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        selector.selectAndExecute(columns, arguments, result, input_rows_count);
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(const Context & context)

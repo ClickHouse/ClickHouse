@@ -1613,7 +1613,7 @@ private:
 
     ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        impl->executeImpl(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     const Context & context;
