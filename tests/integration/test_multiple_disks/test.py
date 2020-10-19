@@ -242,6 +242,9 @@ def test_system_tables(start_cluster):
 
 def test_query_parser(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         with pytest.raises(QueryRuntimeException):
             node1.query("""
                 CREATE TABLE table_with_absent_policy (
@@ -295,6 +298,9 @@ def test_query_parser(start_cluster):
 ])
 def test_alter_policy(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 d UInt64
@@ -371,6 +377,9 @@ def test_no_warning_about_zero_max_data_part_size(start_cluster):
 ])
 def test_round_robin(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 d UInt64
@@ -407,6 +416,9 @@ def test_round_robin(start_cluster, name, engine):
 ])
 def test_max_data_part_size(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         assert int(*node1.query("""SELECT max_data_part_size FROM system.storage_policies WHERE policy_name = 'jbods_with_external' AND volume_name = 'main'""").splitlines()) == 10*1024*1024
 
         node1.query("""
@@ -434,6 +446,9 @@ def test_max_data_part_size(start_cluster, name, engine):
 ])
 def test_jbod_overflow(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 s1 String
@@ -487,6 +502,9 @@ def test_jbod_overflow(start_cluster, name, engine):
 ])
 def test_background_move(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 s1 String
@@ -533,6 +551,9 @@ def test_background_move(start_cluster, name, engine):
 ])
 def test_start_stop_moves(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 s1 String
@@ -637,6 +658,9 @@ def get_paths_for_partition_from_part_log(node, table, partition_id):
 ])
 def test_alter_move(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 EventDate Date,
@@ -710,6 +734,9 @@ def test_alter_move_half_of_partition(start_cluster, volume_or_disk):
     name = "alter_move_half_of_partition"
     engine = "MergeTree()"
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 EventDate Date,
@@ -759,6 +786,9 @@ def test_alter_double_move_partition(start_cluster, volume_or_disk):
     name = "alter_double_move_partition"
     engine = "MergeTree()"
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 EventDate Date,
@@ -831,6 +861,9 @@ def produce_alter_move(node, name):
 ])
 def test_concurrent_alter_move(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 EventDate Date,
@@ -886,6 +919,9 @@ def test_concurrent_alter_move(start_cluster, name, engine):
 ])
 def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 EventDate Date,
@@ -938,6 +974,9 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
 ])
 def test_detach_attach(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 s1 String
@@ -1024,6 +1063,9 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
 ])
 def test_concurrent_alter_modify(start_cluster, name, engine):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE {name} (
                 EventDate Date,
@@ -1078,6 +1120,9 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
 
 def test_simple_replication_and_moves(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         for i, node in enumerate([node1, node2]):
             node.query("""
                 CREATE TABLE replicated_table_for_moves (
@@ -1145,6 +1190,9 @@ def test_simple_replication_and_moves(start_cluster):
 
 def test_download_appropriate_disk(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         for i, node in enumerate([node1, node2]):
             node.query("""
                 CREATE TABLE replicated_table_for_download (
@@ -1179,6 +1227,9 @@ def test_download_appropriate_disk(start_cluster):
 
 def test_rename(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE default.renaming_table (
                 s String
@@ -1218,6 +1269,9 @@ def test_rename(start_cluster):
 
 def test_freeze(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node1.query("""
             CREATE TABLE default.freezing_table (
                 d Date,
@@ -1253,6 +1307,9 @@ def test_freeze(start_cluster):
 
 def test_kill_while_insert(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         name = "test_kill_while_insert"
 
         node1.query("""
@@ -1298,6 +1355,9 @@ def test_kill_while_insert(start_cluster):
 
 def test_move_while_merge(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         name = "test_move_while_merge"
 
         node1.query("""
@@ -1357,6 +1417,9 @@ def test_move_while_merge(start_cluster):
 
 def test_move_across_policies_does_not_work(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         name = "test_move_across_policies_does_not_work"
 
         node1.query("""
@@ -1399,6 +1462,9 @@ def test_move_across_policies_does_not_work(start_cluster):
 
 def _insert_merge_execute(node, name, policy, parts, cmds, parts_before_cmds, parts_after_cmds):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         node.query("""
             CREATE TABLE {name} (
                 n Int64
@@ -1434,6 +1500,9 @@ def _insert_merge_execute(node, name, policy, parts, cmds, parts_before_cmds, pa
 
 def _check_merges_are_working(node, storage_policy, volume, shall_work):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         name = "_check_merges_are_working_{storage_policy}_{volume}".format(storage_policy=storage_policy, volume=volume)
 
         node.query("""
@@ -1480,6 +1549,9 @@ def test_simple_merge_tree_merges_are_disabled(start_cluster):
 
 def test_no_merges_in_configuration_allow_from_query_without_reload(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         name = "test_no_merges_in_configuration_allow_from_query_without_reload"
         policy = "small_jbod_with_external_no_merges"
         node1.restart_clickhouse(kill=True)
@@ -1517,6 +1589,9 @@ def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
 
 def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         name = "test_yes_merges_in_configuration_allow_from_query_without_reload"
         policy = "small_jbod_with_external"
         node1.restart_clickhouse(kill=True)
@@ -1536,6 +1611,9 @@ def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cl
 
 def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_cluster):
     try:
+        print("Before test")
+        for p in ("/jbod1", "/jbod2", "/external"):
+            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"]))
         name = "test_yes_merges_in_configuration_allow_from_query_with_reload"
         policy = "small_jbod_with_external"
         node1.restart_clickhouse(kill=True)
