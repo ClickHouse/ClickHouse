@@ -49,9 +49,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnPtr & input_column = columns[arguments[0]].column;
+        const ColumnPtr & input_column = arguments[0].column;
 
         if (const ColumnNullable * input_column_nullable = checkAndGetColumn<ColumnNullable>(input_column.get()))
         {
@@ -66,8 +66,7 @@ public:
                 {
                     auto res = ColumnUInt8::create(input_rows_count);
                     processNullable(column.getData(), null_map, res->getData(), input_rows_count);
-                    columns[result].column = std::move(res);
-                    return true;
+                    return res;
                 }))
             {
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must have simple numeric type, possibly Nullable", name);
@@ -83,8 +82,7 @@ public:
                 {
                     auto res = ColumnUInt8::create(input_rows_count);
                     processNotNullable(column.getData(), res->getData(), input_rows_count);
-                    columns[result].column = std::move(res);
-                    return true;
+                    return res;
                 }))
             {
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must have simple numeric type, possibly Nullable", name);
