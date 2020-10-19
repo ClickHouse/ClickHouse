@@ -25,7 +25,7 @@
 
 #    include <Poco/DirectoryIterator.h>
 #    include <Poco/File.h>
-#include <cstring>
+#    include <cstring>
 
 
 namespace DB
@@ -399,7 +399,7 @@ void DatabaseConnectionMySQL::loadStoredObjects(Context & context, bool has_forc
         }
 
         empty(); /// test database is works fine.
-        thread = ThreadFromGlobalPool{&DatabaseConnectionMySQL::cleanOutdatedTables, this};
+        thread = std::make_unique<ThreadFromGlobalPool>(&DatabaseConnectionMySQL::cleanOutdatedTables, this);
     }
     catch (...)
     {
@@ -457,14 +457,14 @@ DatabaseConnectionMySQL::~DatabaseConnectionMySQL()
 {
     try
     {
-        if (!quit)
+        if (!quit && thread)
         {
             {
                 quit = true;
                 std::lock_guard lock{mutex};
             }
             cond.notify_one();
-            thread.join();
+            thread->join();
         }
 
         shutdown();

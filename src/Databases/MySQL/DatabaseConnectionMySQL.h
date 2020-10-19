@@ -111,7 +111,7 @@ private:
 
     void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, const Context & context) const;
 
-    ThreadFromGlobalPool thread;
+    std::unique_ptr<ThreadFromGlobalPool> thread;
 };
 
 }
