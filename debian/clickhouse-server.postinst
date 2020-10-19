@@ -41,5 +41,5 @@ if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
         fi
     fi
 
-    ${CLICKHOUSE_GENERIC_PROGRAM} install --user "${CLICKHOUSE_USER}" --group "${CLICKHOUSE_GROUP}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}" --log-path "${CLICKHOUSE_LOGDIR}" --data-path "{CLICKHOUSE_DATADIR}"
+    ${CLICKHOUSE_GENERIC_PROGRAM} install --user "${CLICKHOUSE_USER}" --group "${CLICKHOUSE_GROUP}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}" --log-path "${CLICKHOUSE_LOGDIR}" --data-path "${CLICKHOUSE_DATADIR}"
 fi
