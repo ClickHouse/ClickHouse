@@ -12,25 +12,19 @@
 #include <Poco/Path.h>
 #include <Poco/File.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/Increment.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_COLUMN;
-extern const int INCORRECT_DATA;
-extern const int INCORRECT_FILE_NAME;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int PATH_ACCESS_DENIED;
 }
 
-/** fileInc(x) - read integer from file, increment it and write it down. Create file with '0' if it doesn't exist.
+/** fileInc(x[,y=1]) - read integer from file 'x', increment it by 'y' and write it down. Create file with '0' if it doesn't exist.
   * Returns incremented integer
   */
 class ExecutableFunctionFileInc : public IExecutableFunctionImpl
@@ -53,33 +47,11 @@ public:
         if (!startsWith(file_path.toString(), user_files_path))
             throw Exception("File path " + file_path.toString() + " is not inside " + user_files_path, ErrorCodes::PATH_ACCESS_DENIED);
 
-        Int64 file_val = 0;
-        Poco::File file = Poco::File(file_path);
+        Poco::File(file_path.parent()).createDirectories();
 
-        if (file.exists())
-        {
-            if (file.isDirectory())
-                throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+        auto increment = Increment(file_path);
 
-            if (!file.canRead() || !file.canWrite())
-                throw Exception("There is no RW access to file", ErrorCodes::PATH_ACCESS_DENIED);
-
-            ReadBufferFromFile file_rb(file_path.toString(), WRITE_HELPERS_MAX_INT_WIDTH);
-
-            if (!tryReadIntText(file_val, file_rb) || !file_rb.eof())
-                throw Exception("File must contains only one integer", ErrorCodes::INCORRECT_DATA);
-
-            file_val++;
-        }
-        else
-        {
-            Poco::File(file_path.parent()).createDirectories();
-        }
-
-        WriteBufferFromFile file_wb(file_path.toString(), WRITE_HELPERS_MAX_INT_WIDTH);
-        writeIntText(file_val, file_wb);
-
-        columns[result].column = DataTypeInt64().createColumnConst(input_rows_count, file_val);
+        columns[result].column = DataTypeUInt64().createColumnConst(input_rows_count, increment.peek(true));
     }
 
 private:
@@ -127,12 +99,12 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeInt64>(); }
+    DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeUInt64>(); }
 
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (!checkColumnConst<ColumnString>(arguments.at(0).column.get()))
-            throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         DataTypes argument_types;
         argument_types.emplace_back(arguments.at(0).type);

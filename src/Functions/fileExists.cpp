@@ -19,7 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int PATH_ACCESS_DENIED;
 }
 
@@ -97,7 +97,7 @@ public:
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (!checkColumnConst<ColumnString>(arguments.at(0).column.get()))
-            throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         DataTypes argument_types;
         argument_types.emplace_back(arguments.at(0).type);
