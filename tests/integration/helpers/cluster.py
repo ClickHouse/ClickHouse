@@ -161,6 +161,7 @@ class ClickHouseCluster:
         self.docker_client = None
         self.is_up = False
         print("CLUSTER INIT base_config_dir:{}".format(self.base_config_dir))
+        self.kazoo_connections = {}
 
     def get_client_cmd(self):
         cmd = self.client_bin_path
@@ -734,6 +735,10 @@ class ClickHouseCluster:
             instance.ip_address = None
             instance.client = None
 
+        for zoo_client in self.kazoo_connections.values():
+            zoo_client.stop()
+            zoo_client.close()
+
         if not self.zookeeper_use_tmpfs:
             for i in range(1, 4):
                 zk_data_path = self.instances_dir + '/zkdata' + str(i)
@@ -761,9 +766,16 @@ class ClickHouseCluster:
         os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
 
     def get_kazoo_client(self, zoo_instance_name):
-        zk = KazooClient(hosts=self.get_instance_ip(zoo_instance_name))
-        zk.start()
-        return zk
+
+        if zoo_instance_name not in self.kazoo_connections:
+            kazoo_logger = logging.getLogger("kazoo_logger")
+            kazoo_logger.setLevel(logging.WARNING)
+            self.kazoo_connections[zoo_instance_name] = KazooClient(hosts=self.get_instance_ip(zoo_instance_name), logger=kazoo_logger)
+            self.kazoo_connections[zoo_instance_name].start()
+        else:
+            self.kazoo_connections[zoo_instance_name].restart()
+
+        return self.kazoo_connections[zoo_instance_name]
 
     def run_kazoo_commands_with_retries(self, kazoo_callback, zoo_instance_name='zoo1', repeats=1, sleep_for=1):
         for i in range(repeats - 1):
