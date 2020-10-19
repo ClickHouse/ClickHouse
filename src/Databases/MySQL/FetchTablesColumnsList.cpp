@@ -41,7 +41,7 @@ namespace DB
 {
 
 std::map<String, NamesAndTypesList> fetchTablesColumnsList(
-        mysqlxx::Pool & pool,
+        const mysqlxx::Pool::Entry & connection,
         const String & database_name,
         const std::vector<String> & tables_name,
         bool external_table_functions_use_nulls,
@@ -78,7 +78,7 @@ std::map<String, NamesAndTypesList> fetchTablesColumnsList(
              " WHERE TABLE_SCHEMA = " << quote << database_name
           << " AND TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
 
-    MySQLBlockInputStream result(pool.get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(connection, query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
     while (Block block = result.read())
     {
         const auto & table_name_col = *block.getByPosition(0).column;

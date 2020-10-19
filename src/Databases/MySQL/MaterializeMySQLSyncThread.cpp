@@ -216,8 +216,7 @@ void MaterializeMySQLSyncThread::stopSynchronization()
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
-    const auto & connection = database->getMySQLConnectionPool().get();
-    const auto & mysql_server_version = checkVariableAndGetVersion(connection);
+    const auto & mysql_server_version = checkVariableAndGetVersion(database->getMySQLConnection());
 
     background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
         [this, mysql_server_version = mysql_server_version]() { synchronization(mysql_server_version); });
@@ -312,7 +311,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
     {
         try
         {
-            connection = database->getMySQLConnectionPool().get();
+            connection = database->getMySQLConnection();
             opened_transaction = false;
 
             MaterializeMetadata metadata(

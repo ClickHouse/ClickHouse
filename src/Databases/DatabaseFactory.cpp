@@ -36,7 +36,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_AST;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_DATABASE_ENGINE;
-    extern const int CANNOT_CREATE_DATABASE;
 }
 
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, Context & context)
@@ -111,52 +110,35 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
 
         const auto & host_name_and_port = safeGetLiteralValue<String>(arguments[0], engine_name);
-        const auto & mysql_database_name = safeGetLiteralValue<String>(arguments[1], engine_name);
-        const auto & mysql_user_name = safeGetLiteralValue<String>(arguments[2], engine_name);
-        const auto & mysql_user_password = safeGetLiteralValue<String>(arguments[3], engine_name);
-
         const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
 
         MySQLConnectionArgs args
         {
             .hostname = remote_host_name,
             .port = remote_port,
-            .database_name = mysql_database_name,
-            .username = mysql_user_name,
-            .user_password = mysql_user_password
+            .database_name = safeGetLiteralValue<String>(arguments[1], engine_name),
+            .username = safeGetLiteralValue<String>(arguments[2], engine_name),
+            .user_password = safeGetLiteralValue<String>(arguments[3], engine_name)
         };
 
-        try
+        if (engine_name == "MaterializeMySQL")
         {
+            auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
 
-//            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
+            if (engine_define->settings)
+                materialize_mode_settings->loadFromQuery(*engine_define);
 
-            if (engine_name == "MaterializeMySQL")
-            {
-//                MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
-
-                auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
-
-                if (engine_define->settings)
-                    materialize_mode_settings->loadFromQuery(*engine_define);
-
-                return std::make_shared<DatabaseMaterializeMySQL>(
-                    context, database_name, metadata_path, engine_define, std::move(materialize_mode_settings), args);
-            }
-
-            auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
-
-            mysql_database_settings->loadFromQueryContext(context);
-            mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
-
-            return std::make_shared<DatabaseConnectionMySQL>(
-                context, database_name, metadata_path, engine_define, std::move(mysql_database_settings), args);
+            return std::make_shared<DatabaseMaterializeMySQL>(
+                context, database_name, metadata_path, engine_define, std::move(materialize_mode_settings), args);
         }
-        catch (...)
-        {
-            const auto & exception_message = getCurrentExceptionMessage(true);
-            throw Exception("Cannot create MySQL database, because " + exception_message, ErrorCodes::CANNOT_CREATE_DATABASE);
-        }
+
+        auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
+
+        mysql_database_settings->loadFromQueryContext(context);
+        mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
+
+        return std::make_shared<DatabaseConnectionMySQL>(
+            context, database_name, metadata_path, engine_define, std::move(mysql_database_settings), args);
     }
 #endif
 

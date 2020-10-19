@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int CANNOT_CREATE_DATABASE;
 }
 
 constexpr static const auto suffix = ".remove_flag";
@@ -236,8 +237,9 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(const std::map
             local_tables_cache.erase(iterator);
         }
 
+        mysqlxx::Pool table_connections_pool = createNewMySQLConnectionsPool();
         local_tables_cache[table_name] = std::make_pair(table_modification_time, StorageMySQL::create(
-            StorageID(database_name, table_name), std::move(getMySQLConnectionPool()), database_name_in_mysql, table_name,
+            StorageID(database_name, table_name), std::move(table_connections_pool), database_name_in_mysql, table_name,
             false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, global_context));
     }
 }
@@ -258,7 +260,7 @@ std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTim
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    MySQLBlockInputStream result(getMySQLConnectionPool().get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(getMySQLConnection(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
 
     while (Block block = result.read())
     {
@@ -278,7 +280,7 @@ std::map<String, NamesAndTypesList> DatabaseConnectionMySQL::fetchTablesColumnsL
     const auto & settings = context.getSettingsRef();
 
     return DB::fetchTablesColumnsList(
-            getMySQLConnectionPool(),
+            getMySQLConnection(),
             database_name_in_mysql,
             tables_name,
             settings.external_table_functions_use_nulls,
@@ -401,10 +403,14 @@ void DatabaseConnectionMySQL::loadStoredObjects(Context & context, bool has_forc
     }
     catch (...)
     {
-//        tryLogCurrentException(log, "Cannot load MySQL database stored objects.");
+        tryLogCurrentException(&Poco::Logger::get("DatabaseConnectionMySQL(" + database_name + ")"),
+            "Cannot load MySQL database stored objects.");
 
         if (!force_attach)
-            throw;
+        {
+            const auto & exception_message = getCurrentExceptionMessage(true);
+            throw Exception("Cannot create MySQL database, because " + exception_message, ErrorCodes::CANNOT_CREATE_DATABASE);
+        }
     }
 }
 

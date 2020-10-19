@@ -79,7 +79,7 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(const Context & c
         pool.emplace(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
 
     const auto & settings = context.getSettingsRef();
-    const auto tables_and_columns = fetchTablesColumnsList(*pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
+    const auto tables_and_columns = fetchTablesColumnsList(pool->get(), remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
 
     const auto columns = tables_and_columns.find(remote_table_name);
     if (columns == tables_and_columns.end())

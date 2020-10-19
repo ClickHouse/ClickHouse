@@ -1,6 +1,10 @@
 #pragma once
 
-//#if USE_MYSQL
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_MYSQL
 
 #    include <Databases/IDatabase.h>
 
@@ -29,7 +33,9 @@ public:
 
     MySQLClient & getMySQLReplicaClient() const;
 
-    mysqlxx::Pool & getMySQLConnectionPool() const;
+    mysqlxx::Pool::Entry getMySQLConnection() const;
+
+    mysqlxx::Pool createNewMySQLConnectionsPool() const;
 
 private:
     MySQLConnectionArgs connection_args;
@@ -40,4 +46,4 @@ private:
 
 }
 
-//#endif
+#endif
