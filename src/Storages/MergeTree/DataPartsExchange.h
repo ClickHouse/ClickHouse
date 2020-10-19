@@ -32,7 +32,7 @@ public:
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
     void sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
-    void sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, bool send_default_compression_file);
+    void sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
 
 private:
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
@@ -74,7 +74,6 @@ private:
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
-            bool sync,
             const ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in);
 

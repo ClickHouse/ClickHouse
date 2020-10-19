@@ -204,22 +204,22 @@ public:
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called
      * and "execute" otherwise.
      */
-    void selectAndExecute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    void selectAndExecute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         if (implementations.empty())
             throw Exception("There are no available implementations for function " "TODO(dakovalkov): add name",
                             ErrorCodes::NO_SUITABLE_FUNCTION_IMPLEMENTATION);
 
-        /// Statistics shouldn't rely on small columnss.
+        /// Statistics shouldn't rely on small blocks.
         bool considerable = (input_rows_count > 1000);
 
         size_t id = statistics.select(considerable);
         Stopwatch watch;
 
         if constexpr (std::is_same_v<FunctionInterface, IFunction>)
-            implementations[id]->executeImpl(columns, arguments, result, input_rows_count);
+            implementations[id]->executeImpl(block, arguments, result, input_rows_count);
         else
-            implementations[id]->execute(columns, arguments, result, input_rows_count);
+            implementations[id]->execute(block, arguments, result, input_rows_count);
 
         watch.stop();
 
@@ -232,7 +232,7 @@ public:
 
     /* Register new implementation for function.
      *
-     * Arch - required instruction set for running the implementation. It's guaranteed that no method would
+     * Arch - required instruction set for running the implementation. It's guarantied that no method would
      * be called (even the constructor and static methods) if the processor doesn't support this instruction set.
      *
      * FunctionImpl - implementation, should be inherited from template argument FunctionInterface.

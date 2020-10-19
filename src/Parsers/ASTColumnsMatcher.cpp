@@ -2,7 +2,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
 #include <re2/re2.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
@@ -21,29 +20,10 @@ ASTPtr ASTColumnsMatcher::clone() const
 
 void ASTColumnsMatcher::appendColumnName(WriteBuffer & ostr) const { writeString(original_pattern, ostr); }
 
-void ASTColumnsMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsMatcher::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    hash_state.update(original_pattern.size());
-    hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
-}
-
-void ASTColumnsMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
-    if (column_list)
-    {
-        frame.expression_list_prepend_whitespace = false;
-        column_list->formatImpl(settings, state, frame);
-    }
-    else
-        settings.ostr << quoteString(original_pattern);
-    settings.ostr << ")";
-    for (ASTs::const_iterator it = children.begin() + 1; it != children.end(); ++it)
-    {
-        settings.ostr << ' ';
-        (*it)->formatImpl(settings, state, frame);
-    }
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "("
+                  << quoteString(original_pattern) << ")";
 }
 
 void ASTColumnsMatcher::setPattern(String pattern)

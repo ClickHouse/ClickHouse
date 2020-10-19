@@ -494,6 +494,6 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
 
-## sumMapFiltered (keys_to_keep) (anahtarlar, değerler) {#summapfilteredkeys-to-keepkeys-values}
+## sumMapFiltered (keys\_to\_keep) (anahtarlar, değerler) {#summapfilteredkeys-to-keepkeys-values}
 
 Aynı davranış [sumMap](reference.md#agg_functions-summap) dışında bir dizi anahtar parametre olarak geçirilir. Bu, özellikle yüksek bir Anahtarlık ile çalışırken yararlı olabilir.

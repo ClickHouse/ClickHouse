@@ -24,12 +24,12 @@ toc_title: SYSTEM
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 بارگذاری مجدد تمام لغت نامه که با موفقیت قبل از لود شده است.
-به طور پیش فرض, لغت نامه ها به صورت تنبلی لود (دیدن [_بارگیری کامل](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), بنابراین به جای اینکه به طور خودکار در هنگام راه اندازی لود, در اولین دسترسی از طریق تابع دیکته مقداردهی اولیه و یا از جداول با موتور = فرهنگ لغت را انتخاب کنید. این `SYSTEM RELOAD DICTIONARIES` پرس و جو بارگذاری مجدد از جمله لغت نامه (لود شده).
+به طور پیش فرض, لغت نامه ها به صورت تنبلی لود (دیدن [\_بارگیری کامل](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), بنابراین به جای اینکه به طور خودکار در هنگام راه اندازی لود, در اولین دسترسی از طریق تابع دیکته مقداردهی اولیه و یا از جداول با موتور = فرهنگ لغت را انتخاب کنید. این `SYSTEM RELOAD DICTIONARIES` پرس و جو بارگذاری مجدد از جمله لغت نامه (لود شده).
 همیشه باز می گردد `Ok.` صرف نظر از نتیجه به روز رسانی فرهنگ لغت.
 
 ## بازخوانی لغتنامهها {#query_language-system-reload-dictionary}
 
-به طور کامل یک فرهنگ لغت را دوباره بارگذاری کنید `dictionary_name` بدون در نظر گرفتن دولت از فرهنگ لغت (لود / NOT_LOADED / شکست خورده).
+به طور کامل یک فرهنگ لغت را دوباره بارگذاری کنید `dictionary_name` بدون در نظر گرفتن دولت از فرهنگ لغت (لود / NOT\_LOADED / شکست خورده).
 همیشه باز می گردد `Ok.` صرف نظر از نتیجه به روز رسانی فرهنگ لغت.
 وضعیت فرهنگ لغت را می توان با پرس و جو بررسی کرد `system.dictionaries` جدول
 
@@ -41,7 +41,7 @@ SELECT name, status FROM system.dictionaries;
 
 کش دی ان اس داخلی بازنشانی را کلیک کنید. گاهی اوقات (برای ClickHouse نسخه) لازم است برای استفاده از این دستور هنگامی که در حال تغییر زیرساخت ها (تغییر آدرس IP دیگر ClickHouse سرور یا سرور استفاده شده توسط لغت نامه).
 
-برای راحت تر (اتوماتیک) مدیریت کش دیدن disable_internal_dns_cache, dns_cache_update_period پارامترهای.
+برای راحت تر (اتوماتیک) مدیریت کش دیدن disable\_internal\_dns\_cache, dns\_cache\_update\_period پارامترهای.
 
 ## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
@@ -49,7 +49,7 @@ SELECT name, status FROM system.dictionaries;
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
-Flushes buffers of log messages to system tables (e.g. system.query_log). Allows you to not wait 7.5 seconds when debugging.
+Flushes buffers of log messages to system tables (e.g. system.query\_log). Allows you to not wait 7.5 seconds when debugging.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 

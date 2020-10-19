@@ -64,20 +64,13 @@ TemporaryTableHolder::TemporaryTableHolder(
     const Context & context_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    const ASTPtr & query,
-    bool create_for_global_subquery)
+    const ASTPtr & query)
     : TemporaryTableHolder
       (
           context_,
           [&](const StorageID & table_id)
           {
-              auto storage = StorageMemory::create(
-                      table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
-
-              if (create_for_global_subquery)
-                  storage->delayReadForGlobalSubqueries();
-
-              return storage;
+              return StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
           },
           query
       )
@@ -659,10 +652,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
     if (table)
-    {
         drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        table->is_dropped = true;
-    }
     else
     {
         /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk or remove data from all volumes)
@@ -679,7 +669,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             try
             {
                 table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, *global_context, false).second;
-                table->is_dropped = true;
             }
             catch (...)
             {
@@ -703,7 +692,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, 0});
     else
         tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time});
-    tables_marked_dropped_ids.insert(table_id.uuid);
     /// If list of dropped tables was empty, start a drop task
     if (drop_task && tables_marked_dropped.size() == 1)
         (*drop_task)->schedule();
@@ -745,9 +733,6 @@ void DatabaseCatalog::dropTableDataTask()
         try
         {
             dropTableFinally(table);
-            std::lock_guard lock(tables_marked_dropped_mutex);
-            [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table.table_id.uuid);
-            assert(removed);
         }
         catch (...)
         {
@@ -761,8 +746,6 @@ void DatabaseCatalog::dropTableDataTask()
                     need_reschedule = true;
             }
         }
-
-        wait_table_finally_dropped.notify_all();
     }
 
     /// Do not schedule a task if there is no tables to drop
@@ -775,6 +758,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table) const
     if (table.table)
     {
         table.table->drop();
+        table.table->is_dropped = true;
     }
 
     /// Even if table is not loaded, try remove its data from disk.
@@ -820,17 +804,6 @@ String DatabaseCatalog::resolveDictionaryName(const String & name) const
         return name;
 
     return toString(db_and_table.second->getStorageID().uuid);
-}
-
-void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
-{
-    if (uuid == UUIDHelpers::Nil)
-        return;
-    std::unique_lock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock, [&]()
-    {
-        return tables_marked_dropped_ids.count(uuid) == 0;
-    });
 }
 
 

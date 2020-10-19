@@ -25,7 +25,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -70,14 +69,13 @@ static inline bool likePatternIsStrstr(const String & pattern, String & res)
 }
 
 /** 'like' - if true, treat pattern as SQL LIKE or ILIKE; if false - treat pattern as re2 regexp.
-  * NOTE: We want to run regexp search for whole columns by one call (as implemented in function 'position')
+  * NOTE: We want to run regexp search for whole block by one call (as implemented in function 'position')
   *  but for that, regexp engine must support \0 bytes and their interpretation as string boundaries.
   */
 template <bool like, bool revert = false, bool case_insensitive = false>
 struct MatchImpl
 {
     static constexpr bool use_default_implementation_for_constants = true;
-    static constexpr bool supports_start_pos = false;
 
     using ResultType = UInt8;
 
@@ -86,15 +84,8 @@ struct MatchImpl
           VolnitskyUTF8>;
 
     static void vectorConstant(
-        const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
-        const std::string & pattern,
-        const ColumnPtr & start_pos,
-        PaddedPODArray<UInt8> & res)
+        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
     {
-        if (start_pos != nullptr)
-            throw Exception("Functions 'like' and 'match' don't support start_pos argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
         if (offsets.empty())
             return;
 
@@ -244,8 +235,7 @@ struct MatchImpl
 
     /// Very carefully crafted copy-paste.
     static void vectorFixedConstant(
-        const ColumnString::Chars & data, size_t n, const std::string & pattern,
-        PaddedPODArray<UInt8> & res)
+        const ColumnString::Chars & data, size_t n, const std::string & pattern, PaddedPODArray<UInt8> & res)
     {
         if (data.empty())
             return;

@@ -1,9 +1,8 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 
-#include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>
+#include <Interpreters/Aggregator.h>
 #include <Processors/ResizeProcessor.h>
-#include <Processors/Pipe.h>
 
 namespace DB
 {
@@ -493,32 +492,51 @@ IProcessor::Status SortingAggregatedTransform::prepare()
 }
 
 
-void addMergingAggregatedMemoryEfficientTransform(
-    Pipe & pipe,
-    AggregatingTransformParamsPtr params,
-    size_t num_merging_processors)
+Processors createMergingAggregatedMemoryEfficientPipe(
+        Block header,
+        AggregatingTransformParamsPtr params,
+        size_t num_inputs,
+        size_t num_merging_processors)
 {
-    pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(pipe.getHeader(), pipe.numOutputPorts(), params));
+    Processors processors;
+    processors.reserve(num_merging_processors + 2);
+
+    auto grouping = std::make_shared<GroupingAggregatedTransform>(header, num_inputs, params);
+    processors.emplace_back(std::move(grouping));
 
     if (num_merging_processors <= 1)
     {
         /// --> GroupingAggregated --> MergingAggregatedBucket -->
-        pipe.addTransform(std::make_shared<MergingAggregatedBucketTransform>(params));
-        return;
+        auto transform = std::make_shared<MergingAggregatedBucketTransform>(params);
+        connect(processors.back()->getOutputs().front(), transform->getInputPort());
+
+        processors.emplace_back(std::move(transform));
+        return processors;
     }
 
     /// -->                                        --> MergingAggregatedBucket -->
     /// --> GroupingAggregated --> ResizeProcessor --> MergingAggregatedBucket --> SortingAggregated -->
     /// -->                                        --> MergingAggregatedBucket -->
 
-    pipe.resize(num_merging_processors);
+    auto resize = std::make_shared<ResizeProcessor>(Block(), 1, num_merging_processors);
+    connect(processors.back()->getOutputs().front(), resize->getInputs().front());
+    processors.emplace_back(std::move(resize));
 
-    pipe.addSimpleTransform([params](const Block &)
+    auto sorting = std::make_shared<SortingAggregatedTransform>(num_merging_processors, params);
+    auto out = processors.back()->getOutputs().begin();
+    auto in = sorting->getInputs().begin();
+
+    for (size_t i = 0; i < num_merging_processors; ++i, ++in, ++out)
     {
-        return std::make_shared<MergingAggregatedBucketTransform>(params);
-    });
+        auto transform = std::make_shared<MergingAggregatedBucketTransform>(params);
+        transform->setStream(i);
+        connect(*out, transform->getInputPort());
+        connect(transform->getOutputPort(), *in);
+        processors.emplace_back(std::move(transform));
+    }
 
-    pipe.addTransform(std::make_shared<SortingAggregatedTransform>(num_merging_processors, params));
+    processors.emplace_back(std::move(sorting));
+    return processors;
 }
 
 }

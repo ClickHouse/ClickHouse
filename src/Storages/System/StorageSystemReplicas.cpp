@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -15,8 +16,8 @@ namespace DB
 {
 
 
-StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
-    : IStorage(table_id_)
+StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
+    : IStorage({"system", name_})
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({
@@ -56,7 +57,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 }
 
 
-Pipe StorageSystemReplicas::read(
+Pipes StorageSystemReplicas::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -138,7 +139,7 @@ Pipe StorageSystemReplicas::read(
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
-            return {};
+            return Pipes();
 
         col_database = filtered_block.getByName("database").column;
         col_table = filtered_block.getByName("table").column;
@@ -201,7 +202,9 @@ Pipe StorageSystemReplicas::read(
     UInt64 num_rows = fin_columns.at(0)->size();
     Chunk chunk(std::move(fin_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
+    return pipes;
 }
 
 

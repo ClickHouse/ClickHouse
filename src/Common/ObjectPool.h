@@ -24,7 +24,7 @@ class SimpleObjectPool
 {
 protected:
 
-    /// Hold all available objects in stack.
+    /// Hold all avaiable objects in stack.
     std::mutex mutex;
     std::stack<std::unique_ptr<T>> stack;
 

@@ -150,9 +150,10 @@ Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 }
 
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, const char *thread_name_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric memory_metric_, const char *thread_name_)
     : size(size_)
     , tasks_metric(tasks_metric_)
+    , memory_metric(memory_metric_)
     , thread_name(thread_name_)
 {
     LOG_INFO(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size);
@@ -248,6 +249,8 @@ void BackgroundSchedulePool::threadFunction()
 
     attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
+    if (auto * memory_tracker = CurrentThread::getMemoryTracker())
+        memory_tracker->setMetric(memory_metric);
 
     while (!shutdown)
     {
