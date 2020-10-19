@@ -26,7 +26,7 @@ class Node(object):
     def repr(self):
         return f"Node(name='{self.name}')"
 
-    def restart(self, timeout=120, safe=True):
+    def restart(self, timeout=300, safe=True):
         """Restart node.
         """
         with self.cluster.lock:
@@ -43,18 +43,18 @@ class Node(object):
 class ClickHouseNode(Node):
     """Node with ClickHouse server.
     """
-    def wait_healthy(self, timeout=120):
+    def wait_healthy(self, timeout=300):
         with By(f"waiting until container {self.name} is healthy"):
             start_time = time.time()
             while True:
-                if self.query("select 1", no_checks=1, timeout=120, steps=False).exitcode == 0:
+                if self.query("select 1", no_checks=1, timeout=300, steps=False).exitcode == 0:
                     break
                 if time.time() - start_time < timeout:
                     time.sleep(2)
                     continue
                 assert False, "container is not healthy"
 
-    def restart(self, timeout=120, safe=True):
+    def restart(self, timeout=300, safe=True):
         """Restart node.
         """
         if safe:
@@ -180,7 +180,7 @@ class Cluster(object):
         self.docker_compose += f" --no-ansi --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
         self.lock = threading.Lock()
 
-    def shell(self, node, timeout=120):
+    def shell(self, node, timeout=300):
         """Returns unique shell terminal to be used.
         """
         if node is None:
@@ -193,7 +193,7 @@ class Cluster(object):
         shell.timeout = timeout
         return shell
 
-    def bash(self, node, timeout=120):
+    def bash(self, node, timeout=300):
         """Returns thread-local bash terminal
         to a specific node.
         :param node: name of the service
