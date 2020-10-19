@@ -32,7 +32,13 @@ void KafkaBlockOutputStream::writePrefix()
     if (!buffer)
         throw Exception("Failed to create Kafka producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
-    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer, getHeader(), *context, [this](const Columns & columns, size_t row){ buffer->countRow(columns, row); });
+    child = FormatFactory::instance().getOutput(
+            storage.getFormatName(), *buffer, getHeader(), *context, [this](const Columns & columns, size_t row)
+            {
+                buffer->countRow(columns, row);
+            },
+            /* ignore_no_row_delimiter = */ true
+            );
 }
 
 void KafkaBlockOutputStream::write(const Block & block)
@@ -42,7 +48,8 @@ void KafkaBlockOutputStream::write(const Block & block)
 
 void KafkaBlockOutputStream::writeSuffix()
 {
-    child->writeSuffix();
+    if (child)
+        child->writeSuffix();
     flush();
 }
 

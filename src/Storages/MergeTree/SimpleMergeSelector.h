@@ -73,8 +73,8 @@ public:
 
     explicit SimpleMergeSelector(const Settings & settings_) : settings(settings_) {}
 
-    PartsInPartition select(
-        const Partitions & partitions,
+    PartsRange select(
+        const PartsRanges & parts_ranges,
         const size_t max_total_size_to_merge) override;
 
 private:

@@ -543,9 +543,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(columns[arguments[0]].column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
 
@@ -566,10 +566,10 @@ public:
                 current_offset = offsets[i];
             }
 
-            block.getByPosition(result).column = std::move(col_to);
+            columns[result].column = std::move(col_to);
         }
         else if (
-            const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
+            const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(columns[arguments[0]].column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
             const typename ColumnFixedString::Chars & data = col_from_fix->getChars();
@@ -582,10 +582,10 @@ public:
                 Impl::apply(
                     reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
             }
-            block.getByPosition(result).column = std::move(col_to);
+            columns[result].column = std::move(col_to);
         }
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + columns[arguments[0]].column->getName()
                     + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -604,11 +604,11 @@ private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType>
-    void executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
+    void executeType(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result) const
     {
         using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
-        if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(columns[arguments[0]].column.get()))
         {
             auto col_to = ColumnVector<ToType>::create();
 
@@ -620,10 +620,10 @@ private:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::apply(vec_from[i]);
 
-            block.getByPosition(result).column = std::move(col_to);
+            columns[result].column = std::move(col_to);
         }
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + columns[arguments[0]].column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -647,25 +647,25 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = columns[arguments[0]].type.get();
         WhichDataType which(from_type);
 
-        if      (which.isUInt8()) executeType<UInt8>(block, arguments, result);
-        else if (which.isUInt16()) executeType<UInt16>(block, arguments, result);
-        else if (which.isUInt32()) executeType<UInt32>(block, arguments, result);
-        else if (which.isUInt64()) executeType<UInt64>(block, arguments, result);
-        else if (which.isInt8()) executeType<Int8>(block, arguments, result);
-        else if (which.isInt16()) executeType<Int16>(block, arguments, result);
-        else if (which.isInt32()) executeType<Int32>(block, arguments, result);
-        else if (which.isInt64()) executeType<Int64>(block, arguments, result);
-        else if (which.isDate()) executeType<UInt16>(block, arguments, result);
-        else if (which.isDateTime()) executeType<UInt32>(block, arguments, result);
-        else if (which.isDecimal32()) executeType<Decimal32>(block, arguments, result);
-        else if (which.isDecimal64()) executeType<Decimal64>(block, arguments, result);
+        if      (which.isUInt8()) executeType<UInt8>(columns, arguments, result);
+        else if (which.isUInt16()) executeType<UInt16>(columns, arguments, result);
+        else if (which.isUInt32()) executeType<UInt32>(columns, arguments, result);
+        else if (which.isUInt64()) executeType<UInt64>(columns, arguments, result);
+        else if (which.isInt8()) executeType<Int8>(columns, arguments, result);
+        else if (which.isInt16()) executeType<Int16>(columns, arguments, result);
+        else if (which.isInt32()) executeType<Int32>(columns, arguments, result);
+        else if (which.isInt64()) executeType<Int64>(columns, arguments, result);
+        else if (which.isDate()) executeType<UInt16>(columns, arguments, result);
+        else if (which.isDateTime()) executeType<UInt32>(columns, arguments, result);
+        else if (which.isDecimal32()) executeType<Decimal32>(columns, arguments, result);
+        else if (which.isDecimal64()) executeType<Decimal64>(columns, arguments, result);
         else
-            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal type " + columns[arguments[0]].type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
@@ -689,9 +689,9 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);
+        selector.selectAndExecute(columns, arguments, result, input_rows_count);
     }
 
     static FunctionPtr create(const Context & context)
@@ -968,13 +968,13 @@ private:
         else if (which.isUInt32()) executeIntType<UInt32, first>(icolumn, vec_to);
         else if (which.isUInt64()) executeIntType<UInt64, first>(icolumn, vec_to);
         else if (which.isUInt128() || which.isUUID()) executeBigIntType<UInt128, first>(icolumn, vec_to);
-        else if (which.isbUInt256()) executeBigIntType<bUInt256, first>(icolumn, vec_to);
+        else if (which.isUInt256()) executeBigIntType<UInt256, first>(icolumn, vec_to);
         else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isInt32()) executeIntType<Int32, first>(icolumn, vec_to);
         else if (which.isInt64()) executeIntType<Int64, first>(icolumn, vec_to);
         else if (which.isInt128()) executeBigIntType<Int128, first>(icolumn, vec_to);
-        else if (which.isbInt256()) executeBigIntType<bInt256, first>(icolumn, vec_to);
+        else if (which.isInt256()) executeBigIntType<Int256, first>(icolumn, vec_to);
         else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
@@ -1041,7 +1041,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         size_t rows = input_rows_count;
         auto col_to = ColumnVector<ToType>::create(rows);
@@ -1059,11 +1059,11 @@ public:
         bool is_first_argument = true;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const ColumnWithTypeAndName & col = block.getByPosition(arguments[i]);
+            const ColumnWithTypeAndName & col = columns[arguments[i]];
             executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
         }
 
-        block.getByPosition(result).column = std::move(col_to);
+        columns[result].column = std::move(col_to);
     }
 };
 
@@ -1086,9 +1086,9 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);
+        selector.selectAndExecute(columns, arguments, result, input_rows_count);
     }
 
     static FunctionPtr create(const Context & context)
@@ -1209,22 +1209,22 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const auto arg_count = arguments.size();
 
         if (arg_count == 1)
-            executeSingleArg(block, arguments, result);
+            executeSingleArg(columns, arguments, result);
         else if (arg_count == 2)
-            executeTwoArgs(block, arguments, result);
+            executeTwoArgs(columns, arguments, result);
         else
             throw Exception{"got into IFunction::execute with unexpected number of arguments", ErrorCodes::LOGICAL_ERROR};
     }
 
 private:
-    void executeSingleArg(Block & block, const ColumnNumbers & arguments, const size_t result) const
+    void executeSingleArg(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, const size_t result) const
     {
-        const auto col_untyped = block.getByPosition(arguments.front()).column.get();
+        const auto col_untyped = columns[arguments.front()].column.get();
 
         if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
@@ -1245,22 +1245,22 @@ private:
                 current_offset = offsets[i];
             }
 
-            block.getByPosition(result).column = std::move(col_to);
+            columns[result].column = std::move(col_to);
         }
         else
-            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
+            throw Exception{"Illegal column " + columns[arguments[0]].column->getName() +
                 " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
-    void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
+    void executeTwoArgs(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, const size_t result) const
     {
-        const auto level_col = block.getByPosition(arguments.back()).column.get();
+        const auto level_col = columns[arguments.back()].column.get();
         if (!isColumnConst(*level_col))
             throw Exception{"Second argument of function " + getName() + " must be an integral constant", ErrorCodes::ILLEGAL_COLUMN};
 
         const auto level = level_col->get64(0);
 
-        const auto col_untyped = block.getByPosition(arguments.front()).column.get();
+        const auto col_untyped = columns[arguments.front()].column.get();
         if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
@@ -1281,10 +1281,10 @@ private:
                 current_offset = offsets[i];
             }
 
-            block.getByPosition(result).column = std::move(col_to);
+            columns[result].column = std::move(col_to);
         }
         else
-            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
+            throw Exception{"Illegal column " + columns[arguments[0]].column->getName() +
                 " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 };

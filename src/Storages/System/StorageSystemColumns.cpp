@@ -5,7 +5,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/NullBlockInputStream.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -214,7 +213,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (column.codec)
-                        res_columns[res_index++]->insert("CODEC(" + column.codec->getCodecDesc() + ")");
+                        res_columns[res_index++]->insert(queryToString(column.codec));
                     else
                         res_columns[res_index++]->insertDefault();
                 }

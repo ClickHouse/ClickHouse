@@ -24,4 +24,8 @@ Columns:
 - `execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — The total query execution time, in seconds (wall time).
 - `max_execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — Maximum of query execution time.
 
+## See Also {#see-also}
+
+-   [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
+
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/quotas_usage) <!--hide-->

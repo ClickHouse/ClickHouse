@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/assert_cast.h>
+#include <common/arithmeticOverflow.h>
 
 
 namespace DB
@@ -60,7 +61,18 @@ public:
         if (end < begin)
             total = 0;
         else
-            total = (end - begin + step - 1) / step;
+        {
+            Key dif;
+            size_t sum;
+            if (common::subOverflow(end, begin, dif)
+                || common::addOverflow(static_cast<size_t>(dif), step, sum))
+            {
+                throw Exception("Overflow in internal computations in function " + getName()
+                    + ". Too large arguments", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            }
+
+            total = (sum - 1) / step; // total = (end - begin + step - 1) / step
+        }
 
         if (total > MAX_ELEMENTS)
             throw Exception("The range given in function "

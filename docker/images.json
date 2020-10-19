@@ -2,10 +2,6 @@
     "docker/packager/deb": {
         "name": "yandex/clickhouse-deb-builder",
         "dependent": [
-            "docker/test/stateless",
-            "docker/test/stateless_with_coverage",
-            "docker/test/stateless_pytest",
-            "docker/test/coverage",
             "docker/packager/unbundled"
         ]
     },
@@ -13,8 +9,13 @@
         "name": "yandex/clickhouse-binary-builder",
         "dependent": [
             "docker/test/split_build_smoke_test",
-            "docker/test/pvs"
+            "docker/test/pvs",
+            "docker/test/codebrowser"
         ]
+    },
+    "docker/packager/unbundled": {
+        "name": "yandex/clickhouse-unbundled-builder",
+        "dependent": []
     },
     "docker/test/coverage": {
         "name": "yandex/clickhouse-coverage",
@@ -133,9 +134,17 @@
         "name": "yandex/clickhouse-postgresql-java-client",
         "dependent": []
     },
+    "docker/test/integration/kerberos_kdc": {
+        "name": "yandex/clickhouse-kerberos-kdc",
+        "dependent": []
+    },
     "docker/test/base": {
          "name": "yandex/clickhouse-test-base",
          "dependent": [
+            "docker/test/stateless",
+            "docker/test/stateless_with_coverage",
+            "docker/test/stateless_pytest",
+            "docker/test/coverage"
          ]
     },
     "docker/packager/unbundled": {

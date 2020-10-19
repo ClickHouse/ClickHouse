@@ -1,3 +1,4 @@
+#pragma once
 #include "CacheDictionary.h"
 
 #include <Columns/ColumnsNumber.h>
@@ -148,7 +149,9 @@ void CacheDictionary::getItemsNumberImpl(
             std::begin(cache_expired_ids), std::end(cache_expired_ids),
             std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
 
-    auto on_cell_updated = [&] (const auto id, const auto cell_idx)
+    auto on_cell_updated =
+    [&attribute_array, &cache_not_found_ids, &cache_expired_ids, &out]
+    (const auto id, const auto cell_idx)
     {
         const auto attribute_value = attribute_array[cell_idx];
 

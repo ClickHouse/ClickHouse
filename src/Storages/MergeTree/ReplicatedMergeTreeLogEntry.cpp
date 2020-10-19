@@ -36,6 +36,8 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 out << s << '\n';
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
+            if (merge_type != MergeType::REGULAR)
+                out <<"\nmerge_type: " << static_cast<UInt64>(merge_type);
             break;
 
         case DROP_RANGE:
@@ -148,8 +150,22 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             source_parts.push_back(s);
         }
         in >> new_part_name;
+
         if (format_version >= 4)
+        {
             in >> "\ndeduplicate: " >> deduplicate;
+
+            /// Trying to be more backward compatible
+            in >> "\n";
+            if (checkString("merge_type: ", in))
+            {
+                UInt64 value;
+                in >> value;
+                merge_type = checkAndGetMergeType(value);
+            }
+            else
+                trailing_newline_found = true;
+        }
     }
     else if (type_str == "drop" || type_str == "detach")
     {

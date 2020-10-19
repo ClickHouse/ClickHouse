@@ -11,7 +11,7 @@ L'interface HTTP vous permet D'utiliser ClickHouse sur n'importe quelle plate-fo
 
 Par défaut, clickhouse-server écoute HTTP sur le port 8123 (cela peut être modifié dans la configuration).
 
-Si vous faites une requête GET / sans Paramètres, elle renvoie le code de réponse 200 et la chaîne définie dans [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) valeur par défaut “Ok.” (avec un saut de ligne à la fin)
+Si vous faites une requête GET / sans Paramètres, elle renvoie le code de réponse 200 et la chaîne définie dans [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) valeur par défaut “Ok.” (avec un saut de ligne à la fin)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -38,7 +38,7 @@ Exemple:
 $ curl 'http://localhost:8123/?query=SELECT%201'
 1
 
-$ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
+$ wget -nv -O- 'http://localhost:8123/?query=SELECT 1'
 1
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
@@ -147,12 +147,12 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Pour les requêtes réussies qui ne renvoient pas de table de données, un corps de réponse vide est renvoyé.
 
-Vous pouvez utiliser le format de compression ClickHouse interne lors de la transmission de données. Les données compressées ont un format non standard, et vous devrez utiliser le spécial `clickhouse-compressor` programme de travail (il s'est installé avec le `clickhouse-client` paquet). Pour augmenter l'efficacité de l'insertion de données, vous pouvez désactiver la vérification de la somme de contrôle côté serveur en utilisant [http\_native\_compression\_disable\_checksumming\_on\_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) paramètre.
+Vous pouvez utiliser le format de compression ClickHouse interne lors de la transmission de données. Les données compressées ont un format non standard, et vous devrez utiliser le spécial `clickhouse-compressor` programme de travail (il s'est installé avec le `clickhouse-client` paquet). Pour augmenter l'efficacité de l'insertion de données, vous pouvez désactiver la vérification de la somme de contrôle côté serveur en utilisant [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) paramètre.
 
 Si vous avez spécifié `compress=1` dans l'URL, le serveur compresse les données qu'il vous envoie.
 Si vous avez spécifié `decompress=1` dans L'URL, le serveur décompresse les mêmes données que vous transmettez `POST` méthode.
 
-Vous pouvez également choisir d'utiliser [La compression HTTP](https://en.wikipedia.org/wiki/HTTP_compression). Pour envoyer un compressé `POST` demande, ajouter l'en-tête de requête `Content-Encoding: compression_method`. Pour que ClickHouse compresse la réponse, vous devez ajouter `Accept-Encoding: compression_method`. Supports ClickHouse `gzip`, `br`, et `deflate` [méthodes de compression](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). Pour activer la compression HTTP, vous devez utiliser le ClickHouse [enable\_http\_compression](../operations/settings/settings.md#settings-enable_http_compression) paramètre. Vous pouvez configurer le niveau de compression des données dans le [http\_zlib\_compression\_level](#settings-http_zlib_compression_level) pour toutes les méthodes de compression.
+Vous pouvez également choisir d'utiliser [La compression HTTP](https://en.wikipedia.org/wiki/HTTP_compression). Pour envoyer un compressé `POST` demande, ajouter l'en-tête de requête `Content-Encoding: compression_method`. Pour que ClickHouse compresse la réponse, vous devez ajouter `Accept-Encoding: compression_method`. Supports ClickHouse `gzip`, `br`, et `deflate` [méthodes de compression](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). Pour activer la compression HTTP, vous devez utiliser le ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) paramètre. Vous pouvez configurer le niveau de compression des données dans le [http_zlib_compression_level](#settings-http_zlib_compression_level) pour toutes les méthodes de compression.
 
 Vous pouvez l'utiliser pour réduire le trafic réseau lors de la transmission d'une grande quantité de données, ou pour créer des vidages qui sont immédiatement compressés.
 
@@ -214,7 +214,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 ```
 
 Si le nom d'utilisateur n'est spécifié, le `default` le nom est utilisé. Si le mot de passe n'est spécifié, le mot de passe vide est utilisé.
-Vous pouvez également utiliser les paramètres D'URL pour spécifier des paramètres pour le traitement d'une seule requête ou de profils entiers de paramètres. Exemple: http: / / localhost: 8123/?profil = web & max\_rows\_to\_read=1000000000 & query=sélectionner + 1
+Vous pouvez également utiliser les paramètres D'URL pour spécifier des paramètres pour le traitement d'une seule requête ou de profils entiers de paramètres. Exemple: http: / / localhost: 8123/?profil = web & max_rows_to_read=1000000000 & query=sélectionner + 1
 
 Pour plus d'informations, voir le [Paramètre](../operations/settings/index.md) section.
 
@@ -236,7 +236,7 @@ Pour plus d'informations sur les autres paramètres, consultez la section “SET
 
 De même, vous pouvez utiliser des sessions ClickHouse dans le protocole HTTP. Pour ce faire, vous devez ajouter l' `session_id` GET paramètre à la demande. Vous pouvez utiliser n'importe quelle chaîne comme ID de session. Par défaut, la session est terminée après 60 secondes d'inactivité. Pour modifier ce délai d'attente, de modifier la `default_session_timeout` dans la configuration du serveur, ou ajoutez le `session_timeout` GET paramètre à la demande. Pour vérifier l'état de la session, utilisez `session_check=1` paramètre. Une seule requête à la fois peut être exécutée dans une seule session.
 
-Vous pouvez recevoir des informations sur le déroulement d'une requête en `X-ClickHouse-Progress` en-têtes de réponse. Pour ce faire, activez [send\_progress\_in\_http\_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Exemple de l'en-tête de séquence:
+Vous pouvez recevoir des informations sur le déroulement d'une requête en `X-ClickHouse-Progress` en-têtes de réponse. Pour ce faire, activez [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Exemple de l'en-tête de séquence:
 
 ``` text
 X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
@@ -253,9 +253,9 @@ Possibles champs d'en-tête:
 -   `written_bytes` — Volume of data written in bytes.
 
 Les requêtes en cours d'exécution ne s'arrêtent pas automatiquement si la connexion HTTP est perdue. L'analyse et le formatage des données sont effectués côté serveur et l'utilisation du réseau peut s'avérer inefficace.
-Facultatif ‘query\_id’ le paramètre peut être passé comme ID de requête (n'importe quelle chaîne). Pour plus d'informations, consultez la section “Settings, replace\_running\_query”.
+Facultatif ‘query_id’ le paramètre peut être passé comme ID de requête (n'importe quelle chaîne). Pour plus d'informations, consultez la section “Settings, replace_running_query”.
 
-Facultatif ‘quota\_key’ le paramètre peut être passé comme clé de quota (n'importe quelle chaîne). Pour plus d'informations, consultez la section “Quotas”.
+Facultatif ‘quota_key’ le paramètre peut être passé comme clé de quota (n'importe quelle chaîne). Pour plus d'informations, consultez la section “Quotas”.
 
 L'interface HTTP permet de transmettre des données externes (tables temporaires externes) pour l'interrogation. Pour plus d'informations, consultez la section “External data for query processing”.
 
@@ -377,11 +377,11 @@ Comme vous pouvez le voir dans l'exemple, si `<http_handlers>` est configuré da
 > `<headers>` est responsable de la correspondance de la partie d'en-tête de la requête HTTP. Il est compatible avec les expressions régulières de RE2. C'est une option de configuration. S'il n'est pas défini dans le fichier de configuration, il ne correspond pas à la partie d'en-tête de la requête HTTP.
 >
 > `<handler>` contient la partie de traitement principale. Maintenant `<handler>` pouvez configurer `<type>`, `<status>`, `<content_type>`, `<response_content>`, `<query>`, `<query_param_name>`.
-> \> `<type>` prend actuellement en charge trois types: **predefined\_query\_handler**, **dynamic\_query\_handler**, **statique**.
+> \> `<type>` prend actuellement en charge trois types: **predefined_query_handler**, **dynamic_query_handler**, **statique**.
 > \>
-> \> `<query>` - utiliser avec le type predefined\_query\_handler, exécute la requête lorsque le gestionnaire est appelé.
+> \> `<query>` - utiliser avec le type predefined_query_handler, exécute la requête lorsque le gestionnaire est appelé.
 > \>
-> \> `<query_param_name>` - utiliser avec le type dynamic\_query\_handler, extrait et exécute la valeur correspondant au `<query_param_name>` valeur dans les paramètres de requête HTTP.
+> \> `<query_param_name>` - utiliser avec le type dynamic_query_handler, extrait et exécute la valeur correspondant au `<query_param_name>` valeur dans les paramètres de requête HTTP.
 > \>
 > \> `<status>` - utiliser avec le type statique, code d'état de réponse.
 > \>
@@ -391,9 +391,9 @@ Comme vous pouvez le voir dans l'exemple, si `<http_handlers>` est configuré da
 
 Viennent ensuite les méthodes de configuration pour les différents `<type>`.
 
-## predefined\_query\_handler {#predefined_query_handler}
+## predefined_query_handler {#predefined_query_handler}
 
-`<predefined_query_handler>` prend en charge les paramètres de réglage et les valeurs query\_params. Vous pouvez configurer `<query>` dans le type de `<predefined_query_handler>`.
+`<predefined_query_handler>` prend en charge les paramètres de réglage et les valeurs query_params. Vous pouvez configurer `<query>` dans le type de `<predefined_query_handler>`.
 
 `<query>` la valeur est une requête prédéfinie de `<predefined_query_handler>`, qui est exécuté par ClickHouse lorsqu'une requête HTTP est mise en correspondance et que le résultat de la requête est renvoyé. C'est une configuration incontournable.
 
@@ -428,13 +428,13 @@ max_alter_threads   2
 !!! note "précaution"
     Dans un `<predefined_query_handler>` prend en charge un seul `<query>` d'un type d'insertion.
 
-## dynamic\_query\_handler {#dynamic_query_handler}
+## dynamic_query_handler {#dynamic_query_handler}
 
 Dans `<dynamic_query_handler>`, la requête est écrite sous la forme de param de la requête HTTP. La différence est que dans `<predefined_query_handler>`, la requête est écrite dans le fichier de configuration. Vous pouvez configurer `<query_param_name>` dans `<dynamic_query_handler>`.
 
 Clickhouse extrait et exécute la valeur correspondant au `<query_param_name>` valeur dans l'url de la requête HTTP. La valeur par défaut de `<query_param_name>` être `/query` . C'est une option de configuration. Si il n'y a pas de définition dans le fichier de configuration, le paramètre n'est pas passé.
 
-Pour expérimenter cette fonctionnalité, l'exemple définit les valeurs de max\_threads et max\_alter\_threads et demande si les paramètres ont été définis avec succès.
+Pour expérimenter cette fonctionnalité, l'exemple définit les valeurs de max_threads et max_alter_threads et demande si les paramètres ont été définis avec succès.
 
 Exemple:
 
@@ -459,7 +459,7 @@ max_alter_threads   2
 
 ## statique {#static}
 
-`<static>` peut-retour [content\_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [statut](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) et response\_content. response\_content peut renvoyer le contenu spécifié
+`<static>` peut-retour [content_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [statut](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) et response_content. response_content peut renvoyer le contenu spécifié
 
 Exemple:
 

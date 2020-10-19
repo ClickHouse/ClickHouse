@@ -1,6 +1,7 @@
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
+#include <Common/ThreadProfileEvents.h>
 
 #include <IO/ConcatReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
@@ -32,6 +33,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -181,8 +183,18 @@ static void logException(Context & context, QueryLogElement & elem)
             elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query), elem.stack_trace);
 }
 
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
 
-static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time, ASTPtr ast)
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
+static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time, UInt64 current_time_microseconds, ASTPtr ast)
 {
     /// Exception before the query execution.
     if (auto quota = context.getQuota())
@@ -195,8 +207,13 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
     elem.type = QueryLogElementType::EXCEPTION_BEFORE_START;
 
+    // all callers to onExceptionBeforeStart method construct the timespec for event_time and
+    // event_time_microseconds from the same time point. So, it can be assumed that both of these
+    // times are equal upto the precision of a second.
     elem.event_time = current_time;
+    elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = current_time;
+    elem.query_start_time_microseconds = current_time_microseconds;
 
     elem.current_database = context.getCurrentDatabase();
     elem.query = query_for_logging;
@@ -249,7 +266,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool has_query_tail,
     ReadBuffer * istr)
 {
-    time_t current_time = time(nullptr);
+    // current_time and current_time_microseconds are both constructed from the same time point
+    // to ensure that both the times are equal upto the precision of a second.
+    const auto now = std::chrono::system_clock::now();
+
+    auto current_time = time_in_seconds(now);
+    auto current_time_microseconds = time_in_microseconds(now);
 
     /// If we already executing query and it requires to execute internal query, than
     /// don't replace thread context with given (it can be temporary). Otherwise, attach context to thread.
@@ -299,7 +321,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         logQuery(query_for_logging, context, internal);
 
         if (!internal)
-            onExceptionBeforeStart(query_for_logging, context, current_time, ast);
+        {
+            onExceptionBeforeStart(query_for_logging, context, current_time, current_time_microseconds, ast);
+        }
 
         throw;
     }
@@ -314,15 +338,24 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
+        bool ast_modified = false;
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         if (context.hasQueryParameters())
         {
             ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
             visitor.visit(ast);
-
-            /// Get new query after substitutions.
-            query = serializeAST(*ast);
+            ast_modified = true;
         }
+
+        /// Propagate WITH statement to children ASTSelect.
+        if (settings.enable_global_with_statement)
+        {
+            ApplyWithGlobalVisitor().visit(ast);
+            ast_modified = true;
+        }
+
+        if (ast_modified)
+            query = serializeAST(*ast);
 
         query_for_logging = prepareQueryForLogging(query, context);
 
@@ -379,10 +412,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
         }
 
-        IBlockInputStream::LocalLimits limits;
+        StreamLocalLimits limits;
         if (!interpreter->ignoreLimits())
         {
-            limits.mode = IBlockInputStream::LIMITS_CURRENT;
+            limits.mode = LimitsMode::LIMITS_CURRENT;
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
@@ -464,7 +497,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.type = QueryLogElementType::QUERY_START;
 
             elem.event_time = current_time;
+            elem.event_time_microseconds = current_time_microseconds;
             elem.query_start_time = current_time;
+            elem.query_start_time_microseconds = current_time_microseconds;
 
             elem.current_database = context.getCurrentDatabase();
             elem.query = query_for_logging;
@@ -533,8 +568,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElementType::QUERY_FINISH;
 
-                elem.event_time = time(nullptr);
-
+                // construct event_time and event_time_microseconds using the same time point
+                // so that the two times will always be equal up to a precision of a second.
+                const auto time_now = std::chrono::system_clock::now();
+                elem.event_time = time_in_seconds(time_now);
+                elem.event_time_microseconds = time_in_microseconds(time_now);
                 status_info_to_query_log(elem, info, ast);
 
                 auto progress_callback = context.getProgressCallback();
@@ -594,7 +632,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
 
-                elem.event_time = time(nullptr);
+                // event_time and event_time_microseconds are being constructed from the same time point
+                // to ensure that both the times will be equal upto the precision of a second.
+                const auto time_now = std::chrono::system_clock::now();
+
+                elem.event_time = time_in_seconds(time_now);
+                elem.event_time_microseconds = time_in_microseconds(time_now);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception_code = getCurrentExceptionCode();
                 elem.exception = getCurrentExceptionMessage(false);
@@ -653,7 +696,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (query_for_logging.empty())
                 query_for_logging = prepareQueryForLogging(query, context);
 
-            onExceptionBeforeStart(query_for_logging, context, current_time, ast);
+            onExceptionBeforeStart(query_for_logging, context, current_time, current_time_microseconds, ast);
         }
 
         throw;
@@ -761,8 +804,7 @@ void executeQuery(
             InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context, nullptr);
             copyData(in, *streams.out);
         }
-
-        if (streams.in)
+        else if (streams.in)
         {
             /// FIXME: try to prettify this cast using `as<>()`
             const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
@@ -804,8 +846,7 @@ void executeQuery(
 
             copyData(*streams.in, *out, [](){ return false; }, [&out](const Block &) { out->flush(); });
         }
-
-        if (pipeline.initialized())
+        else if (pipeline.initialized())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
