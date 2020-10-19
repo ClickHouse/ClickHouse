@@ -63,9 +63,9 @@ public:
     bool isStateful() const final { return impl->isStateful(); }
     bool isSuitableForConstantFolding() const final { return impl->isSuitableForConstantFolding(); }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments) const final
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments) const final
     {
-        return impl->getResultIfAlwaysReturnsConstantAndHasArguments(columns, arguments);
+        return impl->getResultIfAlwaysReturnsConstantAndHasArguments(arguments);
     }
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const final { return impl->isInjective(sample_columns); }
@@ -190,9 +190,9 @@ public:
     }
 
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments_) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments_) const override
     {
-        return function->getResultIfAlwaysReturnsConstantAndHasArguments(columns, arguments_);
+        return function->getResultIfAlwaysReturnsConstantAndHasArguments(arguments_);
     }
 
     bool isStateful() const override { return function->isStateful(); }
