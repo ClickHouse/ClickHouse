@@ -123,7 +123,11 @@ namespace
 
 // SimpleWriter is an utility class to serialize protobufs.
 // Knows nothing about protobuf schemas, just provides useful functions to serialize data.
-ProtobufWriter::SimpleWriter::SimpleWriter(WriteBuffer & out_) : out(out_), current_piece_start(0), num_bytes_skipped(0)
+ProtobufWriter::SimpleWriter::SimpleWriter(WriteBuffer & out_, const bool use_length_delimiters_)
+    : out(out_)
+    , current_piece_start(0)
+    , num_bytes_skipped(0)
+    , use_length_delimiters(use_length_delimiters_)
 {
 }
 
@@ -136,8 +140,11 @@ void ProtobufWriter::SimpleWriter::startMessage()
 void ProtobufWriter::SimpleWriter::endMessage()
 {
     pieces.emplace_back(current_piece_start, buffer.size());
-    size_t size_of_message = buffer.size() - num_bytes_skipped;
-    writeVarint(size_of_message, out);
+    if (use_length_delimiters)
+    {
+        size_t size_of_message = buffer.size() - num_bytes_skipped;
+        writeVarint(size_of_message, out);
+    }
     for (const auto & piece : pieces)
         if (piece.end > piece.start)
             out.write(reinterpret_cast<char *>(&buffer[piece.start]), piece.end - piece.start);
@@ -319,8 +326,8 @@ public:
     virtual void writeUInt64(UInt64) override { cannotConvertType("UInt64"); }
     virtual void writeInt128(Int128) override { cannotConvertType("Int128"); }
     virtual void writeUInt128(const UInt128 &) override { cannotConvertType("UInt128"); }
-    virtual void writebInt256(const bInt256 &) override { cannotConvertType("Int256"); }
-    virtual void writebUInt256(const bUInt256 &) override { cannotConvertType("UInt256"); }
+    virtual void writeInt256(const Int256 &) override { cannotConvertType("Int256"); }
+    virtual void writeUInt256(const UInt256 &) override { cannotConvertType("UInt256"); }
     virtual void writeFloat32(Float32) override { cannotConvertType("Float32"); }
     virtual void writeFloat64(Float64) override { cannotConvertType("Float64"); }
     virtual void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) override {}
@@ -558,7 +565,7 @@ private:
     template <typename S>
     void writeDecimal(const Decimal<S> & decimal, UInt32 scale)
     {
-        castNumericAndWriteField(convertFromDecimal<DataTypeDecimal<Decimal<S>>, DataTypeNumber<ToType>>(decimal.value, scale));
+        castNumericAndWriteField(DecimalUtils::convertTo<ToType>(decimal, scale));
     }
 
     void writeField(ToType value)
@@ -827,8 +834,8 @@ std::unique_ptr<ProtobufWriter::IConverter> ProtobufWriter::createConverter<goog
 
 
 ProtobufWriter::ProtobufWriter(
-    WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names)
-    : simple_writer(out)
+    WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names, const bool use_length_delimiters_)
+    : simple_writer(out, use_length_delimiters_)
 {
     std::vector<const google::protobuf::FieldDescriptor *> field_descriptors_without_match;
     root_message = ProtobufColumnMatcher::matchColumns<ColumnMatcherTraits>(column_names, message_type, field_descriptors_without_match);

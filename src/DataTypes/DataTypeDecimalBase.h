@@ -156,44 +156,37 @@ protected:
 };
 
 
-template <typename T, typename U, template <typename> typename DecimalType>
-typename std::enable_if_t<(sizeof(T) >= sizeof(U)), DecimalType<T>>
-decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_multiply, bool is_divide)
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
 {
-    UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
-    if (is_multiply)
+    UInt32 scale{};
+    if constexpr (is_multiply)
         scale = tx.getScale() + ty.getScale();
-    else if (is_divide)
+    else if constexpr (is_division)
         scale = tx.getScale();
-    return DecimalType<T>(DecimalUtils::maxPrecision<T>(), scale);
+    else
+        scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
+
+    if constexpr (sizeof(T) < sizeof(U))
+        return DecimalType<U>(DecimalUtils::maxPrecision<U>(), scale);
+    else
+        return DecimalType<T>(DecimalUtils::maxPrecision<T>(), scale);
 }
 
-template <typename T, typename U, template <typename> typename DecimalType>
-typename std::enable_if_t<(sizeof(T) < sizeof(U)), const DecimalType<U>>
-decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_multiply, bool is_divide)
-{
-    UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
-    if (is_multiply)
-        scale = tx.getScale() * ty.getScale();
-    else if (is_divide)
-        scale = tx.getScale();
-    return DecimalType<U>(DecimalUtils::maxPrecision<U>(), scale);
-}
-
-template <typename T, typename U, template <typename> typename DecimalType>
-const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> &, bool, bool)
+template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
+inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> &)
 {
     return DecimalType<T>(DecimalUtils::maxPrecision<T>(), tx.getScale());
 }
 
-template <typename T, typename U, template <typename> typename DecimalType>
-const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalType<U> & ty, bool, bool)
+template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
+inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalType<U> & ty)
 {
     return DecimalType<U>(DecimalUtils::maxPrecision<U>(), ty.getScale());
 }
 
 template <template <typename> typename DecimalType>
-DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
+inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
     if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal256>())
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);

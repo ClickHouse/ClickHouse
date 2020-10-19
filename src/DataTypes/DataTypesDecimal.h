@@ -77,6 +77,19 @@ inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value 
     return default_value;
 }
 
+inline UInt32 getDecimalPrecision(const IDataType & data_type)
+{
+    if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
+        return decimal_type->getPrecision();
+    if (auto * decimal_type = checkDecimal<Decimal64>(data_type))
+        return decimal_type->getPrecision();
+    if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
+        return decimal_type->getPrecision();
+    if (auto * decimal_type = checkDecimal<Decimal256>(data_type))
+        return decimal_type->getPrecision();
+    return 0;
+}
+
 template <typename T>
 inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
 {
@@ -140,8 +153,9 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
         auto out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
         if constexpr (std::is_same_v<ToNativeType, Int128>)
         {
-            static constexpr Int128 min_int128 = Int128(0x8000000000000000ll) << 64;
-            static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+            static constexpr Int128 min_int128 = minInt128();
+            static constexpr Int128 max_int128 = maxInt128();
+
             if (out <= static_cast<ToNativeType>(min_int128) || out >= static_cast<ToNativeType>(max_int128))
                 throw Exception(std::string(ToDataType::family_name) + " convert overflow. Float is out of Decimal range",
                                 ErrorCodes::DECIMAL_OVERFLOW);
@@ -158,12 +172,18 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     else
     {
         if constexpr (is_big_int_v<FromFieldType>)
-            return convertDecimals<DataTypeDecimal<Decimal256>, ToDataType>(static_cast<bInt256>(value), 0, scale);
+            return convertDecimals<DataTypeDecimal<Decimal256>, ToDataType>(static_cast<Int256>(value), 0, scale);
         else if constexpr (std::is_same_v<FromFieldType, UInt64>)
             return convertDecimals<DataTypeDecimal<Decimal128>, ToDataType>(value, 0, scale);
         else
             return convertDecimals<DataTypeDecimal<Decimal64>, ToDataType>(value, 0, scale);
     }
+}
+
+template <typename T>
+inline DataTypePtr createDecimalMaxPrecision(UInt64 scale)
+{
+    return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::maxPrecision<T>(), scale);
 }
 
 }

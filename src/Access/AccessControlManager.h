@@ -47,7 +47,7 @@ class AccessControlManager : public MultipleAccessStorage
 {
 public:
     AccessControlManager();
-    ~AccessControlManager();
+    ~AccessControlManager() override;
 
     /// Parses access entities from a configuration loaded from users.xml.
     /// This function add UsersConfigAccessStorage if it wasn't added before.
@@ -106,6 +106,7 @@ public:
     bool isSettingNameAllowed(const std::string_view & name) const;
     void checkSettingNameIsAllowed(const std::string_view & name) const;
 
+    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const;
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
     std::shared_ptr<const ContextAccess> getContextAccess(

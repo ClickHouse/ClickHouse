@@ -24,7 +24,7 @@
 Утилиту следует запускать вручную следующим образом:
 
 ``` bash
-$ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
+$ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
 Параметры запуска:

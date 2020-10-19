@@ -23,7 +23,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -35,7 +34,7 @@ namespace ErrorCodes
 
 namespace
 {
-// in private namespace to avoid GCC 9 error: "explicit specialization in non-namespace scope"
+
 template <typename DataType> struct ActionValueTypeMap {};
 template <> struct ActionValueTypeMap<DataTypeInt8>       { using ActionValueType = UInt32; };
 template <> struct ActionValueTypeMap<DataTypeUInt8>      { using ActionValueType = UInt32; };
@@ -50,7 +49,7 @@ template <> struct ActionValueTypeMap<DataTypeDateTime>   { using ActionValueTyp
 // TODO(vnemkov): once there is support for Int64 in LUT, make that Int64.
 // TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
 template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
-}
+
 
 /** formatDateTime(time, 'pattern')
   * Performs formatting of time, according to provided pattern.
@@ -341,42 +340,42 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
     {
         if constexpr (support_integer)
         {
             if (arguments.size() == 1)
             {
-                if (!castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
+                if (!castType(columns[arguments[0]].type.get(), [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
-                        ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(block, arguments, result, input_rows_count);
+                        ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(columns, arguments, result, input_rows_count);
                         return true;
                     }))
                 {
                     throw Exception(
-                        "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of function " + getName()
+                        "Illegal column " + columns[arguments[0]].column->getName() + " of function " + getName()
                             + ", must be Integer or DateTime when arguments size is 1.",
                         ErrorCodes::ILLEGAL_COLUMN);
                 }
             }
             else
             {
-                if (!castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
+                if (!castType(columns[arguments[0]].type.get(), [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
-                        if (!executeType<FromDataType>(block, arguments, result))
+                        if (!executeType<FromDataType>(columns, arguments, result))
                             throw Exception(
-                                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of function " + getName()
+                                "Illegal column " + columns[arguments[0]].column->getName() + " of function " + getName()
                                     + ", must be Integer or DateTime.",
                                 ErrorCodes::ILLEGAL_COLUMN);
                         return true;
                     }))
                 {
-                    if (!executeType<DataTypeDate>(block, arguments, result) && !executeType<DataTypeDateTime>(block, arguments, result)
-                        && !executeType<DataTypeDateTime64>(block, arguments, result))
+                    if (!executeType<DataTypeDate>(columns, arguments, result) && !executeType<DataTypeDateTime>(columns, arguments, result)
+                        && !executeType<DataTypeDateTime64>(columns, arguments, result))
                         throw Exception(
-                            "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of function " + getName()
+                            "Illegal column " + columns[arguments[0]].column->getName() + " of function " + getName()
                                 + ", must be Integer or DateTime.",
                             ErrorCodes::ILLEGAL_COLUMN);
                 }
@@ -384,25 +383,25 @@ public:
         }
         else
         {
-            if (!executeType<DataTypeDate>(block, arguments, result) && !executeType<DataTypeDateTime>(block, arguments, result)
-                && !executeType<DataTypeDateTime64>(block, arguments, result))
+            if (!executeType<DataTypeDate>(columns, arguments, result) && !executeType<DataTypeDateTime>(columns, arguments, result)
+                && !executeType<DataTypeDateTime64>(columns, arguments, result))
                 throw Exception(
-                    "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of function " + getName()
+                    "Illegal column " + columns[arguments[0]].column->getName() + " of function " + getName()
                         + ", must be Date or DateTime.",
                     ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 
     template <typename DataType>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeType(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result) const
     {
-        auto * times = checkAndGetColumn<typename DataType::ColumnType>(block.getByPosition(arguments[0]).column.get());
+        auto * times = checkAndGetColumn<typename DataType::ColumnType>(columns[arguments[0]].column.get());
         if (!times)
             return false;
 
-        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(columns[arguments[1]].column.get());
         if (!pattern_column)
-            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+            throw Exception("Illegal column " + columns[arguments[1]].column->getName()
                             + " of second ('format') argument of function " + getName()
                             + ". Must be constant string.",
                             ErrorCodes::ILLEGAL_COLUMN);
@@ -415,12 +414,12 @@ public:
         size_t result_size = pattern_to_fill.size();
 
         const DateLUTImpl * time_zone_tmp = nullptr;
-        if (castType(block.getByPosition(arguments[0]).type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
+        if (castType(columns[arguments[0]].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
         {
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(columns, arguments, 2, 0);
         }
         else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(columns, arguments, 2, 0);
         else
             time_zone_tmp = &DateLUT::instance();
 
@@ -486,7 +485,7 @@ public:
         }
 
         dst_data.resize(pos - begin);
-        block.getByPosition(result).column = std::move(col_res);
+        columns[result].column = std::move(col_res);
         return true;
     }
 
@@ -713,6 +712,8 @@ struct NameFromUnixTime
 
 using FunctionFormatDateTime = FunctionFormatDateTimeImpl<NameFormatDateTime, false>;
 using FunctionFROM_UNIXTIME = FunctionFormatDateTimeImpl<NameFromUnixTime, true>;
+
+}
 
 void registerFunctionFormatDateTime(FunctionFactory & factory)
 {

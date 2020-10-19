@@ -210,7 +210,7 @@ class Cluster(object):
                 self.down()
         finally:
             with self.lock:
-                for shell in self._bash.values():
+                for shell in list(self._bash.values()):
                     shell.__exit__(type, value, traceback)
 
     def node(self, name):
@@ -246,6 +246,7 @@ class Cluster(object):
                     assert os.path.exists(self.clickhouse_binary_path)
 
             with And("I set all the necessary environment variables"):
+                os.environ["COMPOSE_HTTP_TIMEOUT"] = "300"
                 os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = self.clickhouse_binary_path
                 os.environ["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = os.path.join(
                     os.path.dirname(self.clickhouse_binary_path), "clickhouse-odbc-bridge")
@@ -255,18 +256,30 @@ class Cluster(object):
                 self.command(None, "env | grep CLICKHOUSE")
 
         with Given("docker-compose"):
-            with By("pulling images for all the services"):
-                self.command(None, f'{self.docker_compose} pull 2>&1 | tee', exitcode=0, timeout=timeout)
-            with And("executing docker-compose down just in case it is up"):
-                self.command(None, f'{self.docker_compose} down 2>&1 | tee', exitcode=0, timeout=timeout)
-            with And("executing docker-compose up"):
-                cmd = self.command(None, f'{self.docker_compose} up -d 2>&1 | tee', timeout=timeout)
+            max_attempts = 5
+            for attempt in range(max_attempts):
+                with When(f"attempt {attempt}/{max_attempts}"):
+                    with By("pulling images for all the services"):
+                        cmd = self.command(None, f"{self.docker_compose} pull 2>&1 | tee", exitcode=None, timeout=timeout)
+                        if cmd.exitcode != 0:
+                            continue
+                    with And("executing docker-compose down just in case it is up"):
+                        cmd = self.command(None, f"{self.docker_compose} down 2>&1 | tee", exitcode=None, timeout=timeout)
+                        if cmd.exitcode != 0:
+                            continue
+                    with And("executing docker-compose up"):
+                        cmd = self.command(None, f"{self.docker_compose} up -d 2>&1 | tee", timeout=timeout)
 
-        with Then("check there are no unhealthy containers"):
-            if "is unhealthy" in cmd.output:
-                self.command(None, f'{self.docker_compose} ps | tee')
-                self.command(None, f'{self.docker_compose} logs | tee')
-                fail("found unhealthy containers")
+                    with Then("check there are no unhealthy containers"):
+                        if "is unhealthy" in cmd.output:
+                            self.command(None, f"{self.docker_compose} ps | tee")
+                            self.command(None, f"{self.docker_compose} logs | tee")
+
+                    if cmd.exitcode == 0:
+                        break
+
+            if cmd.exitcode != 0:
+                fail("could not bring up docker-compose cluster")
 
         with Then("wait all nodes report healhy"):
             for name in self.nodes["clickhouse"]:

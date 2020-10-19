@@ -798,10 +798,9 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
 {
     std::unique_lock<std::mutex> update_lock(update_mutex);
 
-    size_t timeout_for_wait = 100000;
     bool result = is_update_finished.wait_for(
             update_lock,
-            std::chrono::milliseconds(timeout_for_wait),
+            std::chrono::milliseconds(query_wait_timeout_milliseconds),
             [&] { return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
 
     if (!result)
@@ -817,13 +816,31 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
          * */
         update_unit_ptr->can_use_callback = false;
         throw DB::Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                            "Dictionary {} source seems unavailable, because {} timeout exceeded.",
-                            getDictionaryID().getNameForLogs(), toString(timeout_for_wait));
+                            "Dictionary {} source seems unavailable, because {}ms timeout exceeded.",
+                            getDictionaryID().getNameForLogs(), toString(query_wait_timeout_milliseconds));
     }
 
 
     if (update_unit_ptr->current_exception)
-        std::rethrow_exception(update_unit_ptr->current_exception);
+    {
+        // There might have been a single update unit for multiple callers in
+        // independent threads, and current_exception will be the same for them.
+        // Don't just rethrow it, because sharing the same exception object
+        // between multiple threads can lead to weird effects if they decide to
+        // modify it, for example, by adding some error context.
+        try
+        {
+            std::rethrow_exception(update_unit_ptr->current_exception);
+        }
+        catch (...)
+        {
+            throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                "Update failed for dictionary '{}': {}",
+                getDictionaryID().getNameForLogs(),
+                getCurrentExceptionMessage(true /*with stack trace*/,
+                    true /*check embedded stack trace*/));
+        }
+    }
 }
 
 void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const
@@ -909,7 +926,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                     else
                         cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
-                    update_unit_ptr->getPresentIdHandler()(id, cell_idx);
+                    update_unit_ptr->callPresentIdHandler(id, cell_idx);
                     /// mark corresponding id as found
                     remaining_ids[id] = 1;
                 }
@@ -971,9 +988,9 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                 if (was_default)
                     cell.setDefault();
                 if (was_default)
-                    update_unit_ptr->getAbsentIdHandler()(id, cell_idx);
+                    update_unit_ptr->callAbsentIdHandler(id, cell_idx);
                 else
-                    update_unit_ptr->getPresentIdHandler()(id, cell_idx);
+                    update_unit_ptr->callPresentIdHandler(id, cell_idx);
                 continue;
             }
             /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
@@ -1005,7 +1022,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
             setDefaultAttributeValue(attribute, cell_idx);
 
         /// inform caller that the cell has not been found
-        update_unit_ptr->getAbsentIdHandler()(id, cell_idx);
+        update_unit_ptr->callAbsentIdHandler(id, cell_idx);
     }
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);

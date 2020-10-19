@@ -33,7 +33,7 @@ Para obtener una descripción de los parámetros de solicitud, consulte [descrip
 
 **ReplacingMergeTree Parámetros**
 
--   `ver` — column with version. Type `UInt*`, `Date`, `DateTime` o `DateTime64`. Parámetro opcional.
+-   `ver` — column with version. Type `UInt*`, `Date` o `DateTime`. Parámetro opcional.
 
     Al fusionar, `ReplacingMergeTree` de todas las filas con la misma clave primaria deja solo una:
 

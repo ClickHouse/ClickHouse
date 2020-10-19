@@ -3,6 +3,7 @@
 #include <boost/program_options.hpp>
 
 #include <sys/stat.h>
+#include <pwd.h>
 
 #if defined(__linux__)
     #include <syscall.h>
@@ -204,6 +205,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-benchmark",
             "clickhouse-copier",
             "clickhouse-obfuscator",
+            "clickhouse-git-import",
             "clickhouse-compressor",
             "clickhouse-format",
             "clickhouse-extract-from-config"
@@ -550,7 +552,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
 #if defined(__linux__)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
-        std::string command = fmt::format("command setcap && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {}", main_bin_path.string());
+        std::string command = fmt::format("command -v setcap && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {}", main_bin_path.string());
         fmt::print(" {}\n", command);
         executeScript(command);
 #endif
@@ -643,9 +645,14 @@ namespace
 
         if (!user.empty())
         {
-            bool need_sudo = geteuid() != 0;
-            if (need_sudo)
-                command = fmt::format("sudo -u '{}' {}", user, command);
+            bool may_need_sudo = geteuid() != 0;
+            if (may_need_sudo)
+            {
+                struct passwd *p = getpwuid(geteuid());
+                // Only use sudo when we are not the given user
+                if (p == nullptr || std::string(p->pw_name) != user)
+                    command = fmt::format("sudo -u '{}' {}", user, command);
+            }
             else
                 command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
         }

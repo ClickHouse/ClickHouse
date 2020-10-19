@@ -20,30 +20,30 @@ def setup(node):
             node.query("DROP ROLE IF EXISTS role1")
 
 @TestOutline(Scenario)
-@Examples("privilege on allow_introspection", [
-    ("dictGet", ("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_DictGet("1.0"))),
-    ("INTROSPECTION", ("*.*",), True, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Introspection("1.0"))),
-    ("SELECT", ("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Select("1.0"))),
-    ("INSERT",("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"))),
-    ("ALTER",("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Alter("1.0"))),
-    ("CREATE",("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Create("1.0"))),
-    ("DROP",("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Drop("1.0"))),
-    ("TRUNCATE",("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Truncate("1.0"))),
-    ("OPTIMIZE",("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Optimize("1.0"))),
-    ("SHOW",("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Show("1.0"))),
-    ("KILL QUERY",("*.*",), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_KillQuery("1.0"))),
-    ("ACCESS MANAGEMENT",("*.*",), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_AccessManagement("1.0"))),
-    ("SYSTEM",("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_System("1.0"))),
-    ("SOURCES",("*.*",), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Sources("1.0"))),
-    ("ALL",("*.*",), True, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_All("1.0"))),
-    ("ALL PRIVILEGES",("*.*",), True, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_All("1.0"))), #alias for all
+@Examples("privilege on allow_column allow_introspection", [
+    ("dictGet", ("db0.table0","db0.*","*.*","tb0","*"), False, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_DictGet("1.0"))),
+    ("INTROSPECTION", ("*.*",), False, True, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Introspection("1.0"))),
+    ("SELECT", ("db0.table0","db0.*","*.*","tb0","*"), True, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Select("1.0"))),
+    ("INSERT",("db0.table0","db0.*","*.*","tb0","*"), True, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"))),
+    ("ALTER",("db0.table0","db0.*","*.*","tb0","*"), False, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Alter("1.0"))),
+    ("CREATE",("db0.table0","db0.*","*.*","tb0","*"), False, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Create("1.0"))),
+    ("DROP",("db0.table0","db0.*","*.*","tb0","*"), False, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Drop("1.0"))),
+    ("TRUNCATE",("db0.table0","db0.*","*.*","tb0","*"), False, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Truncate("1.0"))),
+    ("OPTIMIZE",("db0.table0","db0.*","*.*","tb0","*"), False, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Optimize("1.0"))),
+    ("SHOW",("db0.table0","db0.*","*.*","tb0","*"), True, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Show("1.0"))),
+    ("KILL QUERY",("*.*",), False, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_KillQuery("1.0"))),
+    ("ACCESS MANAGEMENT",("*.*",), False, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_AccessManagement("1.0"))),
+    ("SYSTEM",("db0.table0","db0.*","*.*","tb0","*"), False, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_System("1.0"))),
+    ("SOURCES",("*.*",), False, False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_Sources("1.0"))),
+    ("ALL",("*.*",), True, True, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_All("1.0"))),
+    ("ALL PRIVILEGES",("*.*",), True, True, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_All("1.0"))), #alias for all
     ],)
-def grant_privileges(self, privilege, on, allow_introspection, node="clickhouse1"):
-    grant_privilege(privilege=privilege, on=on, allow_introspection=allow_introspection, node=node)
+def grant_privileges(self, privilege, on, allow_column, allow_introspection, node="clickhouse1"):
+    grant_privilege(privilege=privilege, on=on, allow_column=allow_column, allow_introspection=allow_introspection, node=node)
 
 @TestOutline(Scenario)
 @Requirements(RQ_SRS_006_RBAC_Grant_Privilege_GrantOption("1.0"))
-def grant_privilege(self, privilege, on, allow_introspection, node="clickhouse1"):
+def grant_privilege(self, privilege, on, allow_column, allow_introspection, node="clickhouse1"):
     node = self.context.cluster.node(node)
 
     for on_ in on:
@@ -58,9 +58,10 @@ def grant_privilege(self, privilege, on, allow_introspection, node="clickhouse1"
                 with When("I grant privilege with grant option"):
                     node.query(f"GRANT {privilege} ON {on_} TO user1 WITH GRANT OPTION", settings=settings)
 
-                #grant column specific for some column 'x'
-                with When("I grant privilege with columns"):
-                    node.query(f"GRANT {privilege}(x) ON {on_} TO user0", settings=settings)
+                if allow_column and ('*' not in on_):
+                    #grant column specific for some column 'x'
+                    with When("I grant privilege with columns"):
+                        node.query(f"GRANT {privilege}(x) ON {on_} TO user0", settings=settings)
 
 @TestFeature
 @Name("grant privilege")

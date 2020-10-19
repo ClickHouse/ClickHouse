@@ -1,9 +1,11 @@
+#pragma once
 #if !defined(ARCADIA_BUILD)
 #    include "config_functions.h"
 #endif
 
 #if USE_BASE64
 #    include <Columns/ColumnConst.h>
+#    include <Common/MemorySanitizer.h>
 #    include <Columns/ColumnString.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <Functions/FunctionFactory.h>
@@ -89,14 +91,14 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
+        const ColumnPtr column_string = columns[arguments[0]].column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
 
         if (!input)
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                "Illegal column " + columns[arguments[0]].column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();
@@ -151,6 +153,10 @@ public:
                 }
             }
 
+            /// Base64 library is using AVX-512 with some shuffle operations.
+            /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
+            __msan_unpoison(dst_pos, outlen);
+
             source += srclen + 1;
             dst_pos += outlen + 1;
 
@@ -160,7 +166,7 @@ public:
 
         dst_data.resize(dst_pos - dst);
 
-        block.getByPosition(result).column = std::move(dst_column);
+        columns[result].column = std::move(dst_column);
     }
 };
 }

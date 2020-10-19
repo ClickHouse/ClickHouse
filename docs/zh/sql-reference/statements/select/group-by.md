@@ -66,9 +66,9 @@ toc_title: GROUP BY
 
 `after_having_exclusive` – Don't include rows that didn't pass through `max_rows_to_group_by`. 换句话说, ‘totals’ 将有少于或相同数量的行，因为它会 `max_rows_to_group_by` 被省略。
 
-`after_having_inclusive` – Include all the rows that didn't pass through ‘max\_rows\_to\_group\_by’ 在 ‘totals’. 换句话说, ‘totals’ 将有多个或相同数量的行，因为它会 `max_rows_to_group_by` 被省略。
+`after_having_inclusive` – Include all the rows that didn't pass through ‘max_rows_to_group_by’ 在 ‘totals’. 换句话说, ‘totals’ 将有多个或相同数量的行，因为它会 `max_rows_to_group_by` 被省略。
 
-`after_having_auto` – Count the number of rows that passed through HAVING. If it is more than a certain amount (by default, 50%), include all the rows that didn't pass through ‘max\_rows\_to\_group\_by’ 在 ‘totals’. 否则，不包括它们。
+`after_having_auto` – Count the number of rows that passed through HAVING. If it is more than a certain amount (by default, 50%), include all the rows that didn't pass through ‘max_rows_to_group_by’ 在 ‘totals’. 否则，不包括它们。
 
 `totals_auto_threshold` – By default, 0.5. The coefficient for `after_having_auto`.
 
@@ -116,11 +116,11 @@ GROUP BY domain
 ### 在外部存储器中分组 {#select-group-by-in-external-memory}
 
 您可以启用将临时数据转储到磁盘以限制内存使用期间 `GROUP BY`.
-该 [max\_bytes\_before\_external\_group\_by](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) 设置确定倾销的阈值RAM消耗 `GROUP BY` 临时数据到文件系统。 如果设置为0（默认值），它将被禁用。
+该 [max_bytes_before_external_group_by](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) 设置确定倾销的阈值RAM消耗 `GROUP BY` 临时数据到文件系统。 如果设置为0（默认值），它将被禁用。
 
 使用时 `max_bytes_before_external_group_by`，我们建议您设置 `max_memory_usage` 大约两倍高。 这是必要的，因为聚合有两个阶段：读取数据和形成中间数据（1）和合并中间数据（2）。 将数据转储到文件系统只能在阶段1中发生。 如果未转储临时数据，则阶段2可能需要与阶段1相同的内存量。
 
-例如，如果 [max\_memory\_usage](../../../operations/settings/settings.md#settings_max_memory_usage) 设置为10000000000，你想使用外部聚合，这是有意义的设置 `max_bytes_before_external_group_by` 到10000000000，和 `max_memory_usage` 到20000000000。 当触发外部聚合（如果至少有一个临时数据转储）时，RAM的最大消耗仅略高于 `max_bytes_before_external_group_by`.
+例如，如果 [max_memory_usage](../../../operations/settings/settings.md#settings_max_memory_usage) 设置为10000000000，你想使用外部聚合，这是有意义的设置 `max_bytes_before_external_group_by` 到10000000000，和 `max_memory_usage` 到20000000000。 当触发外部聚合（如果至少有一个临时数据转储）时，RAM的最大消耗仅略高于 `max_bytes_before_external_group_by`.
 
 通过分布式查询处理，在远程服务器上执行外部聚合。 为了使请求者服务器只使用少量的RAM，设置 `distributed_aggregation_memory_efficient` 到1。
 

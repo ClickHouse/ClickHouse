@@ -70,7 +70,7 @@ static inline bool likePatternIsStrstr(const String & pattern, String & res)
 }
 
 /** 'like' - if true, treat pattern as SQL LIKE or ILIKE; if false - treat pattern as re2 regexp.
-  * NOTE: We want to run regexp search for whole block by one call (as implemented in function 'position')
+  * NOTE: We want to run regexp search for whole columns by one call (as implemented in function 'position')
   *  but for that, regexp engine must support \0 bytes and their interpretation as string boundaries.
   */
 template <bool like, bool revert = false, bool case_insensitive = false>
@@ -141,10 +141,7 @@ struct MatchImpl
         {
             size_t size = offsets.size();
 
-            constexpr int flags = case_insensitive ?
-                Regexps::Regexp::RE_CASELESS : 0;
-
-            auto regexp = Regexps::get<like, true>(pattern, flags);
+            auto regexp = Regexps::get<like, true, case_insensitive>(pattern);
 
             std::string required_substring;
             bool is_trivial;
