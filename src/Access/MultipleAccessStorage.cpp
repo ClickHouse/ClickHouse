@@ -401,11 +401,6 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
     }
 
     lock.unlock();
-
-    for (auto type : ext::range(EntityType::MAX))
-    {
-        added_subscriptions[static_cast<size_t>(type)].clear();
-    }
 }
 
 
