@@ -460,7 +460,7 @@ See also the [JSONEachRow](#jsoneachrow) format.
 
 ## JSONString {#jsonstring}
 
-Differs from JSON only in that data fields are output in strings, not in typed json values.
+Differs from JSON only in that data fields are output in strings, not in typed JSON values.
 
 Example:
 
@@ -596,7 +596,7 @@ When inserting the data, you should provide a separate JSON value for each row.
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
 ## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
 
-Differs from JSONEachRow/JSONStringEachRow in that ClickHouse will also yield progress information as JSON objects.
+Differs from `JSONEachRow`/`JSONStringEachRow` in that ClickHouse will also yield progress information as JSON values.
 
 ```json
 {"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
@@ -608,7 +608,7 @@ Differs from JSONEachRow/JSONStringEachRow in that ClickHouse will also yield pr
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
 ## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
 
-Differs from JSONCompactEachRow/JSONCompactStringEachRow in that the column names and types are written as the first two rows.
+Differs from `JSONCompactEachRow`/`JSONCompactStringEachRow` in that the column names and types are written as the first two rows.
 
 ```json
 ["'hello'", "multiply(42, number)", "range(5)"]

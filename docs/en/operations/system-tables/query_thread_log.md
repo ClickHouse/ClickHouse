@@ -1,6 +1,6 @@
-# system.query_thread_log {#system_tables-query_thread_log}
+# system.query_thread_log {#system-tables-query-thread-log}
 
-Contains information about threads which execute queries, for example, thread name, thread start time, duration of query processing.
+Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
 
 To start logging:
 

@@ -6,7 +6,7 @@ toc_title: Client Libraries
 # Client Libraries from Third-party Developers {#client-libraries-from-third-party-developers}
 
 !!! warning "Disclaimer"
-    Yandex does **not** maintain the libraries listed below and haven’t done any extensive testing to ensure their quality.
+    Yandex does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
 
 -   Python
     -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)

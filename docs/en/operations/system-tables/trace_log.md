@@ -1,4 +1,4 @@
-# system.trace_log {#system_tables-trace_log}
+# system.trace_log {#system-tables-trace-log}
 
 Contains stack traces collected by the sampling query profiler.
 
@@ -18,7 +18,7 @@ Columns:
 
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
 
-    When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
+    When connecting to the server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
 
 -   `timer_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Timer type:
 

@@ -30,4 +30,4 @@ Instead of inserting data manually, you might consider to use one of [client lib
 -   `input_format_import_nested_json` allows to insert nested JSON objects into columns of [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) type.
 
 !!! note "Note"
-    Settings are specified as `GET` parameters for the HTTP interface or as additional command-line arguments prefixed with `--` for the CLI interface.
+    Settings are specified as `GET` parameters for the HTTP interface or as additional command-line arguments prefixed with `--` for the `CLI` interface.
