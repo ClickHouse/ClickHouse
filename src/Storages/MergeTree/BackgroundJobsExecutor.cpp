@@ -42,16 +42,18 @@ void IBackgroundJobExecutor::scheduleTask(bool job_done_or_has_job_to_do)
         no_work_done_count = 0;
         /// We have background jobs, schedule task as soon as possible
         scheduling_task->schedule();
+
     }
     else
     {
         auto no_work_done_times = no_work_done_count.fetch_add(1, std::memory_order_relaxed);
+
         auto next_time_to_execute = 1000 * (std::min(
                 sleep_settings.task_sleep_seconds_when_no_work_max,
-                sleep_settings.task_sleep_seconds_when_no_work_min * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
+                sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
             + getSleepRandomAdd());
 
-         scheduling_task->scheduleAfter(next_time_to_execute);
+         scheduling_task->scheduleAfter(next_time_to_execute, false);
     }
 }
 
