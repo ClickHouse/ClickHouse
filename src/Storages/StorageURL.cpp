@@ -74,7 +74,7 @@ namespace
             if (client_info.opentelemetry_trace_id)
             {
                 header.emplace_back("traceparent",
-                    client_info.getOpenTelemetryTraceparentForChild());
+                    client_info.composeTraceparentHeader());
 
                 if (!client_info.opentelemetry_tracestate.empty())
                 {

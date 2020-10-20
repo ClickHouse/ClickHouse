@@ -310,10 +310,6 @@ void HTTPHandler::processQuery(
             session->release();
     });
 
-    // Set the query id supplied by the user, if any.
-    context.setCurrentQueryId(params.get("query_id",
-        request.get("X-ClickHouse-Query-Id", "")));
-
     // Parse the OpenTelemetry traceparent header.
     // Disable in Arcadia -- it interferes with the
     // test_clickhouse.TestTracing.test_tracing_via_http_proxy[traceparent] test.
@@ -322,7 +318,7 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!context.getClientInfo().setOpenTelemetryTraceparent(
+        if (!context.getClientInfo().parseTraceparentHeader(
             opentelemetry_traceparent, error))
         {
             throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
@@ -333,6 +329,11 @@ void HTTPHandler::processQuery(
         context.getClientInfo().opentelemetry_tracestate = request.get("tracestate", "");
     }
 #endif
+
+    // Set the query id supplied by the user, if any, and also update the
+    // OpenTelemetry fields.
+    context.setCurrentQueryId(params.get("query_id",
+        request.get("X-ClickHouse-Query-Id", "")));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");

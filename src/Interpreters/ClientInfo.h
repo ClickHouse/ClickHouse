@@ -103,8 +103,15 @@ public:
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
 
-    bool setOpenTelemetryTraceparent(const std::string & traceparent, std::string & error);
-    std::string getOpenTelemetryTraceparentForChild() const;
+    // Parse/compose OpenTelemetry traceparent header.
+    // Note that these functions use span_id field, not parent_span_id, same as
+    // in native protocol. The incoming traceparent corresponds to the upstream
+    // trace span, and the outgoing traceparent corresponds to our current span.
+    // We use the same ClientInfo structure first for incoming span, and then
+    // for our span: when we switch, we use old span_id as parent_span_id, and
+    // generate a new span_id (currently this happens in Context::setQueryId()).
+    bool parseTraceparentHeader(const std::string & traceparent, std::string & error);
+    std::string composeTraceparentHeader() const;
 
 private:
     void fillOSUserHostNameAndVersionInfo();
