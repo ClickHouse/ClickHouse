@@ -212,22 +212,10 @@
     <!-- Directory with user provided files that are accessible by 'file' table function. -->
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 
-    <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
-    <user_directories>
-        <users_xml>
-            <!-- Path to configuration file with predefined users. -->
-            <path>users.xml</path>
-        </users_xml>
-        <local_directory>
-            <!-- Path to folder where users created by SQL commands are stored. -->
-            <path>/var/lib/clickhouse/access/</path>
-        </local_directory>
-    </user_directories>
-
-    <!-- External user directories (LDAP). -->
+    <!-- LDAP server definitions. -->
     <ldap_servers>
-        <!-- List LDAP servers with their connection parameters here to later use them as authenticators for dedicated users,
-             who have 'ldap' authentication mechanism specified instead of 'password'.
+        <!-- List LDAP servers with their connection parameters here to later 1) use them as authenticators for dedicated local users,
+              who have 'ldap' authentication mechanism specified instead of 'password', or to 2) use them as remote user directories.
              Parameters:
                 host - LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
                 port - LDAP server port, default is 636 if enable_tls is set to true, 389 otherwise.
@@ -246,7 +234,7 @@
                 tls_key_file - path to certificate key file.
                 tls_ca_cert_file - path to CA certificate file.
                 tls_ca_cert_dir - path to the directory containing CA certificates.
-                tls_cipher_suite - allowed cipher suite.
+                tls_cipher_suite - allowed cipher suite (in OpenSSL notation).
              Example:
                 <my_ldap_server>
                     <host>localhost</host>
@@ -264,6 +252,36 @@
                 </my_ldap_server>
         -->
     </ldap_servers>
+
+    <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
+    <user_directories>
+        <users_xml>
+            <!-- Path to configuration file with predefined users. -->
+            <path>users.xml</path>
+        </users_xml>
+        <local_directory>
+            <!-- Path to folder where users created by SQL commands are stored. -->
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+
+        <!-- To add an LDAP server as a remote user directory of users that are not defined locally, define a single 'ldap' section
+              with the following parameters:
+                server - one of LDAP server names defined in 'ldap_servers' config section above.
+                        This parameter is mandatory and cannot be empty.
+                roles - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
+                        If no roles are specified, user will not be able to perform any actions after authentication.
+                        If any of the listed roles is not defined locally at the time of authentication, the authenthication attept
+                         will fail as if the provided password was incorrect.
+             Example:
+                <ldap>
+                    <server>my_ldap_server</server>
+                    <roles>
+                        <my_local_role1 />
+                        <my_local_role2 />
+                    </roles>
+                </ldap>
+        -->
+    </user_directories>
 
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
