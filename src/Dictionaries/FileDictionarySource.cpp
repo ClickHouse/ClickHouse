@@ -60,7 +60,7 @@ BlockInputStreamPtr FileDictionarySource::loadAll()
 
 std::string FileDictionarySource::toString() const
 {
-    return "File: " + filepath + ' ' + format;
+    return fmt::format("File: {}, {}", filepath, format);
 }
 
 
