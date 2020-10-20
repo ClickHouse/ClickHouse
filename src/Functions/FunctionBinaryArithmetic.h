@@ -709,7 +709,7 @@ class FunctionBinaryArithmetic : public IFunction
         if (lhs_is_const && rhs_is_const)
             return ColumnConst::create(std::move(column_to), input_rows_count);
         else
-            return std::move(column_to);
+            return column_to;
     }
 
     ColumnPtr executeDateTimeIntervalPlusMinus(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
