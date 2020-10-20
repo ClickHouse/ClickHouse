@@ -18,6 +18,7 @@ public:
     using ConstStoragePtr = std::shared_ptr<const Storage>;
 
     MultipleAccessStorage(const String & storage_name_ = STORAGE_TYPE);
+    ~MultipleAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
