@@ -152,6 +152,10 @@ void LocalServer::tryInitPath()
         path += '/';
 
     context->setPath(path);
+
+    context->setTemporaryStorage(path + "tmp");
+    context->setFlagsPath(path + "flags");
+
     context->setUserFilesPath(""); // user's files are everywhere
 }
 
