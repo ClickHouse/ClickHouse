@@ -8,7 +8,7 @@ namespace DB
 
 class IServer;
 
-/// Response with HTML page that allow to send queries and show results in browser.
+/// Response with HTML page that allows to send queries and show results in browser.
 class WebUIRequestHandler : public Poco::Net::HTTPRequestHandler
 {
 private:
