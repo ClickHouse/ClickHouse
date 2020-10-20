@@ -1090,6 +1090,7 @@ case "$stage" in
 "restart")
     numactl --hardware ||:
     lscpu ||:
+    sudo dmidecode -t 4 ||:
     time restart
     ;&
 "run_tests")
