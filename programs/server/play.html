@@ -411,25 +411,25 @@
         document.getElementById('error').style.display = 'block';
     }
 
-    function setColorScheme(scheme)
+    function setColorTheme(theme)
     {
-        window.localStorage.setItem('scheme', scheme);
-        document.documentElement.setAttribute('data-theme', scheme);
+        window.localStorage.setItem('theme', theme);
+        document.documentElement.setAttribute('data-theme', theme);
     }
 
-    var scheme = window.localStorage.getItem('scheme');
-    if (scheme) {
-        setColorScheme(scheme);
+    var theme = window.localStorage.getItem('theme');
+    if (theme) {
+        setColorTheme(theme);
     }
 
     document.getElementById('toggle-light').onclick = function()
     {
-        setColorScheme('light');
+        setColorTheme('light');
     }
 
     document.getElementById('toggle-dark').onclick = function()
     {
-        setColorScheme('dark');
+        setColorTheme('dark');
     }
 </script>
 </html>
