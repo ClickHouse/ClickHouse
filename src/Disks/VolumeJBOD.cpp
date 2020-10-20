@@ -101,7 +101,7 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
 
 bool VolumeJBOD::areMergesAvoided() const
 {
-    auto are_merges_avoided_user_override_value = are_merges_avoided_user_override.load(std::memory_order_relaxed);
+    auto are_merges_avoided_user_override_value = are_merges_avoided_user_override.load(std::memory_order_acquire);
     if (are_merges_avoided_user_override_value)
         return *are_merges_avoided_user_override_value;
     else
@@ -110,7 +110,7 @@ bool VolumeJBOD::areMergesAvoided() const
 
 void VolumeJBOD::setAvoidMergesUserOverride(bool avoid)
 {
-    are_merges_avoided_user_override.store(avoid, std::memory_order_relaxed);
+    are_merges_avoided_user_override.store(avoid, std::memory_order_release);
 }
 
 
