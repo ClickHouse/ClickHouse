@@ -46,6 +46,7 @@ public:
     void close(int fd) const override;
     void sync(int fd) const override;
     const String getType() const override { return delegate->getType(); }
+    Executor & getExecutor() override;
 
 protected:
     DiskPtr delegate;
