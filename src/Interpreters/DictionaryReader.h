@@ -30,7 +30,7 @@ public:
             for (auto pos : arg_positions)
                 args.emplace_back(columns[pos]);
 
-            columns[result_pos].column = function->execute(columns, columns[result_pos].type, rows, false);
+            columns[result_pos].column = function->execute(args, columns[result_pos].type, rows, false);
         }
     };
 

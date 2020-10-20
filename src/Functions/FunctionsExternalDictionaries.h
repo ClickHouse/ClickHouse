@@ -176,7 +176,7 @@ private:
         auto dict = helper.getDictionary(arguments[0]);
         ColumnPtr res;
 
-        if ( !((res = executeDispatchSimple<FlatDictionary>(arguments, dict))
+        if (!((res = executeDispatchSimple<FlatDictionary>(arguments, dict))
             || (res = executeDispatchSimple<DirectDictionary>(arguments, dict))
             || (res = executeDispatchSimple<HashedDictionary>(arguments, dict))
             || (res = executeDispatchSimple<CacheDictionary>(arguments, dict))
@@ -330,7 +330,7 @@ private:
         auto dict = helper.getDictionary(arguments[0]);
         ColumnPtr res;
 
-        if ( !((res = executeDispatch<FlatDictionary>(arguments, dict))
+        if (!((res = executeDispatch<FlatDictionary>(arguments, dict))
             || (res = executeDispatch<HashedDictionary>(arguments, dict))
             || (res = executeDispatch<DirectDictionary>(arguments, dict))
             || (res = executeDispatch<CacheDictionary>(arguments, dict))
@@ -508,7 +508,7 @@ private:
         auto dict = helper.getDictionary(arguments[0]);
 
         ColumnPtr res;
-        if ( !((res = executeDispatch<FlatDictionary>(arguments, dict))
+        if (!((res = executeDispatch<FlatDictionary>(arguments, dict))
             || (res = executeDispatch<HashedDictionary>(arguments, dict))
             || (res = executeDispatch<DirectDictionary>(arguments, dict))
             || (res = executeDispatch<CacheDictionary>(arguments, dict))
@@ -845,7 +845,7 @@ private:
         auto dict = helper.getDictionary(arguments[0]);
 
         ColumnPtr res;
-        if ( !((res = executeDispatch<FlatDictionary>(arguments, dict))
+        if (!((res = executeDispatch<FlatDictionary>(arguments, dict))
             || (res = executeDispatch<HashedDictionary>(arguments, dict))
             || (res = executeDispatch<DirectDictionary>(arguments, dict))
             || (res = executeDispatch<CacheDictionary>(arguments, dict))
@@ -1100,7 +1100,7 @@ private:
         auto dict = helper.getDictionary(arguments[0]);
         ColumnPtr res;
 
-        if ( !((res = executeDispatch<FlatDictionary>(arguments, dict))
+        if (!((res = executeDispatch<FlatDictionary>(arguments, dict))
             || (res = executeDispatch<HashedDictionary>(arguments, dict))
             || (res = executeDispatch<DirectDictionary>(arguments, dict))
             || (res = executeDispatch<CacheDictionary>(arguments, dict))
@@ -1667,7 +1667,7 @@ private:
         auto dict = helper.getDictionary(arguments[0]);
         ColumnPtr res;
 
-        if ( !((res = executeDispatch<FlatDictionary>(arguments, result_type, dict))
+        if (!((res = executeDispatch<FlatDictionary>(arguments, result_type, dict))
             || (res = executeDispatch<DirectDictionary>(arguments, result_type, dict))
             || (res = executeDispatch<HashedDictionary>(arguments, result_type, dict))
             || (res = executeDispatch<CacheDictionary>(arguments, result_type, dict))))
@@ -1820,7 +1820,7 @@ private:
         auto dict = helper.getDictionary(arguments[0]);
 
         ColumnPtr res;
-        if ( !((res = executeDispatch<FlatDictionary>(arguments, dict))
+        if (!((res = executeDispatch<FlatDictionary>(arguments, dict))
             || (res = executeDispatch<DirectDictionary>(arguments, dict))
             || (res = executeDispatch<HashedDictionary>(arguments, dict))
             || (res = executeDispatch<CacheDictionary>(arguments, dict))))

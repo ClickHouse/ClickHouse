@@ -464,7 +464,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
         /// For argument of DateTime type, second argument with time zone could be specified.
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
-            time_zone = &extractTimeZoneFromFunctionArguments( arguments, 1, 0);
+            time_zone = &extractTimeZoneFromFunctionArguments(arguments, 1, 0);
 
         if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
         {
@@ -1857,7 +1857,7 @@ using FunctionParseDateTime64BestEffortOrNull = FunctionConvertFromString<
 class ExecutableFunctionCast : public IExecutableFunctionImpl
 {
 public:
-    using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, size_t)>;
+    using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
     explicit ExecutableFunctionCast(WrapperType && wrapper_function_, const char * name_)
             : wrapper_function(std::move(wrapper_function_)), name(name_) {}
@@ -1872,7 +1872,7 @@ protected:
         if (arguments.size() > 2)
             new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
 
-        return wrapper_function(new_arguments, result_type, input_rows_count);
+        return wrapper_function(new_arguments, result_type, nullptr, input_rows_count);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -1891,7 +1891,7 @@ struct NameCast { static constexpr auto name = "CAST"; };
 class FunctionCast final : public IFunctionBaseImpl
 {
 public:
-    using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, size_t)>;
+    using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
 
     FunctionCast(const char * name_, MonotonicityForRange && monotonicity_for_range_
@@ -1951,7 +1951,7 @@ private:
                 FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                 .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function_adaptor] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        return [function_adaptor] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
         {
             return function_adaptor->execute(arguments, result_type, input_rows_count);
         };
@@ -1965,7 +1965,7 @@ private:
                 FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                 .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function_adaptor] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        return [function_adaptor] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
         {
             return function_adaptor->execute(arguments, result_type, input_rows_count);
         };
@@ -1976,7 +1976,7 @@ private:
         if (!isStringOrFixedString(from_type))
             throw Exception{"CAST AS FixedString is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED};
 
-        return [N] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
+        return [N] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
         {
             return FunctionToFixedString::executeForN(arguments, N);
         };
@@ -1993,7 +1993,7 @@ private:
                 FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                 .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function_adaptor] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        return [function_adaptor] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
         {
             return function_adaptor->execute(arguments, result_type, input_rows_count);
         };
@@ -2017,7 +2017,7 @@ private:
             throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
                 ErrorCodes::CANNOT_CONVERT_TYPE};
 
-        return [type_index, scale, to_type] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        return [type_index, scale, to_type] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
         {
             ColumnPtr result_column;
             auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
@@ -2046,7 +2046,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/)
+            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t /*input_rows_count*/)
             {
                 return ConvertImplGenericFromString::execute(arguments, result_type);
             };
@@ -2061,7 +2061,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/)
+            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t /*input_rows_count*/)
             {
                 return ConvertImplGenericFromString::execute(arguments, result_type);
             };
@@ -2090,7 +2090,7 @@ private:
         const auto nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type);
 
         return [nested_function, from_nested_type, to_nested_type](
-                ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) -> ColumnPtr
+                ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
         {
             const auto & array_arg = arguments.front();
 
@@ -2100,7 +2100,7 @@ private:
                 ColumnsWithTypeAndName nested_columns{{ col_array->getDataPtr(), from_nested_type, "" }};
 
                 /// convert nested column
-                auto result_column = nested_function(nested_columns, to_nested_type, nested_columns.front().column->size());
+                auto result_column = nested_function(nested_columns, to_nested_type, nullable_source, nested_columns.front().column->size());
 
                 /// set converted nested column to result
                 return ColumnArray::create(result_column, col_array->getOffsetsPtr());
@@ -2115,7 +2115,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/)
+            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t /*input_rows_count*/)
             {
                 return ConvertImplGenericFromString::execute(arguments, result_type);
             };
@@ -2140,7 +2140,7 @@ private:
             element_wrappers.push_back(prepareUnpackDictionaries(idx_type.second, to_element_types[idx_type.first]));
 
         return [element_wrappers, from_element_types, to_element_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) -> ColumnPtr
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
         {
             const auto * col = arguments.front().column.get();
 
@@ -2153,7 +2153,7 @@ private:
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_element_types[i], "" }};
-                converted_columns[i] = element_wrappers[i](element, to_element_types[i], input_rows_count);
+                converted_columns[i] = element_wrappers[i](element, to_element_types[i], nullable_source, input_rows_count);
             }
 
             return ColumnTuple::create(converted_columns);
@@ -2161,7 +2161,7 @@ private:
     }
 
     template <typename FieldType>
-    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type, bool source_is_nullable) const
+    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const
     {
         using EnumType = DataTypeEnum<FieldType>;
         using Function = typename FunctionTo<EnumType>::Type;
@@ -2172,16 +2172,16 @@ private:
             checkEnumToEnumConversion(from_enum16, to_type);
 
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
-            return createStringToEnumWrapper<ColumnString, EnumType>(source_is_nullable);
+            return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
-            return createStringToEnumWrapper<ColumnFixedString, EnumType>(source_is_nullable);
+            return createStringToEnumWrapper<ColumnFixedString, EnumType>();
         else if (isNativeNumber(from_type) || isEnum(from_type))
         {
             auto function = Function::create();
             auto func_or_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                     .build(ColumnsWithTypeAndName{{nullptr, from_type, "" }});
 
-            return [func_or_adaptor] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+            return [func_or_adaptor] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
             {
                 return func_or_adaptor->execute(arguments, result_type, input_rows_count);
             };
@@ -2217,25 +2217,19 @@ private:
     }
 
     template <typename ColumnStringType, typename EnumType>
-    WrapperType createStringToEnumWrapper(ssize_t source_is_nullable) const
+    WrapperType createStringToEnumWrapper() const
     {
         const char * function_name = name;
-        return [function_name, source_is_nullable] (ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t /*input_rows_count*/)
+        return [function_name] (
+            ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
         {
             const auto & first_col = arguments.front().column.get();
             const auto & result_type = typeid_cast<const EnumType &>(*res_type);
 
             const ColumnStringType * col = typeid_cast<const ColumnStringType *>(first_col);
-            const ColumnNullable * nullable_col = nullptr;
-            if (source_is_nullable)
-            {
-                if (arguments.size() < 2)
-                    throw Exception("Not enough columns", ErrorCodes::LOGICAL_ERROR);
 
-                nullable_col = typeid_cast<const ColumnNullable *>(arguments.back().column.get());
-                if (col && nullable_col && nullable_col->size() != col->size())
-                    throw Exception("ColumnNullable is not compatible with original", ErrorCodes::LOGICAL_ERROR);
-            }
+            if (col && nullable_col && nullable_col->size() != col->size())
+                throw Exception("ColumnNullable is not compatible with original", ErrorCodes::LOGICAL_ERROR);
 
             if (col)
             {
@@ -2269,7 +2263,7 @@ private:
 
     static WrapperType createIdentityWrapper(const DataTypePtr &)
     {
-        return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
+        return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
         {
             return arguments.front().column;
         };
@@ -2278,7 +2272,7 @@ private:
     static WrapperType createNothingWrapper(const IDataType * to_type)
     {
         ColumnPtr res = to_type->createColumnConstWithDefaultValue(1);
-        return [res] (ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count)
+        return [res] (ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t input_rows_count)
         {
             /// Column of Nothing type is trivially convertible to any other column
             return res->cloneResized(input_rows_count)->convertToFullColumnIfConst();
@@ -2297,7 +2291,7 @@ private:
             if (!to_nested->isNullable())
                 throw Exception{"Cannot convert NULL to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
 
-            return [](ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count)
+            return [](ColumnsWithTypeAndName &, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
             {
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
             };
@@ -2314,7 +2308,7 @@ private:
             return wrapper;
 
         return [wrapper, from_low_cardinality, to_low_cardinality, skip_not_null_check]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) -> ColumnPtr
+                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
         {
             ColumnsWithTypeAndName args = {arguments[0]};
             auto & arg = args.front();
@@ -2354,7 +2348,7 @@ private:
                 }
 
                 /// Perform the requested conversion.
-                converted_column = wrapper(args, res_type, tmp_rows_count);
+                converted_column = wrapper(args, res_type, nullable_source, tmp_rows_count);
             }
 
             if (to_low_cardinality)
@@ -2385,12 +2379,12 @@ private:
         bool source_is_nullable = from_type->isNullable();
         bool result_is_nullable = to_type->isNullable();
 
-        auto wrapper = prepareImpl(removeNullable(from_type), removeNullable(to_type), result_is_nullable, source_is_nullable);
+        auto wrapper = prepareImpl(removeNullable(from_type), removeNullable(to_type), result_is_nullable);
 
         if (result_is_nullable)
         {
             return [wrapper, source_is_nullable]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) -> ColumnPtr
+                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
             {
                 /// Create a temporary columns on which to perform the operation.
                 const auto & nullable_type = static_cast<const DataTypeNullable &>(*result_type);
@@ -2402,16 +2396,18 @@ private:
                 else
                     tmp_args = arguments;
 
+                const ColumnNullable * nullable_source = nullptr;
+
                 /// Add original ColumnNullable for createStringToEnumWrapper()
                 if (source_is_nullable)
                 {
                     if (arguments.size() != 1)
                         throw Exception("Invalid number of arguments", ErrorCodes::LOGICAL_ERROR);
-                    tmp_args.emplace_back(arguments.front());
+                    nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
                 }
 
                 /// Perform the requested conversion.
-                auto tmp_res = wrapper(tmp_args, nested_type, input_rows_count);
+                auto tmp_res = wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
 
                 /// May happen in fuzzy tests. For debug purpose.
                 if (!tmp_res)
@@ -2426,11 +2422,10 @@ private:
             /// Conversion from Nullable to non-Nullable.
 
             return [wrapper, skip_not_null_check]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) -> ColumnPtr
+                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
             {
                 auto tmp_args = createBlockWithNestedColumns(arguments);
-                const auto & nullable_type = static_cast<const DataTypeNullable &>(*result_type);
-                const auto & nested_type = nullable_type.getNestedType();
+                auto nested_type = removeNullable(result_type);
 
                 /// Check that all values are not-NULL.
                 /// Check can be skipped in case if LowCardinality dictionary is transformed.
@@ -2445,8 +2440,8 @@ private:
                         throw Exception{"Cannot convert NULL value to non-Nullable type",
                                         ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
                 }
-
-                return wrapper(tmp_args, nested_type, input_rows_count);
+                const ColumnNullable * nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
+                return wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
             };
         }
         else
@@ -2455,7 +2450,7 @@ private:
 
     /// 'from_type' and 'to_type' are nested types in case of Nullable.
     /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
-    WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable, bool source_is_nullable) const
+    WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
@@ -2493,7 +2488,7 @@ private:
                 std::is_same_v<ToDataType, DataTypeEnum8> ||
                 std::is_same_v<ToDataType, DataTypeEnum16>)
             {
-                ret = createEnumWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), source_is_nullable);
+                ret = createEnumWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
                 return true;
             }
             if constexpr (

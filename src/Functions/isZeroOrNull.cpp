@@ -53,6 +53,7 @@ public:
     {
         const ColumnPtr & input_column = arguments[0].column;
 
+        ColumnPtr res;
         if (const ColumnNullable * input_column_nullable = checkAndGetColumn<ColumnNullable>(input_column.get()))
         {
             const NullMap & null_map = input_column_nullable->getNullMapData();
@@ -64,9 +65,10 @@ public:
                 ColumnFloat32, ColumnFloat64>(
                 nested_column, [&](const auto & column)
                 {
-                    auto res = ColumnUInt8::create(input_rows_count);
-                    processNullable(column.getData(), null_map, res->getData(), input_rows_count);
-                    return res;
+                    auto col = ColumnUInt8::create(input_rows_count);
+                    processNullable(column.getData(), null_map, col->getData(), input_rows_count);
+                    res = std::move(col);
+                    return true;
                 }))
             {
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must have simple numeric type, possibly Nullable", name);
@@ -80,14 +82,17 @@ public:
                 ColumnFloat32, ColumnFloat64>(
                 input_column.get(), [&](const auto & column)
                 {
-                    auto res = ColumnUInt8::create(input_rows_count);
-                    processNotNullable(column.getData(), res->getData(), input_rows_count);
-                    return res;
+                    auto col = ColumnUInt8::create(input_rows_count);
+                    processNotNullable(column.getData(), col->getData(), input_rows_count);
+                    res = std::move(col);
+                    return true;
                 }))
             {
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must have simple numeric type, possibly Nullable", name);
             }
         }
+
+        return res;
     }
 
 private:

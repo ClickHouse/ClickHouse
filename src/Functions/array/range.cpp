@@ -343,7 +343,7 @@ private:
         if (arguments.size() == 1)
         {
             const auto * col = arguments[0].column.get();
-            if ( !((res = executeInternal<UInt8>(col))
+            if (!((res = executeInternal<UInt8>(col))
                 || (res = executeInternal<UInt16>(col))
                 || (res = executeInternal<UInt32>(col))
                 || (res = executeInternal<UInt64>(col))))

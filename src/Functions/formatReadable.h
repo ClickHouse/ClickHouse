@@ -52,7 +52,7 @@ public:
     ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         ColumnPtr res;
-        if ( !((res = executeType<UInt8>(arguments))
+        if (!((res = executeType<UInt8>(arguments))
             || (res = executeType<UInt16>(arguments))
             || (res = executeType<UInt32>(arguments))
             || (res = executeType<UInt64>(arguments))

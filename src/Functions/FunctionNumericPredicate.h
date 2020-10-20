@@ -51,7 +51,7 @@ public:
         const auto * in = arguments.front().column.get();
 
         ColumnPtr res;
-        if ( !((res = execute<UInt8>(in))
+        if (!((res = execute<UInt8>(in))
             || (res = execute<UInt16>(in))
             || (res = execute<UInt32>(in))
             || (res = execute<UInt64>(in))

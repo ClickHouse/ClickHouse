@@ -677,6 +677,7 @@ private:
     {
         TypeIndex left_number = col_left.type->getTypeId();
         TypeIndex right_number = col_right.type->getTypeId();
+        ColumnPtr res;
 
         auto call = [&](const auto & types) -> bool
         {
@@ -685,14 +686,16 @@ private:
             using RightDataType = typename Types::RightType;
 
             if (check_decimal_overflow)
-                return DecimalComparison<LeftDataType, RightDataType, Op, true>::apply(col_left, col_right);
+                return (res = DecimalComparison<LeftDataType, RightDataType, Op, true>::apply(col_left, col_right)) != nullptr;
             else
-                return DecimalComparison<LeftDataType, RightDataType, Op, false>::apply(col_left, col_right);
+                return (res = DecimalComparison<LeftDataType, RightDataType, Op, false>::apply(col_left, col_right)) != nullptr;
         };
 
         if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
+
+        return res;
     }
 
     ColumnPtr executeString(const IColumn * c0, const IColumn * c1) const
@@ -852,7 +855,7 @@ private:
                 { !left_const ? column_converted : col_right_untyped->getPtr(), type_to_compare, "" },
             };
 
-            return executeImpl(tmp_columns, result_type, 2, input_rows_count);
+            return executeImpl(tmp_columns, result_type, input_rows_count);
         }
     }
 
@@ -913,7 +916,7 @@ private:
             y[i].column = y_columns[i];
         }
 
-        executeTupleImpl(x, y, tuple_size, input_rows_count);
+        return executeTupleImpl(x, y, tuple_size, input_rows_count);
     }
 
     ColumnPtr executeTupleImpl(const ColumnsWithTypeAndName & x,
@@ -949,7 +952,7 @@ private:
         if (tuple_size == 1)
         {
             /// Do not call AND for single-element tuple.
-            return tmp_columns[2].column;
+            return convolution_columns[0].column;
         }
 
         /// Logical convolution.
@@ -1177,7 +1180,7 @@ public:
         ColumnPtr res;
         if (left_is_num && right_is_num && !date_and_datetime)
         {
-            if ( !((res = executeNumLeftType<UInt8>(col_left_untyped, col_right_untyped))
+            if (!((res = executeNumLeftType<UInt8>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<UInt16>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<UInt32>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<UInt64>(col_left_untyped, col_right_untyped))

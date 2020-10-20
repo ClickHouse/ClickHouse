@@ -143,13 +143,12 @@ void LinearModelData::updateState()
 
 void LinearModelData::predict(
     ColumnVector<Float64>::Container & container,
-    ColumnsWithTypeAndName & columns,
+    ColumnsWithTypeAndName & arguments,
     size_t offset,
     size_t limit,
-    const ColumnNumbers & arguments,
     const Context & context) const
 {
-    gradient_computer->predict(container, columns, offset, limit, arguments, weights, bias, context);
+    gradient_computer->predict(container, arguments, offset, limit, weights, bias, context);
 }
 
 void LinearModelData::returnWeights(IColumn & to) const

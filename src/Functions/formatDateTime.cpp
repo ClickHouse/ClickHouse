@@ -373,9 +373,9 @@ public:
                         return true;
                     }))
                 {
-                    if ( !((res = executeType<DataTypeDate>(arguments, result_type))
-                        || (res = executeType<DataTypeDateTime>(arguments, result_type)
-                        || (res = executeType<DataTypeDateTime64>(arguments, result_type)))))
+                    if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                        || (res = executeType<DataTypeDateTime>(arguments, result_type))
+                        || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
                         throw Exception(
                             "Illegal column " + arguments[0].column->getName() + " of function " + getName()
                                 + ", must be Integer or DateTime.",
@@ -385,9 +385,9 @@ public:
         }
         else
         {
-            if ( !((res = executeType<DataTypeDate>(arguments, result_type)
-                || (res = executeType<DataTypeDateTime>(arguments, result_type)
-                || (res = executeType<DataTypeDateTime64>(arguments, result_type))))))
+            if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                || (res = executeType<DataTypeDateTime>(arguments, result_type))
+                || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
                 throw Exception(
                     "Illegal column " + arguments[0].column->getName() + " of function " + getName()
                         + ", must be Date or DateTime.",
@@ -424,7 +424,7 @@ public:
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         }
         else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments( arguments, 2, 0);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         else
             time_zone_tmp = &DateLUT::instance();
 

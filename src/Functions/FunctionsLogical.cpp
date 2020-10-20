@@ -570,7 +570,7 @@ template <template <typename> class Impl, typename Name>
 ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     ColumnPtr res;
-    if ( !((res = functionUnaryExecuteType<Impl, UInt8>(arguments))
+    if (!((res = functionUnaryExecuteType<Impl, UInt8>(arguments))
         || (res = functionUnaryExecuteType<Impl, UInt16>(arguments))
         || (res = functionUnaryExecuteType<Impl, UInt32>(arguments))
         || (res = functionUnaryExecuteType<Impl, UInt64>(arguments))
