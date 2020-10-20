@@ -1053,7 +1053,7 @@ private:
             else
                 GenericComparisonImpl<Op<int, int>>::vectorVector(*c0, *c1, vec_res);
 
-            return std::move(c_res);
+            return c_res;
         }
     }
 
