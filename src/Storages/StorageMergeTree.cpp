@@ -214,15 +214,12 @@ void StorageMergeTree::drop()
     dropAllData();
 }
 
-void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder & lock_holder)
+void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
-    lock_holder.release();
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
-
-        /// NOTE: It's assumed that this method is called under lockForAlter.
 
         auto parts_to_remove = getDataPartsVector();
         removePartsFromWorkingSet(parts_to_remove, true);
@@ -613,9 +610,9 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(Int64(increment.value.load()), current_mutations_by_version.rbegin()->first);
 }
 
-std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * out_disable_reason)
+std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
+    const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * out_disable_reason, TableLockHolder & /* table_lock_holder */)
 {
-    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     std::unique_lock lock(currently_processing_in_background_mutex);
     auto data_settings = getSettings();
 
@@ -714,18 +711,18 @@ bool StorageMergeTree::merge(
     bool deduplicate,
     String * out_disable_reason)
 {
+    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    auto merge_mutate_entry = selectPartsToMerge(metadata_snapshot, aggressive, partition_id, final, out_disable_reason);
+    auto merge_mutate_entry = selectPartsToMerge(metadata_snapshot, aggressive, partition_id, final, out_disable_reason, table_lock_holder);
     if (!merge_mutate_entry)
         return false;
 
-    return mergeSelectedParts(metadata_snapshot, deduplicate, *merge_mutate_entry);
+    return mergeSelectedParts(metadata_snapshot, deduplicate, *merge_mutate_entry, table_lock_holder);
 }
 
-bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, MergeMutateSelectedEntry & merge_mutate_entry)
+bool StorageMergeTree::mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, MergeMutateSelectedEntry & merge_mutate_entry, TableLockHolder & table_lock_holder)
 {
-    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto & future_part = merge_mutate_entry.future_part;
     Stopwatch stopwatch;
     MutableDataPartPtr new_part;
@@ -769,9 +766,8 @@ bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & p
     return currently_merging_mutating_parts.count(part);
 }
 
-std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String */* disable_reason */)
+std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String */* disable_reason */, TableLockHolder & /* table_lock_holder */)
 {
-    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     std::lock_guard lock(currently_processing_in_background_mutex);
     size_t max_ast_elements = global_context.getSettingsRef().max_expanded_ast_elements;
 
@@ -850,9 +846,8 @@ std::optional<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::sele
     return {};
 }
 
-bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & merge_mutate_entry)
+bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & merge_mutate_entry, TableLockHolder & table_lock_holder)
 {
-    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto & future_part = merge_mutate_entry.future_part;
     auto table_id = getStorageID();
 
@@ -904,32 +899,30 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
     auto metadata_snapshot = getInMemoryMetadataPtr();
     std::optional<MergeMutateSelectedEntry> merge_entry, mutate_entry;
 
-    merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr);
+    auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock);
     if (!merge_entry)
-        mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr);
+        mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
 
     if (merge_entry || mutate_entry)
     {
-        return JobAndPool{[this, metadata_snapshot, merge_entry{std::move(merge_entry)}, mutate_entry{std::move(mutate_entry)}] () mutable
+        return JobAndPool{[this, metadata_snapshot, merge_entry{std::move(merge_entry)}, mutate_entry{std::move(mutate_entry)}, share_lock] () mutable
         {
             if (merge_entry)
-                mergeSelectedParts(metadata_snapshot, false, *merge_entry);
+                mergeSelectedParts(metadata_snapshot, false, *merge_entry, share_lock);
             else if (mutate_entry)
-                mutateSelectedPart(metadata_snapshot, *mutate_entry);
+                mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
         }, PoolType::MERGE_MUTATE};
     }
     else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
     {
-        return JobAndPool{[this] ()
+        return JobAndPool{[this, share_lock] ()
         {
-            {
-                auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-                /// All use relative_data_path which changes during rename
-                /// so execute under share lock.
-                clearOldPartsFromFilesystem();
-                clearOldTemporaryDirectories();
-                clearOldWriteAheadLogs();
-            }
+            /// All use relative_data_path which changes during rename
+            /// so execute under share lock.
+            clearOldPartsFromFilesystem();
+            clearOldTemporaryDirectories();
+            clearOldWriteAheadLogs();
             clearOldMutations();
         }, PoolType::MERGE_MUTATE};
     }
