@@ -548,11 +548,27 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                            users_config_file.string(), users_d.string());
         }
 
-        /// Set capabilities for the binary.
+        /** Set capabilities for the binary.
+          *
+          * 1. Check that "setcap" tool exists.
+          * 2. Check that an arbitrary program with installed capabilities can run.
+          * 3. Set the capabilities.
+          *
+          * The second is important for Docker and systemd-nspawn.
+          * When the container has no capabilities,
+          * but the executable file inside the container has capabilities,
+          *  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
+          */
 
 #if defined(__linux__)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
-        std::string command = fmt::format("command -v setcap && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {}", main_bin_path.string());
+        std::string command = fmt::format("command -v setcap >/dev/null"
+            " && echo > {0} && chmod a+x {0} && {0} && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0} && {0} && rm {0}"
+            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {1}"
+            " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
+                " This is optional. Taskstats accounting will be disabled."
+                " To enable taskstats accounting you may add the required capability later manually.\"",
+            "/tmp/test_setcap.sh", main_bin_path.string());
         fmt::print(" {}\n", command);
         executeScript(command);
 #endif
