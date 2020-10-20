@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
@@ -130,6 +131,7 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
         replace_map.emplace(replacement.name, replacement.expr);
     }
 
+    UInt8 replace_column_sucess = 0;
     for (auto & column : nodes)
     {
         if (const auto * id = column->as<ASTIdentifier>())
@@ -139,6 +141,7 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
             {
                 column = replace_it->second;
                 column->setAlias(replace_it->first);
+                ++replace_column_sucess;
             }
         }
         else if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(column.get()))
@@ -151,9 +154,15 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
                 replaceChildren(new_ast, column, replace_it->first);
                 column = new_ast;
                 column->setAlias(replace_it->first);
+                ++replace_column_sucess;
             }
         }
     }
+
+    if (replace_column_sucess < replace_map.size())
+        throw Exception(
+            "Expressions in columns transformer REPLACE should use same column name as original column",
+            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
 }
