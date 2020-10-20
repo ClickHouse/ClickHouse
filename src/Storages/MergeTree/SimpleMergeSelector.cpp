@@ -90,6 +90,9 @@ double mapPiecewiseLinearToUnit(double value, double min, double max)
 
 /** Is allowed to merge parts in range with specific properties.
   */
+#if defined(__clang__)
+    ALWAYS_INLINE
+#endif
 bool allow(
     double sum_size,
     double max_size,
