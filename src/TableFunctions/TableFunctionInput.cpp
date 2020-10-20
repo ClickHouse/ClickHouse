@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StoragePtr TableFunctionInput::executeImpl(const ASTFunction & function, const Context & context, const std::string & table_name) const
+void TableFunctionInput::parseArguments(const ASTFunction & function, const Context & context)
 {
     if (!function.arguments)
         throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
@@ -33,12 +33,22 @@ StoragePtr TableFunctionInput::executeImpl(const ASTFunction & function, const C
         throw Exception("Table function '" + getName() + "' requires exactly 1 argument: structure",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    String structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context)->as<ASTLiteral &>().value.safeGet<String>();
-    auto columns = parseColumnsListFromString(structure, context);
-    StoragePtr storage = StorageInput::create(StorageID(getDatabaseName(), table_name), columns);
+    structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context)->as<ASTLiteral &>().value.safeGet<String>();
+}
 
+ColumnsDescription TableFunctionInput::getActualTableStructure(const Context & context) const
+{
+    return parseColumnsListFromString(structure, context);
+}
+
+StoragePtr TableFunctionInput::executeImpl(
+    const ASTFunction & /*ast_function*/,
+    const Context & context,
+    const std::string & table_name,
+    ColumnsDescription /*cached_columns*/) const
+{
+    auto storage = StorageInput::create(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
     storage->startup();
-
     return storage;
 }
 

@@ -45,7 +45,7 @@ Notes:
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```
-$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --configs-dir $HOME/ClickHouse/programs/server/ 'test_odbc_interaction -ss'
+$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --base-configs-dir $HOME/ClickHouse/programs/server/ 'test_odbc_interaction -ss'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0

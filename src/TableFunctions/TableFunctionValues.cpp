@@ -62,9 +62,9 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
 }
 
-StoragePtr TableFunctionValues::executeImpl(const ASTFunction & function, const Context & context, const std::string & table_name) const
+void TableFunctionValues::parseArguments(const ASTFunction & ast_function, const Context & /*context*/)
 {
-    const ASTs & args_func = function.children;
+    const ASTs & args_func = ast_function.children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
@@ -83,15 +83,27 @@ StoragePtr TableFunctionValues::executeImpl(const ASTFunction & function, const 
             "Got '{}' instead", getName(), args[0]->formatForErrorMessage()),
             ErrorCodes::BAD_ARGUMENTS);
     }
-    std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-    ColumnsDescription columns = parseColumnsListFromString(structure, context);
+    structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+}
+
+ColumnsDescription TableFunctionValues::getActualTableStructure(const Context & context) const
+{
+    return parseColumnsListFromString(structure, context);
+}
+
+StoragePtr TableFunctionValues::executeImpl(
+    const ASTFunction & ast_function, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+{
+    auto columns = getActualTableStructure(context);
 
     Block sample_block;
     for (const auto & name_type : columns.getOrdinary())
         sample_block.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+    ASTs & args = ast_function.children.at(0)->children;
 
     /// Parsing other arguments as values and inserting them into columns
     parseAndInsertValues(res_columns, args, sample_block, context);

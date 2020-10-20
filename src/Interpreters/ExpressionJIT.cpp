@@ -275,9 +275,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
+    void execute(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
     {
-        auto col_res = block.getByPosition(result).type->createColumn();
+        auto col_res = block[result].type->createColumn();
 
         if (block_size)
         {
@@ -290,16 +290,16 @@ public:
             std::vector<ColumnData> columns(arguments.size() + 1);
             for (size_t i = 0; i < arguments.size(); ++i)
             {
-                const auto * column = block.getByPosition(arguments[i]).column.get();
+                const auto * column = block[arguments[i]].column.get();
                 if (!column)
-                    throw Exception("Column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Column " + block[arguments[i]].name + " is missing", ErrorCodes::LOGICAL_ERROR);
                 columns[i] = getColumnData(column);
             }
             columns[arguments.size()] = getColumnData(col_res.get());
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
         }
 
-        block.getByPosition(result).column = std::move(col_res);
+        block[result].column = std::move(col_res);
     }
 };
 
@@ -484,7 +484,7 @@ llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlacehol
     return it->second(builder, values);
 }
 
-ExecutableFunctionImplPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
+ExecutableFunctionImplPtr LLVMFunction::prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
 
 bool LLVMFunction::isDeterministic() const
 {

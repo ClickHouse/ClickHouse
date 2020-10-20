@@ -31,26 +31,26 @@ private:
     using ResultColumnType = ColumnVector<typename Method::ResultType>;
 
     template <typename T>
-    bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeNumber(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result) const
     {
-        return executeNumberNumber<T, UInt8>(block, arguments, result)
-            || executeNumberNumber<T, UInt16>(block, arguments, result)
-            || executeNumberNumber<T, UInt32>(block, arguments, result)
-            || executeNumberNumber<T, UInt64>(block, arguments, result)
-            || executeNumberNumber<T, Int8>(block, arguments, result)
-            || executeNumberNumber<T, Int16>(block, arguments, result)
-            || executeNumberNumber<T, Int32>(block, arguments, result)
-            || executeNumberNumber<T, Int64>(block, arguments, result)
-            || executeNumberNumber<T, Float32>(block, arguments, result)
-            || executeNumberNumber<T, Float64>(block, arguments, result);
+        return executeNumberNumber<T, UInt8>(columns, arguments, result)
+            || executeNumberNumber<T, UInt16>(columns, arguments, result)
+            || executeNumberNumber<T, UInt32>(columns, arguments, result)
+            || executeNumberNumber<T, UInt64>(columns, arguments, result)
+            || executeNumberNumber<T, Int8>(columns, arguments, result)
+            || executeNumberNumber<T, Int16>(columns, arguments, result)
+            || executeNumberNumber<T, Int32>(columns, arguments, result)
+            || executeNumberNumber<T, Int64>(columns, arguments, result)
+            || executeNumberNumber<T, Float32>(columns, arguments, result)
+            || executeNumberNumber<T, Float64>(columns, arguments, result);
     }
 
 
     template <typename T, typename U>
-    bool executeNumberNumber(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeNumberNumber(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result) const
     {
-        ColumnPtr col1 = block.getByPosition(arguments[0]).column->convertToFullColumnIfConst();
-        ColumnPtr col2 = block.getByPosition(arguments[1]).column->convertToFullColumnIfConst();
+        ColumnPtr col1 = columns[arguments[0]].column->convertToFullColumnIfConst();
+        ColumnPtr col2 = columns[arguments[1]].column->convertToFullColumnIfConst();
         if (!col1 || !col2)
             return false;
 
@@ -75,7 +75,7 @@ private:
             col_array1->getOffsets(),
             col_res->getData());
 
-        block.getByPosition(result).column = std::move(col_res);
+        columns[result].column = std::move(col_res);
         return true;
     }
 
@@ -123,19 +123,19 @@ public:
         return Method::getReturnType(nested_types[0], nested_types[1]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) const override
     {
-        if (!(executeNumber<UInt8>(block, arguments, result)
-            || executeNumber<UInt16>(block, arguments, result)
-              || executeNumber<UInt32>(block, arguments, result)
-              || executeNumber<UInt64>(block, arguments, result)
-              || executeNumber<Int8>(block, arguments, result)
-              || executeNumber<Int16>(block, arguments, result)
-              || executeNumber<Int32>(block, arguments, result)
-              || executeNumber<Int64>(block, arguments, result)
-              || executeNumber<Float32>(block, arguments, result)
-              || executeNumber<Float64>(block, arguments, result)))
-            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function "
+        if (!(executeNumber<UInt8>(columns, arguments, result)
+            || executeNumber<UInt16>(columns, arguments, result)
+              || executeNumber<UInt32>(columns, arguments, result)
+              || executeNumber<UInt64>(columns, arguments, result)
+              || executeNumber<Int8>(columns, arguments, result)
+              || executeNumber<Int16>(columns, arguments, result)
+              || executeNumber<Int32>(columns, arguments, result)
+              || executeNumber<Int64>(columns, arguments, result)
+              || executeNumber<Float32>(columns, arguments, result)
+              || executeNumber<Float64>(columns, arguments, result)))
+            throw Exception{"Illegal column " + columns[arguments[0]].column->getName() + " of first argument of function "
                                 + getName(),
                             ErrorCodes::ILLEGAL_COLUMN};
     }

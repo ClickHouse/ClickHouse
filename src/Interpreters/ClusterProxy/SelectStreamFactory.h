@@ -45,7 +45,7 @@ private:
     const Block header;
     QueryProcessingStage::Enum processed_stage;
     StorageID main_table = StorageID::createEmpty();
-    ASTPtr table_func_ptr;
+    ASTPtr table_func_ptr;  // TODO(ilezhankin): ASTFunction
     Scalars scalars;
     bool has_virtual_shard_num_column = false;
     Tables external_tables;

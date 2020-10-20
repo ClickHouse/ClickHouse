@@ -933,7 +933,7 @@ StoragePtr Context::executeTableFunction(const ASTFunction & table_expression)
 
     if (!res)
     {
-        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.name, *this);
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, *this);
 
         /// Run it and remember the result
         res = table_function_ptr->execute(table_expression, *this, table_function_ptr->getName());
@@ -1102,9 +1102,6 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-    if (!client_info.current_query_id.empty())
-        throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
-
     String query_id_to_set = query_id;
 
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.

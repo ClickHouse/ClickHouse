@@ -1109,24 +1109,21 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         {
             if (command.default_expression)
             {
-                /// If we modify default, but not type
-                if (!command.data_type)
-                {
-                    default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), column_name));
-                }
+                DataTypePtr data_type_ptr;
+                /// If we modify default, but not type.
+                if (!command.data_type) /// it's not ADD COLUMN, because we cannot add column without type
+                    data_type_ptr = all_columns.get(column_name).type;
                 else
-                {
-                    const auto & final_column_name = column_name;
-                    const auto tmp_column_name = final_column_name + "_tmp";
-                    const auto data_type_ptr = command.data_type;
+                    data_type_ptr = command.data_type;
 
+                const auto & final_column_name = column_name;
+                const auto tmp_column_name = final_column_name + "_tmp";
 
-                    default_expr_list->children.emplace_back(setAlias(
-                        addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
-                        final_column_name));
+                default_expr_list->children.emplace_back(setAlias(
+                    addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
+                    final_column_name));
 
-                    default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
-                }
+                default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
@@ -1138,7 +1135,6 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 const auto & final_column_name = column_name;
                 const auto tmp_column_name = final_column_name + "_tmp";
                 const auto data_type_ptr = command.data_type;
-
 
                 default_expr_list->children.emplace_back(setAlias(
                     addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));

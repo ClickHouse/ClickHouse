@@ -17,19 +17,28 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StoragePtr TableFunctionNull::executeImpl(const ASTFunction & function, const Context & context, const std::string & table_name) const
+void TableFunctionNull::parseArguments(const ASTFunction & function, const Context & context)
 {
-    const auto & arguments = function.arguments->children;
+    if (!function.arguments)
+        throw Exception("Table function '" + getName() + "' requires 'structure'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    const auto & arguments = function.arguments->children;
     if (arguments.size() != 1)
         throw Exception("Table function '" + getName() + "' requires 'structure'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    auto structure = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], context)->as<ASTLiteral>()->value.safeGet<String>();
-    ColumnsDescription columns = parseColumnsListFromString(structure, context);
+    structure = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], context)->as<ASTLiteral>()->value.safeGet<String>();
+}
 
+ColumnsDescription TableFunctionNull::getActualTableStructure(const Context & context) const
+{
+    return parseColumnsListFromString(structure, context);
+}
+
+StoragePtr TableFunctionNull::executeImpl(const ASTFunction & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+{
+    auto columns = getActualTableStructure(context);
     auto res = StorageNull::create(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription());
     res->startup();
-
     return res;
 }
 
