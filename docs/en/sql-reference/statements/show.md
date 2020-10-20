@@ -15,23 +15,21 @@ Returns a single `String`-type ‘statement’ column, which contains a single v
 
 ## SHOW DATABASES {#show-databases}
 
-Prints a list of all databases. 
-
-Syntax:
+Prints a list of all databases.
 
 ```sql
-SHOW DATABASES [LIKE '<pattern>'] [ILIKE '<pattern>'] [NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+SHOW DATABASES [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
 This statement is identical to the query:
 
 ```sql
-SELECT name FROM system.databases [WHERE name LIKE '<pattern>'] [WHERE name ILIKE '<pattern>'] [WHERE name NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+SELECT name FROM system.databases [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
-### SHOW DATABASES LIKE {#show-databases-like}
+### Examples {#examples}
 
-Syntax:
+Getting database names, containing the symbols sequence 'de' in their names:
 
 ``` sql
 SHOW DATABASES LIKE '%de%'
@@ -45,9 +43,7 @@ Result:
 └─────────┘
 ```
 
-### SHOW DATABASES ILIKE {#show-databases-ilike}
-
-Syntax:
+Getting database names, containing the case insensitive symbols sequence 'de' in their names:
 
 ``` sql
 SHOW DATABASES ILIKE '%DE%'
@@ -61,9 +57,7 @@ Result:
 └─────────┘
 ```
 
-### SHOW DATABASES NOT LIKE {#show-databases-not-like}
-
-Syntax:
+Getting database names, not containing the symbols sequence 'de' in their names:
 
 ``` sql
 SHOW DATABASES NOT LIKE '%de%'
@@ -80,9 +74,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-### SHOW DATABASES LIMIT {#show-databases-limit}
-
-Syntax:
+Getting the first 2 rows from database names:
 
 ``` sql
 SHOW DATABASES LIMIT 2
@@ -121,10 +113,8 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 
 Displays a list of tables.
 
-Syntax:
-
 ```sql
-SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>'] [ILIKE '<pattern>'] [NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
@@ -132,12 +122,12 @@ If the `FROM` clause is not specified, the query returns the list of tables from
 This statement is identical to the query:
 
 ```sql
-SELECT name FROM system.tables [WHERE name LIKE '<pattern>'] [WHERE name ILIKE '<pattern>'] [WHERE name NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SELECT name FROM system.tables [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-### SHOW TABLES LIKE {#show-tables-like}
+### Examples {#examples}
 
-Syntax:
+Getting table names, containing the symbols sequence 'user' in their names:
 
 ``` sql
 SHOW TABLES FROM system LIKE '%user%'
@@ -152,9 +142,7 @@ Result:
 └──────────────────┘
 ```
 
-### SHOW TABLES ILIKE {#show-tables-ilike}
-
-Syntax:
+Getting table names, containing the case insensitive symbols sequence 'user' in their names:
 
 ``` sql
 SHOW TABLES FROM system ILIKE '%USER%'
@@ -169,9 +157,7 @@ Result:
 └──────────────────┘
 ```
 
-### SHOW TABLES NOT LIKE {#show-tables-not-like}
-
-Syntax:
+Getting table names, not containing the symbol sequence 's' in their names:
 
 ``` sql
 SHOW TABLES FROM system NOT LIKE '%s%'
@@ -187,9 +173,7 @@ Result:
 └──────────────┘
 ```
 
-### SHOW TABLES LIMIT {#show-tables-limit}
-
-Syntax:
+Getting the first 2 rows from table names:
 
 ``` sql
 SHOW TABLES FROM system LIMIT 2
