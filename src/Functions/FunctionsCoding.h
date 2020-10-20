@@ -1787,7 +1787,7 @@ public:
         const auto & col_type_name_ip = columns[arguments[0]];
         const ColumnPtr & column_ip = col_type_name_ip.column;
 
-        const auto col_const_ip_in = checkAndGetColumnConst<ColumnUInt32>(column_ip.get()); 
+        const auto col_const_ip_in = checkAndGetColumnConst<ColumnUInt32>(column_ip.get());
         const auto col_ip_in = checkAndGetColumn<ColumnUInt32>(column_ip.get());
         if (!col_const_ip_in && !col_ip_in)
             throw Exception("Illegal column " + columns[arguments[0]].column->getName()
