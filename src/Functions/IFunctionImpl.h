@@ -35,7 +35,7 @@ public:
 
     virtual String getName() const = 0;
 
-    virtual ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,  size_t input_rows_count) = 0;
+    virtual ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) = 0;
     virtual ColumnPtr executeDryRun(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
     {
         return execute(arguments, result_type, input_rows_count);
