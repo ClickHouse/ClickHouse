@@ -14,16 +14,17 @@ namespace DB
 /// task to sleep according to settings. Look at scheduleTask function for details.
 struct BackgroundTaskSchedulingSettings
 {
-    double thread_sleep_seconds = 10;
     double thread_sleep_seconds_random_part = 1.0;
     double thread_sleep_seconds_if_nothing_to_do = 0.1;
-
-    /// For exponential backoff.
-    double task_sleep_seconds_when_no_work_min = 10;
     double task_sleep_seconds_when_no_work_max = 600;
+    /// For exponential backoff.
     double task_sleep_seconds_when_no_work_multiplier = 1.1;
 
     double task_sleep_seconds_when_no_work_random_part = 1.0;
+
+     /// deprected settings, don't affect background execution
+    double thread_sleep_seconds = 10;
+    double task_sleep_seconds_when_no_work_min = 10;
 };
 
 /// Pool type where we must execute new job. Each background executor can have several
