@@ -1,7 +1,7 @@
 version: '2.3'
 services:
     zoo1:
-        image: zookeeper:3.4.14
+        image: zookeeper:3.4.12
         restart: always
         environment:
             ZOO_TICK_TIME: 500
