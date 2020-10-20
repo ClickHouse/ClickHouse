@@ -1,0 +1,8 @@
+# post / preinstall scripts (not needed, we do it in Dockerfile)
+root/install/*
+
+# docs (looks useless)
+root/usr/share/doc/*
+
+# packages, etc. (used only by prepare.sh)
+ClickHouse

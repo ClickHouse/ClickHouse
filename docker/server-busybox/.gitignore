@@ -1,0 +1,15 @@
+# folder with packages
+ClickHouse
+ClickHouse/*
+
+# weird gitexcude magic to keep committed only 2 files
+!root/
+root/*
+!root/entrypoint.sh
+!root/etc/
+root/etc/*
+!root/etc/clickhouse-server/
+root/etc/clickhouse-server/*
+!root/etc/clickhouse-server/config.d/
+root/etc/clickhouse-server/config.d/*
+!root/etc/clickhouse-server/config.d/docker_related_config.xml
