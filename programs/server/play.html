@@ -324,6 +324,7 @@
 
     document.getElementById('query').onkeypress = function(event)
     {
+        /// Firefox has code 13 for Enter and Chromium has code 10.
         if (event.ctrlKey && (event.charCode == 13 || event.charCode == 10)) {
             post();
         }
@@ -394,6 +395,7 @@
         table.appendChild(tbody);
     }
 
+    /// A function to render raw data when non-default format is specified.
     function renderUnparsedResult(response)
     {
         clear();
@@ -416,6 +418,7 @@
         document.documentElement.setAttribute('data-theme', theme);
     }
 
+    /// The choice of color theme is saved in browser.
     var theme = window.localStorage.getItem('theme');
     if (theme) {
         setColorTheme(theme);
