@@ -55,9 +55,8 @@ public:
     {
         this->data(place).count += this->data(rhs).count;
 
-        if (this->data(rhs).count) {
+        if (this->data(rhs).count)
             this->data(place).value = this->data(rhs).value;
-        }
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override

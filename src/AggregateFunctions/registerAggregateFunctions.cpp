@@ -15,6 +15,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionAvg(factory);
         registerAggregateFunctionAvgWeighted(factory);
         registerAggregateFunctionCount(factory);
+        registerAggregateFunctionCountEqualRanges(factory);
         registerAggregateFunctionGroupArray(factory);
         registerAggregateFunctionGroupUniqArray(factory);
         registerAggregateFunctionGroupArrayInsertAt(factory);
