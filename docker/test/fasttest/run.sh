@@ -147,9 +147,9 @@ CMAKE_LIBS_CONFIG=(
     "-DUSE_STATIC_LIBRARIES=0"
     "-DSPLIT_SHARED_LIBRARIES=1"
     "-DCLICKHOUSE_SPLIT_BINARY=1"
-#    "-DCMAKE_BUILD_TYPE=Debug"
-#    "-DCMAKE_C_FLAGS=-Og"
-#    "-DCMAKE_CXX_FLAGS=-Og"
+    "-DCMAKE_BUILD_TYPE=Debug"
+    "-DCMAKE_C_FLAGS_ADD=-Og"
+    "-DCMAKE_CXX_FLAGS_ADD=-Og"
 )
 
 # TODO remove this? we don't use ccache anyway. An option would be to download it
