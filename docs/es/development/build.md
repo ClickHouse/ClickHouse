@@ -9,7 +9,7 @@ toc_title: "C\xF3mo crear ClickHouse en Linux"
 
 El siguiente tutorial se basa en el sistema Ubuntu Linux.
 Con los cambios apropiados, también debería funcionar en cualquier otra distribución de Linux.
-Plataformas compatibles: x86\_64 y AArch64. El soporte para Power9 es experimental.
+Plataformas compatibles: x86_64 y AArch64. El soporte para Power9 es experimental.
 
 ## Instalar Git, CMake, Python y Ninja {#install-git-cmake-python-and-ninja}
 
@@ -102,7 +102,7 @@ Ejemplo de OpenSUSE Tumbleweed:
 Ejemplo de Fedora Rawhide:
 
     sudo yum update
-    yum --nogpg install git cmake make gcc-c++ python2
+    yum --nogpg install git cmake make gcc-c++ python3
     git clone --recursive https://github.com/ClickHouse/ClickHouse.git
     mkdir build && cd build
     cmake ../ClickHouse

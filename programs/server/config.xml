@@ -212,13 +212,10 @@
     <!-- Directory with user provided files that are accessible by 'file' table function. -->
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 
-    <!-- Path to folder where users and roles created by SQL commands are stored. -->
-    <access_control_path>/var/lib/clickhouse/access/</access_control_path>
-
-    <!-- External user directories (LDAP). -->
+    <!-- LDAP server definitions. -->
     <ldap_servers>
-        <!-- List LDAP servers with their connection parameters here to later use them as authenticators for dedicated users,
-             who have 'ldap' authentication mechanism specified instead of 'password'.
+        <!-- List LDAP servers with their connection parameters here to later 1) use them as authenticators for dedicated local users,
+              who have 'ldap' authentication mechanism specified instead of 'password', or to 2) use them as remote user directories.
              Parameters:
                 host - LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
                 port - LDAP server port, default is 636 if enable_tls is set to true, 389 otherwise.
@@ -237,7 +234,7 @@
                 tls_key_file - path to certificate key file.
                 tls_ca_cert_file - path to CA certificate file.
                 tls_ca_cert_dir - path to the directory containing CA certificates.
-                tls_cipher_suite - allowed cipher suite.
+                tls_cipher_suite - allowed cipher suite (in OpenSSL notation).
              Example:
                 <my_ldap_server>
                     <host>localhost</host>
@@ -256,8 +253,35 @@
         -->
     </ldap_servers>
 
-    <!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
-    <users_config>users.xml</users_config>
+    <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
+    <user_directories>
+        <users_xml>
+            <!-- Path to configuration file with predefined users. -->
+            <path>users.xml</path>
+        </users_xml>
+        <local_directory>
+            <!-- Path to folder where users created by SQL commands are stored. -->
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+
+        <!-- To add an LDAP server as a remote user directory of users that are not defined locally, define a single 'ldap' section
+              with the following parameters:
+                server - one of LDAP server names defined in 'ldap_servers' config section above.
+                        This parameter is mandatory and cannot be empty.
+                roles - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
+                        If no roles are specified, user will not be able to perform any actions after authentication.
+                        If any of the listed roles is not defined locally at the time of authentication, the authenthication attept
+                         will fail as if the provided password was incorrect.
+             Example:
+                <ldap>
+                    <server>my_ldap_server</server>
+                    <roles>
+                        <my_local_role1 />
+                        <my_local_role2 />
+                    </roles>
+                </ldap>
+        -->
+    </user_directories>
 
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
@@ -296,12 +320,37 @@
     -->
     <mlock_executable>true</mlock_executable>
 
+    <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
+    <remap_executable>false</remap_executable>
+
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
     <remote_servers incl="clickhouse_remote_servers" >
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
+            <!-- Inter-server per-cluster secret for Distributed queries
+                 default: no secret (no authentication will be performed)
+
+                 If set, then Distributed queries will be validated on shards, so at least:
+                 - such cluster should exist on the shard,
+                 - such cluster should have the same secret.
+
+                 And also (and which is more important), the initial_user will
+                 be used as current user for the query.
+
+                 Right now the protocol is pretty simple and it only takes into account:
+                 - cluster name
+                 - query
+
+                 Also it will be nice if the following will be implemented:
+                 - source hostname (see interserver_http_host), but then it will depends from DNS,
+                   it can use IP address instead, but then the you need to get correct on the initiator node.
+                 - target hostname / ip address (same notes as for source hostname)
+                 - time-based security tokens
+            -->
+            <!-- <secret></secret> -->
+
             <shard>
                 <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <!-- <internal_replication>false</internal_replication> -->
@@ -615,6 +664,9 @@
 
         <!-- Settings from this profile will be used to execute DDL queries -->
         <!-- <profile>default</profile> -->
+
+        <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
+        <!-- <pool_size>1</pool_size> -->
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->

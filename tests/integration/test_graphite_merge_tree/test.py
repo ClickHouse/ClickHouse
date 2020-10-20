@@ -1,11 +1,10 @@
+import datetime
 import os.path as p
 import time
-import datetime
-import pytest
 
+import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
@@ -302,7 +301,7 @@ CREATE TABLE test.graphite2
                       "AND table='graphite2'"))
         if parts == 1:
             break
-        print('Parts', parts)
+        print(('Parts', parts))
 
     assert TSV(
         q("SELECT value, timestamp, date, updated FROM test.graphite2")
@@ -317,20 +316,20 @@ def test_combined_rules(graphite_table):
     expected_unmerged = ''
     for i in range(384):
         to_insert += "('five_min.count', {v}, {t}, toDate({t}), 1), ".format(
-            v=1, t=1487970000+(i*300)
+            v=1, t=1487970000 + (i * 300)
         )
         to_insert += "('five_min.max', {v}, {t}, toDate({t}), 1), ".format(
-            v=i, t=1487970000+(i*300)
+            v=i, t=1487970000 + (i * 300)
         )
         expected_unmerged += ("five_min.count\t{v1}\t{t}\n"
                               "five_min.max\t{v2}\t{t}\n").format(
-                                  v1=1, v2=i,
-                                  t=1487970000+(i*300)
-                              )
+            v1=1, v2=i,
+            t=1487970000 + (i * 300)
+        )
 
     q(to_insert)
     assert TSV(q('SELECT metric, value, timestamp FROM test.graphite'
-               ' ORDER BY (timestamp, metric)')) == TSV(expected_unmerged)
+                 ' ORDER BY (timestamp, metric)')) == TSV(expected_unmerged)
 
     q('OPTIMIZE TABLE test.graphite PARTITION 201702 FINAL')
     expected_merged = '''
@@ -370,16 +369,16 @@ CREATE TABLE test.graphite
     expected_unmerged = ''
     for i in range(100):
         to_insert += "('top_level.count', {v}, {t}, toDate({t}), 1), ".format(
-            v=1, t=1487970000+(i*60)
+            v=1, t=1487970000 + (i * 60)
         )
         to_insert += "('top_level.max', {v}, {t}, toDate({t}), 1), ".format(
-            v=i, t=1487970000+(i*60)
+            v=i, t=1487970000 + (i * 60)
         )
         expected_unmerged += ("top_level.count\t{v1}\t{t}\n"
                               "top_level.max\t{v2}\t{t}\n").format(
-                                  v1=1, v2=i,
-                                  t=1487970000+(i*60)
-                              )
+            v1=1, v2=i,
+            t=1487970000 + (i * 60)
+        )
 
     q(to_insert)
     assert TSV(q('SELECT metric, value, timestamp FROM test.graphite'

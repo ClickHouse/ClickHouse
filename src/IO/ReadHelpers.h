@@ -801,15 +801,15 @@ readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(DummyUInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readBigIntBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-inline void readBinary(bUInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
-inline void readBinary(bInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
+inline void readBinary(UInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
+inline void readBinary(Int256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
 
 template <typename T>
 inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
@@ -943,8 +943,8 @@ inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
      */
     throw Exception("UInt128 cannot be read as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
-inline void readCSV(bUInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(bInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(UInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 template <typename T>
 void readBinary(std::vector<T> & x, ReadBuffer & buf)

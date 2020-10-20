@@ -4,6 +4,7 @@
 #include <limits>
 #include "Defines.h"
 #include "Types.h"
+#include <common/extended_types.h>
 #include <Common/NaNUtils.h>
 #include <Common/UInt128.h>
 
@@ -52,7 +53,7 @@ template <typename TInt, typename TUInt>
 constexpr bool is_le_int_vs_uint = is_any_int_vs_uint<TInt, TUInt> && (sizeof(TInt) <= sizeof(TUInt));
 
 static_assert(is_le_int_vs_uint<Int128, DB::UInt128>);
-static_assert(is_le_int_vs_uint<Int128, bUInt256>);
+static_assert(is_le_int_vs_uint<Int128, DB::UInt256>);
 
 template <typename TInt, typename TUInt>
 using bool_if_le_int_vs_uint_t = std::enable_if_t<is_le_int_vs_uint<TInt, TUInt>, bool>;
@@ -92,39 +93,27 @@ using bool_if_gt_int_vs_uint = std::enable_if_t<is_gt_int_vs_uint<TInt, TUInt>, 
 template <typename TInt, typename TUInt>
 inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TInt a, TUInt b)
 {
-    if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, UInt8>)
-        return static_cast<TInt>(a) > static_cast<TInt>(static_cast<UInt16>(b));
-    else
-        return static_cast<TInt>(a) > static_cast<TInt>(b);
+    return bigint_cast<TInt>(a) > bigint_cast<TInt>(b);
 }
 
 template <typename TInt, typename TUInt>
 inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TUInt a, TInt b)
 {
-    if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, UInt8>)
-        return static_cast<TInt>(static_cast<UInt16>(a)) > static_cast<TInt>(b);
-    else if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, DB::UInt128>)
-        return static_cast<bUInt256>(a) > b;
-    else
-        return static_cast<TInt>(a) > b;
+    using CastA = std::conditional_t<is_big_int_v<TInt> && std::is_same_v<TUInt, DB::UInt128>, DB::UInt256, TInt>;
+
+    return bigint_cast<CastA>(a) > b;
 }
 
 template <typename TInt, typename TUInt>
 inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TInt a, TUInt b)
 {
-    if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, UInt8>)
-        return static_cast<TInt>(a) == static_cast<TInt>(static_cast<UInt16>(b));
-    else
-        return static_cast<TInt>(a) == static_cast<TInt>(b);
+    return bigint_cast<TInt>(a) == bigint_cast<TInt>(b);
 }
 
 template <typename TInt, typename TUInt>
 inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 {
-    if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, UInt8>)
-        return static_cast<TInt>(static_cast<UInt16>(a)) == static_cast<TInt>(b);
-    else
-        return static_cast<TInt>(a) == static_cast<TInt>(b);
+    return bigint_cast<TInt>(a) == bigint_cast<TInt>(b);
 }
 
 
@@ -200,16 +189,14 @@ inline bool_if_not_safe_conversion<A, B> greaterOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> greaterOp(A a, B b)
 {
-    if constexpr (is_big_int_v<A> && std::is_same_v<B, UInt8>)
-        return a > static_cast<UInt16>(b);
-    else if constexpr (is_big_int_v<B> && std::is_same_v<A, UInt8>)
-        return static_cast<UInt16>(a) > b;
-    else if constexpr (std::is_same_v<A, DB::UInt128> && is_big_int_v<B>)
-        // hack for UInt128 and bUInt128
-        return static_cast<B>(a) > b;
-    else if constexpr (std::is_same_v<B, DB::UInt128> && is_big_int_v<A>)
-        // hack for UInt128 and bUInt128
-        return a > static_cast<A>(b);
+    using CastA1 = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+    using CastB1 = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+
+    using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, DB::UInt128>, B, CastA1>;
+    using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, DB::UInt128>, A, CastB1>;
+
+    if constexpr (is_big_int_v<A> || is_big_int_v<B>)
+        return bigint_cast<CastA>(a) > bigint_cast<CastB>(b);
     else
         return a > b;
 }
@@ -317,17 +304,9 @@ inline bool_if_not_safe_conversion<A, B> equalsOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> equalsOp(A a, B b)
 {
-    using LargestType = std::conditional_t<sizeof(A) >= sizeof(B), A, B>;
+    using LargestType = std::conditional_t<(sizeof(A) > sizeof(B)) || ((sizeof(A) == sizeof(B)) && !std::is_same_v<A, DB::UInt128>), A, B>;
 
-    if constexpr (is_big_int_v<LargestType> && std::is_same_v<A, UInt8>)
-        return static_cast<LargestType>(static_cast<UInt16>(a)) == static_cast<LargestType>(b);
-    else if constexpr (is_big_int_v<LargestType> && std::is_same_v<B, UInt8>)
-        return static_cast<LargestType>(a) == static_cast<LargestType>(static_cast<UInt16>(b));
-    else if constexpr (std::is_same_v<LargestType, DB::UInt128> && is_big_int_v<B>)
-        // hack for UInt128 and bUInt128
-        return static_cast<B>(a) == static_cast<B>(b);
-    else
-        return static_cast<LargestType>(a) == static_cast<LargestType>(b);
+    return bigint_cast<LargestType>(a) == bigint_cast<LargestType>(b);
 }
 
 template <>
@@ -404,8 +383,8 @@ inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
 
 inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Int128 i, DB::Float64 f)
 {
-    static constexpr Int128 min_int128 = Int128(0x8000000000000000ll) << 64;
-    static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+    static constexpr Int128 min_int128 = minInt128();
+    static constexpr Int128 max_int128 = maxInt128();
 
     if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
         return static_cast<DB::Float64>(i) > f;
@@ -416,8 +395,8 @@ inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Int128 i, DB::Float64 f)
 
 inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Float64 f, DB::Int128 i)
 {
-    static constexpr Int128 min_int128 = Int128(0x8000000000000000ll) << 64;
-    static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+    static constexpr Int128 min_int128 = minInt128();
+    static constexpr Int128 max_int128 = maxInt128();
 
     if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
         return f > static_cast<DB::Float64>(i);
@@ -443,16 +422,14 @@ inline bool_if_not_safe_conversion<A, B> notEqualsOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> notEqualsOp(A a, B b)
 {
-    if constexpr (std::is_same_v<A, UInt8> && is_big_int_v<B>)
-        return static_cast<UInt16>(a) != b;
-    else if constexpr (std::is_same_v<B, UInt8> && is_big_int_v<A>)
-        return a != static_cast<UInt16>(b);
-    else if constexpr (std::is_same_v<A, DB::UInt128> && is_big_int_v<B>)
-        // hack for UInt128 and bUInt128
-        return static_cast<B>(a) != b;
-    else if constexpr (std::is_same_v<B, DB::UInt128> && is_big_int_v<A>)
-        // hack for UInt128 and bUInt128
-        return a != static_cast<A>(b);
+    using CastA1 = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+    using CastB1 = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+
+    using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, DB::UInt128>, B, CastA1>;
+    using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, DB::UInt128>, A, CastB1>;
+
+    if constexpr (is_big_int_v<A> || is_big_int_v<B>)
+        return bigint_cast<CastA>(a) != bigint_cast<CastB>(b);
     else
         return a != b;
 }
@@ -467,16 +444,14 @@ inline bool_if_not_safe_conversion<A, B> lessOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> lessOp(A a, B b)
 {
-    if constexpr (std::is_same_v<A, UInt8> && is_big_int_v<B>)
-        return static_cast<UInt16>(a) < b;
-    else if constexpr (std::is_same_v<B, UInt8> && is_big_int_v<A>)
-        return a < static_cast<UInt16>(b);
-    else if constexpr (std::is_same_v<A, DB::UInt128> && is_big_int_v<B>)
-        // hack for UInt128 and bUInt128
-        return static_cast<B>(a) < b;
-    else if constexpr (std::is_same_v<B, DB::UInt128> && is_big_int_v<A>)
-        // hack for UInt128 and bUInt128
-        return a < static_cast<A>(b);
+    using CastA1 = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+    using CastB1 = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+
+    using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, DB::UInt128>, B, CastA1>;
+    using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, DB::UInt128>, A, CastB1>;
+
+    if constexpr (is_big_int_v<A> || is_big_int_v<B>)
+        return bigint_cast<CastA>(a) < bigint_cast<CastB>(b);
     else
         return a < b;
 }
@@ -493,16 +468,14 @@ inline bool_if_not_safe_conversion<A, B> lessOrEqualsOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> lessOrEqualsOp(A a, B b)
 {
-    if constexpr (std::is_same_v<A, UInt8> && is_big_int_v<B>)
-        return static_cast<UInt16>(a) <= b;
-    else if constexpr (std::is_same_v<B, UInt8> && is_big_int_v<A>)
-        return a <= static_cast<UInt16>(b);
-    else if constexpr (std::is_same_v<A, DB::UInt128> && is_big_int_v<B>)
-        // hack for UInt128 and bUInt128
-        return static_cast<B>(a) <= b;
-    else if constexpr (std::is_same_v<B, DB::UInt128> && is_big_int_v<A>)
-        // hack for UInt128 and bUInt128
-        return a <= static_cast<A>(b);
+    using CastA1 = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+    using CastB1 = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+
+    using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, DB::UInt128>, B, CastA1>;
+    using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, DB::UInt128>, A, CastB1>;
+
+    if constexpr (is_big_int_v<A> || is_big_int_v<B>)
+        return bigint_cast<CastA>(a) <= bigint_cast<CastB>(b);
     else
         return a <= b;
 }
@@ -519,16 +492,14 @@ inline bool_if_not_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
 {
-    if constexpr (std::is_same_v<A, UInt8> && is_big_int_v<B>)
-        return static_cast<UInt16>(a) >= b;
-    else if constexpr (std::is_same_v<B, UInt8> && is_big_int_v<A>)
-        return a >= static_cast<UInt16>(b);
-    else if constexpr (std::is_same_v<A, DB::UInt128> && is_big_int_v<B>)
-        // hack for UInt128 and bUInt128
-        return static_cast<B>(a) >= b;
-    else if constexpr (std::is_same_v<B, DB::UInt128> && is_big_int_v<A>)
-        // hack for UInt128 and bUInt128
-        return a >= static_cast<A>(b);
+    using CastA1 = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+    using CastB1 = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+
+    using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, DB::UInt128>, B, CastA1>;
+    using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, DB::UInt128>, A, CastB1>;
+
+    if constexpr (is_big_int_v<A> || is_big_int_v<B>)
+        return bigint_cast<CastA>(a) >= bigint_cast<CastB>(b);
     else
         return a >= b;
 }

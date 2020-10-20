@@ -1,6 +1,6 @@
 #pragma once
 
-#include <set>
+#include <unordered_set>
 
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
@@ -30,9 +30,9 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
-std::multiset<T> extractSingleValueFromBlock(const Block & block, const String & name)
+auto extractSingleValueFromBlock(const Block & block, const String & name)
 {
-    std::multiset<T> res;
+    std::unordered_set<T> res;
     const ColumnWithTypeAndName & data = block.getByName(name);
     size_t rows = block.rows();
     for (size_t i = 0; i < rows; ++i)

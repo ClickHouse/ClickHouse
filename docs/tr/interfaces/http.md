@@ -11,7 +11,7 @@ HTTP arayüzü, herhangi bir programlama dilinden herhangi bir platformda Clickh
 
 Varsayılan olarak, clickhouse-server, 8123 numaralı bağlantı noktasında HTTP dinler (bu, yapılandırmada değiştirilebilir).
 
-Parametreler olmadan bir GET / request yaparsanız, 200 yanıt kodunu ve tanımlanan dizeyi döndürür [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) varsayılan değer “Ok.” (sonunda bir çizgi besleme ile)
+Parametreler olmadan bir GET / request yaparsanız, 200 yanıt kodunu ve tanımlanan dizeyi döndürür [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) varsayılan değer “Ok.” (sonunda bir çizgi besleme ile)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -38,7 +38,7 @@ GET yöntemini kullanırken, ‘readonly’ ayar .lanmıştır. Başka bir deyi�
 $ curl 'http://localhost:8123/?query=SELECT%201'
 1
 
-$ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
+$ wget -nv -O- 'http://localhost:8123/?query=SELECT 1'
 1
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
@@ -147,12 +147,12 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Veri tablosu döndürmeyen başarılı istekler için boş bir yanıt gövdesi döndürülür.
 
-Veri iletirken dahili ClickHouse sıkıştırma formatını kullanabilirsiniz. Sıkıştırılmış veriler standart olmayan bir biçime sahiptir ve özel `clickhouse-compressor` onunla çalışmak için program (bu ile yüklü `clickhouse-client` paket). Veri ekleme verimliliğini artırmak için, sunucu tarafı sağlama toplamı doğrulamasını kullanarak devre dışı bırakabilirsiniz. [http\_native\_compression\_disable\_checksumming\_on\_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) ayar.
+Veri iletirken dahili ClickHouse sıkıştırma formatını kullanabilirsiniz. Sıkıştırılmış veriler standart olmayan bir biçime sahiptir ve özel `clickhouse-compressor` onunla çalışmak için program (bu ile yüklü `clickhouse-client` paket). Veri ekleme verimliliğini artırmak için, sunucu tarafı sağlama toplamı doğrulamasını kullanarak devre dışı bırakabilirsiniz. [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) ayar.
 
 Belirt ift ifiyseniz `compress=1` URL'de, sunucu size gönderdiği verileri sıkıştırır.
 Belirt ift ifiyseniz `decompress=1` URL'de, sunucu içinde geçirdiğiniz aynı verileri açar. `POST` yöntem.
 
-Ayrıca kullanmayı seçebilirsiniz [HTTP sıkıştırma](https://en.wikipedia.org/wiki/HTTP_compression). Sıkıştırılmış bir göndermek için `POST` istek, istek başlığını Ekle `Content-Encoding: compression_method`. Clickhouse'un yanıtı sıkıştırması için şunları eklemelisiniz `Accept-Encoding: compression_method`. ClickHouse destekler `gzip`, `br`, ve `deflate` [sıkıştırma yöntemleri](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). HTTP sıkıştırmasını etkinleştirmek için Clickhouse'u kullanmanız gerekir [enable\_http\_compression](../operations/settings/settings.md#settings-enable_http_compression) ayar. Veri sıkıştırma düzeyini [http\_zlib\_compression\_level](#settings-http_zlib_compression_level) tüm sıkıştırma yöntemleri için ayarlama.
+Ayrıca kullanmayı seçebilirsiniz [HTTP sıkıştırma](https://en.wikipedia.org/wiki/HTTP_compression). Sıkıştırılmış bir göndermek için `POST` istek, istek başlığını Ekle `Content-Encoding: compression_method`. Clickhouse'un yanıtı sıkıştırması için şunları eklemelisiniz `Accept-Encoding: compression_method`. ClickHouse destekler `gzip`, `br`, ve `deflate` [sıkıştırma yöntemleri](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). HTTP sıkıştırmasını etkinleştirmek için Clickhouse'u kullanmanız gerekir [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) ayar. Veri sıkıştırma düzeyini [http_zlib_compression_level](#settings-http_zlib_compression_level) tüm sıkıştırma yöntemleri için ayarlama.
 
 Bunu, büyük miktarda veri iletirken ağ trafiğini azaltmak veya hemen sıkıştırılmış dökümler oluşturmak için kullanabilirsiniz.
 
@@ -214,7 +214,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 ```
 
 Kullanıcı adı belirtilmemişse, `default` adı kullanılır. Parola belirtilmezse, boş parola kullanılır.
-Tek bir sorguyu veya ayarların tüm profillerini işlemek için herhangi bir ayar belirtmek için URL parametrelerini de kullanabilirsiniz. Örnek: http: / / localhost: 8123/?profil = web & max\_rows\_to\_read = 1000000000 & query = seç + 1
+Tek bir sorguyu veya ayarların tüm profillerini işlemek için herhangi bir ayar belirtmek için URL parametrelerini de kullanabilirsiniz. Örnek: http: / / localhost: 8123/?profil = web & max_rows_to_read = 1000000000 & query = seç + 1
 
 Daha fazla bilgi için, bkz: [Ayarlar](../operations/settings/index.md) bölme.
 
@@ -236,7 +236,7 @@ Diğer parametreler hakkında bilgi için bölüme bakın “SET”.
 
 Benzer şekilde, http protokolünde ClickHouse oturumlarını kullanabilirsiniz. Bunu yapmak için şunları eklemeniz gerekir: `session_id` İsteğe parametre alın. Oturum kimliği olarak herhangi bir dize kullanabilirsiniz. Varsayılan olarak, oturum 60 saniye hareketsizlik sonra sonlandırılır. Bu zaman aşımını değiştirmek için, `default_session_timeout` sunucu yapılandırmasında ayarlama veya `session_timeout` İsteğe parametre alın. Oturum durumunu kontrol etmek için `session_check=1` parametre. Bir kerede yalnızca bir sorgu, tek bir oturum içinde çalıştırılabilir.
 
-Bir sorgunun ilerleme durumu hakkında bilgi alabilirsiniz `X-ClickHouse-Progress` yanıt başlıkları. Bunu yapmak için etkinleştir [send\_progress\_in\_http\_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Başlık dizisi örneği:
+Bir sorgunun ilerleme durumu hakkında bilgi alabilirsiniz `X-ClickHouse-Progress` yanıt başlıkları. Bunu yapmak için etkinleştir [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Başlık dizisi örneği:
 
 ``` text
 X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
@@ -253,9 +253,9 @@ Olası başlık alanları:
 -   `written_bytes` — Volume of data written in bytes.
 
 Http bağlantısı kaybolursa çalışan istekler otomatik olarak durmaz. Ayrıştırma ve veri biçimlendirme sunucu tarafında gerçekleştirilir ve ağ kullanarak etkisiz olabilir.
-Opsiyonel ‘query\_id’ parametre sorgu kimliği (herhangi bir dize) geçirilebilir. Daha fazla bilgi için bölüme bakın “Settings, replace\_running\_query”.
+Opsiyonel ‘query_id’ parametre sorgu kimliği (herhangi bir dize) geçirilebilir. Daha fazla bilgi için bölüme bakın “Settings, replace_running_query”.
 
-Opsiyonel ‘quota\_key’ parametre kota anahtarı (herhangi bir dize) olarak geçirilebilir. Daha fazla bilgi için bölüme bakın “Quotas”.
+Opsiyonel ‘quota_key’ parametre kota anahtarı (herhangi bir dize) olarak geçirilebilir. Daha fazla bilgi için bölüme bakın “Quotas”.
 
 HTTP arabirimi, sorgulamak için dış verileri (dış geçici tablolar) geçirmenize izin verir. Daha fazla bilgi için bölüme bakın “External data for query processing”.
 
@@ -377,11 +377,11 @@ $ curl -v 'http://localhost:8123/predefined_query'
 > `<headers>` HTTP isteğinin başlık kısmını eşleştirmekten sorumludur. Bu re2 düzenli ifadeler ile uyumludur. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin üstbilgi bölümü eşleşmiyor.
 >
 > `<handler>` ana işleme bölümünü içerir. Şimdi `<handler>` Yapılandır configureılabilir `<type>`, `<status>`, `<content_type>`, `<response_content>`, `<query>`, `<query_param_name>`.
-> \> `<type>` şu anda üç tip destekler: **predefined\_query\_handler**, **dynamic\_query\_handler**, **sabit**.
+> \> `<type>` şu anda üç tip destekler: **predefined_query_handler**, **dynamic_query_handler**, **sabit**.
 > \>
-> \> `<query>` - işleyici çağrıldığında predefined\_query\_handler türü ile kullanın, sorgu yürütür.
+> \> `<query>` - işleyici çağrıldığında predefined_query_handler türü ile kullanın, sorgu yürütür.
 > \>
-> \> `<query_param_name>` - dynamic\_query\_handler tipi ile kullanın, özler ve karşılık gelen değeri yürütür `<query_param_name>` HTTP isteği params değeri.
+> \> `<query_param_name>` - dynamic_query_handler tipi ile kullanın, özler ve karşılık gelen değeri yürütür `<query_param_name>` HTTP isteği params değeri.
 > \>
 > \> `<status>` - statik tip, yanıt durum kodu ile kullanın.
 > \>
@@ -391,9 +391,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 Sonraki farklı yapılandırma yöntemleri `<type>`.
 
-## predefined\_query\_handler {#predefined_query_handler}
+## predefined_query_handler {#predefined_query_handler}
 
-`<predefined_query_handler>` ayar ayarları ve query\_params değerlerini destekler. Yapılandırabilirsiniz `<query>` tip ininde `<predefined_query_handler>`.
+`<predefined_query_handler>` ayar ayarları ve query_params değerlerini destekler. Yapılandırabilirsiniz `<query>` tip ininde `<predefined_query_handler>`.
 
 `<query>` değer, önceden tanımlanmış bir sorgudur `<predefined_query_handler>`, bir HTTP isteği eşleştirildiğinde ve sorgunun sonucu döndürüldüğünde ClickHouse tarafından yürütülür. Bu bir zorunluluktur yapılandırma.
 
@@ -428,13 +428,13 @@ max_alter_threads   2
 !!! note "Dikkat"
     Birinde `<predefined_query_handler>` sadece birini destekler `<query>` bir ekleme türü.
 
-## dynamic\_query\_handler {#dynamic_query_handler}
+## dynamic_query_handler {#dynamic_query_handler}
 
 İçinde `<dynamic_query_handler>`, sorgu HTTP isteğinin param şeklinde yazılır. Fark şu ki `<predefined_query_handler>`, sorgu yapılandırma dosyasında yazılır. Yapılandırabilirsiniz `<query_param_name>` içinde `<dynamic_query_handler>`.
 
 ClickHouse ayıklar ve karşılık gelen değeri yürütür `<query_param_name>` HTTP isteğinin url'sindeki değer. Varsayılan değer `<query_param_name>` oluyor `/query` . İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanım yoksa, param iletilmez.
 
-Bu işlevselliği denemek için örnek max\_threads ve max\_alter\_threads değerlerini tanımlar ve ayarların başarıyla ayarlanıp ayarlanmadığını sorgular.
+Bu işlevselliği denemek için örnek max_threads ve max_alter_threads değerlerini tanımlar ve ayarların başarıyla ayarlanıp ayarlanmadığını sorgular.
 
 Örnek:
 
@@ -459,7 +459,7 @@ max_alter_threads   2
 
 ## sabit {#static}
 
-`<static>` dön canebilir [content\_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [durum](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) ve response\_content. response\_content belirtilen içeriği döndürebilir
+`<static>` dön canebilir [content_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [durum](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) ve response_content. response_content belirtilen içeriği döndürebilir
 
 Örnek:
 

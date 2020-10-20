@@ -5,7 +5,7 @@
 #endif
 
 #include <Access/LDAPParams.h>
-#include <Core/Types.h>
+#include <common/types.h>
 
 #if USE_LDAP
 #   include <ldap.h>
@@ -32,7 +32,6 @@ public:
 protected:
     MAYBE_NORETURN void diag(const int rc);
     MAYBE_NORETURN void openConnection();
-    int openConnection(const bool graceful_bind_failure = false);
     void closeConnection() noexcept;
 
 protected:

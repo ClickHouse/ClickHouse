@@ -8,7 +8,7 @@ select
 from
    (
       -- quantiles of randomization distributions
-      select quantileExactForEach(0.999)(
+      select quantileExactForEach(0.99)(
         arrayMap(x, y -> abs(x - y), metrics_by_label[1], metrics_by_label[2]) as d
       ) threshold
       ---- uncomment to see what the distribution is really like
@@ -33,7 +33,7 @@ from
                                 -- strip the query away before the join -- it might be several kB long;
                                 (select metrics, run, version from table) no_query,
                                 -- duplicate input measurements into many virtual runs
-                                numbers(1, 100000) nn
+                                numbers(1, 10000) nn
                               -- for each virtual run, randomly reorder measurements
                               order by virtual_run, rand()
                            ) virtual_runs

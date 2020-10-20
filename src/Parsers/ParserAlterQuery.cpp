@@ -30,6 +30,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_rename_column("RENAME COLUMN");
     ParserKeyword s_comment_column("COMMENT COLUMN");
     ParserKeyword s_modify_order_by("MODIFY ORDER BY");
+    ParserKeyword s_modify_sample_by("MODIFY SAMPLE BY");
     ParserKeyword s_modify_ttl("MODIFY TTL");
     ParserKeyword s_materialize_ttl("MATERIALIZE TTL");
     ParserKeyword s_modify_setting("MODIFY SETTING");
@@ -81,12 +82,23 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_where("WHERE");
     ParserKeyword s_to("TO");
 
+    ParserKeyword s_remove("REMOVE");
+    ParserKeyword s_default("DEFAULT");
+    ParserKeyword s_materialized("MATERIALIZED");
+    ParserKeyword s_alias("ALIAS");
+    ParserKeyword s_comment("COMMENT");
+    ParserKeyword s_codec("CODEC");
+    ParserKeyword s_ttl("TTL");
+
+    ParserKeyword s_remove_ttl("REMOVE TTL");
+
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
+    ParserIdentifier parser_remove_property;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
     ParserConstraintDeclaration parser_constraint_decl;
-    ParserCompoundColumnDeclaration parser_modify_col_decl(false);
+    ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
     ParserPartition parser_partition;
     ParserExpression parser_exp_elem;
     ParserList parser_assignment_list(
@@ -432,14 +444,33 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
                 return false;
 
-            if (s_first.ignore(pos, expected))
-                command->first = true;
-            else if (s_after.ignore(pos, expected))
+            if (s_remove.ignore(pos, expected))
             {
-                if (!parser_name.parse(pos, command->column, expected))
+                if (s_default.ignore(pos, expected))
+                    command->remove_property = "DEFAULT";
+                else if (s_materialized.ignore(pos, expected))
+                    command->remove_property = "MATERIALIZED";
+                else if (s_alias.ignore(pos, expected))
+                    command->remove_property = "ALIAS";
+                else if (s_comment.ignore(pos, expected))
+                    command->remove_property = "COMMENT";
+                else if (s_codec.ignore(pos, expected))
+                    command->remove_property = "CODEC";
+                else if (s_ttl.ignore(pos, expected))
+                    command->remove_property = "TTL";
+                else
                     return false;
             }
-
+            else
+            {
+                if (s_first.ignore(pos, expected))
+                    command->first = true;
+                else if (s_after.ignore(pos, expected))
+                {
+                    if (!parser_name.parse(pos, command->column, expected))
+                        return false;
+                }
+            }
             command->type = ASTAlterCommand::MODIFY_COLUMN;
         }
         else if (s_modify_order_by.ignore(pos, expected))
@@ -448,6 +479,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
 
             command->type = ASTAlterCommand::MODIFY_ORDER_BY;
+        }
+        else if (s_modify_sample_by.ignore(pos, expected))
+        {
+            if (!parser_exp_elem.parse(pos, command->sample_by, expected))
+                return false;
+
+            command->type = ASTAlterCommand::MODIFY_SAMPLE_BY;
         }
         else if (s_delete_where.ignore(pos, expected))
         {
@@ -488,6 +526,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
             command->type = ASTAlterCommand::MODIFY_TTL;
         }
+        else if (s_remove_ttl.ignore(pos, expected))
+        {
+            command->type = ASTAlterCommand::REMOVE_TTL;
+        }
         else if (s_materialize_ttl.ignore(pos, expected))
         {
             command->type = ASTAlterCommand::MATERIALIZE_TTL;
@@ -523,6 +565,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->partition);
     if (command->order_by)
         command->children.push_back(command->order_by);
+    if (command->sample_by)
+        command->children.push_back(command->sample_by);
     if (command->predicate)
         command->children.push_back(command->predicate);
     if (command->update_assignments)

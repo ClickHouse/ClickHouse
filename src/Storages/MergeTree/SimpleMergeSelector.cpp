@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
+
 #include <Common/interpolate.h>
 
 #include <cmath>
@@ -15,7 +16,7 @@ namespace
   */
 struct Estimator
 {
-    using Iterator = SimpleMergeSelector::PartsInPartition::const_iterator;
+    using Iterator = SimpleMergeSelector::PartsRange::const_iterator;
 
     void consider(Iterator begin, Iterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
@@ -42,9 +43,9 @@ struct Estimator
         }
     }
 
-    SimpleMergeSelector::PartsInPartition getBest() const
+    SimpleMergeSelector::PartsRange getBest() const
     {
-        return SimpleMergeSelector::PartsInPartition(best_begin, best_end);
+        return SimpleMergeSelector::PartsRange(best_begin, best_end);
     }
 
     static double score(double count, double sum_size, double sum_size_fixed_cost)
@@ -137,7 +138,7 @@ bool allow(
 
 
 void selectWithinPartition(
-    const SimpleMergeSelector::PartsInPartition & parts,
+    const SimpleMergeSelector::PartsRange & parts,
     const size_t max_total_size_to_merge,
     Estimator & estimator,
     const SimpleMergeSelector::Settings & settings)
@@ -152,6 +153,9 @@ void selectWithinPartition(
         if (begin > 1000)
             break;
 
+        if (!parts[begin].shall_participate_in_merges)
+            continue;
+
         size_t sum_size = parts[begin].size;
         size_t max_size = parts[begin].size;
         size_t min_age = parts[begin].age;
@@ -159,6 +163,9 @@ void selectWithinPartition(
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
             if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
+                break;
+
+            if (!parts[end - 1].shall_participate_in_merges)
                 break;
 
             size_t cur_size = parts[end - 1].size;
@@ -185,14 +192,14 @@ void selectWithinPartition(
 }
 
 
-SimpleMergeSelector::PartsInPartition SimpleMergeSelector::select(
-    const Partitions & partitions,
+SimpleMergeSelector::PartsRange SimpleMergeSelector::select(
+    const PartsRanges & parts_ranges,
     const size_t max_total_size_to_merge)
 {
     Estimator estimator;
 
-    for (const auto & partition : partitions)
-        selectWithinPartition(partition, max_total_size_to_merge, estimator, settings);
+    for (const auto & part_range : parts_ranges)
+        selectWithinPartition(part_range, max_total_size_to_merge, estimator, settings);
 
     return estimator.getBest();
 }

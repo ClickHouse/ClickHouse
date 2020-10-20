@@ -8,7 +8,7 @@ namespace DB
 {
 
 using TypeListNativeNumbers = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
-using TypeListExtendedNumbers = TypeList<Int128, bUInt256, bInt256>;
+using TypeListExtendedNumbers = TypeList<Int128, UInt256, Int256>;
 using TypeListDecimalNumbers = TypeList<Decimal32, Decimal64, Decimal128, Decimal256>;
 
 using TypeListGeneralNumbers = typename TypeListConcat<TypeListNativeNumbers, TypeListExtendedNumbers>::Type;

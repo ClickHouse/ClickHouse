@@ -34,9 +34,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
+        columns[result].column = columns[result].type->createColumnConst(
             input_rows_count, getFQDNOrHostName())->convertToFullColumnIfConst();
     }
 };

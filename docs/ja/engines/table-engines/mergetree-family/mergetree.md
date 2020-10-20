@@ -239,7 +239,7 @@ ClickHouseの主キー指標のトリムで不正なデータを毎月パーテ�
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-クエリの実行時にClickHouseがインデックスを使用できるかどうかを確認するには、設定を使用します [force\_index\_by\_date](../../../operations/settings/settings.md#settings-force_index_by_date) と [force\_primary\_key](../../../operations/settings/settings.md).
+クエリの実行時にClickHouseがインデックスを使用できるかどうかを確認するには、設定を使用します [force_index_by_date](../../../operations/settings/settings.md#settings-force_index_by_date) と [force_primary_key](../../../operations/settings/settings.md).
 
 の分割による月で読み込みのみこれらのデータブロックを含むからスピーチへのマークの範囲内で適切に取扱います。 この場合、データブロックには多くの日付(月全体まで)のデータが含まれる場合があります。 ブロック内では、データは主キーによってソートされます。 このため、主キープレフィックスを指定しない日付条件のみのクエリを使用すると、単一の日付よりも多くのデータが読み取られます。
 
@@ -330,7 +330,7 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 その `set` 索引はすべての機能と使用することができる。 その他のインデックスの関数サブセットを以下の表に示します。
 
-| 関数(演算子)/インデックス                                                                                 | 主キー | minmax | ngrambf\_v1 | tokenbf\_v1 | bloom\_filter name |
+| 関数(演算子)/インデックス                                                                                 | 主キー | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter name |
 |-----------------------------------------------------------------------------------------------------------|--------|--------|-------------|-------------|--------------------|
 | [等しい(=,==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                  | ✔      | ✔      | ✔           | ✔           | ✔                  |
 | [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)        | ✔      | ✔      | ✔           | ✔           | ✔                  |
@@ -642,7 +642,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 フードの下で、突然変異および仕切りの凍結は利用します [ハードリンク](https://en.wikipedia.org/wiki/Hard_link). ハードリンクとディスクには対応していないため、この場合、パーツの保管と同じディスクの初期ます。
 
 バックグラウンドでは、部品は空き領域の量に基づいてボリューム間で移動されます (`move_factor` パラメータ)ボリュームが設定ファイルで宣言されている順序に従って。
-データは、最後のデータから最初のデータに転送されることはありません。 システムテーブル [システムpart\_log](../../../operations/system-tables.md#system_tables-part-log) （フィールド `type = MOVE_PART`)と [システム部品](../../../operations/system-tables.md#system_tables-parts) （フィールド `path` と `disk`）背景の動きを監視します。 また、詳細情報はサーバーログに記載されています。
+データは、最後のデータから最初のデータに転送されることはありません。 システムテーブル [システムpart_log](../../../operations/system-tables.md#system_tables-part-log) （フィールド `type = MOVE_PART`)と [システム部品](../../../operations/system-tables.md#system_tables-parts) （フィールド `path` と `disk`）背景の動きを監視します。 また、詳細情報はサーバーログに記載されています。
 
 ユーザーの力で移動中の一部またはパーティションから量別のクエリ [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../sql-reference/statements/alter.md#alter_move-partition) バックグラウンド操作のすべての制限が考慮されます。 クエリは単独で移動を開始し、バックグラウンド操作が完了するまで待機しません。 十分な空き領域がない場合、または必要な条件のいずれかが満たされていない場合、ユーザーはエラーメッセージを表示します。
 

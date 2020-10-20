@@ -21,6 +21,9 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
+namespace
+{
+
 class FunctionH3KRing : public IFunction
 {
 public:
@@ -50,10 +53,10 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
-        const auto * col_k = block.getByPosition(arguments[1]).column.get();
+        const auto * col_hindex = columns[arguments[0]].column.get();
+        const auto * col_k = columns[arguments[1]].column.get();
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
         auto & dst_data = dst->getData();
@@ -93,10 +96,11 @@ public:
             dst_offsets[row] = current_offset;
         }
 
-        block.getByPosition(result).column = std::move(dst);
+        columns[result].column = std::move(dst);
     }
 };
 
+}
 
 void registerFunctionH3KRing(FunctionFactory & factory)
 {

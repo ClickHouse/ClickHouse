@@ -47,15 +47,6 @@ enum class JoinAlgorithm
 DECLARE_SETTING_ENUM(JoinAlgorithm)
 
 
-enum class SpecialSort
-{
-    NOT_SPECIFIED = 0,
-    OPENCL_BITONIC,
-};
-
-DECLARE_SETTING_ENUM(SpecialSort)
-
-
 /// Which rows should be included in TOTALS.
 enum class TotalsMode
 {
@@ -92,6 +83,7 @@ DECLARE_SETTING_ENUM(DistributedProductMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeOutputFormat)
 
 enum class LogsLevel
 {
@@ -126,4 +118,15 @@ enum class DefaultDatabaseEngine
 };
 
 DECLARE_SETTING_ENUM(DefaultDatabaseEngine)
+
+
+enum class MySQLDataTypesSupport
+{
+    DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
+    DATETIME64, // convert MySQL's DATETIME and TIMESTAMP and ClickHouse DateTime64 if precision is > 0 or range is greater that for DateTime.
+    // ENUM
+};
+
+DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
+
 }

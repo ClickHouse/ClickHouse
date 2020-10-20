@@ -39,7 +39,7 @@ using DataTypeFloat32 = DataTypeNumber<Float32>;
 using DataTypeFloat64 = DataTypeNumber<Float64>;
 
 using DataTypeInt128 = DataTypeNumber<Int128>;
-using DataTypeUInt256 = DataTypeNumber<bUInt256>;
-using DataTypeInt256 = DataTypeNumber<bInt256>;
+using DataTypeUInt256 = DataTypeNumber<UInt256>;
+using DataTypeInt256 = DataTypeNumber<Int256>;
 
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Row.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Disks/IDisk.h>
 #include <IO/WriteBuffer.h>
 
