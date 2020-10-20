@@ -113,7 +113,8 @@ namespace
             }
             else if (expect_kerberos_realm)
             {
-                if (ParserKeyword{"REALM"}.ignore(pos, expected)) {
+                if (ParserKeyword{"REALM"}.ignore(pos, expected))
+                {
                     ASTPtr ast;
                     if (!ParserStringLiteral{}.parse(pos, ast, expected))
                         return false;
