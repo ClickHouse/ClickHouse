@@ -447,11 +447,11 @@ UUID IAccessStorage::loginImpl(
     {
         if (auto user = tryRead<User>(*id))
         {
-            if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
-                throwInvalidCredentials();
-
             if (!isAddressAllowedImpl(*user, address))
                 throwAddressNotAllowed(address);
+
+            if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
+                throwInvalidCredentials();
 
             return *id;
         }

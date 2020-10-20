@@ -147,7 +147,7 @@ public:
     /// Throws an exception if no such user or credentials are invalid.
     UUID login(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
 
-    /// Returns the ID of an user who has logged in (maybe on another node).
+    /// Returns the ID of a user who has logged in (maybe on another node).
     /// The function assumes that the password has been already checked somehow, so we can skip checking it now.
     UUID getIDOfLoggedUser(const String & user_name) const;
 

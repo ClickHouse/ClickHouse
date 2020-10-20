@@ -250,11 +250,11 @@ UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::N
     {
         auto user = memory_storage.read<User>(*id);
 
-        if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
-            throwInvalidCredentials();
-
         if (!isAddressAllowedImpl(*user, address))
             throwAddressNotAllowed(address);
+
+        if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
+            throwInvalidCredentials();
 
         return *id;
     }
@@ -266,11 +266,11 @@ UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::N
         user->authentication = Authentication(Authentication::Type::LDAP);
         user->authentication.setLDAPServerName(ldap_server_name);
 
-        if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
-            throwInvalidCredentials();
-
         if (!isAddressAllowedImpl(*user, address))
             throwAddressNotAllowed(address);
+
+        if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
+            throwInvalidCredentials();
 
         checkAllDefaultRoleNamesFoundNoLock();
 

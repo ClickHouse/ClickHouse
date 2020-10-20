@@ -25,7 +25,6 @@ struct QuotaUsage;
 struct Settings;
 class SettingsConstraints;
 class AccessControlManager;
-class Credentials;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 

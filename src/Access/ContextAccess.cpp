@@ -287,6 +287,7 @@ void ContextAccess::calculateAccessRights() const
     }
 }
 
+
 UserPtr ContextAccess::getUser() const
 {
     std::lock_guard lock{mutex};

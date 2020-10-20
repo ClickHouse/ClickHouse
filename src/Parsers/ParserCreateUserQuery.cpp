@@ -106,16 +106,20 @@ namespace
             else if (expect_ldap_server_name)
             {
                 ASTPtr ast;
-                if (!ParserKeyword{"SERVER"}.ignore(pos, expected))
+                if (!ParserKeyword{"SERVER"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
                     return false;
 
                 value = ast->as<const ASTLiteral &>().value.safeGet<String>();
             }
             else if (expect_kerberos_realm)
             {
-                ASTPtr ast;
-                if (ParserKeyword{"REALM"}.ignore(pos, expected))
+                if (ParserKeyword{"REALM"}.ignore(pos, expected)) {
+                    ASTPtr ast;
+                    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                        return false;
+
                     value = ast->as<const ASTLiteral &>().value.safeGet<String>();
+                }
             }
 
             authentication = Authentication{*type};

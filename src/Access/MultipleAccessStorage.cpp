@@ -383,6 +383,7 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 
     /// Lock the mutex again to store added subscriptions to the nested storages.
     lock.lock();
+
     for (auto type : ext::range(EntityType::MAX))
     {
         if (!added_subscriptions[static_cast<size_t>(type)].empty())
@@ -400,7 +401,11 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
     }
 
     lock.unlock();
-    added_subscriptions->clear();
+
+    for (auto type : ext::range(EntityType::MAX))
+    {
+        added_subscriptions[static_cast<size_t>(type)].clear();
+    }
 }
 
 
