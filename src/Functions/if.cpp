@@ -972,7 +972,7 @@ public:
             using T0 = typename Types::LeftType;
             using T1 = typename Types::RightType;
 
-            return (res = executeTyped<T0, T1>(cond_col, arguments, result_type, input_rows_count));
+            return (res = executeTyped<T0, T1>(cond_col, arguments, result_type, input_rows_count)) != nullptr;
         };
 
         TypeIndex left_id = arg_then.type->getTypeId();
@@ -990,8 +990,10 @@ public:
             || (res = executeGenericArray(cond_col, arguments, result_type))
             || (res = executeTuple(arguments, input_rows_count))))
         {
-            executeGeneric(cond_col, arguments, input_rows_count);
+            return executeGeneric(cond_col, arguments, input_rows_count);
         }
+
+        return res;
     }
 };
 

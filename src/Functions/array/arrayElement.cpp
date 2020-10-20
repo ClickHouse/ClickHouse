@@ -632,7 +632,7 @@ ColumnPtr FunctionArrayElement::executeArgument(
         builder.initSink(index_data.size());
 
     ColumnPtr res;
-    if ( !((res = executeNumber<IndexType, UInt8>(arguments, index_data, builder))
+    if (!((res = executeNumber<IndexType, UInt8>(arguments, index_data, builder))
         || (res = executeNumber<IndexType, UInt16>(arguments, index_data, builder))
         || (res = executeNumber<IndexType, UInt32>(arguments, index_data, builder))
         || (res = executeNumber<IndexType, UInt64>(arguments, index_data, builder))
@@ -749,7 +749,7 @@ ColumnPtr FunctionArrayElement::executeImpl(ColumnsWithTypeAndName & arguments, 
     if (!is_array_of_nullable)
     {
         ArrayImpl::NullMapBuilder builder;
-        perform(arguments, result_type, builder, input_rows_count);
+        return perform(arguments, result_type, builder, input_rows_count);
     }
     else
     {
@@ -799,11 +799,10 @@ ColumnPtr FunctionArrayElement::executeImpl(ColumnsWithTypeAndName & arguments, 
             builder.initSource(nullable_col.getNullMapData().data());
         }
 
-        perform(source_columns, tmp_ret_type, builder, input_rows_count);
+        auto res = perform(source_columns, tmp_ret_type, builder, input_rows_count);
 
         /// Store the result.
-        const ColumnWithTypeAndName & source_col = source_columns[2];
-        return ColumnNullable::create(source_col.column, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+        return ColumnNullable::create(res, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
     }
 }
 
@@ -815,7 +814,7 @@ ColumnPtr FunctionArrayElement::perform(ColumnsWithTypeAndName & arguments, cons
         return res;
     else if (!isColumnConst(*arguments[1].column))
     {
-        if ( !((res = executeArgument<UInt8>(arguments, result_type, builder, input_rows_count))
+        if (!((res = executeArgument<UInt8>(arguments, result_type, builder, input_rows_count))
             || (res = executeArgument<UInt16>(arguments, result_type, builder, input_rows_count))
             || (res = executeArgument<UInt32>(arguments, result_type, builder, input_rows_count))
             || (res = executeArgument<UInt64>(arguments, result_type, builder, input_rows_count))
@@ -836,7 +835,7 @@ ColumnPtr FunctionArrayElement::perform(ColumnsWithTypeAndName & arguments, cons
         if (index == 0u)
             throw Exception("Array indices are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
 
-        if ( !((res = executeNumberConst<UInt8>(arguments, index, builder))
+        if (!((res = executeNumberConst<UInt8>(arguments, index, builder))
             || (res = executeNumberConst<UInt16>(arguments, index, builder))
             || (res = executeNumberConst<UInt32>(arguments, index, builder))
             || (res = executeNumberConst<UInt64>(arguments, index, builder))

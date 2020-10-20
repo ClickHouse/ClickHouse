@@ -79,7 +79,7 @@ public:
         const auto * in = arguments.front().column.get();
 
         ColumnPtr res;
-        if ( !((res = execute<UInt8>(in, custom_message))
+        if (!((res = execute<UInt8>(in, custom_message))
             || (res = execute<UInt16>(in, custom_message))
             || (res = execute<UInt32>(in, custom_message))
             || (res = execute<UInt64>(in, custom_message))

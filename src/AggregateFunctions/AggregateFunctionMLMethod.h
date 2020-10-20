@@ -261,10 +261,9 @@ public:
 
     void predict(
         ColumnVector<Float64>::Container & container,
-        ColumnsWithTypeAndName & columns,
+        ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const ColumnNumbers & arguments,
         const Context & context) const;
 
     void returnWeights(IColumn & to) const;

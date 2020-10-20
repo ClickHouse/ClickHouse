@@ -161,7 +161,7 @@ private:
             using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
-            return (res = execute<Type, ReturnType>(col_vec));
+            return (res = execute<Type, ReturnType>(col_vec)) != nullptr;
         };
 
         if (!callOnBasicType<void, true, true, true, false>(col.type->getTypeId(), call))

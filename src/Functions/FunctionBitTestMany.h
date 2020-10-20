@@ -59,7 +59,7 @@ public:
         const auto * value_col = arguments.front().column.get();
 
         ColumnPtr res;
-        if ( !((res = execute<UInt8>(arguments, result_type, value_col))
+        if (!((res = execute<UInt8>(arguments, result_type, value_col))
             || (res = execute<UInt16>(arguments, result_type, value_col))
             || (res = execute<UInt32>(arguments, result_type, value_col))
             || (res = execute<UInt64>(arguments, result_type, value_col))

@@ -284,10 +284,16 @@ ColumnPtr ExecutableFunctionAdaptor::executeWithoutLowCardinalityColumns(
     if (auto res = defaultImplementationForNulls(args, result_type, input_rows_count, dry_run))
         return res;
 
+    ColumnPtr res;
     if (dry_run)
-        return impl->executeDryRun(args, result_type, input_rows_count);
+        res = impl->executeDryRun(args, result_type, input_rows_count);
     else
-        return impl->execute(args, result_type, input_rows_count);
+        res = impl->execute(args, result_type, input_rows_count);
+
+    if (!res)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column was returned by function {}", getName());
+
+    return res;
 }
 
 static const ColumnLowCardinality * findLowCardinalityArgument(const ColumnsWithTypeAndName & arguments)
@@ -441,7 +447,7 @@ ColumnPtr ExecutableFunctionAdaptor::execute(ColumnsWithTypeAndName & arguments,
         }
     }
     else
-        return executeWithoutLowCardinalityColumns( arguments, result_type, input_rows_count, dry_run);
+        return executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
 }
 
 void FunctionOverloadResolverAdaptor::checkNumberOfArguments(size_t number_of_arguments) const
