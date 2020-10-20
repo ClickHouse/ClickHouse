@@ -850,7 +850,7 @@ struct ConvertThroughParsing
         if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
             return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
         else
-            return std::move(col_to);
+            return col_to;
     }
 };
 
