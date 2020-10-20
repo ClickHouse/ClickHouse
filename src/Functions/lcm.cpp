@@ -27,11 +27,13 @@ constexpr T abs(T value) noexcept
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+namespace
+{
 
 template <typename A, typename B>
 struct LCMImpl
@@ -40,14 +42,14 @@ struct LCMImpl
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
-    static inline std::enable_if_t<is_big_int_v<A> || is_big_int_v<B>, Result>
+    static inline std::enable_if_t<is_big_int_v<A> || is_big_int_v<B> || is_big_int_v<Result>, Result>
     apply([[maybe_unused]] A a, [[maybe_unused]] B b)
     {
         throw Exception("LCM is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     template <typename Result = ResultType>
-    static inline std::enable_if_t<!is_big_int_v<A> && !is_big_int_v<B>, Result>
+    static inline std::enable_if_t<!is_big_int_v<A> && !is_big_int_v<B> && !is_big_int_v<Result>, Result>
     apply([[maybe_unused]] A a, [[maybe_unused]] B b)
     {
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
@@ -76,7 +78,9 @@ struct LCMImpl
 };
 
 struct NameLCM { static constexpr auto name = "lcm"; };
-using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM, false>;
+using FunctionLCM = BinaryArithmeticOverloadResolver<LCMImpl, NameLCM, false>;
+
+}
 
 void registerFunctionLCM(FunctionFactory & factory)
 {

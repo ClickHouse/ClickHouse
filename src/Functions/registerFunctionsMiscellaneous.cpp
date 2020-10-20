@@ -59,6 +59,8 @@ void registerFunctionGetMacro(FunctionFactory &);
 void registerFunctionGetScalar(FunctionFactory &);
 void registerFunctionGetSetting(FunctionFactory &);
 void registerFunctionIsConstant(FunctionFactory &);
+void registerFunctionIsDecimalOverflow(FunctionFactory &);
+void registerFunctionCountDigits(FunctionFactory &);
 void registerFunctionGlobalVariable(FunctionFactory &);
 void registerFunctionHasThreadFuzzer(FunctionFactory &);
 void registerFunctionInitializeAggregation(FunctionFactory &);
@@ -121,6 +123,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionGetScalar(factory);
     registerFunctionGetSetting(factory);
     registerFunctionIsConstant(factory);
+    registerFunctionIsDecimalOverflow(factory);
+    registerFunctionCountDigits(factory);
     registerFunctionGlobalVariable(factory);
     registerFunctionHasThreadFuzzer(factory);
     registerFunctionInitializeAggregation(factory);

@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
@@ -343,6 +342,12 @@ protected:
                 if (columns_mask[src_index] || columns_mask[src_index + 1])
                 {
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
+
+                    if (ast && !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
+                    {
+                        auto & create = ast->as<ASTCreateQuery &>();
+                        create.uuid = UUIDHelpers::Nil;
+                    }
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? queryToString(ast) : "");

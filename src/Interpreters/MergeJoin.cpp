@@ -10,11 +10,11 @@
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/TemporaryFileStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <DataStreams/BlocksListBlockInputStream.h>
+
 
 namespace DB
 {
@@ -602,7 +602,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     {
         JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
         materializeBlockInplace(block);
-        JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft());
+        JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft(), false);
 
         sortBlock(block, left_sort_description);
 
@@ -636,6 +636,8 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     /// Back thread even with no data. We have some unfinished data in buffer.
     if (!not_processed && left_blocks_buffer)
         not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
+
+    JoinCommon::restoreLowCardinalityInplace(block);
 }
 
 template <bool in_memory, bool is_all>

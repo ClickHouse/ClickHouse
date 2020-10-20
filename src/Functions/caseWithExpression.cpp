@@ -12,6 +12,9 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
+namespace
+{
+
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
 class FunctionCaseWithExpression : public IFunction
@@ -43,7 +46,7 @@ public:
         return getLeastSupertype(dst_array_types);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & args, size_t result, size_t input_rows_count) const override
     {
         if (args.empty())
             throw Exception{"Function " + getName() + " expects at least 1 argument",
@@ -71,46 +74,48 @@ public:
             if (i % 2)
             {
                 src_array_args.push_back(args[i]);
-                src_array_elems.push_back(block.getByPosition(args[i]));
-                src_array_types.push_back(block.getByPosition(args[i]).type);
+                src_array_elems.push_back(columns[args[i]]);
+                src_array_types.push_back(columns[args[i]].type);
             }
             else
             {
                 dst_array_args.push_back(args[i]);
-                dst_array_elems.push_back(block.getByPosition(args[i]));
-                dst_array_types.push_back(block.getByPosition(args[i]).type);
+                dst_array_elems.push_back(columns[args[i]]);
+                dst_array_types.push_back(columns[args[i]].type);
             }
         }
 
         DataTypePtr src_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(src_array_types));
         DataTypePtr dst_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(dst_array_types));
 
-        Block temp_block = block;
+        ColumnsWithTypeAndName temp_columns_columns = columns;
 
-        size_t src_array_pos = temp_block.columns();
-        temp_block.insert({nullptr, src_array_type, ""});
+        size_t src_array_pos = temp_columns_columns.size();
+        temp_columns_columns.emplace_back(ColumnWithTypeAndName {nullptr, src_array_type, ""});
 
-        size_t dst_array_pos = temp_block.columns();
-        temp_block.insert({nullptr, dst_array_type, ""});
+        size_t dst_array_pos = temp_columns_columns.size();
+        temp_columns_columns.emplace_back(ColumnWithTypeAndName{nullptr, dst_array_type, ""});
 
         auto fun_array = FunctionFactory::instance().get("array", context);
 
-        fun_array->build(src_array_elems)->execute(temp_block, src_array_args, src_array_pos, input_rows_count);
-        fun_array->build(dst_array_elems)->execute(temp_block, dst_array_args, dst_array_pos, input_rows_count);
+        fun_array->build(src_array_elems)->execute(temp_columns_columns, src_array_args, src_array_pos, input_rows_count);
+        fun_array->build(dst_array_elems)->execute(temp_columns_columns, dst_array_args, dst_array_pos, input_rows_count);
 
         /// Execute transform.
         ColumnNumbers transform_args{args.front(), src_array_pos, dst_array_pos, args.back()};
         FunctionFactory::instance().get("transform", context)->build(
-            ext::map<ColumnsWithTypeAndName>(transform_args, [&](auto i){ return temp_block.getByPosition(i); }))
-            ->execute(temp_block, transform_args, result, input_rows_count);
+            ext::map<ColumnsWithTypeAndName>(transform_args, [&](auto i){ return temp_columns_columns[i]; }))
+            ->execute(temp_columns_columns, transform_args, result, input_rows_count);
 
-        /// Put the result into the original block.
-        block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
+        /// Put the result into the original columns.
+        columns[result].column = std::move(temp_columns_columns[result].column);
     }
 
 private:
     const Context & context;
 };
+
+}
 
 void registerFunctionCaseWithExpression(FunctionFactory & factory)
 {

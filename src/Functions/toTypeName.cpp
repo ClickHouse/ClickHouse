@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** toTypeName(x) - get the type name
   * Returns name of IDataType instance (name of data type).
@@ -19,11 +21,11 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    /// Execute the function on the block.
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    /// Execute the function on the columns.
+    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column
-            = DataTypeString().createColumnConst(input_rows_count, block.getByPosition(arguments[0]).type->getName());
+        columns[result].column
+            = DataTypeString().createColumnConst(input_rows_count, columns[arguments[0]].type->getName());
     }
 };
 
@@ -43,12 +45,12 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionToTypeName>();
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block &, const ColumnNumbers &) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &, const ColumnNumbers &) const override
     {
         return DataTypeString().createColumnConst(1, argument_types.at(0)->getName());
     }
@@ -85,6 +87,7 @@ public:
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 };
 
+}
 
 void registerFunctionToTypeName(FunctionFactory & factory)
 {

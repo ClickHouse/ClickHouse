@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -38,19 +39,17 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto & return_type = block.getByPosition(result).type;
+        const auto & return_type = columns[result].type;
 
         if (return_type->onlyNull())
         {
-            block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
+            columns[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
 
-        auto result_column = return_type->createColumn();
-
-        const auto & array_column = block.getByPosition(arguments[0]).column;
+        const auto & array_column = columns[arguments[0]].column;
 
         std::unique_ptr<GatherUtils::IArraySource> source;
 
@@ -61,14 +60,14 @@ public:
         else
             throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
-        auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
+        ColumnArray::MutablePtr sink;
 
         if (pop_front)
-            GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, *sink, 1);
+            sink = GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, 1);
         else
-            GatherUtils::sliceFromLeftConstantOffsetBounded(*source, *sink, 0, -1);
+            sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, 0, -1);
 
-        block.getByPosition(result).column = std::move(result_column);
+        columns[result].column = std::move(sink);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

@@ -1,10 +1,9 @@
 import time
+
 import pytest
-
-from helpers.network import PartitionManager
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
-
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
@@ -27,7 +26,7 @@ def start_cluster():
         yield cluster
 
     except Exception as ex:
-        print ex
+        print(ex)
 
     finally:
         cluster.shutdown()
@@ -55,7 +54,7 @@ def test_merge_doesnt_work_without_zookeeper(start_cluster):
     with PartitionManager() as pm:
         node1.query("OPTIMIZE TABLE test_table FINAL")
         pm.drop_instance_zk_connections(node1)
-        time.sleep(10) # > old_parts_lifetime
+        time.sleep(10)  # > old_parts_lifetime
         assert node1.query("SELECT count(*) from system.parts where table = 'test_table'") == "3\n"
 
     assert_eq_with_retry(node1, "SELECT count(*) from system.parts where table = 'test_table' and active = 1", "1")

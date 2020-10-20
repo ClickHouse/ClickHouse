@@ -102,6 +102,8 @@ Pipe::Holder & Pipe::Holder::operator=(Holder && rhs)
     storage_holders.insert(storage_holders.end(), rhs.storage_holders.begin(), rhs.storage_holders.end());
     interpreter_context.insert(interpreter_context.end(),
                                rhs.interpreter_context.begin(), rhs.interpreter_context.end());
+    for (auto & plan : rhs.query_plans)
+        query_plans.emplace_back(std::move(plan));
 
     return *this;
 }
@@ -389,7 +391,7 @@ void Pipe::dropExtremes()
 
 void Pipe::addTransform(ProcessorPtr transform)
 {
-    addTransform(std::move(transform), nullptr, nullptr);
+    addTransform(std::move(transform), static_cast<OutputPort *>(nullptr), static_cast<OutputPort *>(nullptr));
 }
 
 void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes)
@@ -408,7 +410,7 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
                         ErrorCodes::LOGICAL_ERROR);
 
     if (extremes && extremes_port)
-        throw Exception("Cannot add transform with totals to Pipe because it already has totals.",
+        throw Exception("Cannot add transform with extremes to Pipe because it already has extremes.",
                         ErrorCodes::LOGICAL_ERROR);
 
     if (totals)
@@ -460,6 +462,91 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
     // Temporarily skip this check. TotaslHavingTransform may return finalized totals but not finalized data.
     // if (totals_port)
     //     assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
+
+    if (extremes_port)
+        assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
+
+    if (collected_processors)
+        collected_processors->emplace_back(transform);
+
+    processors.emplace_back(std::move(transform));
+
+    max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
+}
+
+void Pipe::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes)
+{
+    if (output_ports.empty())
+        throw Exception("Cannot add transform to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
+
+    auto & inputs = transform->getInputs();
+    size_t expected_inputs = output_ports.size() + (totals ? 1 : 0) + (extremes ? 1 : 0);
+    if (inputs.size() != expected_inputs)
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because "
+                        "Processor has " + std::to_string(inputs.size()) + " input ports, "
+                        "but " + std::to_string(expected_inputs) + " expected", ErrorCodes::LOGICAL_ERROR);
+
+    if (totals && !totals_port)
+        throw Exception("Cannot add transform consuming totals to Pipe because Pipe does not have totals.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (extremes && !extremes_port)
+        throw Exception("Cannot add transform consuming extremes to Pipe because it already has extremes.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (totals)
+    {
+        connect(*totals_port, *totals);
+        totals_port = nullptr;
+    }
+    if (extremes)
+    {
+        connect(*extremes_port, *extremes);
+        extremes_port = nullptr;
+    }
+
+    bool found_totals = false;
+    bool found_extremes = false;
+
+    size_t next_output = 0;
+    for (auto & input : inputs)
+    {
+        if (&input == totals)
+            found_totals = true;
+        else if (&input == extremes)
+            found_extremes = true;
+        else
+        {
+            connect(*output_ports[next_output], input);
+            ++next_output;
+        }
+    }
+
+    if (totals && !found_totals)
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because "
+                        "specified totals port does not belong to it", ErrorCodes::LOGICAL_ERROR);
+
+    if (extremes && !found_extremes)
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because "
+                        "specified extremes port does not belong to it", ErrorCodes::LOGICAL_ERROR);
+
+    auto & outputs = transform->getOutputs();
+    if (outputs.empty())
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because it has no outputs",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    output_ports.clear();
+    output_ports.reserve(outputs.size());
+
+    for (auto & output : outputs)
+        output_ports.emplace_back(&output);
+
+    header = output_ports.front()->getHeader();
+    for (size_t i = 1; i < output_ports.size(); ++i)
+        assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipes");
+
+    if (totals_port)
+        assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
 
     if (extremes_port)
         assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
@@ -531,6 +618,24 @@ void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
 void Pipe::addSimpleTransform(const ProcessorGetter & getter)
 {
     addSimpleTransform([&](const Block & stream_header, StreamType) { return getter(stream_header); });
+}
+
+void Pipe::resize(size_t num_streams, bool force, bool strict)
+{
+    if (output_ports.empty())
+        throw Exception("Cannot resize an empty Pipe.", ErrorCodes::LOGICAL_ERROR);
+
+    if (!force && num_streams == numOutputPorts())
+        return;
+
+    ProcessorPtr resize;
+
+    if (strict)
+        resize = std::make_shared<StrictResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
+    else
+        resize = std::make_shared<ResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
+
+    addTransform(std::move(resize));
 }
 
 void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
@@ -692,12 +797,21 @@ void Pipe::transform(const Transformer & transformer)
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
-void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
+void Pipe::setLimits(const StreamLocalLimits & limits)
 {
     for (auto & processor : processors)
     {
         if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source_with_progress->setLimits(limits);
+    }
+}
+
+void Pipe::setLeafLimits(const SizeLimits & leaf_limits)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source_with_progress->setLeafLimits(leaf_limits);
     }
 }
 

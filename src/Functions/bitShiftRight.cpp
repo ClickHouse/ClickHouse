@@ -9,6 +9,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
 template <typename A, typename B>
 struct BitShiftRightImpl
 {
@@ -18,12 +21,10 @@ struct BitShiftRightImpl
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
-        using CastB = std::conditional_t<std::is_same_v<B, UInt8>, uint8_t, B>;
-
         if constexpr (is_big_int_v<B>)
-            throw Exception("BitRotate is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
-        else if constexpr (is_big_int_v<ResultType>)
-            return static_cast<Result>(a) >> static_cast<CastB>(b);
+            throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+        else if constexpr (is_big_int_v<A>)
+            return bigint_cast<Result>(a) >> bigint_cast<UInt32>(b);
         else
             return static_cast<Result>(a) >> static_cast<Result>(b);
     }
@@ -41,7 +42,9 @@ struct BitShiftRightImpl
 };
 
 struct NameBitShiftRight { static constexpr auto name = "bitShiftRight"; };
-using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl, NameBitShiftRight>;
+using FunctionBitShiftRight = BinaryArithmeticOverloadResolver<BitShiftRightImpl, NameBitShiftRight>;
+
+}
 
 void registerFunctionBitShiftRight(FunctionFactory & factory)
 {

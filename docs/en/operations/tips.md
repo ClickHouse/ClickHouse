@@ -35,7 +35,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
 
 ``` bash
-$ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
 Use `perf top` to watch the time spent in the kernel for memory management.
@@ -57,7 +57,7 @@ When creating RAID-10, select the `far` layout.
 If your budget allows, choose RAID-10.
 
 If you have more than 4 disks, use RAID-6 (preferred) or RAID-50, instead of RAID-5.
-When using RAID-5, RAID-6 or RAID-50, always increase stripe\_cache\_size, since the default value is usually not the best choice.
+When using RAID-5, RAID-6 or RAID-50, always increase stripe_cache_size, since the default value is usually not the best choice.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size

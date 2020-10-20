@@ -67,13 +67,6 @@ if uname -mpi | grep -q 'x86_64'; then
 fi
 
 
-SUPPORTED_COMMANDS="{start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
-is_supported_command()
-{
-    echo "$SUPPORTED_COMMANDS" | grep -E "(\{|\|)$1(\||})" &> /dev/null
-}
-
-
 is_running()
 {
     pgrep --pidfile "$CLICKHOUSE_PIDFILE" $(echo "${PROGRAM}" | cut -c1-15) 1> /dev/null 2> /dev/null
@@ -220,13 +213,12 @@ use_cron()
     fi
     return 0
 }
-
+# returns false if cron disabled (with systemd)
 enable_cron()
 {
     use_cron && sed -i 's/^#*//' "$CLICKHOUSE_CRONFILE"
 }
-
-
+# returns false if cron disabled (with systemd)
 disable_cron()
 {
     use_cron && sed -i 's/^#*/#/' "$CLICKHOUSE_CRONFILE"
@@ -249,15 +241,14 @@ main()
     EXIT_STATUS=0
     case "$1" in
     start)
-        start && enable_cron
+        service_or_func start && enable_cron
         ;;
     stop)
-        # disable_cron returns false if cron disabled (with systemd) - not checking return status
         disable_cron
-        stop
+        service_or_func stop
         ;;
     restart)
-        restart && enable_cron
+        service_or_func restart && enable_cron
         ;;
     forcestop)
         disable_cron
@@ -267,7 +258,7 @@ main()
         forcerestart && enable_cron
         ;;
     reload)
-        restart
+        service_or_func restart
         ;;
     condstart)
         is_running || service_or_func start
@@ -291,7 +282,7 @@ main()
         disable_cron
         ;;
     *)
-        echo "Usage: $0 $SUPPORTED_COMMANDS"
+        echo "Usage: $0 {start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
         exit 2
         ;;
     esac

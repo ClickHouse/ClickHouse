@@ -54,10 +54,10 @@ RUN apt-get --allow-unauthenticated update -y \
             perl \
             pigz \
             pkg-config \
-            python \
-            python-lxml \
-            python-requests \
-            python-termcolor \
+            python3 \
+            python3-lxml \
+            python3-requests \
+            python3-termcolor \
             qemu-user-static \
             sudo \
             telnet \
@@ -66,12 +66,10 @@ RUN apt-get --allow-unauthenticated update -y \
             unixodbc \
             unixodbc-dev \
             wget \
-            zlib1g-dev \
-            zookeeper \
-            zookeeperd
+            zlib1g-dev
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
-   && wget --quiet -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
+   && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
    && cp /tmp/clickhouse-odbc-tmp/lib64/*.so /usr/local/lib/ \
    && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \

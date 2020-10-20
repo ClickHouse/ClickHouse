@@ -92,15 +92,15 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 テーブルを作成するときは、次の設定が適用されます:
 
--   [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls)
--   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
--   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
--   [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
--   [join\_any\_take\_last\_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+-   [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+-   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
+-   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
+-   [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
+-   [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
 
 その `Join`-エンジンテーブルは使用できません `GLOBAL JOIN` 作戦だ
 
-その `Join`-エンジンは使用を許可する [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) の設定 `CREATE TABLE` 声明。 と [SELECT](../../../sql-reference/statements/select/index.md) クエリを使用できる `join_use_nulls` あまりにも。 あなたが違う場合 `join_use_nulls` 設定することができるエラー入社。 それは結合の種類に依存します。 使用するとき [joinGet](../../../sql-reference/functions/other-functions.md#joinget) 関数、あなたは同じを使用する必要があります `join_use_nulls` 設定 `CRATE TABLE` と `SELECT` 声明。
+その `Join`-エンジンは使用を許可する [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) の設定 `CREATE TABLE` 声明。 と [SELECT](../../../sql-reference/statements/select/index.md) クエリを使用できる `join_use_nulls` あまりにも。 あなたが違う場合 `join_use_nulls` 設定することができるエラー入社。 それは結合の種類に依存します。 使用するとき [joinGet](../../../sql-reference/functions/other-functions.md#joinget) 関数、あなたは同じを使用する必要があります `join_use_nulls` 設定 `CRATE TABLE` と `SELECT` 声明。
 
 ## データ保存 {#data-storage}
 
