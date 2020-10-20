@@ -23,7 +23,7 @@ Vea la descripción detallada del [CREATE TABLE](../../../sql-reference/statemen
 
 **Parámetros del motor**
 
--   `join_strictness` – [ÚNETE a la rigurosidad](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [ÚNETE a la rigurosidad](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [Tipo de unión](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` cláusula que el `JOIN` operación se hace con.
 
@@ -95,8 +95,8 @@ Al crear una tabla, se aplican los siguientes valores:
 -   [Sistema abierto.](../../../operations/settings/settings.md#join_use_nulls)
 -   [Método de codificación de datos:](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
 -   [Método de codificación de datos:](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
--   [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
--   [join\_any\_take\_last\_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+-   [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
+-   [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
 
 El `Join`-las tablas del motor no se pueden usar en `GLOBAL JOIN` operación.
 

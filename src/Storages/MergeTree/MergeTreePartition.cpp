@@ -156,6 +156,25 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
+    out->finalize();
+}
+
+void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row)
+{
+    if (!metadata_snapshot->hasPartitionKey())
+        return;
+
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    partition_key.expression->execute(block);
+    size_t partition_columns_num = partition_key.sample_block.columns();
+    value.resize(partition_columns_num);
+
+    for (size_t i = 0; i < partition_columns_num; ++i)
+    {
+        const auto & column_name = partition_key.sample_block.getByPosition(i).name;
+        const auto & partition_column = block.getByName(column_name).column;
+        partition_column->get(row, value[i]);
+    }
 }
 
 }

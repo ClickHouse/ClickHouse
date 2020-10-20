@@ -45,7 +45,10 @@ ReplxxLineReader::ReplxxLineReader(
             }
             else
             {
-                rx.history_load(history_file_path);
+                if (!rx.history_load(history_file_path))
+                {
+                    rx.print("Loading history failed: %s\n", strerror(errno));
+                }
 
                 if (flock(history_file_fd, LOCK_UN))
                 {
@@ -57,8 +60,9 @@ ReplxxLineReader::ReplxxLineReader(
 
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
-        auto range = suggest.getCompletions(context, context_size);
-        return Replxx::completions_t(range.first, range.second);
+        if (auto range = suggest.getCompletions(context, context_size))
+            return Replxx::completions_t(range->first, range->second);
+        return Replxx::completions_t();
     };
 
     rx.set_completion_callback(callback);
@@ -101,6 +105,10 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 void ReplxxLineReader::addToHistory(const String & line)
 {
     // locking history file to prevent from inconsistent concurrent changes
+    //
+    // replxx::Replxx::history_save() already has lockf(),
+    // but replxx::Replxx::history_load() does not
+    // and that is why flock() is added here.
     bool locked = false;
     if (flock(history_file_fd, LOCK_EX))
         rx.print("Lock of history file failed: %s\n", strerror(errno));
@@ -110,7 +118,8 @@ void ReplxxLineReader::addToHistory(const String & line)
     rx.history_add(line);
 
     // flush changes to the disk
-    rx.history_save(history_file_path);
+    if (!rx.history_save(history_file_path))
+        rx.print("Saving history failed: %s\n", strerror(errno));
 
     if (locked && 0 != flock(history_file_fd, LOCK_UN))
         rx.print("Unlock of history file failed: %s\n", strerror(errno));

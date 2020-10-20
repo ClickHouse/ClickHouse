@@ -7,24 +7,24 @@ insert into array_intersect values ('2019-01-01', [1,2]);
 insert into array_intersect values ('2019-01-01', [1]);
 insert into array_intersect values ('2019-01-01', []);
 
-select arrayIntersect(arr, [1,2]) from array_intersect order by arr;
-select arrayIntersect(arr, []) from array_intersect order by arr;
-select arrayIntersect([], arr) from array_intersect order by arr;
-select arrayIntersect([1,2], arr) from array_intersect order by arr;
-select arrayIntersect([1,2], [1,2,3,4]) from array_intersect order by arr;
-select arrayIntersect([], []) from array_intersect order by arr;
+select arraySort(arrayIntersect(arr, [1,2])) from array_intersect order by arr;
+select arraySort(arrayIntersect(arr, [])) from array_intersect order by arr;
+select arraySort(arrayIntersect([], arr)) from array_intersect order by arr;
+select arraySort(arrayIntersect([1,2], arr)) from array_intersect order by arr;
+select arraySort(arrayIntersect([1,2], [1,2,3,4])) from array_intersect order by arr;
+select arraySort(arrayIntersect([], [])) from array_intersect order by arr;
 
 optimize table array_intersect;
 
-select arrayIntersect(arr, [1,2]) from array_intersect order by arr;
-select arrayIntersect(arr, []) from array_intersect order by arr;
-select arrayIntersect([], arr) from array_intersect order by arr;
-select arrayIntersect([1,2], arr) from array_intersect order by arr;
-select arrayIntersect([1,2], [1,2,3,4]) from array_intersect order by arr;
-select arrayIntersect([], []) from array_intersect order by arr;
+select arraySort(arrayIntersect(arr, [1,2])) from array_intersect order by arr;
+select arraySort(arrayIntersect(arr, [])) from array_intersect order by arr;
+select arraySort(arrayIntersect([], arr)) from array_intersect order by arr;
+select arraySort(arrayIntersect([1,2], arr)) from array_intersect order by arr;
+select arraySort(arrayIntersect([1,2], [1,2,3,4])) from array_intersect order by arr;
+select arraySort(arrayIntersect([], [])) from array_intersect order by arr;
 
 drop table if exists array_intersect;
 
 select '-';
-select arrayIntersect([-100], [156]);
-select arrayIntersect([1], [257]);
+select arraySort(arrayIntersect([-100], [156]));
+select arraySort(arrayIntersect([1], [257]));

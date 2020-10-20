@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS dictdb"
 
-$CLICKHOUSE_CLIENT --query "CREATE DATABASE dictdb Engine = Ordinary"
+$CLICKHOUSE_CLIENT --query "CREATE DATABASE dictdb"
 
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE dictdb.dict_invalidate
@@ -41,11 +41,11 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE dictdb.dict_invalidate"
 function check_exception_detected()
 {
 
-    query_result=`$CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1)
 
     while [ -z "$query_result" ]
     do
-        query_result=`$CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1`
+        query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1)
         sleep 0.1
     done
 }
@@ -66,11 +66,11 @@ FROM system.one"
 
 function check_exception_fixed()
 {
-    query_result=`$CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1)
 
     while [ "$query_result" ]
     do
-        query_result=`$CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1`
+        query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1)
         sleep 0.1
     done
 }

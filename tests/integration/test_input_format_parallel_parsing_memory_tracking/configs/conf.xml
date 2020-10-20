@@ -1,0 +1,4 @@
+<yandex>
+    <!-- make it fail earlier -->
+    <max_server_memory_usage>3000000000</max_server_memory_usage> <!-- 3GB -->
+</yandex>

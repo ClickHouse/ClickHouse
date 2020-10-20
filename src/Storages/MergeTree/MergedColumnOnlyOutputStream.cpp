@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -34,8 +35,12 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         std::move(writer_settings),
         index_granularity);
 
-    writer->setWrittenOffsetColumns(offset_columns_);
-    writer->initSkipIndices();
+    auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
+    if (!writer_on_disk)
+        throw Exception("MergedColumnOnlyOutputStream supports only parts stored on disk", ErrorCodes::NOT_IMPLEMENTED);
+
+    writer_on_disk->setWrittenOffsetColumns(offset_columns_);
+    writer_on_disk->initSkipIndices();
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
@@ -48,12 +53,11 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 
     Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, nullptr);
 
-    size_t rows = block.rows();
-    if (!rows)
+    if (!block.rows())
         return;
 
     writer->write(block);
-    writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);
+    writer->calculateAndSerializeSkipIndices(skip_indexes_block);
     writer->next();
 }
 
@@ -63,12 +67,15 @@ void MergedColumnOnlyOutputStream::writeSuffix()
 }
 
 MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums)
+MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
+    MergeTreeData::MutableDataPartPtr & new_part,
+    MergeTreeData::DataPart::Checksums & all_checksums,
+    bool sync)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->finishDataSerialization(checksums);
-    writer->finishSkipIndicesSerialization(checksums);
+    writer->finishDataSerialization(checksums, sync);
+    writer->finishSkipIndicesSerialization(checksums, sync);
 
     auto columns = new_part->getColumns();
 

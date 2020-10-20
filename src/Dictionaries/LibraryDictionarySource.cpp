@@ -298,6 +298,7 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const std::string & config_prefix,
                                  Block & sample_block,
                                  const Context & context,
+                                 const std::string & /* default_database */,
                                  bool check_config) -> DictionarySourcePtr
     {
         return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context, check_config);

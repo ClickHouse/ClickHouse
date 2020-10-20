@@ -31,7 +31,7 @@ Dans les deux cas le type de la valeur renvoyée est [UInt64](../../sql-referenc
 
 **Détail**
 
-Clickhouse soutient le `COUNT(DISTINCT ...)` syntaxe. Le comportement de cette construction dépend de la [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) paramètre. Il définit lequel des [uniq\*](#agg_function-uniq) fonctions est utilisée pour effectuer l'opération. La valeur par défaut est la [uniqExact](#agg_function-uniqexact) fonction.
+Clickhouse soutient le `COUNT(DISTINCT ...)` syntaxe. Le comportement de cette construction dépend de la [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) paramètre. Il définit lequel des [uniq\*](#agg_function-uniq) fonctions est utilisée pour effectuer l'opération. La valeur par défaut est la [uniqExact](#agg_function-uniqexact) fonction.
 
 Le `SELECT count() FROM table` la requête n'est pas optimisé, car le nombre d'entrées dans la table n'est pas stockée séparément. Il choisit une petite colonne de la table et compte le nombre de valeurs qu'il contient.
 
@@ -721,7 +721,7 @@ La fonction prend un nombre variable de paramètres. Les paramètres peuvent êt
 -   [uniqcombiné](#agg_function-uniqcombined)
 -   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x), groupArray (max\_size) (x) {#agg_function-grouparray}
+## groupArray(x), groupArray (max_size) (x) {#agg_function-grouparray}
 
 Crée un tableau de valeurs de l'argument.
 Les valeurs peuvent être ajoutées au tableau dans une (indéterminée) de commande.
@@ -967,7 +967,7 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x), groupUniqArray (max\_size) (x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## groupUniqArray(x), groupUniqArray (max_size) (x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 Crée un tableau à partir de différentes valeurs d'argument. La consommation de mémoire est la même que pour la `uniqExact` fonction.
 

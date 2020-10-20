@@ -8,6 +8,7 @@ namespace DB
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
+/// WITH ROLLUP. See RollupTransform.
 class RollupStep : public ITransformingStep
 {
 public:

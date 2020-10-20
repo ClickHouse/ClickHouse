@@ -1,7 +1,7 @@
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -67,7 +67,7 @@ TTLBlockInputStream::TTLBlockInputStream(
 
     if (!default_expr_list->children.empty())
     {
-        auto syntax_result = SyntaxAnalyzer(storage.global_context).analyze(default_expr_list, metadata_snapshot->getColumns().getAllPhysical());
+        auto syntax_result = TreeRewriter(storage.global_context).analyze(default_expr_list, metadata_snapshot->getColumns().getAllPhysical());
         defaults_expression = ExpressionAnalyzer{default_expr_list, syntax_result, storage.global_context}.getActions(true);
     }
 
@@ -91,8 +91,7 @@ TTLBlockInputStream::TTLBlockInputStream(
         const Settings & settings = storage.global_context.getSettingsRef();
 
         Aggregator::Params params(header, keys, aggregates,
-            false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-            SettingUInt64(0), SettingUInt64(0),
+            false, settings.max_rows_to_group_by, settings.group_by_overflow_mode, 0, 0,
             settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
             storage.global_context.getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
         aggregator = std::make_unique<Aggregator>(params);
@@ -135,6 +134,7 @@ Block TTLBlockInputStream::readImpl()
     removeValuesWithExpiredColumnTTL(block);
 
     updateMovesTTL(block);
+    updateRecompressionTTL(block);
 
     return block;
 }
@@ -150,7 +150,7 @@ void TTLBlockInputStream::readSuffixImpl()
     data_part->expired_columns = std::move(empty_columns);
 
     if (rows_removed)
-        LOG_INFO(log, "Removed {} rows with expired TTL from part {}", rows_removed, data_part->name);
+        LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", rows_removed, data_part->name);
 }
 
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
@@ -370,13 +370,12 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         block.erase(column);
 }
 
-void TTLBlockInputStream::updateMovesTTL(Block & block)
+void TTLBlockInputStream::updateTTLWithDescriptions(Block & block, const TTLDescriptions & descriptions, TTLInfoMap & ttl_info_map)
 {
     std::vector<String> columns_to_remove;
-    for (const auto & ttl_entry : metadata_snapshot->getMoveTTLs())
+    for (const auto & ttl_entry : descriptions)
     {
-        auto & new_ttl_info = new_ttl_infos.moves_ttl[ttl_entry.result_column];
-
+        auto & new_ttl_info = ttl_info_map[ttl_entry.result_column];
         if (!block.has(ttl_entry.result_column))
         {
             columns_to_remove.push_back(ttl_entry.result_column);
@@ -394,6 +393,16 @@ void TTLBlockInputStream::updateMovesTTL(Block & block)
 
     for (const String & column : columns_to_remove)
         block.erase(column);
+}
+
+void TTLBlockInputStream::updateMovesTTL(Block & block)
+{
+    updateTTLWithDescriptions(block, metadata_snapshot->getMoveTTLs(), new_ttl_infos.moves_ttl);
+}
+
+void TTLBlockInputStream::updateRecompressionTTL(Block & block)
+{
+    updateTTLWithDescriptions(block, metadata_snapshot->getRecompressionTTLs(), new_ttl_infos.recompression_ttl);
 }
 
 UInt32 TTLBlockInputStream::getTimestampByIndex(const IColumn * column, size_t ind)

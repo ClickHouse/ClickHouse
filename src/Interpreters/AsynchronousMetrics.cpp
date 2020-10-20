@@ -325,13 +325,14 @@ void AsynchronousMetrics::update()
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
 #endif
 
+#if defined(OS_LINUX)
     // Try to add processor frequencies, ignoring errors.
     try
     {
         ReadBufferFromFile buf("/proc/cpuinfo", 32768 /* buf_size */);
 
         // We need the following lines:
-        // core id : 4
+        // processor : 4
         // cpu MHz : 4052.941
         // They contain tabs and are interspersed with other info.
         int core_id = 0;
@@ -345,7 +346,7 @@ void AsynchronousMetrics::update()
             // It doesn't read the EOL itself.
             ++buf.position();
 
-            if (s.rfind("core id", 0) == 0)
+            if (s.rfind("processor", 0) == 0)
             {
                 if (auto colon = s.find_first_of(':'))
                 {
@@ -366,6 +367,7 @@ void AsynchronousMetrics::update()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+#endif
 
     /// Add more metrics as you wish.
 

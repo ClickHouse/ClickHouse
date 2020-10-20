@@ -61,23 +61,19 @@ struct StorageInMemoryMetadata
     /// Sets constraints
     void setConstraints(ConstraintsDescription constraints_);
 
-    /// Set partition key for storage (methods bellow, are just wrappers for this
-    /// struct).
+    /// Set partition key for storage (methods bellow, are just wrappers for this struct).
     void setPartitionKey(const KeyDescription & partition_key_);
-    /// Set sorting key for storage (methods bellow, are just wrappers for this
-    /// struct).
+    /// Set sorting key for storage (methods bellow, are just wrappers for this struct).
     void setSortingKey(const KeyDescription & sorting_key_);
-    /// Set primary key for storage (methods bellow, are just wrappers for this
-    /// struct).
+    /// Set primary key for storage (methods bellow, are just wrappers for this struct).
     void setPrimaryKey(const KeyDescription & primary_key_);
-    /// Set sampling key for storage (methods bellow, are just wrappers for this
-    /// struct).
+    /// Set sampling key for storage (methods bellow, are just wrappers for this struct).
     void setSamplingKey(const KeyDescription & sampling_key_);
 
     /// Set common table TTLs
     void setTableTTLs(const TTLTableDescription & table_ttl_);
 
-    /// TTLs for seperate columns
+    /// TTLs for separate columns
     void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
 
     /// Set settings changes in metadata (some settings exlicetely specified in
@@ -118,6 +114,10 @@ struct StorageInMemoryMetadata
     TTLDescriptions getMoveTTLs() const;
     bool hasAnyMoveTTL() const;
 
+    // Just wrapper for table TTLs, return info about recompression ttl
+    TTLDescriptions getRecompressionTTLs() const;
+    bool hasAnyRecompressionTTL() const;
+
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
     ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
@@ -129,13 +129,13 @@ struct StorageInMemoryMetadata
     Block getSampleBlockNonMaterialized() const;
 
     /// Block with ordinary + materialized + virtuals. Virtuals have to be
-    /// explicitely specified, because they are part of Storage type, not
+    /// explicitly specified, because they are part of Storage type, not
     /// Storage metadata.
     Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
 
 
     /// Block with ordinary + materialized + aliases + virtuals. Virtuals have
-    /// to be explicitely specified, because they are part of Storage type, not
+    /// to be explicitly specified, because they are part of Storage type, not
     /// Storage metadata. StorageID required only for more clear exception
     /// message.
     Block getSampleBlockForColumns(

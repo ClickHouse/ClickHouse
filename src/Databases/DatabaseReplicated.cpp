@@ -12,7 +12,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/Lock.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <common/sleep.h>
@@ -53,10 +52,11 @@ zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 DatabaseReplicated::DatabaseReplicated(
     const String & name_,
     const String & metadata_path_,
+    UUID uuid,
     const String & zookeeper_path_,
     const String & replica_name_,
     Context & context_)
-    : DatabaseAtomic(name_, metadata_path_, "store/", "DatabaseReplicated (" + name_ + ")", context_)
+    : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
     , zookeeper_path(zookeeper_path_)
     , replica_name(replica_name_)
 {
@@ -83,7 +83,7 @@ DatabaseReplicated::DatabaseReplicated(
         createDatabaseZKNodes();
     // Old replica recovery
     } else if (current_zookeeper->exists(zookeeper_path + "/replicas/" + replica_name)) {
-        String remote_last_entry = current_zookeeper->get(zookeeper_path + "/replicas/" + replica_name, {}, NULL);
+        String remote_last_entry = current_zookeeper->get(zookeeper_path + "/replicas/" + replica_name, {}, nullptr);
 
         String local_last_entry;
         try
@@ -91,7 +91,7 @@ DatabaseReplicated::DatabaseReplicated(
             ReadBufferFromFile in(getMetadataPath() + ".last_entry", 16);
             readStringUntilEOF(local_last_entry, in);
         }
-        catch (const Exception & e)
+        catch (const Exception &)
         {
                 // Metadata is corrupted.
                 // Replica erases the previous zk last executed log entry
@@ -114,8 +114,6 @@ DatabaseReplicated::DatabaseReplicated(
 
     background_log_executor->scheduleAfter(500);
 }
-
-DatabaseReplicated::~DatabaseReplicated() = default;
 
 void DatabaseReplicated::createDatabaseZKNodes() {
     current_zookeeper = getZooKeeper();
@@ -212,7 +210,7 @@ void DatabaseReplicated::writeLastExecutedToDiskAndZK() {
 void DatabaseReplicated::executeLogName(const String & log_entry_name) {
         String path = zookeeper_path + "/log/" + log_entry_name;
         current_zookeeper = getZooKeeper();
-        String query_to_execute = current_zookeeper->get(path, {}, NULL);
+        String query_to_execute = current_zookeeper->get(path, {}, nullptr);
 
         try
         {
@@ -270,7 +268,7 @@ BlockIO DatabaseReplicated::getFeedback() {
             if (!current_zookeeper->exists(err_path)) {
                 feedback_column->insert("OK");
             } else {
-                String feedback = current_zookeeper->get(err_path, {}, NULL);
+                String feedback = current_zookeeper->get(err_path, {}, nullptr);
                 feedback_column->insert(feedback);
             }
         replica_states.erase(replica_iter);
@@ -333,7 +331,7 @@ void DatabaseReplicated::loadMetadataFromSnapshot() {
     for (auto t = metadatas.begin(); t != metadatas.end(); ++t) {
         String path = zookeeper_path + "/snapshots/" + *latest_snapshot + "/" + *t;
 
-        String query_to_execute = current_zookeeper->get(path, {}, NULL);
+        String query_to_execute = current_zookeeper->get(path, {}, nullptr);
 
         current_context = std::make_unique<Context>(global_context);
         current_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;

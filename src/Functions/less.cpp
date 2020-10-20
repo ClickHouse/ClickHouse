@@ -13,9 +13,9 @@ void registerFunctionLess(FunctionFactory & factory)
 }
 
 template <>
-void FunctionComparison<LessOp, NameLess>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+void FunctionComparison<LessOp, NameLess>::executeTupleImpl(ColumnsWithTypeAndName & columns, size_t result, const ColumnsWithTypeAndName & x,
                                                             const ColumnsWithTypeAndName & y, size_t tuple_size,
-                                                            size_t input_rows_count)
+                                                            size_t input_rows_count) const
 {
     auto less = FunctionFactory::instance().get("less", context);
 
@@ -25,7 +25,7 @@ void FunctionComparison<LessOp, NameLess>::executeTupleImpl(Block & block, size_
         FunctionFactory::instance().get("and", context),
         FunctionFactory::instance().get("or", context),
         FunctionFactory::instance().get("equals", context),
-        block, result, x, y, tuple_size, input_rows_count);
+        columns, result, x, y, tuple_size, input_rows_count);
 }
 
 }

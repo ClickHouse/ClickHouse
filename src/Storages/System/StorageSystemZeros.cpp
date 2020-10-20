@@ -90,7 +90,7 @@ StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multith
 
 }
 
-Pipes StorageSystemZeros::read(
+Pipe StorageSystemZeros::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo &,
@@ -112,8 +112,7 @@ Pipes StorageSystemZeros::read(
     if (!use_multiple_streams)
         num_streams = 1;
 
-    Pipes res;
-    res.reserve(num_streams);
+    Pipe res;
 
     ZerosStatePtr state;
 
@@ -127,7 +126,7 @@ Pipes StorageSystemZeros::read(
         if (limit && i == 0)
             source->addTotalRowsApprox(*limit);
 
-        res.emplace_back(std::move(source));
+        res.addSource(std::move(source));
     }
 
     return res;

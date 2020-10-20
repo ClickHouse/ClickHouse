@@ -14,6 +14,8 @@ toc_title: "\u062F\u0648\u0631"
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db, table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port` یا فقط `host`. میزبان را می توان به عنوان نام سرور مشخص, و یا به عنوان ایپو4 یا ایپو6 نشانی. نشانی اینترنتی6 در براکت مربع مشخص شده است. پورت پورت تی سی پی بر روی سرور از راه دور است. اگر پورت حذف شده است, با استفاده از `tcp_port` از فایل پیکربندی سرور (به طور پیش فرض, 9000).
@@ -54,7 +56,7 @@ example01-{01..02}-1
 
 اگر شما جفت های متعدد از براکت در اشکال مختلف, این تولید محصول مستقیم از مجموعه مربوطه.
 
-نشانی ها و بخش هایی از نشانی در براکت فرفری را می توان با نماد لوله جدا (\|). در این مورد, مجموعه مربوطه را از نشانی ها به عنوان کپی تفسیر, و پرس و جو خواهد شد به اولین ماکت سالم ارسال. با این حال, کپی در نظم در حال حاضر در مجموعه تکرار [\_تبالسازی](../../operations/settings/settings.md) تنظیمات.
+نشانی ها و بخش هایی از نشانی در براکت فرفری را می توان با نماد لوله جدا (\|). در این مورد, مجموعه مربوطه را از نشانی ها به عنوان کپی تفسیر, و پرس و جو خواهد شد به اولین ماکت سالم ارسال. با این حال, کپی در نظم در حال حاضر در مجموعه تکرار [_تبالسازی](../../operations/settings/settings.md) تنظیمات.
 
 مثال:
 
@@ -78,6 +80,6 @@ example01-{01..02}-{1|2}
 اگر کاربر مشخص نشده است, `default` استفاده شده است.
 اگر رمز عبور مشخص نشده است, رمز عبور خالی استفاده شده است.
 
-`remoteSecure` - مثل `remote` but with secured connection. Default port — [\_شروع مجدد](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) از پیکربندی و یا 9440.
+`remoteSecure` - مثل `remote` but with secured connection. Default port — [_شروع مجدد](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) از پیکربندی و یا 9440.
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

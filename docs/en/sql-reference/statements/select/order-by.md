@@ -69,3 +69,155 @@ If there is not enough RAM, it is possible to perform sorting in external memory
 Running a query may use more memory than `max_bytes_before_external_sort`. For this reason, this setting must have a value significantly smaller than `max_memory_usage`. As an example, if your server has 128 GB of RAM and you need to run a single query, set `max_memory_usage` to 100 GB, and `max_bytes_before_external_sort` to 80 GB.
 
 External sorting works much less effectively than sorting in RAM.
+
+## Optimization of Data Reading {#optimize_read_in_order}
+
+ If `ORDER BY` expression has a prefix that coincides with the table sorting key, you can optimize the query by using the [optimize_read_in_order](../../../operations/settings/settings.md#optimize_read_in_order) setting.  
+ 
+ When the `optimize_read_in_order` setting is enabled, the Clickhouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](../../../sql-reference/statements/select/limit.md). So queries on big data with small limit are processed faster.
+
+Optimization works with both `ASC` and `DESC` and doesn't work together with [GROUP BY](../../../sql-reference/statements/select/group-by.md) clause and [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
+
+When the `optimize_read_in_order` setting is disabled, the Clickhouse server does not use the table index while processing `SELECT` queries.
+
+Consider disabling `optimize_read_in_order` manually, when running queries that have `ORDER BY` clause, large `LIMIT` and [WHERE](../../../sql-reference/statements/select/where.md) condition that requires to read huge amount of records before queried data is found.
+
+Optimization is supported in the following table engines:
+
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
+- [Merge](../../../engines/table-engines/special/merge.md), [Buffer](../../../engines/table-engines/special/buffer.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) table engines over `MergeTree`-engine tables
+
+In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query doesn't have the `ORDER BY` clause.
+
+## ORDER BY Expr WITH FILL Modifier {#orderby-with-fill}
+
+This modifier also can be combined with [LIMIT … WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties).
+
+`WITH FILL` modifier can be set after `ORDER BY expr` with optional `FROM expr`, `TO expr` and `STEP expr` parameters.
+All missed values of `expr` column will be filled sequentially and other columns will be filled as defaults.
+
+Use following syntax for filling multiple columns add `WITH FILL` modifier with optional parameters after each field name in `ORDER BY` section.
+
+``` sql
+ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr]
+```
+
+`WITH FILL` can be applied only for fields with Numeric (all kind of float, decimal, int) or Date/DateTime types.
+When `FROM const_expr` not defined sequence of filling use minimal `expr` field value from `ORDER BY`.
+When `TO const_expr` not defined sequence of filling use maximum `expr` field value from `ORDER BY`.
+When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types as `days` for Date type and as `seconds` for DateTime type.
+When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
+
+For example, the following query
+
+``` sql
+SELECT n, source FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n
+```
+
+returns
+
+``` text
+┌─n─┬─source───┐
+│ 1 │ original │
+│ 4 │ original │
+│ 7 │ original │
+└───┴──────────┘
+```
+
+but after apply `WITH FILL` modifier
+
+``` sql
+SELECT n, source FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5
+```
+
+returns
+
+``` text
+┌───n─┬─source───┐
+│   0 │          │
+│ 0.5 │          │
+│   1 │ original │
+│ 1.5 │          │
+│   2 │          │
+│ 2.5 │          │
+│   3 │          │
+│ 3.5 │          │
+│   4 │ original │
+│ 4.5 │          │
+│   5 │          │
+│ 5.5 │          │
+│   7 │ original │
+└─────┴──────────┘
+```
+
+For the case when we have multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` order of filling will follow the order of fields in `ORDER BY` clause.
+
+Example:
+
+``` sql
+SELECT
+    toDate((number * 10) * 86400) AS d1,
+    toDate(number * 86400) AS d2,
+    'original' AS source
+FROM numbers(10)
+WHERE (number % 3) = 1
+ORDER BY
+    d2 WITH FILL,
+    d1 WITH FILL STEP 5;
+```
+
+returns
+
+``` text
+┌───d1───────┬───d2───────┬─source───┐
+│ 1970-01-11 │ 1970-01-02 │ original │
+│ 1970-01-01 │ 1970-01-03 │          │
+│ 1970-01-01 │ 1970-01-04 │          │
+│ 1970-02-10 │ 1970-01-05 │ original │
+│ 1970-01-01 │ 1970-01-06 │          │
+│ 1970-01-01 │ 1970-01-07 │          │
+│ 1970-03-12 │ 1970-01-08 │ original │
+└────────────┴────────────┴──────────┘
+```
+
+Field `d1` doesn’t fill and use default value cause we don’t have repeated values for `d2` value, and sequence for `d1` can’t be properly calculated.
+
+The following query with a changed field in `ORDER BY`
+
+``` sql
+SELECT
+    toDate((number * 10) * 86400) AS d1,
+    toDate(number * 86400) AS d2,
+    'original' AS source
+FROM numbers(10)
+WHERE (number % 3) = 1
+ORDER BY
+    d1 WITH FILL STEP 5,
+    d2 WITH FILL;
+```
+
+returns
+
+``` text
+┌───d1───────┬───d2───────┬─source───┐
+│ 1970-01-11 │ 1970-01-02 │ original │
+│ 1970-01-16 │ 1970-01-01 │          │
+│ 1970-01-21 │ 1970-01-01 │          │
+│ 1970-01-26 │ 1970-01-01 │          │
+│ 1970-01-31 │ 1970-01-01 │          │
+│ 1970-02-05 │ 1970-01-01 │          │
+│ 1970-02-10 │ 1970-01-05 │ original │
+│ 1970-02-15 │ 1970-01-01 │          │
+│ 1970-02-20 │ 1970-01-01 │          │
+│ 1970-02-25 │ 1970-01-01 │          │
+│ 1970-03-02 │ 1970-01-01 │          │
+│ 1970-03-07 │ 1970-01-01 │          │
+│ 1970-03-12 │ 1970-01-08 │ original │
+└────────────┴────────────┴──────────┘
+```

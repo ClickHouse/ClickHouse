@@ -1,4 +1,4 @@
-# system.asynchronous\_metrics {#system_tables-asynchronous_metrics}
+# system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
 Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
 
@@ -31,6 +31,8 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 **See Also**
 
 -   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
--   [system.metrics](metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
--   [system.events](events.md#system_tables-events) — Contains a number of events that have occurred.
--   [system.metric\_log](metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
+-   [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that have occurred.
+-   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+
+ [Original article](https://clickhouse.tech/docs/en/operations/system_tables/asynchronous_metrics) <!--hide-->

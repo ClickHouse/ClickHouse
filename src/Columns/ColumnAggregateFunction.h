@@ -119,7 +119,7 @@ public:
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
-    MutableColumnPtr predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const;
+    MutableColumnPtr predictValues(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, const Context & context) const;
 
     size_t size() const override
     {
@@ -158,6 +158,8 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
     void updateWeakHash32(WeakHash32 & hash) const override;
+
+    void updateHashFast(SipHash & hash) const override;
 
     size_t byteSize() const override;
 

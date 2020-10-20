@@ -18,7 +18,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/NullBlockInputStream.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -34,6 +33,8 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
+
+#include <cassert>
 
 
 namespace DB
@@ -161,11 +162,12 @@ public:
         , lock(storage.rwlock)
         , data_out_file(storage.table_path + "data.bin")
         , data_out_compressed(storage.disk->writeFile(data_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
-        , data_out(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size)
+        , data_out(std::make_unique<CompressedWriteBuffer>(
+            *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size))
         , index_out_file(storage.table_path + "index.mrk")
         , index_out_compressed(storage.disk->writeFile(index_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
-        , index_out(*index_out_compressed)
-        , block_out(data_out, 0, metadata_snapshot->getSampleBlock(), false, &index_out, storage.disk->getFileSize(data_out_file))
+        , index_out(std::make_unique<CompressedWriteBuffer>(*index_out_compressed))
+        , block_out(*data_out, 0, metadata_snapshot->getSampleBlock(), false, index_out.get(), storage.disk->getFileSize(data_out_file))
     {
     }
 
@@ -173,7 +175,16 @@ public:
     {
         try
         {
-            writeSuffix();
+            if (!done)
+            {
+                /// Rollback partial writes.
+                data_out.reset();
+                data_out_compressed.reset();
+                index_out.reset();
+                index_out_compressed.reset();
+
+                storage.file_checker.repair();
+            }
         }
         catch (...)
         {
@@ -194,13 +205,16 @@ public:
             return;
 
         block_out.writeSuffix();
-        data_out.next();
+        data_out->next();
         data_out_compressed->next();
-        index_out.next();
+        data_out_compressed->finalize();
+        index_out->next();
         index_out_compressed->next();
+        index_out_compressed->finalize();
 
         storage.file_checker.update(data_out_file);
         storage.file_checker.update(index_out_file);
+        storage.file_checker.save();
 
         done = true;
     }
@@ -212,10 +226,10 @@ private:
 
     String data_out_file;
     std::unique_ptr<WriteBuffer> data_out_compressed;
-    CompressedWriteBuffer data_out;
+    std::unique_ptr<CompressedWriteBuffer> data_out;
     String index_out_file;
     std::unique_ptr<WriteBuffer> index_out_compressed;
-    CompressedWriteBuffer index_out;
+    std::unique_ptr<CompressedWriteBuffer> index_out;
     NativeBlockOutputStream block_out;
 
     bool done = false;
@@ -249,23 +263,40 @@ StorageStripeLog::StorageStripeLog(
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);
+
+        file_checker.setEmpty(table_path + "data.bin");
+        file_checker.setEmpty(table_path + "index.mrk");
+    }
+    else
+    {
+        try
+        {
+            file_checker.repair();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 }
 
 
 void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    assert(table_path != new_path_to_table_data);
+    {
+        std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    disk->moveDirectory(table_path, new_path_to_table_data);
+        disk->moveDirectory(table_path, new_path_to_table_data);
 
-    table_path = new_path_to_table_data;
-    file_checker.setPath(table_path + "sizes.json");
+        table_path = new_path_to_table_data;
+        file_checker.setPath(table_path + "sizes.json");
+    }
     renameInMemory(new_table_id);
 }
 
 
-Pipes StorageStripeLog::read(
+Pipe StorageStripeLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -285,8 +316,7 @@ Pipes StorageStripeLog::read(
     String index_file = table_path + "index.mrk";
     if (!disk->exists(index_file))
     {
-        pipes.emplace_back(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
-        return pipes;
+        return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
     }
 
     CompressedReadBufferFromFile index_in(disk->readFile(index_file, INDEX_BUFFER_SIZE));
@@ -310,7 +340,7 @@ Pipes StorageStripeLog::read(
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

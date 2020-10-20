@@ -17,6 +17,8 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+namespace
+{
 
 /* Generate string with a UTF-8 encoded text.
  * Take a single argument - length of result string in Unicode code points.
@@ -47,7 +49,7 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         auto col_to = ColumnString::create();
         ColumnString::Chars & data_to = col_to->getChars();
@@ -55,13 +57,13 @@ public:
 
         if (input_rows_count == 0)
         {
-            block.getByPosition(result).column = std::move(col_to);
+            columns[result].column = std::move(col_to);
             return;
         }
 
         offsets_to.resize(input_rows_count);
 
-        const IColumn & length_column = *block.getByPosition(arguments[0]).column;
+        const IColumn & length_column = *columns[arguments[0]].column;
         size_t summary_utf8_len = 0;
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
@@ -137,9 +139,11 @@ public:
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             pos[offsets_to[row_num] - 1] = 0;
 
-        block.getByPosition(result).column = std::move(col_to);
+        columns[result].column = std::move(col_to);
     }
 };
+
+}
 
 void registerFunctionRandomStringUTF8(FunctionFactory & factory)
 {

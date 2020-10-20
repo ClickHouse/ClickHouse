@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -45,25 +46,25 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const auto in = block.getByPosition(arguments.front()).column.get();
+        const auto in = columns[arguments.front()].column.get();
 
-        if (   !execute<UInt8>(block, in, result)
-            && !execute<UInt16>(block, in, result)
-            && !execute<UInt32>(block, in, result)
-            && !execute<UInt64>(block, in, result)
-            && !execute<Int8>(block, in, result)
-            && !execute<Int16>(block, in, result)
-            && !execute<Int32>(block, in, result)
-            && !execute<Int64>(block, in, result)
-            && !execute<Float32>(block, in, result)
-            && !execute<Float64>(block, in, result))
+        if (   !execute<UInt8>(columns, in, result)
+            && !execute<UInt16>(columns, in, result)
+            && !execute<UInt32>(columns, in, result)
+            && !execute<UInt64>(columns, in, result)
+            && !execute<Int8>(columns, in, result)
+            && !execute<Int16>(columns, in, result)
+            && !execute<Int32>(columns, in, result)
+            && !execute<Int64>(columns, in, result)
+            && !execute<Float32>(columns, in, result)
+            && !execute<Float64>(columns, in, result))
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
     template <typename T>
-    bool execute(Block & block, const IColumn * in_untyped, const size_t result)
+    bool execute(ColumnsWithTypeAndName & columns, const IColumn * in_untyped, const size_t result) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {
@@ -77,7 +78,7 @@ public:
             for (const auto i : ext::range(0, size))
                 out_data[i] = Impl::execute(in_data[i]);
 
-            block.getByPosition(result).column = std::move(out);
+            columns[result].column = std::move(out);
             return true;
         }
 

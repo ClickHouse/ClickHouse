@@ -36,6 +36,7 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     void drop() override;
+    void dropInnerTable(bool no_delay);
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
@@ -51,7 +52,9 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
-    void alterPartition(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context) override;
+    Pipe alterPartition(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context) override;
+
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
@@ -69,7 +72,7 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,

@@ -52,7 +52,7 @@
 -   [Distributed](special/distributed.md#distributed)
 -   [MaterializedView](special/materializedview.md#materializedview)
 -   [Dictionary](special/dictionary.md#dictionary)
--   [Merge](special/merge.md#merge
+-   [Merge](special/merge.md#merge)
 -   [File](special/file.md#file)
 -   [Null](special/null.md#null)
 -   [Set](special/set.md#set)

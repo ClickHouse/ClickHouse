@@ -1,5 +1,6 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(clickhouse_parsers .)
+add_headers_and_sources(clickhouse_parsers ./MySQL)
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})
 target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io)
 

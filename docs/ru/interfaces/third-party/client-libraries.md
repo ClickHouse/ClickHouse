@@ -4,7 +4,7 @@
     Яндекс не поддерживает перечисленные ниже библиотеки и не проводит тщательного тестирования для проверки их качества.
 
 -   Python:
-    -   [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
     -   [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
     -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
@@ -39,7 +39,8 @@
     -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
--   C\#
+-   C#
+    -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)

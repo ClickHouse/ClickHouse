@@ -1,0 +1,16 @@
+SELECT
+    k,
+    groupArrayMovingSum(v)
+FROM 
+(
+    SELECT
+        k,
+        dt,
+        v
+    FROM moving_sum_num
+    ORDER BY
+        k ASC,
+        dt ASC
+)
+GROUP BY k
+ORDER BY k ASC

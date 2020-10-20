@@ -6,7 +6,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -15,12 +14,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
 
 // geohashDecode(string) => (lon float64, lat float64)
 class FunctionGeohashDecode : public IFunction
@@ -47,7 +47,7 @@ public:
     }
 
     template <typename ColumnTypeEncoded>
-    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column)
+    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column) const
     {
         const auto * encoded = checkAndGetColumn<ColumnTypeEncoded>(encoded_column);
         if (!encoded)
@@ -75,21 +75,22 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IColumn * encoded = block.getByPosition(arguments[0]).column.get();
-        ColumnPtr & res_column = block.getByPosition(result).column;
+        const IColumn * encoded = columns[arguments[0]].column.get();
+        ColumnPtr & res_column = columns[result].column;
 
         if (tryExecute<ColumnString>(encoded, res_column) ||
             tryExecute<ColumnFixedString>(encoded, res_column))
             return;
 
-        throw Exception("Unsupported argument type:" + block.getByPosition(arguments[0]).column->getName()
+        throw Exception("Unsupported argument type:" + columns[arguments[0]].column->getName()
                         + " of argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
+}
 
 void registerFunctionGeohashDecode(FunctionFactory & factory)
 {

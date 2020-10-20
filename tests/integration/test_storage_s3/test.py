@@ -1,14 +1,15 @@
+import gzip
 import json
 import logging
+import os
+import io
 import random
 import threading
-import os
-
-import pytest
-
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+import time
 
 import helpers.client
+import pytest
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -59,23 +60,22 @@ def prepare_s3_bucket(cluster):
     minio_client.make_bucket(cluster.minio_restricted_bucket)
 
 
+def put_s3_file_content(cluster, bucket, filename, data):
+    buf = io.BytesIO(data)
+    cluster.minio_client.put_object(bucket, filename, buf, len(data))
+
+
 # Returns content of given S3 file as string.
-def get_s3_file_content(cluster, bucket, filename):
+def get_s3_file_content(cluster, bucket, filename, decode=True):
     # type: (ClickHouseCluster, str) -> str
 
     data = cluster.minio_client.get_object(bucket, filename)
-    data_str = ""
+    data_str = b""
     for chunk in data.stream():
         data_str += chunk
+    if decode:
+        return data_str.decode()
     return data_str
-
-
-# Returns nginx access log lines.
-def get_nginx_access_logs():
-    handle = open("/nginx/access.log", "r")
-    data = handle.readlines()
-    handle.close()
-    return data
 
 
 @pytest.fixture(scope="module")
@@ -233,7 +233,7 @@ def test_multipart_put(cluster, maybe_auth, positive):
     one_line_length = 6  # 3 digits, 2 commas, 1 line separator.
 
     # Generate data having size more than one part
-    int_data = [[1, 2, 3] for i in range(csv_size_bytes / one_line_length)]
+    int_data = [[1, 2, 3] for i in range(csv_size_bytes // one_line_length)]
     csv_data = "".join(["{},{},{}\n".format(x, y, z) for x, y, z in int_data])
 
     assert len(csv_data) > min_part_size_bytes
@@ -250,10 +250,9 @@ def test_multipart_put(cluster, maybe_auth, positive):
     else:
         assert positive
 
-        # Use Nginx access logs to count number of parts uploaded to Minio.
-        nginx_logs = get_nginx_access_logs()
-        uploaded_parts = filter(lambda log_line: log_line.find(filename) >= 0 and log_line.find("PUT") >= 0, nginx_logs)
-        assert len(uploaded_parts) > 1
+        # Use proxy access logs to count number of parts uploaded to Minio.
+        proxy_logs = cluster.get_container_logs("proxy1")  # type: str
+        assert proxy_logs.count("PUT /{}/{}".format(bucket, filename)) >= 2
 
         assert csv_data == get_s3_file_content(cluster, bucket, filename)
 
@@ -301,7 +300,7 @@ def test_s3_glob_scheherazade(cluster):
                     cluster.minio_host, cluster.minio_port, bucket, path, table_format, values)
                 run_query(instance, query)
 
-        jobs.append(threading.Thread(target=add_tales, args=(night, min(night+nights_per_job, 1001))))
+        jobs.append(threading.Thread(target=add_tales, args=(night, min(night + nights_per_job, 1001))))
         jobs[-1].start()
 
     for job in jobs:
@@ -321,11 +320,11 @@ def run_s3_mock(cluster):
     logging.info("S3 mock started")
 
 
-# Test get values in CSV format with default settings.
-def test_get_csv_default(cluster):
-    ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'), ["curl", "-s", "http://resolver:8080"])
+def test_custom_auth_headers(cluster):
+    ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'),
+                                              ["curl", "-s", "http://resolver:8080"])
     assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
-    
+
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
     get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(
@@ -336,3 +335,135 @@ def test_get_csv_default(cluster):
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     result = run_query(instance, get_query)
     assert result == '1\t2\t3\n'
+
+
+def test_infinite_redirect(cluster):
+    bucket = "redirected"
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    filename = "test.csv"
+    get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(
+        bucket=bucket,
+        file=filename,
+        table_format=table_format)
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    exception_raised = False
+    try:
+        run_query(instance, get_query)
+    except Exception as e:
+        assert str(e).find("Too many redirects while trying to access") != -1
+        exception_raised = True
+    finally:
+        assert exception_raised
+
+
+def test_storage_s3_get_gzip(cluster):
+    bucket = cluster.minio_bucket
+    instance = cluster.instances["dummy"]
+    filename = "test_get_gzip.bin"
+    name = "test_get_gzip"
+    data = [
+        "Sophia Intrieri,55",
+        "Jack Taylor,71",
+        "Christopher Silva,66",
+        "Clifton Purser,35",
+        "Richard Aceuedo,43",
+        "Lisa Hensley,31",
+        "Alice Wehrley,1",
+        "Mary Farmer,47",
+        "Samara Ramirez,19",
+        "Shirley Lloyd,51",
+        "Santos Cowger,0",
+        "Richard Mundt,88",
+        "Jerry Gonzalez,15",
+        "Angela James,10",
+        "Norman Ortega,33",
+        ""
+    ]
+    buf = io.BytesIO()
+    compressed = gzip.GzipFile(fileobj=buf, mode="wb")
+    compressed.write(("\n".join(data)).encode())
+    compressed.close()
+    put_s3_file_content(cluster, bucket, filename, buf.getvalue())
+
+    try:
+        run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV', 'gzip')".format(
+            name, cluster.minio_host, cluster.minio_port, bucket, filename))
+
+        run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["565"]
+
+    finally:
+        run_query(instance, "DROP TABLE {}".format(name))
+
+
+def test_storage_s3_put_uncompressed(cluster):
+    bucket = cluster.minio_bucket
+    instance = cluster.instances["dummy"]
+    filename = "test_put_uncompressed.bin"
+    name = "test_put_uncompressed"
+    data = [
+        "'Gloria Thompson',99",
+        "'Matthew Tang',98",
+        "'Patsy Anderson',23",
+        "'Nancy Badillo',93",
+        "'Roy Hunt',5",
+        "'Adam Kirk',51",
+        "'Joshua Douds',28",
+        "'Jolene Ryan',0",
+        "'Roxanne Padilla',50",
+        "'Howard Roberts',41",
+        "'Ricardo Broughton',13",
+        "'Roland Speer',83",
+        "'Cathy Cohan',58",
+        "'Kathie Dawson',100",
+        "'Gregg Mcquistion',11",
+    ]
+    try:
+        run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV')".format(
+            name, cluster.minio_host, cluster.minio_port, bucket, filename))
+
+        run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
+
+        run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["753"]
+
+        uncompressed_content = get_s3_file_content(cluster, bucket, filename)
+        assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 753
+    finally:
+        run_query(instance, "DROP TABLE {}".format(name))
+
+
+def test_storage_s3_put_gzip(cluster):
+    bucket = cluster.minio_bucket
+    instance = cluster.instances["dummy"]
+    filename = "test_put_gzip.bin"
+    name = "test_put_gzip"
+    data = [
+        "'Joseph Tomlinson',5",
+        "'Earnest Essary',44",
+        "'Matha Pannell',24",
+        "'Michael Shavers',46",
+        "'Elias Groce',38",
+        "'Pamela Bramlet',50",
+        "'Lewis Harrell',49",
+        "'Tamara Fyall',58",
+        "'George Dixon',38",
+        "'Alice Walls',49",
+        "'Paula Mais',24",
+        "'Myrtle Pelt',93",
+        "'Sylvia Naffziger',18",
+        "'Amanda Cave',83",
+        "'Yolanda Joseph',89"
+    ]
+    try:
+        run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV', 'gzip')".format(
+            name, cluster.minio_host, cluster.minio_port, bucket, filename))
+
+        run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
+
+        run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["708"]
+
+        buf = io.BytesIO(get_s3_file_content(cluster, bucket, filename, decode=False))
+        f = gzip.GzipFile(fileobj=buf, mode="rb")
+        uncompressed_content = f.read().decode()
+        assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 708
+    finally:
+        run_query(instance, "DROP TABLE {}".format(name))

@@ -33,6 +33,11 @@ static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace
 {
     void tryAttachTable(
@@ -105,18 +110,19 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
+void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool /*force_attach*/)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
       */
     using FileNames = std::map<std::string, ASTPtr>;
+    std::mutex file_names_mutex;
     FileNames file_names;
 
     size_t total_dictionaries = 0;
 
-    auto process_metadata = [&context, &file_names, &total_dictionaries, this](const String & file_name)
+    auto process_metadata = [&context, &file_names, &total_dictionaries, &file_names_mutex, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -128,6 +134,8 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
+                create_query->database = database_name;
+                std::lock_guard lock{file_names_mutex};
                 file_names[file_name] = ast;
                 total_dictionaries += create_query->is_dictionary;
             }
@@ -139,7 +147,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
         }
     };
 
-
     iterateMetadataFiles(context, process_metadata);
 
     size_t total_tables = file_names.size() - total_dictionaries;
@@ -150,7 +157,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
     std::atomic<size_t> tables_processed{0};
     std::atomic<size_t> dictionaries_processed{0};
 
-    ThreadPool pool(SettingMaxThreads().getAutoValue());
+    ThreadPool pool;
 
     /// Attach tables.
     for (const auto & name_with_query : file_names)
@@ -163,7 +170,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
                     context,
                     create_query,
                     *this,
-                    getDatabaseName(),
+                    database_name,
                     getMetadataPath() + name_with_query.first,
                     has_force_restore_data_flag);
 
@@ -232,8 +239,7 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
     String statement;
 
     {
-        char in_buf[METADATA_FILE_BUFFER_SIZE];
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
+        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE);
         readStringUntilEOF(statement, in);
     }
 
@@ -248,6 +254,12 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
+    bool has_structure = ast_create_query.columns_list && ast_create_query.columns_list->columns;
+    if (ast_create_query.as_table_function && !has_structure)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
+                                                     " and doesn't have structure in metadata", backQuote(table_name));
+
+    assert(has_structure);
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
     ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
@@ -265,18 +277,29 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
     if (ast_create_query.storage)
     {
         ASTStorage & storage_ast = *ast_create_query.storage;
-        /// ORDER BY may change, but cannot appear, it's required construction
-        if (metadata.sorting_key.definition_ast && storage_ast.order_by)
-            storage_ast.set(storage_ast.order_by, metadata.sorting_key.definition_ast);
 
-        if (metadata.primary_key.definition_ast)
-            storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
+        bool is_extended_storage_def
+            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
 
-        if (metadata.table_ttl.definition_ast)
-            storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
+        if (is_extended_storage_def)
+        {
+            if (metadata.sorting_key.definition_ast)
+                storage_ast.set(storage_ast.order_by, metadata.sorting_key.definition_ast);
 
-        if (metadata.settings_changes)
-            storage_ast.set(storage_ast.settings, metadata.settings_changes);
+            if (metadata.primary_key.definition_ast)
+                storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
+
+            if (metadata.sampling_key.definition_ast)
+                storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
+
+            if (metadata.table_ttl.definition_ast)
+                storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
+            else if (storage_ast.ttl_table != nullptr) /// TTL was removed
+                storage_ast.ttl_table = nullptr;
+
+            if (metadata.settings_changes)
+                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+        }
     }
 
     statement = getObjectDefinitionFromCreateQuery(ast);

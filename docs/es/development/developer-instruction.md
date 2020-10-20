@@ -9,7 +9,7 @@ La construcción de ClickHouse es compatible con Linux, FreeBSD y Mac OS X.
 
 # Si utiliza Windows {#if-you-use-windows}
 
-Si usa Windows, necesita crear una máquina virtual con Ubuntu. Para comenzar a trabajar con una máquina virtual, instale VirtualBox. Puede descargar Ubuntu desde el sitio web: https://www.ubuntu.com/\#download. Por favor, cree una máquina virtual a partir de la imagen descargada (debe reservar al menos 4 GB de RAM para ello). Para ejecutar un terminal de línea de comandos en Ubuntu, busque un programa que contenga la palabra “terminal” en su nombre (gnome-terminal, konsole etc.) o simplemente presione Ctrl + Alt + T.
+Si usa Windows, necesita crear una máquina virtual con Ubuntu. Para comenzar a trabajar con una máquina virtual, instale VirtualBox. Puede descargar Ubuntu desde el sitio web: https://www.ubuntu.com/#download. Por favor, cree una máquina virtual a partir de la imagen descargada (debe reservar al menos 4 GB de RAM para ello). Para ejecutar un terminal de línea de comandos en Ubuntu, busque un programa que contenga la palabra “terminal” en su nombre (gnome-terminal, konsole etc.) o simplemente presione Ctrl + Alt + T.
 
 # Si utiliza un sistema de 32 bits {#if-you-use-a-32-bit-system}
 
@@ -32,7 +32,7 @@ Para hacer eso en Ubuntu, ejecutaría en la terminal de línea de comandos:
     sudo apt update
     sudo apt install git
 
-Puede encontrar un breve manual sobre el uso de Git aquí: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf .
+Puede encontrar un breve manual sobre el uso de Git aquí: https://education.github.com/git-cheat-sheet-education.pdf .
 Para obtener un manual detallado sobre Git, consulte https://git-scm.com/book/en/v2 .
 
 # Clonación de un repositorio en su máquina de desarrollo {#cloning-a-repository-to-your-development-machine}
@@ -44,7 +44,7 @@ En el terminal de línea de comandos, ejecute:
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Nota: por favor, sustituye *your\_github\_username* con lo que es apropiado!
+Nota: por favor, sustituye *your_github_username* con lo que es apropiado!
 
 Este comando creará un directorio `ClickHouse` que contiene la copia de trabajo del proyecto.
 
@@ -154,7 +154,7 @@ Ahora que está listo para construir ClickHouse, le recomendamos que cree un dir
     mkdir build
     cd build
 
-Puede tener varios directorios diferentes (build\_release, build\_debug, etc.) para diferentes tipos de construcción.
+Puede tener varios directorios diferentes (build_release, build_debug, etc.) para diferentes tipos de construcción.
 
 Mientras que dentro de la `build` directorio, configure su compilación ejecutando CMake. Antes de la primera ejecución, debe definir variables de entorno que especifiquen el compilador (compilador gcc versión 9 en este ejemplo).
 
@@ -212,7 +212,7 @@ Para ejecutar el servidor bajo el usuario actual, debe navegar hasta `ClickHouse
 
 En este caso, ClickHouse usará archivos de configuración ubicados en el directorio actual. Puede ejecutar `clickhouse server` desde cualquier directorio que especifique la ruta a un archivo de configuración como un parámetro de línea de comandos `--config-file`.
 
-Para conectarse a ClickHouse con clickhouse-client en otro terminal, vaya a `ClickHouse/build/programs/` y ejecutar `clickhouse client`.
+Para conectarse a ClickHouse con clickhouse-client en otro terminal, vaya a `ClickHouse/build/programs/` y ejecutar `./clickhouse client`.
 
 Si usted consigue `Connection refused` mensaje en Mac OS X o FreeBSD, intente especificar la dirección de host 127.0.0.1:
 
@@ -249,7 +249,7 @@ La Guía de estilo de código: https://clickhouse.tech/docs/en/development/style
 
 Pruebas de escritura: https://clickhouse.tech/docs/en/development/tests/
 
-Lista de tareas: https://github.com/ClickHouse/ClickHouse/contribute
+Lista de tareas: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # Datos de prueba {#test-data}
 

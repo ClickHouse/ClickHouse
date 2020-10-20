@@ -13,14 +13,14 @@ class ASTRolesOrUsersSet;
 class ASTSettingsProfileElements;
 
 /** CREATE USER [IF NOT EXISTS | OR REPLACE] name
-  *     [NOT IDENTIFIED | IDENTIFIED [WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}]
+  *     [NOT IDENTIFIED | IDENTIFIED [WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash|ldap_server}] BY {'password'|'hash'|'server_name'}]
   *     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...]]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   *
   * ALTER USER [IF EXISTS] name
   *      [RENAME TO new_name]
-  *      [NOT IDENTIFIED | IDENTIFIED [WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}]
+  *      [NOT IDENTIFIED | IDENTIFIED [WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash|ldap_server}] BY {'password'|'hash'|'server_name'}]
   *      [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *      [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
   *      [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]

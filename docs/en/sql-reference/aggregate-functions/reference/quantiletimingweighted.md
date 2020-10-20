@@ -8,7 +8,7 @@ With the determined precision computes the [quantile](https://en.wikipedia.org/w
 
 The result is deterministic (it doesn’t depend on the query processing order). The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](quantiles.md#quantiles) function.
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
 
 **Syntax**
 
@@ -39,7 +39,7 @@ The calculation is accurate if:
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
 !!! note "Note"
-    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](quantile.md#quantile).
+    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
 
 **Returned value**
 
@@ -81,5 +81,5 @@ Result:
 
 **See Also**
 
--   [median](median.md#median)
--   [quantiles](quantiles.md#quantiles)
+-   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+-   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

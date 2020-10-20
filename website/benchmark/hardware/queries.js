@@ -149,31 +149,31 @@ var queries =
             "comment": "",
         },
         {
-            "query": "SELECT    URL,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT DontCountHits    AND NOT Refresh    AND notEmpty(URL) GROUP BY URL ORDER BY PageViews DESC LIMIT 10",
+            "query": "SELECT    URL,    count() AS PageViews FROM hits WHERE    CounterID = 62    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT DontCountHits    AND NOT Refresh    AND notEmpty(URL) GROUP BY URL ORDER BY PageViews DESC LIMIT 10",
             "comment": "",
         },
         {
-            "query": "SELECT    Title,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT DontCountHits    AND NOT Refresh    AND notEmpty(Title) GROUP BY Title ORDER BY PageViews DESC LIMIT 10",
+            "query": "SELECT    Title,    count() AS PageViews FROM hits WHERE    CounterID = 62    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT DontCountHits    AND NOT Refresh    AND notEmpty(Title) GROUP BY Title ORDER BY PageViews DESC LIMIT 10",
             "comment": "",
         },
         {
-            "query": "SELECT    URL,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND IsLink    AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000",
+            "query": "SELECT    URL,    count() AS PageViews FROM hits WHERE    CounterID = 62    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND IsLink    AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000",
             "comment": "",
         },
         {
-            "query": "SELECT    TraficSourceID,    SearchEngineID,    AdvEngineID,    ((SearchEngineID = 0 AND AdvEngineID = 0) ? Referer : '') AS Src,    URL AS Dst,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh GROUP BY    TraficSourceID,    SearchEngineID,    AdvEngineID,    Src,    Dst ORDER BY PageViews DESC LIMIT 1000",
+            "query": "SELECT    TraficSourceID,    SearchEngineID,    AdvEngineID,    ((SearchEngineID = 0 AND AdvEngineID = 0) ? Referer : '') AS Src,    URL AS Dst,    count() AS PageViews FROM hits WHERE    CounterID = 62    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh GROUP BY    TraficSourceID,    SearchEngineID,    AdvEngineID,    Src,    Dst ORDER BY PageViews DESC LIMIT 1000",
             "comment": "",
         },
         {
-            "query": "SELECT    URLHash,    EventDate,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND TraficSourceID IN (-1, 6)    AND RefererHash = halfMD5('http://yandex.ru/') GROUP BY    URLHash,    EventDate ORDER BY PageViews DESC LIMIT 100",
+            "query": "SELECT    URLHash,    EventDate,    count() AS PageViews FROM hits WHERE    CounterID = 62    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND TraficSourceID IN (-1, 6)    AND RefererHash = halfMD5('http://yandex.ru/') GROUP BY    URLHash,    EventDate ORDER BY PageViews DESC LIMIT 100",
             "comment": "",
         },
         {
-            "query": "SELECT    WindowClientWidth,    WindowClientHeight,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND NOT DontCountHits    AND URLHash = halfMD5('http://yandex.ru/') GROUP BY    WindowClientWidth,    WindowClientHeight ORDER BY PageViews DESC LIMIT 10000;",
+            "query": "SELECT    WindowClientWidth,    WindowClientHeight,    count() AS PageViews FROM hits WHERE    CounterID = 62    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND NOT DontCountHits    AND URLHash = halfMD5('http://yandex.ru/') GROUP BY    WindowClientWidth,    WindowClientHeight ORDER BY PageViews DESC LIMIT 10000;",
             "comment": "",
         },
         {
-            "query": "SELECT    toStartOfMinute(EventTime) AS Minute,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-02')    AND NOT Refresh    AND NOT DontCountHits GROUP BY    Minute ORDER BY Minute;",
+            "query": "SELECT    toStartOfMinute(EventTime) AS Minute,    count() AS PageViews FROM hits WHERE    CounterID = 62    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-02')    AND NOT Refresh    AND NOT DontCountHits GROUP BY    Minute ORDER BY Minute;",
             "comment": "",
         }
     ];

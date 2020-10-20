@@ -42,7 +42,7 @@ public:
 
     ~ConfigReloader();
 
-    /// Call this method to run the backround thread.
+    /// Call this method to run the background thread.
     void start();
 
     /// Reload immediately. For SYSTEM RELOAD CONFIG query.

@@ -19,11 +19,7 @@ class ASTRolesOrUsersSet;
 class ASTGrantQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    enum class Kind
-    {
-        GRANT,
-        REVOKE,
-    };
+    using Kind = AccessRightsElementWithOptions::Kind;
     Kind kind = Kind::GRANT;
     bool attach = false;
     AccessRightsElements access_rights_elements;
@@ -35,6 +31,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void replaceEmptyDatabaseWithCurrent(const String & current_database);
     void replaceCurrentUserTagWithName(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTGrantQuery>(clone()); }
 };

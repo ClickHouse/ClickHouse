@@ -3,7 +3,8 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <Core/Types.h>
+#include <vector>
+#include <common/types.h>
 
 namespace Poco::Util
 {

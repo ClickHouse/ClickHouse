@@ -18,7 +18,7 @@ public:
     ReadInOrderOptimizer(
         const ManyExpressionActions & elements_actions,
         const SortDescription & required_sort_description,
-        const SyntaxAnalyzerResultPtr & syntax_result);
+        const TreeRewriterResultPtr & syntax_result);
 
     InputOrderInfoPtr getInputOrder(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot) const;
 

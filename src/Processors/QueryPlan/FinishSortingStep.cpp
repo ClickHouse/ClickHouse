@@ -4,15 +4,24 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
 
-static ITransformingStep::DataStreamTraits getTraits()
+static ITransformingStep::Traits getTraits(size_t limit)
 {
-    return ITransformingStep::DataStreamTraits
+    return ITransformingStep::Traits
     {
-            .preserves_distinct_columns = true
+        {
+            .preserves_distinct_columns = true,
+            .returns_single_stream = true,
+            .preserves_number_of_streams = false,
+            .preserves_sorting = false,
+        },
+        {
+            .preserves_number_of_rows = limit == 0,
+        }
     };
 }
 
@@ -22,15 +31,24 @@ FinishSortingStep::FinishSortingStep(
     SortDescription result_description_,
     size_t max_block_size_,
     UInt64 limit_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
-    /// Streams are merged together, only global distinct keys remain distinct.
-    /// Note: we can not clear it if know that there will be only one stream in pipeline. Should we add info about it?
-    output_stream->local_distinct_columns.clear();
+    /// TODO: check input_stream is sorted by prefix_description.
+    output_stream->sort_description = result_description;
+    output_stream->sort_mode = DataStream::SortMode::Stream;
+}
+
+void FinishSortingStep::updateLimit(size_t limit_)
+{
+    if (limit_ && (limit == 0 || limit_ < limit))
+    {
+        limit = limit_;
+        transform_traits.preserves_number_of_rows = limit == 0;
+    }
 }
 
 void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
@@ -45,10 +63,8 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
                 prefix_description,
                 max_block_size, limit_for_merging);
 
-        pipeline.addPipe({ std::move(transform) });
+        pipeline.addTransform(std::move(transform));
     }
-
-    pipeline.enableQuotaForCurrentStreams();
 
     if (need_finish_sorting)
     {
@@ -67,6 +83,22 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
                 header, prefix_description, result_description, max_block_size, limit);
         });
     }
+}
+
+void FinishSortingStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+
+    settings.out << prefix << "Prefix sort description: ";
+    dumpSortDescription(prefix_description, input_streams.front().header, settings.out);
+    settings.out << '\n';
+
+    settings.out << prefix << "Result sort description: ";
+    dumpSortDescription(result_description, input_streams.front().header, settings.out);
+    settings.out << '\n';
+
+    if (limit)
+        settings.out << prefix << "Limit " << limit << '\n';
 }
 
 }

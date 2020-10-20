@@ -1,6 +1,4 @@
-<test>
-    
-
+<test max_ignored_relative_change="0.3">
     <create_query>
         CREATE TABLE jit_test (
             a UInt64,
@@ -43,7 +41,7 @@
         SETTINGS
             compile_expressions = 0;
     </query>
-    <query>
+    <query short="1">
         SELECT
             COUNT()
         FROM

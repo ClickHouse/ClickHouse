@@ -12,7 +12,7 @@ Syntaxe:
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
+[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -34,17 +34,13 @@ Autres types de jointure disponibles dans ClickHouse:
 
 -   `LEFT SEMI JOIN` et `RIGHT SEMI JOIN` une liste blanche sur “join keys”, sans produire un produit cartésien.
 -   `LEFT ANTI JOIN` et `RIGHT ANTI JOIN` une liste noire sur “join keys”, sans produire un produit cartésien.
+-   `LEFT ANY JOIN`, `RIGHT ANY JOIN` et `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
+-   `ASOF JOIN` et `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-## Rigueur {#select-join-strictness}
-
-Modifie la façon dont la correspondance par “join keys” est effectué
-
--   `ALL` — The standard `JOIN` comportement en SQL comme décrit ci-dessus. Défaut.
--   `ANY` — Partially (for opposite side of `LEFT` et `RIGHT`) ou complètement (pour `INNER` et `FULL`) désactive le produit cartésien de la norme `JOIN` type.
--   `ASOF` — For joining sequences with a non-exact match. `ASOF JOIN` l'utilisation est décrite ci-dessous.
+## Setting {#join-settings}
 
 !!! note "Note"
-    La valeur de rigueur par défaut peut être remplacée à l'aide [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) paramètre.
+    La valeur de rigueur par défaut peut être remplacée à l'aide [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) paramètre.
 
 ### ASOF joindre L'utilisation {#asof-join-usage}
 
@@ -105,7 +101,7 @@ Soyez prudent lorsque vous utilisez `GLOBAL`. Pour plus d'informations, voir le 
 
 ### Traitement des cellules vides ou nulles {#processing-of-empty-or-null-cells}
 
-Lors de la jonction de tables, les cellules vides peuvent apparaître. Paramètre [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) définir comment clickhouse remplit ces cellules.
+Lors de la jonction de tables, les cellules vides peuvent apparaître. Paramètre [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) définir comment clickhouse remplit ces cellules.
 
 Si l' `JOIN` les touches sont [Nullable](../../data-types/nullable.md) champs, les lignes où au moins une des clés a la valeur [NULL](../../../sql-reference/syntax.md#null-literal) ne sont pas jointes.
 
@@ -142,10 +138,10 @@ Par défaut, ClickHouse utilise [jointure de hachage](https://en.wikipedia.org/w
 
 Si vous devez restreindre la consommation de mémoire de l'opération join utilisez les paramètres suivants:
 
--   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
--   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
+-   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
+-   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
 
-Lorsque l'une de ces limites est atteinte, ClickHouse agit comme [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) réglage des instructions.
+Lorsque l'une de ces limites est atteinte, ClickHouse agit comme [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) réglage des instructions.
 
 ## Exemple {#examples}
 

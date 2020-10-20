@@ -35,9 +35,9 @@ Function:
 -   Provides the result deterministically (it doesn’t depend on the query processing order).
 
 !!! note "Note"
-    Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](uniqcombined64.md#agg_function-uniqcombined64)
+    Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
 
-Compared to the [uniq](uniq.md#agg_function-uniq) function, the `uniqCombined`:
+Compared to the [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function, the `uniqCombined`:
 
 -   Consumes several times less memory.
 -   Calculates with several times higher accuracy.
@@ -45,7 +45,7 @@ Compared to the [uniq](uniq.md#agg_function-uniq) function, the `uniqCombined`:
 
 **See Also**
 
--   [uniq](uniq.md#agg_function-uniq)
--   [uniqCombined64](uniqcombined64.md#agg_function-uniqcombined64)
--   [uniqHLL12](uniqhll12.md#agg_function-uniqhll12)
--   [uniqExact](uniqexact.md#agg_function-uniqexact)
+-   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
+-   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)

@@ -13,6 +13,10 @@ namespace DB
 {
 
 class Context;
+class QueryPlan;
+
+class QueryPipeline;
+using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
@@ -42,13 +46,16 @@ public:
     /// Only changed columns.
     const Block & getUpdatedHeader() const;
 
+    /// Latest mutation stage affects all columns in storage
+    bool isAffectingAllColumns() const;
+
 private:
     ASTPtr prepare(bool dry_run);
 
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-    BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
+    QueryPipelinePtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
 
@@ -86,8 +93,8 @@ private:
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
 
-        /// Contains columns that are changed by this stage,
-        /// columns changed by the previous stages and also columns needed by the next stages.
+        /// Contains columns that are changed by this stage, columns changed by
+        /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
         std::unique_ptr<ExpressionAnalyzer> analyzer;
@@ -97,6 +104,9 @@ private:
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
         Names filter_column_names;
+
+        /// Check that stage affects all storage columns
+        bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
     std::unique_ptr<Block> updated_header;

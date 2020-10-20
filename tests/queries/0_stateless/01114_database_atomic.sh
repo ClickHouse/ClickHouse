@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01114_1"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01114_2"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01114_3"
 
 
-$CLICKHOUSE_CLIENT --allow_experimental_database_atomic=1 -q "CREATE DATABASE test_01114_1 ENGINE=Atomic"
-$CLICKHOUSE_CLIENT --default_database_engine=Atomic --allow_experimental_database_atomic=1 -q "CREATE DATABASE test_01114_2"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE test_01114_1 ENGINE=Atomic"
+$CLICKHOUSE_CLIENT --default_database_engine=Atomic -q "CREATE DATABASE test_01114_2"
 $CLICKHOUSE_CLIENT --default_database_engine=Ordinary -q "CREATE DATABASE test_01114_3"
 
-$CLICKHOUSE_CLIENT -q "SHOW CREATE DATABASE test_01114_1"
-$CLICKHOUSE_CLIENT -q "SHOW CREATE DATABASE test_01114_2"
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=0 -q "SHOW CREATE DATABASE test_01114_1"
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=0 -q "SHOW CREATE DATABASE test_01114_2"
 $CLICKHOUSE_CLIENT -q "SHOW CREATE DATABASE test_01114_3"
-$CLICKHOUSE_CLIENT -q "SELECT name, engine, splitByChar('/', data_path)[-2], splitByChar('/', metadata_path)[-3], splitByChar('/', metadata_path)[-2] FROM system.databases WHERE name LIKE 'test_01114_%'"
+
+uuid_db_1=`$CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.databases WHERE name='test_01114_1'"`
+uuid_db_2=`$CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.databases WHERE name='test_01114_2'"`
+$CLICKHOUSE_CLIENT -q "SELECT name,
+                              engine,
+                              splitByChar('/', data_path)[-2],
+                              splitByChar('/', metadata_path)[-2] as uuid_path, ((splitByChar('/', metadata_path)[-3] as metadata) = substr(uuid_path, 1, 3)) OR metadata='metadata'
+                              FROM system.databases WHERE name LIKE 'test_01114_%'" | sed "s/$uuid_db_1/00001114-1000-4000-8000-000000000001/g" | sed "s/$uuid_db_2/00001114-1000-4000-8000-000000000002/g"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01114_1.mt_tmp (n UInt64) ENGINE=MergeTree() ORDER BY tuple()"
 $CLICKHOUSE_CLIENT -q "INSERT INTO test_01114_1.mt_tmp SELECT * FROM numbers(100)"
@@ -46,7 +53,7 @@ $CLICKHOUSE_CLIENT -q "EXCHANGE TABLES test_01114_1.mt AND test_01114_2.mt"
 
 # Check that nothing changed
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_01114_1.mt"
-uuid_mt1=`$CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database='test_01114_1' AND name='mt'"`
+uuid_mt1=$($CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database='test_01114_1' AND name='mt'")
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_1.mt" | sed "s/$uuid_mt1/00001114-0000-4000-8000-000000000001/g"
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_2.mt"
 

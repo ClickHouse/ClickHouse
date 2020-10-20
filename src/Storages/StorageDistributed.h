@@ -18,8 +18,8 @@ namespace DB
 struct Settings;
 class Context;
 
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -42,21 +42,6 @@ class StorageDistributed final : public ext::shared_ptr_helper<StorageDistribute
 public:
     ~StorageDistributed() override;
 
-    static StoragePtr createWithOwnCluster(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & remote_database_,       /// database on remote servers.
-        const String & remote_table_,          /// The name of the table on the remote servers.
-        ClusterPtr owned_cluster_,
-        const Context & context_);
-
-    static StoragePtr createWithOwnCluster(
-            const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        ASTPtr & remote_table_function_ptr_,     /// Table function ptr.
-        ClusterPtr & owned_cluster_,
-        const Context & context_);
-
     std::string getName() const override { return "Distributed"; }
 
     bool supportsSampling() const override { return true; }
@@ -66,11 +51,9 @@ public:
 
     bool isRemote() const override { return true; }
 
-    /// Return true if distributed_group_by_no_merge may be applied.
-    bool canForceGroupByNoMerge(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const;
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -78,6 +61,8 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    bool supportsParallelInsert() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
@@ -95,13 +80,14 @@ public:
 
     void startup() override;
     void shutdown() override;
+    void drop() override;
 
     Strings getDataPaths() const override;
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     size_t getShardCount() const;
-    std::pair<const std::string &, const std::string &> getPath();
+    const String & getRelativeDataPath() const { return relative_data_path; }
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
     std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
@@ -162,9 +148,10 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & storage_policy_,
+        const String & storage_policy_name_,
         const String & relative_data_path_,
-        bool attach_);
+        bool attach_,
+        ClusterPtr owned_cluster_ = {});
 
     StorageDistributed(
         const StorageID & id_,
@@ -174,16 +161,20 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & storage_policy_,
+        const String & storage_policy_name_,
         const String & relative_data_path_,
-        bool attach);
+        bool attach,
+        ClusterPtr owned_cluster_ = {});
 
-    void createStorage();
-
-    String storage_policy;
     String relative_data_path;
+
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
-    VolumeJBODPtr volume;
+    StoragePolicyPtr storage_policy;
+    /// The main volume to store data.
+    /// Storage policy may have several configured volumes, but second and other volumes are used for parts movement in MergeTree engine.
+    /// For Distributed engine such configuration doesn't make sense and only the first (main) volume will be used to store data.
+    /// Other volumes will be ignored. It's needed to allow using the same multi-volume policy both for Distributed and other engines.
+    VolumePtr data_volume;
 
     struct ClusterNodeData
     {

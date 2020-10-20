@@ -1,25 +1,27 @@
-import time
-import threading
 import random
+import threading
+import time
 from collections import Counter
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
-
 
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', macros={'cluster': 'test1'}, with_zookeeper=True)
 # Check, that limits on max part size for merges doesn`t affect mutations
-node2 = cluster.add_instance('node2', macros={'cluster': 'test1'}, main_configs=["configs/merge_tree.xml"], with_zookeeper=True)
+node2 = cluster.add_instance('node2', macros={'cluster': 'test1'}, main_configs=["configs/merge_tree.xml"],
+                             with_zookeeper=True)
 
-node3 = cluster.add_instance('node3', macros={'cluster': 'test2'}, main_configs=["configs/merge_tree_max_parts.xml"], with_zookeeper=True)
-node4 = cluster.add_instance('node4', macros={'cluster': 'test2'}, main_configs=["configs/merge_tree_max_parts.xml"], with_zookeeper=True)
+node3 = cluster.add_instance('node3', macros={'cluster': 'test2'}, main_configs=["configs/merge_tree_max_parts.xml"],
+                             with_zookeeper=True)
+node4 = cluster.add_instance('node4', macros={'cluster': 'test2'}, main_configs=["configs/merge_tree_max_parts.xml"],
+                             with_zookeeper=True)
 
 node5 = cluster.add_instance('node5', macros={'cluster': 'test3'}, main_configs=["configs/merge_tree_max_parts.xml"])
 
 all_nodes = [node1, node2, node3, node4, node5]
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -30,9 +32,11 @@ def started_cluster():
             node.query("DROP TABLE IF EXISTS test_mutations")
 
         for node in [node1, node2, node3, node4]:
-            node.query("CREATE TABLE test_mutations(d Date, x UInt32, i UInt32) ENGINE ReplicatedMergeTree('/clickhouse/{cluster}/tables/test/test_mutations', '{instance}') ORDER BY x PARTITION BY toYYYYMM(d)")
+            node.query(
+                "CREATE TABLE test_mutations(d Date, x UInt32, i UInt32) ENGINE ReplicatedMergeTree('/clickhouse/{cluster}/tables/test/test_mutations', '{instance}') ORDER BY x PARTITION BY toYYYYMM(d)")
 
-        node5.query("CREATE TABLE test_mutations(d Date, x UInt32, i UInt32) ENGINE MergeTree() ORDER BY x PARTITION BY toYYYYMM(d)")
+        node5.query(
+            "CREATE TABLE test_mutations(d Date, x UInt32, i UInt32) ENGINE MergeTree() ORDER BY x PARTITION BY toYYYYMM(d)")
 
         yield cluster
 
@@ -86,7 +90,7 @@ class Runner:
                 i += 1
 
             try:
-                print 'thread {}: insert for {}: {}'.format(thread_num, date_str, ','.join(str(x) for x in xs))
+                print('thread {}: insert for {}: {}'.format(thread_num, date_str, ','.join(str(x) for x in xs)))
                 random.choice(self.nodes).query("INSERT INTO test_mutations FORMAT TSV", payload)
 
                 with self.mtx:
@@ -95,8 +99,8 @@ class Runner:
                     self.total_inserted_xs += sum(xs)
                     self.total_inserted_rows += len(xs)
 
-            except Exception, e:
-                print 'Exception while inserting,', e
+            except Exception as e:
+                print('Exception while inserting,', e)
                 self.exceptions.append(e)
             finally:
                 with self.mtx:
@@ -124,7 +128,7 @@ class Runner:
                 continue
 
             try:
-                print 'thread {}: delete {} * {}'.format(thread_num, to_delete_count, x)
+                print('thread {}: delete {} * {}'.format(thread_num, to_delete_count, x))
                 random.choice(self.nodes).query("ALTER TABLE test_mutations DELETE WHERE x = {}".format(x))
 
                 with self.mtx:
@@ -133,8 +137,8 @@ class Runner:
                     self.total_deleted_xs += to_delete_count * x
                     self.total_deleted_rows += to_delete_count
 
-            except Exception, e:
-                print 'Exception while deleting,', e
+            except Exception as e:
+                print('Exception while deleting,', e)
             finally:
                 with self.mtx:
                     self.currently_deleting_xs.remove(x)
@@ -182,9 +186,10 @@ def test_mutations(started_cluster):
 
     all_done = wait_for_mutations(nodes, runner.total_mutations)
 
-    print "Total mutations: ", runner.total_mutations
+    print("Total mutations: ", runner.total_mutations)
     for node in nodes:
-        print node.query("SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations' FORMAT TSVWithNames")
+        print(node.query(
+            "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations' FORMAT TSVWithNames"))
     assert all_done
 
     expected_sum = runner.total_inserted_xs - runner.total_deleted_xs
@@ -195,10 +200,10 @@ def test_mutations(started_cluster):
 
 
 @pytest.mark.parametrize(
-    ('nodes', ),
+    ('nodes',),
     [
-        ([node5, ], ),          # MergeTree
-        ([node3, node4], ),     # ReplicatedMergeTree
+        ([node5, ],),  # MergeTree
+        ([node3, node4],),  # ReplicatedMergeTree
     ]
 )
 def test_mutations_dont_prevent_merges(started_cluster, nodes):
@@ -228,8 +233,10 @@ def test_mutations_dont_prevent_merges(started_cluster, nodes):
         t.join()
 
     for node in nodes:
-        print node.query("SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations' FORMAT TSVWithNames")
-        print node.query("SELECT partition, count(name), sum(active), sum(active*rows) FROM system.parts WHERE table ='test_mutations' GROUP BY partition FORMAT TSVWithNames")
+        print(node.query(
+            "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations' FORMAT TSVWithNames"))
+        print(node.query(
+            "SELECT partition, count(name), sum(active), sum(active*rows) FROM system.parts WHERE table ='test_mutations' GROUP BY partition FORMAT TSVWithNames"))
 
     assert all_done
     assert all([str(e).find("Too many parts") < 0 for e in runner.exceptions])

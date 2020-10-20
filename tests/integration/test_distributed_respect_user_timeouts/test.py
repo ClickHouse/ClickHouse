@@ -1,12 +1,11 @@
 import itertools
+import os.path
 import timeit
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
-
 
 cluster = ClickHouseCluster(__file__)
 
@@ -62,6 +61,7 @@ TIMEOUT_DIFF_UPPER_BOUND = {
     },
 }
 
+
 def _check_exception(exception, expected_tries=3):
     lines = exception.split('\n')
 
@@ -88,15 +88,22 @@ def _check_exception(exception, expected_tries=3):
 
 @pytest.fixture(scope="module", params=["configs", "configs_secure"])
 def started_cluster(request):
-
     cluster = ClickHouseCluster(__file__)
     cluster.__with_ssl_config = request.param == "configs_secure"
+    main_configs = []
+    main_configs += [os.path.join(request.param, "config.d/remote_servers.xml")]
+    if cluster.__with_ssl_config:
+        main_configs += [os.path.join(request.param, "server.crt")]
+        main_configs += [os.path.join(request.param, "server.key")]
+        main_configs += [os.path.join(request.param, "dhparam.pem")]
+        main_configs += [os.path.join(request.param, "config.d/ssl_conf.xml")]
+    user_configs = [os.path.join(request.param, "users.d/set_distributed_defaults.xml")]
     for name in NODES:
-        NODES[name] = cluster.add_instance(name, config_dir=request.param)
+        NODES[name] = cluster.add_instance(name, main_configs=main_configs, user_configs=user_configs)
     try:
         cluster.start()
 
-        for node_id, node in NODES.items():
+        for node_id, node in list(NODES.items()):
             node.query(CREATE_TABLES_SQL)
             node.query(INSERT_SQL_TEMPLATE.format(node_id=node_id))
 
@@ -148,7 +155,7 @@ def test_reconnect(started_cluster, node_name, first_user, query_base):
 
     with PartitionManager() as pm:
         # Break the connection.
-        pm.partition_instances(*NODES.values())
+        pm.partition_instances(*list(NODES.values()))
 
         # Now it shouldn't:
         _check_timeout_and_exception(node, first_user, query_base, query)

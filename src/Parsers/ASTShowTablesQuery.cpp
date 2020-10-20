@@ -13,24 +13,41 @@ ASTPtr ASTShowTablesQuery::clone() const
     return res;
 }
 
+void ASTShowTablesQuery::formatLike(const FormatSettings & settings) const
+{
+    if (!like.empty())
+        settings.ostr
+            << (settings.hilite ? hilite_keyword : "")
+            << (not_like ? " NOT" : "")
+            << (case_insensitive_like ? " ILIKE " : " LIKE ")
+            << (settings.hilite ? hilite_none : "")
+            << std::quoted(like, '\'');
+}
+
+void ASTShowTablesQuery::formatLimit(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (limit_length)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
+        limit_length->formatImpl(settings, state, frame);
+    }
+}
+
 void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (databases)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW DATABASES" << (settings.hilite ? hilite_none : "");
+        formatLike(settings);
+        formatLimit(settings, state, frame);
+
     }
     else if (clusters)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTERS" << (settings.hilite ? hilite_none : "");
-        if (!like.empty())
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << (not_like ? " NOT" : "") << " LIKE " << (settings.hilite ? hilite_none : "")
-                << std::quoted(like, '\'');
+        formatLike(settings);
+        formatLimit(settings, state, frame);
 
-        if (limit_length)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
-            limit_length->formatImpl(settings, state, frame);
-        }
     }
     else if (cluster)
     {
@@ -46,20 +63,15 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
                 << backQuoteIfNeed(from);
 
-        if (!like.empty())
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << (not_like ? " NOT" : "") << " LIKE " << (settings.hilite ? hilite_none : "")
-                << std::quoted(like, '\'');
-        else if (where_expression)
+        formatLike(settings);
+
+        if (where_expression)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
             where_expression->formatImpl(settings, state, frame);
         }
 
-        if (limit_length)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
-            limit_length->formatImpl(settings, state, frame);
-        }
+        formatLimit(settings, state, frame);
     }
 }
 

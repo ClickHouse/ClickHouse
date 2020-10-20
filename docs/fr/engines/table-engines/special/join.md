@@ -23,7 +23,7 @@ Voir la description détaillée de la [CREATE TABLE](../../../sql-reference/stat
 
 **Les Paramètres Du Moteur**
 
--   `join_strictness` – [ADHÉRER à la rigueur](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [ADHÉRER à la rigueur](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [Type de jointure](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` la clause que l' `JOIN` l'opération est faite avec de la.
 
@@ -92,15 +92,15 @@ Vous ne pouvez pas effectuer un `SELECT` requête directement à partir de la ta
 
 Lors de la création d'un tableau, les paramètres suivants sont appliqués:
 
--   [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls)
--   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
--   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
--   [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
--   [join\_any\_take\_last\_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+-   [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+-   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
+-   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
+-   [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
+-   [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
 
 Le `Join`- les tables de moteur ne peuvent pas être utilisées dans `GLOBAL JOIN` opérations.
 
-Le `Join`-moteur permet d'utiliser [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) réglage de la `CREATE TABLE` déclaration. Et [SELECT](../../../sql-reference/statements/select/index.md) requête permet d'utiliser `join_use_nulls` trop. Si vous avez différents `join_use_nulls` paramètres, vous pouvez obtenir une table de jointure d'erreur. Il dépend de type de JOINTURE. Lorsque vous utilisez [joinGet](../../../sql-reference/functions/other-functions.md#joinget) fonction, vous devez utiliser le même `join_use_nulls` réglage en `CRATE TABLE` et `SELECT` déclaration.
+Le `Join`-moteur permet d'utiliser [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) réglage de la `CREATE TABLE` déclaration. Et [SELECT](../../../sql-reference/statements/select/index.md) requête permet d'utiliser `join_use_nulls` trop. Si vous avez différents `join_use_nulls` paramètres, vous pouvez obtenir une table de jointure d'erreur. Il dépend de type de JOINTURE. Lorsque vous utilisez [joinGet](../../../sql-reference/functions/other-functions.md#joinget) fonction, vous devez utiliser le même `join_use_nulls` réglage en `CRATE TABLE` et `SELECT` déclaration.
 
 ## Le Stockage De Données {#data-storage}
 

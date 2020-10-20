@@ -38,12 +38,12 @@
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 Перегружает все словари, которые были успешно загружены до этого.
-По умолчанию включена ленивая загрузка [dictionaries\_lazy\_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load), поэтому словари не загружаются автоматически при старте, а только при первом обращении через dictGet или SELECT к ENGINE=Dictionary. После этого такие словари (LOADED) будут перегружаться командой `system reload dictionaries`.
+По умолчанию включена ленивая загрузка [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load), поэтому словари не загружаются автоматически при старте, а только при первом обращении через dictGet или SELECT к ENGINE=Dictionary. После этого такие словари (LOADED) будут перегружаться командой `system reload dictionaries`.
 Всегда возвращает `Ok.`, вне зависимости от результата обновления словарей.
 
-## RELOAD DICTIONARY Dictionary\_name {#query_language-system-reload-dictionary}
+## RELOAD DICTIONARY Dictionary_name {#query_language-system-reload-dictionary}
 
-Полностью перегружает словарь `dictionary_name`, вне зависимости от состояния словаря (LOADED/NOT\_LOADED/FAILED).
+Полностью перегружает словарь `dictionary_name`, вне зависимости от состояния словаря (LOADED/NOT_LOADED/FAILED).
 Всегда возвращает `Ok.`, вне зависимости от результата обновления словаря.
 Состояние словаря можно проверить запросом к `system.dictionaries`.
 
@@ -55,7 +55,7 @@ SELECT name, status FROM system.dictionaries;
 
 Сбрасывает внутренний DNS кеш ClickHouse. Иногда (для старых версий ClickHouse) необходимо использовать эту команду при изменении инфраструктуры (смене IP адреса у другого ClickHouse сервера или сервера, используемого словарями).
 
-Для более удобного (автоматического) управления кешем см. параметры disable\_internal\_dns\_cache, dns\_cache\_update\_period.
+Для более удобного (автоматического) управления кешем см. параметры disable_internal_dns_cache, dns_cache_update_period.
 
 ## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
@@ -73,7 +73,7 @@ SELECT name, status FROM system.dictionaries;
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
-Записывает буферы логов в системные таблицы (например system.query\_log). Позволяет не ждать 7.5 секунд при отладке.
+Записывает буферы логов в системные таблицы (например system.query_log). Позволяет не ждать 7.5 секунд при отладке.
 Если буфер логов пустой, то этот запрос просто создаст системные таблицы.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
@@ -90,7 +90,7 @@ SELECT name, status FROM system.dictionaries;
 
 ## Управление распределёнными таблицами {#query-language-system-distributed}
 
-ClickHouse может оперировать [распределёнными](../../sql-reference/statements/system.md) таблицами. Когда пользователь вставляет данные в эти таблицы, ClickHouse сначала формирует очередь из данных, которые должны быть отправлены на узлы кластера, а затем асинхронно отправляет подготовленные данные. Вы можете управлять очередью с помощью запросов [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) и [FLUSH DISTRIBUTED](#query_language-system-flush-distributed). Также есть возможность синхронно вставлять распределенные данные с помощью настройки `insert_distributed_sync`.
+ClickHouse может оперировать [распределёнными](../../sql-reference/statements/system.md) таблицами. Когда пользователь вставляет данные в эти таблицы, ClickHouse сначала формирует очередь из данных, которые должны быть отправлены на узлы кластера, а затем асинхронно отправляет подготовленные данные. Вы можете управлять очередью с помощью запросов [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) и [FLUSH DISTRIBUTED](#query_language-system-flush-distributed). Также есть возможность синхронно вставлять распределенные данные с помощью настройки [insert_distributed_sync](../../operations/settings/settings.md#insert_distributed_sync).
 
 ### STOP DISTRIBUTED SENDS {#query_language-system-stop-distributed-sends}
 
@@ -235,14 +235,10 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 Инициализация очереди репликации на основе данных ZooKeeper, происходит так же как при attach table. На короткое время таблица станет недоступной для любых операций.
 
 ``` sql
-SYSTEM RESTART QUEUES [db.]replicated_merge_tree_family_table_name
+SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 Реинициализация состояния Zookeeper сессий для всех `ReplicatedMergeTree` таблиц, сравнивает текущее состояние с тем что хранится в Zookeeper как источник правды и добавляет задачи Zookeeper очередь если необходимо
-
-``` sql
-SYSTEM RESTART QUEUES [db.]replicated_merge_tree_family_table_name
-```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/system/) <!--hide-->

@@ -15,14 +15,12 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/createBlockSelector.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
-#include <Common/ClickHouseRevision.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
@@ -562,7 +560,9 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
 
-    const auto & [disk, data_path] = storage.getPath();
+    auto reservation = storage.getStoragePolicy()->reserve(block.bytes());
+    auto disk = reservation->getDisk()->getPath();
+    auto data_path = storage.getRelativeDataPath();
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
@@ -582,16 +582,16 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         {
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out};
-            NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
+            NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
             /// We wrap the header into a string for compatibility with older versions:
             /// a shard will able to read the header partly and ignore other parts based on its version.
             WriteBufferFromOwnString header_buf;
-            writeVarUInt(ClickHouseRevision::get(), header_buf);
+            writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
             writeStringBinary(query_string, header_buf);
-            context.getSettingsRef().serialize(header_buf);
-            context.getClientInfo().write(header_buf, ClickHouseRevision::get());
+            context.getSettingsRef().write(header_buf);
+            context.getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);

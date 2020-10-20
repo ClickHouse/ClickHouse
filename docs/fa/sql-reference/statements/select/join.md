@@ -12,7 +12,7 @@ machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
+[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -34,15 +34,12 @@ FROM <left_table>
 
 -   `LEFT SEMI JOIN` و `RIGHT SEMI JOIN`, یک لیست سفید در “join keys”, بدون تولید محصول دکارتی.
 -   `LEFT ANTI JOIN` و `RIGHT ANTI JOIN`, لیست سیاه در “join keys”, بدون تولید محصول دکارتی.
+-   `LEFT ANY JOIN`, `RIGHT ANY JOIN` و `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
+-   `ASOF JOIN` و `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-## سختی {#select-join-strictness}
+## Setting {#join-settings}
 
 تغییر چگونگی تطبیق توسط “join keys” انجام شده است
-
--   `ALL` — The standard `JOIN` رفتار در گذاشتن همانطور که در بالا توضیح. به طور پیش فرض.
--   `ANY` — Partially (for opposite side of `LEFT` و `RIGHT`) یا به طور کامل (برای `INNER` و `FULL`) غیر فعال محصول دکارتی برای استاندارد `JOIN` انواع.
--   `ASOF` — For joining sequences with a non-exact match. `ASOF JOIN` استفاده در زیر توضیح داده شده است.
-
 !!! note "یادداشت"
     مقدار سختگیرانه پیش فرض را می توان با استفاده از لغو [بررسی اجمالی](../../../operations/settings/settings.md#settings-join_default_strictness) تنظیمات.
 
@@ -142,10 +139,10 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 اگر شما نیاز به محدود کردن پیوستن به مصرف حافظه عملیات استفاده از تنظیمات زیر:
 
--   [\_پاک کردن \_روشن گرافیک](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
--   [\_پویش همیشگی](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
+-   [_پاک کردن _روشن گرافیک](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
+-   [_پویش همیشگی](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
 
-هنگامی که هر یک از این محدودیت رسیده است, کلیک به عنوان عمل می کند [\_شروع مجدد](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) تنظیم دستور.
+هنگامی که هر یک از این محدودیت رسیده است, کلیک به عنوان عمل می کند [_شروع مجدد](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) تنظیم دستور.
 
 ## مثالها {#examples}
 

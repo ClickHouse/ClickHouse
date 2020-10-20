@@ -101,6 +101,12 @@ void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & 
 void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
 {
     fatal_error_callback = std::move(callback);
+
+    if (!thread_group)
+        return;
+
+    std::lock_guard lock(thread_group->mutex);
+    thread_group->fatal_error_callback = fatal_error_callback;
 }
 
 void ThreadStatus::onFatalError()

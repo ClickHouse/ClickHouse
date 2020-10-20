@@ -24,7 +24,7 @@ class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public ISt
 public:
     std::string getName() const override { return "File"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -59,6 +59,8 @@ public:
     };
 
     NamesAndTypesList getVirtuals() const override;
+
+    static Strings getPathsList(const String & table_path, const String & user_files_path, const Context & context);
 
 protected:
     friend class StorageFileSource;

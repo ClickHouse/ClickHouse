@@ -7,6 +7,86 @@ import os
 DB = 'gh-data'
 RETRIES = 5
 
+API_URL = 'https://api.github.com/repos/ClickHouse/ClickHouse/'
+
+
+def _reverse_dict_with_list(source):
+    result = {}
+    for key, value in list(source.items()):
+        for elem in value:
+            result[elem] = key
+    return result
+
+
+MARKER_TO_LABEL = {
+    '- New Feature': ['pr-feature'],
+    '- Bug Fix': ['pr-bugfix'],
+    '- Improvement': ['pr-improvement'],
+    '- Performance Improvement': ['pr-performance'],
+    '- Backward Incompatible Change': ['pr-backward-incompatible'],
+    '- Build/Testing/Packaging Improvement': ['pr-build'],
+    '- Documentation': ['pr-documentation', 'pr-doc-fix'],
+    '- Other': ['pr-other'],
+    '- Not for changelog': ['pr-not-for-changelog']
+}
+
+LABEL_TO_MARKER = _reverse_dict_with_list(MARKER_TO_LABEL)
+
+DOC_ALERT_LABELS = {
+    'pr-feature'
+}
+
+
+def set_labels_for_pr(pull_request_number, labels, headers):
+    data = {
+        "labels": list(labels)
+    }
+
+    for i in range(RETRIES):
+        try:
+            response = requests.put(API_URL + 'issues/' + str(pull_request_number) + '/labels', json=data, headers=headers)
+            response.raise_for_status()
+            break
+        except Exception as ex:
+            print(("Exception", ex))
+            time.sleep(0.2)
+
+
+def get_required_labels_from_desc(description, current_labels):
+    result = set([])
+    # find first matching category
+    for marker, labels in list(MARKER_TO_LABEL.items()):
+        if marker in description:
+            if not any(label in current_labels for label in labels):
+                result.add(labels[0])
+            break
+
+    # if no category than leave as is
+    if not result:
+        return current_labels
+
+    # save all old labels except category label
+    for label in current_labels:
+        if label not in result and label not in LABEL_TO_MARKER:
+            result.add(label)
+
+    # if some of labels require doc alert
+    if any(label in result for label in DOC_ALERT_LABELS):
+        result.add('doc-alert')
+
+    return result
+
+
+def label_pull_request_event(response):
+    pull_request = response['pull_request']
+    current_labels = set([label['name'] for label in pull_request['labels']])
+    pr_description = pull_request['body'] if pull_request['body'] else ''
+    required_labels = get_required_labels_from_desc(pr_description, current_labels)
+    if not required_labels.issubset(current_labels):
+        token = os.getenv('GITHUB_TOKEN')
+        auth = {'Authorization': 'token ' + token}
+        set_labels_for_pr(pull_request['number'], required_labels, auth)
+
 
 def process_issue_event(response):
     issue = response['issue']
@@ -169,6 +249,7 @@ def event_processor_dispatcher(headers, body, inserter):
         elif headers['X-Github-Event'] == 'pull_request':
             result = process_pull_request_event(body)
             inserter.insert_event_into(DB, 'pull_requests', result)
+            label_pull_request_event(body)
         elif headers['X-Github-Event'] == 'pull_request_review':
             result = process_pull_request_review(body)
             inserter.insert_event_into(DB, 'pull_requests', result)
@@ -201,9 +282,9 @@ class ClickHouseInserter(object):
                 response.raise_for_status()
                 break
             except Exception as ex:
-                print("Cannot insert with exception %s", str(ex))
+                print(("Cannot insert with exception %s", str(ex)))
                 if response:
-                    print("Reponse text %s", response.text)
+                    print(("Response text %s", response.text))
                 time.sleep(0.1)
         else:
             raise Exception("Cannot insert data into clickhouse")

@@ -17,7 +17,7 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
 }
 
 /// Writes 'tuple' word before tuple literals for backward compatibility reasons.
-/// TODO: remove, when versions lower than 20.3 will be rearely used.
+/// TODO: remove, when versions lower than 20.3 will be rarely used.
 class FieldVisitorToColumnName : public StaticVisitor<String>
 {
 public:

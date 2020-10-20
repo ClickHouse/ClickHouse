@@ -5,3 +5,5 @@ This table contains a single UInt64 column named `number` that contains almost a
 You can use this table for tests, or if you need to do a brute force search.
 
 Reads from this table are not parallelized.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/numbers) <!--hide-->

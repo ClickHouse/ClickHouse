@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 ADDINCL(
@@ -11,6 +12,8 @@ PEERDIR(
     contrib/libs/icu
     contrib/libs/pdqsort
 )
+
+CFLAGS(-g0)
 
 SRCS(
     Collator.cpp
@@ -29,6 +32,7 @@ SRCS(
     FilterDescription.cpp
     getLeastSuperColumn.cpp
     IColumn.cpp
+
 )
 
 END()

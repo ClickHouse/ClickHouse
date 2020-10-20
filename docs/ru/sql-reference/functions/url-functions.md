@@ -116,11 +116,11 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### pathFull {#pathfull}
 
-То же самое, но включая query string и fragment. Пример: /top/news.html?page=2\#comments
+То же самое, но включая query string и fragment. Пример: /top/news.html?page=2#comments
 
 ### queryString {#querystring}
 
-Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также \# и всё, что после \#.
+Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также # и всё, что после #.
 
 ### fragment {#fragment}
 
@@ -128,7 +128,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Возвращает query string и fragment identifier. Пример: страница=1\#29390.
+Возвращает query string и fragment identifier. Пример: страница=1#29390.
 
 ### extractURLParameter(URL, name) {#extracturlparameterurl-name}
 
@@ -172,6 +172,42 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘
+```
+
+### netloc {#netloc}
+
+Извлекает сетевую локальность (`username:password@host:port`) из URL.
+
+**Синтаксис**
+
+```sql
+netloc(URL)
+```
+
+**Параметры**
+
+-   `url` — URL. Тип — [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   `username:password@host:port`.
+
+Тип: `String`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT netloc('http://paul@www.example.com:80/');
+```
+
+Результат:
+
+``` text
+┌─netloc('http://paul@www.example.com:80/')─┐
+│ paul@www.example.com:80                   │
+└───────────────────────────────────────────┘
 ```
 
 ## Функции, удаляющие часть из URL-а {#funktsii-udaliaiushchie-chast-iz-url-a}

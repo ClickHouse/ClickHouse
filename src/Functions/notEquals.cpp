@@ -13,14 +13,14 @@ void registerFunctionNotEquals(FunctionFactory & factory)
 }
 
 template <>
-void FunctionComparison<NotEqualsOp, NameNotEquals>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+void FunctionComparison<NotEqualsOp, NameNotEquals>::executeTupleImpl(ColumnsWithTypeAndName & columns, size_t result, const ColumnsWithTypeAndName & x,
                                                                       const ColumnsWithTypeAndName & y, size_t tuple_size,
-                                                                      size_t input_rows_count)
+                                                                      size_t input_rows_count) const
 {
     return executeTupleEqualityImpl(
         FunctionFactory::instance().get("notEquals", context),
         FunctionFactory::instance().get("or", context),
-        block, result, x, y, tuple_size, input_rows_count);
+        columns, result, x, y, tuple_size, input_rows_count);
 }
 
 }

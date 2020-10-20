@@ -17,6 +17,8 @@ struct MergeTreeReaderSettings
 
 struct MergeTreeWriterSettings
 {
+    MergeTreeWriterSettings() = default;
+
     MergeTreeWriterSettings(const Settings & global_settings, bool can_use_adaptive_granularity_,
         size_t aio_threshold_, bool blocks_are_granules_size_ = false)
         : min_compress_block_size(global_settings.min_compress_block_size)
@@ -31,6 +33,7 @@ struct MergeTreeWriterSettings
     bool can_use_adaptive_granularity;
     bool blocks_are_granules_size;
 
+    /// true if we write temporary files during alter.
     size_t estimated_size = 0;
 };
 

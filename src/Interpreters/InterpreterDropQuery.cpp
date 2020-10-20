@@ -42,6 +42,9 @@ BlockIO InterpreterDropQuery::execute()
     if (!drop.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccessForDDLOnCluster());
 
+    if (context.getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
+        drop.no_delay = true;
+
     if (!drop.table.empty())
     {
         if (!drop.is_dictionary)
@@ -138,7 +141,21 @@ BlockIO InterpreterDropQuery::executeToTable(
         }
     }
 
-    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
+    table.reset();
+    ddl_guard = {};
+    if (query.no_delay)
+    {
+        if (query.kind == ASTDropQuery::Kind::Drop)
+            DatabaseCatalog::instance().waitTableFinallyDropped(table_id.uuid);
+        else if (query.kind == ASTDropQuery::Kind::Detach)
+        {
+            if (auto * atomic = typeid_cast<DatabaseAtomic *>(database.get()))
+                atomic->waitDetachedTableNotInUse(table_id.uuid);
+        }
+    }
+
+    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+    {
         auto * database_replicated = typeid_cast<DatabaseReplicated *>(database.get());
         return database_replicated->getFeedback();
     }
@@ -261,6 +278,9 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
                     executeToTable({query.database, query.table}, query);
                 }
             }
+
+            /// Protects from concurrent CREATE TABLE queries
+            auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
 
             auto * database_atomic = typeid_cast<DatabaseAtomic *>(database.get());
             if (!drop && database_atomic)

@@ -45,9 +45,17 @@ public:
         internal = internal_;
     }
 
-    /// Obtain information about columns, their types, default values and column comments, for case when columns in CREATE query is specified explicitly.
+    void setForceAttach(bool force_attach_)
+    {
+        force_attach = force_attach_;
+    }
+
+    /// Obtain information about columns, their types, default values and column comments,
+    ///  for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context, bool sanity_check_compression_codecs);
     static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
+
+    static void prepareOnClusterQuery(ASTCreateQuery & create, const Context & context, const String & cluster_name);
 
 private:
     struct TableProperties
@@ -72,6 +80,8 @@ private:
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 
+    void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
+
     ASTPtr query_ptr;
     Context & context;
 
@@ -79,5 +89,6 @@ private:
     bool has_force_restore_data_flag = false;
     /// Is this an internal query - not from the user.
     bool internal = false;
+    bool force_attach = false;
 };
 }

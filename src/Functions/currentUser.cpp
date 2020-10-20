@@ -7,6 +7,8 @@
 
 namespace DB
 {
+namespace
+{
 
 class FunctionCurrentUser : public IFunction
 {
@@ -39,12 +41,13 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, user_name);
+        columns[result].column = DataTypeString().createColumnConst(input_rows_count, user_name);
     }
 };
 
+}
 
 void registerFunctionCurrentUser(FunctionFactory & factory)
 {

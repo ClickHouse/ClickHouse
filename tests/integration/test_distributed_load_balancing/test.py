@@ -3,8 +3,8 @@
 # pylint: disable=line-too-long
 
 import uuid
-import pytest
 
+import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -14,10 +14,11 @@ n2 = cluster.add_instance('n2', main_configs=['configs/remote_servers.xml'])
 n3 = cluster.add_instance('n3', main_configs=['configs/remote_servers.xml'])
 
 nodes = len(cluster.instances)
-queries = nodes*5
+queries = nodes * 5
+
 
 def bootstrap():
-    for n in cluster.instances.values():
+    for n in list(cluster.instances.values()):
         # At startup, server loads configuration files.
         #
         # However ConfigReloader does not know about already loaded files
@@ -43,9 +44,25 @@ def bootstrap():
             currentDatabase(),
             data)
         """.format())
+        n.query("""
+        CREATE TABLE dist_priority AS data
+        Engine=Distributed(
+            replicas_priority_cluster,
+            currentDatabase(),
+            data)
+        """.format())
+        n.query("""
+        CREATE TABLE dist_priority_negative AS data
+        Engine=Distributed(
+            replicas_priority_negative_cluster,
+            currentDatabase(),
+            data)
+        """.format())
+
 
 def make_uuid():
     return uuid.uuid4().hex
+
 
 @pytest.fixture(scope='module', autouse=True)
 def start_cluster():
@@ -56,7 +73,8 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-def get_node(query_node, *args, **kwargs):
+
+def get_node(query_node, table='dist', *args, **kwargs):
     query_id = make_uuid()
 
     settings = {
@@ -70,9 +88,9 @@ def get_node(query_node, *args, **kwargs):
     else:
         kwargs['settings'].update(settings)
 
-    query_node.query('SELECT * FROM dist', *args, **kwargs)
+    query_node.query('SELECT * FROM ' + table, *args, **kwargs)
 
-    for n in cluster.instances.values():
+    for n in list(cluster.instances.values()):
         n.query('SYSTEM FLUSH LOGS')
 
     rows = query_node.query("""
@@ -92,12 +110,14 @@ def get_node(query_node, *args, **kwargs):
     """.format(query_id=query_id))
     return rows.strip()
 
+
 # TODO: right now random distribution looks bad, but works
 def test_load_balancing_default():
     unique_nodes = set()
     for _ in range(0, queries):
         unique_nodes.add(get_node(n1, settings={'load_balancing': 'random'}))
     assert len(unique_nodes) == nodes, unique_nodes
+
 
 def test_load_balancing_nearest_hostname():
     unique_nodes = set()
@@ -106,12 +126,14 @@ def test_load_balancing_nearest_hostname():
     assert len(unique_nodes) == 1, unique_nodes
     assert unique_nodes == set(['n1'])
 
+
 def test_load_balancing_in_order():
     unique_nodes = set()
     for _ in range(0, queries):
         unique_nodes.add(get_node(n1, settings={'load_balancing': 'in_order'}))
     assert len(unique_nodes) == 1, unique_nodes
     assert unique_nodes == set(['n1'])
+
 
 def test_load_balancing_first_or_random():
     unique_nodes = set()
@@ -120,13 +142,27 @@ def test_load_balancing_first_or_random():
     assert len(unique_nodes) == 1, unique_nodes
     assert unique_nodes == set(['n1'])
 
-# TODO: last_used will be reset on config reload, hence may fail
+
 def test_load_balancing_round_robin():
     unique_nodes = set()
     for _ in range(0, nodes):
         unique_nodes.add(get_node(n1, settings={'load_balancing': 'round_robin'}))
     assert len(unique_nodes) == nodes, unique_nodes
     assert unique_nodes == set(['n1', 'n2', 'n3'])
+
+
+@pytest.mark.parametrize('dist_table', [
+    ('dist_priority'),
+    ('dist_priority_negative'),
+])
+def test_load_balancing_priority_round_robin(dist_table):
+    unique_nodes = set()
+    for _ in range(0, nodes):
+        unique_nodes.add(get_node(n1, dist_table, settings={'load_balancing': 'round_robin'}))
+    assert len(unique_nodes) == 2, unique_nodes
+    # n2 has bigger priority in config
+    assert unique_nodes == set(['n1', 'n3'])
+
 
 def test_distributed_replica_max_ignored_errors():
     settings = {

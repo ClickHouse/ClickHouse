@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>
@@ -102,6 +102,8 @@ private:
     void drain();
     void cleanUnprocessed();
     void resetIfStopped();
+    /// Return number of messages with an error.
+    size_t filterMessageErrors();
 
     bool nextImpl() override;
 };

@@ -176,7 +176,7 @@ Ana ClickHouse kodu (bu `dbms` dizin) ile inşa edilmiştir `-Wall -Wextra -Werr
 
 Clang daha yararlı uyarılar vardır-Sen ile onları arayabilirsiniz `-Weverything` ve varsayılan oluşturmak için bir şey seçin.
 
-Üretim yapıları için gcc kullanılır (hala clang'dan biraz daha verimli kod üretir). Geliştirme için, clang genellikle kullanımı daha uygundur. Hata ayıklama modu ile kendi makinenizde inşa edebilirsiniz (dizüstü bilgisayarınızın pilinden tasarruf etmek için), ancak derleyicinin daha fazla uyarı üretebileceğini lütfen unutmayın `-O3` daha iyi kontrol akışı ve prosedürler arası analiz nedeniyle. Clang ile inşa ederken, `libc++` yerine kullanılır `libstdc++` ve hata ayıklama modu ile oluştururken, hata ayıklama sürümü `libc++` çalışma zamanında daha fazla hata yakalamak için izin verir kullanılır.
+Üretim yapıları için gcc kullanılır (hala clang'dan biraz daha verimli kod üretir). Geliştirme için, clang genellikle kullanımı daha uygundur. Hata ayıklama modu ile kendi makinenizde inşa edebilirsiniz (dizüstü bilgisayarınızın pilinden tasarruf etmek için), ancak derleyicinin daha fazla uyarı üretebileceğini lütfen unutmayın `-O3` daha iyi kontrol akışı ve prosedürler arası analiz nedeniyle. Clang ile inşa ederken ayıklama modu ile oluştururken, hata ayıklama sürümü `libc++` çalışma zamanında daha fazla hata yakalamak için izin verir kullanılır.
 
 ## Dezenfektanlar {#sanitizers}
 
@@ -203,7 +203,7 @@ Hata ayıklama sürümü `jemalloc` hata ayıklama oluşturmak için kullanılı
 ClickHouse fuzzing hem kullanılarak uygulanmaktadır [libFuzzer](https://llvm.org/docs/LibFuzzer.html) ve rastgele SQL sorguları.
 Tüm fuzz testleri sanitizers (Adres ve tanımsız) ile yapılmalıdır.
 
-LibFuzzer kütüphane kodu izole fuzz testi için kullanılır. Fuzzers test kodunun bir parçası olarak uygulanır ve “\_fuzzer” adı postfixes.
+LibFuzzer kütüphane kodu izole fuzz testi için kullanılır. Fuzzers test kodunun bir parçası olarak uygulanır ve “_fuzzer” adı postfixes.
 Fuzzer örneği bulunabilir `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer özgü yapılandırmalar, sözlükler ve corpus saklanır `tests/fuzz`.
 Kullanıcı girişini işleyen her işlevsellik için fuzz testleri yazmanızı öneririz.
 

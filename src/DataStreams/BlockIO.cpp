@@ -42,7 +42,7 @@ void BlockIO::reset()
     in.reset();
     if (process_list_entry)
         process_list_entry->get().releaseQueryStreams();
-    pipeline = QueryPipeline();
+    pipeline.reset();
     process_list_entry.reset();
 
     /// TODO Do we need also reset callbacks? In which order?

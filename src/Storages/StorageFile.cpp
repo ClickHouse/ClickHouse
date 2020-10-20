@@ -17,7 +17,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
-#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -52,6 +51,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace
@@ -126,11 +126,33 @@ void checkCreationIsAllowed(const Context & context_global, const std::string & 
 }
 }
 
+Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, const Context & context)
+{
+    String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
+    Poco::Path poco_path = Poco::Path(table_path);
+    if (poco_path.isRelative())
+        poco_path = Poco::Path(user_files_absolute_path, poco_path);
+
+    Strings paths;
+    const String path = poco_path.absolute().toString();
+    if (path.find_first_of("*?{") == std::string::npos)
+        paths.push_back(path);
+    else
+        paths = listFilesWithRegexpMatching("/", path);
+
+    for (const auto & cur_path : paths)
+        checkCreationIsAllowed(context, user_files_absolute_path, cur_path);
+
+    return paths;
+}
+
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
     if (args.context.getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
+    if (args.format_name == "Distributed")
+        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
     is_db_table = false;
     use_table_fd = true;
@@ -145,32 +167,22 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     : StorageFile(args)
 {
     is_db_table = false;
-    std::string user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
-    Poco::Path poco_path = Poco::Path(table_path_);
-    if (poco_path.isRelative())
-        poco_path = Poco::Path(user_files_absolute_path, poco_path);
-
-    const std::string path = poco_path.absolute().toString();
-    if (path.find_first_of("*?{") == std::string::npos)
-        paths.push_back(path);
-    else
-        paths = listFilesWithRegexpMatching("/", path);
-
-    for (const auto & cur_path : paths)
-        checkCreationIsAllowed(args.context, user_files_absolute_path, cur_path);
+    paths = getPathsList(table_path_, user_files_path, args.context);
 
     if (args.format_name == "Distributed")
     {
-        if (!paths.empty())
-        {
-            auto & first_path = paths[0];
-            Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
+        if (paths.empty())
+            throw Exception("Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
 
+        auto & first_path = paths[0];
+        Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
 
-            StorageInMemoryMetadata storage_metadata;
-            storage_metadata.setColumns(ColumnsDescription(header.getNamesAndTypesList()));
-            setInMemoryMetadata(storage_metadata);
-        }
+        StorageInMemoryMetadata storage_metadata;
+        auto columns = ColumnsDescription(header.getNamesAndTypesList());
+        if (!args.columns.empty() && columns != args.columns)
+            throw Exception("Table structure and file structure are different", ErrorCodes::INCOMPATIBLE_COLUMNS);
+        storage_metadata.setColumns(columns);
+        setInMemoryMetadata(storage_metadata);
     }
 }
 
@@ -179,6 +191,8 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 {
     if (relative_table_dir_path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+    if (args.format_name == "Distributed")
+        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String table_dir_path = base_path + relative_table_dir_path + "/";
     Poco::File(table_dir_path).createDirectories();
@@ -234,12 +248,12 @@ public:
         const Context & context_,
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
-        ColumnDefaults column_defaults_)
+        ColumnsDescription columns_description_)
         : SourceWithProgress(getHeader(metadata_snapshot_, files_info_->need_path_column, files_info_->need_file_column))
         , storage(std::move(storage_))
         , metadata_snapshot(metadata_snapshot_)
         , files_info(std::move(files_info_))
-        , column_defaults(std::move(column_defaults_))
+        , columns_description(std::move(columns_description_))
         , context(context_)
         , max_block_size(max_block_size_)
     {
@@ -314,8 +328,8 @@ public:
                 reader = FormatFactory::instance().getInput(
                         storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size);
 
-                if (!column_defaults.empty())
-                    reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
+                if (columns_description.hasDefaults())
+                    reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_description, context);
 
                 reader->readPrefix();
             }
@@ -366,7 +380,7 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
 
-    ColumnDefaults column_defaults;
+    ColumnsDescription columns_description;
 
     const Context & context;    /// TODO Untangle potential issues with context lifetime.
     UInt64 max_block_size;
@@ -378,7 +392,7 @@ private:
 };
 
 
-Pipes StorageFile::read(
+Pipe StorageFile::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -417,9 +431,9 @@ Pipes StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-                this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns().getDefaults()));
+                this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns()));
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
@@ -435,6 +449,7 @@ public:
         , metadata_snapshot(metadata_snapshot_)
         , lock(storage.rwlock)
     {
+        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (storage.use_table_fd)
         {
             /** NOTE: Using real file binded to FD may be misleading:
@@ -442,16 +457,20 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd), compression_method, 3);
+            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
-                compression_method, 3);
+            naked_buffer = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
+
+        /// In case of CSVWithNames we have already written prefix.
+        if (naked_buffer->size())
+            prefix_written = true;
+
+        write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
         writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, metadata_snapshot->getSampleBlock(), context);
     }
@@ -465,7 +484,9 @@ public:
 
     void writePrefix() override
     {
-        writer->writePrefix();
+        if (!prefix_written)
+            writer->writePrefix();
+        prefix_written = true;
     }
 
     void writeSuffix() override
@@ -484,6 +505,7 @@ private:
     std::unique_lock<std::shared_mutex> lock;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
+    bool prefix_written{false};
 };
 
 BlockOutputStreamPtr StorageFile::write(
@@ -494,8 +516,12 @@ BlockOutputStreamPtr StorageFile::write(
     if (format_name == "Distributed")
         throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
 
+    std::string path;
+    if (!paths.empty())
+        path = paths[0];
+
     return std::make_shared<StorageFileBlockOutputStream>(*this, metadata_snapshot,
-        chooseCompressionMethod(paths[0], compression_method), context);
+        chooseCompressionMethod(path, compression_method), context);
 }
 
 Strings StorageFile::getDataPaths() const
@@ -513,9 +539,12 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
     if (paths.size() != 1)
         throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
+    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
+    if (path_new == paths[0])
+        return;
+
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
     Poco::File(paths[0]).renameTo(path_new);
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
-for i in {1..100}; do $CLICKHOUSE_CLIENT --multiquery --query "
+for _ in {1..100}; do $CLICKHOUSE_CLIENT --multiquery --query "
 DROP TABLE IF EXISTS mt;
 CREATE TABLE mt (x UInt8, k UInt8 DEFAULT 0) ENGINE = SummingMergeTree ORDER BY k;
 

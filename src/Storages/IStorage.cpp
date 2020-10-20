@@ -6,12 +6,12 @@
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Processors/Pipe.h>
+#include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ExpressionActions.h>
-
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 namespace DB
@@ -26,27 +26,27 @@ namespace ErrorCodes
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
-    /// Virtual column maybe overriden by real column
+    /// Virtual column maybe overridden by real column
     return !metadata_snapshot->getColumns().has(column_name) && getVirtuals().contains(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
 {
-    auto lock_holder = rwlock->getLock(type, query_id, std::chrono::milliseconds(acquire_timeout.totalMilliseconds()));
+    auto lock_holder = rwlock->getLock(type, query_id, acquire_timeout);
     if (!lock_holder)
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
         throw Exception(
                 type_str + " locking attempt on \"" + getStorageID().getFullTableName() +
-                "\" has timed out! (" + toString(acquire_timeout.totalMilliseconds()) + "ms) "
+                "\" has timed out! (" + std::to_string(acquire_timeout.count()) + "ms) "
                 "Possible deadlock avoided. Client should retry.",
                 ErrorCodes::DEADLOCK_AVOIDED);
     }
     return lock_holder;
 }
 
-TableLockHolder IStorage::lockForShare(const String & query_id, const SettingSeconds & acquire_timeout)
+TableLockHolder IStorage::lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
@@ -56,7 +56,7 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const SettingSec
     return result;
 }
 
-TableLockHolder IStorage::lockForAlter(const String & query_id, const SettingSeconds & acquire_timeout)
+TableLockHolder IStorage::lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(alter_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
@@ -67,7 +67,7 @@ TableLockHolder IStorage::lockForAlter(const String & query_id, const SettingSec
 }
 
 
-TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout)
+TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableExclusiveLockHolder result;
     result.alter_lock = tryLockTimed(alter_lock, RWLockImpl::Write, query_id, acquire_timeout);
@@ -78,6 +78,49 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     return result;
+}
+
+Pipe IStorage::read(
+        const Names & /*column_names*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/)
+{
+    throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void IStorage::read(
+        QueryPlan & query_plan,
+        TableLockHolder table_lock,
+        StorageMetadataPtr metadata_snapshot,
+        StreamLocalLimits & limits,
+        SizeLimits & leaf_limits,
+        std::shared_ptr<const EnabledQuota> quota,
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        std::shared_ptr<Context> context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams)
+{
+    auto read_step = std::make_unique<ReadFromStorageStep>(
+            std::move(table_lock), std::move(metadata_snapshot), limits, leaf_limits, std::move(quota), shared_from_this(),
+            column_names, query_info, std::move(context), processed_stage, max_block_size, num_streams);
+
+    read_step->setStepDescription("Read from " + getName());
+    query_plan.addStep(std::move(read_step));
+}
+
+Pipe IStorage::alterPartition(
+    const ASTPtr & /* query */,
+    const StorageMetadataPtr & /* metadata_snapshot */,
+    const PartitionCommands & /* commands */,
+    const Context & /* context */)
+{
+    throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IStorage::alter(
@@ -102,6 +145,10 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
     }
 }
 
+void IStorage::checkAlterPartitionIsPossible(const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
+{
+    throw Exception("Table engine " + getName() + " doesn't support partitioning", ErrorCodes::NOT_IMPLEMENTED);
+}
 
 StorageID IStorage::getStorageID() const
 {

@@ -14,11 +14,14 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INVALID_GRANT;
     extern const int SYNTAX_ERROR;
 }
 
 namespace
 {
+    using Kind = ASTGrantQuery::Kind;
+
     bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & access_flags)
     {
         static constexpr auto is_one_of_access_type_words = [](IParser::Pos & pos_)
@@ -154,13 +157,39 @@ namespace
     }
 
 
-    bool parseRoles(IParser::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    void removeNonGrantableFlags(AccessRightsElements & elements)
+    {
+        for (auto & element : elements)
+        {
+            if (element.empty())
+                continue;
+            auto old_flags = element.access_flags;
+            element.removeNonGrantableFlags();
+            if (!element.empty())
+                continue;
+
+            if (!element.any_column)
+                throw Exception(old_flags.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
+            else if (!element.any_table)
+                throw Exception(old_flags.toString() + " cannot be granted on the table level", ErrorCodes::INVALID_GRANT);
+            else if (!element.any_database)
+                throw Exception(old_flags.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
+            else
+                throw Exception(old_flags.toString() + " cannot be granted", ErrorCodes::INVALID_GRANT);
+        }
+    }
+
+
+    bool parseRoles(IParser::Pos & pos, Expected & expected, Kind kind, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            ASTPtr ast;
             ParserRolesOrUsersSet roles_p;
             roles_p.allowRoleNames().useIDMode(id_mode);
+            if (kind == Kind::REVOKE)
+                roles_p.allowAll();
+
+            ASTPtr ast;
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
@@ -174,7 +203,6 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            using Kind = ASTGrantQuery::Kind;
             if (kind == Kind::GRANT)
             {
                 if (!ParserKeyword{"TO"}.ignore(pos, expected))
@@ -217,7 +245,6 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         attach = true;
     }
 
-    using Kind = ASTGrantQuery::Kind;
     Kind kind;
     if (ParserKeyword{"GRANT"}.ignore(pos, expected))
         kind = Kind::GRANT;
@@ -242,7 +269,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     AccessRightsElements elements;
     std::shared_ptr<ASTRolesOrUsersSet> roles;
-    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, attach, roles))
+    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, kind, attach, roles))
         return false;
 
     if (cluster.empty())
@@ -270,6 +297,9 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         throw Exception("GRANT OPTION should be specified for access types", ErrorCodes::SYNTAX_ERROR);
     if (admin_option && !elements.empty())
         throw Exception("ADMIN OPTION should be specified for roles", ErrorCodes::SYNTAX_ERROR);
+
+    if (kind == Kind::GRANT)
+        removeNonGrantableFlags(elements);
 
     auto query = std::make_shared<ASTGrantQuery>();
     node = query;

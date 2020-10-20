@@ -40,13 +40,10 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     /// So rules in zookeeper metadata is following:
     /// - When we have only ORDER BY, than store it in "primary key:" row of /metadata
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
-    if (!metadata_snapshot->isPrimaryKeyDefined())
-        primary_key = formattedAST(metadata_snapshot->getSortingKey().expression_list_ast);
-    else
-    {
-        primary_key = formattedAST(metadata_snapshot->getPrimaryKey().expression_list_ast);
+
+    primary_key = formattedAST(metadata_snapshot->getPrimaryKey().expression_list_ast);
+    if (metadata_snapshot->isPrimaryKeyDefined())
         sorting_key = formattedAST(metadata_snapshot->getSortingKey().expression_list_ast);
-    }
 
     data_format_version = data.format_version;
 
@@ -168,11 +165,6 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
             ErrorCodes::METADATA_MISMATCH);
     }
 
-    if (sampling_expression != from_zk.sampling_expression)
-        throw Exception("Existing table metadata in ZooKeeper differs in sample expression."
-            " Stored in ZooKeeper: " + from_zk.sampling_expression + ", local: " + sampling_expression,
-            ErrorCodes::METADATA_MISMATCH);
-
     if (index_granularity != from_zk.index_granularity)
         throw Exception("Existing table metadata in ZooKeeper differs in index granularity."
             " Stored in ZooKeeper: " + DB::toString(from_zk.index_granularity) + ", local: " + DB::toString(index_granularity),
@@ -214,6 +206,11 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
 {
 
     checkImmutableFieldsEquals(from_zk);
+
+    if (sampling_expression != from_zk.sampling_expression)
+        throw Exception("Existing table metadata in ZooKeeper differs in sample expression."
+            " Stored in ZooKeeper: " + from_zk.sampling_expression + ", local: " + sampling_expression,
+            ErrorCodes::METADATA_MISMATCH);
 
     if (sorting_key != from_zk.sorting_key)
     {
@@ -273,6 +270,12 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
     {
         diff.sorting_key_changed = true;
         diff.new_sorting_key = from_zk.sorting_key;
+    }
+
+    if (sampling_expression != from_zk.sampling_expression)
+    {
+        diff.sampling_expression_changed = true;
+        diff.new_sampling_expression = from_zk.sampling_expression;
     }
 
     if (ttl_table != from_zk.ttl_table)

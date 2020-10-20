@@ -65,6 +65,14 @@ Features:
 -   Database explorer.
 -   Visualization tools, that allow you to represent data in different forms.
 
+### Grafana {#grafana}
+
+[Grafana](https://grafana.com/grafana/plugins/vertamedia-clickhouse-datasource) is a platform for monitoring and visualization.
+
+"Grafana allows you to query, visualize, alert on and understand your metrics no matter where they are stored. Create, explore, and share dashboards with your team and foster a data driven culture. Trusted and loved by the community" &mdash; grafana.com.
+
+ClickHouse datasource plugin provides a support for ClickHouse as a backend database.
+
 ### DBeaver {#dbeaver}
 
 [DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
@@ -94,6 +102,10 @@ Features:
 ### clickhouse-plantuml {#clickhouse-plantuml}
 
 [cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables’ schemes.
+
+### xeus-clickhouse {#xeus-clickhouse}
+
+[xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) is a Jupyter kernal for ClickHouse, which supports query CH data using SQL in Jupyter.
 
 ## Commercial {#commercial}
 

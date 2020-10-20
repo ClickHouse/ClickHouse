@@ -7,7 +7,7 @@ toc_title: For Beginners
 
 Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
-If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/\#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
+If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
 ClickHouse cannot work or build on a 32-bit system. You should acquire access to a 64-bit system and you can continue reading.
 
@@ -28,7 +28,7 @@ To do that in Ubuntu you would run in the command line terminal:
     sudo apt update
     sudo apt install git
 
-A brief manual on using Git can be found here: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+A brief manual on using Git can be found here: https://education.github.com/git-cheat-sheet-education.pdf.
 For a detailed manual on Git see https://git-scm.com/book/en/v2.
 
 ## Cloning a Repository to Your Development Machine {#cloning-a-repository-to-your-development-machine}
@@ -40,7 +40,7 @@ In the command line terminal run:
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Note: please, substitute *your\_github\_username* with what is appropriate!
+Note: please, substitute *your_github_username* with what is appropriate!
 
 This command will create a directory `ClickHouse` containing the working copy of the project.
 
@@ -137,7 +137,7 @@ Official Yandex builds currently use GCC because it generates machine code of sl
 
 To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
-Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/\#install-gcc-9.
+Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/#install-gcc-9.
 
 Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
@@ -150,7 +150,7 @@ Now that you are ready to build ClickHouse we recommend you to create a separate
     mkdir build
     cd build
 
-You can have several different directories (build\_release, build\_debug, etc.) for different types of build.
+You can have several different directories (build_release, build_debug, etc.) for different types of build.
 
 While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 9 gcc compiler in this example).
 
@@ -208,7 +208,7 @@ To run the server under the current user you need to navigate to `ClickHouse/pro
 
 In this case, ClickHouse will use config files located in the current directory. You can run `clickhouse server` from any directory specifying the path to a config file as a command-line parameter `--config-file`.
 
-To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `clickhouse client`.
+To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `./clickhouse client`.
 
 If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying host address 127.0.0.1:
 
@@ -245,7 +245,7 @@ The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
 Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/contribute
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 ## Test Data {#test-data}
 

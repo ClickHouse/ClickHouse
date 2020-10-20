@@ -17,12 +17,12 @@ struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Joined tables' columns resolver.
-/// We want to get each table structure at most once per table occurance. Or even better once per table.
+/// We want to get each table structure at most once per table occurrence. Or even better once per table.
 /// TODO: joins tree with costs to change joins order by CBO.
 class JoinedTables
 {
 public:
-    JoinedTables(Context && contex, const ASTSelectQuery & select_query);
+    JoinedTables(Context && context, const ASTSelectQuery & select_query);
 
     void reset(const ASTSelectQuery & select_query)
     {

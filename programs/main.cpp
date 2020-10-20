@@ -2,10 +2,15 @@
 #include <setjmp.h>
 #include <unistd.h>
 
+#ifdef __linux__
+#include <sys/mman.h>
+#endif
+
 #include <new>
 #include <iostream>
 #include <vector>
 #include <string>
+#include <tuple>
 #include <utility> /// pair
 
 #if !defined(ARCADIA_BUILD)
@@ -46,7 +51,18 @@ int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_GIT_IMPORT
+int mainEntryClickHouseGitImport(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_INSTALL
+int mainEntryClickHouseInstall(int argc, char ** argv);
+int mainEntryClickHouseStart(int argc, char ** argv);
+int mainEntryClickHouseStop(int argc, char ** argv);
+int mainEntryClickHouseStatus(int argc, char ** argv);
+int mainEntryClickHouseRestart(int argc, char ** argv);
+#endif
 
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 
 namespace
 {
@@ -83,6 +99,16 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
     {"obfuscator", mainEntryClickHouseObfuscator},
+#endif
+#if ENABLE_CLICKHOUSE_GIT_IMPORT
+    {"git-import", mainEntryClickHouseGitImport},
+#endif
+#if ENABLE_CLICKHOUSE_INSTALL
+    {"install", mainEntryClickHouseInstall},
+    {"start", mainEntryClickHouseStart},
+    {"stop", mainEntryClickHouseStop},
+    {"status", mainEntryClickHouseStatus},
+    {"restart", mainEntryClickHouseRestart},
 #endif
 };
 
@@ -130,28 +156,29 @@ enum class InstructionFail
     AVX512 = 8
 };
 
-const char * instructionFailToString(InstructionFail fail)
+std::pair<const char *, size_t> instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
+#define ret(x) return std::make_pair(x, ARRAY_SIZE(x) - 1)
         case InstructionFail::NONE:
-            return "NONE";
+            ret("NONE");
         case InstructionFail::SSE3:
-            return "SSE3";
+            ret("SSE3");
         case InstructionFail::SSSE3:
-            return "SSSE3";
+            ret("SSSE3");
         case InstructionFail::SSE4_1:
-            return "SSE4.1";
+            ret("SSE4.1");
         case InstructionFail::SSE4_2:
-            return "SSE4.2";
+            ret("SSE4.2");
         case InstructionFail::POPCNT:
-            return "POPCNT";
+            ret("POPCNT");
         case InstructionFail::AVX:
-            return "AVX";
+            ret("AVX");
         case InstructionFail::AVX2:
-            return "AVX2";
+            ret("AVX2");
         case InstructionFail::AVX512:
-            return "AVX512";
+            ret("AVX512");
     }
     __builtin_unreachable();
 }
@@ -218,7 +245,7 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 }
 
 /// This function is safe to use in static initializers.
-void writeError(const char * data, size_t size)
+void writeErrorLen(const char * data, size_t size)
 {
     while (size != 0)
     {
@@ -234,6 +261,12 @@ void writeError(const char * data, size_t size)
         }
     }
 }
+/// Macros to avoid using strlen(), since it may fail if SSE is not supported.
+#define writeError(data) do \
+    { \
+        static_assert(__builtin_constant_p(data)); \
+        writeErrorLen(data, ARRAY_SIZE(data) - 1); \
+    } while (false)
 
 /// Check SSE and others instructions availability. Calls exit on fail.
 /// This function must be called as early as possible, even before main, because static initializers may use unavailable instructions.
@@ -252,8 +285,7 @@ void checkRequiredInstructions()
         /// Typical implementation of strlen is using SSE4.2 or AVX2.
         /// But this is not the case because it's compiler builtin and is executed at compile time.
 
-        const char * msg = "Can not set signal handler\n";
-        writeError(msg, strlen(msg));
+        writeError("Can not set signal handler\n");
         _Exit(1);
     }
 
@@ -261,12 +293,9 @@ void checkRequiredInstructions()
 
     if (sigsetjmp(jmpbuf, 1))
     {
-        const char * msg1 = "Instruction check fail. The CPU does not support ";
-        writeError(msg1, strlen(msg1));
-        const char * msg2 = instructionFailToString(fail);
-        writeError(msg2, strlen(msg2));
-        const char * msg3 = " instruction set.\n";
-        writeError(msg3, strlen(msg3));
+        writeError("Instruction check fail. The CPU does not support ");
+        std::apply(writeErrorLen, instructionFailToString(fail));
+        writeError(" instruction set.\n");
         _Exit(1);
     }
 
@@ -274,13 +303,60 @@ void checkRequiredInstructions()
 
     if (sigaction(signal, &sa_old, nullptr))
     {
-        const char * msg = "Can not set signal handler\n";
-        writeError(msg, strlen(msg));
+        writeError("Can not set signal handler\n");
         _Exit(1);
     }
 }
 
-struct Checker { Checker() { checkRequiredInstructions(); } } checker;
+#ifdef __linux__
+/// clickhouse uses jemalloc as a production allocator
+/// and jemalloc relies on working MADV_DONTNEED,
+/// which doesn't work under qemu
+///
+/// but do this only under for linux, since only it return zeroed pages after MADV_DONTNEED
+/// (and jemalloc assumes this too, see contrib/jemalloc-cmake/include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h.in)
+void checkRequiredMadviseFlags()
+{
+    size_t size = 1 << 16;
+    void * addr = mmap(nullptr, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    if (addr == MAP_FAILED)
+    {
+        writeError("Can not mmap pages for MADV_DONTNEED check\n");
+        _Exit(1);
+    }
+    memset(addr, 'A', size);
+
+    if (!madvise(addr, size, MADV_DONTNEED))
+    {
+        /// Suboptimal, but should be simple.
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (reinterpret_cast<unsigned char *>(addr)[i] != 0)
+            {
+                writeError("MADV_DONTNEED does not zeroed page. jemalloc will be broken\n");
+                _Exit(1);
+            }
+        }
+    }
+
+    if (munmap(addr, size))
+    {
+        writeError("Can not munmap pages for MADV_DONTNEED check\n");
+        _Exit(1);
+    }
+}
+#endif
+
+struct Checker
+{
+    Checker()
+    {
+        checkRequiredInstructions();
+#ifdef __linux__
+        checkRequiredMadviseFlags();
+#endif
+    }
+} checker;
 
 }
 

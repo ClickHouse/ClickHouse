@@ -108,13 +108,13 @@ struct AggregateFunctionTimeSeriesGroupSumData
             else
                 result.emplace_back(std::make_pair(t, v));
         }
-        size_t i = result.size() - 1;
+        ssize_t i = result.size() - 1;
         //reverse find out the index of timestamp that more than previous timestamp of t
         while (result[i].first > it_ss->second.dps.front().first && i >= 0)
             i--;
 
         i++;
-        while (i < result.size() - 1)
+        while (i < ssize_t(result.size()) - 1)
         {
             result[i].second += it_ss->second.getval(result[i].first);
             i++;

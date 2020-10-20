@@ -8,9 +8,9 @@
 #include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -85,6 +85,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
             context.getRemoteHostFilter().checkURL(avro_schema_registry_url);
     }
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
+    format_settings.avro.allow_missing_fields = settings.input_format_avro_allow_missing_fields;
 
     return format_settings;
 }
@@ -104,10 +105,15 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
+    format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ?
+                                     FormatSettings::Pretty::Charset::ASCII :
+                                     FormatSettings::Pretty::Charset::UTF8;
+    format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
     format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
+    format_settings.tsv.null_representation = settings.output_format_tsv_null_representation;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.schema.format_schema = settings.format_schema;
@@ -122,6 +128,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
     format_settings.avro.output_codec = settings.output_format_avro_codec;
     format_settings.avro.output_sync_interval = settings.output_format_avro_sync_interval;
+    format_settings.date_time_output_format = settings.date_time_output_format;
 
     return format_settings;
 }
@@ -197,21 +204,8 @@ BlockInputStreamPtr FormatFactory::getInput(
 
 
 BlockOutputStreamPtr FormatFactory::getOutput(
-    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const bool ignore_no_row_delimiter) const
 {
-    if (name == "PrettyCompactMonoBlock")
-    {
-        /// TODO: rewrite
-        auto format = getOutputFormat("PrettyCompact", buf, sample, context);
-        auto res = std::make_shared<SquashingBlockOutputStream>(
-                std::make_shared<OutputStreamToOutputFormat>(format),
-                sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
-
-        res->disableFlush();
-
-        return std::make_shared<MaterializingBlockOutputStream>(res, sample);
-    }
-
     if (!getCreators(name).output_processor_creator)
     {
         const auto & output_getter = getCreators(name).output_creator;
@@ -228,7 +222,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(
                 output_getter(buf, sample, std::move(callback), format_settings), sample);
     }
 
-    auto format = getOutputFormat(name, buf, sample, context, std::move(callback));
+    auto format = getOutputFormat(name, buf, sample, context, std::move(callback), ignore_no_row_delimiter);
     return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
@@ -267,7 +261,7 @@ InputFormatPtr FormatFactory::getInputFormat(
 
 
 OutputFormatPtr FormatFactory::getOutputFormat(
-    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const bool ignore_no_row_delimiter) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
@@ -276,10 +270,14 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     const Settings & settings = context.getSettingsRef();
     FormatSettings format_settings = getOutputFormatSetting(settings, context);
 
+    RowOutputFormatParams params;
+    params.ignore_no_row_delimiter = ignore_no_row_delimiter;
+    params.callback = std::move(callback);
+
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    auto format = output_getter(buf, sample, std::move(callback), format_settings);
+    auto format = output_getter(buf, sample, params, format_settings);
 
     /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
     if (format_settings.enable_streaming)
@@ -333,12 +331,89 @@ void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegm
     target = std::move(file_segmentation_engine);
 }
 
+/// File Segmentation Engines for parallel reading
+
+void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
+void registerFileSegmentationEngineCSV(FormatFactory & factory);
+void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
+void registerFileSegmentationEngineRegexp(FormatFactory & factory);
+void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
+void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
+
+/// Formats for both input/output.
+
+void registerInputFormatNative(FormatFactory & factory);
+void registerOutputFormatNative(FormatFactory & factory);
+
+void registerInputFormatProcessorNative(FormatFactory & factory);
+void registerOutputFormatProcessorNative(FormatFactory & factory);
+void registerInputFormatProcessorRowBinary(FormatFactory & factory);
+void registerOutputFormatProcessorRowBinary(FormatFactory & factory);
+void registerInputFormatProcessorTabSeparated(FormatFactory & factory);
+void registerOutputFormatProcessorTabSeparated(FormatFactory & factory);
+void registerInputFormatProcessorValues(FormatFactory & factory);
+void registerOutputFormatProcessorValues(FormatFactory & factory);
+void registerInputFormatProcessorCSV(FormatFactory & factory);
+void registerOutputFormatProcessorCSV(FormatFactory & factory);
+void registerInputFormatProcessorTSKV(FormatFactory & factory);
+void registerOutputFormatProcessorTSKV(FormatFactory & factory);
+void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
+void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
+void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
+void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
+void registerInputFormatProcessorProtobuf(FormatFactory & factory);
+void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
+void registerInputFormatProcessorTemplate(FormatFactory & factory);
+void registerOutputFormatProcessorTemplate(FormatFactory & factory);
+void registerInputFormatProcessorMsgPack(FormatFactory & factory);
+void registerOutputFormatProcessorMsgPack(FormatFactory & factory);
+void registerInputFormatProcessorORC(FormatFactory & factory);
+void registerOutputFormatProcessorORC(FormatFactory & factory);
+void registerInputFormatProcessorParquet(FormatFactory & factory);
+void registerOutputFormatProcessorParquet(FormatFactory & factory);
+void registerInputFormatProcessorArrow(FormatFactory & factory);
+void registerOutputFormatProcessorArrow(FormatFactory & factory);
+void registerInputFormatProcessorAvro(FormatFactory & factory);
+void registerOutputFormatProcessorAvro(FormatFactory & factory);
+void registerInputFormatProcessorRawBLOB(FormatFactory & factory);
+void registerOutputFormatProcessorRawBLOB(FormatFactory & factory);
+
+/// Output only (presentational) formats.
+
+void registerOutputFormatNull(FormatFactory & factory);
+
+void registerOutputFormatProcessorPretty(FormatFactory & factory);
+void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
+void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
+void registerOutputFormatProcessorVertical(FormatFactory & factory);
+void registerOutputFormatProcessorJSON(FormatFactory & factory);
+void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
+void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
+void registerOutputFormatProcessorXML(FormatFactory & factory);
+void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
+void registerOutputFormatProcessorNull(FormatFactory & factory);
+void registerOutputFormatProcessorMySQLWire(FormatFactory & factory);
+void registerOutputFormatProcessorMarkdown(FormatFactory & factory);
+void registerOutputFormatProcessorPostgreSQLWire(FormatFactory & factory);
+
+/// Input only formats.
+
+void registerInputFormatProcessorRegexp(FormatFactory & factory);
+void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
+void registerInputFormatProcessorLineAsString(FormatFactory & factory);
+void registerInputFormatProcessorCapnProto(FormatFactory & factory);
+
 FormatFactory::FormatFactory()
 {
+    registerFileSegmentationEngineTabSeparated(*this);
+    registerFileSegmentationEngineCSV(*this);
+    registerFileSegmentationEngineJSONEachRow(*this);
+    registerFileSegmentationEngineRegexp(*this);
+    registerFileSegmentationEngineJSONAsString(*this);
+    registerFileSegmentationEngineLineAsString(*this);
+
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
-
-    registerOutputFormatProcessorJSONEachRowWithProgress(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);
@@ -358,9 +433,16 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorJSONCompactEachRow(*this);
     registerInputFormatProcessorProtobuf(*this);
     registerOutputFormatProcessorProtobuf(*this);
+    registerInputFormatProcessorTemplate(*this);
+    registerOutputFormatProcessorTemplate(*this);
+    registerInputFormatProcessorMsgPack(*this);
+    registerOutputFormatProcessorMsgPack(*this);
+    registerInputFormatProcessorRawBLOB(*this);
+    registerOutputFormatProcessorRawBLOB(*this);
+
 #if !defined(ARCADIA_BUILD)
-    registerInputFormatProcessorCapnProto(*this);
     registerInputFormatProcessorORC(*this);
+    registerOutputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
     registerInputFormatProcessorArrow(*this);
@@ -368,18 +450,6 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorAvro(*this);
     registerOutputFormatProcessorAvro(*this);
 #endif
-    registerInputFormatProcessorTemplate(*this);
-    registerOutputFormatProcessorTemplate(*this);
-    registerInputFormatProcessorRegexp(*this);
-    registerInputFormatProcessorMsgPack(*this);
-    registerOutputFormatProcessorMsgPack(*this);
-    registerInputFormatProcessorJSONAsString(*this);
-
-    registerFileSegmentationEngineTabSeparated(*this);
-    registerFileSegmentationEngineCSV(*this);
-    registerFileSegmentationEngineJSONEachRow(*this);
-    registerFileSegmentationEngineRegexp(*this);
-    registerFileSegmentationEngineJSONAsString(*this);
 
     registerOutputFormatNull(*this);
 
@@ -389,13 +459,21 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorVertical(*this);
     registerOutputFormatProcessorJSON(*this);
     registerOutputFormatProcessorJSONCompact(*this);
+    registerOutputFormatProcessorJSONEachRowWithProgress(*this);
     registerOutputFormatProcessorXML(*this);
-    registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWire(*this);
     registerOutputFormatProcessorMarkdown(*this);
     registerOutputFormatProcessorPostgreSQLWire(*this);
+
+    registerInputFormatProcessorRegexp(*this);
+    registerInputFormatProcessorJSONAsString(*this);
+    registerInputFormatProcessorLineAsString(*this);
+
+#if !defined(ARCADIA_BUILD)
+    registerInputFormatProcessorCapnProto(*this);
+#endif
 }
 
 FormatFactory & FormatFactory::instance()

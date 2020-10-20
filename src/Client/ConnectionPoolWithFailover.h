@@ -47,6 +47,8 @@ public:
               const Settings * settings,
               bool force_connected) override; /// From IConnectionPool
 
+    Int64 getPriority() const override; /// From IConnectionPool
+
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
@@ -70,7 +72,7 @@ public:
 
     struct NestedPoolStatus
     {
-        const IConnectionPool * pool;
+        const Base::NestedPoolPtr pool;
         size_t error_count;
         std::chrono::seconds estimated_recovery_time;
     };

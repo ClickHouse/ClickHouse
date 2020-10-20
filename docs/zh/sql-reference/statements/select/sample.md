@@ -1,37 +1,35 @@
 ---
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 toc_title: SAMPLE
 ---
 
-# 示例子句 {#select-sample-clause}
+# 采样子句 {#select-sample-clause}
 
-该 `SAMPLE` 子句允许近似 `SELECT` 查询处理。
+该 `SAMPLE` 子句允许近似于 `SELECT` 查询处理。
 
 启用数据采样时，不会对所有数据执行查询，而只对特定部分数据（样本）执行查询。 例如，如果您需要计算所有访问的统计信息，只需对所有访问的1/10分数执行查询，然后将结果乘以10即可。
 
 近似查询处理在以下情况下可能很有用:
 
--   当你有严格的时间requirements（如\<100ms），但你不能证明额外的硬件资源来满足他们的成本。
+-   当你有严格的时间需求（如\<100ms），但你不能通过额外的硬件资源来满足他们的成本。
 -   当您的原始数据不准确时，所以近似不会明显降低质量。
 -   业务需求的目标是近似结果（为了成本效益，或者向高级用户推销确切结果）。
 
 !!! note "注"
-    您只能使用采样中的表 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) 家庭，并且只有在表创建过程中指定了采样表达式（请参阅 [MergeTree引擎](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
+    您只能使用采样中的表 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) 族，并且只有在表创建过程中指定了采样表达式（请参阅 [MergeTree引擎](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
 
 下面列出了数据采样的功能:
 
 -   数据采样是一种确定性机制。 同样的结果 `SELECT .. SAMPLE` 查询始终是相同的。
--   对于不同的表，采样工作始终如一。 对于具有单个采样键的表，具有相同系数的采样总是选择相同的可能数据子集。 例如，用户Id的示例采用来自不同表的所有可能的用户Id的相同子集的行。 这意味着您可以在子查询中使用示例 [IN](../../../sql-reference/operators/in.md) 条款 此外，您可以使用 [JOIN](../../../sql-reference/statements/select/join.md) 条款
+-   对于不同的表，采样工作始终如一。 对于具有单个采样键的表，具有相同系数的采样总是选择相同的可能数据子集。 例如，用户Id的示例采用来自不同表的所有可能的用户Id的相同子集的行。 这意味着您可以在子查询中使用采样 [IN](../../../sql-reference/operators/in.md)  此外，您可以使用 [JOIN](../../../sql-reference/statements/select/join.md) 。
 -   采样允许从磁盘读取更少的数据。 请注意，您必须正确指定采样键。 有关详细信息，请参阅 [创建MergeTree表](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table).
 
 为 `SAMPLE` 子句支持以下语法:
 
 | SAMPLE Clause Syntax | 产品描述                                                                                                                                                                          |
 |----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `SAMPLE k`           | 这里 `k` 是从0到1的数字。</br>查询执行于 `k` 数据的分数。 例如, `SAMPLE 0.1` 对10%的数据运行查询。 [碌莽禄more拢more](#select-sample-k)                                           |
-| `SAMPLE n`           | 这里 `n` 是足够大的整数。</br>该查询是在至少一个样本上执行的 `n` 行（但不超过这个）。 例如, `SAMPLE 10000000` 在至少10,000,000行上运行查询。 [碌莽禄more拢more](#select-sample-n) |
-| `SAMPLE k OFFSET m`  | 这里 `k` 和 `m` 是从0到1的数字。</br>查询在以下示例上执行 `k` 数据的分数。 用于采样的数据由以下偏移 `m` 分数。 [碌莽禄more拢more](#select-sample-offset)                          |
+| `SAMPLE k`           | 这里 `k` 是从0到1的数字。</br>查询执行于 `k` 数据的分数。 例如, `SAMPLE 0.1` 对10%的数据运行查询。 [Read more](#select-sample-k)                                           |
+| `SAMPLE n`           | 这里 `n` 是足够大的整数。</br>该查询是在至少一个样本上执行的 `n` 行（但不超过这个）。 例如, `SAMPLE 10000000` 在至少10,000,000行上运行查询。 [Read more](#select-sample-n) |
+| `SAMPLE k OFFSET m`  | 这里 `k` 和 `m` 是从0到1的数字。</br>查询在以下示例上执行 `k` 数据的分数。 用于采样的数据由以下偏移 `m` 分数。 [Read more](#select-sample-offset)                          |
 
 ## SAMPLE K {#select-sample-k}
 
