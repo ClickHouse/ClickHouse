@@ -153,7 +153,7 @@ initdb()
 
 start()
 {
-    ${CLICKHOUSE_GENERIC_PROGRAM} start --user "${CLICKHOUSE_USER}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}/${PROGRAM}"
+    ${CLICKHOUSE_GENERIC_PROGRAM} start --user "${CLICKHOUSE_USER}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}"
 }
 
 
@@ -165,7 +165,7 @@ stop()
 
 restart()
 {
-    ${CLICKHOUSE_GENERIC_PROGRAM} restart --user "${CLICKHOUSE_USER}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}/${PROGRAM}"
+    ${CLICKHOUSE_GENERIC_PROGRAM} restart --user "${CLICKHOUSE_USER}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}"
 }
 
 
