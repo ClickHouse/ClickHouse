@@ -108,8 +108,7 @@ void StorageMergeTree::startup()
     try
     {
         background_executor.start();
-        if (areBackgroundMovesNeeded())
-            background_moves_executor.start();
+        startBackgroundMovesIfNeeded();
     }
     catch (...)
     {
@@ -1465,7 +1464,8 @@ MutationCommands StorageMergeTree::getFirtsAlterMutationCommandsForPart(const Da
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()
 {
-    background_moves_executor.start();
+    if (areBackgroundMovesNeeded())
+        background_moves_executor.start();
 }
 
 }

@@ -3483,9 +3483,7 @@ void StorageReplicatedMergeTree::startup()
         /// If we don't separate create/start steps, race condition will happen
         /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
         background_executor.start();
-        if (areBackgroundMovesNeeded())
-            background_moves_executor.start();
-
+        startBackgroundMovesIfNeeded();
     }
     catch (...)
     {
@@ -5984,7 +5982,8 @@ MutationCommands StorageReplicatedMergeTree::getFirtsAlterMutationCommandsForPar
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
-    background_moves_executor.start();
+    if (areBackgroundMovesNeeded())
+        background_moves_executor.start();
 }
 
 }
