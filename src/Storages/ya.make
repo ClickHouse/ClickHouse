@@ -105,6 +105,12 @@ SRCS(
     MutationCommands.cpp
     PartitionCommands.cpp
     ReadInOrderOptimizer.cpp
+<<<<<<< HEAD
+=======
+    registerStorages.cpp
+    Rocksdb/EmbeddedRocksdbBlockInputStream.cpp
+    Rocksdb/EmbeddedRocksdbBlockOutputStream.cpp
+>>>>>>> * fix fasttest and cmake && pipline for all_scan
     Rocksdb/StorageEmbeddedRocksdb.cpp
     SelectQueryDescription.cpp
     SetSettings.cpp

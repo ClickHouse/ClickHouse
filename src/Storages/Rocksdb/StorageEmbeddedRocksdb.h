@@ -20,6 +20,7 @@ class StorageEmbeddedRocksdb final : public ext::shared_ptr_helper<StorageEmbedd
     friend struct ext::shared_ptr_helper<StorageEmbeddedRocksdb>;
     friend class EmbeddedRocksdbSource;
     friend class EmbeddedRocksdbBlockOutputStream;
+    friend class EmbeddedRocksdbBlockInputStream;
 public:
     std::string getName() const override { return "EmbeddedRocksdb"; }
 
