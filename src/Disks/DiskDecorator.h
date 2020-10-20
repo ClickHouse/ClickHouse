@@ -4,6 +4,10 @@
 
 namespace DB
 {
+
+/** Forwards all methods to another disk.
+  * Methods can be overridden by descendants.
+  */
 class DiskDecorator : public IDisk
 {
 public:
