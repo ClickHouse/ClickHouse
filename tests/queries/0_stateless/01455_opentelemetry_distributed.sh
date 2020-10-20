@@ -6,19 +6,39 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function check_log
 {
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} --format=JSONEachRow -nq "
 system flush logs;
 
--- Check the number of spans with given trace id, to verify it was propagated.
-select count(*)
+-- Check the number of query spans with given trace id, to verify it was
+-- propagated.
+select count(*) "'"'"total spans"'"'",
+        uniqExact(span_id) "'"'"unique spans"'"'",
+        uniqExactIf(parent_span_id, parent_span_id != 0)
+            "'"'"unique non-zero parent spans"'"'"
     from system.opentelemetry_log
     where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
         and operation_name = 'query'
     ;
 
+-- Also check that the initial query span in ClickHouse has proper parent span.
+select count(*) "'"'"initial query spans with proper parent"'"'"
+    from
+        (select *, attribute_name, attribute_value
+            from system.opentelemetry_log
+                array join attribute.names as attribute_name,
+                    attribute.values as attribute_value) o
+        join system.query_log on query_id = o.attribute_value
+    where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
+        and operation_name = 'query'
+        and parent_span_id = reinterpretAsUInt64(unhex('73'))
+        and o.attribute_name = 'clickhouse.query_id'
+        and is_initial_query
+        and type = 'QueryFinish'
+    ;
+
 -- Check that the tracestate header was propagated. It must have exactly the
 -- same non-empty value for all 'query' spans in this trace.
-select count(distinct value)
+select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
     from system.opentelemetry_log
         array join attribute.names as name, attribute.values as value
     where
@@ -34,14 +54,15 @@ select count(distinct value)
 echo "===http==="
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
-# Check that the HTTP traceparent is read, and then passed through `remote` table function.
-# We expect 4 queries, because there are two DESC TABLE queries for the shard.
-# This is bug-ish, see https://github.com/ClickHouse/ClickHouse/issues/14228
+# Check that the HTTP traceparent is read, and then passed through `remote`
+# table function. We expect 4 queries -- one initial, one SELECT and two
+# DESC TABLE. Two DESC TABLE instead of one looks like a bug, see the issue:
+# https://github.com/ClickHouse/ClickHouse/issues/14228
 ${CLICKHOUSE_CURL} \
-    --header "traceparent: 00-$trace_id-0000000000000010-01" \
+    --header "traceparent: 00-$trace_id-0000000000000073-01" \
     --header "tracestate: some custom state" "http://localhost:8123/" \
     --get \
-    --data-urlencode "query=select 1 from remote('127.0.0.2', system, one)"
+    --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) format Null"
 
 check_log
 
@@ -52,14 +73,14 @@ echo "===native==="
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
 ${CLICKHOUSE_CLIENT} \
-    --opentelemetry-traceparent "00-$trace_id-0000000000000020-02" \
+    --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
     --opentelemetry-tracestate "another custom state" \
-    --query "select * from url('http://127.0.0.2:8123/?query=select%201', CSV, 'a int')"
+    --query "select * from url('http://127.0.0.2:8123/?query=select%201%20format%20Null', CSV, 'a int')"
 
 check_log
 
-# Test sampled tracing. The traces should be started with the specified probability,
-# only for initial queries.
+# Test sampled tracing. The traces should be started with the specified
+# probability, only for initial queries.
 echo "===sampled==="
 query_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
@@ -71,8 +92,8 @@ do
         --query "select 1 from remote('127.0.0.2', system, one) format Null" \
         &
 
-    # clickhouse-client is slow to start, so run them in parallel, but not too
-    # much.
+    # clickhouse-client is slow to start (initialization of DateLUT), so run
+    # several clients in parallel, but not too many.
     if [[ $((i % 10)) -eq 0 ]]
     then
         wait
@@ -84,7 +105,7 @@ ${CLICKHOUSE_CLIENT} -q "system flush logs"
 ${CLICKHOUSE_CLIENT} -q "
     with count(*) as c
     -- expect 200 * 0.1 = 20 sampled events on average
-    select if(c > 10 and c < 30, 'OK', 'fail: ' || toString(c))
+    select if(c > 5 and c < 35, 'OK', 'fail: ' || toString(c))
     from system.opentelemetry_log
         array join attribute.names as name, attribute.values as value
     where name = 'clickhouse.query_id'

@@ -70,7 +70,6 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
             // are random and will probably require the full length anyway.
             writeBinary(opentelemetry_trace_id, out);
             writeBinary(opentelemetry_span_id, out);
-            writeBinary(opentelemetry_parent_span_id, out);
             writeBinary(opentelemetry_tracestate, out);
             writeBinary(opentelemetry_trace_flags, out);
         }
@@ -144,7 +143,6 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
         {
             readBinary(opentelemetry_trace_id, in);
             readBinary(opentelemetry_span_id, in);
-            readBinary(opentelemetry_parent_span_id, in);
             readBinary(opentelemetry_tracestate, in);
             readBinary(opentelemetry_trace_flags, in);
 
@@ -163,7 +161,7 @@ void ClientInfo::setInitialQuery()
     client_name = (DBMS_NAME " ") + client_name;
 }
 
-bool ClientInfo::setOpenTelemetryTraceparent(const std::string & traceparent,
+bool ClientInfo::parseTraceparentHeader(const std::string & traceparent,
     std::string & error)
 {
     uint8_t version = -1;
@@ -215,13 +213,13 @@ bool ClientInfo::setOpenTelemetryTraceparent(const std::string & traceparent,
 
     opentelemetry_trace_id = static_cast<__uint128_t>(trace_id_high) << 64
         | trace_id_low;
-    opentelemetry_parent_span_id = trace_parent;
+    opentelemetry_span_id = trace_parent;
     opentelemetry_trace_flags = trace_flags;
     return true;
 }
 
 
-std::string ClientInfo::getOpenTelemetryTraceparentForChild() const
+std::string ClientInfo::composeTraceparentHeader() const
 {
     // This span is a parent for its children, so we specify this span_id as a
     // parent id.

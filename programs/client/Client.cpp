@@ -2498,7 +2498,7 @@ public:
         {
             std::string traceparent = options["opentelemetry-traceparent"].as<std::string>();
             std::string error;
-            if (!context.getClientInfo().setOpenTelemetryTraceparent(
+            if (!context.getClientInfo().parseTraceparentHeader(
                 traceparent, error))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
