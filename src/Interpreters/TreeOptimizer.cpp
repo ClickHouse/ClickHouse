@@ -140,7 +140,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
             }
-            else if (!function_factory.get(function->name, context)->isInjective(Block{}))
+            else if (!function_factory.get(function->name, context)->isInjective({}))
             {
                 ++i;
                 continue;
@@ -269,7 +269,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 }
 
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
-void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query)
+void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, ASTPtr & node)
 {
     if (!select_query->groupBy())
         return;
@@ -279,10 +279,8 @@ void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query)
 
     GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_keys);
 
-    auto select = select_query->select();
-
     SelectAggregateFunctionOfGroupByKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
-    SelectAggregateFunctionOfGroupByKeysVisitor(visitor_data).visit(select);
+    SelectAggregateFunctionOfGroupByKeysVisitor(visitor_data).visit(node);
 }
 
 /// Remove duplicate items from ORDER BY.
@@ -647,7 +645,7 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
 
     /// Eliminate min/max/any aggregators of functions of GROUP BY keys
     if (settings.optimize_aggregators_of_group_by_keys)
-        optimizeAggregateFunctionsOfGroupByKeys(select_query);
+        optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
 
     /// Remove duplicate items from ORDER BY.
     optimizeDuplicatesInOrderBy(select_query);

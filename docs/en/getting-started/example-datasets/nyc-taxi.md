@@ -195,7 +195,7 @@ The data in this table uses 142 GB.
 
 (Importing data directly from Postgres is also possible using `COPY ... TO PROGRAM`.)
 
-Unfortunately, all the fields associated with the weather (precipitation…average\_wind\_speed) were filled with NULL. Because of this, we will remove them from the final data set.
+Unfortunately, all the fields associated with the weather (precipitation…average_wind_speed) were filled with NULL. Because of this, we will remove them from the final data set.
 
 To start, we’ll create a table on a single server. Later we will make the table distributed.
 

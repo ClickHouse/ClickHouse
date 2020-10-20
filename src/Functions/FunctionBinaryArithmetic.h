@@ -613,17 +613,17 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
-    void executeAggregateMultiply(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    void executeAggregateMultiply(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         ColumnNumbers new_arguments = arguments;
-        if (WhichDataType(block.getByPosition(new_arguments[1]).type).isAggregateFunction())
+        if (WhichDataType(columns[new_arguments[1]].type).isAggregateFunction())
             std::swap(new_arguments[0], new_arguments[1]);
 
-        if (!isColumnConst(*block.getByPosition(new_arguments[1]).column))
-            throw Exception{"Illegal column " + block.getByPosition(new_arguments[1]).column->getName()
+        if (!isColumnConst(*columns[new_arguments[1]].column))
+            throw Exception{"Illegal column " + columns[new_arguments[1]].column->getName()
                 + " of argument of aggregation state multiply. Should be integer constant", ErrorCodes::ILLEGAL_COLUMN};
 
-        const IColumn & agg_state_column = *block.getByPosition(new_arguments[0]).column;
+        const IColumn & agg_state_column = *columns[new_arguments[0]].column;
         bool agg_state_is_const = isColumnConst(agg_state_column);
         const ColumnAggregateFunction & column = typeid_cast<const ColumnAggregateFunction &>(
             agg_state_is_const ? assert_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
@@ -647,7 +647,7 @@ class FunctionBinaryArithmetic : public IFunction
         auto & vec_to = column_to->getData();
         auto & vec_from = column_from->getData();
 
-        UInt64 m = typeid_cast<const ColumnConst *>(block.getByPosition(new_arguments[1]).column.get())->getValue<UInt64>();
+        UInt64 m = typeid_cast<const ColumnConst *>(columns[new_arguments[1]].column.get())->getValue<UInt64>();
 
         // Since we merge the function states by ourselves, we have to have an
         // Arena for this. Pass it to the resulting column so that the arena
@@ -674,16 +674,16 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         if (agg_state_is_const)
-            block.getByPosition(result).column = ColumnConst::create(std::move(column_to), input_rows_count);
+            columns[result].column = ColumnConst::create(std::move(column_to), input_rows_count);
         else
-            block.getByPosition(result).column = std::move(column_to);
+            columns[result].column = std::move(column_to);
     }
 
     /// Merge two aggregation states together.
-    void executeAggregateAddition(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    void executeAggregateAddition(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
-        const IColumn & lhs_column = *block.getByPosition(arguments[0]).column;
-        const IColumn & rhs_column = *block.getByPosition(arguments[1]).column;
+        const IColumn & lhs_column = *columns[arguments[0]].column;
+        const IColumn & rhs_column = *columns[arguments[1]].column;
 
         bool lhs_is_const = isColumnConst(lhs_column);
         bool rhs_is_const = isColumnConst(rhs_column);
@@ -707,30 +707,30 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         if (lhs_is_const && rhs_is_const)
-            block.getByPosition(result).column = ColumnConst::create(std::move(column_to), input_rows_count);
+            columns[result].column = ColumnConst::create(std::move(column_to), input_rows_count);
         else
-            block.getByPosition(result).column = std::move(column_to);
+            columns[result].column = std::move(column_to);
     }
 
-    void executeDateTimeIntervalPlusMinus(Block & block, const ColumnNumbers & arguments,
-        size_t result, size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
+    void executeDateTimeIntervalPlusMinus(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments,
+                                          size_t result, size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
     {
         ColumnNumbers new_arguments = arguments;
 
         /// Interval argument must be second.
-        if (WhichDataType(block.getByPosition(arguments[1]).type).isDateOrDateTime())
+        if (WhichDataType(columns[arguments[1]].type).isDateOrDateTime())
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
-        Block new_block = block;
-        new_block.getByPosition(new_arguments[1]).type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+        ColumnsWithTypeAndName new_columns = columns;
+        new_columns[new_arguments[1]].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
         ColumnsWithTypeAndName new_arguments_with_type_and_name =
-                {new_block.getByPosition(new_arguments[0]), new_block.getByPosition(new_arguments[1])};
+                {new_columns[new_arguments[0]], new_columns[new_arguments[1]]};
         auto function = function_builder->build(new_arguments_with_type_and_name);
 
-        function->execute(new_block, new_arguments, result, input_rows_count);
-        block.getByPosition(result).column = new_block.getByPosition(result).column;
+        function->execute(new_columns, new_arguments, result, input_rows_count);
+        columns[result].column = new_columns[result].column;
     }
 
 public:
@@ -851,12 +851,12 @@ public:
         return type_res;
     }
 
-    bool executeFixedString(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeFixedString(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result) const
     {
         using OpImpl = FixedStringOperationImpl<Op<UInt8, UInt8>>;
 
-        auto col_left_raw = block.getByPosition(arguments[0]).column.get();
-        auto col_right_raw = block.getByPosition(arguments[1]).column.get();
+        auto col_left_raw = columns[arguments[0]].column.get();
+        auto col_right_raw = columns[arguments[1]].column.get();
         if (auto col_left_const = checkAndGetColumnConst<ColumnFixedString>(col_left_raw))
         {
             if (auto col_right_const = checkAndGetColumnConst<ColumnFixedString>(col_right_raw))
@@ -872,7 +872,7 @@ public:
                                       col_right->getChars().data(),
                                       out_chars.data(),
                                       out_chars.size());
-                block.getByPosition(result).column = ColumnConst::create(std::move(col_res), block.rows());
+                columns[result].column = ColumnConst::create(std::move(col_res), col_left_raw->size());
                 return true;
             }
         }
@@ -922,14 +922,14 @@ public:
                     out_chars.size(),
                     col_left->getN());
             }
-            block.getByPosition(result).column = std::move(col_res);
+            columns[result].column = std::move(col_res);
             return true;
         }
         return false;
     }
 
     template <typename A, typename B>
-    bool executeNumeric(Block & block, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right) const
+    bool executeNumeric(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -944,8 +944,8 @@ public:
             using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
             using ColVecResult = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
 
-            auto col_left_raw = block.getByPosition(arguments[0]).column.get();
-            auto col_right_raw = block.getByPosition(arguments[1]).column.get();
+            auto col_left_raw = columns[arguments[0]].column.get();
+            auto col_right_raw = columns[arguments[1]].column.get();
 
             auto col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw);
             auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw);
@@ -981,14 +981,14 @@ public:
                         OpImplCheck::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b) :
                         OpImpl::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b);
 
-                    block.getByPosition(result).column = ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
+                    columns[result].column = ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
                             col_left_const->size(), toField(res, type.getScale()));
                     return true;
                 }
 
                 col_res = ColVecResult::create(0, type.getScale());
                 auto & vec_res = col_res->getData();
-                vec_res.resize(block.rows());
+                vec_res.resize(col_left_raw->size());
 
                 if (col_left && col_right)
                 {
@@ -1026,13 +1026,13 @@ public:
                 if (col_left_const && col_right_const)
                 {
                     auto res = OpImpl::constantConstant(col_left_const->template getValue<T0>(), col_right_const->template getValue<T1>());
-                    block.getByPosition(result).column = ResultDataType().createColumnConst(col_left_const->size(), toField(res));
+                    columns[result].column = ResultDataType().createColumnConst(col_left_const->size(), toField(res));
                     return true;
                 }
 
                 col_res = ColVecResult::create();
                 auto & vec_res = col_res->getData();
-                vec_res.resize(block.rows());
+                vec_res.resize(col_left_raw->size());
 
                 if (col_left && col_right)
                 {
@@ -1050,38 +1050,38 @@ public:
                     return false;
             }
 
-            block.getByPosition(result).column = std::move(col_res);
+            columns[result].column = std::move(col_res);
             return true;
         }
         return false;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         /// Special case when multiply aggregate function state
-        if (isAggregateMultiply(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
+        if (isAggregateMultiply(columns[arguments[0]].type, columns[arguments[1]].type))
         {
-            executeAggregateMultiply(block, arguments, result, input_rows_count);
+            executeAggregateMultiply(columns, arguments, result, input_rows_count);
             return;
         }
 
         /// Special case - addition of two aggregate functions states
-        if (isAggregateAddition(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
+        if (isAggregateAddition(columns[arguments[0]].type, columns[arguments[1]].type))
         {
-            executeAggregateAddition(block, arguments, result, input_rows_count);
+            executeAggregateAddition(columns, arguments, result, input_rows_count);
             return;
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder
-            = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type, context))
+            = getFunctionForIntervalArithmetic(columns[arguments[0]].type, columns[arguments[1]].type, context))
         {
-            executeDateTimeIntervalPlusMinus(block, arguments, result, input_rows_count, function_builder);
+            executeDateTimeIntervalPlusMinus(columns, arguments, result, input_rows_count, function_builder);
             return;
         }
 
-        const auto & left_argument = block.getByPosition(arguments[0]);
-        const auto & right_argument = block.getByPosition(arguments[1]);
+        const auto & left_argument = columns[arguments[0]];
+        const auto & right_argument = columns[arguments[1]];
         auto * left_generic = left_argument.type.get();
         auto * right_generic = right_argument.type.get();
         bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
@@ -1093,10 +1093,10 @@ public:
                 if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
                     return false;
                 else
-                    return executeFixedString(block, arguments, result);
+                    return executeFixedString(columns, arguments, result);
             }
             else
-                return executeNumeric(block, arguments, result, left, right);
+                return executeNumeric(columns, arguments, result, left, right);
         });
 
         if (!valid)
@@ -1190,28 +1190,30 @@ public:
     {
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (left.column && isColumnConst(*left.column) && arguments.size() == 1)
         {
-            Block block_with_constant
+            ColumnsWithTypeAndName columns_with_constant
                 = {{left.column->cloneResized(input_rows_count), left.type, left.name},
-                   block.getByPosition(arguments[0]),
-                   block.getByPosition(result)};
-            Base::executeImpl(block_with_constant, {0, 1}, 2, input_rows_count);
-            block.getByPosition(result) = block_with_constant.getByPosition(2);
+                   columns[arguments[0]],
+                   columns[result]};
+
+            Base::executeImpl(columns_with_constant, {0, 1}, 2, input_rows_count);
+            columns[result] = columns_with_constant[2];
         }
         else if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
         {
-            Block block_with_constant
-                = {block.getByPosition(arguments[0]),
+            ColumnsWithTypeAndName columns_with_constant
+                = {columns[arguments[0]],
                    {right.column->cloneResized(input_rows_count), right.type, right.name},
-                   block.getByPosition(result)};
-            Base::executeImpl(block_with_constant, {0, 1}, 2, input_rows_count);
-            block.getByPosition(result) = block_with_constant.getByPosition(2);
+                   columns[result]};
+
+            Base::executeImpl(columns_with_constant, {0, 1}, 2, input_rows_count);
+            columns[result] = columns_with_constant[2];
         }
         else
-            Base::executeImpl(block, arguments, result, input_rows_count);
+            Base::executeImpl(columns, arguments, result, input_rows_count);
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -1242,13 +1244,14 @@ public:
             {
                 auto transform = [&](const Field & point)
                 {
-                    Block block_with_constant
+                    ColumnsWithTypeAndName columns_with_constant
                         = {{left.column->cloneResized(1), left.type, left.name},
                            {right.type->createColumnConst(1, point), right.type, right.name},
                            {nullptr, return_type, ""}};
-                    Base::executeImpl(block_with_constant, {0, 1}, 2, 1);
+
+                    Base::executeImpl(columns_with_constant, {0, 1}, 2, 1);
                     Field point_transformed;
-                    block_with_constant.getByPosition(2).column->get(0, point_transformed);
+                    columns_with_constant[2].column->get(0, point_transformed);
                     return point_transformed;
                 };
                 transform(left_point);
@@ -1277,13 +1280,14 @@ public:
             {
                 auto transform = [&](const Field & point)
                 {
-                    Block block_with_constant
+                    ColumnsWithTypeAndName columns_with_constant
                         = {{left.type->createColumnConst(1, point), left.type, left.name},
                            {right.column->cloneResized(1), right.type, right.name},
                            {nullptr, return_type, ""}};
-                    Base::executeImpl(block_with_constant, {0, 1}, 2, 1);
+
+                    Base::executeImpl(columns_with_constant, {0, 1}, 2, 1);
                     Field point_transformed;
-                    block_with_constant.getByPosition(2).column->get(0, point_transformed);
+                    columns_with_constant[2].column->get(0, point_transformed);
                     return point_transformed;
                 };
 
