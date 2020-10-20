@@ -315,6 +315,9 @@ void HTTPHandler::processQuery(
         request.get("X-ClickHouse-Query-Id", "")));
 
     // Parse the OpenTelemetry traceparent header.
+    // Disable in Arcadia -- it interferes with the
+    // test_clickhouse.TestTracing.test_tracing_via_http_proxy[traceparent] test.
+#if !defined(ARCADIA_BUILD)
     if (request.has("traceparent"))
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
@@ -329,6 +332,7 @@ void HTTPHandler::processQuery(
 
         context.getClientInfo().opentelemetry_tracestate = request.get("tracestate", "");
     }
+#endif
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
