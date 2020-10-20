@@ -5,6 +5,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -34,9 +35,7 @@ namespace DB
 class DatabaseReplicated : public DatabaseAtomic
 {
 public:
-    DatabaseReplicated(const String & name_, const String & metadata_path_, const String & zookeeper_path_, const String & replica_name_, Context & context);
-
-    ~DatabaseReplicated();
+    DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid, const String & zookeeper_path_, const String & replica_name_, Context & context);
 
     void drop(const Context & /*context*/) override;
 

@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -160,6 +161,39 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         }
     }
 
+    /// For LowCardinality. This is above Nullable, because LowCardinality can contain Nullable but cannot be inside Nullable.
+    {
+        bool have_low_cardinality = false;
+        bool have_not_low_cardinality = false;
+
+        DataTypes nested_types;
+        nested_types.reserve(types.size());
+
+        for (const auto & type : types)
+        {
+            if (const DataTypeLowCardinality * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            {
+                have_low_cardinality = true;
+                nested_types.emplace_back(type_low_cardinality->getDictionaryType());
+            }
+            else
+            {
+                have_not_low_cardinality = true;
+                nested_types.emplace_back(type);
+            }
+        }
+
+        /// All LowCardinality gives LowCardinality.
+        /// LowCardinality with high cardinality gives high cardinality.
+        if (have_low_cardinality)
+        {
+            if (have_not_low_cardinality)
+                return getLeastSupertype(nested_types);
+            else
+                return std::make_shared<DataTypeLowCardinality>(getLeastSupertype(nested_types));
+        }
+    }
+
     /// For Nullable
     {
         bool have_nullable = false;
@@ -265,7 +299,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
 
             if (num_supported != type_ids.size())
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless convertion to Decimal",
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless conversion to Decimal",
                                 ErrorCodes::NO_COMMON_TYPE);
 
             UInt32 max_scale = 0;

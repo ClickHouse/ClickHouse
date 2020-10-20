@@ -41,6 +41,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return is_result_datetime64 ? 2 : 1; }
     bool isVariadic() const override { return is_result_datetime64; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -64,13 +65,13 @@ public:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         using SourceColumnType = typename SourceDataType::ColumnType;
         using ResultColumnType = typename ResultDataType::ColumnType;
 
-        const auto & src = block.getByPosition(arguments[0]);
-        auto & res = block.getByPosition(result);
+        const auto & src = columns[arguments[0]];
+        auto & res = columns[result];
         const auto & col = *src.column;
 
         const SourceColumnType * source_col_typed = checkAndGetColumn<SourceColumnType>(col);

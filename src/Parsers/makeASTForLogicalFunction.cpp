@@ -7,21 +7,6 @@
 
 namespace DB
 {
-ASTPtr makeASTForLogicalNot(ASTPtr argument)
-{
-    bool b;
-    if (tryGetLiteralBool(argument.get(), b))
-        return std::make_shared<ASTLiteral>(Field{UInt8(!b)});
-
-    auto function = std::make_shared<ASTFunction>();
-    auto exp_list = std::make_shared<ASTExpressionList>();
-    function->name = "not";
-    function->arguments = exp_list;
-    function->children.push_back(exp_list);
-    exp_list->children.push_back(argument);
-    return function;
-}
-
 
 ASTPtr makeASTForLogicalAnd(ASTs && arguments)
 {
@@ -100,4 +85,5 @@ bool tryGetLiteralBool(const IAST * ast, bool & value)
         return false;
     }
 }
+
 }

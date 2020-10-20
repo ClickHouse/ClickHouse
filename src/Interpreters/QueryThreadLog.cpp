@@ -1,30 +1,31 @@
 #include "QueryThreadLog.h"
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/ProfileEventsExt.h>
-#include <Common/ClickHouseRevision.h>
-#include <Poco/Net/IPAddress.h>
 #include <array>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/QueryLog.h>
+#include <Poco/Net/IPAddress.h>
+#include <Common/ClickHouseRevision.h>
 
 
 namespace DB
 {
-
 Block QueryThreadLogElement::createBlock()
 {
-    return
-    {
+    return {
         {std::make_shared<DataTypeDate>(),          "event_date"},
         {std::make_shared<DataTypeDateTime>(),      "event_time"},
+        {std::make_shared<DataTypeDateTime64>(6),   "event_time_microseconds"},
         {std::make_shared<DataTypeDateTime>(),      "query_start_time"},
+        {std::make_shared<DataTypeDateTime64>(6),   "query_start_time_microseconds"},
         {std::make_shared<DataTypeUInt64>(),        "query_duration_ms"},
 
         {std::make_shared<DataTypeUInt64>(),        "read_rows"},
@@ -73,7 +74,9 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
+    columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(query_start_time);
+    columns[i++]->insert(query_start_time_microseconds);
     columns[i++]->insert(query_duration_ms);
 
     columns[i++]->insert(read_rows);
@@ -92,7 +95,7 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 
     QueryLogElement::appendClientInfo(client_info, columns, i);
 
-    columns[i++]->insert(ClickHouseRevision::get());
+    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     if (profile_counters)
     {

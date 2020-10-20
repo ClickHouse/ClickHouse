@@ -61,9 +61,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    [[clang::optnone]] void executeImpl(Block & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        if (const ColumnConst * column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnConst * column = checkAndGetColumnConst<ColumnString>(columns[arguments[0]].column.get()))
         {
             String mode = column->getValue<String>();
 
@@ -160,7 +160,7 @@ public:
         else
             throw Exception("The only argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, 0ULL);
+        columns[result].column = columns[result].type->createColumnConst(input_rows_count, 0ULL);
     }
 };
 

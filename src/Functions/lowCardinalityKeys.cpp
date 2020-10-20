@@ -7,12 +7,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
 
 class FunctionLowCardinalityKeys: public IFunction
 {
@@ -38,16 +39,17 @@ public:
         return type->getDictionaryType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         auto arg_num = arguments[0];
-        const auto & arg = block.getByPosition(arg_num);
-        auto & res = block.getByPosition(result);
+        const auto & arg = columns[arg_num];
+        auto & res = columns[result];
         const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(arg.column.get());
         res.column = low_cardinality_column->getDictionary().getNestedColumn()->cloneResized(arg.column->size());
     }
 };
 
+}
 
 void registerFunctionLowCardinalityKeys(FunctionFactory & factory)
 {

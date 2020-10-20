@@ -175,13 +175,22 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
 void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     size_t num_plans = nested_interpreters.size();
-    std::vector<QueryPlan> plans(num_plans);
+
+    /// Skip union for single interpreter.
+    if (num_plans == 1)
+    {
+        nested_interpreters.front()->buildQueryPlan(query_plan);
+        return;
+    }
+
+    std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
     DataStreams data_streams(num_plans);
 
     for (size_t i = 0; i < num_plans; ++i)
     {
-        nested_interpreters[i]->buildQueryPlan(plans[i]);
-        data_streams[i] = plans[i].getCurrentDataStream();
+        plans[i] = std::make_unique<QueryPlan>();
+        nested_interpreters[i]->buildQueryPlan(*plans[i]);
+        data_streams[i] = plans[i]->getCurrentDataStream();
     }
 
     auto max_threads = context->getSettingsRef().max_threads;

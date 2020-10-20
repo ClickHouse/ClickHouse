@@ -7,6 +7,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Get the host name. Is is constant on single server, but is not constant in distributed queries.
 class FunctionHostName : public IFunction
@@ -43,13 +45,14 @@ public:
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.
       */
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
+        columns[result].column = columns[result].type->createColumnConst(
             input_rows_count, DNSResolver::instance().getHostName())->convertToFullColumnIfConst();
     }
 };
 
+}
 
 void registerFunctionHostName(FunctionFactory & factory)
 {

@@ -8,13 +8,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
 
 class FunctionReinterpretAsFixedString : public IFunction
 {
@@ -65,10 +66,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IColumn & src = *block.getByPosition(arguments[0]).column;
-        MutableColumnPtr dst = block.getByPosition(result).type->createColumn();
+        const IColumn & src = *columns[arguments[0]].column;
+        MutableColumnPtr dst = columns[result].type->createColumn();
 
         if (ColumnFixedString * dst_concrete = typeid_cast<ColumnFixedString *>(dst.get()))
         {
@@ -80,9 +81,11 @@ public:
         else
             throw Exception("Illegal column " + src.getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = std::move(dst);
+        columns[result].column = std::move(dst);
     }
 };
+
+}
 
 void registerFunctionReinterpretAsFixedString(FunctionFactory & factory)
 {

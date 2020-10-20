@@ -21,13 +21,8 @@ void finalizeChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     for (auto & column : columns)
-    {
         if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
-        {
-            auto mut_column = IColumn::mutate(std::move(column));
-            column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
-        }
-    }
+            column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
 
     chunk.setColumns(std::move(columns), num_rows);
 }
@@ -262,7 +257,8 @@ void TotalsHavingTransform::prepareTotals()
     {
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
         expression->execute(block);
-        totals = Chunk(block.getColumns(), 1);
+        /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
+        totals = Chunk(block.getColumns(), block.rows());
     }
 }
 

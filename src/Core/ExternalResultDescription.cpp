@@ -1,12 +1,14 @@
 #include "ExternalResultDescription.h"
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
 
 
 namespace DB
@@ -60,6 +62,20 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtDateTime, is_nullable);
         else if (typeid_cast<const DataTypeUUID *>(type))
             types.emplace_back(ValueType::vtUUID, is_nullable);
+        else if (typeid_cast<const DataTypeEnum8 *>(type))
+            types.emplace_back(ValueType::vtString, is_nullable);
+        else if (typeid_cast<const DataTypeEnum16 *>(type))
+            types.emplace_back(ValueType::vtString, is_nullable);
+        else if (typeid_cast<const DataTypeDateTime64 *>(type))
+            types.emplace_back(ValueType::vtDateTime64, is_nullable);
+        else if (typeid_cast<const DataTypeDecimal<Decimal32> *>(type))
+            types.emplace_back(ValueType::vtDecimal32, is_nullable);
+        else if (typeid_cast<const DataTypeDecimal<Decimal64> *>(type))
+            types.emplace_back(ValueType::vtDecimal64, is_nullable);
+        else if (typeid_cast<const DataTypeDecimal<Decimal128> *>(type))
+            types.emplace_back(ValueType::vtDecimal128, is_nullable);
+        else if (typeid_cast<const DataTypeDecimal<Decimal256> *>(type))
+            types.emplace_back(ValueType::vtDecimal256, is_nullable);
         else
             throw Exception{"Unsupported type " + type->getName(), ErrorCodes::UNKNOWN_TYPE};
     }

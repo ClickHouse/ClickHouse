@@ -1,6 +1,6 @@
-# system.part\_log {#system_tables-part-log}
+# system.part_log {#system_tables-part-log}
 
-The `system.part_log` table is created only if the [part\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-part-log) server setting is specified.
+The `system.part_log` table is created only if the [part_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-part-log) server setting is specified.
 
 This table contains information about events that occurred with [data parts](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family tables, such as adding or merging data.
 
@@ -10,7 +10,7 @@ The `system.part_log` table contains the following columns:
     -   `NEW_PART` — Inserting of a new data part.
     -   `MERGE_PARTS` — Merging of data parts.
     -   `DOWNLOAD_PART` — Downloading a data part.
-    -   `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../../sql-reference/statements/alter.md#alter_detach-partition).
+    -   `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../../sql-reference/statements/alter/partition.md#alter_detach-partition).
     -   `MUTATE_PART` — Mutating of a data part.
     -   `MOVE_PART` — Moving the data part from the one disk to another one.
 -   `event_date` (Date) — Event date.
@@ -30,3 +30,5 @@ The `system.part_log` table contains the following columns:
 -   `exception` (String) — Text message of the occurred error.
 
 The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/part_log) <!--hide-->

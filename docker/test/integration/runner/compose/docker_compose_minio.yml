@@ -1,0 +1,46 @@
+version: '2.3'
+
+services:
+  minio1:
+    image: minio/minio
+    volumes:
+      - data1-1:/data1
+      - ${MINIO_CERTS_DIR:-}:/certs
+    ports:
+      - "9001:9001"
+    environment:
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio123
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    command: server --address :9001 --certs-dir /certs /data1-1
+    depends_on:
+      - proxy1
+      - proxy2
+
+  # HTTP proxies for Minio.
+  proxy1:
+    image: yandex/clickhouse-s3-proxy
+    ports:
+      - "8080" # Redirect proxy port
+      - "80"   # Reverse proxy port
+      - "443"  # Reverse proxy port (secure)
+
+  proxy2:
+    image: yandex/clickhouse-s3-proxy
+    ports:
+      - "8080"
+      - "80"
+      - "443"
+
+  # Empty container to run proxy resolver.
+  resolver:
+    image: yandex/clickhouse-python-bottle
+    ports:
+      - "8080"
+    tty: true
+    depends_on:
+      - proxy1
+      - proxy2
+
+volumes:
+  data1-1:

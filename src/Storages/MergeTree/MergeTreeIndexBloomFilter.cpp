@@ -1,8 +1,8 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <ext/bit_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
@@ -35,6 +35,8 @@ MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
     , bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
 {
+    assert(bits_per_row != 0);
+    assert(hash_functions != 0);
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
@@ -92,7 +94,6 @@ static void assertIndexColumnsType(const Block & header)
 MergeTreeIndexPtr bloomFilterIndexCreatorNew(
     const IndexDescription & index)
 {
-
     double max_conflict_probability = 0.025;
 
     if (!index.arguments.empty())

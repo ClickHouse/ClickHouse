@@ -226,14 +226,32 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     String quorum_str;
     if (zookeeper->tryGet(storage.zookeeper_path + "/quorum/status", quorum_str))
     {
-        ReplicatedMergeTreeQuorumEntry quorum_entry;
-        quorum_entry.fromString(quorum_str);
+        ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
 
         if (!quorum_entry.replicas.count(storage.replica_name)
-            && zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
+            && storage.getActiveContainingPart(quorum_entry.part_name))
         {
             LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
-            storage.updateQuorum(quorum_entry.part_name);
+            storage.updateQuorum(quorum_entry.part_name, false);
+        }
+    }
+
+    Strings part_names;
+    String parallel_quorum_parts_path = storage.zookeeper_path + "/quorum/parallel";
+    if (zookeeper->tryGetChildren(parallel_quorum_parts_path, part_names) == Coordination::Error::ZOK)
+    {
+        for (auto & part_name : part_names)
+        {
+            if (zookeeper->tryGet(parallel_quorum_parts_path + "/" + part_name, quorum_str))
+            {
+                ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
+                if (!quorum_entry.replicas.count(storage.replica_name)
+                    && storage.getActiveContainingPart(part_name))
+                {
+                    LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", part_name);
+                    storage.updateQuorum(part_name, true);
+                }
+            }
         }
     }
 }
@@ -278,9 +296,19 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     }
     catch (const Coordination::Exception & e)
     {
+        String existing_replica_host;
+        zookeeper->tryGet(storage.replica_path + "/host", existing_replica_host);
+
+        if (existing_replica_host.empty())
+            existing_replica_host = "without host node";
+        else
+            boost::replace_all(existing_replica_host, "\n", ", ");
+
         if (e.code == Coordination::Error::ZNODEEXISTS)
-            throw Exception("Replica " + storage.replica_path + " appears to be already active. If you're sure it's not, "
-                "try again in a minute or remove znode " + storage.replica_path + "/is_active manually", ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
+            throw Exception(ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
+                "Replica {} appears to be already active ({}). If you're sure it's not, "
+                "try again in a minute or remove znode {}/is_active manually",
+                storage.replica_path, existing_replica_host, storage.replica_path);
 
         throw;
     }

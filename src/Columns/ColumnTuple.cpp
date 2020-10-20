@@ -195,6 +195,12 @@ void ColumnTuple::updateWeakHash32(WeakHash32 & hash) const
         column->updateWeakHash32(hash);
 }
 
+void ColumnTuple::updateHashFast(SipHash & hash) const
+{
+    for (const auto & column : columns)
+        column->updateHashFast(hash);
+}
+
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const size_t tuple_size = columns.size();
@@ -338,15 +344,19 @@ void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_h
     }
 }
 
-void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    for (const auto& column : columns)
-    {
-        column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
-        while (limit && limit <= equal_range.back().first)
-            equal_range.pop_back();
+    if (equal_ranges.empty())
+        return;
 
-        if (equal_range.empty())
+    for (const auto & column : columns)
+    {
+        column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
+
+        while (limit && !equal_ranges.empty() && limit <= equal_ranges.back().first)
+            equal_ranges.pop_back();
+
+        if (equal_ranges.empty())
             break;
     }
 }

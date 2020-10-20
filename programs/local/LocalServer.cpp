@@ -20,7 +20,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
-#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
@@ -78,10 +77,12 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
+    if (config().has("logger.console") || config().has("logger.level") || config().has("logger.log"))
     {
+        // force enable logging
+        config().setString("logger", "logger");
         // sensitive data rules are not used here
-        buildLoggers(config(), logger(), self.commandName());
+        buildLoggers(config(), logger(), "clickhouse-local");
     }
     else
     {
@@ -113,7 +114,7 @@ void LocalServer::tryInitPath()
         if (path.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot work with emtpy storage path that is explicitly specified"
+                "Cannot work with empty storage path that is explicitly specified"
                 " by the --path option. Please check the program options and"
                 " correct the --path.");
         }
@@ -130,7 +131,7 @@ void LocalServer::tryInitPath()
             // This is a directory that is left by a previous run of
             // clickhouse-local that had the same pid and did not complete
             // correctly. Remove it, with an additional sanity check.
-            if (default_path.parent_path() != tmp)
+            if (!std::filesystem::equivalent(default_path.parent_path(), tmp))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "The temporary directory of clickhouse-local '{}' is not"
@@ -209,9 +210,12 @@ try
 
     /// Maybe useless
     if (config().has("macros"))
-        context->setMacros(std::make_unique<Macros>(config(), "macros"));
+        context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
     /// Skip networking
+
+    /// Sets external authenticators config (LDAP).
+    context->setExternalAuthenticatorsConfig(config());
 
     setupUsers();
 
@@ -243,12 +247,15 @@ try
     context->setCurrentDatabase(default_database);
     applyCmdOptions();
 
-    if (!context->getPath().empty())
+    String path = context->getPath();
+    if (!path.empty())
     {
         /// Lock path directory before read
-        status.emplace(context->getPath() + "status");
+        status.emplace(context->getPath() + "status", StatusFile::write_full_info);
 
-        LOG_DEBUG(log, "Loading metadata from {}", context->getPath());
+        LOG_DEBUG(log, "Loading metadata from {}", path);
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
         loadMetadataSystem(*context);
         attachSystemTables(*context);
         loadMetadata(*context);
@@ -265,6 +272,7 @@ try
     context->shutdown();
     context.reset();
 
+    status.reset();
     cleanup();
 
     return Application::EXIT_OK;
@@ -431,7 +439,7 @@ void LocalServer::cleanup()
         const auto dir = *temporary_directory_to_delete;
         temporary_directory_to_delete.reset();
 
-        if (dir.parent_path() != tmp)
+        if (!std::filesystem::equivalent(dir.parent_path(), tmp))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "The temporary directory of clickhouse-local '{}' is not inside"
@@ -498,6 +506,7 @@ void LocalServer::init(int argc, char ** argv)
         ("stacktrace", "print stack traces of exceptions")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
+        ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
         ("ignore-error", "do not stop processing if a query failed")
@@ -553,6 +562,8 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("echo", true);
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("logger.console"))
+        config().setBool("logger.console", options["logger.console"].as<bool>());
     if (options.count("logger.log"))
         config().setString("logger.log", options["logger.log"].as<std::string>());
     if (options.count("logger.level"))

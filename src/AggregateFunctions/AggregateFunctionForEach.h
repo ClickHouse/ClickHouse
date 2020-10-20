@@ -247,6 +247,11 @@ public:
     {
         return true;
     }
+
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
 };
 
 

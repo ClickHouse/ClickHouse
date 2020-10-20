@@ -17,7 +17,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
@@ -262,7 +261,7 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
 }
 
 
-Pipes StorageHDFS::read(
+Pipe StorageHDFS::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -298,7 +297,7 @@ Pipes StorageHDFS::read(
         pipes.emplace_back(std::make_shared<HDFSSource>(
                 sources_info, uri_without_path, format_name, compression_method, metadata_snapshot->getSampleBlock(), context_, max_block_size));
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)

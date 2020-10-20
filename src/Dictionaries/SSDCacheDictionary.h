@@ -76,7 +76,7 @@ public:
     {
         using time_point_t = std::chrono::system_clock::time_point;
         using time_point_rep_t = time_point_t::rep;
-        using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
+        using time_point_urep_t = make_unsigned_t<time_point_rep_t>;
 
         time_point_t expiresAt() const;
         void setExpiresAt(const time_point_t & t);
@@ -300,7 +300,7 @@ class SSDCacheDictionary final : public IDictionary
 {
 public:
     SSDCacheDictionary(
-            const std::string & name_,
+            const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
@@ -311,10 +311,6 @@ public:
             size_t read_buffer_size_,
             size_t write_buffer_size_,
             size_t max_stored_keys_);
-
-    const std::string & getDatabase() const override { return name; }
-    const std::string & getName() const override { return name; }
-    const std::string & getFullName() const override { return getName(); }
 
     std::string getTypeName() const override { return "SSDCache"; }
 
@@ -335,8 +331,8 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<SSDCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, path,
-                max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys);
+        return std::make_shared<SSDCacheDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime,
+                path, max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }

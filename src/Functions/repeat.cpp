@@ -17,6 +17,9 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+namespace
+{
+
 struct RepeatImpl
 {
     /// Safety threshold against DoS.
@@ -25,6 +28,14 @@ struct RepeatImpl
         static constexpr UInt64 max_repeat_times = 1000000;
         if (repeat_time > max_repeat_times)
             throw Exception("Too many times to repeat (" + std::to_string(repeat_time) + "), maximum is: " + std::to_string(max_repeat_times),
+                ErrorCodes::TOO_LARGE_STRING_SIZE);
+    }
+
+    static inline void checkStringSize(UInt64 size)
+    {
+        static constexpr UInt64 max_string_size = 1 << 30;
+        if (size > max_string_size)
+            throw Exception("Too large string size (" + std::to_string(size) + ") in function repeat, maximum is: " + std::to_string(max_string_size),
                 ErrorCodes::TOO_LARGE_STRING_SIZE);
     }
 
@@ -41,7 +52,10 @@ struct RepeatImpl
         res_offsets.assign(offsets);
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
-            data_size += (offsets[i] - offsets[i - 1] - 1) * repeat_time + 1;   /// Note that accessing -1th element is valid for PaddedPODArray.
+            /// Note that accessing -1th element is valid for PaddedPODArray.
+            size_t repeated_size = (offsets[i] - offsets[i - 1] - 1) * repeat_time + 1;
+            checkStringSize(repeated_size);
+            data_size += repeated_size;
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
@@ -63,7 +77,9 @@ struct RepeatImpl
         res_offsets.assign(offsets);
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
-            data_size += (offsets[i] - offsets[i - 1] - 1) * col_num[i] + 1;
+            size_t repeated_size = (offsets[i] - offsets[i - 1] - 1) * col_num[i] + 1;
+            checkStringSize(repeated_size);
+            data_size += repeated_size;
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
@@ -89,7 +105,9 @@ struct RepeatImpl
         UInt64 col_size = col_num.size();
         for (UInt64 i = 0; i < col_size; ++i)
         {
-            data_size += str_size * col_num[i] + 1;
+            size_t repeated_size = str_size * col_num[i] + 1;
+            checkStringSize(repeated_size);
+            data_size += repeated_size;
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
@@ -147,10 +165,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        const auto & strcolumn = block.getByPosition(arguments[0]).column;
-        const auto & numcolumn = block.getByPosition(arguments[1]).column;
+        const auto & strcolumn = columns[arguments[0]].column;
+        const auto & numcolumn = columns[arguments[1]].column;
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(strcolumn.get()))
         {
@@ -159,17 +177,17 @@ public:
                 UInt64 repeat_time = scale_column_num->getValue<UInt64>();
                 auto col_res = ColumnString::create();
                 RepeatImpl::vectorStrConstRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), repeat_time);
-                block.getByPosition(result).column = std::move(col_res);
+                columns[result].column = std::move(col_res);
                 return;
             }
-            else if (castType(block.getByPosition(arguments[1]).type.get(), [&](const auto & type)
+            else if (castType(columns[arguments[1]].type.get(), [&](const auto & type)
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
                     const ColumnVector<T> * colnum = checkAndGetColumn<ColumnVector<T>>(numcolumn.get());
                     auto col_res = ColumnString::create();
                     RepeatImpl::vectorStrVectorRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), colnum->getData());
-                    block.getByPosition(result).column = std::move(col_res);
+                    columns[result].column = std::move(col_res);
                     return true;
                 }))
             {
@@ -182,14 +200,14 @@ public:
 
             StringRef copy_str = col_const->getDataColumn().getDataAt(0);
 
-            if (castType(block.getByPosition(arguments[1]).type.get(), [&](const auto & type)
+            if (castType(columns[arguments[1]].type.get(), [&](const auto & type)
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
                     const ColumnVector<T> * colnum = checkAndGetColumn<ColumnVector<T>>(numcolumn.get());
                     auto col_res = ColumnString::create();
                     RepeatImpl::constStrVectorRepeat(copy_str, col_res->getChars(), col_res->getOffsets(), colnum->getData());
-                    block.getByPosition(result).column = std::move(col_res);
+                    columns[result].column = std::move(col_res);
                     return true;
                 }))
             {
@@ -198,11 +216,12 @@ public:
         }
 
         throw Exception(
-            "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+            "Illegal column " + columns[arguments[0]].column->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
+}
 
 void registerFunctionRepeat(FunctionFactory & factory)
 {

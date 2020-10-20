@@ -9,7 +9,7 @@ La construction de ClickHouse est prise en charge sous Linux, FreeBSD et Mac OS 
 
 # Si Vous Utilisez Windows {#if-you-use-windows}
 
-Si vous utilisez Windows, vous devez créer une machine virtuelle avec Ubuntu. Pour commencer à travailler avec une machine virtuelle, installez VirtualBox. Vous pouvez télécharger Ubuntu sur le site: https://www.ubuntu.com/\#download. veuillez créer une machine virtuelle à partir de l'image téléchargée (vous devez réserver au moins 4 Go de RAM pour cela). Pour exécuter un terminal de ligne de commande dans Ubuntu, recherchez un programme contenant le mot “terminal” dans son nom (gnome-terminal, konsole etc.) ou appuyez simplement sur Ctrl + Alt + T.
+Si vous utilisez Windows, vous devez créer une machine virtuelle avec Ubuntu. Pour commencer à travailler avec une machine virtuelle, installez VirtualBox. Vous pouvez télécharger Ubuntu sur le site: https://www.ubuntu.com/#download. veuillez créer une machine virtuelle à partir de l'image téléchargée (vous devez réserver au moins 4 Go de RAM pour cela). Pour exécuter un terminal de ligne de commande dans Ubuntu, recherchez un programme contenant le mot “terminal” dans son nom (gnome-terminal, konsole etc.) ou appuyez simplement sur Ctrl + Alt + T.
 
 # Si vous utilisez un système 32 bits {#if-you-use-a-32-bit-system}
 
@@ -32,7 +32,7 @@ Pour ce faire dans Ubuntu vous exécutez dans le terminal de ligne de commande:
     sudo apt update
     sudo apt install git
 
-Un bref manuel sur l'utilisation de Git peut être trouvé ici: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+Un bref manuel sur l'utilisation de Git peut être trouvé ici: https://education.github.com/git-cheat-sheet-education.pdf.
 Pour un manuel détaillé sur Git voir https://git-scm.com/book/en/v2.
 
 # Clonage D'un référentiel sur votre machine de développement {#cloning-a-repository-to-your-development-machine}
@@ -44,7 +44,7 @@ Dans le terminal de ligne de commande exécuter:
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Remarque: Veuillez remplacer *your\_github\_username* avec ce qui est approprié!
+Remarque: Veuillez remplacer *your_github_username* avec ce qui est approprié!
 
 Cette commande va créer un répertoire `ClickHouse` contenant la copie de travail du projet.
 
@@ -154,7 +154,7 @@ Maintenant que vous êtes prêt à construire ClickHouse nous vous conseillons d
     mkdir build
     cd build
 
-Vous pouvez avoir plusieurs répertoires différents (build\_release, build\_debug, etc.) pour les différents types de construction.
+Vous pouvez avoir plusieurs répertoires différents (build_release, build_debug, etc.) pour les différents types de construction.
 
 Tandis qu'à l'intérieur de la `build` répertoire, configurez votre build en exécutant CMake. Avant la première exécution, vous devez définir des variables d'environnement qui spécifient le compilateur (compilateur gcc version 9 dans cet exemple).
 
@@ -212,7 +212,7 @@ Pour exécuter le serveur sous l'utilisateur actuel vous devez naviguer vers `Cl
 
 Dans ce cas, ClickHouse utilisera les fichiers de configuration situés dans le répertoire courant. Vous pouvez l'exécuter `clickhouse server` depuis n'importe quel répertoire spécifiant le chemin d'accès à un fichier de configuration en tant que paramètre de ligne de commande `--config-file`.
 
-Pour vous connecter à ClickHouse avec clickhouse-client dans un autre terminal, accédez à `ClickHouse/build/programs/` et exécuter `clickhouse client`.
+Pour vous connecter à ClickHouse avec clickhouse-client dans un autre terminal, accédez à `ClickHouse/build/programs/` et exécuter `./clickhouse client`.
 
 Si vous obtenez `Connection refused` message sur Mac OS X ou FreeBSD, essayez de spécifier l'adresse hôte 127.0.0.1:
 
@@ -249,7 +249,7 @@ Le code Style Guide: https://clickhouse.tech/docs/fr/développement/style/
 
 Rédaction de tests: https://clickhouse.tech/docs/fr/développement/tests/
 
-Liste des tâches: https://github.com/ClickHouse/ClickHouse/contribute
+Liste des tâches: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # Des Données De Test {#test-data}
 

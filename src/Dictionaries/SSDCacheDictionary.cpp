@@ -1,4 +1,4 @@
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
 
 #include "SSDCacheDictionary.h"
 
@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int AIO_READ_ERROR;
     extern const int AIO_WRITE_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int CACHE_DICTIONARY_UPDATE_FAIL;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int CANNOT_FSYNC;
@@ -1191,10 +1192,25 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
 
             if (update_error_count)
             {
-                /// TODO: юзать старые значения.
+                /// TODO: use old values
 
-                /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
-                std::rethrow_exception(last_update_exception);
+                // We don't have expired data for that `id` so all we can do is
+                // to rethrow `last_exception`. We might have to throw the same
+                // exception for different callers of dictGet() in different
+                // threads, which might then modify the exception object, so we
+                // have to throw a copy.
+                try
+                {
+                    std::rethrow_exception(last_update_exception);
+                }
+                catch (...)
+                {
+                    throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                        "Update failed for dictionary '{}': {}",
+                        getPath(),
+                        getCurrentExceptionMessage(true /*with stack trace*/,
+                            true /*check embedded stack trace*/));
+                }
             }
 
             /// Set key
@@ -1276,7 +1292,7 @@ void SSDCacheStorage::collectGarbage()
 }
 
 SSDCacheDictionary::SSDCacheDictionary(
-    const std::string & name_,
+    const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
@@ -1287,7 +1303,7 @@ SSDCacheDictionary::SSDCacheDictionary(
     const size_t read_buffer_size_,
     const size_t write_buffer_size_,
     const size_t max_stored_keys_)
-    : name(name_)
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
@@ -1314,7 +1330,7 @@ SSDCacheDictionary::SSDCacheDictionary(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
         getItemsNumberImpl<TYPE, TYPE>(index, ids, out, [&](const size_t) { return null_value; }); /* NOLINT */ \
     }
@@ -1343,7 +1359,7 @@ SSDCacheDictionary::SSDCacheDictionary(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>( \
             index, \
             ids, \
@@ -1374,7 +1390,7 @@ SSDCacheDictionary::SSDCacheDictionary(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>( \
             index, \
             ids, \
@@ -1430,7 +1446,7 @@ void SSDCacheDictionary::getItemsNumberImpl(
 void SSDCacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(null_values[index])};
 
@@ -1441,7 +1457,7 @@ void SSDCacheDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl(index, ids, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -1450,7 +1466,7 @@ void SSDCacheDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl(index, ids, out, [&](const size_t) { return StringRef{def}; });
 }
@@ -1640,6 +1656,8 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
         if (dict_struct.key)
             throw Exception{"'key' is not supported for dictionary of layout 'cache'", ErrorCodes::UNSUPPORTED_METHOD};
 
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
+
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception{name
                             + ": elements .structure.range_min and .structure.range_max should be defined only "
@@ -1686,7 +1704,7 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SSDCacheDictionary>(
-                name, dict_struct, std::move(source_ptr), dict_lifetime, path,
+                dict_id, dict_struct, std::move(source_ptr), dict_lifetime, path,
                 max_partitions_count, file_size / block_size, block_size,
                 read_buffer_size / block_size, write_buffer_size / block_size,
                 max_stored_keys);

@@ -356,7 +356,7 @@ Diğer tüm durumlarda, anlamı açıklayan bir isim kullanın.
 bool info_successfully_loaded = false;
 ```
 
-**9.** İsimleri `define`s ve genel sabitler alt çizgi ile ALL\_CAPS kullanın.
+**9.** İsimleri `define`s ve genel sabitler alt çizgi ile ALL_CAPS kullanın.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -396,7 +396,7 @@ Bağımsız değişken yapıcı gövdesinde kullanılmazsa, alt çizgi soneki at
 timer (not m_timer)
 ```
 
-**14.** Bir de SAB theitler için `enum`, büyük harfle CamelCase kullanın. ALL\_CAPS da kabul edilebilir. Eğer... `enum` yerel olmayan, bir `enum class`.
+**14.** Bir de SAB theitler için `enum`, büyük harfle CamelCase kullanın. ALL_CAPS da kabul edilebilir. Eğer... `enum` yerel olmayan, bir `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -701,15 +701,15 @@ auto s = std::string{"Hello"};
 
 Ama diğer şeyler eşit olmak, çapraz platform veya taşınabilir kod tercih edilir.
 
-**2.** Dil: C++17.
+**2.** Dil: C++20.
 
-**3.** Derleyici: `gcc`. Şu anda (Aralık 2017), kod sürüm 7.2 kullanılarak derlenmiştir. (Ayrıca kullanılarak derlenebilir `clang 4`.)
+**3.** Derleyici: `gcc`. Şu anda (Ağustos 2020), kod sürüm 9.3 kullanılarak derlenmiştir. (Ayrıca kullanılarak derlenebilir `clang 8`.)
 
-Standart kütüphane kullanılır (`libstdc++` veya `libc++`).
+Standart kütüphane kullanılır (`libc++`).
 
 **4.**OS: Linux UB .untu, daha eski değil.
 
-**5.**Kod x86\_64 CPU mimarisi için yazılmıştır.
+**5.**Kod x86_64 CPU mimarisi için yazılmıştır.
 
 CPU komut seti, sunucularımız arasında desteklenen minimum kümedir. Şu anda, sse 4.2.
 
@@ -749,7 +749,7 @@ Eğer kod inunuz `master` şube henüz imara değil, önce inşa onu hariç `pus
 
 ## Kitaplık {#libraries}
 
-**1.** C++14 standart Kütüphanesi kullanılır (deneysel uzantılara izin verilir) ve `boost` ve `Poco` çerçeveler.
+**1.** C++20 standart Kütüphanesi kullanılır (deneysel uzantılara izin verilir) ve `boost` ve `Poco` çerçeveler.
 
 **2.** Gerekirse, OS paketinde bulunan iyi bilinen kütüphaneleri kullanabilirsiniz.
 

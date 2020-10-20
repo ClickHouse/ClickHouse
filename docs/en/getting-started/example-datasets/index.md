@@ -1,13 +1,14 @@
 ---
 toc_folder_title: Example Datasets
-toc_priority: 12
+toc_priority: 15
 toc_title: Introduction
 ---
 
 # Example Datasets {#example-datasets}
 
-This section describes how to obtain example datasets and import them into ClickHouse.
-For some datasets example queries are also available.
+This section describes how to obtain example datasets and import them into ClickHouse. For some datasets example queries are also available.
+
+The list of documented datasets:
 
 -   [Anonymized Yandex.Metrica Dataset](../../getting-started/example-datasets/metrica.md)
 -   [Star Schema Benchmark](../../getting-started/example-datasets/star-schema.md)

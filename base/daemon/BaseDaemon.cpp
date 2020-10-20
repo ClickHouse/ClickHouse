@@ -9,7 +9,6 @@
 #include <string.h>
 #include <signal.h>
 #include <cxxabi.h>
-#include <execinfo.h>
 #include <unistd.h>
 
 #include <typeinfo>
@@ -52,6 +51,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -77,6 +77,15 @@ static void call_default_signal_handler(int sig)
     raise(sig);
 }
 
+const char * msan_strsignal(int sig)
+{
+    // Apparently strsignal is not instrumented by MemorySanitizer, so we
+    // have to unpoison it to avoid msan reports inside fmt library when we
+    // print it.
+    const char * signal_name = strsignal(sig);
+    __msan_unpoison_string(signal_name);
+    return signal_name;
+}
 
 static constexpr size_t max_query_id_size = 127;
 
@@ -152,6 +161,11 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 }
 
 
+/// Avoid link time dependency on DB/Interpreters - will use this function only when linked.
+__attribute__((__weak__)) void collectCrashLog(
+    Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
+
+
 /** The thread that read info about signal or std::terminate from pipe.
   * On HUP / USR1, close log files (for new files to be opened later).
   * On information about std::terminate, write it to log.
@@ -163,7 +177,8 @@ public:
     enum Signals : int
     {
         StdTerminate = -1,
-        StopThread = -2
+        StopThread = -2,
+        SanitizerTrap = -3,
     };
 
     explicit SignalListener(BaseDaemon & daemon_)
@@ -223,8 +238,12 @@ public:
                 std::string query_id;
                 DB::ThreadStatus * thread_ptr{};
 
-                DB::readPODBinary(info, in);
-                DB::readPODBinary(context, in);
+                if (sig != SanitizerTrap)
+                {
+                    DB::readPODBinary(info, in);
+                    DB::readPODBinary(context, in);
+                }
+
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
                 DB::readBinary(query_id, in);
@@ -271,15 +290,24 @@ private:
         if (query_id.empty())
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, strsignal(sig), sig);
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
+                thread_num, msan_strsignal(sig), sig);
         }
         else
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, query_id, strsignal(sig), sig);
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
+                thread_num, query_id, msan_strsignal(sig), sig);
         }
 
-        LOG_FATAL(log, signalToErrorMessage(sig, info, context));
+        String error_message;
+
+        if (sig != SanitizerTrap)
+            error_message = signalToErrorMessage(sig, info, context);
+        else
+            error_message = "Sanitizer trap.";
+
+        LOG_FATAL(log, error_message);
 
         if (stack_trace.getSize())
         {
@@ -297,20 +325,17 @@ private:
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
+        /// Write crash to system.crash_log table if available.
+        if (collectCrashLog)
+            collectCrashLog(sig, thread_num, query_id, stack_trace);
+
         /// Send crash report to developers (if configured)
-
-        #if defined(__ELF__) && !defined(__FreeBSD__)
-            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
-        #else
-            String build_id_hex{};
-        #endif
-
-        SentryWriter::onFault(sig, info, context, stack_trace, build_id_hex);
+        if (sig != SanitizerTrap)
+            SentryWriter::onFault(sig, error_message, stack_trace);
 
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
             thread_ptr->onFatalError();
-
     }
 };
 
@@ -320,35 +345,27 @@ extern "C" void __sanitizer_set_death_callback(void (*)());
 
 static void sanitizerDeathCallback()
 {
-    Poco::Logger * log = &Poco::Logger::get("BaseDaemon");
+    /// Also need to send data via pipe. Otherwise it may lead to deadlocks or failures in printing diagnostic info.
 
-    StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
+    char buf[signal_pipe_buf_size];
+    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
-    if (query_id.size == 0)
-    {
-        LOG_FATAL(log, "(version {}{}) (from thread {}) (no query) Sanitizer trap.",
-            VERSION_STRING, VERSION_OFFICIAL, getThreadId());
-    }
-    else
-    {
-        LOG_FATAL(log, "(version {}{}) (from thread {}) (query_id: {}) Sanitizer trap.",
-            VERSION_STRING, VERSION_OFFICIAL, getThreadId(), query_id);
-    }
+    const StackTrace stack_trace;
 
-    /// Just in case print our own stack trace. In case when llvm-symbolizer does not work.
-    StackTrace stack_trace;
-    if (stack_trace.getSize())
-    {
-        std::stringstream bare_stacktrace;
-        bare_stacktrace << "Stack trace:";
-        for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-            bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
+    StringRef query_id = DB::CurrentThread::getQueryId();
+    query_id.size = std::min(query_id.size, max_query_id_size);
 
-        LOG_FATAL(log, bare_stacktrace.str());
-    }
+    int sig = SignalListener::SanitizerTrap;
+    DB::writeBinary(sig, out);
+    DB::writePODBinary(stack_trace, out);
+    DB::writeBinary(UInt32(getThreadId()), out);
+    DB::writeStringBinary(query_id, out);
+    DB::writePODBinary(DB::current_thread, out);
 
-    /// Write symbolized stack trace line by line for better grep-ability.
-    stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+    out.next();
+
+    /// The time that is usually enough for separate thread to print info into log.
+    sleepForSeconds(10);
 }
 #endif
 
@@ -442,6 +459,11 @@ BaseDaemon::~BaseDaemon()
 {
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
+    /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
+    for (int sig : handled_signals)
+    {
+        signal(sig, SIG_DFL);
+    }
     signal_pipe.close();
 }
 
@@ -628,7 +650,7 @@ void BaseDaemon::initialize(Application & self)
 
     /// Create pid file.
     if (config().has("pid"))
-        pid.emplace(config().getString("pid"));
+        pid.emplace(config().getString("pid"), DB::StatusFile::write_pid);
 
     /// Change path for logging.
     if (!log_path.empty())
@@ -696,7 +718,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     /// Setup signal handlers.
     auto add_signal_handler =
-        [](const std::vector<int> & signals, signal_function handler)
+        [this](const std::vector<int> & signals, signal_function handler)
         {
             struct sigaction sa;
             memset(&sa, 0, sizeof(sa));
@@ -720,6 +742,8 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
                 for (auto signal : signals)
                     if (sigaction(signal, &sa, nullptr))
                         throw Poco::Exception("Cannot set signal handler.");
+
+                std::copy(signals.begin(), signals.end(), std::back_inserter(handled_signals));
             }
         };
 
@@ -757,7 +781,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 void BaseDaemon::logRevision() const
 {
     Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
-        + " with revision " + std::to_string(ClickHouseRevision::get())
+        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
 }
@@ -812,63 +836,6 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
     Poco::Util::ServerApplication::defineOptions(new_options);
 }
 
-bool isPidRunning(pid_t pid)
-{
-    return getpgid(pid) >= 0;
-}
-
-BaseDaemon::PID::PID(const std::string & file_)
-{
-    file = Poco::Path(file_).absolute().toString();
-    Poco::File poco_file(file);
-
-    if (poco_file.exists())
-    {
-        pid_t pid_read = 0;
-        {
-            std::ifstream in(file);
-            if (in.good())
-            {
-                in >> pid_read;
-                if (pid_read && isPidRunning(pid_read))
-                    throw Poco::Exception("Pid file exists and program running with pid = " + std::to_string(pid_read) + ", should not start daemon.");
-            }
-        }
-        std::cerr << "Old pid file exists (with pid = " << pid_read << "), removing." << std::endl;
-        poco_file.remove();
-    }
-
-    int fd = open(file.c_str(),
-        O_CREAT | O_EXCL | O_WRONLY,
-        S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-
-    if (-1 == fd)
-    {
-        if (EEXIST == errno)
-            throw Poco::Exception("Pid file exists, should not start daemon.");
-        throw Poco::CreateFileException("Cannot create pid file.");
-    }
-
-    SCOPE_EXIT({ close(fd); });
-
-    std::stringstream s;
-    s << getpid();
-    if (static_cast<ssize_t>(s.str().size()) != write(fd, s.str().c_str(), s.str().size()))
-        throw Poco::Exception("Cannot write to pid file.");
-}
-
-BaseDaemon::PID::~PID()
-{
-    try
-    {
-        Poco::File(file).remove();
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
 void BaseDaemon::handleSignal(int signal_id)
 {
     if (signal_id == SIGINT ||
@@ -885,13 +852,13 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
+        throw DB::Exception(std::string("Unsupported signal: ") + msan_strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
+    LOG_INFO(&logger(), "Received termination signal ({})", msan_strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {

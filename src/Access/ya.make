@@ -1,8 +1,11 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
 )
+
+CFLAGS(-g0)
 
 SRCS(
     AccessControlManager.cpp
@@ -17,26 +20,29 @@ SRCS(
     EnabledRolesInfo.cpp
     EnabledRowPolicies.cpp
     EnabledSettings.cpp
-    GrantedAccess.cpp
+    ExternalAuthenticators.cpp
     GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
+    LDAPAccessStorage.cpp
+    LDAPClient.cpp
     MemoryAccessStorage.cpp
     MultipleAccessStorage.cpp
-    Quota.cpp
     QuotaCache.cpp
+    Quota.cpp
     QuotaUsage.cpp
-    Role.cpp
     RoleCache.cpp
+    Role.cpp
     RolesOrUsersSet.cpp
-    RowPolicy.cpp
     RowPolicyCache.cpp
+    RowPolicy.cpp
     SettingsConstraints.cpp
     SettingsProfile.cpp
     SettingsProfileElement.cpp
     SettingsProfilesCache.cpp
     User.cpp
     UsersConfigAccessStorage.cpp
+
 )
 
 END()

@@ -348,6 +348,29 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 }
 
 
+template <typename Type>
+bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
+{
+    auto check = [&](const auto & value)
+    {
+        auto it = name_to_value_map.find(value.first);
+        /// If we don't have this name, than we have to be sure,
+        /// that this value exists in enum
+        if (it == name_to_value_map.end())
+            return value_to_name_map.count(value.second) > 0;
+
+        /// If we have this name, than it should have the same value
+        return it->value.second == value.second;
+    };
+
+    if (const auto * rhs_enum8 = typeid_cast<const DataTypeEnum8 *>(&rhs))
+        return std::all_of(rhs_enum8->getValues().begin(), rhs_enum8->getValues().end(), check);
+    if (const auto * rhs_enum16 = typeid_cast<const DataTypeEnum16 *>(&rhs))
+        return std::all_of(rhs_enum16->getValues().begin(), rhs_enum16->getValues().end(), check);
+    return false;
+}
+
+
 /// Explicit instantiations.
 template class DataTypeEnum<Int8>;
 template class DataTypeEnum<Int16>;

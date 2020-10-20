@@ -102,9 +102,15 @@ if (USE_INTERNAL_SSL_LIBRARY)
     add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
 
-if (ENABLE_LDAP AND USE_INTERNAL_LDAP_LIBRARY)
+if (USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
+
+# Should go before:
+# - mariadb-connector-c
+# - aws-s3-cmake
+# - sentry-native
+add_subdirectory (curl-cmake)
 
 function(mysql_support)
     set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
@@ -216,6 +222,7 @@ if (USE_INTERNAL_AVRO_LIBRARY)
 endif()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
+    set(GOOGLETEST_VERSION 1.10.0) # master
     # Google Test from sources
     add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     # avoid problems with <regexp.h>
@@ -263,23 +270,6 @@ if (USE_INTERNAL_GRPC_LIBRARY)
     add_subdirectory(grpc-cmake)
 endif ()
 
-if (USE_INTERNAL_AWS_S3_LIBRARY OR USE_SENTRY)
-    set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
-    set (save_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
-    set (save_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
-    set (save_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
-    set (save_CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH})
-    add_subdirectory(curl-cmake)
-    set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
-    set (CMAKE_REQUIRED_LIBRARIES ${save_CMAKE_REQUIRED_LIBRARIES})
-    set (CMAKE_CMAKE_REQUIRED_INCLUDES ${save_CMAKE_REQUIRED_INCLUDES})
-    set (CMAKE_REQUIRED_FLAGS ${save_CMAKE_REQUIRED_FLAGS})
-    set (CMAKE_CMAKE_MODULE_PATH ${save_CMAKE_MODULE_PATH})
-
-    # The library is large - avoid bloat.
-    target_compile_options (curl PRIVATE -g0)
-endif ()
-
 if (USE_INTERNAL_AWS_S3_LIBRARY)
     add_subdirectory(aws-s3-cmake)
 
@@ -301,8 +291,13 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
-if (USE_CASSANDRA)
+if (USE_AMQPCPP OR USE_CASSANDRA)
     add_subdirectory (libuv)
+endif()
+if (USE_AMQPCPP)
+    add_subdirectory (amqpcpp-cmake)
+endif()
+if (USE_CASSANDRA)
     add_subdirectory (cassandra)
 endif()
 
@@ -312,3 +307,14 @@ endif()
 
 add_subdirectory (fmtlib-cmake)
 
+if (USE_STATS)
+    add_subdirectory (stats-cmake)
+    add_subdirectory (gcem)
+endif()
+
+if (USE_KRB5)
+    add_subdirectory (krb5-cmake)
+    if (USE_CYRUS_SASL)
+        add_subdirectory (cyrus-sasl-cmake)
+    endif()
+endif()

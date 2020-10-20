@@ -8,6 +8,7 @@ namespace DB
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
+/// This step finishes aggregation. See AggregatingSortedTransform.
 class MergingAggregatedStep : public ITransformingStep
 {
 public:
@@ -21,6 +22,8 @@ public:
     String getName() const override { return "MergingAggregated"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
+
+    void describeActions(FormatSettings & settings) const override;
 
 private:
     AggregatingTransformParamsPtr params;

@@ -366,7 +366,7 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(context.getTemporaryVolume()->getNextDisk()->getPath());
+            const std::string tmp_path(context.getTemporaryVolume()->getDisk()->getPath());
             const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
@@ -475,16 +475,21 @@ void HTTPHandler::processQuery(
         reserved_param_suffixes.emplace_back("_structure");
     }
 
+    std::string database = request.get("X-ClickHouse-Database", "");
+    std::string default_format = request.get("X-ClickHouse-Format", "");
+
     SettingsChanges settings_changes;
     for (const auto & [key, value] : params)
     {
         if (key == "database")
         {
-            context.setCurrentDatabase(value);
+            if (database.empty())
+                database = value;
         }
         else if (key == "default_format")
         {
-            context.setDefaultFormat(value);
+            if (default_format.empty())
+                default_format = value;
         }
         else if (param_could_be_skipped(key))
         {
@@ -496,6 +501,12 @@ void HTTPHandler::processQuery(
                 settings_changes.push_back({key, value});
         }
     }
+
+    if (!database.empty())
+        context.setCurrentDatabase(database);
+
+    if (!default_format.empty())
+        context.setDefaultFormat(default_format);
 
     /// For external data we also want settings
     context.checkSettingsConstraints(settings_changes);
@@ -709,7 +720,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         }
 
         processQuery(context, request, params, response, used_output);
-        LOG_INFO(log, "Done processing query");
+        LOG_DEBUG(log, "Done processing query");
     }
     catch (...)
     {

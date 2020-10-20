@@ -121,12 +121,12 @@ public:
         size_t left_index = static_cast<size_t>(index);
         size_t right_index = left_index + 1;
         if (right_index == samples.size())
-            return samples[left_index].first;
+            return static_cast<double>(samples[left_index].first);
 
         const double left_coef = right_index - index;
         const double right_coef = index - left_index;
 
-        return samples[left_index].first * left_coef + samples[right_index].first * right_coef;
+        return static_cast<double>(samples[left_index].first) * left_coef + static_cast<double>(samples[right_index].first) * right_coef;
     }
 
     void merge(const ReservoirSamplerDeterministic & b)

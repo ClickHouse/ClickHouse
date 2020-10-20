@@ -37,7 +37,7 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 使用指定的`name`, `type`, [`codec`](../../sql-reference/statements/create.md#codecs) 以及 `default_expr` (请参见 [Default expressions](../../sql-reference/statements/create.md#create-default-values))，往表中增加新的列。
 
 
-如果sql中包含 `IF NOT EXISTS` ，执行语句时如果列已经存在，CH不会报错。如果指定`AFTER name_after`（表中另一个列的名称），则新的列会加在指定列的后面。否则，新的列将被添加到表的末尾。注意，不能讲新的列添加到表的开始位置， `name_after` 可以是执行该动作时已经在表中存在的任意列。
+如果sql中包含 `IF NOT EXISTS` ，执行语句时如果列已经存在，CH不会报错。如果指定`AFTER name_after`（表中另一个列的名称），则新的列会加在指定列的后面。否则，新的列将被添加到表的末尾。注意，不能将新的列添加到表的开始位置， `name_after` 可以是执行该动作时已经在表中存在的任意列。
 
 添加列仅仅是改变原有表的结构不会对已有数据产生影响。执行完 `ALTER`后磁盘中也不会出现新的数据。如果查询表时列的数据为空，那么CH会使用列的默认值来进行填充（如果有默认表达式，则使用这个；或者用0或空字符串）。当数据块完成合并(参见[MergeTree](../../engines/table-engines/mergetree-family/mergetree.md))后，磁盘中会出现该列的数据。
 
@@ -166,7 +166,7 @@ MODIFY ORDER BY new_expression
 
 该操作仅支持 [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) 系列表 (含 [replicated](../../engines/table-engines/mergetree-family/replication.md) 表)。它会将表的 [排序键](../../engines/table-engines/mergetree-family/mergetree.md)变成 `new_expression` (元组表达式)。主键仍保持不变。
 
-该操作时轻量级的，仅会改变元数据。
+该操作是轻量级的，仅会改变元数据。
 
 
 ### 跳过索引来更改数据 {#manipulations-with-data-skipping-indices}
@@ -426,7 +426,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 -   `system.parts`表  `partition`列的某个值，例如， `ALTER TABLE visits DETACH PARTITION 201901`
 -   表的列表达式。支持常量及常量表达式。例如， `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`
 -   使用分区ID。分区ID是字符串变量（可能的话有较好的可读性），在文件系统和ZooKeeper中作为分区名称。分区ID必须配置在 `PARTITION ID`中，用单引号包含，例如， `ALTER TABLE visits DETACH PARTITION ID '201901'`
--   在 [ALTER ATTACH PART](#alter_attach-partition) 和 [DROP DETACHED PART](#alter_drop-detached) 操作中，要配置块的名称，使用 [system.detached\_parts](../../operations/system-tables/detached_parts.md#system_tables-detached_parts)表中 `name`列的字符串值，例如： `ALTER TABLE visits ATTACH PART '201901_1_1_0'`
+-   在 [ALTER ATTACH PART](#alter_attach-partition) 和 [DROP DETACHED PART](#alter_drop-detached) 操作中，要配置块的名称，使用 [system.detached_parts](../../operations/system-tables/detached_parts.md#system_tables-detached_parts)表中 `name`列的字符串值，例如： `ALTER TABLE visits ATTACH PART '201901_1_1_0'`
 
 
 设置分区时，引号使用要看分区表达式的类型。例如，对于 `String`类型，需要设置用引号(`'`)包含的名称。对于 `Date` 和 `Int*`引号就不需要了。
@@ -568,7 +568,7 @@ ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]tabl
 ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
         NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]

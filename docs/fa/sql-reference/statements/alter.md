@@ -208,7 +208,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` دایرکتوری به جدول.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - پارتیشن داده ها را از یک جدول به دیگری کپی می کند و جایگزین می شود.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#تغییر\_موف\_ قابل تنظیم-پارتیشن) - پارتیشن داده را از یک جدول به دیگری حرکت دهید.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(#تغییر_موف_ قابل تنظیم-پارتیشن) - پارتیشن داده را از یک جدول به دیگری حرکت دهید.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - بازنشانی ارزش یک ستون مشخص شده در یک پارتیشن.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - بازنشانی شاخص ثانویه مشخص شده در یک پارتیشن.
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -581,7 +581,7 @@ ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]tabl
 ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
         NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]

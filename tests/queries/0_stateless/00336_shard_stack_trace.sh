@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d 'SELECT a' | wc -l
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&stacktrace=0" -d 'SELECT a' | wc -l

@@ -307,11 +307,15 @@ template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FloatRoundingImpl
 {
 private:
+    static_assert(!IsDecimalNumber<T>);
+
     using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
     using Data = std::array<T, Op::data_count>;
+    using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using Container = typename ColumnType::Container;
 
 public:
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
     {
         auto mm_scale = Op::prepare(scale);
 
@@ -349,10 +353,11 @@ struct IntegerRoundingImpl
 {
 private:
     using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode, tie_breaking_mode>;
+    using Container = typename ColumnVector<T>::Container;
 
 public:
     template <size_t scale>
-    static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void applyImpl(const Container & in, Container & out)
     {
         const T * end_in = in.data() + in.size();
 
@@ -367,7 +372,7 @@ public:
         }
     }
 
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
     {
         /// Manual function cloning for compiler to generate integer division by constant.
         switch (scale)
@@ -404,6 +409,8 @@ template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_m
 class DecimalRoundingImpl
 {
 private:
+    static_assert(IsDecimalNumber<T>);
+
     using NativeType = typename T::NativeType;
     using Op = IntegerRoundingComputation<NativeType, rounding_mode, ScaleMode::Negative, tie_breaking_mode>;
     using Container = typename ColumnDecimal<T>::Container;
@@ -428,7 +435,15 @@ public:
             }
         }
         else
-            memcpy(out.data(), in.data(), in.size() * sizeof(T));
+        {
+            if constexpr (!is_big_int_v<NativeType>)
+                memcpy(out.data(), in.data(), in.size() * sizeof(T));
+            else
+            {
+                for (size_t i = 0; i < in.size(); i++)
+                    out[i] = in[i];
+            }
+        }
     }
 };
 
@@ -443,7 +458,7 @@ class Dispatcher
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
-    static void apply(Block & block, const ColumnVector<T> * col, Int64 scale_arg, size_t result)
+    static void apply(ColumnsWithTypeAndName & columns, const ColumnVector<T> * col, Int64 scale_arg, size_t result)
     {
         auto col_res = ColumnVector<T>::create();
 
@@ -469,10 +484,10 @@ class Dispatcher
             }
         }
 
-        block.getByPosition(result).column = std::move(col_res);
+        columns[result].column = std::move(col_res);
     }
 
-    static void apply(Block & block, const ColumnDecimal<T> * col, Int64 scale_arg, size_t result)
+    static void apply(ColumnsWithTypeAndName & columns, const ColumnDecimal<T> * col, Int64 scale_arg, size_t result)
     {
         const typename ColumnDecimal<T>::Container & vec_src = col->getData();
 
@@ -482,16 +497,16 @@ class Dispatcher
         if (!vec_res.empty())
             DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), vec_res, scale_arg);
 
-        block.getByPosition(result).column = std::move(col_res);
+        columns[result].column = std::move(col_res);
     }
 
 public:
-    static void apply(Block & block, const IColumn * column, Int64 scale_arg, size_t result)
+    static void apply(ColumnsWithTypeAndName & columns, const IColumn * column, Int64 scale_arg, size_t result)
     {
         if constexpr (IsNumber<T>)
-            apply(block, checkAndGetColumn<ColumnVector<T>>(column), scale_arg, result);
+            apply(columns, checkAndGetColumn<ColumnVector<T>>(column), scale_arg, result);
         else if constexpr (IsDecimalNumber<T>)
-            apply(block, checkAndGetColumn<ColumnDecimal<T>>(column), scale_arg, result);
+            apply(columns, checkAndGetColumn<ColumnDecimal<T>>(column), scale_arg, result);
     }
 };
 
@@ -530,11 +545,11 @@ public:
         return arguments[0];
     }
 
-    static Int64 getScaleArg(Block & block, const ColumnNumbers & arguments)
+    static Int64 getScaleArg(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments)
     {
         if (arguments.size() == 2)
         {
-            const IColumn & scale_column = *block.getByPosition(arguments[1]).column;
+            const IColumn & scale_column = *columns[arguments[1]].column;
             if (!isColumnConst(scale_column))
                 throw Exception("Scale argument for rounding functions must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
@@ -551,10 +566,10 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & column = block.getByPosition(arguments[0]);
-        Int64 scale_arg = getScaleArg(block, arguments);
+        const ColumnWithTypeAndName & column = columns[arguments[0]];
+        Int64 scale_arg = getScaleArg(columns, arguments);
 
         auto call = [&](const auto & types) -> bool
         {
@@ -564,7 +579,7 @@ public:
             if constexpr (IsDataTypeNumber<DataType> || IsDataTypeDecimal<DataType>)
             {
                 using FieldType = typename DataType::FieldType;
-                Dispatcher<FieldType, rounding_mode, tie_breaking_mode>::apply(block, column.column.get(), scale_arg, result);
+                Dispatcher<FieldType, rounding_mode, tie_breaking_mode>::apply(columns, column.column.get(), scale_arg, result);
                 return true;
             }
             return false;
@@ -631,23 +646,23 @@ public:
         return getLeastSupertype({type_x, type_arr_nested});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        auto in_column = block.getByPosition(arguments[0]).column;
-        const auto & in_type = block.getByPosition(arguments[0]).type;
+        auto in_column = columns[arguments[0]].column;
+        const auto & in_type = columns[arguments[0]].type;
 
-        auto array_column = block.getByPosition(arguments[1]).column;
-        const auto & array_type = block.getByPosition(arguments[1]).type;
+        auto array_column = columns[arguments[1]].column;
+        const auto & array_type = columns[arguments[1]].type;
 
-        const auto & return_type = block.getByPosition(result).type;
+        const auto & return_type = columns[result].type;
         auto column_result = return_type->createColumn();
         auto out = column_result.get();
 
         if (!in_type->equals(*return_type))
-            in_column = castColumn(block.getByPosition(arguments[0]), return_type);
+            in_column = castColumn(columns[arguments[0]], return_type);
 
         if (!array_type->equals(*return_type))
-            array_column = castColumn(block.getByPosition(arguments[1]), std::make_shared<DataTypeArray>(return_type));
+            array_column = castColumn(columns[arguments[1]], std::make_shared<DataTypeArray>(return_type));
 
         const auto in = in_column.get();
         auto boundaries = typeid_cast<const ColumnConst &>(*array_column).getValue<Array>();
@@ -672,12 +687,12 @@ public:
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        block.getByPosition(result).column = std::move(column_result);
+        columns[result].column = std::move(column_result);
     }
 
 private:
     template <typename T>
-    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
+    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries) const
     {
         const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped);
         auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
@@ -689,7 +704,7 @@ private:
     }
 
     template <typename T>
-    bool executeDecimal(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
+    bool executeDecimal(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries) const
     {
         const auto in = checkAndGetColumn<ColumnDecimal<T>>(in_untyped);
         auto out = typeid_cast<ColumnDecimal<T> *>(out_untyped);
@@ -701,7 +716,7 @@ private:
     }
 
     template <typename Container>
-    void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries)
+    void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries) const
     {
         using ValueType = typename Container::value_type;
         std::vector<ValueType> boundary_values(boundaries.size());

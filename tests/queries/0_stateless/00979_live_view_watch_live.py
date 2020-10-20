@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os
 import sys
 import signal
@@ -30,6 +30,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.send('CREATE LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt')
     client1.expect(prompt)
     client1.send('WATCH test.lv')
+    client1.expect('_version')
     client1.expect(r'0.*1' + end_of_block)
     client2.send('INSERT INTO test.mt VALUES (1),(2),(3)')
     client1.expect(r'6.*2' + end_of_block)
@@ -37,16 +38,16 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client2.send('INSERT INTO test.mt VALUES (4),(5),(6)')
     client1.expect(r'21.*3' + end_of_block)
     client2.expect(prompt)
-    for i in range(1,129):
+    for i in range(1, 129):
        client2.send('INSERT INTO test.mt VALUES (1)')
-       client1.expect(r'%d.*%d' % (21+i, 3+i) + end_of_block)
+       client1.expect(r'%d.*%d' % (21 + i, 3 + i) + end_of_block)
        client2.expect(prompt)
     # send Ctrl-C
     client1.send('\x03', eol='')
     match = client1.expect('(%s)|([#\$] )' % prompt)
     if match.groups()[1]:
         client1.send(client1.command)
-        client1.expect(prompt)    
+        client1.expect(prompt)
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)
     client1.send('DROP TABLE test.mt')

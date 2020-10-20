@@ -17,6 +17,7 @@ RUN apt-get update \
             libc6-dbg \
             moreutils \
             ncdu \
+            numactl \
             p7zip-full \
             parallel \
             psmisc \
@@ -28,7 +29,7 @@ RUN apt-get update \
             tzdata \
             vim \
             wget \
-    && pip3 --no-cache-dir install clickhouse_driver \
+    && pip3 --no-cache-dir install clickhouse_driver scipy \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \

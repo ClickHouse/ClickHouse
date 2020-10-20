@@ -117,7 +117,7 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 
 For example, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
 
-### port(URL\[, default\_port = 0\]) {#port}
+### port(URL\[, default_port = 0\]) {#port}
 
 Returns the port or `default_port` if there is no port in the URL (or in case of validation error).
 
@@ -127,11 +127,11 @@ Returns the path. Example: `/top/news.html` The path does not include the query 
 
 ### pathFull {#pathfull}
 
-The same as above, but including query string and fragment. Example: /top/news.html?page=2\#comments
+The same as above, but including query string and fragment. Example: /top/news.html?page=2#comments
 
 ### queryString {#querystring}
 
-Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as \# and everything after \#.
+Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as # and everything after #.
 
 ### fragment {#fragment}
 
@@ -139,7 +139,7 @@ Returns the fragment identifier. fragment does not include the initial hash symb
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Returns the query string and fragment identifier. Example: page=1\#29390.
+Returns the query string and fragment identifier. Example: page=1#29390.
 
 ### extractURLParameter(URL, name) {#extracturlparameterurl-name}
 
@@ -182,6 +182,42 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘
+```
+
+### netloc {#netloc}
+
+Extracts network locality (`username:password@host:port`) from a URL.
+
+**Syntax**
+
+``` sql
+netloc(URL)
+```
+
+**Parameters**
+
+-   `url` — URL. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   `username:password@host:port`.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT netloc('http://paul@www.example.com:80/');
+```
+
+Result:
+
+``` text
+┌─netloc('http://paul@www.example.com:80/')─┐
+│ paul@www.example.com:80                   │
+└───────────────────────────────────────────┘
 ```
 
 ## Functions that Remove Part of a URL {#functions-that-remove-part-of-a-url}

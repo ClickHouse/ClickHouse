@@ -46,8 +46,8 @@ std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what);
 class ExpressionActions;
 std::ostream & operator<<(std::ostream & stream, const ExpressionActions & what);
 
-struct SyntaxAnalyzerResult;
-std::ostream & operator<<(std::ostream & stream, const SyntaxAnalyzerResult & what);
+struct TreeRewriterResult;
+std::ostream & operator<<(std::ostream & stream, const TreeRewriterResult & what);
 }
 
 /// some operator<< should be declared before operator<<(... std::shared_ptr<>)

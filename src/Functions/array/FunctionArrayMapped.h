@@ -73,7 +73,7 @@ public:
             if (!array_type)
                 throw Exception("Argument " + toString(i + 2) + " of function " + getName() + " must be array. Found "
                                 + arguments[i + 1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            nested_types[i] = removeLowCardinality(array_type->getNestedType());
+            nested_types[i] = recursiveRemoveLowCardinality(array_type->getNestedType());
         }
 
         const DataTypeFunction * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
@@ -135,11 +135,11 @@ public:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (arguments.size() == 1)
         {
-            ColumnPtr column_array_ptr = block.getByPosition(arguments[0]).column;
+            ColumnPtr column_array_ptr = columns[arguments[0]].column;
             const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
             if (!column_array)
@@ -151,11 +151,11 @@ public:
                 column_array = assert_cast<const ColumnArray *>(column_array_ptr.get());
             }
 
-            block.getByPosition(result).column = Impl::execute(*column_array, column_array->getDataPtr());
+            columns[result].column = Impl::execute(*column_array, column_array->getDataPtr());
         }
         else
         {
-            const auto & column_with_type_and_name = block.getByPosition(arguments[0]);
+            const auto & column_with_type_and_name = columns[arguments[0]];
 
             if (!column_with_type_and_name.column)
                 throw Exception("First argument for function " + getName() + " must be a function.",
@@ -177,7 +177,7 @@ public:
 
             for (size_t i = 1; i < arguments.size(); ++i)
             {
-                const auto & array_with_type_and_name = block.getByPosition(arguments[i]);
+                const auto & array_with_type_and_name = columns[arguments[i]];
 
                 ColumnPtr column_array_ptr = array_with_type_and_name.column;
                 const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
@@ -190,9 +190,7 @@ public:
                     const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
                     if (!column_const_array)
                         throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
-                    column_array_ptr = column_const_array->convertToFullColumn();
-                    if (column_array_ptr->lowCardinality())
-                        column_array_ptr = column_array_ptr->convertToFullColumnIfLowCardinality();
+                    column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
                     column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
                 }
 
@@ -218,11 +216,11 @@ public:
                 }
 
                 arrays.emplace_back(ColumnWithTypeAndName(column_array->getDataPtr(),
-                                                          removeLowCardinality(array_type->getNestedType()),
+                                                          recursiveRemoveLowCardinality(array_type->getNestedType()),
                                                           array_with_type_and_name.name));
             }
 
-            /// Put all the necessary columns multiplied by the sizes of arrays into the block.
+            /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
             auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
             auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
             replicated_column_function->appendArguments(arrays);
@@ -231,7 +229,7 @@ public:
             if (lambda_result->lowCardinality())
                 lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
 
-            block.getByPosition(result).column = Impl::execute(*column_first_array, lambda_result);
+            columns[result].column = Impl::execute(*column_first_array, lambda_result);
         }
     }
 };

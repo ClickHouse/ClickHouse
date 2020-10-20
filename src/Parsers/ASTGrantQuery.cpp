@@ -133,9 +133,16 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
 }
 
 
+void ASTGrantQuery::replaceEmptyDatabaseWithCurrent(const String & current_database)
+{
+    access_rights_elements.replaceEmptyDatabase(current_database);
+}
+
+
 void ASTGrantQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
 {
     if (to_roles)
         to_roles->replaceCurrentUserTagWithName(current_user_name);
 }
+
 }

@@ -14,12 +14,12 @@ You can use table functions in:
 
         The method for creating a temporary table that is available only in the current query. The table is deleted when the query finishes.
 
--   [CREATE TABLE AS \<table\_function()\>](../../sql-reference/statements/create.md#create-table-query) query.
+-   [CREATE TABLE AS \<table_function()\>](../../sql-reference/statements/create/table.md) query.
 
         It's one of the methods of creating a table.
 
 !!! warning "Warning"
-    You can’t use table functions if the [allow\_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) setting is disabled.
+    You can’t use table functions if the [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) setting is disabled.
 
 | Function                                                  | Description                                                                                                                            |
 |-----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|

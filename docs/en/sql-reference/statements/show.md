@@ -3,7 +3,7 @@ toc_priority: 38
 toc_title: SHOW
 ---
 
-# SHOW Queries {#show-queries}
+# SHOW Statements {#show-queries}
 
 ## SHOW CREATE TABLE {#show-create-table}
 
@@ -114,7 +114,7 @@ If user is not specified, the query returns privileges for the current user.
 
 ## SHOW CREATE USER {#show-create-user-statement}
 
-Shows parameters that were used at a [user creation](../../sql-reference/statements/create.md#create-user-statement).
+Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
 
 `SHOW CREATE USER` doesn’t output user passwords.
 
@@ -126,7 +126,7 @@ SHOW CREATE USER [name | CURRENT_USER]
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
 
-Shows parameters that were used at a [role creation](../../sql-reference/statements/create.md#create-role-statement).
+Shows parameters that were used at a [role creation](../../sql-reference/statements/create/role.md).
 
 ### Syntax {#show-create-role-syntax}
 
@@ -136,7 +136,7 @@ SHOW CREATE ROLE name
 
 ## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
 
-Shows parameters that were used at a [row policy creation](../../sql-reference/statements/create.md#create-row-policy-statement).
+Shows parameters that were used at a [row policy creation](../../sql-reference/statements/create/row-policy.md).
 
 ### Syntax {#show-create-row-policy-syntax}
 
@@ -146,9 +146,9 @@ SHOW CREATE [ROW] POLICY name ON [database.]table
 
 ## SHOW CREATE QUOTA {#show-create-quota-statement}
 
-Shows parameters that were used at a [quota creation](../../sql-reference/statements/create.md#create-quota-statement).
+Shows parameters that were used at a [quota creation](../../sql-reference/statements/create/quota.md).
 
-### Syntax {#show-create-row-policy-syntax}
+### Syntax {#show-create-quota-syntax}
 
 ``` sql
 SHOW CREATE QUOTA [name | CURRENT]
@@ -156,12 +156,72 @@ SHOW CREATE QUOTA [name | CURRENT]
 
 ## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
 
-Shows parameters that were used at a [settings profile creation](../../sql-reference/statements/create.md#create-settings-profile-statement).
+Shows parameters that were used at a [settings profile creation](../../sql-reference/statements/create/settings-profile.md).
 
-### Syntax {#show-create-row-policy-syntax}
+### Syntax {#show-create-settings-profile-syntax}
 
 ``` sql
 SHOW CREATE [SETTINGS] PROFILE name
+```
+
+## SHOW USERS {#show-users-statement}
+
+Returns a list of [user account](../../operations/access-rights.md#user-account-management) names. To view user accounts parameters, see the system table [system.users](../../operations/system-tables/users.md#system_tables-users).
+
+### Syntax {#show-users-syntax}
+
+``` sql
+SHOW USERS
+```
+ 
+## SHOW ROLES {#show-roles-statement}
+
+Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
+
+### Syntax {#show-roles-syntax}
+
+``` sql
+SHOW [CURRENT|ENABLED] ROLES
+```
+
+## SHOW PROFILES {#show-profiles-statement}
+
+Returns a list of [setting profiles](../../operations/access-rights.md#settings-profiles-management). To view user accounts parameters, see the system table [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
+
+### Syntax {#show-profiles-syntax}
+
+``` sql
+SHOW [SETTINGS] PROFILES
+```
+
+## SHOW POLICIES {#show-policies-statement}
+
+Returns a list of [row policies](../../operations/access-rights.md#row-policy-management) for the specified table. To view user accounts parameters, see the system table [system.row_policies](../../operations/system-tables/row_policies.md#system_tables-row_policies).
+
+### Syntax {#show-policies-syntax}
+
+``` sql
+SHOW [ROW] POLICIES [ON [db.]table]
+```
+
+## SHOW QUOTAS {#show-quotas-statement}
+
+Returns a list of [quotas](../../operations/access-rights.md#quotas-management). To view quotas parameters, see the system table [system.quotas](../../operations/system-tables/quotas.md#system_tables-quotas).
+
+### Syntax {#show-quotas-syntax}
+
+``` sql
+SHOW QUOTAS
+```  
+    
+## SHOW QUOTA {#show-quota-statement}
+
+Returns a [quota](../../operations/quotas.md) consumption for all users or for current user. To view another parameters, see system tables [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) and [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
+
+### Syntax {#show-quota-syntax}
+
+``` sql
+SHOW [CURRENT] QUOTA
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

@@ -14,6 +14,8 @@ Oluşturmadan uzak sunuculara erişmenizi sağlar. `Distributed` Tablo.
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db, table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port` ya da sadece `host`. Ana bilgisayar sunucu adı veya IPv4 veya IPv6 adresi olarak belirtilebilir. Köşeli parantez içinde bir IPv6 adresi belirtilir. Bağlantı noktası, uzak sunucudaki TCP bağlantı noktasıdır. Bağlantı noktası atlanırsa, kullanır `tcp_port` sunucunun yapılandırma dosyasından (varsayılan olarak, 9000).
@@ -78,6 +80,6 @@ Bu `remote` tablo işlevi aşağıdaki durumlarda yararlı olabilir:
 Kullanıcı belirtilmemişse, `default` kullanılır.
 Parola belirtilmezse, boş bir parola kullanılır.
 
-`remoteSecure` - aynı `remote` but with secured connection. Default port — [tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) yapılandırma veya 9440'ten.
+`remoteSecure` - aynı `remote` but with secured connection. Default port — [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) yapılandırma veya 9440'ten.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

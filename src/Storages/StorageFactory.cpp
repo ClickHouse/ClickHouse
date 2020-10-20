@@ -180,7 +180,16 @@ StoragePtr StorageFactory::get(
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
 
-    return storages.at(name).creator_fn(arguments);
+    auto res = storages.at(name).creator_fn(arguments);
+    if (!empty_engine_args.empty())
+    {
+        /// Storage creator modified empty arguments list, so we should modify the query
+        assert(storage_def && storage_def->engine && !storage_def->engine->arguments);
+        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();
+        storage_def->engine->children.push_back(storage_def->engine->arguments);
+        storage_def->engine->arguments->children = empty_engine_args;
+    }
+    return res;
 }
 
 StorageFactory & StorageFactory::instance()

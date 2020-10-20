@@ -9,6 +9,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** buildId() - returns the compiler build id of the running binary.
   */
@@ -36,12 +38,13 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, SymbolIndex::instance().getBuildIDHex());
+        columns[result].column = DataTypeString().createColumnConst(input_rows_count, SymbolIndex::instance().getBuildIDHex());
     }
 };
 
+}
 
 void registerFunctionBuildId(FunctionFactory & factory)
 {

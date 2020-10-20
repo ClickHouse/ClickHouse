@@ -14,6 +14,8 @@ toc_title: "\u30EA\u30E2\u30FC\u30C8"
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db, table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`、または単に `host`. ホストは、サーバー名またはIPv4またはIPv6アドレスとして指定できます。 IPv6アドレスは角かっこで指定します。 ポートは、リモートサーバー上のTCPポートです。 ポートが省略されると、次のようになります `tcp_port` サーバーの設定ファイルから(デフォルトでは9000)。
@@ -54,7 +56,7 @@ example01-{01..02}-1
 
 中括弧のペアが複数ある場合、対応する集合の直接積を生成します。
 
-中括弧の中の住所と住所の一部は、パイプ記号(\|)で区切ることができます。 この場合、対応するアドレスのセットはレプリカとして解釈され、クエリは最初の正常なレプリカに送信されます。 ただし、レプリカは、現在設定されている順序で反復処理されます。 [load\_balancing](../../operations/settings/settings.md) 設定。
+中括弧の中の住所と住所の一部は、パイプ記号(\|)で区切ることができます。 この場合、対応するアドレスのセットはレプリカとして解釈され、クエリは最初の正常なレプリカに送信されます。 ただし、レプリカは、現在設定されている順序で反復処理されます。 [load_balancing](../../operations/settings/settings.md) 設定。
 
 例:
 
@@ -78,6 +80,6 @@ example01-{01..02}-{1|2}
 ユーザーが指定されていない場合, `default` が使用される。
 パスワードを指定しない場合は、空のパスワードが使用されます。
 
-`remoteSecure` -同じように `remote` but with secured connection. Default port — [tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 設定または9440から。
+`remoteSecure` -同じように `remote` but with secured connection. Default port — [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 設定または9440から。
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

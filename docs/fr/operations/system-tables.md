@@ -13,7 +13,7 @@ Les tables système n'ont pas de fichiers avec des données sur le disque ou de 
 Les tables système sont en lecture seule.
 Ils sont situés dans la ‘system’ la base de données.
 
-## système.asynchronous\_metrics {#system_tables-asynchronous_metrics}
+## système.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
 Contient des mesures qui sont calculées périodiquement en arrière-plan. Par exemple, la quantité de RAM utilisée.
 
@@ -48,7 +48,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 -   [Surveiller](monitoring.md) — Base concepts of ClickHouse monitoring.
 -   [système.métrique](#system_tables-metrics) — Contains instantly calculated metrics.
 -   [système.événement](#system_tables-events) — Contains a number of events that have occurred.
--   [système.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [système.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
 ## système.cluster {#system-clusters}
 
@@ -72,8 +72,8 @@ Veuillez noter que `errors_count` est mise à jour une fois par requête à la g
 **Voir aussi**
 
 -   [Tableau moteur Distribués](../engines/table-engines/special/distributed.md)
--   [paramètre distributed\_replica\_error\_cap](settings/settings.md#settings-distributed_replica_error_cap)
--   [paramètre distributed\_replica\_error\_half\_life](settings/settings.md#settings-distributed_replica_error_half_life)
+-   [paramètre distributed_replica_error_cap](settings/settings.md#settings-distributed_replica_error_cap)
+-   [paramètre distributed_replica_error_half_life](settings/settings.md#settings-distributed_replica_error_half_life)
 
 ## système.colonne {#system-columns}
 
@@ -145,7 +145,7 @@ Cette table contient une seule colonne de chaîne appelée ‘name’ – the na
 Chaque base de données que le serveur connaît a une entrée correspondante dans la table.
 Cette table système est utilisée pour implémenter `SHOW DATABASES` requête.
 
-## système.detached\_parts {#system_tables-detached_parts}
+## système.detached_parts {#system_tables-detached_parts}
 
 Contient des informations sur les pièces détachées de [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) table. Le `reason` colonne spécifie pourquoi la pièce a été détachée. Pour les pièces détachées par l'utilisateur, la raison est vide. De telles pièces peuvent être attachées avec [ALTER TABLE ATTACH PARTITION\|PART](../sql-reference/statements/alter.md#alter_attach-partition) commande. Pour la description des autres colonnes, voir [système.partie](#system_tables-parts). Si le nom de pièce n'est pas valide, les valeurs de certaines colonnes peuvent être `NULL`. Ces pièces peuvent être supprimés avec [ALTER TABLE DROP DETACHED PART](../sql-reference/statements/alter.md#alter_drop-detached).
 
@@ -239,9 +239,9 @@ SELECT * FROM system.events LIMIT 5
 
 **Voir Aussi**
 
--   [système.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [système.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [système.métrique](#system_tables-metrics) — Contains instantly calculated metrics.
--   [système.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [système.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 -   [Surveiller](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## système.fonction {#system-functions}
@@ -253,9 +253,9 @@ Colonne:
 -   `name`(`String`) – The name of the function.
 -   `is_aggregate`(`UInt8`) — Whether the function is aggregate.
 
-## système.graphite\_retentions {#system-graphite-retentions}
+## système.graphite_retentions {#system-graphite-retentions}
 
-Contient des informations sur les paramètres [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) qui sont utilisés dans les tableaux avec [\* GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md) moteur.
+Contient des informations sur les paramètres [graphite_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) qui sont utilisés dans les tableaux avec [\* GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md) moteur.
 
 Colonne:
 
@@ -324,12 +324,12 @@ SELECT * FROM system.metrics LIMIT 10
 
 **Voir Aussi**
 
--   [système.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [système.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [système.événement](#system_tables-events) — Contains a number of events that occurred.
--   [système.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [système.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 -   [Surveiller](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## système.metric\_log {#system_tables-metric_log}
+## système.metric_log {#system_tables-metric_log}
 
 Contient l'historique des valeurs de métriques des tables `system.metrics` et `system.events` périodiquement vidé sur le disque.
 Pour activer la collection d'historique des métriques `system.metric_log`, créer `/etc/clickhouse-server/config.d/metric_log.xml` avec le contenu suivant:
@@ -380,7 +380,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 **Voir aussi**
 
--   [système.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [système.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [système.événement](#system_tables-events) — Contains a number of events that occurred.
 -   [système.métrique](#system_tables-metrics) — Contains instantly calculated metrics.
 -   [Surveiller](monitoring.md) — Base concepts of ClickHouse monitoring.
@@ -391,7 +391,7 @@ Cette table contient une seule colonne UInt64 nommée ‘number’ qui contient 
 Vous pouvez utiliser cette table pour les tests, ou si vous avez besoin de faire une recherche de force brute.
 Les lectures de cette table ne sont pas parallélisées.
 
-## système.numbers\_mt {#system-numbers-mt}
+## système.numbers_mt {#system-numbers-mt}
 
 Le même que ‘system.numbers’ mais les lectures sont parallélisées. Les nombres peuvent être retournés dans n'importe quel ordre.
 Utilisé pour les tests.
@@ -483,9 +483,9 @@ Colonne:
 
 -   `marks_size` (`UInt64`) – Alias for `marks_bytes`.
 
-## système.part\_log {#system_tables-part-log}
+## système.part_log {#system_tables-part-log}
 
-Le `system.part_log` la table est créée uniquement si [part\_log](server-configuration-parameters/settings.md#server_configuration_parameters-part-log) serveur paramètre est spécifié.
+Le `system.part_log` la table est créée uniquement si [part_log](server-configuration-parameters/settings.md#server_configuration_parameters-part-log) serveur paramètre est spécifié.
 
 Ce tableau contient des informations sur les événements survenus avec [les parties de données](../engines/table-engines/mergetree-family/custom-partitioning-key.md) dans le [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) table de famille, telles que l'ajout ou la fusion de données.
 
@@ -528,11 +528,11 @@ Colonne:
 -   `rows_read` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 -   `bytes_read` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 -   `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
--   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max\_memory\_usage](../operations/settings/query-complexity.md#settings_max_memory_usage) paramètre.
+-   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max_memory_usage](../operations/settings/query-complexity.md#settings_max_memory_usage) paramètre.
 -   `query` (String) – The query text. For `INSERT` il n'inclut pas les données à insérer.
 -   `query_id` (String) – Query ID, if defined.
 
-## système.text\_log {#system-tables-text-log}
+## système.text_log {#system_tables-text_log}
 
 Contient des entrées de journalisation. Niveau de journalisation qui va à cette table peut être limité `text_log.level` paramètre de serveur.
 
@@ -559,16 +559,16 @@ Colonne:
 -   `source_file` (`LowCardinality(String)`)- Fichier Source à partir duquel la journalisation a été effectuée.
 -   `source_line` (`UInt64`)- Ligne Source à partir de laquelle la journalisation a été effectuée.
 
-## système.query\_log {#system_tables-query_log}
+## système.query_log {#system_tables-query_log}
 
 Contient des informations sur l'exécution de requêtes. Pour chaque requête, vous pouvez voir l'Heure de début du traitement, la durée du traitement, les messages d'erreur et d'autres informations.
 
 !!! note "Note"
     Le tableau ne contient pas les données d'entrée pour `INSERT` requête.
 
-Clickhouse crée cette table uniquement si [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) serveur paramètre est spécifié. Ce paramètre définit les règles de journalisation, tels que l'intervalle d'enregistrement ou le nom de la table, la requête sera connecté.
+Clickhouse crée cette table uniquement si [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) serveur paramètre est spécifié. Ce paramètre définit les règles de journalisation, tels que l'intervalle d'enregistrement ou le nom de la table, la requête sera connecté.
 
-Pour activer la journalisation des requêtes, définissez [log\_queries](settings/settings.md#settings-log-queries) paramètre 1. Pour plus de détails, voir le [Paramètre](settings/settings.md) section.
+Pour activer la journalisation des requêtes, définissez [log_queries](settings/settings.md#settings-log-queries) paramètre 1. Pour plus de détails, voir le [Paramètre](settings/settings.md) section.
 
 Le `system.query_log` table enregistre deux types de requêtes:
 
@@ -636,22 +636,22 @@ Chaque requête crée une ou deux lignes dans le `query_log` le tableau, en fonc
 2.  Si une erreur s'est produite pendant le traitement de la requête, deux événements avec les types 1 et 4 sont créés.
 3.  Si une erreur s'est produite avant le lancement de la requête, un seul événement de type 3 est créé.
 
-Par défaut, les journaux sont ajoutés à la table à des intervalles de 7,5 secondes. Vous pouvez définir cet intervalle dans la [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) configuration du serveur (voir `flush_interval_milliseconds` paramètre). Pour vider les journaux de force du tampon mémoire dans la table, utilisez le `SYSTEM FLUSH LOGS` requête.
+Par défaut, les journaux sont ajoutés à la table à des intervalles de 7,5 secondes. Vous pouvez définir cet intervalle dans la [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) configuration du serveur (voir `flush_interval_milliseconds` paramètre). Pour vider les journaux de force du tampon mémoire dans la table, utilisez le `SYSTEM FLUSH LOGS` requête.
 
 Lorsque la table est supprimée manuellement, il sera automatiquement créé à la volée. Notez que tous les précédents journaux seront supprimés.
 
 !!! note "Note"
     La période de stockage des journaux est illimitée. Les journaux ne sont pas automatiquement supprimés de la table. Vous devez organiser vous-même la suppression des journaux obsolètes.
 
-Vous pouvez spécifier une clé de partitionnement arbitraire pour `system.query_log` la table dans le [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) configuration du serveur (voir `partition_by` paramètre).
+Vous pouvez spécifier une clé de partitionnement arbitraire pour `system.query_log` la table dans le [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) configuration du serveur (voir `partition_by` paramètre).
 
-## système.query\_thread\_log {#system_tables-query-thread-log}
+## système.query_thread_log {#system_tables-query-thread-log}
 
 La table contient des informations sur chaque thread d'exécution de requête.
 
-Clickhouse crée cette table uniquement si [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) serveur paramètre est spécifié. Ce paramètre définit les règles de journalisation, tels que l'intervalle d'enregistrement ou le nom de la table, la requête sera connecté.
+Clickhouse crée cette table uniquement si [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) serveur paramètre est spécifié. Ce paramètre définit les règles de journalisation, tels que l'intervalle d'enregistrement ou le nom de la table, la requête sera connecté.
 
-Pour activer la journalisation des requêtes, définissez [log\_query\_threads](settings/settings.md#settings-log-query-threads) paramètre 1. Pour plus de détails, voir le [Paramètre](settings/settings.md) section.
+Pour activer la journalisation des requêtes, définissez [log_query_threads](settings/settings.md#settings-log-query-threads) paramètre 1. Pour plus de détails, voir le [Paramètre](settings/settings.md) section.
 
 Colonne:
 
@@ -701,20 +701,20 @@ Colonne:
 -   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [système.événement](#system_tables-events)
 -   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` colonne.
 
-Par défaut, les journaux sont ajoutés à la table à des intervalles de 7,5 secondes. Vous pouvez définir cet intervalle dans la [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) configuration du serveur (voir `flush_interval_milliseconds` paramètre). Pour vider les journaux de force du tampon mémoire dans la table, utilisez le `SYSTEM FLUSH LOGS` requête.
+Par défaut, les journaux sont ajoutés à la table à des intervalles de 7,5 secondes. Vous pouvez définir cet intervalle dans la [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) configuration du serveur (voir `flush_interval_milliseconds` paramètre). Pour vider les journaux de force du tampon mémoire dans la table, utilisez le `SYSTEM FLUSH LOGS` requête.
 
 Lorsque la table est supprimée manuellement, il sera automatiquement créé à la volée. Notez que tous les précédents journaux seront supprimés.
 
 !!! note "Note"
     La période de stockage des journaux est illimitée. Les journaux ne sont pas automatiquement supprimés de la table. Vous devez organiser vous-même la suppression des journaux obsolètes.
 
-Vous pouvez spécifier une clé de partitionnement arbitraire pour `system.query_thread_log` la table dans le [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) configuration du serveur (voir `partition_by` paramètre).
+Vous pouvez spécifier une clé de partitionnement arbitraire pour `system.query_thread_log` la table dans le [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) configuration du serveur (voir `partition_by` paramètre).
 
-## système.trace\_log {#system_tables-trace_log}
+## système.trace_log {#system_tables-trace_log}
 
 Contient des traces de pile collectées par le profileur de requête d'échantillonnage.
 
-Clickhouse crée cette table lorsque le [trace\_log](server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) la section de configuration du serveur est définie. Aussi l' [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) et [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) paramètres doivent être définis.
+Clickhouse crée cette table lorsque le [trace_log](server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) la section de configuration du serveur est définie. Aussi l' [query_profiler_real_time_period_ns](settings/settings.md#query_profiler_real_time_period_ns) et [query_profiler_cpu_time_period_ns](settings/settings.md#query_profiler_cpu_time_period_ns) paramètres doivent être définis.
 
 Pour analyser les journaux, utilisez `addressToLine`, `addressToSymbol` et `demangle` fonctions d'introspection.
 
@@ -737,7 +737,7 @@ Colonne:
 
 -   `thread_number` ([UInt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id` ([Chaîne](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) système de table.
+-   `query_id` ([Chaîne](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) système de table.
 
 -   `trace` ([Tableau (UInt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
@@ -794,9 +794,9 @@ inserts_in_queue:           0
 merges_in_queue:            1
 part_mutations_in_queue:    0
 queue_oldest_time:          2020-02-20 08:34:30
-inserts_oldest_time:        0000-00-00 00:00:00
+inserts_oldest_time:        1970-01-01 00:00:00
 merges_oldest_time:         2020-02-20 08:34:30
-part_mutations_oldest_time: 0000-00-00 00:00:00
+part_mutations_oldest_time: 1970-01-01 00:00:00
 oldest_part_to_get:
 oldest_part_to_merge_to:    20200220_20284_20840_7
 oldest_part_to_mutate_to:
@@ -824,7 +824,7 @@ Colonne:
 -   `parts_to_check` (`UInt32`) - Le nombre de parties des données dans la file d'attente pour la vérification. Une pièce est placée dans la file d'attente de vérification s'il y a un soupçon qu'elle pourrait être endommagée.
 -   `zookeeper_path` (`String`)- Chemin d'accès aux données de la table dans ZooKeeper.
 -   `replica_name` (`String`) - Réplique nom de la Gardienne. Différentes répliques d'une même table ont des noms différents.
--   `replica_path` (`String`)- Chemin vers les données de réplique dans ZooKeeper. La même chose que la concaténation ‘zookeeper\_path/replicas/replica\_path’.
+-   `replica_path` (`String`)- Chemin vers les données de réplique dans ZooKeeper. La même chose que la concaténation ‘zookeeper_path/replicas/replica_path’.
 -   `columns_version` (`Int32`)- Numéro de Version de la structure de la table. Indique combien de fois ALTER a été effectué. Si les répliques ont des versions différentes, cela signifie que certaines répliques n'ont pas encore Toutes les modifications.
 -   `queue_size` (`UInt32`),- La taille de la file d'attente pour les opérations en attente d'être exécuté. Les opérations comprennent l'insertion de blocs de données, les fusions et certaines autres actions. Il coïncide généralement avec `future_parts`.
 -   `inserts_in_queue` (`UInt32`) - Nombre d'insertions de blocs de données qui doivent être faits. Les Insertions sont généralement répliquées assez rapidement. Si ce nombre est grand, cela signifie que quelque chose est faux.
@@ -845,7 +845,7 @@ Les 4 colonnes suivantes ont une valeur non nulle uniquement lorsqu'il y a une s
 -   `active_replicas` (`UInt8`) - Le nombre de répliques de cette table qui ont une session dans ZooKeeper (c'est-à-dire le nombre de répliques fonctionnelles).
 
 Si vous demandez toutes les colonnes, la table peut fonctionner un peu lentement, car plusieurs lectures de ZooKeeper sont faites pour chaque ligne.
-Si vous ne demandez pas les 4 dernières colonnes (log\_max\_index, log\_pointer, total\_replicas, active\_replicas), la table fonctionne rapidement.
+Si vous ne demandez pas les 4 dernières colonnes (log_max_index, log_pointer, total_replicas, active_replicas), la table fonctionne rapidement.
 
 Par exemple, vous pouvez vérifier que tout fonctionne correctement comme ceci:
 
@@ -932,7 +932,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [Autorisations pour les requêtes](settings/permissions-for-queries.md#settings_readonly)
 -   [Contraintes sur les paramètres](settings/constraints-on-settings.md)
 
-## système.tableau\_moteurs {#system.table_engines}
+## système.tableau_moteurs {#system.table_engines}
 
 ``` text
 ┌─name───────────────────┬─value───────┐
@@ -943,7 +943,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 └────────────────────────┴─────────────┘
 ```
 
-## système.merge\_tree\_settings {#system-merge_tree_settings}
+## système.merge_tree_settings {#system-merge_tree_settings}
 
 Contient des informations sur les paramètres pour `MergeTree` table.
 
@@ -955,7 +955,7 @@ Colonne:
 -   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
-## système.tableau\_moteurs {#system-table-engines}
+## système.tableau_moteurs {#system-table-engines}
 
 Contient une description des moteurs de table pris en charge par le serveur et leurs informations de support de fonctionnalité.
 
@@ -1118,25 +1118,25 @@ Le tableau contient des informations sur [mutation](../sql-reference/statements/
 
 **base de données**, **table** - Le nom de la base de données et de la table à laquelle la mutation a été appliquée.
 
-**mutation\_id** - Le numéro d'identification de la mutation. Pour les tables répliquées ces ID correspondent aux noms znode dans le `<table_path_in_zookeeper>/mutations/` répertoire de la Gardienne. Pour les tables non compliquées, Les Id correspondent aux noms de fichiers dans le répertoire de données de la table.
+**mutation_id** - Le numéro d'identification de la mutation. Pour les tables répliquées ces ID correspondent aux noms znode dans le `<table_path_in_zookeeper>/mutations/` répertoire de la Gardienne. Pour les tables non compliquées, Les Id correspondent aux noms de fichiers dans le répertoire de données de la table.
 
 **commande** - La chaîne de commande mutation (la partie de la requête après `ALTER TABLE [db.]table`).
 
-**create\_time** - Quand cette commande de mutation a été soumise pour exécution.
+**create_time** - Quand cette commande de mutation a été soumise pour exécution.
 
-**block\_numbers.partition\_id**, **block\_numbers.nombre** - Une colonne imbriquée. Pour les mutations de tables répliquées, il contient un enregistrement pour chaque partition: l'ID de partition et le numéro de bloc acquis par la mutation (dans chaque partition, seules les parties contenant des blocs avec des nombres inférieurs au numéro de bloc acquis par la mutation dans cette partition seront mutées). Dans les tables non répliquées, les numéros de bloc de toutes les partitions forment une seule séquence. Cela signifie que pour les mutations de tables non répliquées, la colonne contiendra un enregistrement avec un seul numéro de bloc acquis par la mutation.
+**block_numbers.partition_id**, **block_numbers.nombre** - Une colonne imbriquée. Pour les mutations de tables répliquées, il contient un enregistrement pour chaque partition: l'ID de partition et le numéro de bloc acquis par la mutation (dans chaque partition, seules les parties contenant des blocs avec des nombres inférieurs au numéro de bloc acquis par la mutation dans cette partition seront mutées). Dans les tables non répliquées, les numéros de bloc de toutes les partitions forment une seule séquence. Cela signifie que pour les mutations de tables non répliquées, la colonne contiendra un enregistrement avec un seul numéro de bloc acquis par la mutation.
 
-**parts\_to\_do** - Le nombre de parties de données qui doivent être mutées pour que la mutation se termine.
+**parts_to_do** - Le nombre de parties de données qui doivent être mutées pour que la mutation se termine.
 
-**\_done** - La mutation est faite? Notez que même si `parts_to_do = 0` il est possible qu'une mutation d'une table répliquée ne soit pas encore effectuée en raison d'un INSERT de longue durée qui créera une nouvelle partie de données qui devra être mutée.
+**_done** - La mutation est faite? Notez que même si `parts_to_do = 0` il est possible qu'une mutation d'une table répliquée ne soit pas encore effectuée en raison d'un INSERT de longue durée qui créera une nouvelle partie de données qui devra être mutée.
 
 S'il y avait des problèmes avec la mutation de certaines parties, les colonnes suivantes contiennent des informations supplémentaires:
 
-**latest\_failed\_part** - Le nom de la partie la plus récente qui n'a pas pu être mutée.
+**latest_failed_part** - Le nom de la partie la plus récente qui n'a pas pu être mutée.
 
-**latest\_fail\_time** - Le temps de la partie la plus récente mutation de l'échec.
+**latest_fail_time** - Le temps de la partie la plus récente mutation de l'échec.
 
-**latest\_fail\_reason** - Le message d'exception qui a provoqué l'échec de la mutation de pièce la plus récente.
+**latest_fail_reason** - Le message d'exception qui a provoqué l'échec de la mutation de pièce la plus récente.
 
 ## système.disque {#system_tables-disks}
 
@@ -1150,7 +1150,7 @@ Colonne:
 -   `total_space` ([UInt64](../sql-reference/data-types/int-uint.md)) — Disk volume in bytes.
 -   `keep_free_space` ([UInt64](../sql-reference/data-types/int-uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` paramètre de configuration du disque.
 
-## système.storage\_policies {#system_tables-storage_policies}
+## système.storage_policies {#system_tables-storage_policies}
 
 Contient des informations sur les stratégies de stockage et les volumes définis [configuration du serveur](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 

@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Names.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>
@@ -269,6 +269,8 @@ bool DNSResolver::updateCache()
     LOG_DEBUG(log, "Updating DNS cache");
 
     {
+        String updated_host_name = Poco::Net::DNS::hostName();
+
         std::lock_guard lock(impl->drop_mutex);
 
         for (const auto & host : impl->new_hosts)
@@ -279,10 +281,10 @@ bool DNSResolver::updateCache()
             impl->known_addresses.insert(address);
         impl->new_addresses.clear();
 
-        impl->host_name.emplace(Poco::Net::DNS::hostName());
+        impl->host_name.emplace(updated_host_name);
     }
 
-    /// FIXME Updating may take a long time becouse we cannot manage timeouts of getaddrinfo(...) and getnameinfo(...).
+    /// FIXME Updating may take a long time because we cannot manage timeouts of getaddrinfo(...) and getnameinfo(...).
     /// DROP DNS CACHE will wait on update_mutex (possibly while holding drop_mutex)
     std::lock_guard lock(impl->update_mutex);
 

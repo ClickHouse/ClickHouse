@@ -33,10 +33,10 @@ namespace ErrorCodes
   * Convert bitmap to integer array:
   * bitmapToArray:    bitmap -> integer[]
   *
-  * Retrun the smallest value in the set:
+  * Return the smallest value in the set:
   * bitmapMin:    bitmap -> integer
   *
-  * Retrun the greatest value in the set:
+  * Return the greatest value in the set:
   * bitmapMax:    bitmap -> integer
   *
   * Return subset in specified range (not include the range_end):
@@ -60,7 +60,7 @@ namespace ErrorCodes
   * Two bitmap andnot calculation:
   * bitmapAndnot:    bitmap,bitmap -> bitmap
   *
-  * Retrun bitmap cardinality:
+  * Return bitmap cardinality:
   * bitmapCardinality:    bitmap -> integer
   *
   * Two bitmap and calculation, return cardinality:
@@ -122,9 +122,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = columns[arguments[0]].type.get();
         auto array_type = typeid_cast<const DataTypeArray *>(from_type);
         auto nested_type = array_type->getNestedType();
 
@@ -132,13 +132,13 @@ public:
 
         WhichDataType which(nested_type);
         if (which.isUInt8())
-            executeBitmapData<UInt8>(block, argument_types, arguments, result);
+            executeBitmapData<UInt8>(columns, argument_types, arguments, result);
         else if (which.isUInt16())
-            executeBitmapData<UInt16>(block, argument_types, arguments, result);
+            executeBitmapData<UInt16>(columns, argument_types, arguments, result);
         else if (which.isUInt32())
-            executeBitmapData<UInt32>(block, argument_types, arguments, result);
+            executeBitmapData<UInt32>(columns, argument_types, arguments, result);
         else if (which.isUInt64())
-            executeBitmapData<UInt64>(block, argument_types, arguments, result);
+            executeBitmapData<UInt64>(columns, argument_types, arguments, result);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -146,10 +146,10 @@ public:
 
 private:
     template <typename T>
-    void executeBitmapData(Block & block, DataTypes & argument_types, const ColumnNumbers & arguments, size_t result)
+    void executeBitmapData(ColumnsWithTypeAndName & columns, DataTypes & argument_types, const ColumnNumbers & arguments, size_t result) const
     {
         // input data
-        const ColumnArray * array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
+        const ColumnArray * array = typeid_cast<const ColumnArray *>(columns[arguments[0]].column.get());
         ColumnPtr mapped = array->getDataPtr();
         const ColumnArray::Offsets & offsets = array->getOffsets();
         const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(&*mapped);
@@ -174,7 +174,7 @@ private:
                 bitmap_data.rbs.add(input_data[pos]);
             }
         }
-        block.getByPosition(result).column = std::move(col_to);
+        columns[result].column = std::move(col_to);
     }
 };
 
@@ -207,32 +207,32 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         // input data
-        const auto & return_type = block.getByPosition(result).type;
+        const auto & return_type = columns[result].type;
         auto res_ptr = return_type->createColumn();
         ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
         IColumn & res_data = res.getData();
         ColumnArray::Offsets & res_offsets = res.getOffsets();
 
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = columns[arguments[0]].type.get();
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            executeIntType<UInt8>(block, arguments, input_rows_count, res_data, res_offsets);
+            executeIntType<UInt8>(columns, arguments, input_rows_count, res_data, res_offsets);
         else if (which.isUInt16())
-            executeIntType<UInt16>(block, arguments, input_rows_count, res_data, res_offsets);
+            executeIntType<UInt16>(columns, arguments, input_rows_count, res_data, res_offsets);
         else if (which.isUInt32())
-            executeIntType<UInt32>(block, arguments, input_rows_count, res_data, res_offsets);
+            executeIntType<UInt32>(columns, arguments, input_rows_count, res_data, res_offsets);
         else if (which.isUInt64())
-            executeIntType<UInt64>(block, arguments, input_rows_count, res_data, res_offsets);
+            executeIntType<UInt64>(columns, arguments, input_rows_count, res_data, res_offsets);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        block.getByPosition(result).column = std::move(res_ptr);
+        columns[result].column = std::move(res_ptr);
     }
 
 private:
@@ -240,11 +240,11 @@ private:
 
     template <typename T>
     void executeIntType(
-        Block & block, const ColumnNumbers & arguments, size_t input_rows_count, IColumn & res_data_col, ColumnArray::Offsets & res_offsets)
+            ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t input_rows_count, IColumn & res_data_col, ColumnArray::Offsets & res_offsets)
         const
     {
         const ColumnAggregateFunction * column
-            = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[0]).column.get());
+            = typeid_cast<const ColumnAggregateFunction *>(columns[arguments[0]].column.get());
 
         PaddedPODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
         ColumnArray::Offset res_offset = 0;
@@ -299,19 +299,19 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = columns[arguments[0]].type.get();
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            executeIntType<UInt8>(block, arguments, result, input_rows_count);
+            executeIntType<UInt8>(columns, arguments, result, input_rows_count);
         else if (which.isUInt16())
-            executeIntType<UInt16>(block, arguments, result, input_rows_count);
+            executeIntType<UInt16>(columns, arguments, result, input_rows_count);
         else if (which.isUInt32())
-            executeIntType<UInt32>(block, arguments, result, input_rows_count);
+            executeIntType<UInt32>(columns, arguments, result, input_rows_count);
         else if (which.isUInt64())
-            executeIntType<UInt64>(block, arguments, result, input_rows_count);
+            executeIntType<UInt64>(columns, arguments, result, input_rows_count);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -322,10 +322,10 @@ private:
 
     template <typename T>
     void executeIntType(
-        Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+            ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
         const
     {
-        const IColumn * columns[3];
+        const IColumn * column_ptrs[3];
         bool is_column_const[3];
         const ColumnAggregateFunction * col_agg_func;
         const PaddedPODArray<AggregateDataPtr> * container0;
@@ -333,23 +333,23 @@ private:
 
         for (size_t i = 0; i < 3; ++i)
         {
-            columns[i] = block.getByPosition(arguments[i]).column.get();
-            is_column_const[i] = isColumnConst(*columns[i]);
+            column_ptrs[i] = columns[arguments[i]].column.get();
+            is_column_const[i] = isColumnConst(*column_ptrs[i]);
         }
         if (is_column_const[0])
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(columns[0])->getDataColumnPtr().get());
+            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get());
         else
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(columns[0]);
+            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0]);
 
         container0 = &col_agg_func->getData();
         if (is_column_const[1])
-            container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(columns[1])->getDataColumnPtr().get())->getData();
+            container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get())->getData();
         else
-            container1 = &typeid_cast<const ColumnUInt32*>(columns[1])->getData();
+            container1 = &typeid_cast<const ColumnUInt32*>(column_ptrs[1])->getData();
         if (is_column_const[2])
-            container2 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(columns[2])->getDataColumnPtr().get())->getData();
+            container2 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(column_ptrs[2])->getDataColumnPtr().get())->getData();
         else
-            container2 = &typeid_cast<const ColumnUInt32*>(columns[2])->getData();
+            container2 = &typeid_cast<const ColumnUInt32*>(column_ptrs[2])->getData();
 
         auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
         col_to->reserve(input_rows_count);
@@ -367,7 +367,7 @@ private:
                 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
             Impl::apply(bitmap_data_0, range_start, range_end, bitmap_data_2);
         }
-        block.getByPosition(result).column = std::move(col_to);
+        columns[result].column = std::move(col_to);
     }
 };
 
@@ -435,19 +435,19 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = columns[arguments[0]].type.get();
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            executeIntType<UInt8>(block, arguments, result, input_rows_count);
+            executeIntType<UInt8>(columns, arguments, result, input_rows_count);
         else if (which.isUInt16())
-            executeIntType<UInt16>(block, arguments, result, input_rows_count);
+            executeIntType<UInt16>(columns, arguments, result, input_rows_count);
         else if (which.isUInt32())
-            executeIntType<UInt32>(block, arguments, result, input_rows_count);
+            executeIntType<UInt32>(columns, arguments, result, input_rows_count);
         else if (which.isUInt64())
-            executeIntType<UInt64>(block, arguments, result, input_rows_count);
+            executeIntType<UInt64>(columns, arguments, result, input_rows_count);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -458,9 +458,9 @@ private:
 
     template <typename T>
     void executeIntType(
-        Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+            ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
-        const IColumn * columns[3];
+        const IColumn * column_ptrs[3];
         bool is_column_const[3];
         const ColumnAggregateFunction * col_agg_func;
         const PaddedPODArray<AggregateDataPtr> * container0;
@@ -468,32 +468,32 @@ private:
 
         for (size_t i = 0; i < 3; ++i)
         {
-            columns[i] = block.getByPosition(arguments[i]).column.get();
-            is_column_const[i] = isColumnConst(*columns[i]);
+            column_ptrs[i] = columns[arguments[i]].column.get();
+            is_column_const[i] = isColumnConst(*column_ptrs[i]);
         }
         if (is_column_const[0])
         {
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(columns[0])->getDataColumnPtr().get());
+            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get());
         }
         else
         {
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(columns[0]);
+            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0]);
         }
         container0 = &col_agg_func->getData();
 
         if (is_column_const[1])
-            array = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(columns[1])->getDataColumnPtr().get());
+            array = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get());
         else
         {
-            array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[1]).column.get());
+            array = typeid_cast<const ColumnArray *>(columns[arguments[1]].column.get());
         }
         const ColumnArray::Offsets & from_offsets = array->getOffsets();
         const ColumnVector<UInt32>::Container & from_container = typeid_cast<const ColumnVector<UInt32> *>(&array->getData())->getData();
 
         if (is_column_const[2])
-            array = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(columns[2])->getDataColumnPtr().get());
+            array = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(column_ptrs[2])->getDataColumnPtr().get());
         else
-            array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[2]).column.get());
+            array = typeid_cast<const ColumnArray *>(columns[arguments[2]].column.get());
 
         const ColumnArray::Offsets & to_offsets = array->getOffsets();
         const ColumnVector<UInt32>::Container & to_container = typeid_cast<const ColumnVector<UInt32> *>(&array->getData())->getData();
@@ -538,7 +538,7 @@ private:
             bitmap_data_2.rbs.merge(bitmap_data_0.rbs);
             bitmap_data_2.rbs.rb_replace(&from_container[from_start], &to_container[to_start], from_end - from_start);
         }
-        block.getByPosition(result).column = std::move(col_to);
+        columns[result].column = std::move(col_to);
     }
 };
 
@@ -568,27 +568,27 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<ToType>::create(input_rows_count);
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = columns[arguments[0]].type.get();
 
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            executeIntType<UInt8>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt8>(columns, arguments, input_rows_count, vec_to);
         else if (which.isUInt16())
-            executeIntType<UInt16>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt16>(columns, arguments, input_rows_count, vec_to);
         else if (which.isUInt32())
-            executeIntType<UInt32>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt32>(columns, arguments, input_rows_count, vec_to);
         else if (which.isUInt64())
-            executeIntType<UInt64>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt64>(columns, arguments, input_rows_count, vec_to);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        block.getByPosition(result).column = std::move(col_to);
+        columns[result].column = std::move(col_to);
     }
 
 private:
@@ -596,10 +596,10 @@ private:
 
     template <typename T>
     void executeIntType(
-        Block & block, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to)
+            ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to) const
     {
         const ColumnAggregateFunction * column
-            = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[0]).column.get());
+            = typeid_cast<const ColumnAggregateFunction *>(columns[arguments[0]].column.get());
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const AggregateFunctionGroupBitmapData<T> & bitmap_data
@@ -738,52 +738,52 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<UInt8>::create(input_rows_count);
         typename ColumnVector<UInt8>::Container & vec_to = col_to->getData();
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = columns[arguments[0]].type.get();
 
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            executeIntType<UInt8>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt8>(columns, arguments, input_rows_count, vec_to);
         else if (which.isUInt16())
-            executeIntType<UInt16>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt16>(columns, arguments, input_rows_count, vec_to);
         else if (which.isUInt32())
-            executeIntType<UInt32>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt32>(columns, arguments, input_rows_count, vec_to);
         else if (which.isUInt64())
-            executeIntType<UInt64>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt64>(columns, arguments, input_rows_count, vec_to);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        block.getByPosition(result).column = std::move(col_to);
+        columns[result].column = std::move(col_to);
     }
 
 private:
     template <typename T>
     void executeIntType(
-        Block & block, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<UInt8>::Container & vec_to)
+            ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<UInt8>::Container & vec_to) const
     {
-        const IColumn * columns[2];
+        const IColumn * column_ptrs[2];
         bool is_column_const[2];
         const PaddedPODArray<AggregateDataPtr> * container0;
         const PaddedPODArray<UInt32> * container1;
 
         for (size_t i = 0; i < 2; ++i)
         {
-            columns[i] = block.getByPosition(arguments[i]).column.get();
-            is_column_const[i] = isColumnConst(*columns[i]);
+            column_ptrs[i] = columns[arguments[i]].column.get();
+            is_column_const[i] = isColumnConst(*column_ptrs[i]);
         }
         if (is_column_const[0])
-            container0 = &typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(columns[0])->getDataColumnPtr().get())->getData();
+            container0 = &typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get())->getData();
         else
-            container0 = &typeid_cast<const ColumnAggregateFunction*>(columns[0])->getData();
+            container0 = &typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0])->getData();
         if (is_column_const[1])
-            container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(columns[1])->getDataColumnPtr().get())->getData();
+            container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get())->getData();
         else
-            container1 = &typeid_cast<const ColumnUInt32*>(columns[1])->getData();
+            container1 = &typeid_cast<const ColumnUInt32*>(column_ptrs[1])->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -835,52 +835,52 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<ToType>::create(input_rows_count);
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = columns[arguments[0]].type.get();
 
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            executeIntType<UInt8>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt8>(columns, arguments, input_rows_count, vec_to);
         else if (which.isUInt16())
-            executeIntType<UInt16>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt16>(columns, arguments, input_rows_count, vec_to);
         else if (which.isUInt32())
-            executeIntType<UInt32>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt32>(columns, arguments, input_rows_count, vec_to);
         else if (which.isUInt64())
-            executeIntType<UInt64>(block, arguments, input_rows_count, vec_to);
+            executeIntType<UInt64>(columns, arguments, input_rows_count, vec_to);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        block.getByPosition(result).column = std::move(col_to);
+        columns[result].column = std::move(col_to);
     }
 
 private:
     template <typename T>
     void executeIntType(
-        Block & block, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to)
+            ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        const ColumnAggregateFunction * columns[2];
+        const ColumnAggregateFunction * column_ptrs[2];
         bool is_column_const[2];
         for (size_t i = 0; i < 2; ++i)
         {
-            if (auto argument_column_const = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get()))
+            if (auto argument_column_const = checkAndGetColumn<ColumnConst>(columns[arguments[i]].column.get()))
             {
-                columns[i] = typeid_cast<const ColumnAggregateFunction*>(argument_column_const->getDataColumnPtr().get());
+                column_ptrs[i] = typeid_cast<const ColumnAggregateFunction*>(argument_column_const->getDataColumnPtr().get());
                 is_column_const[i] = true;
             }
             else
             {
-                columns[i] = typeid_cast<const ColumnAggregateFunction*>(block.getByPosition(arguments[i]).column.get());
+                column_ptrs[i] = typeid_cast<const ColumnAggregateFunction*>(columns[arguments[i]].column.get());
                 is_column_const[i] = false;
             }
         }
 
-        const PaddedPODArray<AggregateDataPtr> & container0 = columns[0]->getData();
-        const PaddedPODArray<AggregateDataPtr> & container1 = columns[1]->getData();
+        const PaddedPODArray<AggregateDataPtr> & container0 = column_ptrs[0]->getData();
+        const PaddedPODArray<AggregateDataPtr> & container1 = column_ptrs[1]->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -970,19 +970,19 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = columns[arguments[0]].type.get();
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            executeBitmapData<UInt8>(block, arguments, result, input_rows_count);
+            executeBitmapData<UInt8>(columns, arguments, result, input_rows_count);
         else if (which.isUInt16())
-            executeBitmapData<UInt16>(block, arguments, result, input_rows_count);
+            executeBitmapData<UInt16>(columns, arguments, result, input_rows_count);
         else if (which.isUInt32())
-            executeBitmapData<UInt32>(block, arguments, result, input_rows_count);
+            executeBitmapData<UInt32>(columns, arguments, result, input_rows_count);
         else if (which.isUInt64())
-            executeBitmapData<UInt64>(block, arguments, result, input_rows_count);
+            executeBitmapData<UInt64>(columns, arguments, result, input_rows_count);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -990,30 +990,30 @@ public:
 
 private:
     template <typename T>
-    void executeBitmapData(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    void executeBitmapData(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
-        const ColumnAggregateFunction * columns[2];
+        const ColumnAggregateFunction * column_ptrs[2];
         bool is_column_const[2];
         for (size_t i = 0; i < 2; ++i)
         {
-            if (auto argument_column_const = typeid_cast<const ColumnConst *>(block.getByPosition(arguments[i]).column.get()))
+            if (auto argument_column_const = typeid_cast<const ColumnConst *>(columns[arguments[i]].column.get()))
             {
-                columns[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
+                column_ptrs[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
                 is_column_const[i] = true;
             }
             else
             {
-                columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+                column_ptrs[i] = typeid_cast<const ColumnAggregateFunction *>(columns[arguments[i]].column.get());
                 is_column_const[i] = false;
             }
         }
 
-        auto col_to = ColumnAggregateFunction::create(columns[0]->getAggregateFunction());
+        auto col_to = ColumnAggregateFunction::create(column_ptrs[0]->getAggregateFunction());
 
         col_to->reserve(input_rows_count);
 
-        const PaddedPODArray<AggregateDataPtr> & container0 = columns[0]->getData();
-        const PaddedPODArray<AggregateDataPtr> & container1 = columns[1]->getData();
+        const PaddedPODArray<AggregateDataPtr> & container0 = column_ptrs[0]->getData();
+        const PaddedPODArray<AggregateDataPtr> & container1 = column_ptrs[1]->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -1026,7 +1026,7 @@ private:
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
             Impl<T>::apply(bitmap_data_1, bitmap_data_2);
         }
-        block.getByPosition(result).column = std::move(col_to);
+        columns[result].column = std::move(col_to);
     }
 };
 

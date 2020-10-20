@@ -2,7 +2,7 @@
 
 #include <map>
 #include <vector>
-#include <Core/Types.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -23,15 +23,17 @@ std::vector<std::pair<Float64, Float64>> geohashCoverBox(
 struct GeohashesInBoxPreparedArgs
 {
     UInt64 items_count = 0;
-    uint8_t precision = 0;
+
+    UInt32 longitude_items = 0;
+    UInt32 latitude_items = 0;
 
     Float64 longitude_min = 0.0;
     Float64 latitude_min = 0.0;
-    Float64 longitude_max = 0.0;
-    Float64 latitude_max = 0.0;
 
     Float64 longitude_step = 0.0;
     Float64 latitude_step = 0.0;
+
+    uint8_t precision = 0;
 };
 
 GeohashesInBoxPreparedArgs geohashesInBoxPrepare(

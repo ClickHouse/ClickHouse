@@ -140,6 +140,13 @@ Block KafkaBlockInputStream::readImpl()
 
         if (new_rows)
         {
+            // In read_kafka_message(), ReadBufferFromKafkaConsumer::nextImpl()
+            // will be called, that may make something unusable, i.e. clean
+            // ReadBufferFromKafkaConsumer::messages, which is accessed from
+            // ReadBufferFromKafkaConsumer::currentTopic() (and other helpers).
+            if (buffer->isStalled())
+                throw Exception("Polled messages became unusable", ErrorCodes::LOGICAL_ERROR);
+
             buffer->storeLastReadMessageOffset();
 
             auto topic         = buffer->currentTopic();
@@ -186,13 +193,13 @@ Block KafkaBlockInputStream::readImpl()
 
             total_rows = total_rows + new_rows;
         }
-        else if (buffer->isStalled())
-        {
-            ++failed_poll_attempts;
-        }
         else if (buffer->polledDataUnusable())
         {
             break;
+        }
+        else if (buffer->isStalled())
+        {
+            ++failed_poll_attempts;
         }
         else
         {

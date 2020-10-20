@@ -3,25 +3,27 @@ toc_priority: 42
 toc_title: Decimal
 ---
 
-# Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S) {#decimalp-s-decimal32s-decimal64s-decimal128s}
+# Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S) {#decimal}
 
 Signed fixed-point numbers that keep precision during add, subtract and multiply operations. For division least significant digits are discarded (not rounded).
 
 ## Parameters {#parameters}
 
--   P - precision. Valid range: \[ 1 : 38 \]. Determines how many decimal digits number can have (including fraction).
+-   P - precision. Valid range: \[ 1 : 76 \]. Determines how many decimal digits number can have (including fraction).
 -   S - scale. Valid range: \[ 0 : P \]. Determines how many decimal digits fraction can have.
 
 Depending on P parameter value Decimal(P, S) is a synonym for:
 - P from \[ 1 : 9 \] - for Decimal32(S)
 - P from \[ 10 : 18 \] - for Decimal64(S)
 - P from \[ 19 : 38 \] - for Decimal128(S)
+- P from \[ 39 : 76 \] - for Decimal256(S)
 
 ## Decimal Value Ranges {#decimal-value-ranges}
 
 -   Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
 -   Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
 -   Decimal128(S) - ( -1 \* 10^(38 - S), 1 \* 10^(38 - S) )
+-   Decimal256(S) - ( -1 \* 10^(76 - S), 1 \* 10^(76 - S) )
 
 For example, Decimal32(4) can contain numbers from -99999.9999 to 99999.9999 with 0.0001 step.
 
@@ -38,6 +40,7 @@ Binary operations on Decimal result in wider result type (with any order of argu
 -   `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
 -   `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
 -   `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
+-   `Decimal256(S1) <op> Decimal<32|64|128>(S2) -> Decimal256(S)`
 
 Rules for scale:
 
@@ -103,5 +106,9 @@ SELECT toDecimal32(1, 8) < 100
 ``` text
 DB::Exception: Can't compare.
 ```
+
+**See also**
+-   [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
+-   [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
 
 [Original article](https://clickhouse.tech/docs/en/data_types/decimal/) <!--hide-->

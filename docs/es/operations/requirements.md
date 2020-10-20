@@ -9,7 +9,7 @@ toc_title: Requisito
 
 ## CPU {#cpu}
 
-Para la instalación desde paquetes deb precompilados, utilice una CPU con arquitectura x86\_64 y soporte para las instrucciones de SSE 4.2. Para ejecutar ClickHouse con procesadores que no admiten SSE 4.2 o tienen arquitectura AArch64 o PowerPC64LE, debe compilar ClickHouse a partir de fuentes.
+Para la instalación desde paquetes deb precompilados, utilice una CPU con arquitectura x86_64 y soporte para las instrucciones de SSE 4.2. Para ejecutar ClickHouse con procesadores que no admiten SSE 4.2 o tienen arquitectura AArch64 o PowerPC64LE, debe compilar ClickHouse a partir de fuentes.
 
 ClickHouse implementa el procesamiento de datos paralelo y utiliza todos los recursos de hardware disponibles. Al elegir un procesador, tenga en cuenta que ClickHouse funciona de manera más eficiente en configuraciones con un gran número de núcleos pero con una velocidad de reloj más baja que en configuraciones con menos núcleos y una velocidad de reloj más alta. Por ejemplo, 16 núcleos con 2600 MHz es preferible a 8 núcleos con 3600 MHz.
 

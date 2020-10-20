@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
+#include <Core/BigInt.h>
 #include <Common/UInt128.h>
 #include <common/unaligned.h>
 
@@ -85,6 +86,7 @@ intHashCRC32(const T & x, DB::UInt64 updated_value)
     return updated_value;
 }
 
+
 inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 updated_value)
 {
     if (size < 8)
@@ -164,7 +166,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
 }
 
 template <typename T>
-inline size_t DefaultHash64(T key)
+inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> key)
 {
     union
     {
@@ -176,11 +178,32 @@ inline size_t DefaultHash64(T key)
     return intHash64(u.out);
 }
 
+template <typename T>
+inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
+{
+    if constexpr (std::is_same_v<T, DB::Int128>)
+    {
+        return intHash64(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
+    }
+    if constexpr (std::is_same_v<T, DB::UInt128>)
+    {
+        return intHash64(key.low ^ key.high);
+    }
+    else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
+    {
+        return intHash64(static_cast<UInt64>(key) ^
+            static_cast<UInt64>(key >> 64) ^
+            static_cast<UInt64>(key >> 128) ^
+            static_cast<UInt64>(key >> 256));
+    }
+    __builtin_unreachable();
+}
+
 template <typename T, typename Enable = void>
 struct DefaultHash;
 
 template <typename T>
-struct DefaultHash<T, std::enable_if_t<is_arithmetic_v<T>>>
+struct DefaultHash<T, std::enable_if_t<!DB::IsDecimalNumber<T>>>
 {
     size_t operator() (T key) const
     {
@@ -189,7 +212,7 @@ struct DefaultHash<T, std::enable_if_t<is_arithmetic_v<T>>>
 };
 
 template <typename T>
-struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) <= 8>>
+struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T>>>
 {
     size_t operator() (T key) const
     {
@@ -197,19 +220,10 @@ struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) <= 8>
     }
 };
 
-template <typename T>
-struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) == 16>>
-{
-    size_t operator() (T key) const
-    {
-        return DefaultHash64<Int64>(key >> 64) ^ DefaultHash64<Int64>(key);
-    }
-};
-
 template <typename T> struct HashCRC32;
 
 template <typename T>
-inline size_t hashCRC32(T key)
+inline size_t hashCRC32(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> key)
 {
     union
     {
@@ -219,6 +233,12 @@ inline size_t hashCRC32(T key)
     u.out = 0;
     u.in = key;
     return intHashCRC32(u.out);
+}
+
+template <typename T>
+inline size_t hashCRC32(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
+{
+    return intHashCRC32(key, -1);
 }
 
 #define DEFINE_HASH(T) \
@@ -235,14 +255,24 @@ DEFINE_HASH(DB::UInt16)
 DEFINE_HASH(DB::UInt32)
 DEFINE_HASH(DB::UInt64)
 DEFINE_HASH(DB::UInt128)
+DEFINE_HASH(DB::UInt256)
 DEFINE_HASH(DB::Int8)
 DEFINE_HASH(DB::Int16)
 DEFINE_HASH(DB::Int32)
 DEFINE_HASH(DB::Int64)
+DEFINE_HASH(DB::Int128)
+DEFINE_HASH(DB::Int256)
 DEFINE_HASH(DB::Float32)
 DEFINE_HASH(DB::Float64)
 
 #undef DEFINE_HASH
+
+
+template <>
+struct DefaultHash<DB::UInt128> : public DB::UInt128Hash {};
+
+template <>
+struct DefaultHash<DB::DummyUInt256> : public DB::UInt256Hash {};
 
 
 /// It is reasonable to use for UInt8, UInt16 with sufficient hash table size.
@@ -295,6 +325,23 @@ struct IntHash32
 {
     size_t operator() (const T & key) const
     {
-        return intHash32<salt>(key);
+        if constexpr (std::is_same_v<T, DB::Int128>)
+        {
+            return intHash32<salt>(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
+        }
+        else if constexpr (std::is_same_v<T, DB::UInt128>)
+        {
+            return intHash32<salt>(key.low ^ key.high);
+        }
+        else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
+        {
+            return intHash32<salt>(static_cast<UInt64>(key) ^
+                static_cast<UInt64>(key >> 64) ^
+                static_cast<UInt64>(key >> 128) ^
+                static_cast<UInt64>(key >> 256));
+        }
+        else if constexpr (sizeof(T) <= sizeof(UInt64))
+            return intHash32<salt>(key);
+        __builtin_unreachable();
     }
 };

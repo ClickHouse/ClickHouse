@@ -50,6 +50,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INFINITE_LOOP;
@@ -145,7 +146,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 }
 
 
-Pipes StorageBuffer::read(
+Pipe StorageBuffer::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -154,7 +155,7 @@ Pipes StorageBuffer::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    Pipes pipes_from_dst;
+    Pipe pipe_from_dst;
 
     if (destination_id)
     {
@@ -181,7 +182,7 @@ Pipes StorageBuffer::read(
                 query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination, destination_metadata_snapshot);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
-            pipes_from_dst = destination->read(
+            pipe_from_dst = destination->read(
                 column_names, destination_metadata_snapshot, query_info,
                 context, processed_stage, max_block_size, num_streams);
         }
@@ -216,66 +217,83 @@ Pipes StorageBuffer::read(
             }
             else
             {
-                pipes_from_dst = destination->read(
+                pipe_from_dst = destination->read(
                     columns_intersection, destination_metadata_snapshot, query_info,
                     context, processed_stage, max_block_size, num_streams);
 
-                for (auto & pipe : pipes_from_dst)
+                if (!pipe_from_dst.empty())
                 {
-                    pipe.addSimpleTransform(std::make_shared<AddingMissedTransform>(
-                            pipe.getHeader(), header_after_adding_defaults, metadata_snapshot->getColumns().getDefaults(), context));
+                    pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
+                    {
+                        return std::make_shared<AddingMissedTransform>(stream_header, header_after_adding_defaults,
+                            metadata_snapshot->getColumns(), context);
+                    });
 
-                    pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-                            pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
+                    pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
+                    {
+                        return std::make_shared<ConvertingTransform>(
+                            stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
+                    });
                 }
             }
         }
 
-        for (auto & pipe : pipes_from_dst)
-            pipe.addTableLock(destination_lock);
+        pipe_from_dst.addTableLock(destination_lock);
     }
 
-    Pipes pipes_from_buffers;
-    pipes_from_buffers.reserve(num_shards);
-    for (auto & buf : buffers)
-        pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this, metadata_snapshot));
+    Pipe pipe_from_buffers;
+    {
+        Pipes pipes_from_buffers;
+        pipes_from_buffers.reserve(num_shards);
+        for (auto & buf : buffers)
+            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this, metadata_snapshot));
+
+        pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
+    }
 
     /// Convert pipes from table to structure from buffer.
-    if (!pipes_from_buffers.empty() && !pipes_from_dst.empty()
-        && !blocksHaveEqualStructure(pipes_from_buffers.front().getHeader(), pipes_from_dst.front().getHeader()))
+    if (!pipe_from_buffers.empty() && !pipe_from_dst.empty()
+        && !blocksHaveEqualStructure(pipe_from_buffers.getHeader(), pipe_from_dst.getHeader()))
     {
-        for (auto & pipe : pipes_from_dst)
-            pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-                    pipe.getHeader(),
-                    pipes_from_buffers.front().getHeader(),
-                    ConvertingTransform::MatchColumnsMode::Name));
+        pipe_from_dst.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ConvertingTransform>(
+                   header,
+                   pipe_from_buffers.getHeader(),
+                   ConvertingTransform::MatchColumnsMode::Name);
+        });
     }
 
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
-        for (auto & pipe : pipes_from_buffers)
-            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).execute().pipeline.getPipe();
+        pipe_from_buffers = QueryPipeline::getPipe(
+                InterpreterSelectQuery(query_info.query, context, std::move(pipe_from_buffers),
+                                               SelectQueryOptions(processed_stage)).execute().pipeline);
 
     if (query_info.prewhere_info)
     {
-        for (auto & pipe : pipes_from_buffers)
-            pipe.addSimpleTransform(std::make_shared<FilterTransform>(pipe.getHeader(), query_info.prewhere_info->prewhere_actions,
-                    query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column));
+        pipe_from_buffers.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FilterTransform>(
+                    header, query_info.prewhere_info->prewhere_actions,
+                    query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
+        });
 
         if (query_info.prewhere_info->alias_actions)
         {
-            for (auto & pipe : pipes_from_buffers)
-                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), query_info.prewhere_info->alias_actions));
-
+            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
+            });
         }
     }
 
-    for (auto & pipe : pipes_from_buffers)
-        pipes_from_dst.emplace_back(std::move(pipe));
-
-    return pipes_from_dst;
+    Pipes pipes;
+    pipes.emplace_back(std::move(pipe_from_dst));
+    pipes.emplace_back(std::move(pipe_from_buffers));
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
@@ -367,6 +385,9 @@ public:
         }
 
         size_t bytes = block.bytes();
+
+        storage.writes.rows += rows;
+        storage.writes.bytes += bytes;
 
         /// If the block already exceeds the maximum limit, then we skip the buffer.
         if (rows > storage.max_thresholds.rows || bytes > storage.max_thresholds.bytes)
@@ -529,7 +550,7 @@ bool StorageBuffer::optimize(
     if (deduplicate)
         throw Exception("DEDUPLICATE cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
-    flushAllBuffers(false);
+    flushAllBuffers(false, true);
     return true;
 }
 
@@ -577,14 +598,14 @@ bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_p
 }
 
 
-void StorageBuffer::flushAllBuffers(const bool check_thresholds)
+void StorageBuffer::flushAllBuffers(bool check_thresholds, bool reset_blocks_structure)
 {
     for (auto & buf : buffers)
-        flushBuffer(buf, check_thresholds);
+        flushBuffer(buf, check_thresholds, false, reset_blocks_structure);
 }
 
 
-void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked)
+void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked, bool reset_block_structure)
 {
     Block block_to_write;
     time_t current_time = time(nullptr);
@@ -637,6 +658,8 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     try
     {
         writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, global_context));
+        if (reset_block_structure)
+            buffer.data.clear();
     }
     catch (...)
     {
@@ -713,7 +736,10 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     for (const auto & column : block_to_write)
         list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
-    InterpreterInsertQuery interpreter{insert, global_context, allow_materialized};
+    auto insert_context = Context(global_context);
+    insert_context.makeQueryContext();
+
+    InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
 
     auto block_io = interpreter.execute();
     block_io.out->writePrefix();
@@ -808,7 +834,9 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     checkAlterIsPossible(params, context.getSettingsRef());
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    /// So that no blocks of the old structure remain.
+    /// Flush all buffers to storages, so that no non-empty blocks of the old
+    /// structure remain. Structure of empty blocks will be updated during first
+    /// insert.
     optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
@@ -836,8 +864,21 @@ void registerStorageBuffer(StorageFactory & factory)
                 " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        // Table and database name arguments accept expressions, evaluate them.
         engine_args[0] = evaluateConstantExpressionForDatabaseName(engine_args[0], args.local_context);
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
+
+        // After we evaluated all expressions, check that all arguments are
+        // literals.
+        for (size_t i = 0; i < 9; i++)
+        {
+            if (!typeid_cast<ASTLiteral *>(engine_args[i].get()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Storage Buffer expects a literal as an argument #{}, got '{}'"
+                    " instead", i, engine_args[i]->formatForErrorMessage());
+            }
+        }
 
         String destination_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String destination_table = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();

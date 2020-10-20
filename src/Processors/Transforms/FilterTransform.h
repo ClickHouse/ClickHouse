@@ -8,8 +8,9 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-/** Has one input and one output.
-  * Simply pull a block from input, transform it, and push it to output.
+/** Implements WHERE, HAVING operations.
+  * Takes an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions.
+  * The expression is evaluated and result chunks contain only the filtered rows.
   * If remove_filter_column is true, remove filter column from block.
   */
 class FilterTransform : public ISimpleTransform

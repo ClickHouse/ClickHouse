@@ -45,10 +45,10 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::Context 
     res.reserve(constraints.size());
     for (const auto & constraint : constraints)
     {
-        // SyntaxAnalyzer::analyze has query as non-const argument so to avoid accidental query changes we clone it
+        // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
         auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
         ASTPtr expr = constraint_ptr->expr->clone();
-        auto syntax_result = SyntaxAnalyzer(context).analyze(expr, source_columns_);
+        auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
         res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false));
     }
     return res;

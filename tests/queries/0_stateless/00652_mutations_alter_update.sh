@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
-
-. $CURDIR/mergetree_mutations.lib
+. "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS alter_update"
 
@@ -26,8 +24,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO alter_update VALUES \
     ('2000-01-01', 123, 'abc', 1), \
     ('2000-01-01', 234, 'cde', 2)"
 
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update UPDATE value1 = 'aaa', value2 = value2 + 100 WHERE key < 200"
-wait_for_mutation "alter_update" "mutation_2.txt"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update UPDATE value1 = 'aaa', value2 = value2 + 100 WHERE key < 200" --mutations_sync=1
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM alter_update ORDER BY key"
 
@@ -40,8 +37,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO alter_update VALUES ('2000-01-01', 123
 
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update \
     UPDATE value2 = (value2 + 1) / 2 WHERE 1, \
-    UPDATE value2 = value2 + 1 WHERE 1"
-wait_for_mutation "alter_update" "mutation_4.txt"
+    UPDATE value2 = value2 + 1 WHERE 1" --mutations_sync=1
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM alter_update ORDER BY key"
 
@@ -59,8 +55,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO alter_update VALUES \
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update \
     DELETE WHERE key IN (SELECT toUInt32(arrayJoin([121, 122, 123]))), \
     UPDATE value1 = concat(value1, 'ccc') WHERE value2 IN (20, 30), \
-    UPDATE value1 = 'iii' WHERE value2 IN (SELECT toUInt64(40))"
-wait_for_mutation "alter_update" "mutation_6.txt"
+    UPDATE value1 = 'iii' WHERE value2 IN (SELECT toUInt64(40))" --mutations_sync=1
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM alter_update ORDER BY key"
 
@@ -75,8 +70,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO alter_update VALUES \
 
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update \
     UPDATE value2 = value2 + 10 WHERE 1, \
-    DELETE WHERE value2 = 20"
-wait_for_mutation "alter_update" "mutation_8.txt"
+    DELETE WHERE value2 = 20" --mutations_sync=1
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM alter_update ORDER BY key"
 
@@ -96,8 +90,7 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update \
     UPDATE value2 = value2 + 10 WHERE value2 <= 10, \
     DELETE WHERE length(value1) + value2 = 23, \
     DELETE WHERE materialized_value = 'materialized_37', \
-    UPDATE value1 = concat(value1, '_', materialized_value) WHERE key = 456"
-wait_for_mutation "alter_update" "mutation_10.txt"
+    UPDATE value1 = concat(value1, '_', materialized_value) WHERE key = 456" --mutations_sync=1
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM alter_update ORDER BY key"
 
@@ -123,8 +116,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO alter_update VALUES \
     ('2000-01-01', 456, 'ijk', 40)"
 
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update \
-    UPDATE value2 = value2 + 7 WHERE value2 <= 20"
-wait_for_mutation "alter_update" "mutation_12.txt"
+    UPDATE value2 = value2 + 7 WHERE value2 <= 20" --mutations_sync=1
 
 ${CLICKHOUSE_CLIENT} --query="SELECT value2, materialized_value FROM alter_update ORDER BY key"
 

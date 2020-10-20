@@ -33,9 +33,9 @@ But because ClickHouse is linked with most of the symbols exported (-rdynamic fl
 3. DWARF debug info. It contains the most detailed information about symbols and everything else.
 It allows to get source file names and line numbers from addresses. Only available if you use -g option for compiler.
 It is also used by default for ClickHouse builds, but because of its weight (about two gigabytes)
-it is splitted to separate binary and provided in clickhouse-common-static-dbg package.
+it is split to separate binary and provided in clickhouse-common-static-dbg package.
 This separate binary is placed in /usr/lib/debug/usr/bin/clickhouse and is loaded automatically by tools like gdb, addr2line.
-When you build ClickHouse by yourself, debug info is not splitted and present in a single huge binary.
+When you build ClickHouse by yourself, debug info is not split and present in a single huge binary.
 
 What ClickHouse is using to provide good stack traces?
 
@@ -59,7 +59,7 @@ Otherwise you will get only exported symbols from program headers.
 #   pragma clang diagnostic ignored "-Wunused-macros"
 #endif
 
-#define __msan_unpoison_string(X)
+#define __msan_unpoison_string(X) // NOLINT
 #if defined(__has_feature)
 #   if __has_feature(memory_sanitizer)
 #       undef __msan_unpoison_string
@@ -315,7 +315,7 @@ void collectSymbolsFromELF(dl_phdr_info * info,
     if (ec)
         return;
 
-    /// Debug info and symbol table sections may be splitted to separate binary.
+    /// Debug info and symbol table sections may be split to separate binary.
     std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path.relative_path();
 
     object_name = std::filesystem::exists(debug_info_path) ? debug_info_path : canonical_path;

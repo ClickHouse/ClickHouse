@@ -21,7 +21,6 @@ namespace
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
@@ -68,11 +67,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
     try
     {
         size_t num_columns = columns.size();
-
-        if (res_columns.size() != num_columns)
-            throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
-                            "Expected " + toString(num_columns) + ", "
-                            "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
+        checkNumberOfColumns(num_columns);
 
         /// Pointers to offset columns that are common to the nested data structure columns.
         /// If append is true, then the value will be equal to nullptr and will be used only to
@@ -167,7 +162,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
 void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
 

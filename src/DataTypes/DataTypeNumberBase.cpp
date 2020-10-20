@@ -26,7 +26,7 @@ void DataTypeNumberBase<T>::deserializeText(IColumn & column, ReadBuffer & istr,
 {
     T x;
 
-    if constexpr (is_integral_v<T> && is_arithmetic_v<T>)
+    if constexpr (is_integer_v<T> && is_arithmetic_v<T>)
         readIntTextUnsafe(x, istr);
     else
         readText(x, istr);
@@ -68,7 +68,7 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
     auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
     bool is_finite = isFinite(x);
 
-    const bool need_quote = (is_integral_v<T> && (sizeof(T) == 8) && settings.json.quote_64bit_integers)
+    const bool need_quote = (is_integer_v<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
         || (settings.json.quote_denormals && !is_finite);
 
     if (need_quote)
@@ -242,13 +242,13 @@ MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
-    return is_integral_v<T>;
+    return std::is_integral_v<T>;
 }
 
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
-    return is_integral_v<T> && is_unsigned_v<T>;
+    return std::is_integral_v<T> && is_unsigned_v<T>;
 }
 
 
@@ -257,11 +257,14 @@ template class DataTypeNumberBase<UInt8>;
 template class DataTypeNumberBase<UInt16>;
 template class DataTypeNumberBase<UInt32>;
 template class DataTypeNumberBase<UInt64>;
-template class DataTypeNumberBase<UInt128>; // used only in UUID
+template class DataTypeNumberBase<UInt128>; // base for UUID
+template class DataTypeNumberBase<UInt256>;
 template class DataTypeNumberBase<Int8>;
 template class DataTypeNumberBase<Int16>;
 template class DataTypeNumberBase<Int32>;
 template class DataTypeNumberBase<Int64>;
+template class DataTypeNumberBase<Int128>;
+template class DataTypeNumberBase<Int256>;
 template class DataTypeNumberBase<Float32>;
 template class DataTypeNumberBase<Float64>;
 

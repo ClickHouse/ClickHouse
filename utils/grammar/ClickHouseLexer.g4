@@ -27,9 +27,11 @@ K_CHECK : C H E C K;
 K_CLUSTER : C L U S T E R;
 K_COLUMN : C O L U M N;
 K_COLLATE : C O L L A T E;
+K_CODEC : C O D E C;
 K_CREATE : C R E A T E;
 K_CROSS : C R O S S;
 K_DAY : D A Y;
+K_DELETE : D E L E T E;
 K_DESCRIBE : D E S C R I B E;
 K_DESCENDING : D E S C E N D I N G;
 K_DESC : D E S C;
@@ -37,6 +39,7 @@ K_DATABASE : D A T A B A S E;
 K_DATABASES : D A T A B A S E S;
 K_DEFAULT : D E F A U L T;
 K_DETACH : D E T A C H;
+K_DISK : D I S K;
 K_DISTINCT : D I S T I N C T;
 K_DROP : D R O P;
 K_ELSE : E L S E;
@@ -68,7 +71,7 @@ K_LAST : L A S T;
 K_LEFT : L E F T;
 K_LIKE : L I K E;
 K_LIMIT : L I M I T;
-K_MAIN : M A I N;  // not a clickhouse reverved word
+K_MAIN : M A I N;  // not a clickhouse reserved word
 K_MATERIALIZED : M A T E R I A L I Z E D;
 K_MINUTE : M I N U T E;
 K_MODIFY : M O D I F Y;
@@ -88,7 +91,7 @@ K_PREWHERE : P R E W H E R E;
 K_PROCESSLIST : P R O C E S S L I S T;
 K_QUERY : Q U E R Y;
 K_RENAME : R E N A M E;
-K_RETURN : R E T U R N;  // not a clickhouse reverved word
+K_RETURN : R E T U R N;  // not a clickhouse reserved word
 K_RIGHT : R I G H T;
 K_SAMPLE : S A M P L E;
 K_SECOND : S E C O N D;
@@ -104,8 +107,10 @@ K_TEST : T E S T;
 K_THEN : T H E N;
 K_TOTALS : T O T A L S;
 K_TO : T O;
+K_TTL : T T L;
 K_OUTER: O U T E R;
 K_VALUES : V A L U E S;
+K_VOLUME : V O L U M E;
 K_VIEW : V I E W;
 K_UNION : U N I O N;
 K_USE : U S E;

@@ -112,9 +112,9 @@ For a non-distributed query, use the regular `IN` / `JOIN`.
 
 Be careful when using subqueries in the `IN` / `JOIN` clauses for distributed query processing.
 
-Let’s look at some examples. Assume that each server in the cluster has a normal **local\_table**. Each server also has a **distributed\_table** table with the **Distributed** type, which looks at all the servers in the cluster.
+Let’s look at some examples. Assume that each server in the cluster has a normal **local_table**. Each server also has a **distributed_table** table with the **Distributed** type, which looks at all the servers in the cluster.
 
-For a query to the **distributed\_table**, the query will be sent to all the remote servers and run on them using the **local\_table**.
+For a query to the **distributed_table**, the query will be sent to all the remote servers and run on them using the **local_table**.
 
 For example, the query
 
@@ -148,7 +148,7 @@ In other words, the data set in the IN clause will be collected on each server i
 
 This will work correctly and optimally if you are prepared for this case and have spread data across the cluster servers such that the data for a single UserID resides entirely on a single server. In this case, all the necessary data will be available locally on each server. Otherwise, the result will be inaccurate. We refer to this variation of the query as “local IN”.
 
-To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed\_table** inside a subquery. The query would look like this:
+To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed_table** inside a subquery. The query would look like this:
 
 ``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)

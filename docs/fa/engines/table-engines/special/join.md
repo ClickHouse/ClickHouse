@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **پارامترهای موتور**
 
--   `join_strictness` – [پیوستن به سختی](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [پیوستن به سختی](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [پیوستن به نوع](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` بند که `JOIN` عملیات با ساخته شده.
 
@@ -93,9 +93,9 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 هنگام ایجاد یک جدول تنظیمات زیر اعمال می شود:
 
 -   [ارزشهای خبری عبارتند از:](../../../operations/settings/settings.md#join_use_nulls)
--   [\_پاک کردن \_روشن گرافیک](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
--   [\_پویش همیشگی](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
--   [\_شروع مجدد](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
+-   [_پاک کردن _روشن گرافیک](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
+-   [_پویش همیشگی](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
+-   [_شروع مجدد](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
 -   [نمایش سایت](../../../operations/settings/settings.md#settings-join_any_take_last_row)
 
 این `Join`- جداول موتور نمی تواند مورد استفاده قرار گیرد `GLOBAL JOIN` عملیات.

@@ -9,7 +9,7 @@ ClickHouse binası Linux, FreeBSD ve Mac OS X üzerinde desteklenmektedir.
 
 # Windows Kullanıyorsanız {#if-you-use-windows}
 
-Windows kullanıyorsanız, Ubuntu ile bir sanal makine oluşturmanız gerekir. Bir sanal makine ile çalışmaya başlamak için VirtualBox yükleyin. UB :unt :u'yu web sitesinden indirebilirsiniz: https://www.ubuntu.com/\#download. lütfen indirilen görüntüden bir sanal makine oluşturun (bunun için en az 4GB RAM ayırmalısınız). Ubuntu'da bir komut satırı terminali çalıştırmak için lütfen kelimeyi içeren bir program bulun “terminal” adına (gnome-terminal, konsole vb.)) veya sadece Ctrl+Alt+T tuşlarına basın.
+Windows kullanıyorsanız, Ubuntu ile bir sanal makine oluşturmanız gerekir. Bir sanal makine ile çalışmaya başlamak için VirtualBox yükleyin. UB :unt :u'yu web sitesinden indirebilirsiniz: https://www.ubuntu.com/#download. lütfen indirilen görüntüden bir sanal makine oluşturun (bunun için en az 4GB RAM ayırmalısınız). Ubuntu'da bir komut satırı terminali çalıştırmak için lütfen kelimeyi içeren bir program bulun “terminal” adına (gnome-terminal, konsole vb.)) veya sadece Ctrl+Alt+T tuşlarına basın.
 
 # 32 bit sistem kullanıyorsanız {#if-you-use-a-32-bit-system}
 
@@ -32,7 +32,7 @@ Bunu Ubuntu'da yapmak için komut satırı terminalinde çalışırsınız:
     sudo apt update
     sudo apt install git
 
-Git kullanımı ile ilgili kısa bir el kitabı burada bulunabilir: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+Git kullanımı ile ilgili kısa bir el kitabı burada bulunabilir: https://education.github.com/git-cheat-sheet-education.pdf.
 Git ile ilgili ayrıntılı bir el kitabı için bkz. https://git-scm.com/book/en/v2.
 
 # Geliştirme Makinenize bir depo klonlama {#cloning-a-repository-to-your-development-machine}
@@ -44,7 +44,7 @@ Komut satırında terminal Çalıştır:
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Not: lütfen, yerine *your\_github\_username* uygun olanı ile!
+Not: lütfen, yerine *your_github_username* uygun olanı ile!
 
 Bu komut bir dizin oluşturacaktır `ClickHouse` projenin çalışma kopyasını içeren.
 
@@ -154,7 +154,7 @@ Artık ClickHouse oluşturmaya hazır olduğunuza göre ayrı bir dizin oluştur
     mkdir build
     cd build
 
-Birkaç farklı dizine (build\_release, build\_debug, vb.) sahip olabilirsiniz.) farklı yapı türleri için.
+Birkaç farklı dizine (build_release, build_debug, vb.) sahip olabilirsiniz.) farklı yapı türleri için.
 
 İçinde iken `build` dizin, cmake çalıştırarak yapı yapılandırın. İlk çalıştırmadan önce, derleyici belirten ortam değişkenlerini tanımlamanız gerekir (bu örnekte sürüm 9 gcc derleyicisi).
 
@@ -212,7 +212,7 @@ Sunucuyu geçerli kullanıcı altında çalıştırmak için aşağıdakilere gi
 
 Bu durumda, ClickHouse geçerli dizinde bulunan yapılandırma dosyalarını kullanır. Koş youabilirsiniz `clickhouse server` komut satırı parametresi olarak bir yapılandırma dosyasının yolunu belirten herhangi bir dizinden `--config-file`.
 
-Başka bir terminalde clickhouse-client ile Clickhouse'a bağlanmak için `ClickHouse/build/programs/` ve koş `clickhouse client`.
+Başka bir terminalde clickhouse-client ile Clickhouse'a bağlanmak için `ClickHouse/build/programs/` ve koş `./clickhouse client`.
 
 Eğer alırsanız `Connection refused` Mac OS X veya Freebsd'de mesaj, ana bilgisayar adresi 127.0.0.1 belirtmeyi deneyin:
 
@@ -249,7 +249,7 @@ Kod stili Kılavuzu: https://clickhouse.tech / doscs / TR / development / style/
 
 Yazma testleri: https://clickhouse.teknoloji / doscs / TR / geliştirme / testler/
 
-Görevlerin listesi: https://github.com/ClickHouse/ClickHouse/contribute
+Görevlerin listesi: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # Test Verileri {#test-data}
 

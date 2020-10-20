@@ -1,10 +1,10 @@
-#include <IO/ReadBufferFromFileBase.h>
+#include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
-#include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include "DiskS3.h"
+#include "Disks/DiskCacheWrapper.h"
 #include "Disks/DiskFactory.h"
 #include "ProxyConfiguration.h"
 #include "ProxyListConfiguration.h"
@@ -46,7 +46,8 @@ namespace
             throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + proxy_scheme, ErrorCodes::BAD_ARGUMENTS);
         auto proxy_port = proxy_resolver_config.getUInt(prefix + ".proxy_port");
 
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy resolver: {}, Scheme: {}, Port: {}", endpoint.toString(), proxy_scheme, proxy_port);
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy resolver: {}, Scheme: {}, Port: {}",
+            endpoint.toString(), proxy_scheme, proxy_port);
 
         return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, proxy_scheme, proxy_port);
     }
@@ -115,19 +116,25 @@ void registerDiskS3(DiskFactory & factory)
         if (uri.key.back() != '/')
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
+        cfg.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
+        cfg.httpRequestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
         cfg.endpointOverride = uri.endpoint;
 
         auto proxy_config = getProxyConfiguration(config_prefix, config);
         if (proxy_config)
             cfg.perRequestConfiguration = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
 
+        cfg.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(
+            config.getUInt(config_prefix + ".retry_attempts", 10));
+
         auto client = S3::ClientFactory::instance().create(
             cfg,
             uri.is_virtual_hosted_style,
             config.getString(config_prefix + ".access_key_id", ""),
-            config.getString(config_prefix + ".secret_access_key", ""));
+            config.getString(config_prefix + ".secret_access_key", ""),
+            context.getRemoteHostFilter());
 
-        String metadata_path = context.getPath() + "disks/" + name + "/";
+        String metadata_path = config.getString(config_prefix + ".metadata_path", context.getPath() + "disks/" + name + "/");
 
         auto s3disk = std::make_shared<DiskS3>(
             name,
@@ -136,12 +143,37 @@ void registerDiskS3(DiskFactory & factory)
             uri.bucket,
             uri.key,
             metadata_path,
-            context.getSettingsRef().s3_min_upload_part_size);
+            context.getSettingsRef().s3_min_upload_part_size,
+            config.getUInt64(config_prefix + ".min_multi_part_upload_size", 10 * 1024 * 1024),
+            config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
 
         /// This code is used only to check access to the corresponding disk.
-        checkWriteAccess(*s3disk);
-        checkReadAccess(name, *s3disk);
-        checkRemoveAccess(*s3disk);
+        if (!config.getBool(config_prefix + ".skip_access_check", false))
+        {
+            checkWriteAccess(*s3disk);
+            checkReadAccess(name, *s3disk);
+            checkRemoveAccess(*s3disk);
+        }
+
+        bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
+
+        if (cache_enabled)
+        {
+            String cache_path = config.getString(config_prefix + ".cache_path", context.getPath() + "disks/" + name + "/cache/");
+
+            if (metadata_path == cache_path)
+                throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
+
+            auto cache_disk = std::make_shared<DiskLocal>("s3-cache", cache_path, 0);
+            auto cache_file_predicate = [] (const String & path)
+            {
+                return path.ends_with("idx") // index files.
+                       || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") // mark files.
+                       || path.ends_with("txt") || path.ends_with("dat");
+            };
+
+            return std::make_shared<DiskCacheWrapper>(s3disk, cache_disk, cache_file_predicate);
+        }
 
         return s3disk;
     };

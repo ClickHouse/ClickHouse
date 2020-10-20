@@ -1,22 +1,24 @@
-import time
 import os
-import threading
 import random
-from contextlib import contextmanager
+import threading
+import time
 
 import pytest
-
+from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
-from helpers.client import CommandRequest
-
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', config_dir='configs', with_zookeeper=True, macros={"layer": 0, "shard": 0, "replica": 1})
-node2 = cluster.add_instance('node2', config_dir='configs', with_zookeeper=True, macros={"layer": 0, "shard": 0, "replica": 2})
+node1 = cluster.add_instance('node1',
+                             main_configs=["configs/conf.d/merge_tree.xml", "configs/conf.d/remote_servers.xml"],
+                             with_zookeeper=True, macros={"layer": 0, "shard": 0, "replica": 1})
+node2 = cluster.add_instance('node2',
+                             main_configs=["configs/conf.d/merge_tree.xml", "configs/conf.d/remote_servers.xml"],
+                             with_zookeeper=True, macros={"layer": 0, "shard": 0, "replica": 2})
 nodes = [node1, node2]
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -31,7 +33,7 @@ def started_cluster():
 
 def test_random_inserts(started_cluster):
     # Duration of the test, reduce it if don't want to wait
-    DURATION_SECONDS = 10# * 60
+    DURATION_SECONDS = 10  # * 60
 
     node1.query("""
         CREATE TABLE simple ON CLUSTER test_cluster (date Date, i UInt32, s String)
@@ -39,9 +41,9 @@ def test_random_inserts(started_cluster):
 
     with PartitionManager() as pm_random_drops:
         for sacrifice in nodes:
-            pass # This test doesn't work with partition problems still
-            #pm_random_drops._add_rule({'probability': 0.01, 'destination': sacrifice.ip_address, 'source_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
-            #pm_random_drops._add_rule({'probability': 0.01, 'source': sacrifice.ip_address, 'destination_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
+            pass  # This test doesn't work with partition problems still
+            # pm_random_drops._add_rule({'probability': 0.01, 'destination': sacrifice.ip_address, 'source_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
+            # pm_random_drops._add_rule({'probability': 0.01, 'source': sacrifice.ip_address, 'destination_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
 
         min_timestamp = int(time.time())
         max_timestamp = min_timestamp + DURATION_SECONDS
@@ -50,18 +52,21 @@ def test_random_inserts(started_cluster):
         bash_script = os.path.join(os.path.dirname(__file__), "test.sh")
         inserters = []
         for node in nodes:
-            cmd = ['/bin/bash', bash_script, node.ip_address, str(min_timestamp), str(max_timestamp), str(cluster.get_client_cmd())]
+            cmd = ['/bin/bash', bash_script, node.ip_address, str(min_timestamp), str(max_timestamp),
+                   str(cluster.get_client_cmd())]
             inserters.append(CommandRequest(cmd, timeout=DURATION_SECONDS * 2, stdin=''))
-            print node.name, node.ip_address
+            print(node.name, node.ip_address)
 
         for inserter in inserters:
             inserter.get_answer()
 
-    answer="{}\t{}\t{}\t{}\n".format(num_timestamps, num_timestamps, min_timestamp, max_timestamp)
+    answer = "{}\t{}\t{}\t{}\n".format(num_timestamps, num_timestamps, min_timestamp, max_timestamp)
 
     for node in nodes:
-        res = node.query_with_retry("SELECT count(), uniqExact(i), min(i), max(i) FROM simple", check_callback=lambda res: TSV(res) == TSV(answer))
-        assert TSV(res) == TSV(answer), node.name + " : " + node.query("SELECT groupArray(_part), i, count() AS c FROM simple GROUP BY i ORDER BY c DESC LIMIT 1")
+        res = node.query_with_retry("SELECT count(), uniqExact(i), min(i), max(i) FROM simple",
+                                    check_callback=lambda res: TSV(res) == TSV(answer))
+        assert TSV(res) == TSV(answer), node.name + " : " + node.query(
+            "SELECT groupArray(_part), i, count() AS c FROM simple GROUP BY i ORDER BY c DESC LIMIT 1")
 
     node1.query("""DROP TABLE simple ON CLUSTER test_cluster""")
 
@@ -100,8 +105,8 @@ class Runner:
                     self.total_inserted += 2 * x + 1
                 self.mtx.release()
 
-            except Exception, e:
-                print 'Exception:', e
+            except Exception as e:
+                print('Exception:', e)
 
             x += 2
             self.stop_ev.wait(0.1 + random.random() / 10)
@@ -114,13 +119,14 @@ def test_insert_multithreaded(started_cluster):
         node.query("DROP TABLE IF EXISTS repl_test")
 
     for node in nodes:
-        node.query("CREATE TABLE repl_test(d Date, x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/repl_test', '{replica}') ORDER BY x PARTITION BY toYYYYMM(d)")
+        node.query(
+            "CREATE TABLE repl_test(d Date, x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/repl_test', '{replica}') ORDER BY x PARTITION BY toYYYYMM(d)")
 
     runner = Runner()
 
     threads = []
     for thread_num in range(5):
-        threads.append(threading.Thread(target=runner.do_insert, args=(thread_num, )))
+        threads.append(threading.Thread(target=runner.do_insert, args=(thread_num,)))
 
     for t in threads:
         t.start()
@@ -135,7 +141,7 @@ def test_insert_multithreaded(started_cluster):
     assert runner.total_inserted > 0
 
     all_replicated = False
-    for i in range(100): # wait for replication 50 seconds max
+    for i in range(100):  # wait for replication 50 seconds max
         time.sleep(0.5)
 
         def get_delay(node):

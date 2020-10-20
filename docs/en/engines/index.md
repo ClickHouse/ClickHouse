@@ -5,11 +5,11 @@ toc_priority: 25
 toc_title: hidden
 ---
 
-# ClickHouse Engines
+# ClickHouse Engines {#clickhouse-engines}
 
 There are two key engine kinds in ClickHouse:
 
--   [Table engines](table-engines/index.md)
--   [Database engines](database-engines/index.md)
+-   [Table engines](../engines/table-engines/index.md)
+-   [Database engines](../engines/database-engines/index.md)
 
 {## [Original article](https://clickhouse.tech/docs/en/engines/) ##}

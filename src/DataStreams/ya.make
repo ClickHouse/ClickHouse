@@ -1,10 +1,14 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
+    contrib/libs/poco/MongoDB
 )
 
 NO_COMPILER_WARNINGS()
+
+CFLAGS(-g0)
 
 SRCS(
     AddingDefaultBlockOutputStream.cpp
@@ -18,11 +22,9 @@ SRCS(
     ConvertingBlockInputStream.cpp
     copyData.cpp
     CountingBlockOutputStream.cpp
-    CreatingSetsBlockInputStream.cpp
     DistinctSortedBlockInputStream.cpp
     ExecutionSpeedLimits.cpp
     ExpressionBlockInputStream.cpp
-    FilterBlockInputStream.cpp
     finalizeBlock.cpp
     IBlockInputStream.cpp
     InputStreamFromASTInsertQuery.cpp
@@ -31,6 +33,7 @@ SRCS(
     materializeBlock.cpp
     MaterializingBlockInputStream.cpp
     MergingSortedBlockInputStream.cpp
+    MongoDBBlockInputStream.cpp
     narrowBlockInputStreams.cpp
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
@@ -44,6 +47,7 @@ SRCS(
     SquashingBlockOutputStream.cpp
     SquashingTransform.cpp
     TTLBlockInputStream.cpp
+
 )
 
 END()
