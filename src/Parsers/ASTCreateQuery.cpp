@@ -124,6 +124,8 @@ ASTPtr ASTColumns::clone() const
         res->set(res->indices, indices->clone());
     if (constraints)
         res->set(res->constraints, constraints->clone());
+    if (primary_key)
+        res->set(res->primary_key, primary_key->clone());
 
     return res;
 }

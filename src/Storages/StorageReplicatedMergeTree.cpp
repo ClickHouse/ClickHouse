@@ -114,6 +114,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int UNKNOWN_POLICY;
 }
 
 namespace ActionLocks
@@ -5587,7 +5588,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         throw Exception("Destination table " + dest_table_storage->getStorageID().getNameForLogs() +
                         " should have the same storage policy of source table " + getStorageID().getNameForLogs() + ". " +
                         getStorageID().getNameForLogs() + ": " + this->getStoragePolicy()->getName() + ", " +
-                        getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::LOGICAL_ERROR);
+                        getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_POLICY);
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
