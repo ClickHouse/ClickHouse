@@ -21,10 +21,6 @@
 
 #include <type_traits>
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
 
 namespace DB
 {
