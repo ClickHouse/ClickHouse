@@ -341,19 +341,19 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## date_trunc {#date_trunc}
 
-Truncates a date or date with time based on the specified datepart.
+Truncates date and time data to the specified precision.
 
 **Syntax** 
 
 ``` sql
-date_trunc(datepart, value[, time_zone])
+date_trunc(precision, value[, time_zone])
 ```
 
 Alias: `dateTrunc`. 
 
 **Parameters**
 
--   `datepart` — Name of the datepart. [String](../syntax.md#syntax-string-literal).
+-   `precision` — Required precision. [String](../syntax.md#syntax-string-literal).
     Possible values:
 
     - `second`
@@ -370,7 +370,7 @@ Alias: `dateTrunc`.
 
 **Returned value**
 
--   Value, truncated to the specified datepart.
+-   Value, truncated to the specified precision.
 
 Type: [Datetime](../../sql-reference/data-types/datetime.md).
 
