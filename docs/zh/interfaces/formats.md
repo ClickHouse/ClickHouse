@@ -159,7 +159,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 -   `min` 是具有最小值的行 `format_schema_rows` 格式（当极值设置为1时)
 -   `max` 是具有最大值的行 `format_schema_rows` 格式（当极值设置为1时)
 -   `rows` 输出行总数
--   `rows_before_limit` 是没有限制的最小行数。 仅当查询包含LIMIT时输出。 如果查询包含GROUP BY，则rows_before_limit_at_least是没有限制的确切行数。
+-   `rows_before_limit` 是没有限制的最小行数。 仅当查询包含LIMIT时输出。 如果查询包含GROUP BY，则rows\_before\_limit\_at\_least是没有限制的确切行数。
 -   `time` 请求执行时间以秒为单位
 -   `rows_read` 已读取的行数
 -   `bytes_read` 被读取的字节数（未压缩）
@@ -276,7 +276,7 @@ SELECT * FROM t_null FORMAT TSKV
 
     clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 
-\*默认情况下间隔符是 `,` ，在 [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) 中可以了解更多间隔符配置。
+\*默认情况下间隔符是 `,` ，在 [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) 中可以了解更多间隔符配置。
 
 解析的时候，可以使用或不使用引号来解析所有值。支持双引号和单引号。行也可以不用引号排列。 在这种情况下，它们被解析为逗号或换行符（CR 或 LF）。在解析不带引号的行时，若违反 RFC 规则，会忽略前导和尾随的空格和制表符。 对于换行，全部支持 Unix（LF），Windows（CR LF）和 Mac OS Classic（CR LF）。
 
@@ -365,12 +365,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义：斜线`/`被转义为`\/`; 替代的换行符 `U+2028` 和 `U+2029` 会打断一些浏览器解析，它们会被转义为 `\uXXXX`。 ASCII 控制字符被转义：退格，换页，换行，回车和水平制表符被替换为`\b`，`\f`，`\n`，`\r`，`\t` 作为使用`\uXXXX`序列的00-1F范围内的剩余字节。 无效的 UTF-8 序列更改为替换字符 ，因此输出文本将包含有效的 UTF-8 序列。 为了与 JavaScript 兼容，默认情况下，Int64 和 UInt64 整数用双引号引起来。要除去引号，可以将配置参数 output_format_json_quote_64bit_integers 设置为0。
+JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义：斜线`/`被转义为`\/`; 替代的换行符 `U+2028` 和 `U+2029` 会打断一些浏览器解析，它们会被转义为 `\uXXXX`。 ASCII 控制字符被转义：退格，换页，换行，回车和水平制表符被替换为`\b`，`\f`，`\n`，`\r`，`\t` 作为使用`\uXXXX`序列的00-1F范围内的剩余字节。 无效的 UTF-8 序列更改为替换字符 ，因此输出文本将包含有效的 UTF-8 序列。 为了与 JavaScript 兼容，默认情况下，Int64 和 UInt64 整数用双引号引起来。要除去引号，可以将配置参数 output\_format\_json\_quote\_64bit\_integers 设置为0。
 
 `rows` – 结果输出的行数。
 
 `rows_before_limit_at_least` 去掉 LIMIT 过滤后的最小行总数。 只会在查询包含 LIMIT 条件时输出。
-若查询包含 GROUP BY，rows_before_limit_at_least 就是去掉 LIMIT 后过滤后的准确行数。
+若查询包含 GROUP BY，rows\_before\_limit\_at\_least 就是去掉 LIMIT 后过滤后的准确行数。
 
 `totals` – 总值 （当使用 TOTALS 条件时）。
 
@@ -451,7 +451,7 @@ ClickHouse 支持 [NULL](../sql-reference/syntax.md), 在 JSON 格式中以 `nul
 
 ### 嵌套结构的使用 {#jsoneachrow-nested}
 
-如果你有一张桌子 [嵌套式](../sql-reference/data-types/nested-data-structures/nested.md) 数据类型列，可以插入具有相同结构的JSON数据。 启用此功能与 [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 设置。
+如果你有一张桌子 [嵌套式](../sql-reference/data-types/nested-data-structures/nested.md) 数据类型列，可以插入具有相同结构的JSON数据。 启用此功能与 [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 设置。
 
 例如，请考虑下表:
 
@@ -465,7 +465,7 @@ CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memor
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-将数据作为分层JSON对象集插入 [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+将数据作为分层JSON对象集插入 [input\_format\_import\_nested\_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -595,7 +595,7 @@ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FOR
 
 ## PrettySpace {#prettyspace}
 
-与 `PrettyCompact`(#prettycompact) 格式不一样的是，它使用空格来代替网格来显示数据。
+与 `PrettyCompact`(\#prettycompact) 格式不一样的是，它使用空格来代替网格来显示数据。
 
 ## RowBinary {#rowbinary}
 
@@ -763,7 +763,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits
       c @1 :Uint64;
     }
 
-格式文件存储的目录可以在服务配置中的 [format_schema_path](../operations/server-configuration-parameters/settings.md) 指定。
+格式文件存储的目录可以在服务配置中的 [format\_schema\_path](../operations/server-configuration-parameters/settings.md) 指定。
 
 Cap’n Proto 反序列化是很高效的，通常不会增加系统的负载。
 
@@ -840,7 +840,7 @@ ClickHouse在输入和输出protobuf消息 `length-delimited` 格式。
 
 ClickHouse Avro格式支持读取和写入 [Avro数据文件](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
-### 数据类型匹配{#sql_reference/data_types-matching} {#data-types-matching-sql_referencedata_types-matching}
+### 数据类型匹配{\#sql\_reference/data\_types-matching} {#data-types-matching-sql_referencedata_types-matching}
 
 下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql-reference/data-types/index.md) 在 `INSERT` 和 `SELECT` 查询。
 
@@ -894,7 +894,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 -   名,名,名,名 `[A-Za-z_]`
 -   随后只包含 `[A-Za-z0-9_]`
 
-输出Avro文件压缩和同步间隔可以配置 [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) 和 [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) 分别。
+输出Avro文件压缩和同步间隔可以配置 [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) 和 [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) 分别。
 
 ## AvroConfluent {#data-format-avro-confluent}
 
@@ -904,9 +904,9 @@ AvroConfluent支持解码单对象Avro消息常用于 [卡夫卡](https://kafka.
 
 模式解析后会进行缓存。
 
-架构注册表URL配置为 [format_avro_schema_registry_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+架构注册表URL配置为 [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
-### 数据类型匹配{#sql_reference/data_types-matching-1} {#data-types-matching-sql_referencedata_types-matching-1}
+### 数据类型匹配{\#sql\_reference/data\_types-matching-1} {#data-types-matching-sql_referencedata_types-matching-1}
 
 和 [Avro](#data-format-avro)
 
@@ -948,7 +948,7 @@ SELECT * FROM topic1_stream;
 
 [阿帕奇地板](http://parquet.apache.org/) 是Hadoop生态系统中普遍存在的列式存储格式。 ClickHouse支持此格式的读写操作。
 
-### 数据类型匹配{#sql_reference/data_types-matching-2} {#data-types-matching-sql_referencedata_types-matching-2}
+### 数据类型匹配{\#sql\_reference/data\_types-matching-2} {#data-types-matching-sql_referencedata_types-matching-2}
 
 下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql-reference/data-types/index.md) 在 `INSERT` 和 `SELECT` 查询。
 
@@ -996,7 +996,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 [阿帕奇兽人](https://orc.apache.org/) 是Hadoop生态系统中普遍存在的列式存储格式。 您只能将此格式的数据插入ClickHouse。
 
-### 数据类型匹配{#sql_reference/data_types-matching-3} {#data-types-matching-sql_referencedata_types-matching-3}
+### 数据类型匹配{\#sql\_reference/data\_types-matching-3} {#data-types-matching-sql_referencedata_types-matching-3}
 
 下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql-reference/data-types/index.md) 在 `INSERT` 查询。
 
@@ -1047,15 +1047,15 @@ e.g. `schemafile.proto:MessageType`.
 如果在批处理模式下使用客户端，则由于安全原因，架构的路径必须是相对的。
 
 如果您通过输入或输出数据 [HTTP接口](../interfaces/http.md) 格式架构中指定的文件名
-应该位于指定的目录中 [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
+应该位于指定的目录中 [format\_schema\_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 在服务器配置中。
 
 [原始文章](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
 
 ## 跳过错误 {#skippingerrors}
 
-一些格式，如 `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` 和 `Protobuf` 如果发生解析错误，可以跳过断开的行，并从下一行开始继续解析。 看 [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) 和
-[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) 设置。
+一些格式，如 `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` 和 `Protobuf` 如果发生解析错误，可以跳过断开的行，并从下一行开始继续解析。 看 [input\_format\_allow\_errors\_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) 和
+[input\_format\_allow\_errors\_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) 设置。
 限制:
 -在解析错误的情况下 `JSONEachRow` 跳过所有数据，直到新行（或EOF），所以行必须由 `\n` 正确计算错误。
 - `Template` 和 `CustomSeparated` 在最后一列之后使用分隔符，并在行之间使用分隔符来查找下一行的开头，所以跳过错误只有在其中至少有一个不为空时才有效。

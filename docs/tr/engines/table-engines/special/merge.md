@@ -31,7 +31,7 @@ Kullanmak için tipik bir yol `Merge` motor çok sayıda çalışma içindir `Ti
 
 Örnek 2:
 
-Diyelim ki eski bir tablonuz (WatchLog_old) var ve verileri yeni bir tabloya (WatchLog_new) taşımadan bölümlemeyi değiştirmeye karar verdiniz ve her iki tablodaki verileri görmeniz gerekiyor.
+Diyelim ki eski bir tablonuz (WatchLog\_old) var ve verileri yeni bir tabloya (WatchLog\_new) taşımadan bölümlemeyi değiştirmeye karar verdiniz ve her iki tablodaki verileri görmeniz gerekiyor.
 
 ``` sql
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)

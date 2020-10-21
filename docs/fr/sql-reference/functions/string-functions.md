@@ -31,12 +31,12 @@ La fonction fonctionne également pour les tableaux.
 Renvoie la longueur d'une chaîne en points de code Unicode (pas en caractères), en supposant que la chaîne contient un ensemble d'octets qui composent le texte codé en UTF-8. Si cette hypothèse n'est pas remplie, elle renvoie un résultat (elle ne lance pas d'exception).
 Le type de résultat est UInt64.
 
-## char_length, CHAR_LENGTH {#char-length}
+## char\_length, CHAR\_LENGTH {#char-length}
 
 Renvoie la longueur d'une chaîne en points de code Unicode (pas en caractères), en supposant que la chaîne contient un ensemble d'octets qui composent le texte codé en UTF-8. Si cette hypothèse n'est pas remplie, elle renvoie un résultat (elle ne lance pas d'exception).
 Le type de résultat est UInt64.
 
-## character_length, CHARACTER_LENGTH {#character-length}
+## character\_length, CHARACTER\_LENGTH {#character-length}
 
 Renvoie la longueur d'une chaîne en points de code Unicode (pas en caractères), en supposant que la chaîne contient un ensemble d'octets qui composent le texte codé en UTF-8. Si cette hypothèse n'est pas remplie, elle renvoie un résultat (elle ne lance pas d'exception).
 Le type de résultat est UInt64.
@@ -77,7 +77,7 @@ toValidUTF8( input_string )
 
 Paramètre:
 
--   input_string — Any set of bytes represented as the [Chaîne](../../sql-reference/data-types/string.md) type de données objet.
+-   input\_string — Any set of bytes represented as the [Chaîne](../../sql-reference/data-types/string.md) type de données objet.
 
 Valeur renvoyée: chaîne UTF-8 valide.
 

@@ -1,4 +1,3 @@
-#pragma once
 /**
   * This file contains some using-declarations that define various kinds of
   * PODArray.

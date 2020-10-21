@@ -14,13 +14,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
 
 // geohashDecode(string) => (lon float64, lat float64)
 class FunctionGeohashDecode : public IFunction
@@ -77,20 +76,19 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IColumn * encoded = block[arguments[0]].column.get();
-        ColumnPtr & res_column = block[result].column;
+        const IColumn * encoded = block.getByPosition(arguments[0]).column.get();
+        ColumnPtr & res_column = block.getByPosition(result).column;
 
         if (tryExecute<ColumnString>(encoded, res_column) ||
             tryExecute<ColumnFixedString>(encoded, res_column))
             return;
 
-        throw Exception("Unsupported argument type:" + block[arguments[0]].column->getName()
+        throw Exception("Unsupported argument type:" + block.getByPosition(arguments[0]).column->getName()
                         + " of argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
-}
 
 void registerFunctionGeohashDecode(FunctionFactory & factory)
 {

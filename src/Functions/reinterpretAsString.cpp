@@ -8,14 +8,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 /** Function for transforming numbers and dates to strings that contain the same set of bytes in the machine representation. */
 class FunctionReinterpretAsString : public IFunction
@@ -70,19 +68,18 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const IColumn & src = *block[arguments[0]].column;
-        MutableColumnPtr dst = block[result].type->createColumn();
+        const IColumn & src = *block.getByPosition(arguments[0]).column;
+        MutableColumnPtr dst = block.getByPosition(result).type->createColumn();
 
         if (ColumnString * dst_concrete = typeid_cast<ColumnString *>(dst.get()))
             executeToString(src, *dst_concrete);
         else
             throw Exception("Illegal column " + src.getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block[result].column = std::move(dst);
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
-}
 
 void registerFunctionReinterpretAsString(FunctionFactory & factory)
 {
@@ -90,3 +87,5 @@ void registerFunctionReinterpretAsString(FunctionFactory & factory)
 }
 
 }
+
+

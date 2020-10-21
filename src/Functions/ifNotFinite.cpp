@@ -8,8 +8,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// ifNotFinite(x, y) is equivalent to isFinite(x) ? x : y.
 class FunctionIfNotFinite : public IFunction
@@ -43,28 +41,28 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName temp_block = block;
+        Block temp_block = block;
 
-        auto is_finite = FunctionFactory::instance().get("isFinite", context)->build({temp_block[arguments[0]]});
+        auto is_finite = FunctionFactory::instance().get("isFinite", context)->build(
+            {temp_block.getByPosition(arguments[0])});
 
-        size_t is_finite_pos = temp_block.size();
-        temp_block.emplace_back(ColumnWithTypeAndName{nullptr, is_finite->getReturnType(), ""});
+        size_t is_finite_pos = temp_block.columns();
+        temp_block.insert({nullptr, is_finite->getReturnType(), ""});
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {temp_block[is_finite_pos], temp_block[arguments[0]], temp_block[arguments[1]]});
+            {temp_block.getByPosition(is_finite_pos), temp_block.getByPosition(arguments[0]), temp_block.getByPosition(arguments[1])});
 
         is_finite->execute(temp_block, {arguments[0]}, is_finite_pos, input_rows_count);
 
         func_if->execute(temp_block, {is_finite_pos, arguments[0], arguments[1]}, result, input_rows_count);
 
-        block[result].column = std::move(temp_block[result].column);
+        block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
     }
 
 private:
     const Context & context;
 };
 
-}
 
 void registerFunctionIfNotFinite(FunctionFactory & factory)
 {
