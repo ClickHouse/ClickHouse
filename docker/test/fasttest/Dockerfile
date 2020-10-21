@@ -53,7 +53,6 @@ RUN apt-get update \
         ninja-build \
         psmisc \
         python3 \
-        python3-pip \
         python3-lxml \
         python3-requests \
         python3-termcolor \
@@ -62,8 +61,6 @@ RUN apt-get update \
         tzdata \
         unixodbc \
        --yes --no-install-recommends
-
-RUN pip3 install numpy scipy pandas
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
