@@ -414,6 +414,11 @@ BlockIO InterpreterInsertQuery::execute()
         res.out = std::move(out_streams.at(0));
 
     res.pipeline.addStorageHolder(table);
+    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
+    {
+        if (auto inner_table = mv->tryGetTargetTable())
+            res.pipeline.addStorageHolder(inner_table);
+    }
 
     return res;
 }
