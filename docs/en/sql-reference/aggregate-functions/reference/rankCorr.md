@@ -1,6 +1,6 @@
 ## rankCorr {#agg_function-rankcorr}
 
-The aggregate function which computes a rank correlation coefficient.
+Computes a rank correlation coefficient.
 
 **Syntax**
 
@@ -10,12 +10,12 @@ rankCorr(x, y)
 
 **Parameters**
 
--   `x` — Floating-point number. [Float64](../../../sql-reference/data-types/float.md#float32-float64).
--   `y` — Floating-point number. [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — Arbitrary value. It can be of the [Float32](../../../sql-reference/data-types/float.md#float32-float64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+-   `y` — Arbitrary value. It can be of the [Float32](../../../sql-reference/data-types/float.md#float32-float64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value(s)**
 
--   Returns a floating-point number.
+-   Returns a rank correlation coefficient of the ranks of x and y. The value of the correlation coefficient ranges from -1 to +1. If less than two arguments are passed, the function will return an exception. The value close to +1 denotes a high linear relationship, and with an increase of one random variable, the second random variable also increases. The value close to -1 denotes a high linear relationship, and with an increase of one random variable, the second random variable decreases. The value close or equal to 0 denotes no relationship between the two random variables.
 
 Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
