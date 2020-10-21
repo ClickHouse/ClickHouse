@@ -34,7 +34,7 @@ ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV NUM_TRIES=1
-ENV MAX_RUN_TIME=0 #unlimited
+ENV MAX_RUN_TIME=0
 
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]
