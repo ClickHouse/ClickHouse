@@ -47,6 +47,8 @@ SRCS(
     addSeconds.cpp
     addWeeks.cpp
     addYears.cpp
+    aes_decrypt_mysql.cpp
+    aes_encrypt_mysql.cpp
     appendTrailingCharIfAbsent.cpp
     array/arrayAll.cpp
     array/arrayAUC.cpp
@@ -141,6 +143,7 @@ SRCS(
     currentUser.cpp
     dateDiff.cpp
     date_trunc.cpp
+    decrypt.cpp
     defaultValueOfArgumentType.cpp
     defaultValueOfTypeName.cpp
     demange.cpp
@@ -148,6 +151,7 @@ SRCS(
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
+    encrypt.cpp
     endsWith.cpp
     equals.cpp
     erfc.cpp
@@ -176,6 +180,7 @@ SRCS(
     FunctionFQDN.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
+    FunctionsAES.cpp
     FunctionsCoding.cpp
     FunctionsConversion.cpp
     FunctionsEmbeddedDictionaries.cpp
