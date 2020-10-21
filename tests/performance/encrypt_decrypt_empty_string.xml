@@ -15,7 +15,6 @@
 
               <value>encrypt('aes-192-cfb1', materialize(plaintext), key24, iv16)</value>
               <value>encrypt('aes-192-cfb8', materialize(plaintext), key24, iv16)</value>
-              <value>encrypt('aes-192-cfb128', materialize(plaintext), key24, iv16)</value>
               <value>encrypt('aes-192-ctr', materialize(plaintext), key24, iv16)</value>
               <value>encrypt('aes-192-ofb', materialize(plaintext), key24, iv16)</value>
 
@@ -34,7 +33,6 @@
 
               <value>decrypt('aes-192-cfb1', encrypt('aes-192-cfb1', materialize(plaintext), key24, iv16), key24, iv16)</value>
               <value>decrypt('aes-192-cfb8', encrypt('aes-192-cfb8', materialize(plaintext), key24, iv16), key24, iv16)</value>
-              <value>decrypt('aes-192-cfb128', encrypt('aes-192-cfb128', materialize(plaintext), key24, iv16), key24, iv16)</value>
               <value>decrypt('aes-192-ctr', encrypt('aes-192-ctr', materialize(plaintext), key24, iv16), key24, iv16)</value>
               <value>decrypt('aes-192-ofb', encrypt('aes-192-ofb', materialize(plaintext), key24, iv16), key24, iv16)</value>
 

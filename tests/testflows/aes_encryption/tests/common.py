@@ -27,10 +27,8 @@ modes = [
     ("'aes-256-cfb8'", 32, 16, None),
     # cfb128
     ("'aes-128-cfb128'", 16, None, None),
-    ("'aes-192-cfb128'", 24, None, None),
     ("'aes-256-cfb128'", 32, None, None),
     ("'aes-128-cfb128'", 16, 16, None),
-    ("'aes-192-cfb128'", 24, 16, None),
     ("'aes-256-cfb128'", 32, 16, None),
     # ofb
     ("'aes-128-ofb'", 16, None, None),
@@ -95,12 +93,9 @@ mysql_modes = [
     ("'aes-256-cfb8'", 64, 64),
     # cfb128
     ("'aes-128-cfb128'", 16, None),
-    ("'aes-192-cfb128'", 24, None),
     ("'aes-256-cfb128'", 32, None),
     ("'aes-128-cfb128'", 16, 16),
     ("'aes-128-cfb128'", 24, 24),
-    ("'aes-192-cfb128'", 24, 16),
-    ("'aes-192-cfb128'", 32, 32),
     ("'aes-256-cfb128'", 32, 16),
     ("'aes-256-cfb128'", 64, 64),
     # ofb

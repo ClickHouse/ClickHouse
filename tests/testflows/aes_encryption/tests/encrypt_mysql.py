@@ -143,8 +143,6 @@ def invalid_parameters(self):
     # CFB128
     ("'aes-128-cfb128'", 16, 16,
      Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_128_CFB128_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb128'", 24, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_192_CFB128_KeyAndInitializationVector_Length("1.0"))),
     ("'aes-256-cfb128'", 32, 16,
      Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_256_CFB128_KeyAndInitializationVector_Length("1.0"))),
     # OFB

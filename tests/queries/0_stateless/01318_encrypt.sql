@@ -87,7 +87,7 @@ SELECT 'aes-192-cfb8' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FR
 SELECT 'aes-256-cfb8' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
 
 SELECT 'aes-128-cfb128' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
-SELECT 'aes-192-cfb128' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
+-- SELECT 'aes-192-cfb128' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
 SELECT 'aes-256-cfb128' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
 
 SELECT 'aes-128-ecb' as mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
@@ -113,7 +113,7 @@ SELECT 'aes-192-cfb8' as mode, hex(encrypt(mode, input, key24, iv)) FROM encrypt
 SELECT 'aes-256-cfb8' as mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
 
 SELECT 'aes-128-cfb128' as mode, hex(encrypt(mode, input, key16, iv)) FROM encryption_test;
-SELECT 'aes-192-cfb128' as mode, hex(encrypt(mode, input, key24, iv)) FROM encryption_test;
+-- SELECT 'aes-192-cfb128' as mode, hex(encrypt(mode, input, key24, iv)) FROM encryption_test;
 SELECT 'aes-256-cfb128' as mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
 
 SELECT 'aes-128-ctr' as mode, hex(encrypt(mode, input, key16, iv)) FROM encryption_test;

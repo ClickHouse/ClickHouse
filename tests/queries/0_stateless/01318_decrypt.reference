@@ -33,9 +33,6 @@ aes-256-cfb8	1
 aes-128-cfb128	1
 aes-128-cfb128	1
 aes-128-cfb128	1
-aes-192-cfb128	1
-aes-192-cfb128	1
-aes-192-cfb128	1
 aes-256-cfb128	1
 aes-256-cfb128	1
 aes-256-cfb128	1
@@ -88,9 +85,6 @@ aes-256-cfb8	1
 aes-128-cfb128	1
 aes-128-cfb128	1
 aes-128-cfb128	1
-aes-192-cfb128	1
-aes-192-cfb128	1
-aes-192-cfb128	1
 aes-256-cfb128	1
 aes-256-cfb128	1
 aes-256-cfb128	1
