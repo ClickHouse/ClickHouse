@@ -137,6 +137,10 @@ AccessControlManager::AccessControlManager()
 
 AccessControlManager::~AccessControlManager() = default;
 
+void AccessControlManager::addStorage(const StoragePtr & new_storage) {
+    MultipleAccessStorage::addStorage(new_storage);
+    LOG_DEBUG(getLogger(), "Added storage '{}' of type '{}'", new_storage->getStorageName(), String(new_storage->getStorageType()));
+}
 
 void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_)
 {
