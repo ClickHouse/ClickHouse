@@ -134,18 +134,18 @@ public:
         const auto & value = this->data(place).values;
         size_t size = this->data(place).size_x;
 
-        //create a copy of values not to format data
+        // create a copy of values not to format data
         PODArrayWithStackMemory<std::pair<Float64, Float64>, 32> tmp_values;
         tmp_values.resize(size);
         for (size_t j = 0; j < size; ++ j)
             tmp_values[j] = static_cast<std::pair<Float64, Float64>>(value[j]);
 
-        //sort x_values
+        // sort x_values
         std::sort(std::begin(tmp_values), std::end(tmp_values), ComparePairFirst<std::greater>{});
 
         for (size_t j = 0; j < size;)
         {
-            //replace x_values with their ranks
+            // replace x_values with their ranks
             size_t rank = j + 1;
             size_t same = 1;
             size_t cur_sum = rank;
@@ -157,9 +157,9 @@ public:
                 {
                     // rank of (j + 1)th number
                     rank += 1;
-                    same++;
+                    ++same;
                     cur_sum += rank;
-                    j++;
+                    ++j;
                 }
                 else
                     break;
@@ -169,16 +169,16 @@ public:
             Float64 insert_rank = static_cast<Float64>(cur_sum) / same;
             for (size_t i = cur_start; i <= j; ++i)
                 tmp_values[i].first = insert_rank;
-            j++;
+            ++j;
         }
 
-        //sort y_values
+        // sort y_values
         std::sort(std::begin(tmp_values), std::end(tmp_values), ComparePairSecond<std::greater>{});
 
-        //replace y_values with their ranks
+        // replace y_values with their ranks
         for (size_t j = 0; j < size;)
         {
-            //replace x_values with their ranks
+            // replace x_values with their ranks
             size_t rank = j + 1;
             size_t same = 1;
             size_t cur_sum = rank;
@@ -190,9 +190,9 @@ public:
                 {
                     // rank of (j + 1)th number
                     rank += 1;
-                    same++;
+                    ++same;
                     cur_sum += rank;
-                    j++;
+                    ++j;
                 }
                 else
                 {
@@ -204,10 +204,10 @@ public:
             Float64 insert_rank = static_cast<Float64>(cur_sum) / same;
             for (size_t i = cur_start; i <= j; ++i)
                 tmp_values[i].second = insert_rank;
-            j++;
+            ++j;
         }
 
-        //count d^2 sum
+        // count d^2 sum
         Float64 answer = static_cast<Float64>(0);
         for (size_t j = 0; j < size; ++ j)
             answer += (tmp_values[j].first - tmp_values[j].second) * (tmp_values[j].first - tmp_values[j].second);
