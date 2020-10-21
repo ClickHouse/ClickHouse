@@ -47,7 +47,7 @@
             --button-active-color: #F00;
             --button-active-text-color: #FFF;
             --misc-text-color: #888;
-            --error-color: #400; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
+            --error-color: #400;
             --table-header-color: #102020;
             --table-hover-color: #003333;
             --null-color: #A88;
@@ -282,6 +282,9 @@
 
     function post()
     {
+        /// TODO: Avoid race condition on subsequent requests when responses may come out of order.
+        /// TODO: Check if URL already contains query string (append parameters).
+
         var url = document.getElementById('url').value +
             /// Ask server to allow cross-domain requests.
             '?add_http_cors_header=1' +
@@ -309,6 +312,7 @@
                         renderUnparsedResult(this.response);
                     }
                 } else {
+                    /// TODO: Proper rendering of network errors.
                     renderError(this.response);
                 }
             } else {
@@ -376,6 +380,7 @@
                 var is_null = (cell === null);
                 var content = document.createTextNode(is_null ? 'ᴺᵁᴸᴸ' : cell);
                 td.appendChild(content);
+                /// TODO: Execute regexp only once for each column.
                 td.className = response.meta[col_idx].type.match(/^(U?Int|Decimal|Float)/) ? 'right' : 'left';
                 if (is_null) {
                     td.className += ' null';
@@ -400,6 +405,12 @@
     {
         clear();
         var data = document.getElementById('data-unparsed')
+
+        if (response === '') {
+            /// TODO: Fade or remove previous result when new request will be performed.
+            response = 'Ok.';
+        }
+
         data.innerText = response;
         /// inline-block make width adjust to the size of content.
         data.style.display = 'inline-block';

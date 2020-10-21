@@ -63,7 +63,7 @@ class ServerThread(threading.Thread):
                 try:
                     time.sleep(ServerThread.DEFAULT_SERVER_DELAY)
                     s = socket.create_connection(('localhost', self.tcp_port), ServerThread.DEFAULT_CONNECTION_TIMEOUT)
-                    s.sendall('G')  # trigger expected "bad" HELLO response
+                    s.sendall(b'G')  # trigger expected "bad" HELLO response
                     print('Successful server response:', s.recv(1024))  # FIXME: read whole buffered response
                     s.shutdown(socket.SHUT_RDWR)
                     s.close()
@@ -76,8 +76,8 @@ class ServerThread(threading.Thread):
             # If process has died then try to fetch output before releasing lock
             if self._proc.returncode is not None:
                 stdout, stderr = self._proc.communicate()
-                print(stdout, file=sys.stderr)
-                print(stderr, file=sys.stderr)
+                print(stdout.decode('utf-8'), file=sys.stderr)
+                print(stderr.decode('utf-8'), file=sys.stderr)
 
             if self._proc.returncode == 70:  # Address already in use
                 retries -= 1
