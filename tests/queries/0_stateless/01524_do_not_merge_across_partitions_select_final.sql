@@ -9,7 +9,7 @@ INSERT INTO select_final SELECT toDate('2020-01-01'), number FROM numbers(2);
 INSERT INTO select_final SELECT toDate('2020-01-01'), number + 1 FROM numbers(2);
 
 
-SELECT * FROM select_final FINAL ORDER BY x SETTINGS do_not_merge_across_partitions_select_final = 1;;
+SELECT * FROM select_final FINAL ORDER BY x SETTINGS do_not_merge_across_partitions_select_final = 1;
 
 DROP TABLE select_final;
 
