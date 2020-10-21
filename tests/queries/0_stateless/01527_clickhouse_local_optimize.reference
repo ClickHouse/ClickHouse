@@ -1,16 +1,8 @@
-202001_1_1_0	1	2020-01-01	String
-202001_4_4_0	1	2020-01-01	String
-202002_2_2_0	2	2020-02-02	Another string
-202002_5_5_0	2	2020-02-02	Another string
-202003_3_3_0	3	2020-03-03	One more string
-202003_6_6_0	3	2020-03-03	One more string
-202001_1_1_0	4	2020-01-02	String for first partition
-202001_4_4_0	4	2020-01-02	String for first partition
-202001_1_4_1	1	2020-01-01	String
-202001_1_4_1	1	2020-01-01	String
-202002_2_5_1	2	2020-02-02	Another string
-202002_2_5_1	2	2020-02-02	Another string
-202003_3_6_1	3	2020-03-03	One more string
-202003_3_6_1	3	2020-03-03	One more string
-202001_1_4_1	4	2020-01-02	String for first partition
-202001_1_4_1	4	2020-01-02	String for first partition
+1	2020-01-01	String
+2	2020-02-02	Another string
+3	2020-03-03	One more string
+4	2020-01-02	String for first partition
+1	2020-01-01	String
+2	2020-02-02	Another string
+3	2020-03-03	One more string
+4	2020-01-02	String for first partition
