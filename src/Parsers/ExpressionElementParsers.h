@@ -92,9 +92,12 @@ protected:
   */
 class ParserColumnsTransformers : public IParserBase
 {
+public:
+    ParserColumnsTransformers(bool is_strict_ = false): is_strict(is_strict_) {}
 protected:
     const char * getName() const override { return "COLUMNS transformers"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool is_strict;
 };
 
 /** A function, for example, f(x, y + 1, g(z)).

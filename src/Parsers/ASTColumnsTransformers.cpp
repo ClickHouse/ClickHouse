@@ -46,7 +46,9 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 
 void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (settings.hilite ? hilite_none : "") << "(";
+    settings.ostr << (settings.hilite ? hilite_keyword : "");
+    settings.ostr << (is_strict ? "EXCEPTSTRICT" : "EXCEPT");
+    settings.ostr << (settings.hilite ? hilite_none : "") << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -62,23 +64,42 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
+    ASTs unexcepted_columns(children);
     nodes.erase(
         std::remove_if(
             nodes.begin(),
             nodes.end(),
-            [this](const ASTPtr & node_child)
+            [&](const ASTPtr & node_child)
             {
                 if (const auto * id = node_child->as<ASTIdentifier>())
                 {
-                    for (const auto & except_child : children)
+                    for (size_t i = 0; i < children.size(); i++)
                     {
-                        if (except_child->as<const ASTIdentifier &>().name == id->shortName())
+                        if (children[i]->as<const ASTIdentifier &>().name == id->shortName())
+                        {
+                            unexcepted_columns.erase(unexcepted_columns.begin() + i);
                             return true;
+                        }
                     }
                 }
                 return false;
             }),
         nodes.end());
+
+    if (is_strict && !unexcepted_columns.empty())
+    {
+        String unexisted_columns;
+        for (size_t i = 0; i < unexcepted_columns.size(); ++i)
+        {
+            if (i > 0)
+                unexisted_columns += ", ";
+            unexisted_columns += unexcepted_columns[i]->as<const ASTIdentifier &>().name;
+        }
+
+        throw Exception(
+            "Columns transformer EXPCEPTSTRICT process unexist column : " + unexisted_columns,
+            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+    }
 }
 
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(
@@ -90,7 +111,9 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (settings.hilite ? hilite_none : "") << "(";
+    settings.ostr << (settings.hilite ? hilite_keyword : "");
+    settings.ostr << (is_strict ? "REPLACESTRICT" : "REPLACE");
+    settings.ostr << (settings.hilite ? hilite_none : "") << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -131,7 +154,6 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
         replace_map.emplace(replacement.name, replacement.expr);
     }
 
-    UInt8 replace_column_sucess = 0;
     for (auto & column : nodes)
     {
         if (const auto * id = column->as<ASTIdentifier>())
@@ -141,7 +163,7 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
             {
                 column = replace_it->second;
                 column->setAlias(replace_it->first);
-                ++replace_column_sucess;
+                replace_map.erase(replace_it);
             }
         }
         else if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(column.get()))
@@ -154,15 +176,25 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
                 replaceChildren(new_ast, column, replace_it->first);
                 column = new_ast;
                 column->setAlias(replace_it->first);
-                ++replace_column_sucess;
+                replace_map.erase(replace_it);
             }
         }
     }
 
-    if (replace_column_sucess < replace_map.size())
+    if (is_strict && !replace_map.empty())
+    {
+        String unexisted_columns = "";
+        for (auto it = replace_map.begin(); it != replace_map.end(); ++it)
+        {
+            if (unexisted_columns != "")
+                unexisted_columns += ", ";
+            unexisted_columns += it->first;
+        }
         throw Exception(
-            "Expressions in columns transformer REPLACE should use same column name as original column",
+            "Columns transformer REPLACESTRICT process unexist column : " + unexisted_columns,
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+    }
+
 }
 
 }
