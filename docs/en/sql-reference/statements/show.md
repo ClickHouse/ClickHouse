@@ -43,7 +43,7 @@ Result:
 └─────────┘
 ```
 
-Getting database names, containing the case insensitive symbols sequence 'de' in their names:
+Getting database names, containing symbols sequence 'de' in their names, in the case insensitive manner:
 
 ``` sql
 SHOW DATABASES ILIKE '%DE%'
@@ -89,7 +89,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-### See Also
+### See Also {#see-also}
 
 -   [CREATE DATABASE](https://clickhouse.tech/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
@@ -142,7 +142,7 @@ Result:
 └──────────────────┘
 ```
 
-Getting table names, containing the case insensitive symbols sequence 'user' in their names:
+Getting table names, containing sequence 'user' in their names, in the case insensitive manner:
 
 ``` sql
 SHOW TABLES FROM system ILIKE '%USER%'
@@ -188,7 +188,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-### See Also
+### See Also {#see-also}
 
 -   [Create Tables](https://clickhouse.tech/docs/en/getting-started/tutorial/#create-tables)
 -   [SHOW CREATE TABLE](https://clickhouse.tech/docs/en/sql-reference/statements/show/#show-create-table)
