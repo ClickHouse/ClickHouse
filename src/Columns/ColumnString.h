@@ -267,6 +267,9 @@ public:
 
     Offsets & getOffsets() { return offsets; }
     const Offsets & getOffsets() const { return offsets; }
+
+    // Throws an exception if offsets/chars are messed up
+    void validate() const;
 };
 
 
