@@ -21,14 +21,12 @@
 .type	CRYPTO_rdrand,@function
 .align	16
 CRYPTO_rdrand:
-.cfi_startproc	
 	xorq	%rax,%rax
 .byte	72,15,199,242
 
 	adcq	%rax,%rax
 	movq	%rdx,0(%rdi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	CRYPTO_rdrand,.-CRYPTO_rdrand
 
 
@@ -40,7 +38,6 @@ CRYPTO_rdrand:
 .type	CRYPTO_rdrand_multiple8_buf,@function
 .align	16
 CRYPTO_rdrand_multiple8_buf:
-.cfi_startproc	
 	testq	%rsi,%rsi
 	jz	.Lout
 	movq	$8,%rdx
@@ -57,7 +54,6 @@ CRYPTO_rdrand_multiple8_buf:
 .Lerr:
 	xorq	%rax,%rax
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	CRYPTO_rdrand_multiple8_buf,.-CRYPTO_rdrand_multiple8_buf
 #endif
 .section	.note.GNU-stack,"",@progbits

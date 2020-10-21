@@ -58,7 +58,6 @@ chacha20_poly1305_constants:
 .type	poly_hash_ad_internal,@function
 .align	64
 poly_hash_ad_internal:
-.cfi_startproc	
 	xorq	%r10,%r10
 	xorq	%r11,%r11
 	xorq	%r12,%r12
@@ -221,7 +220,6 @@ hash_ad_tail_loop:
 
 1:
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	poly_hash_ad_internal, .-poly_hash_ad_internal
 
 .globl	chacha20_poly1305_open
@@ -229,31 +227,16 @@ hash_ad_tail_loop:
 .type	chacha20_poly1305_open,@function
 .align	64
 chacha20_poly1305_open:
-.cfi_startproc	
 	pushq	%rbp
-.cfi_adjust_cfa_offset	8
 	pushq	%rbx
-.cfi_adjust_cfa_offset	8
 	pushq	%r12
-.cfi_adjust_cfa_offset	8
 	pushq	%r13
-.cfi_adjust_cfa_offset	8
 	pushq	%r14
-.cfi_adjust_cfa_offset	8
 	pushq	%r15
-.cfi_adjust_cfa_offset	8
 
 
 	pushq	%r9
-.cfi_adjust_cfa_offset	8
 	subq	$288 + 32,%rsp
-.cfi_adjust_cfa_offset	288 + 32
-.cfi_offset	rbp, -16
-.cfi_offset	rbx, -24
-.cfi_offset	r12, -32
-.cfi_offset	r13, -40
-.cfi_offset	r14, -48
-.cfi_offset	r15, -56
 	leaq	32(%rsp),%rbp
 	andq	$-32,%rbp
 	movq	%rdx,8+32(%rbp)
@@ -1848,26 +1831,17 @@ open_sse_finalize:
 	adcq	8+16(%rbp),%r11
 
 	addq	$288 + 32,%rsp
-.cfi_adjust_cfa_offset	-(288 + 32)
 	popq	%r9
-.cfi_adjust_cfa_offset	-8
 	movq	%r10,(%r9)
 	movq	%r11,8(%r9)
 
 	popq	%r15
-.cfi_adjust_cfa_offset	-8
 	popq	%r14
-.cfi_adjust_cfa_offset	-8
 	popq	%r13
-.cfi_adjust_cfa_offset	-8
 	popq	%r12
-.cfi_adjust_cfa_offset	-8
 	popq	%rbx
-.cfi_adjust_cfa_offset	-8
 	popq	%rbp
-.cfi_adjust_cfa_offset	-8
 	.byte	0xf3,0xc3
-.cfi_adjust_cfa_offset	(8 * 6) + 288 + 32
 
 open_sse_128:
 	movdqu	.chacha20_consts(%rip),%xmm0
@@ -2100,7 +2074,6 @@ open_sse_128:
 	jmp	1b
 	jmp	open_sse_tail_16
 .size	chacha20_poly1305_open, .-chacha20_poly1305_open
-.cfi_endproc	
 
 
 
@@ -2110,31 +2083,16 @@ open_sse_128:
 .type	chacha20_poly1305_seal,@function
 .align	64
 chacha20_poly1305_seal:
-.cfi_startproc	
 	pushq	%rbp
-.cfi_adjust_cfa_offset	8
 	pushq	%rbx
-.cfi_adjust_cfa_offset	8
 	pushq	%r12
-.cfi_adjust_cfa_offset	8
 	pushq	%r13
-.cfi_adjust_cfa_offset	8
 	pushq	%r14
-.cfi_adjust_cfa_offset	8
 	pushq	%r15
-.cfi_adjust_cfa_offset	8
 
 
 	pushq	%r9
-.cfi_adjust_cfa_offset	8
 	subq	$288 + 32,%rsp
-.cfi_adjust_cfa_offset	288 + 32
-.cfi_offset	rbp, -16
-.cfi_offset	rbx, -24
-.cfi_offset	r12, -32
-.cfi_offset	r13, -40
-.cfi_offset	r14, -48
-.cfi_offset	r15, -56
 	leaq	32(%rsp),%rbp
 	andq	$-32,%rbp
 	movq	56(%r9),%rbx
@@ -3916,26 +3874,17 @@ do_length_block:
 	adcq	8+16(%rbp),%r11
 
 	addq	$288 + 32,%rsp
-.cfi_adjust_cfa_offset	-(288 + 32)
 	popq	%r9
-.cfi_adjust_cfa_offset	-8
 	movq	%r10,0(%r9)
 	movq	%r11,8(%r9)
 
 	popq	%r15
-.cfi_adjust_cfa_offset	-8
 	popq	%r14
-.cfi_adjust_cfa_offset	-8
 	popq	%r13
-.cfi_adjust_cfa_offset	-8
 	popq	%r12
-.cfi_adjust_cfa_offset	-8
 	popq	%rbx
-.cfi_adjust_cfa_offset	-8
 	popq	%rbp
-.cfi_adjust_cfa_offset	-8
 	.byte	0xf3,0xc3
-.cfi_adjust_cfa_offset	(8 * 7) + 288 + 32
 
 seal_sse_128:
 	movdqu	.chacha20_consts(%rip),%xmm0
@@ -8982,6 +8931,5 @@ seal_avx2_short_tail:
 1:
 	vzeroupper
 	jmp	seal_sse_tail_16
-.cfi_endproc	
 #endif
 .section	.note.GNU-stack,"",@progbits

@@ -50,7 +50,6 @@
 .type	ChaCha20_ctr32,@function
 .align	64
 ChaCha20_ctr32:
-.cfi_startproc	
 	cmpq	$0,%rdx
 	je	.Lno_data
 	movq	OPENSSL_ia32cap_P+4(%rip),%r10
@@ -58,25 +57,12 @@ ChaCha20_ctr32:
 	jnz	.LChaCha20_ssse3
 
 	pushq	%rbx
-.cfi_adjust_cfa_offset	8
-.cfi_offset	rbx,-16
 	pushq	%rbp
-.cfi_adjust_cfa_offset	8
-.cfi_offset	rbp,-24
 	pushq	%r12
-.cfi_adjust_cfa_offset	8
-.cfi_offset	r12,-32
 	pushq	%r13
-.cfi_adjust_cfa_offset	8
-.cfi_offset	r13,-40
 	pushq	%r14
-.cfi_adjust_cfa_offset	8
-.cfi_offset	r14,-48
 	pushq	%r15
-.cfi_adjust_cfa_offset	8
-.cfi_offset	r15,-56
 	subq	$64+24,%rsp
-.cfi_adjust_cfa_offset	88
 .Lctr32_body:
 
 
@@ -317,30 +303,20 @@ ChaCha20_ctr32:
 .Ldone:
 	leaq	64+24+48(%rsp),%rsi
 	movq	-48(%rsi),%r15
-.cfi_restore	r15
 	movq	-40(%rsi),%r14
-.cfi_restore	r14
 	movq	-32(%rsi),%r13
-.cfi_restore	r13
 	movq	-24(%rsi),%r12
-.cfi_restore	r12
 	movq	-16(%rsi),%rbp
-.cfi_restore	rbp
 	movq	-8(%rsi),%rbx
-.cfi_restore	rbx
 	leaq	(%rsi),%rsp
-.cfi_adjust_cfa_offset	-136
 .Lno_data:
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	ChaCha20_ctr32,.-ChaCha20_ctr32
 .type	ChaCha20_ssse3,@function
 .align	32
 ChaCha20_ssse3:
 .LChaCha20_ssse3:
-.cfi_startproc	
 	movq	%rsp,%r9
-.cfi_def_cfa_register	r9
 	cmpq	$128,%rdx
 	ja	.LChaCha20_4x
 
@@ -466,18 +442,14 @@ ChaCha20_ssse3:
 
 .Ldone_ssse3:
 	leaq	(%r9),%rsp
-.cfi_def_cfa_register	rsp
 .Lssse3_epilogue:
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	ChaCha20_ssse3,.-ChaCha20_ssse3
 .type	ChaCha20_4x,@function
 .align	32
 ChaCha20_4x:
 .LChaCha20_4x:
-.cfi_startproc	
 	movq	%rsp,%r9
-.cfi_def_cfa_register	r9
 	movq	%r10,%r11
 	shrq	$32,%r10
 	testq	$32,%r10
@@ -1018,18 +990,14 @@ ChaCha20_4x:
 
 .Ldone4x:
 	leaq	(%r9),%rsp
-.cfi_def_cfa_register	rsp
 .L4x_epilogue:
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	ChaCha20_4x,.-ChaCha20_4x
 .type	ChaCha20_8x,@function
 .align	32
 ChaCha20_8x:
 .LChaCha20_8x:
-.cfi_startproc	
 	movq	%rsp,%r9
-.cfi_def_cfa_register	r9
 	subq	$0x280+8,%rsp
 	andq	$-32,%rsp
 	vzeroupper
@@ -1624,10 +1592,8 @@ ChaCha20_8x:
 .Ldone8x:
 	vzeroall
 	leaq	(%r9),%rsp
-.cfi_def_cfa_register	rsp
 .L8x_epilogue:
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	ChaCha20_8x,.-ChaCha20_8x
 #endif
 .section	.note.GNU-stack,"",@progbits

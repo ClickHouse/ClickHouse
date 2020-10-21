@@ -49,7 +49,6 @@ and_mask:
 .type	GFMUL,@function
 .align	16
 GFMUL:
-.cfi_startproc	
 	vpclmulqdq	$0x00,%xmm1,%xmm0,%xmm2
 	vpclmulqdq	$0x11,%xmm1,%xmm0,%xmm5
 	vpclmulqdq	$0x10,%xmm1,%xmm0,%xmm3
@@ -70,14 +69,12 @@ GFMUL:
 
 	vpxor	%xmm5,%xmm2,%xmm0
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	GFMUL, .-GFMUL
 .globl	aesgcmsiv_htable_init
 .hidden aesgcmsiv_htable_init
 .type	aesgcmsiv_htable_init,@function
 .align	16
 aesgcmsiv_htable_init:
-.cfi_startproc	
 	vmovdqa	(%rsi),%xmm0
 	vmovdqa	%xmm0,%xmm1
 	vmovdqa	%xmm0,(%rdi)
@@ -96,14 +93,12 @@ aesgcmsiv_htable_init:
 	call	GFMUL
 	vmovdqa	%xmm0,112(%rdi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aesgcmsiv_htable_init, .-aesgcmsiv_htable_init
 .globl	aesgcmsiv_htable6_init
 .hidden aesgcmsiv_htable6_init
 .type	aesgcmsiv_htable6_init,@function
 .align	16
 aesgcmsiv_htable6_init:
-.cfi_startproc	
 	vmovdqa	(%rsi),%xmm0
 	vmovdqa	%xmm0,%xmm1
 	vmovdqa	%xmm0,(%rdi)
@@ -118,14 +113,12 @@ aesgcmsiv_htable6_init:
 	call	GFMUL
 	vmovdqa	%xmm0,80(%rdi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aesgcmsiv_htable6_init, .-aesgcmsiv_htable6_init
 .globl	aesgcmsiv_htable_polyval
 .hidden aesgcmsiv_htable_polyval
 .type	aesgcmsiv_htable_polyval,@function
 .align	16
 aesgcmsiv_htable_polyval:
-.cfi_startproc	
 	testq	%rdx,%rdx
 	jnz	.Lhtable_polyval_start
 	.byte	0xf3,0xc3
@@ -335,14 +328,12 @@ aesgcmsiv_htable_polyval:
 	vmovdqu	%xmm1,(%rcx)
 	vzeroupper
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aesgcmsiv_htable_polyval,.-aesgcmsiv_htable_polyval
 .globl	aesgcmsiv_polyval_horner
 .hidden aesgcmsiv_polyval_horner
 .type	aesgcmsiv_polyval_horner,@function
 .align	16
 aesgcmsiv_polyval_horner:
-.cfi_startproc	
 	testq	%rcx,%rcx
 	jnz	.Lpolyval_horner_start
 	.byte	0xf3,0xc3
@@ -368,14 +359,12 @@ aesgcmsiv_polyval_horner:
 
 	vmovdqa	%xmm0,(%rdi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aesgcmsiv_polyval_horner,.-aesgcmsiv_polyval_horner
 .globl	aes128gcmsiv_aes_ks
 .hidden aes128gcmsiv_aes_ks
 .type	aes128gcmsiv_aes_ks,@function
 .align	16
 aes128gcmsiv_aes_ks:
-.cfi_startproc	
 	vmovdqu	(%rdi),%xmm1
 	vmovdqa	%xmm1,(%rsi)
 
@@ -424,14 +413,12 @@ aes128gcmsiv_aes_ks:
 	vpxor	%xmm2,%xmm1,%xmm1
 	vmovdqa	%xmm1,32(%rsi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes128gcmsiv_aes_ks,.-aes128gcmsiv_aes_ks
 .globl	aes256gcmsiv_aes_ks
 .hidden aes256gcmsiv_aes_ks
 .type	aes256gcmsiv_aes_ks,@function
 .align	16
 aes256gcmsiv_aes_ks:
-.cfi_startproc	
 	vmovdqu	(%rdi),%xmm1
 	vmovdqu	16(%rdi),%xmm3
 	vmovdqa	%xmm1,(%rsi)
@@ -472,13 +459,11 @@ aes256gcmsiv_aes_ks:
 	vpxor	%xmm2,%xmm1,%xmm1
 	vmovdqa	%xmm1,32(%rsi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .globl	aes128gcmsiv_aes_ks_enc_x1
 .hidden aes128gcmsiv_aes_ks_enc_x1
 .type	aes128gcmsiv_aes_ks_enc_x1,@function
 .align	16
 aes128gcmsiv_aes_ks_enc_x1:
-.cfi_startproc	
 	vmovdqa	(%rcx),%xmm1
 	vmovdqa	0(%rdi),%xmm4
 
@@ -613,14 +598,12 @@ aes128gcmsiv_aes_ks_enc_x1:
 
 	vmovdqa	%xmm4,0(%rsi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes128gcmsiv_aes_ks_enc_x1,.-aes128gcmsiv_aes_ks_enc_x1
 .globl	aes128gcmsiv_kdf
 .hidden aes128gcmsiv_kdf
 .type	aes128gcmsiv_kdf,@function
 .align	16
 aes128gcmsiv_kdf:
-.cfi_startproc	
 
 
 
@@ -706,25 +689,19 @@ aes128gcmsiv_kdf:
 	vmovdqa	%xmm11,32(%rsi)
 	vmovdqa	%xmm12,48(%rsi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes128gcmsiv_kdf,.-aes128gcmsiv_kdf
 .globl	aes128gcmsiv_enc_msg_x4
 .hidden aes128gcmsiv_enc_msg_x4
 .type	aes128gcmsiv_enc_msg_x4,@function
 .align	16
 aes128gcmsiv_enc_msg_x4:
-.cfi_startproc	
 	testq	%r8,%r8
 	jnz	.L128_enc_msg_x4_start
 	.byte	0xf3,0xc3
 
 .L128_enc_msg_x4_start:
 	pushq	%r12
-.cfi_adjust_cfa_offset	8
-.cfi_offset	%r12,-16
 	pushq	%r13
-.cfi_adjust_cfa_offset	8
-.cfi_offset	%r13,-24
 
 	shrq	$4,%r8
 	movq	%r8,%r10
@@ -879,36 +856,23 @@ aes128gcmsiv_enc_msg_x4:
 
 .L128_enc_msg_x4_out:
 	popq	%r13
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	%r13
 	popq	%r12
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	%r12
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes128gcmsiv_enc_msg_x4,.-aes128gcmsiv_enc_msg_x4
 .globl	aes128gcmsiv_enc_msg_x8
 .hidden aes128gcmsiv_enc_msg_x8
 .type	aes128gcmsiv_enc_msg_x8,@function
 .align	16
 aes128gcmsiv_enc_msg_x8:
-.cfi_startproc	
 	testq	%r8,%r8
 	jnz	.L128_enc_msg_x8_start
 	.byte	0xf3,0xc3
 
 .L128_enc_msg_x8_start:
 	pushq	%r12
-.cfi_adjust_cfa_offset	8
-.cfi_offset	%r12,-16
 	pushq	%r13
-.cfi_adjust_cfa_offset	8
-.cfi_offset	%r13,-24
 	pushq	%rbp
-.cfi_adjust_cfa_offset	8
-.cfi_offset	%rbp,-32
 	movq	%rsp,%rbp
-.cfi_def_cfa_register	rbp
 
 
 	subq	$128,%rsp
@@ -1135,25 +1099,16 @@ aes128gcmsiv_enc_msg_x8:
 
 .L128_enc_msg_x8_out:
 	movq	%rbp,%rsp
-.cfi_def_cfa_register	%rsp
 	popq	%rbp
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	%rbp
 	popq	%r13
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	%r13
 	popq	%r12
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	%r12
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes128gcmsiv_enc_msg_x8,.-aes128gcmsiv_enc_msg_x8
 .globl	aes128gcmsiv_dec
 .hidden aes128gcmsiv_dec
 .type	aes128gcmsiv_dec,@function
 .align	16
 aes128gcmsiv_dec:
-.cfi_startproc	
 	testq	$~15,%r9
 	jnz	.L128_dec_start
 	.byte	0xf3,0xc3
@@ -1638,14 +1593,12 @@ aes128gcmsiv_dec:
 .L128_dec_out:
 	vmovdqu	%xmm0,(%rdx)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes128gcmsiv_dec, .-aes128gcmsiv_dec
 .globl	aes128gcmsiv_ecb_enc_block
 .hidden aes128gcmsiv_ecb_enc_block
 .type	aes128gcmsiv_ecb_enc_block,@function
 .align	16
 aes128gcmsiv_ecb_enc_block:
-.cfi_startproc	
 	vmovdqa	(%rdi),%xmm1
 
 	vpxor	(%rdx),%xmm1,%xmm1
@@ -1663,14 +1616,12 @@ aes128gcmsiv_ecb_enc_block:
 	vmovdqa	%xmm1,(%rsi)
 
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes128gcmsiv_ecb_enc_block,.-aes128gcmsiv_ecb_enc_block
 .globl	aes256gcmsiv_aes_ks_enc_x1
 .hidden aes256gcmsiv_aes_ks_enc_x1
 .type	aes256gcmsiv_aes_ks_enc_x1,@function
 .align	16
 aes256gcmsiv_aes_ks_enc_x1:
-.cfi_startproc	
 	vmovdqa	con1(%rip),%xmm0
 	vmovdqa	mask(%rip),%xmm15
 	vmovdqa	(%rdi),%xmm8
@@ -1846,14 +1797,12 @@ aes256gcmsiv_aes_ks_enc_x1:
 
 	vmovdqa	%xmm8,(%rsi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes256gcmsiv_aes_ks_enc_x1,.-aes256gcmsiv_aes_ks_enc_x1
 .globl	aes256gcmsiv_ecb_enc_block
 .hidden aes256gcmsiv_ecb_enc_block
 .type	aes256gcmsiv_ecb_enc_block,@function
 .align	16
 aes256gcmsiv_ecb_enc_block:
-.cfi_startproc	
 	vmovdqa	(%rdi),%xmm1
 	vpxor	(%rdx),%xmm1,%xmm1
 	vaesenc	16(%rdx),%xmm1,%xmm1
@@ -1872,14 +1821,12 @@ aes256gcmsiv_ecb_enc_block:
 	vaesenclast	224(%rdx),%xmm1,%xmm1
 	vmovdqa	%xmm1,(%rsi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes256gcmsiv_ecb_enc_block,.-aes256gcmsiv_ecb_enc_block
 .globl	aes256gcmsiv_enc_msg_x4
 .hidden aes256gcmsiv_enc_msg_x4
 .type	aes256gcmsiv_enc_msg_x4,@function
 .align	16
 aes256gcmsiv_enc_msg_x4:
-.cfi_startproc	
 	testq	%r8,%r8
 	jnz	.L256_enc_msg_x4_start
 	.byte	0xf3,0xc3
@@ -2073,14 +2020,12 @@ aes256gcmsiv_enc_msg_x4:
 
 .L256_enc_msg_x4_out:
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes256gcmsiv_enc_msg_x4,.-aes256gcmsiv_enc_msg_x4
 .globl	aes256gcmsiv_enc_msg_x8
 .hidden aes256gcmsiv_enc_msg_x8
 .type	aes256gcmsiv_enc_msg_x8,@function
 .align	16
 aes256gcmsiv_enc_msg_x8:
-.cfi_startproc	
 	testq	%r8,%r8
 	jnz	.L256_enc_msg_x8_start
 	.byte	0xf3,0xc3
@@ -2362,14 +2307,12 @@ aes256gcmsiv_enc_msg_x8:
 .L256_enc_msg_x8_out:
 	.byte	0xf3,0xc3
 
-.cfi_endproc	
 .size	aes256gcmsiv_enc_msg_x8,.-aes256gcmsiv_enc_msg_x8
 .globl	aes256gcmsiv_dec
 .hidden aes256gcmsiv_dec
 .type	aes256gcmsiv_dec,@function
 .align	16
 aes256gcmsiv_dec:
-.cfi_startproc	
 	testq	$~15,%r9
 	jnz	.L256_dec_start
 	.byte	0xf3,0xc3
@@ -2922,14 +2865,12 @@ aes256gcmsiv_dec:
 .L256_dec_out:
 	vmovdqu	%xmm0,(%rdx)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes256gcmsiv_dec, .-aes256gcmsiv_dec
 .globl	aes256gcmsiv_kdf
 .hidden aes256gcmsiv_kdf
 .type	aes256gcmsiv_kdf,@function
 .align	16
 aes256gcmsiv_kdf:
-.cfi_startproc	
 
 
 
@@ -3073,7 +3014,6 @@ aes256gcmsiv_kdf:
 	vmovdqa	%xmm12,64(%rsi)
 	vmovdqa	%xmm13,80(%rsi)
 	.byte	0xf3,0xc3
-.cfi_endproc	
 .size	aes256gcmsiv_kdf, .-aes256gcmsiv_kdf
 #endif
 .section	.note.GNU-stack,"",@progbits

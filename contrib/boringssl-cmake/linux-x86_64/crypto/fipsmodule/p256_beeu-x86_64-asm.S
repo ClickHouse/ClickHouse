@@ -19,31 +19,15 @@
 .hidden beeu_mod_inverse_vartime
 .align	32
 beeu_mod_inverse_vartime:
-.cfi_startproc	
 	pushq	%rbp
-.cfi_adjust_cfa_offset	8
-.cfi_offset	rbp,-16
 	pushq	%r12
-.cfi_adjust_cfa_offset	8
-.cfi_offset	r12,-24
 	pushq	%r13
-.cfi_adjust_cfa_offset	8
-.cfi_offset	r13,-32
 	pushq	%r14
-.cfi_adjust_cfa_offset	8
-.cfi_offset	r14,-40
 	pushq	%r15
-.cfi_adjust_cfa_offset	8
-.cfi_offset	r15,-48
 	pushq	%rbx
-.cfi_adjust_cfa_offset	8
-.cfi_offset	rbx,-56
 	pushq	%rsi
-.cfi_adjust_cfa_offset	8
-.cfi_offset	rsi,-64
 
 	subq	$80,%rsp
-.cfi_adjust_cfa_offset	80
 	movq	%rdi,0(%rsp)
 
 
@@ -313,30 +297,14 @@ beeu_mod_inverse_vartime:
 
 .Lbeeu_finish:
 	addq	$80,%rsp
-.cfi_adjust_cfa_offset	-80
 	popq	%rsi
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	rsi
 	popq	%rbx
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	rbx
 	popq	%r15
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	r15
 	popq	%r14
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	r14
 	popq	%r13
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	r13
 	popq	%r12
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	r12
 	popq	%rbp
-.cfi_adjust_cfa_offset	-8
-.cfi_restore	rbp
 	.byte	0xf3,0xc3
-.cfi_endproc	
 
 .size	beeu_mod_inverse_vartime, .-beeu_mod_inverse_vartime
 #endif
