@@ -23,8 +23,8 @@ public:
         const boost::container::flat_set<UUID> & current_roles, const boost::container::flat_set<UUID> & current_roles_with_admin_option);
 
 private:
-    void collectEnabledRoles();
-    void collectEnabledRoles(EnabledRoles & enabled);
+    void collectEnabledRoles(ext::scope_guard & notifications);
+    void collectEnabledRoles(EnabledRoles & enabled, ext::scope_guard & notifications);
     RolePtr getRole(const UUID & role_id);
     void roleChanged(const UUID & role_id, const RolePtr & changed_role);
     void roleRemoved(const UUID & role_id);

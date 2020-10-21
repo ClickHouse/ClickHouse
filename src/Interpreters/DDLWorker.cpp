@@ -787,12 +787,6 @@ void DDLWorker::processTask(DDLTask & task)
                     storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
-                /// For some reason we check consistency of cluster definition only
-                /// in case of ALTER query, but not in case of CREATE/DROP etc.
-                /// It's strange, but this behaviour exits for a long and we cannot change it.
-                if (storage && query_with_table->as<ASTAlterQuery>())
-                    checkShardConfig(query_with_table->table, task, storage);
-
                 if (storage && taskShouldBeExecutedOnLeader(rewritten_ast, storage)  && !is_circular_replicated)
                     tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
                 else
@@ -836,35 +830,6 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const Storage
 
     return storage->supportsReplication();
 }
-
-
-void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, StoragePtr storage) const
-{
-    const auto & shard_info = task.cluster->getShardsInfo().at(task.host_shard_num);
-    bool config_is_replicated_shard = shard_info.hasInternalReplication();
-
-    if (dynamic_cast<const StorageDistributed *>(storage.get()))
-    {
-        LOG_TRACE(log, "Table {} is distributed, skip checking config.", backQuote(table));
-        return;
-    }
-
-    if (storage->supportsReplication() && !config_is_replicated_shard)
-    {
-        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-            "Table {} is replicated, but shard #{} isn't replicated according to its cluster definition. "
-            "Possibly <internal_replication>true</internal_replication> is forgotten in the cluster config.",
-            backQuote(table), task.host_shard_num + 1);
-    }
-
-    if (!storage->supportsReplication() && config_is_replicated_shard)
-    {
-        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-            "Table {} isn't replicated, but shard #{} is replicated according to its cluster definition",
-            backQuote(table), task.host_shard_num + 1);
-    }
-}
-
 
 bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     DDLTask & task,
@@ -910,7 +875,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     String executed_by;
 
     zkutil::EventPtr event = std::make_shared<Poco::Event>();
-    if (zookeeper->tryGet(is_executed_path, executed_by))
+    if (zookeeper->tryGet(is_executed_path, executed_by, nullptr, event))
     {
         LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
         return true;
@@ -961,6 +926,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
         if (event->tryWait(std::uniform_int_distribution<int>(0, 1000)(rng)))
         {
+            LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
             executed_by_leader = true;
             break;
         }

@@ -1,24 +1,24 @@
 #!/bin/bash
 
 kill_clickhouse () {
-    echo "clickhouse pids" `ps aux | grep clickhouse` | ts '%Y-%m-%d %H:%M:%S'
-    kill `pgrep -u clickhouse` 2>/dev/null
+    echo "clickhouse pids $(pgrep -u clickhouse)" | ts '%Y-%m-%d %H:%M:%S'
+    kill "$(pgrep -u clickhouse)" 2>/dev/null
 
-    for i in {1..10}
+    for _ in {1..10}
     do
-        if ! kill -0 `pgrep -u clickhouse`; then
+        if ! kill -0 "$(pgrep -u clickhouse)"; then
             echo "No clickhouse process" | ts '%Y-%m-%d %H:%M:%S'
             break
         else
-            echo "Process" `pgrep -u clickhouse` "still alive" | ts '%Y-%m-%d %H:%M:%S'
+            echo "Process $(pgrep -u clickhouse) still alive" | ts '%Y-%m-%d %H:%M:%S'
             sleep 10
         fi
     done
 
     echo "Will try to send second kill signal for sure"
-    kill `pgrep -u clickhouse` 2>/dev/null
+    kill "$(pgrep -u clickhouse)" 2>/dev/null
     sleep 5
-    echo "clickhouse pids" `ps aux | grep clickhouse` | ts '%Y-%m-%d %H:%M:%S'
+    echo "clickhouse pids $(pgrep -u clickhouse)" | ts '%Y-%m-%d %H:%M:%S'
 }
 
 start_clickhouse () {
@@ -47,11 +47,15 @@ start_clickhouse
 sleep 10
 
 
-if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then
+if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 
-LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --testname --shard --zookeeper "$SKIP_LIST_OPT" $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+# We can have several additional options so we path them as array because it's
+# more idiologically correct.
+read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
+
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --testname --shard --zookeeper --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
 kill_clickhouse
 

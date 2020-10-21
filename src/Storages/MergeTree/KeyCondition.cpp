@@ -454,14 +454,13 @@ static Field applyFunctionForField(
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
-    Block block
+    ColumnsWithTypeAndName columns
     {
         { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
-        { nullptr, func->getReturnType(), "y" }
     };
 
-    func->execute(block, {0}, 1, 1);
-    return (*block.safeGetByPosition(1).column)[0];
+    auto col = func->execute(columns, func->getResultType(), 1);
+    return (*col)[0];
 }
 
 /// The case when arguments may have types different than in the primary key.
@@ -470,21 +469,15 @@ static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
-    ColumnWithTypeAndName argument = { arg_type->createColumnConst(1, arg_value), arg_type, "x" };
+    ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
 
-    FunctionBasePtr func_base = func->build({argument});
+    FunctionBasePtr func_base = func->build(arguments);
 
-    DataTypePtr return_type = func_base->getReturnType();
+    DataTypePtr return_type = func_base->getResultType();
 
-    Block block
-    {
-        std::move(argument),
-        { nullptr, return_type, "result" }
-    };
+    auto col = func_base->execute(arguments, return_type, 1);
 
-    func_base->execute(block, {0}, 1, 1);
-
-    Field result = (*block.safeGetByPosition(1).column)[0];
+    Field result = (*col)[0];
 
     return {std::move(result), std::move(return_type)};
 }
@@ -497,18 +490,23 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
         return applyFunctionForField(func, current_type, field);
 
     String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
-    size_t result_idx;
-    const auto & block = field.block;
-    if (!block->has(result_name))
-    {
-        result_idx = block->columns();
-        field.block->insert({nullptr, func->getReturnType(), result_name});
-        func->execute(*block, {field.column_idx}, result_idx, block->rows());
-    }
-    else
-        result_idx = block->getPositionByName(result_name);
+    const auto & columns = field.columns;
+    size_t result_idx = columns->size();
 
-    return {field.block, field.row_idx, result_idx};
+    for (size_t i = 0; i < result_idx; ++i)
+    {
+        if ((*columns)[i].name == result_name)
+            result_idx = i;
+    }
+
+    ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
+    if (result_idx == columns->size())
+    {
+        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
+        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
+    }
+
+    return {field.columns, field.row_idx, result_idx};
 }
 
 void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
@@ -737,7 +735,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
         if (!func || !func->hasInformationAboutMonotonicity())
             return false;
 
-        key_column_type = func->getReturnType();
+        key_column_type = func->getResultType();
         out_functions_chain.push_back(func);
     }
 
@@ -1191,7 +1189,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             key_range.right_included = true;
         }
 
-        current_type = func->getReturnType();
+        current_type = func->getResultType();
 
         if (!monotonicity.is_positive)
             key_range.swapLeftAndRight();
