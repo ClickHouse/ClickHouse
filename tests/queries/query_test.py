@@ -11,19 +11,21 @@ import sys
 def run_client(bin_prefix, port, query, reference, replace_map={}):
     client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode'],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    result, error = client.communicate(query)
+    result, error = client.communicate(query.encode('utf-8'))
     assert client.returncode is not None, "Client should exit after processing all queries"
 
-    for old, new in replace_map.iteritems():
-        result = result.replace(old, new)
+    for old, new in replace_map.items():
+        result = result.replace(old.encode('utf-8'), new.encode('utf-8'))
 
     if client.returncode != 0:
-        print >> sys.stderr, error
+        print(error.decode('utf-8'), file=sys.stderr)
         pytest.fail('Client died unexpectedly with code {code}'.format(code=client.returncode), pytrace=False)
     elif result != reference:
         pytest.fail("Query output doesn't match reference:{eol}{diff}".format(
                 eol=os.linesep,
-                diff=os.linesep.join(l.strip() for l in difflib.unified_diff(reference.splitlines(), result.splitlines(), fromfile='expected', tofile='actual'))),
+                diff=os.linesep.join(l.strip() for l in difflib.unified_diff(reference.decode('utf-8').splitlines(),
+                                                                             result.decode('utf-8').splitlines(),
+                                                                             fromfile='expected', tofile='actual'))),
             pytrace=False)
 
 
@@ -32,7 +34,7 @@ def random_str(length=10):
     return ''.join(random.choice(alphabet) for _ in range(length))
 
 
-@pytest.mark.timeout(timeout=10, method='signal')
+@pytest.mark.timeout(timeout=30, method='signal')
 def test_query(bin_prefix, sql_query, standalone_server):
     tcp_port = standalone_server.tcp_port
 
@@ -44,7 +46,7 @@ def test_query(bin_prefix, sql_query, standalone_server):
 
     with open(query_path, 'r') as file:
         query = file.read()
-    with open(reference_path, 'r') as file:
+    with open(reference_path, 'rb') as file:
         reference = file.read()
 
     random_name = 'test_{random}'.format(random=random_str())
@@ -52,9 +54,9 @@ def test_query(bin_prefix, sql_query, standalone_server):
     run_client(bin_prefix, tcp_port, query, reference, {random_name: 'default'})
 
     query = "SELECT 'SHOW ORPHANED TABLES'; SELECT name FROM system.tables WHERE database != 'system' ORDER BY (database, name);"
-    run_client(bin_prefix, tcp_port, query, 'SHOW ORPHANED TABLES\n')
+    run_client(bin_prefix, tcp_port, query, b'SHOW ORPHANED TABLES\n')
 
-    run_client(bin_prefix, tcp_port, 'DROP DATABASE {random};'.format(random=random_name), '')
+    run_client(bin_prefix, tcp_port, 'DROP DATABASE {random};'.format(random=random_name), b'')
 
     query = "SELECT 'SHOW ORPHANED DATABASES'; SHOW DATABASES;"
-    run_client(bin_prefix, tcp_port, query, 'SHOW ORPHANED DATABASES\n_temporary_and_external_tables\ndefault\nsystem\n')
+    run_client(bin_prefix, tcp_port, query, b'SHOW ORPHANED DATABASES\n_temporary_and_external_tables\ndefault\nsystem\n')

@@ -47,10 +47,10 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex_origin = block.getByPosition(arguments[0]).column.get();
-        const auto * col_hindex_dest = block.getByPosition(arguments[1]).column.get();
+        const auto * col_hindex_origin = columns[arguments[0]].column.get();
+        const auto * col_hindex_dest = columns[arguments[1]].column.get();
 
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
@@ -66,7 +66,7 @@ public:
             dst_data[row] = res;
         }
 
-        block.getByPosition(result).column = std::move(dst);
+        columns[result].column = std::move(dst);
     }
 };
 

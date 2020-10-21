@@ -88,6 +88,7 @@ void IMergeTreeDataPart::MinMaxIndex::store(
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
+        out->finalize();
     }
 }
 
@@ -759,6 +760,16 @@ void IMergeTreeDataPart::loadColumns(bool require)
         column_name_to_position.emplace(column.name, pos++);
 }
 
+bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
+{
+    /// `IMergeTreeDataPart::volume` describes space where current part belongs, and holds
+    /// `SingleDiskVolume` object which does not contain up-to-date settings of corresponding volume.
+    /// Therefore we shall obtain volume from storage policy.
+    auto volume_ptr = storage_policy->getVolume(storage_policy->getVolumeIndexByDisk(volume->getDisk()));
+
+    return !volume_ptr->areMergesAvoided();
+}
+
 UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from)
 {
     if (disk_->isFile(from))
@@ -942,21 +953,26 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
     volume->getDisk()->removeIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
-void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservation) const
+void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
 {
     assertOnDisk();
-    auto reserved_disk = reservation->getDisk();
-    if (reserved_disk->getName() == volume->getDisk()->getName())
+
+    if (disk->getName() == volume->getDisk()->getName())
         throw Exception("Can not clone data part " + name + " to same disk " + volume->getDisk()->getName(), ErrorCodes::LOGICAL_ERROR);
+    if (directory_name.empty())
+        throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
 
-    String path_to_clone = storage.relative_data_path + "detached/";
+    String path_to_clone = storage.relative_data_path + directory_name + '/';
 
-    if (reserved_disk->exists(path_to_clone + relative_path))
-        throw Exception("Path " + fullPath(reserved_disk, path_to_clone + relative_path) + " already exists. Can not clone ", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-    reserved_disk->createDirectory(path_to_clone);
+    if (disk->exists(path_to_clone + relative_path))
+    {
+        LOG_WARNING(storage.log, "Path " + fullPath(disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
+        disk->removeRecursive(path_to_clone + relative_path + '/');
+    }
+    disk->createDirectories(path_to_clone);
 
-    volume->getDisk()->copy(getFullRelativePath(), reserved_disk, path_to_clone);
-    volume->getDisk()->removeIfExists(path_to_clone + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
+    volume->getDisk()->removeIfExists(path_to_clone + '/' + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

@@ -53,7 +53,7 @@ class ClickHouseNode(Node):
                     continue
                 assert False, "container is not healthy"
 
-    def restart(self, timeout=120, safe=True):
+    def restart(self, timeout=120, safe=True, wait_healthy=True):
         """Restart node.
         """
         if safe:
@@ -73,7 +73,8 @@ class ClickHouseNode(Node):
 
         self.cluster.command(None, f'{self.cluster.docker_compose} restart {self.name}', timeout=timeout)
 
-        self.wait_healthy(timeout)
+        if wait_healthy:
+            self.wait_healthy(timeout)
 
     def query(self, sql, message=None, exitcode=None, steps=True, no_checks=False,
               raise_on_exception=False, step=By, settings=None, *args, **kwargs):
@@ -210,7 +211,7 @@ class Cluster(object):
                 self.down()
         finally:
             with self.lock:
-                for shell in self._bash.values():
+                for shell in list(self._bash.values()):
                     shell.__exit__(type, value, traceback)
 
     def node(self, name):
@@ -295,12 +296,12 @@ class Cluster(object):
         :param steps: don't break command into steps, default: True
         """
         debug(f"command() {node}, {command}")
-        with By("executing command", description=command) if steps else NullStep():
+        with By("executing command", description=command, format_description=False) if steps else NullStep():
             r = self.bash(node)(command, *args, **kwargs)
         if exitcode is not None:
-            with Then(f"exitcode should be {exitcode}") if steps else NullStep():
+            with Then(f"exitcode should be {exitcode}", format_name=False) if steps else NullStep():
                 assert r.exitcode == exitcode, error(r.output)
         if message is not None:
-            with Then(f"output should contain message", description=message) if steps else NullStep():
+            with Then(f"output should contain message", description=message, format_description=False) if steps else NullStep():
                 assert message in r.output, error(r.output)
         return r
