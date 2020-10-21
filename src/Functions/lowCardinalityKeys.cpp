@@ -39,13 +39,11 @@ public:
         return type->getDictionaryType();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        auto arg_num = arguments[0];
-        const auto & arg = columns[arg_num];
-        auto & res = columns[result];
+        const auto & arg = arguments[0];
         const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(arg.column.get());
-        res.column = low_cardinality_column->getDictionary().getNestedColumn()->cloneResized(arg.column->size());
+        return low_cardinality_column->getDictionary().getNestedColumn()->cloneResized(arg.column->size());
     }
 };
 
