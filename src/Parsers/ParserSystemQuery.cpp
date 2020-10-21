@@ -137,7 +137,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 ASTPtr ast;
                 if (ParserIdentifier{}.parse(pos, ast, expected))
-                    storage_policy_str = ast->as<ASTIdentifier &>().name;
+                    storage_policy_str = ast->as<ASTIdentifier &>().name();
                 else
                     return false;
 
@@ -145,7 +145,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     return false;
 
                 if (ParserIdentifier{}.parse(pos, ast, expected))
-                    volume_str = ast->as<ASTIdentifier &>().name;
+                    volume_str = ast->as<ASTIdentifier &>().name();
                 else
                     return false;
             }
