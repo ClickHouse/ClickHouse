@@ -157,7 +157,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     try
     {
@@ -338,28 +338,26 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
-        bool ast_modified = false;
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         if (context.hasQueryParameters())
         {
             ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
             visitor.visit(ast);
-            ast_modified = true;
+            query = serializeAST(*ast);
         }
+
+        /// MUST goes before any modification (except for prepared statements,
+        /// since it substitute parameters and w/o them query does not contains
+        /// parameters), to keep query as-is in query_log and server log.
+        query_for_logging = prepareQueryForLogging(query, context);
+        logQuery(query_for_logging, context, internal);
 
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)
         {
             ApplyWithGlobalVisitor().visit(ast);
-            ast_modified = true;
-        }
-
-        if (ast_modified)
             query = serializeAST(*ast);
-
-        query_for_logging = prepareQueryForLogging(query, context);
-
-        logQuery(query_for_logging, context, internal);
+        }
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
@@ -804,8 +802,7 @@ void executeQuery(
             InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context, nullptr);
             copyData(in, *streams.out);
         }
-
-        if (streams.in)
+        else if (streams.in)
         {
             /// FIXME: try to prettify this cast using `as<>()`
             const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
@@ -847,8 +844,7 @@ void executeQuery(
 
             copyData(*streams.in, *out, [](){ return false; }, [&out](const Block &) { out->flush(); });
         }
-
-        if (pipeline.initialized())
+        else if (pipeline.initialized())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 

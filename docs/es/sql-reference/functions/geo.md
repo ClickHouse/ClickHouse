@@ -209,10 +209,10 @@ Devuelve una matriz de cadenas codificadas por geohash de precisión dada que ca
 
 **Valores de entrada**
 
--   longitude\_min - longitud mínima, valor flotante en el rango `[-180°, 180°]`
--   latitude\_min - latitud mínima, valor flotante en el rango `[-90°, 90°]`
--   longitude\_max - longitud máxima, valor flotante en el rango `[-180°, 180°]`
--   latitude\_max - latitud máxima, valor flotante en el rango `[-90°, 90°]`
+-   longitude_min - longitud mínima, valor flotante en el rango `[-180°, 180°]`
+-   latitude_min - latitud mínima, valor flotante en el rango `[-90°, 90°]`
+-   longitude_max - longitud máxima, valor flotante en el rango `[-180°, 180°]`
+-   latitude_max - latitud máxima, valor flotante en el rango `[-90°, 90°]`
 -   precisión - precisión del geohash, `UInt8` en el rango `[1, 12]`
 
 Tenga en cuenta que todos los parámetros de coordenadas deben ser del mismo tipo: `Float32` o `Float64`.

@@ -209,10 +209,10 @@ Renvoie un tableau de chaînes codées geohash de précision donnée qui tombent
 
 **Les valeurs d'entrée**
 
--   longitude\_min-longitude min, valeur flottante dans la plage `[-180°, 180°]`
--   latitude\_min-latitude min, valeur flottante dans la plage `[-90°, 90°]`
--   longitude\_max-longitude maximale, valeur flottante dans la plage `[-180°, 180°]`
--   latitude\_max-latitude maximale, valeur flottante dans la plage `[-90°, 90°]`
+-   longitude_min-longitude min, valeur flottante dans la plage `[-180°, 180°]`
+-   latitude_min-latitude min, valeur flottante dans la plage `[-90°, 90°]`
+-   longitude_max-longitude maximale, valeur flottante dans la plage `[-180°, 180°]`
+-   latitude_max-latitude maximale, valeur flottante dans la plage `[-90°, 90°]`
 -   précision - geohash précision, `UInt8` dans la gamme `[1, 12]`
 
 Veuillez noter que tous les paramètres de coordonnées doit être du même type: soit `Float32` ou `Float64`.

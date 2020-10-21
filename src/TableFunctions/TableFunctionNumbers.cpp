@@ -7,6 +7,7 @@
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypesNumber.h>
 #include "registerTableFunctions.h"
 
 
@@ -18,8 +19,16 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+
 template <bool multithreaded>
-StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+ColumnsDescription TableFunctionNumbers<multithreaded>::getActualTableStructure(const Context & /*context*/) const
+{
+    /// NOTE: https://bugs.llvm.org/show_bug.cgi?id=47418
+    return ColumnsDescription{{{"number", std::make_shared<DataTypeUInt64>()}}};
+}
+
+template <bool multithreaded>
+StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     if (const auto * function = ast_function->as<ASTFunction>())
     {
@@ -27,7 +36,6 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
 
         if (arguments.size() != 1 && arguments.size() != 2)
             throw Exception("Table function '" + getName() + "' requires 'length' or 'offset, length'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 
         UInt64 offset = arguments.size() == 2 ? evaluateArgument(context, arguments[0]) : 0;
         UInt64 length = arguments.size() == 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
