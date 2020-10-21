@@ -373,9 +373,9 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     return arrays;
 }
 
-ColumnPtr FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const
+ColumnPtr FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    const auto * return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
+    const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
 
     if (!return_type_array)
         throw Exception{"Return type for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
@@ -383,7 +383,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & arguments
     const auto & nested_return_type = return_type_array->getNestedType();
 
     if (typeid_cast<const DataTypeNothing *>(nested_return_type.get()))
-        return return_type->createColumnConstWithDefaultValue(input_rows_count);
+        return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
     auto num_args = arguments.size();
     DataTypes data_types;
@@ -393,7 +393,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & arguments
 
     auto return_type_with_nulls = getMostSubtype(data_types, true, true);
 
-    auto casted_columns = castColumns(arguments, return_type, return_type_with_nulls);
+    auto casted_columns = castColumns(arguments, result_type, return_type_with_nulls);
 
     UnpackedArrays arrays = prepareArrays(casted_columns.casted, casted_columns.initial);
 
@@ -428,7 +428,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & arguments
         else
         {
             column = assert_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType()->createColumn();
-            result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column)), return_type);
+            result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column)), result_type);
         }
     }
 
