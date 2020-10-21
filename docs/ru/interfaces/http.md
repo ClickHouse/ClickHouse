@@ -74,7 +74,7 @@ ECT 1
 
 Можно попросить любой другой формат - с помощью секции FORMAT запроса.
 
-Кроме того, вы можете использовать параметр URL-адреса default_format или заголовок X-ClickHouse-Format, чтобы указать формат по умолчанию, отличный от TabSeparated.
+Кроме того, вы можете использовать параметр URL-адреса `default_format` или заголовок `X-ClickHouse-Format`, чтобы указать формат по умолчанию, отличный от `TabSeparated`.
 
 ``` bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
