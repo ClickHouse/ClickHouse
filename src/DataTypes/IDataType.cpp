@@ -193,7 +193,6 @@ String IDataType::getFileNameForStream(const NameAndTypePair & column, const IDa
             else if (elem.type == Substream::ArraySizes)
             {
                 size_t nested_level = column.type->getNestedLevel();
-
                 for (size_t i = 0; i < nested_level - current_nested_level; ++i)
                 {
                     if (subcolumn_parts.empty())
@@ -209,26 +208,6 @@ String IDataType::getFileNameForStream(const NameAndTypePair & column, const IDa
             stream_name += getDelimiterForSubcolumnPart(subcolumn_part) + escapeForFileName(subcolumn_part);
     }
 
-    return getNameForSubstreamPath(std::move(stream_name), path, "%2E");
-}
-
-String IDataType::getFileNameForStream(const String & column_name, const IDataType::SubstreamPath & path)
-{
-    /// Sizes of arrays (elements of Nested type) are shared (all reside in single file).
-    String nested_table_name = Nested::extractTableName(column_name);
-
-    bool is_sizes_of_nested_type =
-        path.size() == 1    /// Nested structure may have arrays as nested elements (so effectively we have multidimensional arrays).
-                            /// Sizes of arrays are shared only at first level.
-        && path[0].type == IDataType::Substream::ArraySizes
-        && nested_table_name != column_name;
-
-    auto stream_name = escapeForFileName(is_sizes_of_nested_type ? nested_table_name : column_name);
-
-    /// For compatibility reasons, we use %2E instead of dot.
-    /// Because nested data may be represented not by Array of Tuple,
-    ///  but by separate Array columns with names in a form of a.b,
-    ///  and name is encoded as a whole.
     return getNameForSubstreamPath(std::move(stream_name), path, "%2E");
 }
 

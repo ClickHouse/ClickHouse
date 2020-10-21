@@ -14,7 +14,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -87,13 +87,11 @@ private:
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, size_t max_read_buffer_size_)
-            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path)))),
-            compressed(*plain)
+            : compressed(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path))))
         {
         }
 
-        std::unique_ptr<ReadBuffer> plain;
-        CompressedReadBuffer compressed;
+        CompressedReadBufferFromFile compressed;
     };
 
     using FileStreams = std::map<String, std::unique_ptr<Stream>>;
@@ -231,10 +229,14 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type, IColumn & co
     {
         String stream_name = IDataType::getFileNameForStream(name_and_type, path);
 
-        if (!streams.count(stream_name))
-            streams[stream_name] = std::make_unique<Stream>(storage.disk, storage.files[stream_name].data_file_path, max_read_buffer_size);
+        auto & stream = streams[stream_name];
+        if (!stream)
+            stream = std::make_unique<Stream>(storage.disk, storage.files[stream_name].data_file_path, max_read_buffer_size);
 
-        return &streams[stream_name]->compressed;
+        /// FIXME: avoid double reading of subcolumns
+        stream->compressed.seek(0, 0);
+
+        return &stream->compressed;
     };
 
     if (deserialize_states.count(name) == 0)
@@ -441,7 +443,8 @@ Pipe StorageTinyLog::read(
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
     return Pipe(std::make_shared<TinyLogSource>(
-        max_block_size, Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
+        max_block_size, metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names),
+        *this, context.getSettingsRef().max_read_buffer_size));
 }
 
 

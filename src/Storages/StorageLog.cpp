@@ -9,7 +9,7 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -45,7 +45,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
 }
-
 
 class LogSource final : public SourceWithProgress
 {
@@ -91,15 +90,13 @@ private:
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t max_read_buffer_size_)
-            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path)))),
-            compressed(*plain)
+            : compressed(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path))))
         {
             if (offset)
-                plain->seek(offset, SEEK_SET);
+                compressed.seek(offset, 0);
         }
 
-        std::unique_ptr<ReadBufferFromFileBase> plain;
-        CompressedReadBuffer compressed;
+        CompressedReadBufferFromFile compressed;
     };
 
     using FileStreams = std::map<String, Stream>;
@@ -251,7 +248,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, IColumn & column
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
 
-    auto create_string_getter = [&](bool stream_for_prefix)
+    auto create_stream_getter = [&](bool stream_for_prefix)
     {
         return [&, stream_for_prefix] (const IDataType::SubstreamPath & path) -> ReadBuffer *
         {
@@ -267,17 +264,21 @@ void LogSource::readData(const NameAndTypePair & name_and_type, IColumn & column
 
             auto & data_file_path = file_it->second.data_file_path;
             auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, max_read_buffer_size).first;
+
+            /// FIXME: avoid double reading of subcolumns
+            it->second.compressed.seek(0, 0);
+
             return &it->second.compressed;
         };
     };
 
     if (deserialize_states.count(name) == 0)
     {
-        settings.getter = create_string_getter(true);
+        settings.getter = create_stream_getter(true);
         type->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
     }
 
-    settings.getter = create_string_getter(false);
+    settings.getter = create_stream_getter(false);
     type->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name]);
 }
 
@@ -623,7 +624,7 @@ Pipe StorageLog::read(
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
     loadMarks();
 
-    NamesAndTypesList all_columns = Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names));
+    NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 

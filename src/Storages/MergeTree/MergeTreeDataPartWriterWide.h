@@ -25,22 +25,20 @@ public:
 
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
+    IDataType::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns);
 
 private:
     /// Write data of one column.
     /// Return how many marks were written and
     /// how many rows were written for last mark
     void writeColumn(
-        const String & name,
-        const IDataType & type,
+        const NameAndTypePair & name_and_type,
         const IColumn & column,
         WrittenOffsetColumns & offset_columns);
 
     /// Write single granule of one column (rows between 2 marks)
     size_t writeSingleGranule(
-        const String & name,
-        const IDataType & type,
+        const NameAndTypePair & name_and_type,
         const IColumn & column,
         WrittenOffsetColumns & offset_columns,
         IDataType::SerializeBinaryBulkStatePtr & serialization_state,
@@ -51,21 +49,18 @@ private:
 
     /// Write mark for column
     void writeSingleMark(
-        const String & name,
-        const IDataType & type,
+        const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
         size_t number_of_rows,
         DB::IDataType::SubstreamPath & path);
 
     void writeFinalMark(
-        const std::string & column_name,
-        const DataTypePtr column_type,
+        const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
         DB::IDataType::SubstreamPath & path);
 
     void addStreams(
-        const String & name,
-        const IDataType & type,
+        const NameAndTypePair & column,
         const ASTPtr & effective_codec_desc,
         size_t estimated_size);
 

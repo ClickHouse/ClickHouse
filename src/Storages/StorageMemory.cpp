@@ -32,7 +32,7 @@ public:
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot)
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names(std::move(column_names_))
+        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
         , current_it(first_)
         , num_blocks(num_blocks_)
     {
@@ -71,11 +71,17 @@ protected:
         {
             const Block & src = *current_it;
             Columns columns;
-            columns.reserve(column_names.size());
+            columns.reserve(columns.size());
 
             /// Add only required columns to `res`.
-            for (const auto & name : column_names)
-                columns.emplace_back(src.getByName(name).column);
+            for (const auto & elem : column_names_and_types)
+            {
+                auto current_column = src.getByName(elem.getStorageName()).column;
+                if (elem.isSubcolumn())
+                    columns.emplace_back(elem.getStorageType()->getSubcolumn(elem.getSubcolumnName(), *current_column->assumeMutable()));
+                else
+                    columns.emplace_back(std::move(current_column));
+            }
 
             ++current_block_idx;
 
@@ -88,7 +94,7 @@ protected:
         }
     }
 private:
-    Names column_names;
+    NamesAndTypesList column_names_and_types;
     BlocksList::iterator current_it;
     size_t current_block_idx = 0;
     size_t num_blocks;
