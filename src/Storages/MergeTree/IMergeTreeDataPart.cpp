@@ -760,6 +760,16 @@ void IMergeTreeDataPart::loadColumns(bool require)
         column_name_to_position.emplace(column.name, pos++);
 }
 
+bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
+{
+    /// `IMergeTreeDataPart::volume` describes space where current part belongs, and holds
+    /// `SingleDiskVolume` object which does not contain up-to-date settings of corresponding volume.
+    /// Therefore we shall obtain volume from storage policy.
+    auto volume_ptr = storage_policy->getVolume(storage_policy->getVolumeIndexByDisk(volume->getDisk()));
+
+    return !volume_ptr->areMergesAvoided();
+}
+
 UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from)
 {
     if (disk_->isFile(from))
