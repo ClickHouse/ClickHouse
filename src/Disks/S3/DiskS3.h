@@ -21,6 +21,8 @@ class DiskS3 : public IDisk
 public:
     friend class DiskS3Reservation;
 
+    class AwsS3KeyKeeper;
+
     DiskS3(
         String name_,
         std::shared_ptr<Aws::S3::S3Client> client_,
@@ -110,6 +112,10 @@ public:
 
 private:
     bool tryReserve(UInt64 bytes);
+
+    void removeMeta(const String & path, AwsS3KeyKeeper & keys);
+    void removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys);
+    void removeAws(const AwsS3KeyKeeper & keys);
 
 private:
     const String name;

@@ -83,7 +83,7 @@ void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, 
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
     std::unique_lock lock(mutex);
-    not_in_use = cleenupDetachedTables();
+    not_in_use = cleanupDetachedTables();
     auto table_id = table->getStorageID();
     assertDetachedTableNotInUse(table_id.uuid);
     DatabaseWithDictionaries::attachTableUnlocked(name, table, lock);
@@ -97,7 +97,7 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
     auto table = DatabaseWithDictionaries::detachTableUnlocked(name, lock);
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
-    not_in_use = cleenupDetachedTables();
+    not_in_use = cleanupDetachedTables();
     return table;
 }
 
@@ -115,6 +115,10 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool 
         table_name_to_path.erase(table_name);
     }
     tryRemoveSymlink(table_name);
+    /// Remove the inner table (if any) to avoid deadlock
+    /// (due to attemp to execute DROP from the worker thread)
+    if (auto * mv = dynamic_cast<StorageMaterializedView *>(table.get()))
+        mv->dropInnerTable(no_delay);
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
@@ -263,7 +267,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         if (query.database != database_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
                             database_name, query.database);
-        not_in_use = cleenupDetachedTables();
+        not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);
         attachTableUnlocked(query.table, table, lock);   /// Should never throw
@@ -306,7 +310,7 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
               ", because it was detached but still used by some query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
-DatabaseAtomic::DetachedTables DatabaseAtomic::cleenupDetachedTables()
+DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
 {
     DetachedTables not_in_use;
     auto it = detached_tables.begin();
@@ -324,14 +328,14 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleenupDetachedTables()
     return not_in_use;
 }
 
-void DatabaseAtomic::assertCanBeDetached(bool cleenup)
+void DatabaseAtomic::assertCanBeDetached(bool cleanup)
 {
-    if (cleenup)
+    if (cleanup)
     {
         DetachedTables not_in_use;
         {
             std::lock_guard lock(mutex);
-            not_in_use = cleenupDetachedTables();
+            not_in_use = cleanupDetachedTables();
         }
     }
     std::lock_guard lock(mutex);
@@ -499,6 +503,28 @@ void DatabaseAtomic::renameDictionaryInMemoryUnlocked(const StorageID & old_name
         return;
     const auto & dict = dynamic_cast<const IDictionaryBase &>(*result.object);
     dict.updateDictionaryName(new_name);
+}
+void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
+{
+    {
+        std::lock_guard lock{mutex};
+        if (detached_tables.count(uuid) == 0)
+            return;
+    }
+
+    /// Table is in use while its shared_ptr counter is greater than 1.
+    /// We cannot trigger condvar on shared_ptr destruction, so it's busy wait.
+    while (true)
+    {
+        DetachedTables not_in_use;
+        {
+            std::lock_guard lock{mutex};
+            not_in_use = cleanupDetachedTables();
+            if (detached_tables.count(uuid) == 0)
+                return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 }
 
 }
