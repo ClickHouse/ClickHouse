@@ -44,6 +44,21 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_)
         names[i] = toString(i + 1);
 }
 
+static void checkTupleNames(const Strings & names, std::function<void(const char *, int)> on_error)
+{
+    std::unordered_set<String> names_set;
+    for (const auto & name : names)
+    {
+        if (name.empty())
+            on_error("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+        if (isNumericASCII(name[0]))
+            on_error("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
+
+        if (!names_set.insert(name).second)
+            on_error("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
+    }
+}
 
 DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
     : elems(elems_), names(names_), have_explicit_names(true)
@@ -52,20 +67,15 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
     if (names.size() != size)
         throw Exception("Wrong number of names passed to constructor of DataTypeTuple", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    std::unordered_set<String> names_set;
-    for (size_t i = 0; i < size; ++i)
-    {
-        if (names[i].empty())
-            throw Exception("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
-
-        if (isNumericASCII(names[i][0]))
-            throw Exception("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
-
-        if (!names_set.insert(names[i]).second)
-            throw Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
-    }
+    checkTupleNames(names, [](const char * msg, int code) { throw Exception(msg, code); });
 }
 
+bool DataTypeTuple::canBeCreatedWithNames(const Strings & names)
+{
+    bool has_error = false;
+    checkTupleNames(names, [&](const char *, int) { has_error = true; });
+    return !has_error;
+}
 
 std::string DataTypeTuple::doGetName() const
 {

@@ -1559,6 +1559,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
+        argument.name = argument_names[i];
         argument.column = child.column;
         argument.type = child.result_type;
 
