@@ -160,7 +160,7 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
-    std::unordered_map<String, const NameAndTypePair *> self_columns;
+    std::unordered_map<std::string_view, const NameAndTypePair *> self_columns;
 
     for (const auto & column : *this)
         self_columns[column.name] = &column;

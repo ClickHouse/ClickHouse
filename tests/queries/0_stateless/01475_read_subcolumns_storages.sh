@@ -8,9 +8,10 @@ set -e
 create_query="CREATE TABLE subcolumns(n Nullable(UInt32), a1 Array(UInt32),\
     a2 Array(Array(Array(UInt32))), a3 Array(Nullable(UInt32)), t Tuple(s String, v UInt32))"
 
-declare -a ENGINES=("Log" "StripeLog" "TinyLog" "Memory" \
-    "MergeTree ORDER BY tuple() SETTINGS min_bytes_for_compact_part='10M'"
-    "MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part='10M'"
+# "StripeLog"
+declare -a ENGINES=("Log" "TinyLog" "Memory" \
+    "MergeTree ORDER BY tuple() SETTINGS min_bytes_for_compact_part='10M'" \
+    "MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part='10M'" \
     "MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0")
 
 for engine in "${ENGINES[@]}"; do

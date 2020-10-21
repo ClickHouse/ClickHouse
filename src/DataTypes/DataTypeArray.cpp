@@ -149,9 +149,9 @@ namespace
         offset_values.resize(i);
     }
 
-    MutableColumnPtr getArraySizesPositionIndependent(ColumnArray & column_array)
+    MutableColumnPtr getArraySizesPositionIndependent(const ColumnArray & column_array)
     {
-        ColumnArray::Offsets & offset_values = column_array.getOffsets();
+        const auto & offset_values = column_array.getOffsets();
         MutableColumnPtr new_offsets = column_array.getOffsetsColumn().cloneEmpty();
 
         if (offset_values.empty())

@@ -72,15 +72,15 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
 ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
-    const String & column_name, const IDataType & type, std::unordered_set<String> * processed_substreams) const
+    const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const
 {
     ColumnSize size;
     if (checksums.empty())
         return size;
 
-    type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
-        String file_name = IDataType::getFileNameForStream(column_name, substream_path);
+        String file_name = IDataType::getFileNameForStream(column, substream_path);
 
         if (processed_substreams && !processed_substreams->insert(file_name).second)
             return;
@@ -158,7 +158,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                 IDataType::SubstreamPath stream_path;
                 name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
                 {
-                    String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
+                    String file_name = IDataType::getFileNameForStream(name_type, substream_path);
                     String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
                     String bin_file_name = file_name + ".bin";
                     if (!checksums.files.count(mrk_file_name))
@@ -180,7 +180,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
         {
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
-                auto file_path = path + IDataType::getFileNameForStream(name_type.name, substream_path) + index_granularity_info.marks_file_extension;
+                auto file_path = path + IDataType::getFileNameForStream(name_type, substream_path) + index_granularity_info.marks_file_extension;
 
                 /// Missing file is Ok for case when new column was added.
                 if (volume->getDisk()->exists(file_path))
@@ -226,7 +226,7 @@ String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & colum
     column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         if (filename.empty())
-            filename = IDataType::getFileNameForStream(column.name, substream_path);
+            filename = IDataType::getFileNameForStream(column, substream_path);
     });
     return filename;
 }
@@ -236,7 +236,7 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
     std::unordered_set<String> processed_substreams;
     for (const NameAndTypePair & column : columns)
     {
-        ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
+        ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
         each_columns_size[column.name] = size;
         total_size.add(size);
 

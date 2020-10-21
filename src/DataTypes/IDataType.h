@@ -455,7 +455,6 @@ public:
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
-    static String getFileNameForStream(const String & column_name, const SubstreamPath & path);
     static String getSubcolumnNameForStream(String stream_name, const SubstreamPath & path);
 
     /// Substream path supports special compression methods like codec Delta.
