@@ -116,7 +116,7 @@ private:
     /// Function that executes in background scheduling pool
     void jobExecutingTask();
     /// Recalculate timeouts when we have to check for a new job
-    void scheduleTask(bool job_done_or_has_job_to_do);
+    void scheduleTask(bool job_done, bool with_backoff=false);
     /// Return random add for sleep in case of error
     double getSleepRandomAdd();
 };

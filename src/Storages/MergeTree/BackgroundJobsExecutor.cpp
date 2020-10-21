@@ -35,9 +35,9 @@ double IBackgroundJobExecutor::getSleepRandomAdd()
     return std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 }
 
-void IBackgroundJobExecutor::scheduleTask(bool job_done_or_has_job_to_do)
+void IBackgroundJobExecutor::scheduleTask(bool job_done, bool with_backoff)
 {
-    if (job_done_or_has_job_to_do)
+    if (job_done)
     {
         no_work_done_count = 0;
         /// We have background jobs, schedule task as soon as possible
@@ -46,14 +46,22 @@ void IBackgroundJobExecutor::scheduleTask(bool job_done_or_has_job_to_do)
     }
     else
     {
-        auto no_work_done_times = no_work_done_count.fetch_add(1, std::memory_order_relaxed);
+        size_t next_time_to_execute;
+        if (with_backoff)
+        {
+            auto no_work_done_times = no_work_done_count.fetch_add(1, std::memory_order_relaxed);
 
-        auto next_time_to_execute = 1000 * (std::min(
-                sleep_settings.task_sleep_seconds_when_no_work_max,
-                sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
-            + getSleepRandomAdd());
+            next_time_to_execute = 1000 * (std::min(
+                    sleep_settings.task_sleep_seconds_when_no_work_max,
+                    sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
+                + getSleepRandomAdd());
+        }
+        else
+        {
+            next_time_to_execute = 1000 * sleep_settings.thread_sleep_seconds_if_nothing_to_do;
+        }
 
-         scheduling_task->scheduleAfter(next_time_to_execute, false);
+        scheduling_task->scheduleAfter(next_time_to_execute, false);
     }
 }
 
@@ -105,7 +113,7 @@ try
                         scheduleTask(false);
                     }
                 });
-                /// We've scheduled task in then background pool and when it will finish we will be triggered again. But this task can be
+                /// We've scheduled task in the background pool and when it will finish we will be triggered again. But this task can be
                 /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselfs here.
                 scheduleTask(true);
             }
@@ -117,9 +125,9 @@ try
                 scheduleTask(false);
             }
         }
-        else /// Pool is full and we have some work to do, let's schedule our task as fast as possible
+        else /// Pool is full and we have some work to do
         {
-            scheduleTask(true);
+            scheduleTask(false, /* with_backoff = */ false);
         }
     }
     else /// Nothing to do, no jobs
