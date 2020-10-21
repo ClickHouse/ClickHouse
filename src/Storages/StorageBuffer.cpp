@@ -239,6 +239,7 @@ Pipe StorageBuffer::read(
         }
 
         pipe_from_dst.addTableLock(destination_lock);
+        pipe_from_dst.addStorageHolder(destination);
     }
 
     Pipe pipe_from_buffers;
