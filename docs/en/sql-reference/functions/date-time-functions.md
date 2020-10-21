@@ -370,7 +370,7 @@ Alias: `dateTrunc`.
 
 **Returned value**
 
--   Value, truncated to the specified precision.
+-   Value, truncated to the specified part of date.
 
 Type: [Datetime](../../sql-reference/data-types/datetime.md).
 
