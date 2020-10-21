@@ -645,7 +645,8 @@ add_executable(
   ${BORINGSSL_SOURCE_DIR}/tool/transport_common.cc
 )
 
-target_link_libraries(bssl ssl crypto)
+target_link_libraries(ssl crypto)
+target_link_libraries(bssl ssl)
 
 if(NOT WIN32 AND NOT ANDROID)
   target_link_libraries(crypto pthread)
