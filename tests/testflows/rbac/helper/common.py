@@ -1,5 +1,6 @@
 import uuid
 from multiprocessing.dummy import Pool
+from testflows.core.name import basename, parentname
 from contextlib import contextmanager
 
 from testflows.core import *
@@ -52,7 +53,11 @@ def permutations(table_count=1):
     return [*range((1 << table_count)-1)]
 
 def getuid():
-    return str(uuid.uuid1()).replace('-', '_')
+    if "=" in basename(current().name):
+        testname = f"{basename(parentname(current().name)).replace(' ', '_').replace(',','')}"
+    else:
+        testname = f"{basename(current().name).replace(' ', '_').replace(',','')}"
+    return testname + "_" + str(uuid.uuid1()).replace('-', '_')
 
 @contextmanager
 def table(node, name, table_type_name="MergeTree"):
