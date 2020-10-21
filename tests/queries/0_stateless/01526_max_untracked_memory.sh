@@ -8,7 +8,6 @@ query="select randomPrintableASCII(number) from numbers(1000)"
 # (but actually even more)
 min_trace_entries=2
 
-#
 # TCP
 
 # do not use _, they should be escaped for LIKE
@@ -18,9 +17,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 query_id_tcp="$(${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT query_id FROM system.query_log WHERE query LIKE '%$query_id_tcp_prefix%'")"
 ${CLICKHOUSE_CLIENT} -q "SELECT count()>=$min_trace_entries FROM system.trace_log WHERE query_id = '$query_id_tcp' AND abs(size) < 4e6 AND event_time >= now() - interval 1 hour"
 
-#
 # HTTP
-#
 
 # query_id cannot be longer then 28 bytes
 query_id_http="01526_http_${RANDOM}_$$"
