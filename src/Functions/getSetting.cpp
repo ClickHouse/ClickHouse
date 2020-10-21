@@ -50,9 +50,9 @@ public:
         return type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        block[result].column = block[result].type->createColumnConst(input_rows_count, value);
+        return result_type->createColumnConst(input_rows_count, value);
     }
 
 private:

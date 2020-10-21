@@ -65,13 +65,12 @@ public:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         using SourceColumnType = typename SourceDataType::ColumnType;
         using ResultColumnType = typename ResultDataType::ColumnType;
 
-        const auto & src = block[arguments[0]];
-        auto & res = block[result];
+        const auto & src = arguments[0];
         const auto & col = *src.column;
 
         const SourceColumnType * source_col_typed = checkAndGetColumn<SourceColumnType>(col);
@@ -80,16 +79,16 @@ public:
                     + std::string(SourceDataType::family_name),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        res.column = res.type->createColumn();
+        auto res_column = result_type->createColumn();
 
         if (input_rows_count == 0)
-            return;
+            return res_column;
 
-        auto & result_data = assert_cast<ResultColumnType &>(res.column->assumeMutableRef()).getData();
+        auto & result_data = assert_cast<ResultColumnType &>(res_column->assumeMutableRef()).getData();
         result_data.reserve(source_col_typed->size());
         const auto & source_data = source_col_typed->getData();
 
-        const auto scale_diff = getScaleDiff(*checkAndGetDataType<SourceDataType>(src.type.get()), *checkAndGetDataType<ResultDataType>(res.type.get()));
+        const auto scale_diff = getScaleDiff(*checkAndGetDataType<SourceDataType>(src.type.get()), *checkAndGetDataType<ResultDataType>(result_type.get()));
         if (scale_diff == 0)
         {
             static_assert(sizeof(typename SourceColumnType::Container::value_type) == sizeof(typename ResultColumnType::Container::value_type));
@@ -114,6 +113,8 @@ public:
             for (const auto & v : source_data)
                 result_data.push_back(static_cast<Int64>(toDestValue(v) / scale_multiplier));
         }
+
+        return res_column;
     }
 
 private:

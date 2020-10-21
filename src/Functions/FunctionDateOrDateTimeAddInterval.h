@@ -305,7 +305,7 @@ private:
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeAddIntervalImpl
 {
-    static void execute(Transform transform, ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result)
+    static ColumnPtr execute(Transform transform, ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
     {
         using FromValueType = typename FromDataType::FieldType;
         using FromColumnType = typename FromDataType::ColumnType;
@@ -313,16 +313,16 @@ struct DateTimeAddIntervalImpl
 
         auto op = Adder<Transform>{std::move(transform)};
 
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
 
-        const ColumnPtr source_col = block[arguments[0]].column;
+        const ColumnPtr source_col = arguments[0].column;
 
-        auto result_col = block[result].type->createColumn();
+        auto result_col = result_type->createColumn();
         auto col_to = assert_cast<ToColumnType *>(result_col.get());
 
         if (const auto * sources = checkAndGetColumn<FromColumnType>(source_col.get()))
         {
-            const IColumn & delta_column = *block[arguments[1]].column;
+            const IColumn & delta_column = *arguments[1].column;
 
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
                 op.vectorConstant(sources->getData(), col_to->getData(), delta_const_column->getInt(0), time_zone);
@@ -334,16 +334,16 @@ struct DateTimeAddIntervalImpl
             op.constantVector(
                 sources_const->template getValue<FromValueType>(),
                 col_to->getData(),
-                *block[arguments[1]].column, time_zone);
+                *arguments[1].column, time_zone);
         }
         else
         {
-            throw Exception("Illegal column " + block[arguments[0]].column->getName()
+            throw Exception("Illegal column " + arguments[0].column->getName()
                 + " of first argument of function " + Transform::name,
                 ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        block[result].column = std::move(result_col);
+        return result_col;
     }
 };
 
@@ -463,28 +463,28 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
-        const IDataType * from_type = block[arguments[0]].type.get();
+        const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
 
         if (which.isDate())
         {
-            DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(
-                Transform{}, block, arguments, result);
+            return DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(
+                Transform{}, arguments, result_type);
         }
         else if (which.isDateTime())
         {
-            DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
-                Transform{}, block, arguments, result);
+            return DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
+                Transform{}, arguments, result_type);
         }
         else if (const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type))
         {
-            DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
-                Transform{datetime64_type->getScale()}, block, arguments, result);
+            return DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
+                Transform{datetime64_type->getScale()}, arguments, result_type);
         }
         else
-            throw Exception("Illegal type " + block[arguments[0]].type->getName() + " of first argument of function " + getName(),
+            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
