@@ -621,7 +621,10 @@ add_library(
   ${BORINGSSL_SOURCE_DIR}/ssl/tls_record.cc
 
   ${BORINGSSL_SOURCE_DIR}/decrepit/ssl/ssl_decrepit.c
+<<<<<<< HEAD
   ${BORINGSSL_SOURCE_DIR}/decrepit/cfb/cfb.c
+=======
+>>>>>>> 8227564950a431d3425887ae0f860883d11b3d0f
 )
 
 add_executable(
