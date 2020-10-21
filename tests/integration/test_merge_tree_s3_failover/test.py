@@ -45,7 +45,10 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("node",
-                             main_configs=["configs/config.d/log_conf.xml", "configs/config.d/storage_conf.xml"],
+                             main_configs=["configs/config.d/log_conf.xml",
+                                           "configs/config.d/storage_conf.xml",
+                                           "configs/config.d/instant_moves.xml",
+                                           "configs/config.d/part_log.xml"],
                              with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
@@ -115,3 +118,60 @@ def test_write_failover(cluster, min_bytes_for_wide_part, request_count):
 
             assert node.query("CHECK TABLE s3_failover_test") == '1\n'
             assert node.query("SELECT * FROM s3_failover_test FORMAT Values") == data
+
+
+# Check that second data part move is ended successfully if first attempt was failed.
+def test_move_failover(cluster):
+    node = cluster.instances["node"]
+
+    node.query(
+        """
+        CREATE TABLE s3_failover_test (
+            dt DateTime,
+            id Int64,
+            data String
+        ) ENGINE=MergeTree()
+        ORDER BY id
+        TTL dt + INTERVAL 3 SECOND TO VOLUME 'external'
+        SETTINGS storage_policy='s3_cold'
+        """
+    )
+
+    # Fail a request to S3 to break first TTL move.
+    fail_request(cluster, 1)
+
+    node.query("INSERT INTO s3_failover_test VALUES (now() - 2, 0, 'data'), (now() - 2, 1, 'data')")
+
+    # Wait for part move to S3.
+    max_attempts = 10
+    for attempt in range(max_attempts + 1):
+        disk = node.query("SELECT disk_name FROM system.parts WHERE table='s3_failover_test' LIMIT 1")
+        if disk != "s3\n":
+            if attempt == max_attempts:
+                assert disk == "s3\n", "Expected move to S3 while part still on disk " + disk
+            else:
+                time.sleep(1)
+        else:
+            break
+
+    # Ensure part_log is created.
+    node.query("SYSTEM FLUSH LOGS")
+
+    # There should be 2 attempts to move part.
+    assert node.query("""
+        SELECT count(*) FROM system.part_log 
+        WHERE event_type='MovePart' AND table='s3_failover_test'
+        """) == '2\n'
+
+    # First attempt should be failed with expected error.
+    exception = node.query("""
+        SELECT exception FROM system.part_log 
+        WHERE event_type='MovePart' AND table='s3_failover_test' AND notEmpty(exception)
+        ORDER BY event_time
+        LIMIT 1
+        """)
+    assert exception.find("Expected Error") != -1, exception
+
+    # Ensure data is not corrupted.
+    assert node.query("CHECK TABLE s3_failover_test") == '1\n'
+    assert node.query("SELECT id,data FROM s3_failover_test FORMAT Values") == "(0,'data'),(1,'data')"

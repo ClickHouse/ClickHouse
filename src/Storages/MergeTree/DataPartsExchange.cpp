@@ -311,7 +311,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     NativeBlockInputStream block_in(in, 0);
     auto block = block_in.read();
 
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, reservation->getDisk());
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, reservation->getDisk(), 0);
     MergeTreeData::MutableDataPartPtr new_data_part =
         std::make_shared<MergeTreeDataPartInMemory>(data, part_name, volume);
 
@@ -408,7 +408,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     assertEOF(in);
 
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);

@@ -66,10 +66,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
-        const IColumn & src = *block[arguments[0]].column;
-        MutableColumnPtr dst = block[result].type->createColumn();
+        const IColumn & src = *arguments[0].column;
+        MutableColumnPtr dst = result_type->createColumn();
 
         if (ColumnFixedString * dst_concrete = typeid_cast<ColumnFixedString *>(dst.get()))
         {
@@ -81,7 +81,7 @@ public:
         else
             throw Exception("Illegal column " + src.getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block[result].column = std::move(dst);
+        return dst;
     }
 };
 
