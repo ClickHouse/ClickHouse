@@ -156,8 +156,13 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 ### Поддержка Kerberos {#kafka-kerberos-support}
 
+<<<<<<< HEAD
 Чтобы начать работу с Kafka с поддержкой Kerberos, добавьте дочерний элемент `security_protocol` со значением `sasl_plaintext`. Этого будет достаточно, если получен тикет на получение тикета (ticket-granting ticket) Kerberos и он кэшируется средствами ОС.
 ClickHouse может поддерживать учетные данные Kerberos с помощью файла keytab. Рассмотрим дочерние элементы `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` and `sasl.kerberos.kinit.cmd`.
+=======
+Чтобы начать работу с Kafka с поддержкой Kerberos, добавьте дочерний элемент `security_protocol` со значением `sasl_plaintext`. Этого будет достаточно, если получен билет на получение билета (ticket-granting ticket) Kerberos и он кэшируется средствами ОС.
+ClickHouse может поддерживать учетные данные Kerberos с помощью файла keytab. Рассмотрим дочерние элементы `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` и `sasl.kerberos.kinit.cmd`.
+>>>>>>> 4f7e48705b917afe2a8da2f2c5a0ea91ed7f9f4d
 
 Пример:
 

@@ -74,7 +74,7 @@ ECT 1
 
 Можно попросить любой другой формат - с помощью секции FORMAT запроса.
 
-Кроме того, вы можете использовать параметр URL-адреса default_format или заголовок X-ClickHouse-Format, чтобы указать формат по умолчанию, отличный от TabSeparated.
+Кроме того, вы можете использовать параметр URL-адреса `default_format` или заголовок `X-ClickHouse-Format`, чтобы указать формат по умолчанию, отличный от `TabSeparated`.
 
 ``` bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -166,7 +166,7 @@ $ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gz
 !!! note "Примечание"
     Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
 
-Вы можете использовать параметр URL database или заголовок X-ClickHouse-Database, чтобы указать БД по умолчанию.
+Вы можете использовать параметр URL `database` или заголовок `X-ClickHouse-Database`, чтобы указать БД по умолчанию.
 
 ``` bash
 $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?database=system' --data-binary @-
