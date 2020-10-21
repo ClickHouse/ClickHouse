@@ -49,45 +49,37 @@ public:
         return getLeastSupertype({removeNullable(arguments[0]), arguments[1]});
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Always null.
-        if (columns[arguments[0]].type->onlyNull())
-        {
-            columns[result].column = columns[arguments[1]].column;
-            return;
-        }
+        if (arguments[0].type->onlyNull())
+            return arguments[1].column;
 
         /// Could not contain nulls, so nullIf makes no sense.
-        if (!columns[arguments[0]].type->isNullable())
-        {
-            columns[result].column = columns[arguments[0]].column;
-            return;
-        }
+        if (!arguments[0].type->isNullable())
+            return arguments[0].column;
 
         /// ifNull(col1, col2) == if(isNotNull(col1), assumeNotNull(col1), col2)
 
-        ColumnsWithTypeAndName temp_columns = columns;
+        ColumnsWithTypeAndName columns{arguments[0]};
 
-        size_t is_not_null_pos = temp_columns.size();
-        temp_columns.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});
-        size_t assume_not_null_pos = temp_columns.size();
-        temp_columns.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(columns[arguments[0]].type), ""});
+        auto is_not_null = FunctionFactory::instance().get("isNotNull", context)->build(columns);
+        auto is_not_null_type = std::make_shared<DataTypeUInt8>();
+        auto is_not_null_res = is_not_null->execute(columns, is_not_null_type, input_rows_count);
 
-        auto is_not_null = FunctionFactory::instance().get("isNotNull", context)->build(
-            {temp_columns[arguments[0]]});
+        auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context)->build(columns);
+        auto assume_not_null_type = removeNullable(arguments[0].type);
+        auto assume_nut_null_res = assume_not_null->execute(columns, assume_not_null_type, input_rows_count);
 
-        auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context)->build(
-            {temp_columns[arguments[0]]});
+        ColumnsWithTypeAndName if_columns
+        {
+                {is_not_null_res, is_not_null_type, ""},
+                {assume_nut_null_res, assume_not_null_type, ""},
+                arguments[1],
+        };
 
-        auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {temp_columns[is_not_null_pos], temp_columns[assume_not_null_pos], temp_columns[arguments[1]]}); //-V557
-
-        is_not_null->execute(temp_columns, {arguments[0]}, is_not_null_pos, input_rows_count);
-        assume_not_null->execute(temp_columns, {arguments[0]}, assume_not_null_pos, input_rows_count);
-        func_if->execute(temp_columns, {is_not_null_pos, assume_not_null_pos, arguments[1]}, result, input_rows_count);
-
-        columns[result].column = std::move(temp_columns[result].column);
+        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns); //-V557
+        return func_if->execute(if_columns, result_type, input_rows_count);
     }
 
 private:
