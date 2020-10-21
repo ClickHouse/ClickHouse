@@ -1249,7 +1249,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     auto it = parts.begin();
     parts_to_merge_ranges.push_back(it);
 
-    if (data_settings->do_not_merge_across_partitions_select_final)
+    if (settings.do_not_merge_across_partitions_select_final)
     {
         while (it != parts.end())
         {
@@ -1305,9 +1305,10 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             out_projection = createProjection(pipe, data);
 
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
-        /// then we won't postprocess this part
-        if (data_settings->do_not_merge_across_partitions_select_final &&
-            std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1)
+        /// with level > 0 then we won't postprocess this part
+        if (settings.do_not_merge_across_partitions_select_final &&
+            std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
+            parts_to_merge_ranges[range_index]->data_part->info.level > 0)
         {
             partition_pipes.emplace_back(std::move(pipe));
             continue;
@@ -1333,7 +1334,8 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         {
             switch (data.merging_params.mode)
             {
-                case MergeTreeData::MergingParams::Ordinary: {
+                case MergeTreeData::MergingParams::Ordinary:
+                {
                     return std::make_shared<MergingSortedTransform>(header, pipe.numOutputPorts(), sort_description, max_block_size);
                 }
 
@@ -1397,8 +1399,6 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             std::vector<OutputPorts::iterator> output_ports;
             processors.reserve(ports.size() + num_streams);
             output_ports.reserve(ports.size());
-
-            LOG_DEBUG(log, "Output ports size: {}", ports.size());
 
             for (auto & port : ports)
             {
