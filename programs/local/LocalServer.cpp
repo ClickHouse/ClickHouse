@@ -337,7 +337,7 @@ void LocalServer::processQueries()
 
     /// we can't mutate global context (due to possible races), so we can't reuse it safely as a query context
     /// so we need a copy here
-    auto query_context = Context(context);
+    auto query_context = Context(context.get());
 
     query_context->makeSessionContext();
     query_context->makeQueryContext();
