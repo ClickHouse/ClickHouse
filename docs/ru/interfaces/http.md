@@ -166,7 +166,7 @@ $ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gz
 !!! note "Примечание"
     Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
 
-Вы можете использовать параметр URL database или заголовок X-ClickHouse-Database, чтобы указать БД по умолчанию.
+Вы можете использовать параметр URL `database` или заголовок `X-ClickHouse-Database`, чтобы указать БД по умолчанию.
 
 ``` bash
 $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?database=system' --data-binary @-
