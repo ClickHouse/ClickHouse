@@ -341,19 +341,19 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## date_trunc {#date_trunc}
 
-Truncates date and time data to the specified precision.
+Truncates date and time data to the specified part of date.
 
 **Syntax** 
 
 ``` sql
-date_trunc(precision, value[, time_zone])
+date_trunc(unit, value[, timezone])
 ```
 
 Alias: `dateTrunc`. 
 
 **Parameters**
 
--   `precision` — Required precision. [String](../syntax.md#syntax-string-literal).
+-   `unit` — Part of date. [String](../syntax.md#syntax-string-literal).
     Possible values:
 
     - `second`
@@ -408,7 +408,7 @@ Result:
 
 -   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
-## now {#now}
+# now {#now}
 
 Returns the current date and time (at one of the moments of request execution). 
 
@@ -417,12 +417,12 @@ Function returns a constant, even if the request took a long time to complete.
 **Syntax** 
 
 ``` sql
-now()
+now([timezone])
 ```
 
 **Parameters**
 
-No parameters.
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -432,7 +432,7 @@ Type: [Datetime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
-Query:
+Query without timezone:
 
 ``` sql
 SELECT now();
@@ -442,8 +442,22 @@ Result:
 
 ``` text
 ┌───────────────now()─┐
-│ 2020-09-28 10:38:45 │
+│ 2020-10-17 07:42:09 │
 └─────────────────────┘
+```
+
+Query with the specified timezone:
+
+``` sql
+SELECT now('Europe/Moscow');
+```
+
+Result:
+
+``` text
+┌─now('Europe/Moscow')─┐
+│  2020-10-17 10:42:23 │
+└──────────────────────┘
 ```
 
 ## today {#today}

@@ -236,14 +236,14 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 **Синтаксис** 
 
 ``` sql
-date_trunc(datepart, value[, time_zone])
+date_trunc(unit, value[, timezone])
 ```
 
 Синоним: `dateTrunc`. 
 
 **Параметры**
 
--   `datepart` — Название части даты или времени. [String](../syntax.md#syntax-string-literal).
+-   `unit` — Название части даты или времени. [String](../syntax.md#syntax-string-literal).
     Возможные значения:
 
     - `second`
@@ -307,12 +307,12 @@ SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
 **Синтаксис** 
 
 ``` sql
-now()
+now([timezone])
 ```
 
 **Параметры**
 
-Нет параметров.
+-   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). [String](../../sql-reference/data-types/string.md)
 
 **Возвращаемое значение**
 
@@ -322,7 +322,7 @@ now()
 
 **Пример**
 
-Запрос:
+Запрос без указания часового пояса:
 
 ``` sql
 SELECT now();
@@ -332,8 +332,22 @@ SELECT now();
 
 ``` text
 ┌───────────────now()─┐
-│ 2020-09-28 10:38:45 │
+│ 2020-10-17 07:42:09 │
 └─────────────────────┘
+```
+
+Запрос с указанием часового пояса:
+
+``` sql
+SELECT now('Europe/Moscow');
+```
+
+Результат:
+
+``` text
+┌─now('Europe/Moscow')─┐
+│  2020-10-17 10:42:23 │
+└──────────────────────┘
 ```
 
 ## today {#today}
