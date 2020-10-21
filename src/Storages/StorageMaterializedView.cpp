@@ -124,6 +124,7 @@ Pipe StorageMaterializedView::read(
 
     Pipe pipe = storage->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     pipe.addTableLock(lock);
+    pipe.addStorageHolder(storage);
 
     return pipe;
 }
