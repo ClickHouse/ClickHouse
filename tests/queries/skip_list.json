@@ -18,7 +18,10 @@
         "00152_insert_different_granularity",
         "00151_replace_partition_with_different_granularity",
         "00157_cache_dictionary",
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01474_executable_dictionary" /// informational stderr from sanitizer at start
     ],
     "address-sanitizer": [
         "00281",
@@ -28,6 +31,8 @@
         "memory_profiler",
         "odbc_roundtrip",
         "01103_check_cpu_instructions_at_startup",
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"
     ],
     "ub-sanitizer": [
@@ -38,6 +43,8 @@
         "memory_profiler",
         "01103_check_cpu_instructions_at_startup",
         "00900_orc_load",
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"
     ],
     "memory-sanitizer": [
@@ -50,6 +57,8 @@
         "01086_odbc_roundtrip", /// can't pass because odbc libraries are not instrumented
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
         "01114_mysql_database_engine_segfault", /// it fails in _nss_files_parse_servent while using NSS from GLibc to authenticate (need to get rid of it)
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"
     ],
     "debug-build": [
