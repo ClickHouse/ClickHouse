@@ -335,15 +335,19 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
-    context->makeSessionContext();
-    context->makeQueryContext();
+    /// we can't mutate global context (due to possible races), so we can't reuse it safely as a query context
+    /// so we need a copy here
+    auto query_context = Context(context);
 
-    context->setUser("default", "", Poco::Net::SocketAddress{});
-    context->setCurrentQueryId("");
+    query_context->makeSessionContext();
+    query_context->makeQueryContext();
+
+    query_context->setUser("default", "", Poco::Net::SocketAddress{});
+    query_context->setCurrentQueryId("");
     applyCmdSettings();
 
     /// Use the same query_id (and thread group) for all queries
-    CurrentThread::QueryScope query_scope_holder(*context);
+    CurrentThread::QueryScope query_scope_holder(*query_context);
 
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;
@@ -362,7 +366,7 @@ void LocalServer::processQueries()
 
         try
         {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {});
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *query_context, {});
         }
         catch (...)
         {
