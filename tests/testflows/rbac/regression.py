@@ -7,6 +7,7 @@ append_path(sys.path, "..")
 
 from helpers.cluster import Cluster
 from helpers.argparser import argparser
+from rbac.requirements import SRS_006_ClickHouse_Role_Based_Access_Control
 
 issue_14091 = "https://github.com/ClickHouse/ClickHouse/issues/14091"
 issue_14149 = "https://github.com/ClickHouse/ClickHouse/issues/14149"
@@ -100,6 +101,9 @@ xflags = {
 @XFails(xfails)
 @XFlags(xflags)
 @Name("rbac")
+@Specifications(
+    SRS_006_ClickHouse_Role_Based_Access_Control
+)
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """RBAC regression.
     """

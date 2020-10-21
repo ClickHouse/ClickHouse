@@ -1,4 +1,5 @@
-# SRS-006 ClickHouse Role Based Access Control<br>Software Requirements Specification
+# SRS-006 ClickHouse Role Based Access Control
+# Software Requirements Specification
 
 ## Table of Contents
 
