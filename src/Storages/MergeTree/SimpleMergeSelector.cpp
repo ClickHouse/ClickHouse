@@ -101,7 +101,9 @@ bool allow(
 //    std::cerr << "sum_size: " << sum_size << "\n";
 
     /// Map size to 0..1 using logarithmic scale
-    double size_normalized = mapPiecewiseLinearToUnit(log1p(sum_size), log1p(settings.min_size_to_lower_base), log1p(settings.max_size_to_lower_base));
+    /// Use log(1 + x) instead of log1p(x) because our x variables (sum_size and settings) are always integer.
+    /// Also log1p seems to be slow and significantly affect performance of merges assignment.
+    double size_normalized = mapPiecewiseLinearToUnit(log(1 + sum_size), log(1 + settings.min_size_to_lower_base), log(1 + settings.max_size_to_lower_base));
 
 //    std::cerr << "size_normalized: " << size_normalized << "\n";
 
