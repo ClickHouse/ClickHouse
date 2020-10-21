@@ -68,7 +68,7 @@ public:
 
         /// Create named tuple if possible.
         if (DataTypeTuple::canBeCreatedWithNames(names))
-            return std::make_shared<DataTypeTuple>(types, names);
+            return std::make_shared<DataTypeTuple>(types, names, false);
 
         return std::make_shared<DataTypeTuple>(types);
     }

@@ -60,8 +60,8 @@ static void checkTupleNames(const Strings & names, std::function<void(const char
     }
 }
 
-DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
-    : elems(elems_), names(names_), have_explicit_names(true)
+DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_, bool serialize_names_)
+    : elems(elems_), names(names_), have_explicit_names(true), serialize_names(serialize_names_)
 {
     size_t size = elems.size();
     if (names.size() != size)
@@ -88,7 +88,7 @@ std::string DataTypeTuple::doGetName() const
         if (i != 0)
             s << ", ";
 
-        if (have_explicit_names)
+        if (have_explicit_names && serialize_names)
             s << backQuoteIfNeed(names[i]) << ' ';
 
         s << elems[i]->getName();
