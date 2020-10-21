@@ -8,6 +8,7 @@
 1970-04-11	1970-01-11	1970-11-21
 222	18	347
 111	11	173.5
+1970-04-11	1970-01-11	1970-11-21
 SELECT
     sum(i),
     sum(j),
@@ -50,6 +51,11 @@ SELECT
     avg(j + 2 AS j),
     avg(k)
 FROM columns_transformers
+SELECT
+    toDate(any(i)),
+    toDate(any(j)),
+    toDate(any(k))
+FROM columns_transformers AS a
 SELECT
     (i + 1) + 1 AS i,
     j,

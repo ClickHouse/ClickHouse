@@ -1236,6 +1236,10 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword except("EXCEPT");
     ParserKeyword replace("REPLACE");
     ParserKeyword as("AS");
+    ParserKeyword except_strict("EXCEPTSTRICT");
+    ParserKeyword replace_strict("REPLACESTRICT");
+    bool is_except = false;
+    bool is_replace = false;
 
     if (apply.ignore(pos, expected))
     {
@@ -1256,7 +1260,26 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         node = std::move(res);
         return true;
     }
+    else if (except_strict.ignore(pos, expected))
+    {
+        is_except = true;
+        is_strict = true;
+    }
     else if (except.ignore(pos, expected))
+    {
+        is_except = true;
+    }
+    else if (replace_strict.ignore(pos, expected))
+    {
+        is_replace = true;
+        is_strict = true;
+    }
+    else if (replace.ignore(pos, expected))
+    {
+        is_replace = true;
+    }
+
+    if (is_except)
     {
         if (pos->type != TokenType::OpeningRoundBracket)
             return false;
@@ -1282,11 +1305,13 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
         auto res = std::make_shared<ASTColumnsExceptTransformer>();
         res->children = std::move(identifiers);
+        res->is_strict = is_strict;
         node = std::move(res);
         return true;
     }
-    else if (replace.ignore(pos, expected))
+    else if (is_replace)
     {
+
         if (pos->type != TokenType::OpeningRoundBracket)
             return false;
         ++pos;
@@ -1323,6 +1348,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
         auto res = std::make_shared<ASTColumnsReplaceTransformer>();
         res->children = std::move(replacements);
+        res->is_strict = is_strict;
         node = std::move(res);
         return true;
     }

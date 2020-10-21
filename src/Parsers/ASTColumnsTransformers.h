@@ -30,6 +30,7 @@ protected:
 class ASTColumnsExceptTransformer : public IASTColumnsTransformer
 {
 public:
+    bool is_strict = false;
     String getID(char) const override { return "ColumnsExceptTransformer"; }
     ASTPtr clone() const override
     {
@@ -66,6 +67,7 @@ public:
         void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     };
 
+    bool is_strict = false;
     String getID(char) const override { return "ColumnsReplaceTransformer"; }
     ASTPtr clone() const override
     {
