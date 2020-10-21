@@ -621,10 +621,7 @@ add_library(
   ${BORINGSSL_SOURCE_DIR}/ssl/tls_record.cc
 
   ${BORINGSSL_SOURCE_DIR}/decrepit/ssl/ssl_decrepit.c
-<<<<<<< HEAD
   ${BORINGSSL_SOURCE_DIR}/decrepit/cfb/cfb.c
-=======
->>>>>>> 8227564950a431d3425887ae0f860883d11b3d0f
 )
 
 add_executable(
@@ -648,7 +645,8 @@ add_executable(
   ${BORINGSSL_SOURCE_DIR}/tool/transport_common.cc
 )
 
-target_link_libraries(bssl ssl crypto)
+target_link_libraries(ssl crypto)
+target_link_libraries(bssl ssl)
 
 if(NOT WIN32 AND NOT ANDROID)
   target_link_libraries(crypto pthread)
