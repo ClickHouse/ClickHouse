@@ -114,10 +114,9 @@ public:
     virtual void predictValues(
         ConstAggregateDataPtr /* place */,
         IColumn & /*to*/,
-        ColumnsWithTypeAndName & /*block*/,
+        ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
-        const ColumnNumbers & /*arguments*/,
         const Context & /*context*/) const
     {
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);

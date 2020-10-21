@@ -52,17 +52,17 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const auto n = columns[arguments[1]].column->getUInt(0);
-        return executeForN(columns, arguments, result, n);
+        const auto n = arguments[1].column->getUInt(0);
+        return executeForN(arguments, n);
     }
 
-    static void executeForN(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, const size_t result, const size_t n)
+    static ColumnPtr executeForN(ColumnsWithTypeAndName & arguments, const size_t n)
     {
-        const auto & column = columns[arguments[0]].column;
+        const auto & column = arguments[0].column;
 
-        if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto column_fixed = ColumnFixedString::create(n);
 
@@ -82,9 +82,9 @@ public:
                 memcpy(&out_chars[i * n], &in_chars[off], len);
             }
 
-            columns[result].column = std::move(column_fixed);
+            return column_fixed;
         }
-        else if (const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             const auto src_n = column_fixed_string->getN();
             if (src_n > n)
@@ -100,7 +100,7 @@ public:
             for (size_t i = 0; i < size; ++i)
                 memcpy(&out_chars[i * n], &in_chars[i * src_n], src_n);
 
-            columns[result].column = std::move(column_fixed);
+            return column_fixed;
         }
         else
             throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);

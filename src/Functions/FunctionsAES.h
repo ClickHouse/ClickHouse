@@ -178,23 +178,23 @@ private:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(DB::ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
 
-        const auto mode = block[arguments[0]].column->getDataAt(0);
+        const auto mode = arguments[0].column->getDataAt(0);
 
         if (mode.size == 0 || !std::string_view(mode).starts_with("aes-"))
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-        auto evp_cipher = getCipherByName(mode);
+        const auto * evp_cipher = getCipherByName(mode);
         if (evp_cipher == nullptr)
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
         const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
 
-        const auto input_column = block[arguments[1]].column;
-        const auto key_column = block[arguments[2]].column;
+        const auto input_column = arguments[1].column;
+        const auto key_column = arguments[2].column;
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
@@ -203,7 +203,7 @@ private:
             result_column = doEncrypt(evp_cipher, input_rows_count, input_column, key_column, nullptr, nullptr);
         else
         {
-            const auto iv_column = block[arguments[3]].column;
+            const auto iv_column = arguments[3].column;
             if (compatibility_mode != OpenSSLDetails::CompatibilityMode::MySQL && EVP_CIPHER_iv_length(evp_cipher) == 0)
                 throw Exception(mode.toString() + " does not support IV", ErrorCodes::BAD_ARGUMENTS);
 
@@ -216,12 +216,12 @@ private:
                 if (cipher_mode != EVP_CIPH_GCM_MODE)
                     throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
 
-                const auto aad_column = block[arguments[4]].column;
+                const auto aad_column = arguments[4].column;
                 result_column = doEncrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
         }
 
-        block[result].column = std::move(result_column);
+        return result_column;
     }
 
     template <typename InputColumnType, typename KeyColumnType, typename IvColumnType, typename AadColumnType>
@@ -262,7 +262,7 @@ private:
         using namespace OpenSSLDetails;
 
         auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-        auto evp_ctx = evp_ctx_ptr.get();
+        auto * evp_ctx = evp_ctx_ptr.get();
 
         const auto block_size = static_cast<size_t>(EVP_CIPHER_block_size(evp_cipher));
         const auto key_size = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
@@ -293,7 +293,7 @@ private:
 #endif
         }
 
-        auto encrypted = encrypted_result_column_data.data();
+        auto * encrypted = encrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder;
 
@@ -453,29 +453,29 @@ private:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(DB::ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
 
-        const auto mode = block[arguments[0]].column->getDataAt(0);
+        const auto mode = arguments[0].column->getDataAt(0);
         if (mode.size == 0 || !std::string_view(mode).starts_with("aes-"))
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-        auto evp_cipher = getCipherByName(mode);
+        const auto * evp_cipher = getCipherByName(mode);
         if (evp_cipher == nullptr)
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
-        const auto input_column = block[arguments[1]].column;
-        const auto key_column = block[arguments[2]].column;
+        const auto input_column = arguments[1].column;
+        const auto key_column = arguments[2].column;
 
         ColumnPtr result_column;
         if (arguments.size() <= 3)
             result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, nullptr, nullptr);
         else
         {
-            const auto iv_column = block[arguments[3]].column;
+            const auto iv_column = arguments[3].column;
             if (compatibility_mode != OpenSSLDetails::CompatibilityMode::MySQL && EVP_CIPHER_iv_length(evp_cipher) == 0)
                 throw Exception(mode.toString() + " does not support IV", ErrorCodes::BAD_ARGUMENTS);
 
@@ -488,12 +488,12 @@ private:
                 if (EVP_CIPHER_mode(evp_cipher) != EVP_CIPH_GCM_MODE)
                     throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
 
-                const auto aad_column = block[arguments[4]].column;
+                const auto aad_column = arguments[4].column;
                 result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
         }
 
-        block[result].column = std::move(result_column);
+        return result_column;
     }
 
     template <typename InputColumnType, typename KeyColumnType, typename IvColumnType, typename AadColumnType>
@@ -535,7 +535,7 @@ private:
         using namespace OpenSSLDetails;
 
         auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-        auto evp_ctx = evp_ctx_ptr.get();
+        auto * evp_ctx = evp_ctx_ptr.get();
 
         [[maybe_unused]] const auto block_size = static_cast<size_t>(EVP_CIPHER_block_size(evp_cipher));
         [[maybe_unused]] const auto iv_size = static_cast<size_t>(EVP_CIPHER_iv_length(evp_cipher));
@@ -566,7 +566,7 @@ private:
             decrypted_result_column_data.resize(resulting_size);
 #endif
         }
-        auto decrypted = decrypted_result_column_data.data();
+        auto * decrypted = decrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder;
         for (size_t r = 0; r < input_rows_count; ++r)
