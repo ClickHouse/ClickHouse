@@ -354,7 +354,7 @@ void RestoreQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, D
     {
         if (IdentifierSemantic::getMembership(identifier))
         {
-            // TODO(ilezhankin): should restore qualified name here - why exactly here?
+            identifier.restoreTable();  // TODO(ilezhankin): should restore qualified name here - why exactly here?
             if (data.rename)
                 data.changeTable(identifier);
         }

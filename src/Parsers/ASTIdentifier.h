@@ -21,7 +21,7 @@ public:
     UUID uuid = UUIDHelpers::Nil;
 
     explicit ASTIdentifier(const String & short_name);
-    explicit ASTIdentifier(std::vector<String> && name_parts);
+    explicit ASTIdentifier(std::vector<String> && name_parts, bool special = false);
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name()); }
@@ -40,6 +40,9 @@ public:
     const String & shortName() const { return name_parts.back(); }
     const String & name() const;
 
+    void restoreTable();
+
+    // FIXME: used only when it's needed to rewrite distributed table name to real remote table name.
     void resetTable(const String & database_name, const String & table_name);
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
@@ -55,8 +58,6 @@ private:
     using ASTWithAlias::children; /// ASTIdentifier is child free
 
     std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
-
-    static std::shared_ptr<ASTIdentifier> createSpecial(std::vector<String> && name_parts);
 
     friend struct IdentifierSemantic;
     friend ASTPtr createTableIdentifier(const StorageID & table_id);

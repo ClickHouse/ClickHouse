@@ -22,7 +22,7 @@ ASTIdentifier::ASTIdentifier(const String & short_name)
     assert(!full_name.empty());
 }
 
-ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_)
+ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special)
     : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     assert(!name_parts.empty());
@@ -31,19 +31,16 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_)
         assert(!part.empty());
         (void) part;  // otherwise not-used in release build
     }
+    semantic->special = special;
+
+    if (!special && name_parts.size() >= 2)
+        semantic->table = name_parts.end()[-2];
 }
 
 ASTPtr ASTIdentifier::clone() const
 {
     auto ret = std::make_shared<ASTIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
-    return ret;
-}
-
-std::shared_ptr<ASTIdentifier> ASTIdentifier::createSpecial(std::vector<String> && name_parts)
-{
-    auto ret = std::make_shared<ASTIdentifier>(std::move(name_parts));
-    ret->semantic->special = true;
     return ret;
 }
 
@@ -104,6 +101,15 @@ void ASTIdentifier::appendColumnNameImpl(WriteBuffer & ostr) const
     writeString(name(), ostr);
 }
 
+void ASTIdentifier::restoreTable()
+{
+    if (!compound())
+    {
+        full_name.clear();
+        name_parts.insert(name_parts.begin(), semantic->table);
+    }
+}
+
 void ASTIdentifier::resetTable(const String & database_name, const String & table_name)
 {
     auto ast = createTableIdentifier(database_name, table_name);
@@ -129,9 +135,9 @@ ASTPtr createTableIdentifier(const StorageID & table_id)
 {
     std::shared_ptr<ASTIdentifier> res;
     if (table_id.database_name.empty())
-        res = ASTIdentifier::createSpecial({table_id.table_name});
+        res = std::make_shared<ASTIdentifier>(std::vector<String>{table_id.table_name}, true);
     else
-        res = ASTIdentifier::createSpecial({table_id.database_name, table_id.table_name});
+        res = std::make_shared<ASTIdentifier>(std::vector<String>{table_id.database_name, table_id.table_name}, true);
     res->uuid = table_id.uuid;
     return res;
 }
