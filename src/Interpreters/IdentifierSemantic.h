@@ -15,6 +15,7 @@ struct IdentifierSemanticImpl
     bool covered = false;              /// real (compound) name is hidden by an alias (short name)
     std::optional<size_t> membership;  /// table position in join
     String table = {};                 /// store table name for columns just to support legacy logic.
+    bool legacy_compound = false;      /// true if identifier supposed to be comply for legacy |compound()| behavior
 };
 
 /// Static class to manipulate IdentifierSemanticImpl via ASTIdentifier

@@ -32,6 +32,7 @@ public:
 
     bool compound() const { return name_parts.size() > 1; }
     bool isShort() const { return name_parts.size() == 1; }
+    bool supposedToBeCompound() const;  // TODO(ilezhankin): get rid of this
 
     void setShortName(const String & new_name);
 
@@ -40,10 +41,10 @@ public:
     const String & shortName() const { return name_parts.back(); }
     const String & name() const;
 
-    void restoreTable();
+    void restoreTable();  // TODO(ilezhankin): get rid of this
 
     // FIXME: used only when it's needed to rewrite distributed table name to real remote table name.
-    void resetTable(const String & database_name, const String & table_name);
+    void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
 

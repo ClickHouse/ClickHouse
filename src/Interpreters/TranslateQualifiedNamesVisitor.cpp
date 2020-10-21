@@ -175,9 +175,12 @@ void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr
 
 static void addIdentifier(ASTs & nodes, const DatabaseAndTableWithAlias & table, const String & column_name)
 {
+    std::vector<String> parts = {column_name};
+
     String table_name = table.getQualifiedNamePrefix(false);
-    auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{table_name, column_name});
-    nodes.emplace_back(identifier);
+    if (!table_name.empty()) parts.insert(parts.begin(), table_name);
+
+    nodes.emplace_back(std::make_shared<ASTIdentifier>(std::move(parts)));
 }
 
 /// Replace *, alias.*, database.table.* with a list of columns.

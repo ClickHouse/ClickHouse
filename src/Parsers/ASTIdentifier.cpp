@@ -31,7 +31,9 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special)
         assert(!part.empty());
         (void) part;  // otherwise not-used in release build
     }
+
     semantic->special = special;
+    semantic->legacy_compound = true;
 
     if (!special && name_parts.size() >= 2)
         semantic->table = name_parts.end()[-2];
@@ -42,6 +44,11 @@ ASTPtr ASTIdentifier::clone() const
     auto ret = std::make_shared<ASTIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
     return ret;
+}
+
+bool ASTIdentifier::supposedToBeCompound() const
+{
+    return semantic->legacy_compound;
 }
 
 void ASTIdentifier::setShortName(const String & new_name)

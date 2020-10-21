@@ -144,7 +144,7 @@ std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr
 
 const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases)
 {
-    if (identifier->compound())
+    if (identifier->supposedToBeCompound())
         return identifier;
 
     UInt32 max_attempts = 100;
@@ -156,7 +156,7 @@ const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifie
             break; /// not a column alias
         if (identifier == parent)
             break; /// alias to itself with the same name: 'a as a'
-        if (identifier->compound())
+        if (identifier->supposedToBeCompound())
             break; /// not an alias. Break to prevent cycle through short names: 'a as b, t1.b as a'
 
         it = aliases.find(identifier->name());
