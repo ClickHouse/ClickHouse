@@ -8,6 +8,23 @@
 namespace DB
 {
 
+namespace
+{
+    class ParserNestedOrExpression : public IParserBase
+    {
+    protected:
+        const char * getName() const override { return "nested or expression"; }
+
+        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+        {
+            ParserNestedTable nested_parser;
+            ParserExpression expr_parser;
+            return nested_parser.parse(pos, node, expected) || expr_parser.parse(pos, node, expected);
+        }
+    };
+}
+
+
 bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserNestedTable nested;
@@ -78,7 +95,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ParserList args_parser(std::make_unique<ParserExpression>(), std::make_unique<ParserToken>(TokenType::Comma));
+    ParserList args_parser(std::make_unique<ParserNestedOrExpression>(), std::make_unique<ParserToken>(TokenType::Comma));
     ASTPtr expr_list_args;
 
     if (!args_parser.parse(pos, expr_list_args, expected))
