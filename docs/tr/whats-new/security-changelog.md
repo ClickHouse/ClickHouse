@@ -53,7 +53,7 @@ Kredi: Yandex Bilgi Güvenliği ekibinden Andrey Krasichkov ve Evgeny Sidorov
 
 ### CVE-2018-14668 {#cve-2018-14668}
 
-“remote” tablo fonksiyonu izin keyfi semboller “user”, “password” ve “default_database” çapraz Protokol isteği sahtecilik saldırılarına yol açan alanlar.
+“remote” tablo fonksiyonu izin keyfi semboller “user”, “password” ve “default\_database” çapraz Protokol isteği sahtecilik saldırılarına yol açan alanlar.
 
 Kredi: Yandex Bilgi Güvenliği ekibinden Andrey Krasichkov
 

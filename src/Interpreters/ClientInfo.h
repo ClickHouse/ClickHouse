@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/SocketAddress.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -69,7 +69,7 @@ public:
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    unsigned client_tcp_protocol_version = 0;
+    unsigned client_revision = 0;
 
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;

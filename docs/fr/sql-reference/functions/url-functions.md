@@ -125,11 +125,11 @@ Retourne le chemin d'accès. Exemple: `/top/news.html` Le chemin n'inclut pas la
 
 ### pathFull {#pathfull}
 
-La même chose que ci-dessus, mais y compris la chaîne de requête et le fragment. Exemple: / top / nouvelles.le html?page = 2 # commentaires
+La même chose que ci-dessus, mais y compris la chaîne de requête et le fragment. Exemple: / top / nouvelles.le html?page = 2 \# commentaires
 
 ### queryString {#querystring}
 
-Retourne la chaîne de requête. Exemple: page = 1 & lr=213. query-string n'inclut pas le point d'interrogation initial, ainsi que # et tout ce qui suit #.
+Retourne la chaîne de requête. Exemple: page = 1 & lr=213. query-string n'inclut pas le point d'interrogation initial, ainsi que \# et tout ce qui suit \#.
 
 ### fragment {#fragment}
 
@@ -137,7 +137,7 @@ Renvoie l'identificateur de fragment. fragment n'inclut pas le symbole de hachag
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Renvoie la chaîne de requête et l'Identificateur de fragment. Exemple: page = 1 # 29390.
+Renvoie la chaîne de requête et l'Identificateur de fragment. Exemple: page = 1 \# 29390.
 
 ### extractURLParameter (URL, nom) {#extracturlparameterurl-name}
 

@@ -75,7 +75,7 @@ Bu yapı `users` bölme:
 
     Sonucun ilk satırı şifredir. İkinci satır karşılık gelen çift SHA1 karmasıdır.
 
-### access_management {#access_management-user-setting}
+### access\_management {#access_management-user-setting}
 
 Bu ayar, SQL-driven kullanarak devre dışı bırakır sağlar [erişim kontrolü ve hesap yönetimi](../access-rights.md#access-control) kullanıcı için.
 
@@ -86,7 +86,7 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-### kullanıcı_adı / ağlar {#user-namenetworks}
+### kullanıcı\_adı / ağlar {#user-namenetworks}
 
 Kullanıcının ClickHouse sunucusuna bağlanabileceği ağların listesi.
 
@@ -128,18 +128,18 @@ Erişimi yalnızca localhost'tan açmak için şunları belirtin:
 <ip>127.0.0.1</ip>
 ```
 
-### kullanıcı_adı / profil {#user-nameprofile}
+### kullanıcı\_adı / profil {#user-nameprofile}
 
 Kullanıcı için bir ayarlar profili atayabilirsiniz. Ayarlar profilleri ayrı bir bölümde yapılandırılır `users.xml` Dosya. Daha fazla bilgi için, bkz. [Ayarların profilleri](settings-profiles.md).
 
-### user_name / kota {#user-namequota}
+### user\_name / kota {#user-namequota}
 
 Kotalar, belirli bir süre boyunca kaynak kullanımını izlemenize veya sınırlamanıza izin verir. Kotalar yapılandırılır `quotas`
 bu bölüm `users.xml` yapılandırma dosyası.
 
 Kullanıcı için ayarlanmış bir kotalar atayabilirsiniz. Kotalar yapılandırmasının ayrıntılı bir açıklaması için bkz. [Kotalar](../quotas.md#quotas).
 
-### user_name / veritabanları {#user-namedatabases}
+### user\_name / veritabanları {#user-namedatabases}
 
 Bu bölümde, ClickHouse tarafından döndürülen satırları sınırlayabilirsiniz `SELECT` geçerli kullanıcı tarafından yapılan sorgular, böylece temel satır düzeyinde güvenlik uygular.
 

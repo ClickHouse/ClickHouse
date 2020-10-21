@@ -221,20 +221,17 @@ Pipe StorageBuffer::read(
                     columns_intersection, destination_metadata_snapshot, query_info,
                     context, processed_stage, max_block_size, num_streams);
 
-                if (!pipe_from_dst.empty())
+                pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
                 {
-                    pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
-                    {
-                        return std::make_shared<AddingMissedTransform>(stream_header, header_after_adding_defaults,
-                            metadata_snapshot->getColumns(), context);
-                    });
+                    return std::make_shared<AddingMissedTransform>(stream_header, header_after_adding_defaults,
+                        metadata_snapshot->getColumns(), context);
+                });
 
-                    pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
-                    {
-                        return std::make_shared<ConvertingTransform>(
-                            stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
-                    });
-                }
+                pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
+                {
+                    return std::make_shared<ConvertingTransform>(
+                        stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
+                });
             }
         }
 

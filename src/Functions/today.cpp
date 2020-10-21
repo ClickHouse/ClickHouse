@@ -10,8 +10,6 @@
 
 namespace DB
 {
-namespace
-{
 
 class ExecutableFunctionToday : public IExecutableFunctionImpl
 {
@@ -22,7 +20,7 @@ public:
 
     void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block[result].column = DataTypeDate().createColumnConst(input_rows_count, day_value);
+        block.getByPosition(result).column = DataTypeDate().createColumnConst(input_rows_count, day_value);
     }
 
 private:
@@ -80,8 +78,6 @@ public:
         return std::make_unique<FunctionBaseToday>(DateLUT::instance().toDayNum(time(nullptr)));
     }
 };
-
-}
 
 void registerFunctionToday(FunctionFactory & factory)
 {

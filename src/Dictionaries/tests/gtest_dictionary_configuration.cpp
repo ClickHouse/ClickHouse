@@ -1,4 +1,4 @@
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>

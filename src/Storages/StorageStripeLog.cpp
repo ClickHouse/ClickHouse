@@ -18,6 +18,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -33,8 +34,6 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
-
-#include <cassert>
 
 
 namespace DB
@@ -283,15 +282,12 @@ StorageStripeLog::StorageStripeLog(
 
 void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    assert(table_path != new_path_to_table_data);
-    {
-        std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
-        disk->moveDirectory(table_path, new_path_to_table_data);
+    disk->moveDirectory(table_path, new_path_to_table_data);
 
-        table_path = new_path_to_table_data;
-        file_checker.setPath(table_path + "sizes.json");
-    }
+    table_path = new_path_to_table_data;
+    file_checker.setPath(table_path + "sizes.json");
     renameInMemory(new_table_id);
 }
 

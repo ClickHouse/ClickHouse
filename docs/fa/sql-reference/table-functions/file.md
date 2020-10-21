@@ -15,7 +15,7 @@ file(path, format, structure)
 
 **پارامترهای ورودی**
 
--   `path` — The relative path to the file from [_مخفی کردن _صفحه](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). مسیر به فایل پشتیبانی پس از دل تنگی در حالت فقط خواندنی: `*`, `?`, `{abc,def}` و `{N..M}` کجا `N`, `M` — numbers, \``'abc', 'def'` — strings.
+-   `path` — The relative path to the file from [\_مخفی کردن \_صفحه](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). مسیر به فایل پشتیبانی پس از دل تنگی در حالت فقط خواندنی: `*`, `?`, `{abc,def}` و `{N..M}` کجا `N`, `M` — numbers, \``'abc', 'def'` — strings.
 -   `format` — The [قالب](../../interfaces/formats.md#formats) پرونده
 -   `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
@@ -72,12 +72,12 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 
 1.  فرض کنید ما چندین فایل با مسیرهای نسبی زیر داریم:
 
--   ‘some_dir/some_file_1’
--   ‘some_dir/some_file_2’
--   ‘some_dir/some_file_3’
--   ‘another_dir/some_file_1’
--   ‘another_dir/some_file_2’
--   ‘another_dir/some_file_3’
+-   ‘some\_dir/some\_file\_1’
+-   ‘some\_dir/some\_file\_2’
+-   ‘some\_dir/some\_file\_3’
+-   ‘another\_dir/some\_file\_1’
+-   ‘another\_dir/some\_file\_2’
+-   ‘another\_dir/some\_file\_3’
 
 1.  پرس و جو مقدار ردیف در این فایل ها:
 
