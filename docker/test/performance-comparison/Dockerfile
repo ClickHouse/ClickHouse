@@ -37,14 +37,15 @@ RUN apt-get update \
 
 COPY * /
 
-# Bind everything to node 1 early. We have to bind both servers and the tmpfs
-# on which the database is stored. How to do it through Yandex Sandbox API is
-# unclear, but by default tmpfs uses 'process allocation policy', not sure
-# which process but hopefully the one that writes to it, so just bind the
-# downloader script as well.
+# Bind everything to NUMA node #1, if there's more than one. We avoid node #0,
+# because it is more susceptible to system interruptions. We have to bind both
+# servers and the tmpfs on which the database is stored. How to do it through
+# Yandex Sandbox API is unclear, but by default tmpfs uses 'process allocation
+# policy', not sure which process but hopefully the one that writes to it, so
+# just bind the downloader script as well.
 # We could also try to remount it with proper options in Sandbox task.
 # https://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt
-CMD ["numactl", "--cpunodebind=1", "--membind=1", "/entrypoint.sh"]
+CMD ["bash", "-c", "node=$(numactl --hardware | grep -q 'available: 1 nodes' && echo 0 || echo 1); echo Will bind to NUMA node $node; numactl --cpunodebind=$node --membind=$node /entrypoint.sh"]
 
 # docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> yandex/clickhouse-performance-comparison
 
