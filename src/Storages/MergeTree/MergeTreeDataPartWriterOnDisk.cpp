@@ -212,7 +212,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
      * And otherwise it will look like excessively growing memory consumption in context of query.
      *  (observed in long INSERT SELECTs)
      */
-    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
 
