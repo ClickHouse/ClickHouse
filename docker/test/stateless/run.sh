@@ -1,6 +1,7 @@
 #!/bin/bash
 
-set -e -x
+# fail on errors, verbose and export all env variables
+set -e -x -a
 
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
