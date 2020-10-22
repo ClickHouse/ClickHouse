@@ -46,9 +46,7 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 
 void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-    settings.ostr << (is_strict ? "EXCEPTSTRICT" : "EXCEPT");
-    settings.ostr << (settings.hilite ? hilite_none : "") << "(";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : "") << (settings.hilite ? hilite_none : "") << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -64,7 +62,8 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
-    ASTs unexcepted_columns(children);
+    ASTs expected_columns(children);
+
     nodes.erase(
         std::remove_if(
             nodes.begin(),
@@ -73,11 +72,11 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
             {
                 if (const auto * id = node_child->as<ASTIdentifier>())
                 {
-                    for (size_t i = 0; i < children.size(); i++)
+                    for (int i = children.size() - 1; i >= 0; --i)
                     {
                         if (children[i]->as<const ASTIdentifier &>().name == id->shortName())
                         {
-                            unexcepted_columns.erase(unexcepted_columns.begin() + i);
+                            expected_columns.erase(expected_columns.begin() + i);
                             return true;
                         }
                     }
@@ -86,18 +85,18 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
             }),
         nodes.end());
 
-    if (is_strict && !unexcepted_columns.empty())
+    if (is_strict && !expected_columns.empty())
     {
-        String unexisted_columns;
-        for (size_t i = 0; i < unexcepted_columns.size(); ++i)
+        String expected_columns_str;
+        for (size_t i = 0; i < expected_columns.size(); ++i)
         {
             if (i > 0)
-                unexisted_columns += ", ";
-            unexisted_columns += unexcepted_columns[i]->as<const ASTIdentifier &>().name;
+                expected_columns_str += ", ";
+            expected_columns_str += expected_columns[i]->as<const ASTIdentifier &>().name;
         }
 
         throw Exception(
-            "Columns transformer EXPCEPTSTRICT process unexist column : " + unexisted_columns,
+            "Columns transformer EXCEPT expects following column(s) : " + expected_columns_str,
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     }
 }
@@ -111,9 +110,7 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-    settings.ostr << (is_strict ? "REPLACESTRICT" : "REPLACE");
-    settings.ostr << (settings.hilite ? hilite_none : "") << "(";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : "") << (settings.hilite ? hilite_none : "") << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -183,15 +180,15 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
 
     if (is_strict && !replace_map.empty())
     {
-        String unexisted_columns = "";
+        String expected_columns = "";
         for (auto it = replace_map.begin(); it != replace_map.end(); ++it)
         {
-            if (unexisted_columns != "")
-                unexisted_columns += ", ";
-            unexisted_columns += it->first;
+            if (expected_columns != "")
+                expected_columns += ", ";
+            expected_columns += it->first;
         }
         throw Exception(
-            "Columns transformer REPLACESTRICT process unexist column : " + unexisted_columns,
+            "Columns transformer REPLACE expects following column(s) : " + expected_columns,
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     }
 
