@@ -39,9 +39,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnWithTypeAndName & elem = columns[arguments[0]];
+        const ColumnWithTypeAndName & elem = arguments[0];
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             /// Return the negated null map.
@@ -52,12 +52,12 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
                 res_data[i] = !src_data[i];
 
-            columns[result].column = std::move(res_column);
+            return res_column;
         }
         else
         {
             /// Since no element is nullable, return a constant one.
-            columns[result].column = DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
+            return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
         }
     }
 };

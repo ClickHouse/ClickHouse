@@ -466,6 +466,9 @@ public:
     /// Does takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> totalRows() const { return {}; }
 
+    /// Same as above but also take partition predicate into account.
+    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const { return {}; }
+
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)
     /// - disk (compressed)

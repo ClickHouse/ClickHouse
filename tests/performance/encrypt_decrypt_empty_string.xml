@@ -1,0 +1,67 @@
+<test>
+  <!-- "Strict" mode (key and iv length checks), empty plaintext.
+  Ciphers that produce empty ciphertext on empty plaintext, and hence can be optimized to almost NO-OP. -->
+
+    <substitutions>
+        <substitution>
+          <name>func</name>
+          <values>
+              <!-- materialize(plaitext) is to avoid all-args-are-const optimization, resulting in executing function exactly once. -->
+              <value>encrypt('aes-128-cfb1', materialize(plaintext), key16, iv16)</value>
+              <value>encrypt('aes-128-cfb8', materialize(plaintext), key16, iv16)</value>
+              <value>encrypt('aes-128-cfb128', materialize(plaintext), key16, iv16)</value>
+              <value>encrypt('aes-128-ctr', materialize(plaintext), key16, iv16)</value>
+              <value>encrypt('aes-128-ofb', materialize(plaintext), key16, iv16)</value>
+
+              <value>encrypt('aes-192-cfb1', materialize(plaintext), key24, iv16)</value>
+              <value>encrypt('aes-192-cfb8', materialize(plaintext), key24, iv16)</value>
+              <value>encrypt('aes-192-cfb128', materialize(plaintext), key24, iv16)</value>
+              <value>encrypt('aes-192-ctr', materialize(plaintext), key24, iv16)</value>
+              <value>encrypt('aes-192-ofb', materialize(plaintext), key24, iv16)</value>
+
+              <value>encrypt('aes-256-cfb1', materialize(plaintext), key32, iv16)</value>
+              <value>encrypt('aes-256-cfb8', materialize(plaintext), key32, iv16)</value>
+              <value>encrypt('aes-256-cfb128', materialize(plaintext), key32, iv16)</value>
+              <value>encrypt('aes-256-ctr', materialize(plaintext), key32, iv16)</value>
+              <value>encrypt('aes-256-ofb', materialize(plaintext), key32, iv16)</value>
+
+              <!-- decrypt + encrypt since it is really hard to compose decrypt-only case -->
+              <value>decrypt('aes-128-cfb1', encrypt('aes-128-cfb1', materialize(plaintext), key16, iv16), key16, iv16)</value>
+              <value>decrypt('aes-128-cfb8', encrypt('aes-128-cfb8', materialize(plaintext), key16, iv16), key16, iv16)</value>
+              <value>decrypt('aes-128-cfb128', encrypt('aes-128-cfb128', materialize(plaintext), key16, iv16), key16, iv16)</value>
+              <value>decrypt('aes-128-ctr', encrypt('aes-128-ctr', materialize(plaintext), key16, iv16), key16, iv16)</value>
+              <value>decrypt('aes-128-ofb', encrypt('aes-128-ofb', materialize(plaintext), key16, iv16), key16, iv16)</value>
+
+              <value>decrypt('aes-192-cfb1', encrypt('aes-192-cfb1', materialize(plaintext), key24, iv16), key24, iv16)</value>
+              <value>decrypt('aes-192-cfb8', encrypt('aes-192-cfb8', materialize(plaintext), key24, iv16), key24, iv16)</value>
+              <value>decrypt('aes-192-cfb128', encrypt('aes-192-cfb128', materialize(plaintext), key24, iv16), key24, iv16)</value>
+              <value>decrypt('aes-192-ctr', encrypt('aes-192-ctr', materialize(plaintext), key24, iv16), key24, iv16)</value>
+              <value>decrypt('aes-192-ofb', encrypt('aes-192-ofb', materialize(plaintext), key24, iv16), key24, iv16)</value>
+
+              <value>decrypt('aes-256-cfb1', encrypt('aes-256-cfb1', materialize(plaintext), key32, iv16), key32, iv16)</value>
+              <value>decrypt('aes-256-cfb8', encrypt('aes-256-cfb8', materialize(plaintext), key32, iv16), key32, iv16)</value>
+              <value>decrypt('aes-256-cfb128', encrypt('aes-256-cfb128', materialize(plaintext), key32, iv16), key32, iv16)</value>
+              <value>decrypt('aes-256-ctr', encrypt('aes-256-ctr', materialize(plaintext), key32, iv16), key32, iv16)</value>
+              <value>decrypt('aes-256-ofb', encrypt('aes-256-ofb', materialize(plaintext), key32, iv16), key32, iv16)</value>
+
+           </values>
+        </substitution>
+        <substitution>
+           <name>table</name>
+           <values>
+               <value>numbers(10000000)</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>plaintext</name>
+           <values>
+              <value>''</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <!-- allow OpenSSL-related code load ciphers and warm-up -->
+    <fill_query>WITH {plaintext} as plaintext, repeat('k', 32) as key32, substring(key32, 1, 24) as key24, substring(key32, 1, 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12 SELECT count() FROM {table} WHERE NOT ignore({func}) LIMIT 1</fill_query>
+
+    <query>WITH {plaintext} as plaintext, repeat('k', 32) as key32, substring(key32, 1, 24) as key24, substring(key32, 1, 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12 SELECT count() FROM {table} WHERE NOT ignore({func})</query>
+</test>
