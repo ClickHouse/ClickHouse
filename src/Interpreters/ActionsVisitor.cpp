@@ -567,7 +567,8 @@ void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
     else
     {
         for (auto & child : ast->children)
-            visit(child, data);
+            if (needChildVisit(ast, child))
+                visit(child, data);
     }
 }
 
