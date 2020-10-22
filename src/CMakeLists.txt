@@ -333,8 +333,8 @@ if (USE_CAPNP)
 endif ()
 
 if (USE_ARROW)
-    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${ARROW_INCLUDE_DIR})
-    dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${ARROW_INCLUDE_DIR})
+    dbms_target_link_libraries(PUBLIC ${ARROW_LIBRARY})
 endif ()
 
 if (USE_PARQUET)
