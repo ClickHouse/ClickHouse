@@ -1,3 +1,7 @@
+---
+toc_priority: 150
+---
+
 ## initializeAggregation {#initializeaggregation}
 
 Initializes aggregation (on) some lines from input.
