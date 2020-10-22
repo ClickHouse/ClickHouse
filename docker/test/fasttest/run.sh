@@ -20,6 +20,7 @@ FASTTEST_SOURCE=$(readlink -f "${FASTTEST_SOURCE:-$FASTTEST_WORKSPACE/ch}")
 FASTTEST_BUILD=$(readlink -f "${FASTTEST_BUILD:-${BUILD:-$FASTTEST_WORKSPACE/build}}")
 FASTTEST_DATA=$(readlink -f "${FASTTEST_DATA:-$FASTTEST_WORKSPACE/db-fasttest}")
 FASTTEST_OUTPUT=$(readlink -f "${FASTTEST_OUTPUT:-$FASTTEST_WORKSPACE}")
+PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
 
 # Export these variables, so that all subsequent invocations of the script
 # use them, and not try to guess them anew, which leads to weird effects.
@@ -28,6 +29,7 @@ export FASTTEST_SOURCE
 export FASTTEST_BUILD
 export FASTTEST_DATA
 export FASTTEST_OUT
+export PATH
 
 server_pid=none
 
@@ -144,12 +146,6 @@ CMAKE_LIBS_CONFIG=(
     "-DENABLE_EMBEDDED_COMPILER=0"
     "-DENABLE_THINLTO=0"
     "-DUSE_UNWIND=1"
-    "-DUSE_STATIC_LIBRARIES=0"
-    "-DSPLIT_SHARED_LIBRARIES=1"
-    "-DCLICKHOUSE_SPLIT_BINARY=1"
-    "-DCMAKE_BUILD_TYPE=Debug"
-    "-DCMAKE_C_FLAGS_ADD=-Og"
-    "-DCMAKE_CXX_FLAGS_ADD=-Og"
 )
 
 # TODO remove this? we don't use ccache anyway. An option would be to download it
@@ -342,8 +338,6 @@ case "$stage" in
     ;&
 "build")
     build
-    PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
-    export PATH
     ;&
 "configure")
     # The `install_log.txt` is also needed for compatibility with old CI task --
