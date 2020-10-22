@@ -526,24 +526,19 @@ ExpressionActions::~ExpressionActions() = default;
 
 void ExpressionActions::checkLimits(ExecutionContext & execution_context) const
 {
-    if (settings.max_temporary_columns && block.columns() > settings.max_temporary_columns)
-        throw Exception("Too many temporary columns: " + block.dumpNames()
-            + ". Maximum: " + settings.max_temporary_columns.toString(),
-            ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS);
-
-    if (settings.max_temporary_non_const_columns)
+    if (max_temporary_non_const_columns)
     {
         size_t non_const_columns = 0;
-        for (size_t i = 0, size = block.columns(); i < size; ++i)
-            if (block.safeGetByPosition(i).column && !isColumnConst(*block.safeGetByPosition(i).column))
+        for (const auto & column : execution_context.columns)
+            if (column.column && !isColumnConst(*column.column))
                 ++non_const_columns;
 
         if (non_const_columns > settings.max_temporary_non_const_columns)
         {
             std::stringstream list_of_non_const_columns;
-            for (size_t i = 0, size = block.columns(); i < size; ++i)
-                if (block.safeGetByPosition(i).column && !isColumnConst(*block.safeGetByPosition(i).column))
-                    list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
+            for (const auto & column : execution_context.columns)
+                if (column.column && !isColumnConst(*column.column))
+                    list_of_non_const_columns << "\n" << column.name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
                 + ". Maximum: " + settings.max_temporary_non_const_columns.toString(),
@@ -708,6 +703,14 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             throw Exception("Cannot execute INPUT action", ErrorCodes::LOGICAL_ERROR);
         }
     }
+}
+
+Names ExpressionActions::getRequiredColumns() const
+{
+    Names names;
+    for (const auto & input : required_columns)
+        names.push_back(input.name);
+    return names;
 }
 
 bool ExpressionActions::hasArrayJoin() const
@@ -1127,15 +1130,16 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
     for (auto it = actions.rbegin(); it != actions.rend(); ++it)
     {
         const auto & action = *it;
-        if (action.type == action.APPLY_FUNCTION && action.function_base)
+        if (action.node->type == ActionsDAG::Type::FUNCTION && action.node->function_base)
         {
-            auto name = action.function_base->getName();
-            if ((name == "in" || name == "globalIn")
-                && action.result_name == column_name
-                && action.argument_names.size() > 1)
+            if (action.node->result_name == column_name && action.node->children.size() > 1)
             {
-                set_to_check = action.argument_names[1];
-                break;
+                auto name = action.node->function_base->getName();
+                if ((name == "in" || name == "globalIn"))
+                {
+                    set_to_check = action.node->children[1]->result_name;
+                    break;
+                }
             }
         }
     }
@@ -1144,10 +1148,10 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
     {
         for (const auto & action : actions)
         {
-            if (action.type == action.ADD_COLUMN && action.result_name == set_to_check)
+            if (action.node->type == ActionsDAG::Type::COLUMN && action.node->result_name == set_to_check)
             {
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
-                if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
+                if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
                 {
                     if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
                         return true;
@@ -1540,8 +1544,20 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     const FunctionOverloadResolverPtr & function,
     const Names & argument_names,
     std::string result_name,
-    bool compile_expressions [[maybe_unused]])
+    const Context & context [[maybe_unused]])
 {
+    const auto & settings = context.getSettingsRef();
+    max_temporary_columns = settings.max_temporary_columns;
+    max_temporary_non_const_columns = settings.max_temporary_non_const_columns;
+
+    bool do_compile_expressions = false;
+#if USE_EMBEDDED_COMPILER
+    do_compile_expressions = settings.compile_expressions;
+
+    if (!compilation_cache)
+        compilation_cache = context.getCompiledExpressionCache();
+#endif
+
     size_t num_arguments = argument_names.size();
 
     Node node;
@@ -1572,10 +1588,6 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.result_type = node.function_base->getResultType();
     node.function = node.function_base->prepare(arguments);
 
-    bool do_compile_expressions = false;
-#if USE_EMBEDDED_COMPILER
-    do_compile_expressions = compile_expressions;
-#endif
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
     /// But if we compile expressions compiled version of this function maybe placed in cache,
     /// so we don't want to unfold non deterministic functions
@@ -1669,6 +1681,56 @@ std::string ActionsDAG::dumpNames() const
         out << it->result_name;
     }
     return out.str();
+}
+
+void ActionsDAG::removeUnusedActions(const NameSet & required_names)
+{
+    for (const auto & name : required_names)
+    {
+        if (index.count(name) == 0)
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                            "Unknown column: {}, there are only columns {}", name, dumpNames());
+    }
+
+    std::unordered_set<Node *> visited_nodes;
+    std::stack<Node *> stack;
+
+    {
+        Index new_index;
+        for (const auto &[name, node] : index)
+        {
+            if (required_names.count(std::string(name)))
+            {
+                new_index[name] = node;
+                visited_nodes.insert(node);
+                stack.push(node);
+            }
+        }
+
+        index.swap(new_index);
+    }
+
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        for (auto * child : node->children)
+        {
+            if (visited_nodes.count(child) == 0)
+            {
+                stack.push(child);
+                visited_nodes.insert(child);
+            }
+        }
+    }
+
+    nodes.remove_if([&](Node * node) { return visited_nodes.count(node) == 0; });
+
+    /// Parent with the same name could be removed. Clear ptr to it if so.
+    for (auto & node : nodes)
+        if (node.renaming_parent && visited_nodes.count(node.renaming_parent) == 0)
+            node.renaming_parent = nullptr;
 }
 
 ExpressionActionsPtr ActionsDAG::buildExpressions()
@@ -1796,6 +1858,13 @@ ExpressionActionsPtr ActionsDAG::buildExpressions()
 
     expressions->nodes.swap(nodes);
     index.clear();
+
+    if (max_temporary_columns && expressions->num_columns > max_temporary_columns)
+        throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
+                        "Too many temporary columns: {}. Maximum: {}",
+                        dumpNames(), std::to_string(max_temporary_columns));
+
+    expressions->max_temporary_non_const_columns = max_temporary_non_const_columns;
 
     return expressions;
 }

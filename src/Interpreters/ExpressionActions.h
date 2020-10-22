@@ -191,6 +191,13 @@ private:
     std::list<Node> nodes;
     Index index;
 
+    size_t max_temporary_columns = 0;
+    size_t max_temporary_non_const_columns = 0;
+
+#if USE_EMBEDDED_COMPILER
+    std::shared_ptr<CompiledExpressionCache> compilation_cache;
+#endif
+
 public:
     ActionsDAG() = default;
     ActionsDAG(const ActionsDAG &) = delete;
@@ -214,8 +221,9 @@ public:
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
             std::string result_name,
-            bool compile_expressions);
+            const Context & context);
 
+    void removeUnusedActions(const NameSet & required_names);
     ExpressionActionsPtr buildExpressions();
 
 private:
@@ -265,6 +273,8 @@ private:
     NamesAndTypesList required_columns;
     Block sample_block;
 
+    size_t max_temporary_non_const_columns = 0;
+
     friend class ActionsDAG;
 
 public:
@@ -312,9 +322,6 @@ public:
 
 private:
     Settings settings;
-#if USE_EMBEDDED_COMPILER
-    std::shared_ptr<CompiledExpressionCache> compilation_cache;
-#endif
 
     void checkLimits(ExecutionContext & execution_context) const;
 
