@@ -1,6 +1,7 @@
 ## initializeAggregation {#initializeaggregation}
 
 Initializes aggregation (on) some lines from input.
+Может быть полезно для тестов, а также для работы со столбцами типа AggregateFunction в AggregationgMergeTree. Например можно вставлять в такие столбцы с помощью initializeAggregation или использовать ее в качестве значения по умолчанию.
 
 **Syntax** (without SELECT)
 
