@@ -104,6 +104,7 @@ public:
     size_t getPositionByName(const String & name) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
+    bool serializeNames() const { return serialize_names; }
 };
 
 }
