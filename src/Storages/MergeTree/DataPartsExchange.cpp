@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Disks/createVolume.h>
 #include <Disks/SingleDiskVolume.h>
-#include <Disks/S3/DiskS3.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/FileSyncGuard.h>
@@ -269,7 +268,7 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
             throw Exception("Unexpected size of file " + metadata_file, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
 
         writePODBinary(hashing_out.getHash(), out);
-    }    
+    }
 }
 
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
@@ -359,7 +358,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             throw Exception("Got 'send_s3_metadata' cookie with old protocol version", ErrorCodes::LOGICAL_ERROR);
         if (!try_use_s3_copy)
             throw Exception("Got 'send_s3_metadata' cookie when was not requested", ErrorCodes::LOGICAL_ERROR);
-        
+
         size_t sum_files_size = 0;
         readBinary(sum_files_size, in);
         IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -373,14 +372,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
         try
         {
-            return downloadPartToS3(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(disksS3), in);
+            return downloadPartToS3(part_name, replica_path, to_detached, tmp_prefix_, std::move(disksS3), in);
         }
-        catch(const Exception& e)
+        catch (const Exception & e)
         {
             if (e.code() != ErrorCodes::S3_ERROR)
                 throw;
             /// Try again but without S3 copy
-            return fetchPart(metadata_snapshot, part_name, replica_path, host, port, timeouts, 
+            return fetchPart(metadata_snapshot, part_name, replica_path, host, port, timeouts,
                 user, password, interserver_scheme, to_detached, tmp_prefix_, false);
         }
     }
@@ -545,7 +544,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
-    bool ,//sync,
     const Disks & disksS3,
     PooledReadWriteBufferFromHTTP & in
     )

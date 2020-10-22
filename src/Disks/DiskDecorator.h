@@ -50,7 +50,7 @@ public:
     void close(int fd) const override;
     void sync(int fd) const override;
     const String getType() const override { return delegate->getType(); }
-    const String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
+    String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkFile(const String & path) const override { return delegate->checkFile(path); }
     Executor & getExecutor() override;
 

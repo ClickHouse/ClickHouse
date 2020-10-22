@@ -110,7 +110,7 @@ public:
 
     void shutdown() override;
 
-    const String getUniqueId(const String & path) const override;
+    String getUniqueId(const String & path) const override;
 
     bool checkFile(const String & path) const override;
 

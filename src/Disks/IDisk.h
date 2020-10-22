@@ -196,7 +196,7 @@ public:
     virtual void shutdown() { }
 
     /// Return some uniq string for file, overrided for S3
-    virtual const String getUniqueId(const String & path) const { return path; }
+    virtual String getUniqueId(const String & path) const { return path; }
 
     /// Check file, overrided for S3 only
     virtual bool checkFile(const String & path) const { return exists(path); }

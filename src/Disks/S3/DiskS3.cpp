@@ -572,7 +572,7 @@ void DiskS3::createDirectories(const String & path)
     Poco::File(metadata_path + path).createDirectories();
 }
 
-const String DiskS3::getUniqueId(const String & path) const
+String DiskS3::getUniqueId(const String & path) const
 {
     Metadata metadata(s3_root_path, metadata_path, path);
     String id;
