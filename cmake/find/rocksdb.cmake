@@ -23,6 +23,35 @@ if (NOT USE_INTERNAL_ROCKSDB_LIBRARY)
     if (NOT ROCKSDB_LIBRARY OR NOT ROCKSDB_INCLUDE_DIR)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system rocksdb library")
     endif()
+
+    if (NOT SNAPPY_LIBRARY)
+        include(cmake/find/snappy.cmake)
+    endif()
+    if (NOT ZLIB_LIBRARY)
+        include(cmake/find/zlib.cmake)
+    endif()
+
+    find_package(BZip2)
+    find_library(ZSTD_LIBRARY zstd)
+    find_library(LZ4_LIBRARY lz4)
+    find_library(GFLAGS_LIBRARY gflags)
+
+    if(SNAPPY_LIBRARY AND ZLIB_LIBRARY AND LZ4_LIBRARY AND BZIP2_FOUND AND ZSTD_LIBRARY AND GFLAGS_LIBRARY)
+        list (APPEND ROCKSDB_LIBRARY ${SNAPPY_LIBRARY})
+        list (APPEND ROCKSDB_LIBRARY ${ZLIB_LIBRARY})
+        list (APPEND ROCKSDB_LIBRARY ${LZ4_LIBRARY})
+        list (APPEND ROCKSDB_LIBRARY ${BZIP2_LIBRARY})
+        list (APPEND ROCKSDB_LIBRARY ${ZSTD_LIBRARY})
+        list (APPEND ROCKSDB_LIBRARY ${GFLAGS_LIBRARY})
+    else()
+        message (${RECONFIGURE_MESSAGE_LEVEL}
+                 "Can't find system rocksdb: snappy=${SNAPPY_LIBRARY} ;"
+                 " zlib=${ZLIB_LIBRARY} ;"
+                 " lz4=${LZ4_LIBRARY} ;"
+                 " bz2=${BZIP2_LIBRARY} ;"
+                 " zstd=${ZSTD_LIBRARY} ;"
+                 " gflags=${GFLAGS_LIBRARY} ;")
+    endif()
 endif ()
 
 if(ROCKSDB_LIBRARY AND ROCKSDB_INCLUDE_DIR)
@@ -31,7 +60,6 @@ elseif (NOT MISSING_INTERNAL_ROCKSDB)
     set (USE_INTERNAL_ROCKSDB_LIBRARY 1)
 
     set (ROCKSDB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb/include")
-    set (ROCKSDB_CORE_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb/include")
     set (ROCKSDB_LIBRARY "rocksdb")
     set (USE_ROCKSDB 1)
 endif ()
