@@ -8,24 +8,26 @@ namespace DB
 template <class Values, class Weights>
 struct AvgWeightedFunctionTypesDeduction
 {
-    template <class T> struct NextAvgType  { using Type = T; };
+    template <class> struct NextAvgType  { };
     template <> struct NextAvgType<Int8>   { using Type = Int16; };
     template <> struct NextAvgType<Int16>  { using Type = Int32; };
     template <> struct NextAvgType<Int32>  { using Type = Int64; };
     template <> struct NextAvgType<Int64>  { using Type = Int128; };
-    template <> struct NextAvgType<Int128> { using Type = Int256; };
-    template <> struct NextAvgType<Int256> { using Type = Int256; };
 
     template <> struct NextAvgType<UInt8>   { using Type = UInt16; };
     template <> struct NextAvgType<UInt16>  { using Type = UInt32; };
     template <> struct NextAvgType<UInt32>  { using Type = UInt64; };
     template <> struct NextAvgType<UInt64>  { using Type = UInt128; };
-    template <> struct NextAvgType<UInt128> { using Type = UInt256; };
-    template <> struct NextAvgType<UInt256> { using Type = UInt256; };
+
+    // Promoted to Float as these types don't go well when operating with above ones
+    template <> struct NextAvgType<UInt128> { using Type = Float64; };
+    template <> struct NextAvgType<UInt256> { using Type = Float64; };
+    template <> struct NextAvgType<Int128> { using Type = Float64; };
+    template <> struct NextAvgType<Int256> { using Type = Float64; };
 
     template <> struct NextAvgType<Decimal32> { using Type = Decimal128; };
     template <> struct NextAvgType<Decimal64> { using Type = Decimal128; };
-    template <> struct NextAvgType<Decimal128> { using Type = Decimal256; };
+    template <> struct NextAvgType<Decimal128> { using Type = Decimal128; };
     template <> struct NextAvgType<Decimal256> { using Type = Decimal256; };
 
     template <> struct NextAvgType<Float32> { using Type = Float64; };
@@ -43,11 +45,11 @@ struct AvgWeightedFunctionTypesDeduction
         static constexpr bool BothDecimal = UDecimal && VDecimal;
         static constexpr bool NoneDecimal = !UDecimal && !VDecimal;
 
-        template <class T>
-        static constexpr bool IsIntegral = std::is_integral_v<T>;
-            /// we do not include extended integral types here as they produce errors while diving on Decimals.
-            /// || std::is_same_v<T, Int128> || std::is_same_v<T, Int256>
-            /// || std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>;
+        /// we do not include extended integral types here as they produce errors while diving on Decimals.
+        template <class T> static constexpr bool IsIntegral = std::is_integral_v<T>;
+        template <class T> static constexpr bool IsExtendedIntegral =
+            std::is_same_v<T, Int128> || std::is_same_v<T, Int256>
+            || std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>;
 
         static constexpr bool BothOrNoneDecimal = BothDecimal || NoneDecimal;
 
@@ -80,8 +82,11 @@ struct AvgWeightedFunctionTypesDeduction
          *
          * When the denominator only is Decimal, it will be casted to Float64 as integral / Decimal produces a compile
          * time error.
+         *
+         * Extended integer types can't be multiplied by doubles (I don't know, why), so we also convert them to
+         * double.
          */
-        using Denom = std::conditional_t<VDecimal && !UDecimal,
+        using Denom = std::conditional_t<(VDecimal && !UDecimal) || IsExtendedIntegral<V>,
             Float64,
             NextAvgTypeT<V>>;
     };
@@ -123,10 +128,13 @@ public:
         const auto & values = static_cast<const DecimalOrVectorCol<Values> &>(*columns[0]);
         const auto & weights = static_cast<const DecimalOrVectorCol<Weights> &>(*columns[1]);
 
-        const auto value = values.getData()[row_num];
-        const auto weight = weights.getData()[row_num];
+        using Numerator = typename Base::Numerator;
+        using Denominator = typename Base::Denominator;
 
-        this->data(place).numerator += static_cast<typename Base::Numerator>(value) * weight;
+        const Numerator value = Numerator(values.getData()[row_num]);
+        const Denominator weight = Denominator(weights.getData()[row_num]);
+
+        this->data(place).numerator += value * weight;
         this->data(place).denominator += weight;
     }
 
