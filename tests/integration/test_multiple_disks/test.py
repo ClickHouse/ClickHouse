@@ -493,6 +493,8 @@ def test_background_move(start_cluster, name, engine):
             SETTINGS storage_policy='moving_jbod_with_external'
         """.format(name=name, engine=engine))
 
+        node1.query(f"SYSTEM START MERGES {name}")
+
         for i in range(5):
             data = []  # 5MB in total
             for i in range(5):
@@ -520,6 +522,8 @@ def test_background_move(start_cluster, name, engine):
 
         # first (oldest) part was moved to external
         assert path.startswith("/external")
+
+        node1.query(f"SYSTEM START MERGES {name}")
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
