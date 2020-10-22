@@ -133,7 +133,11 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     auto manager = context.getActionLocksManager();
     manager->cleanExpired();
 
-    if (table_id)
+    if (volume_ptr && action_type == ActionLocks::PartsMerge)
+    {
+        volume_ptr->setAvoidMergesUserOverride(!start);
+    }
+    else if (table_id)
     {
         auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
         if (table)
@@ -207,6 +211,10 @@ BlockIO InterpreterSystemQuery::execute()
 
     if (!query.target_dictionary.empty() && !query.database.empty())
         query.target_dictionary = query.database + "." + query.target_dictionary;
+
+    volume_ptr = {};
+    if (!query.storage_policy.empty() && !query.volume.empty())
+        volume_ptr = context.getStoragePolicy(query.storage_policy)->getVolumeByName(query.volume);
 
     switch (query.type)
     {

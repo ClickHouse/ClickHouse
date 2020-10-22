@@ -777,7 +777,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
                 return;
 
-            auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr);
+            auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
             auto part = createPart(part_name, part_info, single_disk_volume, part_name);
             bool broken = false;
 
@@ -2997,7 +2997,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     for (const auto & part_names : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part {}", part_names.second);
-        auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_names.first, name_to_disk[part_names.first]);
+        auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_names.first, name_to_disk[part_names.first], 0);
         MutableDataPartPtr part = createPart(part_names.first, single_disk_volume, source_dir + part_names.second);
         loadPartAndFixMetadataImpl(part);
         loaded_parts.push_back(part);
@@ -3410,7 +3410,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     localBackup(disk, src_part_path, dst_part_path);
     disk->removeIfExists(dst_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk);
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     auto dst_data_part = createPart(dst_part_name, dst_part_info, single_disk_volume, tmp_dst_part_name);
 
     dst_data_part->is_temp = true;
