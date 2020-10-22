@@ -216,7 +216,7 @@ public:
             std::string result_name,
             bool compile_expressions);
 
-    ExpressionActionsPtr buildExpressions(const Context & context);
+    ExpressionActionsPtr buildExpressions();
 
 private:
     Node & addNode(Node node, bool can_replace = false);
@@ -265,8 +265,11 @@ private:
     NamesAndTypesList required_columns;
     Block sample_block;
 
+    friend class ActionsDAG;
+
 public:
     ~ExpressionActions();
+    ExpressionActions() = default;
 
     ExpressionActions(const ExpressionActions & other) = default;
 
@@ -308,7 +311,6 @@ public:
     bool checkColumnIsAlwaysFalse(const String & column_name) const;
 
 private:
-
     Settings settings;
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compilation_cache;

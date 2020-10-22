@@ -17,6 +17,7 @@
 #include <optional>
 #include <Columns/ColumnSet.h>
 #include <queue>
+#include <stack>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -1670,7 +1671,7 @@ std::string ActionsDAG::dumpNames() const
     return out.str();
 }
 
-ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
+ExpressionActionsPtr ActionsDAG::buildExpressions()
 {
     struct Data
     {
@@ -1679,6 +1680,10 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
         size_t num_expected_children = 0;
         std::vector<Node *> parents;
         Node * renamed_child = nullptr;
+
+        ssize_t position = -1;
+        size_t num_created_parents = 0;
+        bool used_in_result = false;
     };
 
     std::vector<Data> data(nodes.size());
@@ -1696,7 +1701,9 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
 
     for (auto & node : nodes)
     {
-        data[reverse_index[&node]].num_expected_children += node.children.size();
+        auto & node_data = data[reverse_index[&node]];
+        node_data.num_expected_children += node.children.size();
+        node_data.used_in_result = node.renaming_parent == nullptr && index.count(node.result_name);
 
         for (const auto & child : node.children)
             data[reverse_index[child]].parents.emplace_back(&node);
@@ -1728,7 +1735,8 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
         }
     };
 
-    auto expressions = std::make_shared<ExpressionActions>(NamesAndTypesList(), context);
+    auto expressions = std::make_shared<ExpressionActions>();
+    std::stack<size_t> free_positions;
 
     while (!ready_nodes.empty() || !ready_array_joins.empty())
     {
@@ -1742,42 +1750,42 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
 
         auto & cur = data[reverse_index[node]];
 
-        switch (node->type)
+        size_t free_position = expressions->num_columns;
+        if (free_positions.empty())
+            ++expressions->num_columns;
+        else
         {
-            case Type::INPUT:
-                expressions->addInput({node->column, node->result_type, node->result_name});
-                break;
-            case Type::COLUMN:
-                expressions->add(ExpressionAction::addColumn({node->column, node->result_type, node->result_name}));
-                break;
-            case Type::ALIAS:
-                expressions->add(ExpressionAction::copyColumn(argument_names.at(0), node->result_name, cur.renamed_child != nullptr));
-                break;
-            case Type::ARRAY_JOIN:
-                /// Here we copy argument because arrayJoin removes source column.
-                /// It makes possible to remove source column before arrayJoin if it won't be needed anymore.
-
-                /// It could have been possible to implement arrayJoin which keeps source column,
-                /// but in this case it will always be replicated (as many arrays), which is expensive.
-                expressions->add(ExpressionAction::copyColumn(argument_names.at(0), node->unique_column_name_for_array_join));
-                expressions->add(ExpressionAction::arrayJoin(node->unique_column_name_for_array_join, node->result_name));
-                break;
-            case Type::FUNCTION:
-            {
-                ExpressionAction action;
-                action.type = ExpressionAction::APPLY_FUNCTION;
-                action.result_name = node->result_name;
-                action.result_type = node->result_type;
-                action.function_builder = node->function_builder;
-                action.function_base = node->function_base;
-                action.function = node->function;
-                action.argument_names = std::move(argument_names);
-                action.added_column = node->column;
-
-                expressions->add(action);
-                break;
-            }
+            free_position = free_positions.top();
+            free_positions.pop();
         }
+
+        cur.position = free_position;
+
+        ExpressionActions::Arguments arguments;
+        arguments.reserve(cur.node->children.size());
+        for (auto * child : cur.node->children)
+        {
+            auto & arg = data[reverse_index[child]];
+
+            if (arg.position < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument was not calculated for {}", child->result_name);
+
+            ++arg.num_created_parents;
+
+            ExpressionActions::Argument argument;
+            argument.pos = arg.position;
+            argument.remove = !arg.used_in_result && arg.num_created_parents == arg.parents.size();
+
+            arguments.emplace_back(argument);
+        }
+
+        if (node->type == Type::INPUT)
+            expressions->required_columns.push_back({node->result_name, node->result_type});
+        else
+            expressions->actions.push_back({node, arguments, free_position, cur.used_in_result});
+
+        if (cur.used_in_result)
+            expressions->sample_block.insert({cur.node->column, cur.node->result_type, cur.node->result_name});
 
         for (const auto & parent : cur.parents)
             update_parent(parent);
@@ -1785,6 +1793,9 @@ ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
         if (node->renaming_parent)
             update_parent(node->renaming_parent);
     }
+
+    expressions->nodes.swap(nodes);
+    index.clear();
 
     return expressions;
 }
