@@ -92,11 +92,11 @@ double mapPiecewiseLinearToUnit(double value, double min, double max)
 /** Is allowed to merge parts in range with specific properties.
   */
 bool allow(
-    size_t sum_size,
-    size_t max_size,
-    size_t min_age,
-    size_t range_size,
-    size_t partition_size,
+    double sum_size,
+    double max_size,
+    double min_age,
+    double range_size,
+    double partition_size,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log,
     const SimpleMergeSelector::Settings & settings)
