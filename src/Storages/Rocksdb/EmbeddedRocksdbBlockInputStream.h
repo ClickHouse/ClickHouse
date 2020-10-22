@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-#include <Interpreters/Context.h>
 #include <Storages/Rocksdb/StorageEmbeddedRocksdb.h>
 
 #include <rocksdb/db.h>

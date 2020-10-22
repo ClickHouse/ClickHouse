@@ -79,7 +79,7 @@ static bool traverseASTFilter(const String & primary_key, const DataTypePtr & pr
         const IAST * value;
 
         if (args.children.size() != 2)
-                return false;
+            return false;
 
         if (function->name == "in")
         {
@@ -87,7 +87,7 @@ static bool traverseASTFilter(const String & primary_key, const DataTypePtr & pr
             if (!ident)
                 return false;
 
-            if (ident->name != primary_key)
+            if (ident->name() != primary_key)
                 return false;
             value = args.children.at(1).get();
 
@@ -122,7 +122,7 @@ static bool traverseASTFilter(const String & primary_key, const DataTypePtr & pr
             else
                 return false;
 
-            if (ident->name != primary_key)
+            if (ident->name() != primary_key)
                 return false;
 
             //function->name == "equals"
