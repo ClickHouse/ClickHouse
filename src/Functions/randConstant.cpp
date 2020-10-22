@@ -22,9 +22,9 @@ public:
 
 bool useDefaultImplementationForNulls() const override { return false; }
 
-    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    ColumnPtr execute(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) override
     {
-        columns[result].column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
+        return DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
     }
 
 private:
@@ -47,12 +47,12 @@ public:
         return argument_types;
     }
 
-    const DataTypePtr & getReturnType() const override
+    const DataTypePtr & getResultType() const override
     {
         return return_type;
     }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionRandomConstant<ToType, Name>>(value);
     }

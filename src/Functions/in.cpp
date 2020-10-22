@@ -80,16 +80,13 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {
         if constexpr (ignore_set)
-        {
-            columns[result].column = ColumnUInt8::create(input_rows_count, 0u);
-            return;
-        }
+            return ColumnUInt8::create(input_rows_count, 0u);
 
         /// Second argument must be ColumnSet.
-        ColumnPtr column_set_ptr = columns[arguments[1]].column;
+        ColumnPtr column_set_ptr = arguments[1].column;
         const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
             column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
@@ -100,7 +97,7 @@ public:
         DB::Block columns_of_key_columns;
 
         /// First argument may be a tuple or a single column.
-        const ColumnWithTypeAndName & left_arg = columns[arguments[0]];
+        const ColumnWithTypeAndName & left_arg = arguments[0];
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
         const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(left_arg.column.get());
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
@@ -125,7 +122,7 @@ public:
         else
             columns_of_key_columns.insert(left_arg);
 
-        columns[result].column = set->execute(columns_of_key_columns, negative);
+        return set->execute(columns_of_key_columns, negative);
     }
 };
 
