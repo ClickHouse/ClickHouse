@@ -527,7 +527,7 @@ struct CachedColumnName
     bool & skip_cache;
     String cached;
 
-    CachedColumnName(bool & skip_cache_) : skip_cache(skip_cache_) {}
+    explicit CachedColumnName(bool & skip_cache_) : skip_cache(skip_cache_) {}
 
     const String & get(const ASTPtr & ast)
     {

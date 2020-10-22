@@ -22,7 +22,7 @@ private:
     DataTypes elems;
     Strings names;
     bool have_explicit_names;
-    bool serialize_names;
+    bool serialize_names = true;
 public:
     static constexpr bool is_parametric = true;
 
