@@ -29,7 +29,10 @@ but may have different types.
 -   Weighted mean otherwise.
 
 **Return type**
-- [Float64](../../../sql-reference/data-types/float.md).
+
+- `Decimal` if both types are [Decimal](../../../sql-reference/data-types/decimal.md)
+  or if one type is Decimal and other is Integer.
+- [Float64](../../../sql-reference/data-types/float.md) otherwise.
 
 **Example**
 
