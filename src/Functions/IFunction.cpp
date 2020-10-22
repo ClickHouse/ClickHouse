@@ -316,12 +316,10 @@ void ExecutableFunctionAdaptor::executeWithoutLowCardinalityColumns(
     if (defaultImplementationForNulls(columns, args, result, input_rows_count, dry_run))
         return;
 
-    FunctionArguments arguments(columns);
-
     if (dry_run)
-        impl->executeDryRun(arguments, args, result, input_rows_count);
+        impl->executeDryRun(columns, args, result, input_rows_count);
     else
-        impl->execute(arguments, args, result, input_rows_count);
+        impl->execute(columns, args, result, input_rows_count);
 }
 
 static const ColumnLowCardinality * findLowCardinalityArgument(const ColumnsWithTypeAndName & columns, const ColumnNumbers & args)

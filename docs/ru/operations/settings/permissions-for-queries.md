@@ -16,7 +16,7 @@ toc_title: "\u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043d\u0438\u044f\u0020\u
 Разрешения пользователя по типу запроса регулируются параметрами:
 
 -   [readonly](#settings_readonly) — ограничивает разрешения для всех типов запросов, кроме DDL.
--   [allow\_ddl](#settings_allow_ddl) — ограничивает разрешения для DDL запросов.
+-   [allow_ddl](#settings_allow_ddl) — ограничивает разрешения для DDL запросов.
 
 `KILL QUERY` выполняется с любыми настройками.
 
@@ -42,7 +42,7 @@ toc_title: "\u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043d\u0438\u044f\u0020\u
 
 0
 
-## allow\_ddl {#settings_allow_ddl}
+## allow_ddl {#settings_allow_ddl}
 
 Разрешает/запрещает [DDL](https://ru.wikipedia.org/wiki/Data_Definition_Language) запросы.
 

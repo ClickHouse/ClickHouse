@@ -46,7 +46,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & sample_block, const ColumnNumbers & arguments, size_t result) const final
     {
-        FunctionArguments columns(const_cast<ColumnsWithTypeAndName &>(sample_block));
+        ColumnsWithTypeAndName columns(const_cast<ColumnsWithTypeAndName &>(sample_block));
         return std::make_shared<ExecutableFunctionAdaptor>(impl->prepare(columns, arguments, result));
     }
 

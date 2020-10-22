@@ -38,8 +38,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column
-            = DataTypeString().createColumnConst(input_rows_count, block.getByPosition(arguments[0]).column->getName());
+        block[result].column
+            = DataTypeString().createColumnConst(input_rows_count, block[arguments[0]].column->getName());
     }
 
     ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments) const override

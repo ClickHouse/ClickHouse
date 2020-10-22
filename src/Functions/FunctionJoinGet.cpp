@@ -22,10 +22,10 @@ void ExecutableFunctionJoinGet<or_null>::execute(Block & block, const ColumnNumb
     ColumnsWithTypeAndName keys;
     for (size_t i = 2; i < arguments.size(); ++i)
     {
-        auto key = block.getByPosition(arguments[i]);
+        auto key = block[arguments[i]];
         keys.emplace_back(std::move(key));
     }
-    block.getByPosition(result) = join->joinGet(keys, result_block);
+    block[result] = join->joinGet(keys, result_block);
 }
 
 template <bool or_null>
