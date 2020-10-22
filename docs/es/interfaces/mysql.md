@@ -7,7 +7,7 @@ toc_title: Interfaz MySQL
 
 # Interfaz MySQL {#mysql-interface}
 
-ClickHouse soporta el protocolo de cable MySQL. Puede ser habilitado por [mysql\_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) configuración en el archivo de configuración:
+ClickHouse soporta el protocolo de cable MySQL. Puede ser habilitado por [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) configuración en el archivo de configuración:
 
 ``` xml
 <mysql_port>9004</mysql_port>

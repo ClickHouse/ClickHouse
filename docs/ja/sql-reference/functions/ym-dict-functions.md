@@ -17,12 +17,12 @@ ClickHouseは、特定の地域が属する国のさまざまな視点をサポ�
 
 その ‘clickhouse-server’ configは、地域階層を持つファイルを指定します::`<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>`
 
-このファイル以外にも、名前に\_記号と接尾辞が付加された近くのファイルも検索します（ファイル拡張子の前に）。
+このファイル以外にも、名前に_記号と接尾辞が付加された近くのファイルも検索します（ファイル拡張子の前に）。
 たとえば、次のファイルも検索します `/opt/geo/regions_hierarchy_ua.txt`、存在する場合。
 
 `ua` 辞書キーと呼ばれます。 接尾辞のない辞書の場合、キーは空の文字列です。
 
-すべての辞書は実行時に再ロードされます(builtin\_dictionaries\_reload\_interval設定パラメータで定義されているように、一定の秒数ごとに、またはデフォルトでは時間に一度)。 ただし、使用可能な辞書のリストは、サーバーの起動時に一度に定義されます。
+すべての辞書は実行時に再ロードされます(builtin_dictionaries_reload_interval設定パラメータで定義されているように、一定の秒数ごとに、またはデフォルトでは時間に一度)。 ただし、使用可能な辞書のリストは、サーバーの起動時に一度に定義されます。
 
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 例:
@@ -107,7 +107,7 @@ LIMIT 15
 地域を大陸に変換します。 他のすべての方法では、この関数は次のように同じです ‘regionToCity’.
 例: `regionToContinent(toUInt32(213)) = 10001` モスクワ(213)をユーラシア(10001)に変換します。
 
-### regionToTopContinent(\#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
+### regionToTopContinent(#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
 
 リージョンの階層内で最も高い大陸を検索します。
 

@@ -2,7 +2,7 @@
 
 Содержит экземпляры трассировки стека адресов вызова, собранные с помощью семплирующего профайлера запросов.
 
-ClickHouse создает эту таблицу когда утсановлена настройка [trace\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) в конфигурационном файле сервереа. А также настройки [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) и [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns).
+ClickHouse создает эту таблицу когда утсановлена настройка [trace_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) в конфигурационном файле сервереа. А также настройки [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) и [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns).
 
 Для анализа stack traces, используйте функции интроспекции `addressToLine`, `addressToSymbol` и `demangle`.
 

@@ -9,7 +9,7 @@ toc_title: Comment Construire ClickHouse sur Linux
 
 Le tutoriel suivant est basé sur le système Linux Ubuntu.
 Avec les modifications appropriées, il devrait également fonctionner sur toute autre distribution Linux.
-Plates-formes prises en charge: x86\_64 et AArch64. La prise en charge de Power9 est expérimentale.
+Plates-formes prises en charge: x86_64 et AArch64. La prise en charge de Power9 est expérimentale.
 
 ## Installez Git, CMake, Python et Ninja {#install-git-cmake-python-and-ninja}
 

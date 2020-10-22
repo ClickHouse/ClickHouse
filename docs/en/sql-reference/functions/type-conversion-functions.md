@@ -13,7 +13,6 @@ ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w
 
 ## toInt(8\|16\|32\|64\|128\|256) {#toint8163264128256}
 
-
 Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
 
 -   `toInt8(expr)` — Results in the `Int8` data type.
@@ -189,9 +188,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 └──────┴────────────────────────────────────────────────────┘
 ```
 
-
-## toDecimal(32\|64\|128\'|256)OrZero {#todecimal3264128256orzero}
-
+## toDecimal(32\|64\|128\|256)OrZero {#todecimal3264128256orzero}
 
 Converts an input value to the [Decimal(P,S)](../../sql-reference/data-types/decimal.md) data type. This family of functions include:
 
@@ -253,7 +250,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix\_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix\_timestamp))’.
+As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix_timestamp))’.
 
 Conversion between a date and date with time is performed the natural way: by adding a null time or dropping the time.
 
@@ -372,6 +369,10 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 │ Nullable(UInt16)                        │
 └─────────────────────────────────────────┘
 ```
+
+**See also**
+
+-   [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable) setting
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 
