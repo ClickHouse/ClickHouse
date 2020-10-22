@@ -13,16 +13,9 @@ Initializes aggregation (on) some lines from input.
 initializeAggregation(input_rows_count);
 ```
 
-**Parameters** (Optional)
-
--   `x` — Description. [Type name](relative/path/to/type/dscr.md#type).
--   `y` — Description. [Type name](relative/path/to/type/dscr.md#type).
-
 **Returned value(s)**
 
 -   Returned values list.
-
-Type: [Type](relative/path/to/type/dscr.md#type).
 
 **Example**
 
