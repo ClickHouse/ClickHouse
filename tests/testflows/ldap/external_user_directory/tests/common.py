@@ -70,6 +70,15 @@ def rbac_roles(*roles):
                 with By(f"dropping role {role}", flags=TE):
                     node.query(f"DROP ROLE IF EXISTS {role}")
 
+def verify_ldap_user_exists(server, username, password):
+    """Check that LDAP user is defined on the LDAP server.
+    """
+    with By("searching LDAP database"):
+        ldap_node = current().context.cluster.node(server)
+        r = ldap_node.command(
+            f"ldapwhoami -H ldap://localhost -D 'cn={username},ou=users,dc=company,dc=com' -w {password}")
+        assert r.exitcode == 0, error()
+
 def create_ldap_external_user_directory_config_content(server=None, roles=None, **kwargs):
     """Create LDAP external user directory configuration file content.
     """
@@ -197,8 +206,26 @@ def login(servers, directory_server, *users, config=None):
 
 @TestStep(When)
 @Name("I login as {username} and execute query")
-def login_and_execute_query(self, username, password, exitcode=None, message=None, steps=True, timeout=60):
-    self.context.node.query("SELECT 1",
-        settings=[("user", username), ("password", password)],
-        exitcode=exitcode or 0,
-        message=message, steps=steps, timeout=timeout)
+def login_and_execute_query(self, username, password, exitcode=None, message=None, steps=True, timeout=60, poll=False):
+    if poll:
+        start_time = time.time()
+        attempt = 0
+
+        with By("repeatedly trying to login until successful or timeout"):
+            while True:
+                with When(f"attempt #{attempt}"):
+                    r = self.context.node.query("SELECT 1", settings=[("user", username), ("password", password)],
+                        no_checks=True, steps=False, timeout=timeout)
+
+                if r.exitcode == (0 if exitcode is None else exitcode) and (message in r.output if message is not None else True):
+                    break
+
+                if time.time() - start_time > timeout:
+                    fail(f"timeout {timeout} trying to login")
+
+                attempt += 1
+    else:
+        self.context.node.query("SELECT 1",
+            settings=[("user", username), ("password", password)],
+            exitcode=(0 if exitcode is None else exitcode),
+            message=message, steps=steps, timeout=timeout)
