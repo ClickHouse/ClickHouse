@@ -51,7 +51,8 @@ BlockIO InterpreterAlterQuery::execute()
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY && !table->supportsReplication()) {
+    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY && !table->supportsReplication())
+    {
         database->propose(query_ptr);
         auto * database_replicated = typeid_cast<DatabaseReplicated *>(database.get());
         return database_replicated->getFeedback();
