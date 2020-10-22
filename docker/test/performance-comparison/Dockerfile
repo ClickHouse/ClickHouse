@@ -47,7 +47,9 @@ COPY * /
 # writes to it, so just bind the downloader script as well. We could also try to
 # remount it with proper options in Sandbox task.
 # https://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt
-CMD ["bash", "-c", "node=$((RANDOM % $(numactl --hardware | sed -n 's/^.*available:\(.*\)nodes.*$/\1/p'))); echo Will bind to NUMA node $node; numactl --cpunodebind=$node --membind=$node /entrypoint.sh"]
+# Double-escaped backslashes are a tribute to the engineering wonder of docker --
+# it gives '/bin/sh: 1: [bash,: not found' otherwise.
+CMD ["bash", "-c", "node=$((RANDOM % $(numactl --hardware | sed -n 's/^.*available:\\(.*\\)nodes.*$/\\1/p'))); echo Will bind to NUMA node $node; numactl --cpunodebind=$node --membind=$node /entrypoint.sh"]
 
 # docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> yandex/clickhouse-performance-comparison
 
