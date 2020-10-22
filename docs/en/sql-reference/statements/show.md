@@ -74,7 +74,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-Getting the first 2 rows from database names:
+Getting the first two rows from database names:
 
 ``` sql
 SHOW DATABASES LIMIT 2
@@ -173,7 +173,7 @@ Result:
 └──────────────┘
 ```
 
-Getting the first 2 rows from table names:
+Getting the first two rows from table names:
 
 ``` sql
 SHOW TABLES FROM system LIMIT 2
