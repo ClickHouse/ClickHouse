@@ -21,7 +21,7 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/OpenTelemetryLog.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -323,7 +323,7 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { if (auto text_log = context.getTextLog()) text_log->flush(true); },
                     [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); },
                     [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
-                    [&] () { if (auto opentelemetry_log = context.getOpenTelemetryLog()) opentelemetry_log->flush(true); }
+                    [&] () { if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:

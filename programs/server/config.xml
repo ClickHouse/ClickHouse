@@ -597,7 +597,7 @@
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.
     -->
-    <opentelemetry_log>
+    <opentelemetry_span_log>
         <!--
             The default table creation code is insufficient, this <engine> spec
             is a workaround. There is no 'event_time' for this log, but two times,
@@ -614,9 +614,9 @@
             order by (finish_date, finish_time_us, trace_id)
         </engine>
         <database>system</database>
-        <table>opentelemetry_log</table>
+        <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </opentelemetry_log>
+    </opentelemetry_span_log>
 
 
     <!-- Crash log. Stores stack traces for fatal errors.

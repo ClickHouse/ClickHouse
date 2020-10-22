@@ -15,7 +15,7 @@ select count(*) "'"'"total spans"'"'",
         uniqExact(span_id) "'"'"unique spans"'"'",
         uniqExactIf(parent_span_id, parent_span_id != 0)
             "'"'"unique non-zero parent spans"'"'"
-    from system.opentelemetry_log
+    from system.opentelemetry_span_log
     where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
         and operation_name = 'query'
     ;
@@ -24,7 +24,7 @@ select count(*) "'"'"total spans"'"'",
 select count(*) "'"'"initial query spans with proper parent"'"'"
     from
         (select *, attribute_name, attribute_value
-            from system.opentelemetry_log
+            from system.opentelemetry_span_log
                 array join attribute.names as attribute_name,
                     attribute.values as attribute_value) o
         join system.query_log on query_id = o.attribute_value
@@ -39,7 +39,7 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
 -- Check that the tracestate header was propagated. It must have exactly the
 -- same non-empty value for all 'query' spans in this trace.
 select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
-    from system.opentelemetry_log
+    from system.opentelemetry_span_log
         array join attribute.names as name, attribute.values as value
     where
         trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
@@ -106,7 +106,7 @@ ${CLICKHOUSE_CLIENT} -q "
     with count(*) as c
     -- expect 200 * 0.1 = 20 sampled events on average
     select if(c > 5 and c < 35, 'OK', 'fail: ' || toString(c))
-    from system.opentelemetry_log
+    from system.opentelemetry_span_log
         array join attribute.names as name, attribute.values as value
     where name = 'clickhouse.query_id'
         and operation_name = 'query'

@@ -59,15 +59,14 @@ public:
     String initial_query_id;
     Poco::Net::SocketAddress initial_address;
 
-    // OpenTelemetry things
+    // OpenTelemetry trace information.
     __uint128_t opentelemetry_trace_id = 0;
-    // Span ID is not strictly the client info, but convenient to keep here.
     // The span id we get the in the incoming client info becomes our parent span
     // id, and the span id we send becomes downstream parent span id.
     UInt64 opentelemetry_span_id = 0;
     UInt64 opentelemetry_parent_span_id = 0;
-    // the incoming tracestate header, we just pass it downstream.
-    // https://www.w3.org/TR/trace-context/
+    // The incoming tracestate header and the trace flags, we just pass them downstream.
+    // They are described at https://www.w3.org/TR/trace-context/
     String opentelemetry_tracestate;
     UInt8 opentelemetry_trace_flags = 0;
 

@@ -31,7 +31,7 @@
 #include <Access/EnabledQuota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/OpenTelemetryLog.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
@@ -245,9 +245,9 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
 
-    if (auto opentelemetry_log = context.getOpenTelemetryLog();
+    if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog();
         context.getClientInfo().opentelemetry_trace_id
-            && opentelemetry_log)
+            && opentelemetry_span_log)
     {
         OpenTelemetrySpanLogElement span;
         span.trace_id = context.getClientInfo().opentelemetry_trace_id;
@@ -275,7 +275,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
                 context.getClientInfo().opentelemetry_tracestate);
         }
 
-        opentelemetry_log->add(span);
+        opentelemetry_span_log->add(span);
     }
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);
@@ -663,9 +663,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         query_log->add(elem);
                 }
 
-                if (auto opentelemetry_log = context.getOpenTelemetryLog();
+                if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog();
                     context.getClientInfo().opentelemetry_trace_id
-                        && opentelemetry_log)
+                        && opentelemetry_span_log)
                 {
                     OpenTelemetrySpanLogElement span;
                     span.trace_id = context.getClientInfo().opentelemetry_trace_id;
@@ -692,7 +692,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             context.getClientInfo().opentelemetry_tracestate);
                     }
 
-                    opentelemetry_log->add(span);
+                    opentelemetry_span_log->add(span);
                 }
             };
 

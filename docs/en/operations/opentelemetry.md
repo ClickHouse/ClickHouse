@@ -1,8 +1,16 @@
-# [draft] OpenTelemetry support
+---
+toc_priority: 62
+toc_title: [experimental] OpenTelemetry
+---
+
+# [experimental] OpenTelemetry Support
 
 [OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting
 traces and metrics from distributed application. ClickHouse has some support
 for OpenTelemetry.
+
+!!! warning "Warning"
+This is an experimental feature that will change in backwards-incompatible ways in the future releases.
 
 
 ## Supplying Trace Context to ClickHouse
@@ -40,9 +48,9 @@ a dependency on a particular monitoring system, instead only
 providing the tracing data conforming to the standard. A natural way to do so
 in an SQL RDBMS is a system table. OpenTelemetry trace span information
 [required by the standard](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/overview.md#span)
-is stored in the system table called `system.opentelemetry_log`.
+is stored in the system table called `system.opentelemetry_span_log`.
 
-The table must be enabled in the server configuration, see the `opentelemetry_log`
+The table must be enabled in the server configuration, see the `opentelemetry_span_log`
 element in the default config file `config.xml`. It is enabled by default.
 
 The table has the following columns:

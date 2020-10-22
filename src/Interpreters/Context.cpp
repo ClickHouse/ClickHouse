@@ -1791,14 +1791,14 @@ std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
 }
 
 
-std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetryLog()
+std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog()
 {
     auto lock = getLock();
 
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->opentelemetry_log;
+    return shared->system_logs->opentelemetry_span_log;
 }
 
 

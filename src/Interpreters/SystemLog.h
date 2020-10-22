@@ -106,8 +106,8 @@ struct SystemLogs
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
     /// Metrics from system.asynchronous_metrics.
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
-    /// OpenTelemetry trace spans
-    std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_log;
+    /// OpenTelemetry trace spans.
+    std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
 
     std::vector<ISystemLog *> logs;
 };
