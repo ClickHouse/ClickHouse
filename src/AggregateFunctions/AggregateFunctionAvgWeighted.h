@@ -44,13 +44,14 @@ struct AvgWeightedFunctionTypesDeduction
         static constexpr bool NoneDecimal = !UDecimal && !VDecimal;
 
         template <class T>
-        static constexpr bool IsIntegral = std::is_integral_v<T>
-            || std::is_same_v<T, Int128> || std::is_same_v<T, Int256>
-            || std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>;
+        static constexpr bool IsIntegral = std::is_integral_v<T>;
+            /// we do not include extended integral types here as they produce errors while diving on Decimals.
+            /// || std::is_same_v<T, Int128> || std::is_same_v<T, Int256>
+            /// || std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>;
 
         static constexpr bool BothOrNoneDecimal = BothDecimal || NoneDecimal;
 
-        using Num = std::conditional<BothOrNoneDecimal,
+        using Num = std::conditional_t<BothOrNoneDecimal,
             /// When both types are Decimal, we can perform computations in the Decimals only.
             /// When none of the types is Decimal, the result is always correct, the numerator is the next largest type up
             /// to Float64.
@@ -63,10 +64,9 @@ struct AvgWeightedFunctionTypesDeduction
                 std::conditional_t<IsIntegral<V>,
                     NextAvgTypeT<U>,
                     Float64>,
-                /// When the denominator only is Decimal, we check the numerator (as the above case).
-                std::conditional_t<IsIntegral<U>,
-                    NextAvgTypeT<U>,
-                    Float64>>>;
+                /// When the denominator only is Decimal, it would be converted to Float64 (as integral / Decimal
+                /// produces a compile error, vice versa allowed), so we just cast the numerator to Flaoat64;
+                Float64>>;
 
         /**
          * When both types are Decimal, we can perform computations in the Decimals only.
@@ -78,10 +78,10 @@ struct AvgWeightedFunctionTypesDeduction
          * - If the denominator was floating-point, the numerator would be Float64.
          * - If not, the numerator would be Decimal (as the denominator is integral).
          *
-         * When the denominator only is Decimal, the numerator is either integral (so we leave the Decimal), or Float64,
-         * so we set the denominator to Float64;
+         * When the denominator only is Decimal, it will be casted to Float64 as integral / Decimal produces a compile
+         * time error.
          */
-        using Denom = std::conditional<VDecimal && !UDecimal && !IsIntegral<U>,
+        using Denom = std::conditional_t<VDecimal && !UDecimal,
             Float64,
             NextAvgTypeT<V>>;
     };

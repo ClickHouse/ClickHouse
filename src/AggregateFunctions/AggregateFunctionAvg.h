@@ -17,10 +17,10 @@ using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<
 template <class Numerator, class Denominator>
 struct RationalFraction
 {
-    /// {0} prohibited as excess elements.
-    /// = 0 prohibited as there are no suitable constructors.
-    Numerator numerator = static_cast<Numerator>(0);
-    Denominator denominator = static_cast<Denominator>(0);
+    constexpr RationalFraction(): numerator(0), denominator(0) {}
+
+    Numerator numerator;
+    Denominator denominator;
 
     /// Calculate the fraction as a #Result.
     template <class Result>
