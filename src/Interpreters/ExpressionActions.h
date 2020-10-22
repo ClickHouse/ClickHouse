@@ -233,13 +233,18 @@ private:
     using Node = ActionsDAG::Node;
     using Index = ActionsDAG::Index;
 
+    struct Argument
+    {
+        size_t pos;
+        bool remove;
+    };
+
+    using Arguments = std::vector<Argument>;
+
     struct Action
     {
         Node * node;
-        ColumnNumbers arguments;
-        /// Columns which will be removed after actions is executed.
-        /// It is always a subset of arguments.
-        ColumnNumbers to_remove;
+        Arguments arguments;
         size_t result_position;
         bool is_used_in_result;
     };

@@ -626,24 +626,32 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
                 throw Exception("Result column is not empty", ErrorCodes::LOGICAL_ERROR);
 
             res_column.type = action.node->result_type;
-            /// Columns names are not used, avoid extra copy.
-            /// res_column.name = action.node->result_name;
+            res_column.name = action.node->result_name;
+
+            ColumnsWithTypeAndName arguments(action.arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                arguments[i] = std::move(columns[action.arguments[i].pos]);
 
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
             if (action.node->is_function_compiled)
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-            action.node->function->execute(columns, action.arguments, action.result_position, num_rows, dry_run);
+
+            res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+
+            for (size_t i = 0; i < arguments.size(); ++i)
+                if (!action.arguments[i].remove)
+                    arguments[i] = std::move(columns[action.arguments[i].pos]);
 
             break;
         }
 
         case ActionsDAG::Type::ARRAY_JOIN:
         {
-            size_t array_join_key_pos = action.arguments.front();
+            size_t array_join_key_pos = action.arguments.front().pos;
             auto array_join_key = columns[array_join_key_pos];
 
             /// Remove array join argument in advance if it is not needed.
-            if (!action.to_remove.empty())
+            if (action.arguments.front().remove)
                 columns[array_join_key_pos] = {};
 
             array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
@@ -679,8 +687,18 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
 
         case ActionsDAG::Type::ALIAS:
         {
-            /// Do not care about names, they are empty.
-            columns[action.result_position] = columns[action.arguments.front()];
+            const auto & arg = action.arguments.front();
+            if (action.result_position != arg.pos)
+            {
+                columns[action.result_position].column = columns[arg.pos].column;
+                columns[action.result_position].type = columns[arg.pos].type;
+            }
+
+            columns[action.result_position].name = action.node->result_name;
+
+            if (arg.remove)
+                columns[arg.pos] = {};
+
             break;
         }
 
@@ -689,9 +707,6 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             throw Exception("Cannot execute INPUT action", ErrorCodes::LOGICAL_ERROR);
         }
     }
-
-    for (auto to_remove : action.to_remove)
-        columns[to_remove] = {};
 }
 
 bool ExpressionActions::hasArrayJoin() const
