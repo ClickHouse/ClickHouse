@@ -17,7 +17,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <common/getFQDNOrHostName.h>
-#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/SettingsChanges.h>
 #include <Disks/StoragePolicy.h>
@@ -237,7 +236,8 @@ void HTTPHandler::processQuery(
     Poco::Net::HTTPServerRequest & request,
     HTMLForm & params,
     Poco::Net::HTTPServerResponse & response,
-    Output & used_output)
+    Output & used_output,
+    std::optional<CurrentThread::QueryScope> & query_scope)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
@@ -619,6 +619,8 @@ void HTTPHandler::processQuery(
 
     customizeContext(request, context);
 
+    query_scope.emplace(context);
+
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
@@ -718,7 +720,8 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     /// Should be initialized before anything,
     /// For correct memory accounting.
     Context context = server.context();
-    CurrentThread::QueryScope query_scope(context);
+    /// Cannot be set here, since query_id is unknown.
+    std::optional<CurrentThread::QueryScope> query_scope;
 
     Output used_output;
 
@@ -743,7 +746,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
-        processQuery(context, request, params, response, used_output);
+        processQuery(context, request, params, response, used_output, query_scope);
         LOG_DEBUG(log, "Done processing query");
     }
     catch (...)

@@ -63,10 +63,10 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const IColumn * haystack_column = columns[arguments[0]].column.get();
-        const IColumn * needle_column = columns[arguments[1]].column.get();
+        const IColumn * haystack_column = arguments[0].column.get();
+        const IColumn * needle_column = arguments[1].column.get();
 
         auto col_res = ColumnVector<UInt8>::create();
         typename ColumnVector<UInt8>::Container & vec_res = col_res->getData();
@@ -84,7 +84,7 @@ public:
         else
             throw Exception("Illegal combination of columns as arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        columns[result].column = std::move(col_res);
+        return col_res;
     }
 
 private:
@@ -159,9 +159,9 @@ public:
     #endif
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        selector.selectAndExecute(columns, arguments, result, input_rows_count);
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(const Context & context)

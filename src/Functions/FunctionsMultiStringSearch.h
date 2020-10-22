@@ -75,20 +75,20 @@ public:
         return Impl::getReturnType();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
-        const ColumnPtr & column_haystack = columns[arguments[0]].column;
+        const ColumnPtr & column_haystack = arguments[0].column;
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
 
-        const ColumnPtr & arr_ptr = columns[arguments[1]].column;
+        const ColumnPtr & arr_ptr = arguments[1].column;
         const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
 
         if (!col_const_arr)
             throw Exception(
-                "Illegal column " + columns[arguments[1]].column->getName() + ". The array is not const",
+                "Illegal column " + arguments[1].column->getName() + ". The array is not const",
                 ErrorCodes::ILLEGAL_COLUMN);
 
         Array src_arr = col_const_arr->getValue<Array>();
@@ -115,12 +115,12 @@ public:
         if (col_haystack_vector)
             Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res);
         else
-            throw Exception("Illegal column " + columns[arguments[0]].column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal column " + arguments[0].column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         if constexpr (Impl::is_column_array)
-            columns[result].column = ColumnArray::create(std::move(col_res), std::move(col_offsets));
+            return ColumnArray::create(std::move(col_res), std::move(col_offsets));
         else
-            columns[result].column = std::move(col_res);
+            return col_res;
     }
 };
 

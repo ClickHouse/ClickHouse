@@ -49,28 +49,31 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        if (!(executeType<UInt8>(columns, arguments, result)
-            || executeType<UInt16>(columns, arguments, result)
-            || executeType<UInt32>(columns, arguments, result)
-            || executeType<UInt64>(columns, arguments, result)
-            || executeType<Int8>(columns, arguments, result)
-            || executeType<Int16>(columns, arguments, result)
-            || executeType<Int32>(columns, arguments, result)
-            || executeType<Int64>(columns, arguments, result)
-            || executeType<Float32>(columns, arguments, result)
-            || executeType<Float64>(columns, arguments, result)))
-            throw Exception("Illegal column " + columns[arguments[0]].column->getName()
+        ColumnPtr res;
+        if (!((res = executeType<UInt8>(arguments))
+            || (res = executeType<UInt16>(arguments))
+            || (res = executeType<UInt32>(arguments))
+            || (res = executeType<UInt64>(arguments))
+            || (res = executeType<Int8>(arguments))
+            || (res = executeType<Int16>(arguments))
+            || (res = executeType<Int32>(arguments))
+            || (res = executeType<Int64>(arguments))
+            || (res = executeType<Float32>(arguments))
+            || (res = executeType<Float64>(arguments))))
+            throw Exception("Illegal column " + arguments[0].column->getName()
                             + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
+
+        return res;
     }
 
 private:
     template <typename T>
-    bool executeType(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result) const
+    ColumnPtr executeType(ColumnsWithTypeAndName & arguments) const
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(columns[arguments[0]].column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get()))
         {
             auto col_to = ColumnString::create();
 
@@ -91,11 +94,10 @@ private:
             }
 
             buf_to.finalize();
-            columns[result].column = std::move(col_to);
-            return true;
+            return col_to;
         }
 
-        return false;
+        return nullptr;
     }
 };
 
