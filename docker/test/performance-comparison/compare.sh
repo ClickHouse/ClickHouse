@@ -1088,6 +1088,7 @@ case "$stage" in
     time configure
     ;&
 "restart")
+    numactl --show ||:
     numactl --hardware ||:
     lscpu ||:
     dmidecode -t 4 ||:
