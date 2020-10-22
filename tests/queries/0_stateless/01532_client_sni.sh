@@ -13,4 +13,4 @@ strace -f -x -s10000 -e trace=write,sendto ${CLICKHOUSE_LOCAL} --query "SELECT *
 #          extension id  len: 14  |    type     |
 #                                 |             |
 #                       hostnames list       hostname
-#                            len, 14          len, 9
+#                            len, 12          len, 9
