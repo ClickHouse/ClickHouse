@@ -344,6 +344,7 @@ Pipe StorageMerge::createSources(
         convertingSourceStream(header, metadata_snapshot, *modified_context, modified_query_info.query, pipe, processed_stage);
 
         pipe.addTableLock(struct_lock);
+        pipe.addStorageHolder(storage);
         pipe.addInterpreterContext(modified_context);
     }
 

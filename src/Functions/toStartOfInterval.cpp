@@ -226,13 +226,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
     {
-        const auto & time_column = columns[arguments[0]];
-        const auto & interval_column = columns[arguments[1]];
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(columns, arguments, 2, 0);
+        const auto & time_column = arguments[0];
+        const auto & interval_column = arguments[1];
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         auto result_column = dispatchForColumns(time_column, interval_column, time_zone);
-        columns[result].column = std::move(result_column);
+        return result_column;
     }
 
     bool hasInformationAboutMonotonicity() const override
