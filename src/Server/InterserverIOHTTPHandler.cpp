@@ -97,7 +97,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
         if (auto [message, success] = checkAuthentication(request); success)
         {
             processQuery(request, response, used_output);
-            LOG_INFO(log, "Done processing query");
+            LOG_DEBUG(log, "Done processing query");
         }
         else
         {

@@ -353,20 +353,22 @@ def run_tests_array(all_tests_with_params):
 
                             if os.path.isfile(stdout_file):
                                 print(", result:\n")
-                                print(open(stdout_file).read())
+                                print('\n'.join(open(stdout_file).read().split('\n')[:100]))
 
                         elif stderr:
                             failures += 1
                             failures_chain += 1
                             print(MSG_FAIL, end='')
                             print_test_time(total_time)
-                            print(" - having stderror:\n{}".format(stderr))
+                            print(" - having stderror:\n{}".format(
+                                '\n'.join(stderr.split('\n')[:100])))
                         elif 'Exception' in stdout:
                             failures += 1
                             failures_chain += 1
                             print(MSG_FAIL, end='')
                             print_test_time(total_time)
-                            print(" - having exception:\n{}".format(stdout))
+                            print(" - having exception:\n{}".format(
+                                '\n'.join(stdout.split('\n')[:100])))
                         elif not os.path.isfile(reference_file):
                             print(MSG_UNKNOWN, end='')
                             print_test_time(total_time)
@@ -509,6 +511,15 @@ def collect_build_flags(client):
     if clickhouse_proc.returncode == 0:
         if b'Ordinary' in stdout:
             result.append(BuildFlags.DATABASE_ORDINARY)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'")
+
+    if clickhouse_proc.returncode == 0:
+        if stdout == b'0\n':
+            result.append(BuildFlags.POLYMORPHIC_PARTS)
     else:
         raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 

@@ -48,7 +48,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -88,8 +88,8 @@ private:
         ColumnsWithTypeAndName casted;
     };
 
-    static CastArgumentsResult castColumns(Block & block, const ColumnNumbers & arguments,
-                        const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
+    static CastArgumentsResult castColumns(ColumnsWithTypeAndName & arguments,
+                                           const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
     UnpackedArrays prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const;
 
     template <typename Map, typename ColumnType, bool is_numeric_column>
@@ -206,12 +206,11 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
 }
 
 FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
-        Block & block, const ColumnNumbers & arguments, const DataTypePtr & return_type,
-        const DataTypePtr & return_type_with_nulls)
+    ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls)
 {
     size_t num_args = arguments.size();
     ColumnsWithTypeAndName initial_columns(num_args);
-    ColumnsWithTypeAndName columns(num_args);
+    ColumnsWithTypeAndName casted_columns(num_args);
 
     const auto * type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
     const auto & type_nested = type_array->getNestedType();
@@ -233,10 +232,10 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
 
     for (size_t i = 0; i < num_args; ++i)
     {
-        const ColumnWithTypeAndName & arg = block.getByPosition(arguments[i]);
+        const ColumnWithTypeAndName & arg = arguments[i];
         initial_columns[i] = arg;
-        columns[i] = arg;
-        auto & column = columns[i];
+        casted_columns[i] = arg;
+        auto & column = casted_columns[i];
 
         if (is_numeric_or_string)
         {
@@ -279,24 +278,14 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
         }
     }
 
-    return {.initial = initial_columns, .casted = columns};
+    return {.initial = initial_columns, .casted = casted_columns};
 }
 
 static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, const Context & context)
 {
-    ColumnsWithTypeAndName args;
-    args.reserve(2);
-    args.emplace_back(std::move(first));
-    args.emplace_back(std::move(second));
-
+    ColumnsWithTypeAndName args{first, second};
     auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
-
-    Block block = args;
-    block.insert({nullptr, eq_func->getReturnType(), ""});
-
-    eq_func->execute(block, {0, 1}, 2, args.front().column->size());
-
-    return block.getByPosition(2).column;
+    return eq_func->execute(args, eq_func->getResultType(), args.front().column->size());
 }
 
 FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
@@ -384,10 +373,9 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     return arrays;
 }
 
-void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+ColumnPtr FunctionArrayIntersect::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    const auto & return_type = block.getByPosition(result).type;
-    const auto * return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
+    const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
 
     if (!return_type_array)
         throw Exception{"Return type for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
@@ -395,22 +383,19 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
     const auto & nested_return_type = return_type_array->getNestedType();
 
     if (typeid_cast<const DataTypeNothing *>(nested_return_type.get()))
-    {
-        block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
-        return;
-    }
+        return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
     auto num_args = arguments.size();
     DataTypes data_types;
     data_types.reserve(num_args);
     for (size_t i = 0; i < num_args; ++i)
-        data_types.push_back(block.getByPosition(arguments[i]).type);
+        data_types.push_back(arguments[i].type);
 
     auto return_type_with_nulls = getMostSubtype(data_types, true, true);
 
-    auto columns = castColumns(block, arguments, return_type, return_type_with_nulls);
+    auto casted_columns = castColumns(arguments, result_type, return_type_with_nulls);
 
-    UnpackedArrays arrays = prepareArrays(columns.casted, columns.initial);
+    UnpackedArrays arrays = prepareArrays(casted_columns.casted, casted_columns.initial);
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
@@ -443,11 +428,11 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
         else
         {
             column = assert_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType()->createColumn();
-            result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column)), return_type);
+            result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column)), result_type);
         }
     }
 
-    block.getByPosition(result).column = std::move(result_column);
+    return result_column;
 }
 
 template <typename T, size_t>

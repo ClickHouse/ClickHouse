@@ -9,7 +9,7 @@ toc_title: "Linux\u4E0A\u3067ClickHouse\u3092\u69CB\u7BC9\u3059\u308B\u65B9\u6CD
 
 次のチュートリアルはUbuntu Linuxシステムに基づいています。
 適切な変更により、他のLinuxディストリビューションでも動作するはずです。
-サポートされるプラットフォーム:x86\_64およびAArch64。 Power9のサポートは実験的です。
+サポートされるプラットフォーム:x86_64およびAArch64。 Power9のサポートは実験的です。
 
 ## Git、CMake、Pythonと忍者をインストールします {#install-git-cmake-python-and-ninja}
 
