@@ -900,7 +900,10 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
 
         def alter_update(num):
             for i in range(num):
-                node1.query("ALTER TABLE {} UPDATE number = number + 1 WHERE 1".format(name))
+                try:
+                    node1.query("ALTER TABLE {} UPDATE number = number + 1 WHERE 1".format(name))
+                except:
+                    pass
 
         def alter_modify_ttl(num):
             for i in range(num):
@@ -927,17 +930,17 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
         p = Pool(15)
         tasks = []
         for i in range(5):
-            tasks.append(p.apply_async(insert, (100,)))
-            tasks.append(p.apply_async(alter_move, (100,)))
-            tasks.append(p.apply_async(alter_update, (100,)))
-            tasks.append(p.apply_async(alter_modify_ttl, (100,)))
-            tasks.append(p.apply_async(optimize_table, (100,)))
+            tasks.append(p.apply_async(insert, (30,)))
+            tasks.append(p.apply_async(alter_move, (30,)))
+            tasks.append(p.apply_async(alter_update, (30,)))
+            tasks.append(p.apply_async(alter_modify_ttl, (30,)))
+            tasks.append(p.apply_async(optimize_table, (30,)))
 
         for task in tasks:
             task.get(timeout=120)
 
         assert node1.query("SELECT 1") == "1\n"
-        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "500\n"
+        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "150\n"
     finally:
         node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
 

@@ -22,6 +22,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 
 
 namespace DB
@@ -138,6 +139,22 @@ void StorageMaterializedView::read(
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
 
     storage->read(query_plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+
+    StreamLocalLimits limits;
+    SizeLimits leaf_limits;
+
+    /// Add table lock for destination table.
+    auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
+            query_plan.getCurrentDataStream(),
+            storage,
+            std::move(lock),
+            limits,
+            leaf_limits,
+            nullptr,
+            nullptr);
+
+    adding_limits_and_quota->setStepDescription("Lock destination table for Buffer");
+    query_plan.addStep(std::move(adding_limits_and_quota));
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
@@ -153,7 +170,7 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 }
 
 
-static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
+static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id, bool no_delay)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, global_context))
     {
@@ -162,7 +179,8 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
         drop_query->database = target_table_id.database_name;
         drop_query->table = target_table_id.table_name;
         drop_query->kind = kind;
-        drop_query->no_delay = true;
+        drop_query->no_delay = no_delay;
+        drop_query->if_exists = true;
         ASTPtr ast_drop_query = drop_query;
         InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
@@ -177,14 +195,19 @@ void StorageMaterializedView::drop()
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
 
+    dropInnerTable(true);
+}
+
+void StorageMaterializedView::dropInnerTable(bool no_delay)
+{
     if (has_inner_table && tryGetTargetTable())
-        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
+        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id, no_delay);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     if (has_inner_table)
-        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_table_id);
+        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_table_id, true);
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const

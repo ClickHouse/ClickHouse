@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -28,19 +29,21 @@ void TableFunctionFactory::registerFunction(const std::string & name, Value crea
 }
 
 TableFunctionPtr TableFunctionFactory::get(
-    const std::string & name,
+    const ASTPtr & ast_function,
     const Context & context) const
 {
-    auto res = tryGet(name, context);
+    const auto * table_function = ast_function->as<ASTFunction>();
+    auto res = tryGet(table_function->name, context);
     if (!res)
     {
-        auto hints = getHints(name);
+        auto hints = getHints(table_function->name);
         if (!hints.empty())
-            throw Exception("Unknown table function " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_FUNCTION);
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}. Maybe you meant: {}", table_function->name , toString(hints));
         else
-            throw Exception("Unknown table function " + name, ErrorCodes::UNKNOWN_FUNCTION);
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
     }
 
+    res->parseArguments(ast_function, context);
     return res;
 }
 
