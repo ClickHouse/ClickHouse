@@ -361,7 +361,7 @@ public:
 
     /// Lock part in zookeeper for use common S3 data in several nodes
     void lockSharedData(const String & zookeeper_path, const String & replica_name, zkutil::ZooKeeperPtr zookeeper) const;
-    
+
     /// Unlock common S3 data part in zookeeper
     /// Return true if data unlocked
     /// Return false if data is still used by another node

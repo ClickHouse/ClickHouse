@@ -35,8 +35,8 @@ public:
     std::string getId(const std::string & node_id) const override;
     void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) override;
 
-    void setZooKeeper(const zkutil::ZooKeeperPtr & zookeeper_, const String & zookeeper_path_, const String & replica_name_) override 
-    { 
+    void setZooKeeper(const zkutil::ZooKeeperPtr & zookeeper_, const String & zookeeper_path_, const String & replica_name_) override
+    {
         zookeeper = zookeeper_;
         zookeeper_path = zookeeper_path_;
         replica_name = replica_name_;
@@ -87,7 +87,7 @@ public:
     ActionBlocker blocker;
 
     void setZooKeeper(const zkutil::ZooKeeperPtr & zookeeper_, const String & zookeeper_path_, const String & replica_name_)
-    { 
+    {
         zookeeper = zookeeper_;
         zookeeper_path = zookeeper_path_;
         replica_name = replica_name_;
@@ -114,7 +114,6 @@ private:
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
-            bool sync,
             const Disks & disksS3,
             PooledReadWriteBufferFromHTTP & in);
 
