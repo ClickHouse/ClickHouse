@@ -244,6 +244,8 @@ void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const Dat
         prefix.resize(prefix.size() - 1); /// crop dot
         identifier.full_name.clear();
         identifier.name_parts = {prefix, identifier.shortName()};
+        identifier.semantic->table = prefix;
+        identifier.semantic->legacy_compound = true;
     }
 }
 
