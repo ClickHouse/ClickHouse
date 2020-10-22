@@ -73,13 +73,13 @@ public:
         return type->getReturnType();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnAggregateFunction * column_with_states
-            = typeid_cast<const ColumnAggregateFunction *>(&*columns[arguments.at(0)].column);
+            = typeid_cast<const ColumnAggregateFunction *>(&*arguments.at(0).column);
 
         if (!column_with_states)
-            throw Exception("Illegal column " + columns[arguments.at(0)].column->getName()
+            throw Exception("Illegal column " + arguments.at(0).column->getName()
                     + " of first argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -87,7 +87,7 @@ public:
         ColumnPtr column_with_groups;
 
         if (arguments.size() == 2)
-            column_with_groups = columns[arguments[1]].column;
+            column_with_groups = arguments[1].column;
 
         AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
@@ -130,7 +130,7 @@ public:
             ++row_number;
         }
 
-        columns[result].column = std::move(result_column_ptr);
+        return result_column_ptr;
     }
 };
 

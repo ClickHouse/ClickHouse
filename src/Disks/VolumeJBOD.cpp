@@ -56,11 +56,23 @@ VolumeJBOD::VolumeJBOD(
 
     /// Default value is 'true' due to backward compatibility.
     perform_ttl_move_on_insert = config.getBool(config_prefix + ".perform_ttl_move_on_insert", true);
+
+    are_merges_avoided = config.getBool(config_prefix + ".prefer_not_to_merge", false);
+}
+
+VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        DiskSelectorPtr disk_selector)
+    : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
+{
+    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load(std::memory_order_relaxed);
+    last_used = volume_jbod.last_used.load(std::memory_order_relaxed);
 }
 
 DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
 {
-    size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
+    size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
     size_t index = start_from % disks.size();
     return disks[index];
 }
@@ -73,7 +85,7 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
     if (max_data_part_size != 0 && bytes > max_data_part_size)
         return {};
 
-    size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
+    size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
     size_t disks_num = disks.size();
     for (size_t i = 0; i < disks_num; ++i)
     {
@@ -86,5 +98,20 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
     }
     return {};
 }
+
+bool VolumeJBOD::areMergesAvoided() const
+{
+    auto are_merges_avoided_user_override_value = are_merges_avoided_user_override.load(std::memory_order_acquire);
+    if (are_merges_avoided_user_override_value)
+        return *are_merges_avoided_user_override_value;
+    else
+        return are_merges_avoided;
+}
+
+void VolumeJBOD::setAvoidMergesUserOverride(bool avoid)
+{
+    are_merges_avoided_user_override.store(avoid, std::memory_order_release);
+}
+
 
 }

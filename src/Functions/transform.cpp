@@ -143,29 +143,26 @@ public:
         }
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(columns[arguments[1]].column.get());
-        const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(columns[arguments[2]].column.get());
+        const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(arguments[1].column.get());
+        const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get());
 
         if (!array_from || !array_to)
             throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
 
-        initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), columns, arguments);
+        initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), arguments);
 
-        const auto * in = columns[arguments.front()].column.get();
+        const auto * in = arguments.front().column.get();
 
         if (isColumnConst(*in))
-        {
-            executeConst(columns, arguments, result, input_rows_count);
-            return;
-        }
+            return executeConst(arguments, result_type, input_rows_count);
 
         const IColumn * default_column = nullptr;
         if (arguments.size() == 4)
-            default_column = columns[arguments[3]].column.get();
+            default_column = arguments[3].column.get();
 
-        auto column_result = columns[result].type->createColumn();
+        auto column_result = result_type->createColumn();
         auto * out = column_result.get();
 
         if (!executeNum<UInt8>(in, out, default_column)
@@ -183,36 +180,21 @@ public:
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        columns[result].column = std::move(column_result);
+        return column_result;
     }
 
 private:
-    static void executeConst(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+    static ColumnPtr executeConst(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
     {
         /// Materialize the input column and compute the function as usual.
 
-        ColumnsWithTypeAndName tmp_columns;
-        ColumnNumbers tmp_arguments;
-
-        tmp_columns.emplace_back(columns[arguments[0]]);
-        tmp_columns[0].column = tmp_columns[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
-        tmp_arguments.push_back(0);
-
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            tmp_columns.emplace_back(columns[arguments[i]]);
-            tmp_arguments.push_back(i);
-        }
+        ColumnsWithTypeAndName args = arguments;
+        args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
         auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
-                    .build(tmp_columns);
+                    .build(args);
 
-        tmp_columns.emplace_back(columns[result]);
-        size_t tmp_result = arguments.size();
-
-        impl->execute(tmp_columns, tmp_arguments, tmp_result, input_rows_count);
-
-        columns[result].column = tmp_columns[tmp_result].column;
+        return impl->execute(args, result_type, input_rows_count);
     }
 
     template <typename T>
@@ -741,7 +723,7 @@ private:
     mutable Cache cache;
 
     /// Can be called from different threads. It works only on the first call.
-    void initialize(const Array & from, const Array & to, ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments) const
+    void initialize(const Array & from, const Array & to, ColumnsWithTypeAndName & arguments) const
     {
         if (cache.initialized)
             return;
@@ -765,7 +747,7 @@ private:
 
         if (arguments.size() == 4)
         {
-            const IColumn * default_col = columns[arguments[3]].column.get();
+            const IColumn * default_col = arguments[3].column.get();
             const ColumnConst * const_default_col = typeid_cast<const ColumnConst *>(default_col);
 
             if (const_default_col)
