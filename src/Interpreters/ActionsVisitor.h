@@ -87,8 +87,7 @@ struct ScopeStack
     void addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
-            std::string result_name,
-            bool compile_expressions);
+            std::string result_name);
 
     ActionsDAGPtr popLevel();
 
@@ -154,8 +153,7 @@ public:
                          const Names & argument_names,
                          std::string result_name)
         {
-            actions_stack.addFunction(function, argument_names, std::move(result_name),
-                                      context.getSettingsRef().compile_expressions);
+            actions_stack.addFunction(function, argument_names, std::move(result_name));
         }
 
         ActionsDAGPtr getActions()

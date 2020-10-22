@@ -223,7 +223,7 @@ public:
             std::string result_name,
             const Context & context);
 
-    void removeUnusedActions(const NameSet & required_names);
+    void removeUnusedActions(const Names & required_names);
     ExpressionActionsPtr buildExpressions();
 
 private:
@@ -255,6 +255,8 @@ private:
         Arguments arguments;
         size_t result_position;
         bool is_used_in_result;
+
+        std::string toString() const;
     };
 
     using Actions = std::vector<Action>;
@@ -273,6 +275,9 @@ private:
     NamesAndTypesList required_columns;
     Block sample_block;
 
+    /// This flag means that all columns except input will be removed from block before execution.
+    bool project_input = false;
+
     size_t max_temporary_non_const_columns = 0;
 
     friend class ActionsDAG;
@@ -284,7 +289,7 @@ public:
     ExpressionActions(const ExpressionActions & other) = default;
 
     /// Adds to the beginning the removal of all extra columns.
-    void prependProjectInput();
+    void prependProjectInput() { project_input = true; }
 
     /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
     /// Returns nullptr if no actions may be moved before ARRAY JOIN.

@@ -48,478 +48,45 @@ namespace ErrorCodes
 static constexpr auto DUMMY_COLUMN_NAME = "_dummy";
 
 
-Names ExpressionAction::getNeededColumns() const
-{
-    Names res = argument_names;
-
-    if (table_join)
-        res.insert(res.end(), table_join->keyNamesLeft().begin(), table_join->keyNamesLeft().end());
-
-    for (const auto & column : projection)
-        res.push_back(column.first);
-
-    if (!source_name.empty())
-        res.push_back(source_name);
-
-    return res;
-}
-
-
-ExpressionAction ExpressionAction::applyFunction(
-    const FunctionOverloadResolverPtr & function_,
-    const std::vector<std::string> & argument_names_,
-    std::string result_name_)
-{
-    if (result_name_.empty())
-    {
-        result_name_ = function_->getName() + "(";
-        for (size_t i = 0 ; i < argument_names_.size(); ++i)
-        {
-            if (i)
-                result_name_ += ", ";
-            result_name_ += argument_names_[i];
-        }
-        result_name_ += ")";
-    }
-
-    ExpressionAction a;
-    a.type = APPLY_FUNCTION;
-    a.result_name = result_name_;
-    a.function_builder = function_;
-    a.argument_names = argument_names_;
-    return a;
-}
-
-ExpressionAction ExpressionAction::addColumn(
-    const ColumnWithTypeAndName & added_column_)
-{
-    ExpressionAction a;
-    a.type = ADD_COLUMN;
-    a.result_name = added_column_.name;
-    a.result_type = added_column_.type;
-    a.added_column = added_column_.column;
-    return a;
-}
-
-ExpressionAction ExpressionAction::removeColumn(const std::string & removed_name)
-{
-    ExpressionAction a;
-    a.type = REMOVE_COLUMN;
-    a.source_name = removed_name;
-    return a;
-}
-
-ExpressionAction ExpressionAction::copyColumn(const std::string & from_name, const std::string & to_name, bool can_replace)
-{
-    ExpressionAction a;
-    a.type = COPY_COLUMN;
-    a.source_name = from_name;
-    a.result_name = to_name;
-    a.can_replace = can_replace;
-    return a;
-}
-
-ExpressionAction ExpressionAction::project(const NamesWithAliases & projected_columns_)
-{
-    ExpressionAction a;
-    a.type = PROJECT;
-    a.projection = projected_columns_;
-    return a;
-}
-
-ExpressionAction ExpressionAction::project(const Names & projected_columns_)
-{
-    ExpressionAction a;
-    a.type = PROJECT;
-    a.projection.resize(projected_columns_.size());
-    for (size_t i = 0; i < projected_columns_.size(); ++i)
-        a.projection[i] = NameWithAlias(projected_columns_[i], "");
-    return a;
-}
-
-ExpressionAction ExpressionAction::addAliases(const NamesWithAliases & aliased_columns_)
-{
-    ExpressionAction a;
-    a.type = ADD_ALIASES;
-    a.projection = aliased_columns_;
-    return a;
-}
-
-ExpressionAction ExpressionAction::arrayJoin(std::string source_name, std::string result_name)
-{
-    if (source_name == result_name)
-        throw Exception("ARRAY JOIN action should have different source and result names", ErrorCodes::LOGICAL_ERROR);
-
-    ExpressionAction a;
-    a.type = ARRAY_JOIN;
-    a.source_name = std::move(source_name);
-    a.result_name = std::move(result_name);
-    return a;
-}
-
-
-void ExpressionAction::prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding)
-{
-    // std::cerr << "preparing: " << toString() << std::endl;
-
-    /** Constant expressions should be evaluated, and put the result in sample_block.
-      */
-
-    switch (type)
-    {
-        case APPLY_FUNCTION:
-        {
-            if (sample_block.has(result_name))
-                throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-
-            bool all_const = true;
-            bool all_suitable_for_constant_folding = true;
-
-            ColumnsWithTypeAndName arguments(argument_names.size());
-            for (size_t i = 0; i < argument_names.size(); ++i)
-            {
-                arguments[i] = sample_block.getByName(argument_names[i]);
-                ColumnPtr col = arguments[i].column;
-                if (!col || !isColumnConst(*col))
-                    all_const = false;
-
-                if (names_not_for_constant_folding.count(argument_names[i]))
-                    all_suitable_for_constant_folding = false;
-            }
-
-            size_t result_position = sample_block.columns();
-            sample_block.insert({nullptr, result_type, result_name});
-            if (!function)
-                function = function_base->prepare(arguments);
-            function->createLowCardinalityResultCache(settings.max_threads);
-
-            bool compile_expressions = false;
-#if USE_EMBEDDED_COMPILER
-            compile_expressions = settings.compile_expressions;
-#endif
-            /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-            /// But if we compile expressions compiled version of this function maybe placed in cache,
-            /// so we don't want to unfold non deterministic functions
-            if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
-            {
-                if (added_column)
-                    sample_block.getByPosition(result_position).column = added_column;
-                else
-                    sample_block.getByPosition(result_position).column = function->execute(arguments, result_type, sample_block.rows(), true);
-
-                /// If the result is not a constant, just in case, we will consider the result as unknown.
-                ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
-                if (!isColumnConst(*col.column))
-                {
-                    col.column = nullptr;
-                }
-                else
-                {
-                    /// All constant (literal) columns in block are added with size 1.
-                    /// But if there was no columns in block before executing a function, the result has size 0.
-                    /// Change the size to 1.
-
-                    if (col.column->empty())
-                        col.column = col.column->cloneResized(1);
-
-                    if (!all_suitable_for_constant_folding)
-                        names_not_for_constant_folding.insert(result_name);
-                }
-            }
-
-            /// Some functions like ignore() or getTypeName() always return constant result even if arguments are not constant.
-            /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
-            /// unnecessary materialization.
-            auto & res = sample_block.getByPosition(result_position);
-            if (!res.column && function_base->isSuitableForConstantFolding())
-            {
-                if (auto col = function_base->getResultIfAlwaysReturnsConstantAndHasArguments(arguments))
-                {
-                    res.column = std::move(col);
-                    names_not_for_constant_folding.insert(result_name);
-                }
-            }
-
-            break;
-        }
-
-        case ARRAY_JOIN:
-        {
-            ColumnWithTypeAndName current = sample_block.getByName(source_name);
-            sample_block.erase(source_name);
-
-            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
-            if (!array_type)
-                throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
-
-            current.name = result_name;
-            current.type = array_type->getNestedType();
-            current.column = nullptr; /// Result is never const
-            sample_block.insert(std::move(current));
-
-            break;
-        }
-
-        case PROJECT:
-        {
-            Block new_block;
-
-            for (const auto & elem : projection)
-            {
-                const std::string & name = elem.first;
-                const std::string & alias = elem.second;
-                ColumnWithTypeAndName column = sample_block.getByName(name);
-                if (!alias.empty())
-                    column.name = alias;
-                new_block.insert(std::move(column));
-            }
-
-            sample_block.swap(new_block);
-            break;
-        }
-
-        case ADD_ALIASES:
-        {
-            for (const auto & elem : projection)
-            {
-                const std::string & name = elem.first;
-                const std::string & alias = elem.second;
-                const ColumnWithTypeAndName & column = sample_block.getByName(name);
-                if (!alias.empty() && !sample_block.has(alias))
-                    sample_block.insert({column.column, column.type, alias});
-            }
-            break;
-        }
-
-        case REMOVE_COLUMN:
-        {
-            sample_block.erase(source_name);
-            break;
-        }
-
-        case ADD_COLUMN:
-        {
-            if (sample_block.has(result_name))
-                throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-
-            sample_block.insert(ColumnWithTypeAndName(added_column, result_type, result_name));
-            break;
-        }
-
-        case COPY_COLUMN:
-        {
-            const auto & source = sample_block.getByName(source_name);
-            result_type = source.type;
-
-            if (sample_block.has(result_name))
-            {
-                if (can_replace)
-                {
-                    auto & result = sample_block.getByName(result_name);
-                    result.type = result_type;
-                    result.column = source.column;
-                }
-                else
-                    throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-            }
-            else
-                sample_block.insert(ColumnWithTypeAndName(source.column, result_type, result_name));
-
-            break;
-        }
-    }
-}
-
-void ExpressionAction::execute(Block & block, bool dry_run) const
-{
-    size_t input_rows_count = block.rows();
-
-    if (type == REMOVE_COLUMN || type == COPY_COLUMN)
-        if (!block.has(source_name))
-            throw Exception("Not found column '" + source_name + "'. There are columns: " + block.dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-
-    if (type == ADD_COLUMN || (type == COPY_COLUMN && !can_replace) || type == APPLY_FUNCTION)
-        if (block.has(result_name))
-            throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-
-    switch (type)
-    {
-        case APPLY_FUNCTION:
-        {
-            ColumnsWithTypeAndName arguments(argument_names.size());
-            for (size_t i = 0; i < argument_names.size(); ++i)
-                arguments[i] = block.getByName(argument_names[i]);
-
-            size_t num_columns_without_result = block.columns();
-            block.insert({ nullptr, result_type, result_name});
-
-            ProfileEvents::increment(ProfileEvents::FunctionExecute);
-            if (is_function_compiled)
-                ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-            block.getByPosition(num_columns_without_result).column = function->execute(arguments, result_type, input_rows_count, dry_run);
-
-            break;
-        }
-
-        case ARRAY_JOIN:
-        {
-            auto source = block.getByName(source_name);
-            block.erase(source_name);
-            source.column = source.column->convertToFullColumnIfConst();
-
-            const ColumnArray * array = typeid_cast<const ColumnArray *>(source.column.get());
-            if (!array)
-                throw Exception("ARRAY JOIN of not array: " + source_name, ErrorCodes::TYPE_MISMATCH);
-
-            for (auto & column : block)
-                column.column = column.column->replicate(array->getOffsets());
-
-            source.column = array->getDataPtr();
-            source.type = assert_cast<const DataTypeArray &>(*source.type).getNestedType();
-            source.name = result_name;
-
-            block.insert(std::move(source));
-
-            break;
-        }
-
-        case PROJECT:
-        {
-            Block new_block;
-
-            for (const auto & elem : projection)
-            {
-                const std::string & name = elem.first;
-                const std::string & alias = elem.second;
-                ColumnWithTypeAndName column = block.getByName(name);
-                if (!alias.empty())
-                    column.name = alias;
-                new_block.insert(std::move(column));
-            }
-
-            block.swap(new_block);
-
-            break;
-        }
-
-        case ADD_ALIASES:
-        {
-            for (const auto & elem : projection)
-            {
-                const std::string & name = elem.first;
-                const std::string & alias = elem.second;
-                const ColumnWithTypeAndName & column = block.getByName(name);
-                if (!alias.empty() && !block.has(alias))
-                    block.insert({column.column, column.type, alias});
-            }
-            break;
-        }
-
-        case REMOVE_COLUMN:
-            block.erase(source_name);
-            break;
-
-        case ADD_COLUMN:
-            block.insert({ added_column->cloneResized(input_rows_count), result_type, result_name });
-            break;
-
-        case COPY_COLUMN:
-            if (can_replace && block.has(result_name))
-            {
-                auto & result = block.getByName(result_name);
-                const auto & source = block.getByName(source_name);
-                result.type = source.type;
-                result.column = source.column;
-            }
-            else
-            {
-                const auto & source_column = block.getByName(source_name);
-                block.insert({source_column.column, source_column.type, result_name});
-            }
-
-            break;
-    }
-}
-
-
-std::string ExpressionAction::toString() const
+std::string ExpressionActions::Action::toString() const
 {
     std::stringstream ss;
-    switch (type)
+    switch (node->type)
     {
-        case ADD_COLUMN:
-            ss << "ADD " << result_name << " "
-                << (result_type ? result_type->getName() : "(no type)") << " "
-                << (added_column ? added_column->getName() : "(no column)");
+        case ActionsDAG::Type::COLUMN:
+            ss << "COLUMN " << node->result_name << " "
+                << (node->result_type ? node->result_type->getName() : "(no type)") << " "
+                << (node->column ? node->column->getName() : "(no column)");
             break;
 
-        case REMOVE_COLUMN:
-            ss << "REMOVE " << source_name;
+        case ActionsDAG::Type::ALIAS:
+            ss << "ALIAS " << node->result_name << " = " << node->children.front()->result_name;
+            if (arguments.front().remove)
+                ss << " (removing)";
             break;
 
-        case COPY_COLUMN:
-            ss << "COPY " << result_name << " = " << source_name;
-            if (can_replace)
-                ss << " (can replace)";
-            break;
-
-        case APPLY_FUNCTION:
-            ss << "FUNCTION " << result_name << " " << (is_function_compiled ? "[compiled] " : "")
-                << (result_type ? result_type->getName() : "(no type)") << " = "
-                << (function_base ? function_base->getName() : "(no function)") << "(";
-            for (size_t i = 0; i < argument_names.size(); ++i)
+        case ActionsDAG::Type::FUNCTION:
+            ss << "FUNCTION " << node->result_name << " " << (node->is_function_compiled ? "[compiled] " : "")
+                << (node->result_type ? node->result_type->getName() : "(no type)") << " = "
+                << (node->function_base ? node->function_base->getName() : "(no function)") << "(";
+            for (size_t i = 0; i < node->children.size(); ++i)
             {
                 if (i)
                     ss << ", ";
-                ss << argument_names[i];
+                ss << node->children[i]->result_name;
             }
             ss << ")";
             break;
 
-        case ARRAY_JOIN:
-            ss << "ARRAY JOIN " << source_name << " -> " << result_name;
+        case ActionsDAG::Type::ARRAY_JOIN:
+            ss << "ARRAY JOIN " << node->children.front()->result_name << " -> " << node->result_name;
             break;
 
-        case PROJECT: [[fallthrough]];
-        case ADD_ALIASES:
-            ss << (type == PROJECT ? "PROJECT " : "ADD_ALIASES ");
-            for (size_t i = 0; i < projection.size(); ++i)
-            {
-                if (i)
-                    ss << ", ";
-                ss << projection[i].first;
-                if (!projection[i].second.empty() && projection[i].second != projection[i].first)
-                    ss << " AS " << projection[i].second;
-            }
+        case ActionsDAG::Type::INPUT:
             break;
     }
 
     return ss.str();
-}
-
-ExpressionActions::ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_)
-    : input_columns(input_columns_), settings(context_.getSettingsRef())
-{
-    for (const auto & input_elem : input_columns)
-        sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
-
-#if USE_EMBEDDED_COMPILER
-compilation_cache = context_.getCompiledExpressionCache();
-#endif
-}
-
-/// For constant columns the columns themselves can be contained in `input_columns_`.
-ExpressionActions::ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_)
-    : settings(context_.getSettingsRef())
-{
-    for (const auto & input_elem : input_columns_)
-    {
-        input_columns.emplace_back(input_elem.name, input_elem.type);
-        sample_block.insert(input_elem);
-    }
-#if USE_EMBEDDED_COMPILER
-    compilation_cache = context_.getCompiledExpressionCache();
-#endif
 }
 
 ExpressionActions::~ExpressionActions() = default;
@@ -545,11 +112,6 @@ void ExpressionActions::checkLimits(ExecutionContext & execution_context) const
                 ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
         }
     }
-}
-
-void ExpressionActions::prependProjectInput()
-{
-    actions.insert(actions.begin(), ExpressionAction::project(getRequiredColumns()));
 }
 
 void ExpressionActions::execute(Block & block, bool dry_run) const
@@ -589,9 +151,14 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         }
     }
 
-    std::sort(inputs_to_remove.rbegin(), inputs_to_remove.rend());
-    for (auto input : inputs_to_remove)
-        block.erase(input);
+    if (project_input)
+        block.clear();
+    else
+    {
+        std::sort(inputs_to_remove.rbegin(), inputs_to_remove.rend());
+        for (auto input : inputs_to_remove)
+            block.erase(input);
+    }
 
     for (const auto & action : actions)
     {
@@ -746,242 +313,12 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
     return res;
 }
 
-void ExpressionActions::finalize(const Names & output_columns)
-{
-    NameSet final_columns;
-    for (const auto & name : output_columns)
-    {
-        if (!sample_block.has(name))
-            throw Exception("Unknown column: " + name + ", there are only columns "
-                            + sample_block.dumpNames(), ErrorCodes::UNKNOWN_IDENTIFIER);
-        final_columns.insert(name);
-    }
-
-#if USE_EMBEDDED_COMPILER
-    /// This has to be done before removing redundant actions and inserting REMOVE_COLUMNs
-    /// because inlining may change dependency sets.
-    if (settings.compile_expressions)
-        compileFunctions(actions, output_columns, sample_block, compilation_cache, settings.min_count_to_compile_expression);
-#endif
-
-    /// Which columns are needed to perform actions from the current to the last.
-    NameSet needed_columns = final_columns;
-    /// Which columns nobody will touch from the current action to the last.
-    NameSet unmodified_columns;
-
-    {
-        NamesAndTypesList sample_columns = sample_block.getNamesAndTypesList();
-        for (const auto & sample_column : sample_columns)
-            unmodified_columns.insert(sample_column.name);
-    }
-
-    /// Let's go from the end and maintain set of required columns at this stage.
-    /// We will throw out unnecessary actions, although usually they are absent by construction.
-    for (int i = static_cast<int>(actions.size()) - 1; i >= 0; --i)
-    {
-        ExpressionAction & action = actions[i];
-        Names in = action.getNeededColumns();
-
-        if (action.type == ExpressionAction::PROJECT)
-        {
-            needed_columns = NameSet(in.begin(), in.end());
-            unmodified_columns.clear();
-        }
-        else if (action.type == ExpressionAction::ADD_ALIASES)
-        {
-            needed_columns.insert(in.begin(), in.end());
-            for (auto & name_wit_alias : action.projection)
-            {
-                auto it = unmodified_columns.find(name_wit_alias.second);
-                if (it != unmodified_columns.end())
-                    unmodified_columns.erase(it);
-            }
-        }
-        else if (action.type == ExpressionAction::ARRAY_JOIN)
-        {
-            /// We need source anyway, in order to calculate number of rows correctly.
-            needed_columns.insert(action.source_name);
-            unmodified_columns.erase(action.result_name);
-            needed_columns.erase(action.result_name);
-
-            /// Note: technically, if result of arrayJoin is not needed,
-            /// we may remove all the columns and loose the number of rows here.
-            /// However, I cannot imagine how it is possible.
-            /// For "big" ARRAY JOIN it could have happened in query like
-            ///    SELECT count() FROM table ARRAY JOIN x
-            /// Now, "big" ARRAY JOIN is moved to separate pipeline step,
-            /// and arrayJoin(x) is an expression which result can't be lost.
-        }
-        else
-        {
-            std::string out = action.result_name;
-            if (!out.empty())
-            {
-                /// If the result is not used and there are no side effects, throw out the action.
-                if (!needed_columns.count(out) &&
-                    (action.type == ExpressionAction::APPLY_FUNCTION
-                    || action.type == ExpressionAction::ADD_COLUMN
-                    || action.type == ExpressionAction::COPY_COLUMN))
-                {
-                    actions.erase(actions.begin() + i);
-
-                    if (unmodified_columns.count(out))
-                    {
-                        sample_block.erase(out);
-                        unmodified_columns.erase(out);
-                    }
-
-                    continue;
-                }
-
-                unmodified_columns.erase(out);
-                needed_columns.erase(out);
-
-                /** If the function is a constant expression, then replace the action by adding a column-constant - result.
-                  * That is, we perform constant folding.
-                  */
-                if (action.type == ExpressionAction::APPLY_FUNCTION && sample_block.has(out))
-                {
-                    auto & result = sample_block.getByName(out);
-                    if (result.column && names_not_for_constant_folding.count(result.name) == 0)
-                    {
-                        action.type = ExpressionAction::ADD_COLUMN;
-                        action.result_type = result.type;
-                        action.added_column = result.column;
-                        action.function_builder = nullptr;
-                        action.function_base = nullptr;
-                        action.function = nullptr;
-                        action.argument_names.clear();
-                        in.clear();
-                    }
-                }
-            }
-
-            needed_columns.insert(in.begin(), in.end());
-        }
-    }
-
-
-    /// 1) Sometimes we don't need any columns to perform actions and sometimes actions doesn't produce any columns as result.
-    /// But Block class doesn't store any information about structure itself, it uses information from column.
-    /// If we remove all columns from input or output block we will lose information about amount of rows in it.
-    /// To avoid this situation we always leaving one of the columns in required columns (input)
-    /// and output column. We choose that "redundant" column by size with help of getSmallestColumn.
-    ///
-    /// 2) Sometimes we have to read data from different Storages to execute query.
-    /// For example in 'remote' function which requires to read data from local table (for example MergeTree) and
-    /// remote table (doesn't know anything about it).
-    ///
-    /// If we have combination of two previous cases, our heuristic from (1) can choose absolutely different columns,
-    /// so generated streams with these actions will have different headers. To avoid this we additionally rename our "redundant" column
-    /// to DUMMY_COLUMN_NAME with help of COPY_COLUMN action and consequent remove of original column.
-    /// It doesn't affect any logic, but all streams will have same "redundant" column in header called "_dummy".
-
-    /// Also, it seems like we will always have same type (UInt8) of "redundant" column, but it's not obvious.
-
-    bool dummy_column_copied = false;
-
-
-    /// We will not throw out all the input columns, so as not to lose the number of rows in the block.
-    if (needed_columns.empty() && !input_columns.empty())
-    {
-        auto colname = getSmallestColumn(input_columns);
-        needed_columns.insert(colname);
-        actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
-        dummy_column_copied = true;
-    }
-
-    /// We will not leave the block empty so as not to lose the number of rows in it.
-    if (final_columns.empty() && !input_columns.empty())
-    {
-        auto colname = getSmallestColumn(input_columns);
-        final_columns.insert(DUMMY_COLUMN_NAME);
-        if (!dummy_column_copied) /// otherwise we already have this column
-            actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
-    }
-
-    for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
-    {
-        NamesAndTypesList::iterator it0 = it;
-        ++it;
-        if (!needed_columns.count(it0->name))
-        {
-            if (unmodified_columns.count(it0->name))
-                sample_block.erase(it0->name);
-            input_columns.erase(it0);
-        }
-    }
-
-/*    std::cerr << "\n";
-      for (const auto & action : actions)
-          std::cerr << action.toString() << "\n";
-      std::cerr << "\n";*/
-
-    /// Deletes unnecessary temporary columns.
-
-    /// If the column after performing the function `refcount = 0`, it can be deleted.
-    std::map<String, int> columns_refcount;
-
-    for (const auto & name : final_columns)
-        ++columns_refcount[name];
-
-    for (const auto & action : actions)
-    {
-        if (!action.source_name.empty())
-            ++columns_refcount[action.source_name];
-
-        for (const auto & name : action.argument_names)
-            ++columns_refcount[name];
-
-        for (const auto & name_alias : action.projection)
-            ++columns_refcount[name_alias.first];
-    }
-
-    Actions new_actions;
-    new_actions.reserve(actions.size());
-
-    for (const auto & action : actions)
-    {
-        new_actions.push_back(action);
-
-        auto process = [&] (const String & name)
-        {
-            auto refcount = --columns_refcount[name];
-            if (refcount <= 0 && action.type != ExpressionAction::ARRAY_JOIN)
-            {
-                new_actions.push_back(ExpressionAction::removeColumn(name));
-                if (sample_block.has(name))
-                    sample_block.erase(name);
-            }
-        };
-
-        if (!action.source_name.empty())
-            process(action.source_name);
-
-        for (const auto & name : action.argument_names)
-            process(name);
-
-        /// For `projection`, there is no reduction in `refcount`, because the `project` action replaces the names of the columns, in effect, already deleting them under the old names.
-    }
-
-    actions.swap(new_actions);
-
-/*    std::cerr << "\n";
-    for (const auto & action : actions)
-        std::cerr << action.toString() << "\n";
-    std::cerr << "\n";*/
-
-    optimizeArrayJoin();
-    checkLimits(sample_block);
-}
-
-
 std::string ExpressionActions::dumpActions() const
 {
     std::stringstream ss;
 
     ss << "input:\n";
-    for (const auto & input_column : input_columns)
+    for (const auto & input_column : required_columns)
         ss << input_column.name << " " << input_column.type->getName() << "\n";
 
     ss << "\nactions:\n";
@@ -1269,7 +606,7 @@ void ExpressionActionsChain::addStep()
     if (auto * step = typeid_cast<ExpressionActionsStep *>(steps.back().get()))
     {
         if (!step->actions)
-            step->actions = step->actions_dag->buildExpressions(context);
+            step->actions = step->actions_dag->buildExpressions();
     }
 
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
@@ -1683,28 +1020,25 @@ std::string ActionsDAG::dumpNames() const
     return out.str();
 }
 
-void ActionsDAG::removeUnusedActions(const NameSet & required_names)
+void ActionsDAG::removeUnusedActions(const Names & required_names)
 {
-    for (const auto & name : required_names)
-    {
-        if (index.count(name) == 0)
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                            "Unknown column: {}, there are only columns {}", name, dumpNames());
-    }
-
     std::unordered_set<Node *> visited_nodes;
     std::stack<Node *> stack;
 
     {
         Index new_index;
-        for (const auto &[name, node] : index)
+
+        for (const auto & name : required_names)
         {
-            if (required_names.count(std::string(name)))
-            {
-                new_index[name] = node;
-                visited_nodes.insert(node);
-                stack.push(node);
-            }
+            auto it = index.find(name);
+            if (it == index.end())
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                                "Unknown column: {}, there are only columns {}", name, dumpNames());
+
+            auto * node = it->second;
+            new_index[name] = node;
+            visited_nodes.insert(node);
+            stack.push(node);
         }
 
         index.swap(new_index);
