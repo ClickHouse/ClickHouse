@@ -17,6 +17,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
@@ -3662,28 +3663,13 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
 std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
-    Names partition_key_columns = partition_key.column_names;
-    KeyCondition key_condition(
-        query_info, context, partition_key_columns, partition_key.expression, true /* single_point */, true /* strict */);
-    if (key_condition.alwaysUnknownOrTrue())
+    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context);
+    if (partition_pruner.isUseless())
         return {};
-    std::unordered_map<String, bool> partition_filter_map;
     size_t res = 0;
     foreachCommittedParts([&](auto & part)
     {
-        const auto & partition_id = part->info.partition_id;
-        bool is_valid;
-        if (auto it = partition_filter_map.find(partition_id); it != partition_filter_map.end())
-            is_valid = it->second;
-        else
-        {
-            const auto & partition_value = part->partition.value;
-            std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
-            is_valid = key_condition.mayBeTrueInRange(partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
-            partition_filter_map.emplace(partition_id, is_valid);
-        }
-        if (is_valid)
+        if (!partition_pruner.canBePruned(part))
             res += part->rows_count;
     });
     return res;

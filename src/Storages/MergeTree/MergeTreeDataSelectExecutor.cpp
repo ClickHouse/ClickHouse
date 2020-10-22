@@ -6,6 +6,7 @@
 #include <Poco/File.h>
 
 #include <Common/FieldVisitors.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
@@ -226,13 +227,15 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     }
 
     std::optional<KeyCondition> minmax_idx_condition;
+    std::optional<PartitionPruner> partition_pruner;
     if (data.minmax_idx_expr)
     {
         minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
+        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context);
 
-        if (settings.force_index_by_date && minmax_idx_condition->alwaysUnknownOrTrue())
+        if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
-            String msg = "MinMax index by columns (";
+            String msg = "Neither MinMax index by columns (";
             bool first = true;
             for (const String & col : data.minmax_idx_columns)
             {
@@ -242,7 +245,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
                     msg += ", ";
                 msg += col;
             }
-            msg += ") is not used and setting 'force_index_by_date' is set";
+            msg += ") nor partition expr is used and setting 'force_index_by_date' is set";
 
             throw Exception(msg, ErrorCodes::INDEX_NOT_USED);
         }
@@ -265,6 +268,12 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
             if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
                     part->minmax_idx.hyperrectangle, data.minmax_idx_column_types).can_be_true)
                 continue;
+
+            if (partition_pruner)
+            {
+                if (partition_pruner->canBePruned(part))
+                    continue;
+            }
 
             if (max_block_numbers_to_read)
             {
