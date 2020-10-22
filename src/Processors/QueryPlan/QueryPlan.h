@@ -69,6 +69,7 @@ public:
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
+    size_t getMaxThreads() const { return max_threads; }
 
     void addInterpreterContext(std::shared_ptr<Context> context);
 
