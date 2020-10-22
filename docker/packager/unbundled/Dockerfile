@@ -65,6 +65,7 @@ RUN apt-get update \
         libavro-dev \
         libfarmhash-dev \
         librocksdb-dev \
+        libgflags-dev \
         libmysqlclient-dev \
         --yes --no-install-recommends
 

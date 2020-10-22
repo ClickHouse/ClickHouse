@@ -25,9 +25,10 @@ CREATE TEMPORARY TABLE keys AS SELECT * FROM numbers(1000);
 
 SET max_rows_to_read = 2;
 SELECT dummy == (1,1.2) FROM test WHERE k IN (1, 3) OR k IN (1) OR k IN (3, 1) OR k IN [1] OR k IN [1, 3] ;
-SELECT k == 4 FROM test WHERE k = 4 OR k IN [4];
+SELECT k == 4 FROM test WHERE k = 4 OR k IN [4] OR k in (4, 10000001, 10000002) AND value > 0;
 SELECT k == 4 FROM test WHERE k IN (SELECT toUInt32(number) FROM keys WHERE number = 4);
 SELECT k, value FROM test WHERE k = 0 OR value > 0; -- { serverError 158 }
+SELECT k, value FROM test WHERE k = 0 AND k IN (1, 3) OR k > 8; -- { serverError 158 }
 
 TRUNCATE TABLE test;
 SELECT 0 == count(1) FROM test;
