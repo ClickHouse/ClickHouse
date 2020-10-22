@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-WORKING_FOLDER_01528="${CLICKHOUSE_TMP}/01527_clickhouse_local_optimize"
+WORKING_FOLDER_01528="${CLICKHOUSE_TMP}/01528_clickhouse_local_prepare_parts"
 rm -rf "${WORKING_FOLDER_01528}"
 
 mkdir -p "${WORKING_FOLDER_01528}/metadata/local"
