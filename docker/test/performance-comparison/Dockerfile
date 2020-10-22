@@ -9,6 +9,7 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
             bash \
             curl \
+            dmidecode \
             g++ \
             gdb \
             git \
@@ -37,15 +38,16 @@ RUN apt-get update \
 
 COPY * /
 
-# Bind everything to NUMA node #1, if there's more than one. We avoid node #0,
-# because it is more susceptible to system interruptions. We have to bind both
-# servers and the tmpfs on which the database is stored. How to do it through
-# Yandex Sandbox API is unclear, but by default tmpfs uses 'process allocation
-# policy', not sure which process but hopefully the one that writes to it, so
-# just bind the downloader script as well.
-# We could also try to remount it with proper options in Sandbox task.
+# Bind everything to one NUMA node, if there's more than one. Theoretically the
+# node #0 should be less stable because of system interruptions. We bind
+# randomly to node 1 or 0 to gather some statistics on that. We have to bind
+# both servers and the tmpfs on which the database is stored. How to do it
+# through Yandex Sandbox API is unclear, but by default tmpfs uses
+# 'process allocation policy', not sure which process but hopefully the one that
+# writes to it, so just bind the downloader script as well. We could also try to
+# remount it with proper options in Sandbox task.
 # https://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt
-CMD ["bash", "-c", "node=$(numactl --hardware | grep -q 'available: 1 nodes' && echo 0 || echo 1); echo Will bind to NUMA node $node; numactl --cpunodebind=$node --membind=$node /entrypoint.sh"]
+CMD ["bash", "-c", "node=$((RANDOM % $(numactl --hardware | sed -n 's/^.*available:\(.*\)nodes.*$/\1/p'))); echo Will bind to NUMA node $node; numactl --cpunodebind=$node --membind=$node /entrypoint.sh"]
 
 # docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> yandex/clickhouse-performance-comparison
 
