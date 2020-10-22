@@ -259,6 +259,7 @@
         "00305_http_and_readonly",
         "00834_kill_mutation",
         "00763_long_lock_buffer_alter_destination_table",
+        "01516_drop_table_stress",
         "attach",
         "ddl_dictionaries",
         "dictionary",
