@@ -140,21 +140,24 @@ void StorageMaterializedView::read(
 
     storage->read(query_plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
-    StreamLocalLimits limits;
-    SizeLimits leaf_limits;
+    if (query_plan.isInitialized())
+    {
+        StreamLocalLimits limits;
+        SizeLimits leaf_limits;
 
-    /// Add table lock for destination table.
-    auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-            query_plan.getCurrentDataStream(),
-            storage,
-            std::move(lock),
-            limits,
-            leaf_limits,
-            nullptr,
-            nullptr);
+        /// Add table lock for destination table.
+        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
+                query_plan.getCurrentDataStream(),
+                storage,
+                std::move(lock),
+                limits,
+                leaf_limits,
+                nullptr,
+                nullptr);
 
-    adding_limits_and_quota->setStepDescription("Lock destination table for Buffer");
-    query_plan.addStep(std::move(adding_limits_and_quota));
+        adding_limits_and_quota->setStepDescription("Lock destination table for Buffer");
+        query_plan.addStep(std::move(adding_limits_and_quota));
+    }
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
