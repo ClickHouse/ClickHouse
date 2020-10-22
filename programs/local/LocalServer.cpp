@@ -336,7 +336,7 @@ void LocalServer::processQueries()
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
     /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
-    /// so we can't reuse it safely as a query global_context and need a copy here
+    /// so we can't reuse it safely as a query context and need a copy here
     auto context = Context(*global_context);
 
     context.makeSessionContext();
