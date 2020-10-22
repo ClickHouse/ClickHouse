@@ -1,4 +1,4 @@
-#include "OpenTelemetryLog.h"
+#include "OpenTelemetrySpanLog.h"
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>

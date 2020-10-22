@@ -133,8 +133,6 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
             client_version_patch = client_tcp_protocol_version;
     }
 
-    // TODO what does it even mean to read this structure over HTTP? I thought
-    // this was for native protocol? See interface == Interface::HTTP.
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
     {
         uint8_t have_trace_id = 0;
@@ -145,10 +143,6 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
             readBinary(opentelemetry_span_id, in);
             readBinary(opentelemetry_tracestate, in);
             readBinary(opentelemetry_trace_flags, in);
-
-            fmt::print(stderr, "read {:x}, {}, {} at\n{}\n",
-                opentelemetry_trace_id, opentelemetry_span_id,
-                opentelemetry_parent_span_id, StackTrace().toString());
         }
     }
 }
