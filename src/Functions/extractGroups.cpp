@@ -51,10 +51,10 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnPtr column_haystack = block[arguments[0]].column;
-        const ColumnPtr column_needle = block[arguments[1]].column;
+        const ColumnPtr column_haystack = arguments[0].column;
+        const ColumnPtr column_needle = arguments[1].column;
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
@@ -100,7 +100,7 @@ public:
             offsets_data[i] = current_offset;
         }
 
-        block[result].column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+        return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 };
 

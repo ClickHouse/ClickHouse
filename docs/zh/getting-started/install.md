@@ -2,9 +2,9 @@
 
 ## 系统要求 {#xi-tong-yao-qiu}
 
-ClickHouse可以在任何具有x86\_64，AArch64或PowerPC64LE CPU架构的Linux，FreeBSD或Mac OS X上运行。
+ClickHouse可以在任何具有x86_64，AArch64或PowerPC64LE CPU架构的Linux，FreeBSD或Mac OS X上运行。
 
-虽然预构建的二进制文件通常是为x86  \_64编译并利用SSE 4.2指令集，但除非另有说明，否则使用支持它的CPU将成为额外的系统要求。这是检查当前CPU是否支持SSE 4.2的命令：
+虽然预构建的二进制文件通常是为x86  _64编译并利用SSE 4.2指令集，但除非另有说明，否则使用支持它的CPU将成为额外的系统要求。这是检查当前CPU是否支持SSE 4.2的命令：
 
 ``` bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"

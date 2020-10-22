@@ -216,20 +216,17 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
-        {
-            block[result].column = ColumnString::create();
-            return;
-        }
+            return ColumnString::create();
 
         PODArray<Float64> xs, ys;
         PODArray<String> variant_names;
         String dist;
         bool higher_is_better;
 
-        if (const ColumnConst * col_dist = checkAndGetColumnConst<ColumnString>(block[arguments[0]].column.get()))
+        if (const ColumnConst * col_dist = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
         {
             dist = col_dist->getDataAt(0).data;
             dist = Poco::toLower(dist);
@@ -239,16 +236,13 @@ public:
         else
             throw Exception("First argument for function " + getName() + " must be Constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (const ColumnConst * col_higher_is_better = checkAndGetColumnConst<ColumnUInt8>(block[arguments[1]].column.get()))
+        if (const ColumnConst * col_higher_is_better = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get()))
             higher_is_better = col_higher_is_better->getBool(0);
         else
             throw Exception("Second argument for function " + getName() + " must be Constatnt boolean", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block[arguments[2]].column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get()))
         {
-            if (!col_const_arr)
-                throw Exception("Third argument for function " + getName() + " must be Array of constant strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
             Array src_arr = col_const_arr->getValue<Array>();
 
             for (size_t i = 0; i < src_arr.size(); ++i)
@@ -258,22 +252,24 @@ public:
                 variant_names.push_back(src_arr[i].get<const String &>());
             }
         }
+        else
+            throw Exception("Third argument for function " + getName() + " must be Array of constant strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block[arguments[3]].column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[3].column.get()))
         {
-            if (!col_const_arr)
-                throw Exception("Forth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!toFloat64(col_const_arr, xs))
                 throw Exception("Forth and fifth Argument for function " + getName() + " must be Array of constant Numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
+        else
+            throw Exception("Forth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block[arguments[4]].column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[4].column.get()))
         {
-            if (!col_const_arr)
-                throw Exception("Fifth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!toFloat64(col_const_arr, ys))
                 throw Exception("Fifth Argument for function " + getName() + " must be Array of constant Numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
+        else
+            throw Exception("Fifth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (variant_names.size() != xs.size() || xs.size() != ys.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments doesn't match: variant_names: {}, xs: {}, ys: {}", variant_names.size(), xs.size(), ys.size());
@@ -294,7 +290,7 @@ public:
         auto dst = ColumnString::create();
         std::string result_str = convertToJson(variant_names, variants);
         dst->insertData(result_str.c_str(), result_str.length());
-        block[result].column = std::move(dst);
+        return dst;
     }
 };
 
