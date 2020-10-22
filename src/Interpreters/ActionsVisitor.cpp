@@ -564,6 +564,11 @@ void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
         visit(*literal, ast, data);
     else if (auto * expression_list = ast->as<ASTExpressionList>())
         visit(*expression_list, ast, data);
+    else
+    {
+        for (auto & child : ast->children)
+            visit(child, data);
+    }
 }
 
 std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPtr & ast, Data & data)
