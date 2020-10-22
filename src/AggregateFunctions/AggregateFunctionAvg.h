@@ -44,18 +44,57 @@ struct RationalFraction
 };
 
 /**
- * @tparam Numerator The type that the initial numerator column would have (needed to cast the input IColumn to
+ * Motivation: ClickHouse has added the Decimal data type, which basically represents a fraction that stores
+ * the precise (unlike floating-point) result with respect to some scale.
+ *
+ * These decimal types can't be divided by floating point data types, so functions like avg or avgWeighted
+ * can't return the Floa64 column as a result when of the input columns is Decimal (because that would, in case of
+ * avgWeighted, involve division numerator (Decimal) / denominator (Float64)).
+ *
+ * The rules for determining the output and intermediate storage types for these functions are different, so
+ * the struct representing the deduction guide is presented.
+ *
+ * Given the initial Columns types (e.g. values and weights for avgWeighted, values for avg),
+ * the struct calculated the output type and the intermediate storage type (that's used by the RationalFraction).
+ */
+template <class Column1, class Column2>
+struct AvgFunctionTypesDeductionTemplate
+{
+    using Numerator = int;
+    using Denominator = int;
+    using Fraction = RationalFraction<Numerator, Denominator>;
+
+    using ResultType = bool;
+    using ResultDataType = bool;
+    using ResultVectorType = bool;
+};
+
+/**
+ * @tparam InitialNumerator The type that the initial numerator column would have (needed to cast the input IColumn to
  *                   appropriate type).
- * @tparam Denominator The type that the initial denominator column would have.
+ * @tparam InitialDenominator The type that the initial denominator column would have.
+ *
+ * @tparam Deduction Function template that, given the numerator and the denominator, finds the actual
+ *         suitable storage and the resulting column type.
  *
  * @tparam Derived When deriving from this class, use the child class name as in CRTP, e.g.
  *         class Self : Agg<char, bool, bool, Self>.
  */
-template <class Numerator, class Denominator, class Derived>
-class AggregateFunctionAvgBase : public IAggregateFunctionDataHelper<RationalFraction<Numerator, Denominator>, Derived>
+template <class InitialNumerator, class InitialDenominator, template <class, class> class Deduction, class Derived>
+class AggregateFunctionAvgBase : public
+        IAggregateFunctionDataHelper<typename Deduction<InitialNumerator, InitialDenominator>::Fraction, Derived>
 {
 public:
-    using Base = IAggregateFunctionDataHelper<RationalFraction<Numerator, Denominator>, Derived>;
+    using Deducted = Deduction<InitialNumerator, InitialDenominator>;
+
+    using ResultType =       typename Deducted::ResultType;
+    using ResultDataType =   typename Deducted::ResultDataType;
+    using ResultVectorType = typename Deducted::ResultVectorType;
+
+    using Numerator =   typename Deducted::Numerator;
+    using Denominator = typename Deducted::Denominator;
+
+    using Base = IAggregateFunctionDataHelper<typename Deducted::Fraction, Derived>;
 
     /// ctor for native types
     explicit AggregateFunctionAvgBase(const DataTypes & argument_types_): Base(argument_types_, {}), scale(0) {}
@@ -66,7 +105,10 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeNumber<Float64>>();
+        if constexpr (IsDecimalNumber<ResultType>)
+            return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
+        else
+            return std::make_shared<ResultDataType>();
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -97,20 +139,39 @@ public:
 
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
-        static_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).template result<Float64>());
+        static_cast<ResultVectorType &>(to).getData().push_back(this->data(place).template result<ResultType>());
     }
 
 protected:
     UInt32 scale;
 };
 
-template <class InputColumn, class Numerator, class Denominator>
+template <class T, class V>
+struct AvgFunctionTypesDeduction
+{
+    using Numerator = std::conditional_t<IsDecimalNumber<T>,
+        std::conditional_t<std::is_same_v<T, Decimal256>,
+            Decimal256,
+            Decimal128>,
+        NearestFieldType<T>>;
+
+    using Denominator = V;
+    using Fraction = RationalFraction<Numerator, Denominator>;
+
+    using ResultType =       std::conditional_t<IsDecimalNumber<T>, T, Float64>;
+    using ResultDataType =   std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<T>, DataTypeNumber<Float64>>;
+    using ResultVectorType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<Float64>>;
+};
+
+template <class InputColumn>
 class AggregateFunctionAvg final :
-    public AggregateFunctionAvgBase<Numerator, Denominator, AggregateFunctionAvg<InputColumn, Numerator, Denominator>>
+    public AggregateFunctionAvgBase<InputColumn, UInt64, AvgFunctionTypesDeduction, AggregateFunctionAvg<InputColumn>>
 {
 public:
-    using AggregateFunctionAvgBase<Numerator, Denominator,
-        AggregateFunctionAvg<InputColumn, Numerator, Denominator>>::AggregateFunctionAvgBase;
+    using Base =
+        AggregateFunctionAvgBase<InputColumn, UInt64, AvgFunctionTypesDeduction, AggregateFunctionAvg<InputColumn>>;
+
+    using Base::Base;
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
