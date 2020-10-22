@@ -6,6 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+class Collator;
 
 namespace DB
 {
@@ -29,6 +30,11 @@ private:
 
     ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_);
     ColumnNullable(const ColumnNullable &) = default;
+
+    void getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+
+    void updatePermutationImpl(
+        bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator = nullptr) const;
 
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
@@ -94,6 +100,9 @@ public:
                        int direction, int nan_direction_hint) const override;
     void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res) const;
+    void updatePermutationWithCollation(
+        const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_range) const;
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;

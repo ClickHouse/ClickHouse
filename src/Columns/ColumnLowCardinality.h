@@ -31,6 +31,11 @@ class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinalit
     ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false);
     ColumnLowCardinality(const ColumnLowCardinality & other) = default;
 
+    void getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+
+    template <typename Cmp>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const;
+
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
@@ -128,6 +133,10 @@ public:
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const override;
+
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const;
+
+    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges& equal_range) const;
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {

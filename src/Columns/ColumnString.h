@@ -42,14 +42,18 @@ private:
     /// Size of i-th element, including terminating zero.
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return offsets[i] - offsets[i - 1]; }
 
-    template <bool positive>
-    struct less;
+    struct cmp;
 
-    template <bool positive>
-    struct lessWithCollation;
+    struct cmpWithCollation;
 
     ColumnString() = default;
     ColumnString(const ColumnString & src);
+
+    template <typename Cmp>
+    void getPermutationImpl(size_t limit, Permutation & res, Cmp comparator) const;
+
+    template <typename Cmp>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const;
 
 public:
     const char * getFamilyName() const override { return "String"; }
@@ -233,12 +237,12 @@ public:
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
-    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
+    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const override;
 
     /// Sorting with respect of collation.
     void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
 
-    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges& equal_range) const;
+    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const;
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
