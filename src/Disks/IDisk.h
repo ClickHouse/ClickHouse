@@ -201,10 +201,10 @@ public:
     /// Check file, overrided for S3 only
     virtual bool checkFile(const String & path) const { return exists(path); }
 
-private:
     /// Returns executor to perform asynchronous operations.
-    Executor & getExecutor() { return *executor; }
+    virtual Executor & getExecutor() { return *executor; }
 
+private:
     std::unique_ptr<Executor> executor;
 };
 

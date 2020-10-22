@@ -23,9 +23,14 @@ public:
         FunctionWrapper(FunctionOverloadResolverPtr resolver, const ColumnsWithTypeAndName & arguments, Block & block,
                         const ColumnNumbers & arg_positions_, const String & column_name, TypeIndex expected_type);
 
-        void execute(Block & block, size_t rows) const
+        void execute(ColumnsWithTypeAndName & columns, size_t rows) const
         {
-            function->execute(block, arg_positions, result_pos, rows, false);
+            ColumnsWithTypeAndName args;
+            args.reserve(arg_positions.size());
+            for (auto pos : arg_positions)
+                args.emplace_back(columns[pos]);
+
+            columns[result_pos].column = function->execute(args, columns[result_pos].type, rows, false);
         }
     };
 

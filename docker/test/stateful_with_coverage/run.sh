@@ -105,7 +105,11 @@ if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-test --testname --shard --zookeeper --no-stateless "$SKIP_LIST_OPT" "$ADDITIONAL_OPTIONS" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+# We can have several additional options so we path them as array because it's
+# more idiologically correct.
+read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
+
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
 kill_clickhouse
 

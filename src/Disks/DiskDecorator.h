@@ -4,6 +4,10 @@
 
 namespace DB
 {
+
+/** Forwards all methods to another disk.
+  * Methods can be overridden by descendants.
+  */
 class DiskDecorator : public IDisk
 {
 public:
@@ -48,6 +52,7 @@ public:
     const String getType() const override { return delegate->getType(); }
     const String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkFile(const String & path) const override { return delegate->checkFile(path); }
+    Executor & getExecutor() override;
 
 protected:
     DiskPtr delegate;
