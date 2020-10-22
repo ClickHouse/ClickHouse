@@ -202,7 +202,7 @@ SELECT * FROM nestedt FORMAT TSV
 -   `min` は最小値を持つ行です。 `format_template_row` 書式(極値が1に設定されている場合)
 -   `max` は最大値を持つ行です。 `format_template_row` 書式(極値が1に設定されている場合)
 -   `rows` 出力行の合計数です
--   `rows_before_limit` そこにあったであろう行の最小数は制限なしです。 出力の場合のみを含むクエリを制限します。 クエリにGROUP BYが含まれている場合、rows\_before\_limit\_at\_leastは制限なしで行われていた行の正確な数です。
+-   `rows_before_limit` そこにあったであろう行の最小数は制限なしです。 出力の場合のみを含むクエリを制限します。 クエリにGROUP BYが含まれている場合、rows_before_limit_at_leastは制限なしで行われていた行の正確な数です。
 -   `time` リクエストの実行時間を秒単位で指定します
 -   `rows_read` 読み込まれた行数です
 -   `bytes_read` (圧縮されていない)読み込まれたバイト数です
@@ -353,21 +353,21 @@ Both data output and parsing are supported in this format. For parsing, any orde
 
 カンマ区切りの値の形式 ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-書式設定の場合、行は二重引用符で囲まれます。 文字列内の二重引用符は、行の二重引用符として出力されます。 文字をエスケープするルールは他にありません。 Dateとdate-timeは二重引用符で囲みます。 数値は引用符なしで出力されます。 値は区切り文字で区切られます。 `,` デフォルトでは。 区切り文字は設定で定義されています [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). 行は、Unixラインフィード(LF)を使用して区切られます。 最初に、配列はTabSeparated形式のように文字列にシリアル化され、結果の文字列は二重引用符でCSVに出力されます。 CSV形式のタプルは、個別の列としてシリアル化されます(つまり、タプル内の入れ子は失われます)。
+書式設定の場合、行は二重引用符で囲まれます。 文字列内の二重引用符は、行の二重引用符として出力されます。 文字をエスケープするルールは他にありません。 Dateとdate-timeは二重引用符で囲みます。 数値は引用符なしで出力されます。 値は区切り文字で区切られます。 `,` デフォルトでは。 区切り文字は設定で定義されています [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). 行は、Unixラインフィード(LF)を使用して区切られます。 最初に、配列はTabSeparated形式のように文字列にシリアル化され、結果の文字列は二重引用符でCSVに出力されます。 CSV形式のタプルは、個別の列としてシリアル化されます(つまり、タプル内の入れ子は失われます)。
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\*デフォルトでは、区切り文字は `,`. を参照。 [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) より多くの情報のための設定。
+\*デフォルトでは、区切り文字は `,`. を参照。 [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) より多くの情報のための設定。
 
 解析時には、すべての値を引用符の有無にかかわらず解析できます。 二重引用符と単一引quotesの両方がサポートされています。 行は引用符なしで配置することもできます。 この場合、区切り文字または改行（CRまたはLF）まで解析されます。 RFCに違反して、引用符なしで行を解析すると、先頭と末尾のスペースとタブは無視されます。 ラインフィードでは、Unix(LF)、Windows(CR LF)、およびMac OS Classic(CR LF)タイプがすべてサポートされています。
 
 空の引用符で囲まれていない入力値は、それぞれの列のデフォルト値に置き換えられます。
-[input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+[input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 有効です。
 
-`NULL` として書式設定される `\N` または `NULL` または空の引用符で囲まれていない文字列(設定を参照 [input\_format\_csv\_unquoted\_null\_literal\_as\_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) と [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` として書式設定される `\N` または `NULL` または空の引用符で囲まれていない文字列(設定を参照 [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) と [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 CSV形式では、合計と極値の出力は次のようにサポートされます `TabSeparated`.
 
@@ -452,12 +452,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-JSONはJavaScriptと互換性があります。 これを確実にするために、一部の文字は追加でエスケープされます。 `/` としてエスケープ `\/`;代替の改行 `U+2028` と `U+2029` ブラウザによってはエスケープされます `\uXXXX`. ASCII制御文字はエスケープされます。 `\b`, `\f`, `\n`, `\r`, `\t` を使用して、00-1F範囲の残りのバイトと同様に `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) 0にする。
+JSONはJavaScriptと互換性があります。 これを確実にするために、一部の文字は追加でエスケープされます。 `/` としてエスケープ `\/`;代替の改行 `U+2028` と `U+2029` ブラウザによってはエスケープされます `\uXXXX`. ASCII制御文字はエスケープされます。 `\b`, `\f`, `\n`, `\r`, `\t` を使用して、00-1F範囲の残りのバイトと同様に `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) 0にする。
 
 `rows` – The total number of output rows.
 
 `rows_before_limit_at_least` そこにある行の最小数は制限なしであったでしょう。 出力の場合のみを含むクエリを制限します。
-クエリにGROUP BYが含まれている場合、rows\_before\_limit\_at\_leastは制限なしで行われていた行の正確な数です。
+クエリにGROUP BYが含まれている場合、rows_before_limit_at_leastは制限なしで行われていた行の正確な数です。
 
 `totals` – Total values (when using WITH TOTALS).
 
@@ -544,7 +544,7 @@ ClickHouseを無視した空間要素には、カンマの後にオブジェク�
 
 ClickHouseは省略された値を対応するデフォルト値に置き換えます [データ型](../sql-reference/data-types/index.md).
 
-もし `DEFAULT expr` に応じて異なる置換規則を使用します。 [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) 設定。
+もし `DEFAULT expr` に応じて異なる置換規則を使用します。 [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) 設定。
 
 次の表を考えます:
 
@@ -587,7 +587,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 ### 入れ子構造の使用 {#jsoneachrow-nested}
 
-あなたがテーブルを持っている場合 [入れ子](../sql-reference/data-types/nested-data-structures/nested.md) データ型の列には、同じ構造でJSONデータを挿入することができます。 この機能を有効にするには [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 設定。
+あなたがテーブルを持っている場合 [入れ子](../sql-reference/data-types/nested-data-structures/nested.md) データ型の列には、同じ構造でJSONデータを挿入することができます。 この機能を有効にするには [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 設定。
 
 たとえば、次の表を考えてみましょう:
 
@@ -601,7 +601,7 @@ CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memor
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-挿入データとしての階層JSONオブジェクト [input\_format\_import\_nested\_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+挿入データとしての階層JSONオブジェクト [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -783,7 +783,7 @@ The minimum set of characters that you need to escape when passing data in Value
 
 これはで使用される形式です `INSERT INTO t VALUES ...` ただし、クエリ結果の書式設定にも使用できます。
 
-も参照。: [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) と [input\_format\_values\_deduce\_templates\_of\_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) 設定。
+も参照。: [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) と [input_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) 設定。
 
 ## 垂直 {#vertical}
 
@@ -1046,7 +1046,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 -   で始まる `[A-Za-z_]`
 -   その後のみ `[A-Za-z0-9_]`
 
-出力Avroファイルの圧縮および同期間隔は以下で設定できます [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) と [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) それぞれ。
+出力Avroファイルの圧縮および同期間隔は以下で設定できます [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) と [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) それぞれ。
 
 ## アブロコンフルエント {#data-format-avro-confluent}
 
@@ -1056,7 +1056,7 @@ AvroConfluent支援復号単一のオブジェクトアブロのメッセージ�
 
 スキーマがキャッシュ一度に解決されます。
 
-スキーマのレジストリのURLは設定され [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+スキーマのレジストリのURLは設定され [format_avro_schema_registry_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
 ### データ型の一致 {#data_types-matching-1}
 
@@ -1199,13 +1199,13 @@ e.g. `schemafile.proto:MessageType`.
 クライアントを使用する場合 [バッチモード](../interfaces/cli.md#cli_usage) は、パスのスキーマ"相対的"に指定する必要があります。
 
 を介してデータを入力または出力する場合 [HTTPインターフェ](../interfaces/http.md) 形式スキーマで指定されたファイル名
-指定されたディレクトリにあるはずです。 [format\_schema\_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
+指定されたディレクトリにあるはずです。 [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 サーバー構成で。
 
 ## スキップエラー {#skippingerrors}
 
-次のような形式があります `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` と `Protobuf` 解析エラーが発生した場合に壊れた行をスキップし、次の行の先頭から解析を続行できます。 見る [input\_format\_allow\_errors\_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) と
-[input\_format\_allow\_errors\_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) 設定。
+次のような形式があります `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` と `Protobuf` 解析エラーが発生した場合に壊れた行をスキップし、次の行の先頭から解析を続行できます。 見る [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) と
+[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) 設定。
 制限:
 -解析エラーの場合 `JSONEachRow` 新しい行(またはEOF)まですべてのデータをスキップします。 `\n` エラーを正しく数える。
 - `Template` と `CustomSeparated` 最後の列の後にdelimiterを使用し、行の間にdelimiterを使用すると、次の行の先頭を見つけることができます。

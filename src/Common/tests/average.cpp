@@ -502,8 +502,8 @@ Float NO_INLINE really_unrolled(const PODArray<UInt8> & keys, const PODArray<Flo
 
 struct State4
 {
-    Float sum[4] = {0, 0, 0, 0};
-    size_t count[4] = {0, 0, 0, 0};
+    Float sum[4]{};
+    size_t count[4]{};
 
     template <UInt32 idx>
     void add(Float value)
@@ -522,13 +522,13 @@ Float NO_INLINE another_unrolled_x4(const PODArray<UInt8> & keys, const PODArray
 {
     State4 map[256]{};
 
-    size_t size = keys.size() & ~size_t(3);
-    for (size_t i = 0; i < size; i+=4)
+    size_t size = keys.size() / 4 * 4;
+    for (size_t i = 0; i < size; i += 4)
     {
         map[keys[i]].add<0>(values[i]);
-        map[keys[i+1]].add<1>(values[i]);
-        map[keys[i+2]].add<2>(values[i]);
-        map[keys[i+3]].add<3>(values[i]);
+        map[keys[i + 1]].add<1>(values[i]);
+        map[keys[i + 2]].add<2>(values[i]);
+        map[keys[i + 3]].add<3>(values[i]);
     }
 
     /// tail

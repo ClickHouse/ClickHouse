@@ -60,6 +60,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    static Strings getPathsList(const String & table_path, const String & user_files_path, const Context & context);
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileBlockOutputStream;

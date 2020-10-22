@@ -15,6 +15,10 @@ if (COMPILER_GCC)
 elseif (COMPILER_CLANG)
     # Require minimum version of clang/apple-clang
     if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
+        # If you are developer you can figure out what exact versions of AppleClang are Ok,
+        # remove the following line and commit changes below.
+        message (FATAL_ERROR "AppleClang is not supported, you should install clang from brew.")
+
         # AppleClang 10.0.1 (Xcode 10.2) corresponds to LLVM/Clang upstream version 7.0.0
         # AppleClang 11.0.0 (Xcode 11.0) corresponds to LLVM/Clang upstream version 8.0.0
         set (XCODE_MINIMUM_VERSION 10.2)
