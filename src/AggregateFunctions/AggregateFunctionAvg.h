@@ -43,25 +43,7 @@ struct RationalFraction
     }
 };
 
-template <class, class = void>
-struct AvgTraits
-{
-    using ResultType = Float64;
-    using ResultDataType = DataTypeNumber<Float64>;
-    using ResultVectorType = ColumnVector<Float64>;
-};
-
-template <class T>
-struct AvgTraits<T, std::enable_if_t<IsDecimalNumber<T>>>
-{
-    using ResultType = T;
-    using ResultDataType = DataTypeDecimal<T>;
-    using ResultVectorType = ColumnDecimal<T>;
-};
-
 /**
- * @tparam DesiredResult The type that we want to be used for resulting column. "Desired" as the real type in most cases
- *                       would be not DesiredResult, but Float64.
  * @tparam Numerator The type that the initial numerator column would have (needed to cast the input IColumn to
  *                   appropriate type).
  * @tparam Denominator The type that the initial denominator column would have.
@@ -69,12 +51,11 @@ struct AvgTraits<T, std::enable_if_t<IsDecimalNumber<T>>>
  * @tparam Derived When deriving from this class, use the child class name as in CRTP, e.g.
  *         class Self : Agg<char, bool, bool, Self>.
  */
-template <class DesiredResult, class Numerator, class Denominator, class Derived>
+template <class Numerator, class Denominator, class Derived>
 class AggregateFunctionAvgBase : public IAggregateFunctionDataHelper<RationalFraction<Numerator, Denominator>, Derived>
 {
 public:
     using Base = IAggregateFunctionDataHelper<RationalFraction<Numerator, Denominator>, Derived>;
-    using Traits = AvgTraits<DesiredResult>;
 
     /// ctor for native types
     explicit AggregateFunctionAvgBase(const DataTypes & argument_types_): Base(argument_types_, {}), scale(0) {}
@@ -85,12 +66,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        using ResultDataType = typename Traits::ResultDataType;
-
-        if constexpr (IsDecimalNumber<DesiredResult>)
-            return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
-        else
-            return std::make_shared<ResultDataType>();
+        return std::make_shared<DataTypeNumber<Float64>>();
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -121,28 +97,24 @@ public:
 
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
-        using ResultType = typename Traits::ResultType;
-        using ResultVectorType = typename Traits::ResultVectorType;
-
-        static_cast<ResultVectorType &>(to).getData().push_back(this->data(place).template result<ResultType>());
+        static_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).template result<Float64>());
     }
 
 protected:
     UInt32 scale;
 };
 
-template <class Large, class Numerator, class Denominator>
+template <class InputColumn, class Numerator, class Denominator>
 class AggregateFunctionAvg final :
-    public AggregateFunctionAvgBase<Large, Numerator, Denominator,
-        AggregateFunctionAvg<Large, Numerator, Denominator>>
+    public AggregateFunctionAvgBase<Numerator, Denominator, AggregateFunctionAvg<InputColumn, Numerator, Denominator>>
 {
 public:
-    using AggregateFunctionAvgBase<Large, Numerator, Denominator,
-        AggregateFunctionAvg<Large, Numerator, Denominator>>::AggregateFunctionAvgBase;
+    using AggregateFunctionAvgBase<Numerator, Denominator,
+        AggregateFunctionAvg<InputColumn, Numerator, Denominator>>::AggregateFunctionAvgBase;
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        const auto & column = static_cast<const DecimalOrVectorCol<Large> &>(*columns[0]);
+        const auto & column = static_cast<const DecimalOrVectorCol<InputColumn> &>(*columns[0]);
         this->data(place).numerator += column.getData()[row_num];
         this->data(place).denominator += 1;
     }

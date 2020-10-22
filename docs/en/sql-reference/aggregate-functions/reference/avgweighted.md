@@ -29,10 +29,7 @@ but may have different types.
 -   Weighted mean otherwise.
 
 **Return type**
-
-- `Decimal` if both types are [Decimal](../../../sql-reference/data-types/decimal.md) (largest type taken).
-(depending on the largest type).
-- [Float64](../../../sql-reference/data-types/float.md) otherwise.
+- [Float64](../../../sql-reference/data-types/float.md).
 
 **Example**
 
