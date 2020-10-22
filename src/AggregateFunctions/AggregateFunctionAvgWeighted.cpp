@@ -26,28 +26,6 @@ constexpr bool allowTypes(const DataTypePtr& left, const DataTypePtr& right)
     return allow(l_dt) && allow(r_dt);
 }
 
-template <class U, class V> using Biggest = std::conditional_t<(sizeof(U) > sizeof(V)), U, V>;
-
-template <class U, class V>
-struct LargestType
-{
-    using Biggest = Biggest<U, V>;
-    static constexpr bool UDecimal = IsDecimalNumber<U>;
-    static constexpr bool VDecimal = IsDecimalNumber<V>;
-
-    using TypeIfBothDecimal = std::conditional_t<std::is_same_v<Biggest, Decimal256>,
-          Decimal256,
-          Decimal128>;
-
-    using Type = std::conditional_t<UDecimal && VDecimal,
-          TypeIfBothDecimal,
-          Float64>;
-};
-
-template <class U, class V> using LargestTypeT = typename LargestType<U, V>::Type;
-template <class U, class V> using Function = AggregateFunctionAvgWeighted<LargestTypeT<U, V>, U, V>;
-
-
 #define AT_SWITCH(LINE) \
     switch (which.idx) \
     { \
@@ -64,7 +42,7 @@ static IAggregateFunction * create(const IDataType & second_type, TArgs && ... a
     const WhichDataType which(second_type);
 
 #define LINE(Type) \
-    case TypeIndex::Type:       return new Function<First, Type>(std::forward<TArgs>(args)...)
+    case TypeIndex::Type:       return new AggregateFunctionAvgWeighted<First, Type>(std::forward<TArgs>(args)...)
     AT_SWITCH(LINE)
 #undef LINE
 }
