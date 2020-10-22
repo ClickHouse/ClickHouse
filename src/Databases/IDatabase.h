@@ -181,7 +181,8 @@ public:
     virtual bool empty() const = 0;
 
     /// Submit query to log. Currently used by DatabaseReplicated engine only.
-    virtual void propose(const ASTPtr & /*query*/) {
+    virtual void propose(const ASTPtr & /*query*/)
+    {
         throw Exception(getEngineName() + ": propose() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 

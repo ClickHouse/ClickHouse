@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace fs = std::filesystem;
@@ -713,14 +714,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// contain the right database name for every replica
     /// therefore for such queries the AST database
     /// field is modified right before an actual execution
-    if (context.getClientInfo().query_kind == ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
+    if (context.getClientInfo().query_kind == ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+    {
         create.database = current_database;
     }
 
     /// Actually creates table
     bool created = doCreateTable(create, properties);
 
-    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
+    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+    {
         auto * database_replicated = typeid_cast<DatabaseReplicated *>(database.get());
         return database_replicated->getFeedback();
     }
@@ -786,7 +789,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         return true;
     }
 
-    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
+    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+    {
         database->propose(query_ptr);
         return true;
     }
