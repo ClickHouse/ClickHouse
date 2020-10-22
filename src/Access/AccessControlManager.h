@@ -149,8 +149,6 @@ public:
     const ExternalAuthenticators & getExternalAuthenticators() const;
 
 private:
-    void addStorage(const StoragePtr & new_storage);
-
     class ContextAccessCache;
     class CustomSettingsPrefixes;
 
