@@ -197,7 +197,7 @@ Los datos de esta tabla utilizan 142 GB.
 
 (Importar datos directamente desde Postgres también es posible usando `COPY ... TO PROGRAM`.)
 
-Unfortunately, all the fields associated with the weather (precipitation…average\_wind\_speed) were filled with NULL. Because of this, we will remove them from the final data set.
+Unfortunately, all the fields associated with the weather (precipitation…average_wind_speed) were filled with NULL. Because of this, we will remove them from the final data set.
 
 Para empezar, crearemos una tabla en un único servidor. Posteriormente haremos la mesa distribuida.
 

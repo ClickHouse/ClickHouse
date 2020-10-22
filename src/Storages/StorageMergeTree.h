@@ -57,6 +57,7 @@ public:
         unsigned num_streams) override;
 
     std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const override;
     std::optional<UInt64> totalBytes() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;

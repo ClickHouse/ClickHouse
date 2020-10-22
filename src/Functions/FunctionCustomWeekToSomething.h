@@ -96,26 +96,26 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const IDataType * from_type = block[arguments[0]].type.get();
+        const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
 
         if (which.isDate())
-            CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
-                block, arguments, result, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
+                arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime())
-            CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(
-                block, arguments, result, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(
+                arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime64())
         {
-            CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(
-                block, arguments, result, input_rows_count,
+            return CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(
+                arguments, result_type, input_rows_count,
                 TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
         }
         else
             throw Exception(
-                "Illegal type " + block[arguments[0]].type->getName() + " of argument of function " + getName(),
+                "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
