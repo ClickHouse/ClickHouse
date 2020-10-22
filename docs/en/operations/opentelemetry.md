@@ -1,6 +1,6 @@
 ---
 toc_priority: 62
-toc_title: [experimental] OpenTelemetry
+toc_title: OpenTelemetry Support
 ---
 
 # [experimental] OpenTelemetry Support
