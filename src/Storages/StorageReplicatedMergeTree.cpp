@@ -2540,10 +2540,10 @@ void StorageReplicatedMergeTree::mutationsUpdatingTask()
     }
 }
 
-ReplicatedMergeTreeQueue::SelectedEntry StorageReplicatedMergeTree::selectQueueEntry()
+ReplicatedMergeTreeQueue::SelectedEntryPtr StorageReplicatedMergeTree::selectQueueEntry()
 {
     /// This object will mark the element of the queue as running.
-    ReplicatedMergeTreeQueue::SelectedEntry selected;
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selected;
 
     try
     {
@@ -2557,10 +2557,10 @@ ReplicatedMergeTreeQueue::SelectedEntry StorageReplicatedMergeTree::selectQueueE
     return selected;
 }
 
-bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntry & selected_entry)
+bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry)
 {
 
-    LogEntryPtr & entry = selected_entry.first;
+    LogEntryPtr & entry = selected_entry->log_entry;
     return queue.processEntry([this]{ return getZooKeeper(); }, entry, [&](LogEntryPtr & entry_to_process)
     {
         try
@@ -2609,14 +2609,12 @@ std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
         return {};
 
     /// This object will mark the element of the queue as running.
-    ReplicatedMergeTreeQueue::SelectedEntry selected_entry = selectQueueEntry();
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry = selectQueueEntry();
 
-    LogEntryPtr & entry = selected_entry.first;
-
-    if (!entry)
+    if (!selected_entry)
         return {};
 
-    return JobAndPool{[this, selected_entry{std::move(selected_entry)}] () mutable
+    return JobAndPool{[this, selected_entry] () mutable
     {
         processQueueEntry(selected_entry);
     }, PoolType::MERGE_MUTATE};
