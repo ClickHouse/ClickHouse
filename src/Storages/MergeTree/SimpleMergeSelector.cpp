@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
-
 #include <Common/interpolate.h>
 
 #include <cmath>
@@ -153,9 +152,6 @@ void selectWithinPartition(
         if (begin > 1000)
             break;
 
-        if (!parts[begin].shall_participate_in_merges)
-            continue;
-
         size_t sum_size = parts[begin].size;
         size_t max_size = parts[begin].size;
         size_t min_age = parts[begin].age;
@@ -163,9 +159,6 @@ void selectWithinPartition(
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
             if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
-                break;
-
-            if (!parts[end - 1].shall_participate_in_merges)
                 break;
 
             size_t cur_size = parts[end - 1].size;

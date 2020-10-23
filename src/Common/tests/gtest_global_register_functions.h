@@ -1,4 +1,3 @@
-#pragma once
 #include <Functions/FunctionFactory.h>
 #include <Functions/registerFunctions.h>
 

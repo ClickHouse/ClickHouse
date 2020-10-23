@@ -33,19 +33,19 @@ void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factor
     factory.registerOutputFormatProcessor("JSONEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, params, format_settings, false);
+        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, callback, format_settings, false);
     });
 
     factory.registerOutputFormatProcessor("JSONStringsEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, params, format_settings, true);
+        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, callback, format_settings, true);
     });
 }
 

@@ -37,7 +37,7 @@ using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 class ProtobufReader : private boost::noncopyable
 {
 public:
-    ProtobufReader(ReadBuffer & in_, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names, const bool use_length_delimiters_);
+    ProtobufReader(ReadBuffer & in_, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names);
     ~ProtobufReader();
 
     /// Should be called when we start reading a new message.
@@ -93,7 +93,7 @@ private:
     class SimpleReader
     {
     public:
-        SimpleReader(ReadBuffer & in_, const bool use_length_delimiters_);
+        SimpleReader(ReadBuffer & in_);
         bool startMessage();
         void endMessage(bool ignore_errors);
         void startNestedMessage();
@@ -126,7 +126,6 @@ private:
         UInt64 continueReadingVarint(UInt64 first_byte);
         void ignoreVarint();
         void ignoreGroup();
-        [[noreturn]] void throwUnknownFormat() const;
 
         ReadBuffer & in;
         Int64 cursor;
@@ -135,7 +134,6 @@ private:
         std::vector<Int64> parent_message_ends;
         Int64 field_end;
         Int64 last_string_pos;
-        const bool use_length_delimiters;
     };
 
     class IConverter

@@ -20,7 +20,7 @@ Sorgu eklemek için sütunların bir listesini belirtebilirsiniz `[(c1, c2, c3)]
 -   Hesaplanan değerler `DEFAULT` tablo tanımında belirtilen ifadeler.
 -   Sıfırlar ve boş dizeler, eğer `DEFAULT` ifadeler tanımlanmamıştır.
 
-Eğer [strict_ınsert_defaults = 1](../../operations/settings/settings.md), sahip olmayan sütunlar `DEFAULT` tanımlanan sorguda listelenmelidir.
+Eğer [strict\_ınsert\_defaults = 1](../../operations/settings/settings.md), sahip olmayan sütunlar `DEFAULT` tanımlanan sorguda listelenmelidir.
 
 Veri herhangi bir İNSERT geçirilebilir [biçimli](../../interfaces/formats.md#formats) ClickHouse tarafından desteklenmektedir. Biçim sorguda açıkça belirtilmelidir:
 

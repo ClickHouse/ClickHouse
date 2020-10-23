@@ -10,10 +10,6 @@
 
 #include <fmt/format.h>
 
-#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
-#define ABORT_ON_LOGICAL_ERROR
-#endif
-
 namespace Poco { class Logger; }
 
 

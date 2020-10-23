@@ -54,18 +54,18 @@ public:
         return type->getReturnType();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        auto column = columns[arguments.at(0)].column;
+        auto column = block.getByPosition(arguments.at(0)).column;
         if (!typeid_cast<const ColumnAggregateFunction *>(column.get()))
-            throw Exception("Illegal column " + columns[arguments.at(0)].column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
                     + " of first argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         /// Column is copied here, because there is no guarantee that we own it.
         auto mut_column = IColumn::mutate(std::move(column));
-        columns[result].column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
+        block.getByPosition(result).column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
     }
 };
 

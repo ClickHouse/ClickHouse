@@ -64,7 +64,10 @@ public:
 
     /// Delete TTL should be checked only by TTL time, there are no other ways
     /// to satisfy it.
-    bool isTTLAlreadySatisfied(const IMergeSelector::Part &) const override;
+    bool isTTLAlreadySatisfied(const IMergeSelector::Part &) const override
+    {
+        return false;
+    }
 
 private:
     bool only_drop_parts;
