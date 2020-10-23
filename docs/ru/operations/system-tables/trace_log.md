@@ -1,4 +1,4 @@
-# system.trace_log {#system-tables-trace-log}
+# system.trace_log {#system_tables-trace_log}
 
 Содержит экземпляры трассировки стека адресов вызова, собранные с помощью семплирующего профайлера запросов.
 

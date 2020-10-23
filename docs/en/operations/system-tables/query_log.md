@@ -1,4 +1,4 @@
-# system.query_log {#system-tables-query-log}
+# system.query_log {#system_tables-query_log}
 
 Contains information about executed queries, for example, start time, duration of processing, error messages.
 

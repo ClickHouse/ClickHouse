@@ -5,8 +5,6 @@ toc_title: SAMPLE BY
 
 # Manipulating Sampling-Key Expressions {#manipulations-with-sampling-key-expressions}
 
-Syntax:
-
 ``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
 ```
