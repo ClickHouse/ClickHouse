@@ -37,6 +37,7 @@
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
+#include <Common/randomSeed.h>
 
 #include <filesystem>
 
@@ -148,20 +149,11 @@ void LocalServer::tryInitPath()
         /// or it can be some leftovers from other clickhouse-local runs
         /// as we can't accurately distinguish those situations we don't touch any existent folders
         /// we just try to pick some free name for our working folder
-        size_t retries = 0;
 
-        while (1)
-        {
-            retries++;
+        default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
 
-            default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), retries);
-
-            if (!exists(default_path))
-                break;
-
-            if (retries >= 20)
-                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Can not find a name for a temporary folder: {} exist!", default_path.string());
-        }
+        if (exists(default_path))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessfull attempt to create working directory: {} exist!", default_path.string());
 
         create_directory(default_path);
         temporary_directory_to_delete = default_path;
@@ -467,14 +459,6 @@ void LocalServer::cleanup()
     {
         const auto dir = *temporary_directory_to_delete;
         temporary_directory_to_delete.reset();
-
-        if (dir.string().find(fmt::format("clickhouse-local-{}", getpid())) == std::string::npos)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "The name of working directory of clickhouse-local '{}' doesn't look like temporary name. Will not delete it",
-                dir.string()
-            );
-        }
         LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
         remove_all(dir);
     }
