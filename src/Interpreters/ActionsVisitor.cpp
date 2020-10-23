@@ -385,7 +385,7 @@ ActionsMatcher::Data::Data(
     const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
     const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
     PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-    bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_)
+    bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_, bool has_having_)
     : context(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -396,6 +396,7 @@ ActionsMatcher::Data::Data(
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
     , no_storage_or_local(no_storage_or_local_)
+    , has_having(has_having_)
     , visit_depth(0)
     , actions_stack(std::move(actions), context)
     , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
@@ -944,12 +945,15 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
 
         SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
 
-        /** The following happens for GLOBAL INs:
+        /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
           *   in the subquery_for_set object, this subquery is set as source and the temporary table _data1 as the table.
           * - this function shows the expression IN_data1.
+          * 
+          * In case that we have HAVING with IN subquery, we have to force creating set for it.
+          * Also it doesn't make sence if it is GLOBAL IN or ordinary IN.
           */
-        if (!subquery_for_set.source && data.no_storage_or_local)
+        if ((!subquery_for_set.source && data.no_storage_or_local) || data.has_having)
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
             subquery_for_set.source = std::make_unique<QueryPlan>();

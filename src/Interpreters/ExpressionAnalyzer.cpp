@@ -396,7 +396,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
     LogAST log;
     ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
                                    sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
-                                   no_subqueries, false, only_consts, !isRemoteStorage());
+                                   no_subqueries, false, only_consts, !isRemoteStorage(), false);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -407,7 +407,17 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_sub
     LogAST log;
     ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
                                    sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
-                                   no_subqueries, true, only_consts, !isRemoteStorage());
+                                   no_subqueries, true, only_consts, !isRemoteStorage(), false);
+    ActionsVisitor(visitor_data, log.stream()).visit(ast);
+    actions = visitor_data.getActions();
+}
+
+void ExpressionAnalyzer::getRootActionsHasHaving(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts)
+{
+    LogAST log;
+    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
+                                   sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
+                                   no_subqueries, false, only_consts, !isRemoteStorage(), true);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -825,7 +835,7 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     step.required_output.push_back(select_query->having()->getColumnName());
-    getRootActions(select_query->having(), only_types, step.actions());
+    getRootActionsHasHaving(select_query->having(), only_types, step.actions());
 
     return true;
 }
