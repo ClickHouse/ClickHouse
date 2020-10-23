@@ -1,7 +1,7 @@
 ---
 title: SELECT Query
 toc_folder_title: SELECT
-toc_priority: 33
+toc_priority: 32
 toc_title: Overview
 ---
 
