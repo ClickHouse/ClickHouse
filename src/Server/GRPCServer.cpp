@@ -31,6 +31,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INVALID_GRPC_QUERY_INFO;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int UNKNOWN_DATABASE;
@@ -267,6 +268,8 @@ namespace
         query_context->applySettingsChanges(settings_changes);
         const Settings & settings = query_context->getSettingsRef();
 
+        send_exception_with_stacktrace = query_context->getSettingsRef().calculate_text_stack_trace;
+
         /// Set the current database if specified.
         if (!query_info.database().empty())
         {
@@ -371,6 +374,14 @@ namespace
         while (query_info.next_query_info())
         {
             readQueryInfo();
+            if (!query_info.query().empty() || !query_info.query_id().empty() || query_info.settings_size()
+                || !query_info.database().empty() || !query_info.input_data_delimiter().empty() || !query_info.output_format().empty()
+                || !query_info.user_name().empty() || !query_info.password().empty() || !query_info.quota().empty())
+            {
+                throw Exception("Extra query infos can be used only to add more input data. "
+                                "Only the following fields can be set: input_data, next_query_info",
+                                ErrorCodes::INVALID_GRPC_QUERY_INFO);
+            }
             if (!query_info.input_data().empty())
             {
                 const char * begin = query_info.input_data().data();
@@ -478,6 +489,8 @@ namespace
     void Call::onException(const Exception & exception)
     {
         io.onException();
+
+        LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", exception.code(), exception.displayText(), exception.getStackTraceString());
 
         if (responder && !responder_finished)
         {
@@ -626,7 +639,10 @@ namespace
     {
         auto & grpc_exception = *result.mutable_exception();
         grpc_exception.set_code(exception.code());
-        grpc_exception.set_message(getExceptionMessage(exception, send_exception_with_stacktrace, true));
+        grpc_exception.set_name(exception.name());
+        grpc_exception.set_display_text(exception.displayText());
+        if (send_exception_with_stacktrace)
+            grpc_exception.set_stack_trace(exception.getStackTraceString());
         sendResult();
     }
 }

@@ -24,8 +24,10 @@ message Progress {
 }
 
 message Exception {
-    int32 code = 1;
-    string message = 2;
+   int32 code = 1;
+   string name = 2;
+   string display_text = 3;
+   string stack_trace = 4;
 }
 
 message Result {
