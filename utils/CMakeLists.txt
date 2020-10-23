@@ -30,6 +30,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (checksum-for-compressed-block)
     add_subdirectory (db-generator)
     add_subdirectory (wal-dump)
+    add_subdirectory (check-mysql-binlog)
 endif ()
 
 if (ENABLE_CODE_QUALITY)

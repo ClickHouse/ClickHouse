@@ -173,14 +173,20 @@ add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 
+set (DBMS_COMMON_LIBRARIES)
+# libgcc_s does not provide an implementation of an atomics library. Instead,
+# GCC’s libatomic library can be used to supply these when using libgcc_s.
+if ((NOT USE_LIBCXX) AND COMPILER_CLANG AND OS_LINUX)
+    list (APPEND DBMS_COMMON_LIBRARIES atomic)
+endif()
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE jemalloc libdivide)
+    target_link_libraries (dbms PRIVATE jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PUBLIC ${all_modules})
+    target_link_libraries (dbms PUBLIC ${all_modules} ${DBMS_COMMON_LIBRARIES})
     target_link_libraries (clickhouse_interpreters PRIVATE jemalloc libdivide)
     list (APPEND all_modules dbms)
     # force all split libs to be linked

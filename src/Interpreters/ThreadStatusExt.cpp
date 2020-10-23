@@ -30,11 +30,37 @@ namespace ErrorCodes
     extern const int CANNOT_SET_THREAD_PRIORITY;
 }
 
+void ThreadStatus::applyQuerySettings()
+{
+    const Settings & settings = query_context->getSettingsRef();
+
+    query_id = query_context->getCurrentQueryId();
+    initQueryProfiler();
+
+    untracked_memory_limit = settings.max_untracked_memory;
+    if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
+        untracked_memory_limit = settings.memory_profiler_step;
+
+#if defined(OS_LINUX)
+    /// Set "nice" value if required.
+    Int32 new_os_thread_priority = settings.os_thread_priority;
+    if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
+    {
+        LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
+
+        if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
+            throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+
+        os_thread_priority = new_os_thread_priority;
+    }
+#endif
+}
+
 
 void ThreadStatus::attachQueryContext(Context & query_context_)
 {
     query_context = &query_context_;
-    query_id = query_context->getCurrentQueryId();
+
     if (!global_context)
         global_context = &query_context->getGlobalContext();
 
@@ -47,7 +73,7 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
             thread_group->global_context = global_context;
     }
 
-    initQueryProfiler();
+    applyQuerySettings();
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -82,30 +108,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     }
 
     if (query_context)
-    {
-        query_id = query_context->getCurrentQueryId();
-        initQueryProfiler();
-
-        const Settings & settings = query_context->getSettingsRef();
-
-        untracked_memory_limit = settings.max_untracked_memory;
-        if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
-            untracked_memory_limit = settings.memory_profiler_step;
-
-#if defined(OS_LINUX)
-        /// Set "nice" value if required.
-        Int32 new_os_thread_priority = settings.os_thread_priority;
-        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
-        {
-            LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
-
-            if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
-                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-
-            os_thread_priority = new_os_thread_priority;
-        }
-#endif
-    }
+        applyQuerySettings();
 
     initPerformanceCounters();
 
@@ -171,7 +174,8 @@ void ThreadStatus::initPerformanceCounters()
     query_start_time_microseconds = time_in_microseconds(now);
     ++queries_started;
 
-    *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
+    // query_start_time_nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
+    *last_rusage = RUsageCounters::current();
 
     if (query_context)
     {
