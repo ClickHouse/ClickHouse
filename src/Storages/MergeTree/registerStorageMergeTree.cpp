@@ -608,26 +608,36 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, args.context);
 
-        if (!args.storage_def->order_by)
-            throw Exception(
-                "You must provide an ORDER BY expression in the table definition. "
-                "If you don't want this table to be sorted, use ORDER BY tuple()",
-                ErrorCodes::BAD_ARGUMENTS);
 
-        /// Get sorting key from engine arguments.
+        /// Get sorting key from engine arguments. PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         ///
         /// NOTE: store merging_param_key_arg as additional key column. We do it
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
-            args.storage_def->order_by->ptr(), metadata.columns, args.context, merging_param_key_arg);
+        if (args.storage_def->order_by)
+        {
+            metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
+                args.storage_def->order_by->ptr(), metadata.columns, args.context, merging_param_key_arg);
+        }
+        else if (args.storage_def->primary_key)
+        {
+            metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
+                args.storage_def->primary_key->ptr(), metadata.columns, args.context, merging_param_key_arg);
+        }
+        else
+        {
+            throw Exception(
+                "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
+                "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()",
+                ErrorCodes::BAD_ARGUMENTS);
+        }
 
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
         }
-        else /// Otherwise we copy it from primary key definition
+        else /// Otherwise we don't have explicit primary key and copy if from order by
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context);
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
