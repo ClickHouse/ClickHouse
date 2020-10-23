@@ -586,11 +586,11 @@ DiskDirectoryIteratorPtr DiskS3::iterateDirectory(const String & path)
     return std::make_unique<DiskS3DirectoryIterator>(metadata_path + path, path);
 }
 
-void DiskS3::clearDirectory(const String & path, bool keep_s3)
+void DiskS3::clearDirectory(const String & path)
 {
     for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
         if (isFile(it->path()))
-            remove(it->path(), keep_s3);
+            remove(it->path());
 }
 
 void DiskS3::moveFile(const String & from_path, const String & to_path)
@@ -744,7 +744,7 @@ void DiskS3::removeAws(const AwsS3KeyKeeper & keys)
     }
 }
 
-void DiskS3::remove(const String & path, bool keep_s3)
+void DiskS3::removeShared(const String & path, bool keep_s3)
 {
     AwsS3KeyKeeper keys;
     removeMeta(path, keys);
@@ -752,7 +752,7 @@ void DiskS3::remove(const String & path, bool keep_s3)
         removeAws(keys);
 }
 
-void DiskS3::removeRecursive(const String & path, bool keep_s3)
+void DiskS3::removeSharedRecursive(const String & path, bool keep_s3)
 {
     AwsS3KeyKeeper keys;
     removeMetaRecursive(path, keys);

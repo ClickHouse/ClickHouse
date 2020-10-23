@@ -199,11 +199,11 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         buf_size);
 }
 
-void DiskCacheWrapper::clearDirectory(const String & path, bool keep_s3)
+void DiskCacheWrapper::clearDirectory(const String & path)
 {
     if (cache_disk->exists(path))
-        cache_disk->clearDirectory(path, keep_s3);
-    DiskDecorator::clearDirectory(path, keep_s3);
+        cache_disk->clearDirectory(path);
+    DiskDecorator::clearDirectory(path);
 }
 
 void DiskCacheWrapper::moveDirectory(const String & from_path, const String & to_path)
@@ -252,18 +252,32 @@ void DiskCacheWrapper::copyFile(const String & from_path, const String & to_path
     DiskDecorator::copyFile(from_path, to_path);
 }
 
-void DiskCacheWrapper::remove(const String & path, bool keep_s3)
+void DiskCacheWrapper::remove(const String & path)
 {
     if (cache_disk->exists(path))
-        cache_disk->remove(path, keep_s3);
-    DiskDecorator::remove(path, keep_s3);
+        cache_disk->remove(path);
+    DiskDecorator::remove(path);
 }
 
-void DiskCacheWrapper::removeRecursive(const String & path, bool keep_s3)
+void DiskCacheWrapper::removeRecursive(const String & path)
 {
     if (cache_disk->exists(path))
-        cache_disk->removeRecursive(path, keep_s3);
-    DiskDecorator::removeRecursive(path, keep_s3);
+        cache_disk->removeRecursive(path);
+    DiskDecorator::removeRecursive(path);
+}
+
+void DiskCacheWrapper::removeShared(const String & path, bool keep_s3)
+{
+    if (cache_disk->exists(path))
+        cache_disk->removeShared(path, keep_s3);
+    DiskDecorator::removeShared(path, keep_s3);
+}
+
+void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
+{
+    if (cache_disk->exists(path))
+        cache_disk->removeSharedRecursive(path, keep_s3);
+    DiskDecorator::removeSharedRecursive(path, keep_s3);
 }
 
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)

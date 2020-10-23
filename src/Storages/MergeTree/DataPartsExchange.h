@@ -114,7 +114,7 @@ private:
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
-            const Disks & disksS3,
+            const Disks & disks_s3,
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData & data;

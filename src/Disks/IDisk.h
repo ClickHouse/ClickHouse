@@ -105,7 +105,7 @@ public:
     virtual void createDirectories(const String & path) = 0;
 
     /// Remove all files from the directory. Directories are not removed.
-    virtual void clearDirectory(const String & path, bool keep_s3 = false) = 0;
+    virtual void clearDirectory(const String & path) = 0;
 
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
@@ -153,17 +153,26 @@ public:
         size_t aio_threshold = 0) = 0;
 
     /// Remove file or directory. Throws exception if file doesn't exists or if directory is not empty.
-    virtual void remove(const String & path, bool keep_s3 = false) = 0;
+    virtual void remove(const String & path) = 0;
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
-    virtual void removeRecursive(const String & path, bool keep_s3 = false) = 0;
+    virtual void removeRecursive(const String & path) = 0;
 
     /// Remove file or directory if it exists.
-    void removeIfExists(const String & path, bool keep_s3 = false)
+    void removeIfExists(const String & path)
     {
         if (exists(path))
-            remove(path, keep_s3);
+            remove(path);
     }
+
+    /// Remove file or directory. Throws exception if file doesn't exists or if directory is not empty.
+    virtual void removeShared(const String & path, bool) { remove(path); }
+
+    /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
+    virtual void removeSharedRecursive(const String & path, bool) { removeRecursive(path); }
+
+    /// Remove file or directory if it exists.
+    void removeSharedIfExists(const String & path, bool) { removeIfExists(path); }
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;

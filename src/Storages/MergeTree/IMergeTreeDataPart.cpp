@@ -851,7 +851,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 
         try
         {
-            volume->getDisk()->removeRecursive(to + "/", keep_s3);
+            volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
         }
         catch (...)
         {
@@ -874,7 +874,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     if (checksums.empty())
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        volume->getDisk()->removeRecursive(to + "/", keep_s3);
+        volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
     }
     else
     {
@@ -887,18 +887,18 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                volume->getDisk()->remove(to + "/" + file, keep_s3);
+                volume->getDisk()->removeShared(to + "/" + file, keep_s3);
     #if !__clang__
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                volume->getDisk()->remove(to + "/" + file, keep_s3);
+                volume->getDisk()->removeShared(to + "/" + file, keep_s3);
 
-            volume->getDisk()->removeIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
+            volume->getDisk()->removeSharedIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
+            volume->getDisk()->removeSharedIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
 
-            volume->getDisk()->remove(to, keep_s3);
+            volume->getDisk()->removeShared(to, keep_s3);
         }
         catch (...)
         {
@@ -906,7 +906,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
 
-            volume->getDisk()->removeRecursive(to + "/", keep_s3);
+            volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
         }
     }
 }
