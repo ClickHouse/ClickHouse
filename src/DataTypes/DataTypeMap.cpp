@@ -303,6 +303,15 @@ static DeserializeBinaryBulkStateMap * checkAndGetMapDeserializeState(IDataType:
     return map_state;
 }
 
+void DataTypeMap::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+{
+    path.push_back(Substream::MapElement);
+    path.back().map_element_name = "keys";
+    keys->enumerateStreams(callback, path);
+    path.back().map_element_name = "values";
+    keys->enumerateStreams(callback, path);
+    path.pop_back();
+}
 
 void DataTypeMap::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
@@ -312,7 +321,9 @@ void DataTypeMap::serializeBinaryBulkStatePrefix(
     map_state->states.resize(2);
 
     settings.path.push_back(Substream::MapElement);
+    settings.path.back().map_element_name = "keys";
     keys->serializeBinaryBulkStatePrefix(settings, map_state->states[0]);
+    settings.path.back().map_element_name = "values";
     values->serializeBinaryBulkStatePrefix(settings, map_state->states[1]);
     settings.path.pop_back();
 
@@ -326,7 +337,9 @@ void DataTypeMap::serializeBinaryBulkStateSuffix(
     auto * map_state = checkAndGetMapSerializeState(state);
 
     settings.path.push_back(Substream::MapElement);
+    settings.path.back().map_element_name = "keys";
     keys->serializeBinaryBulkStateSuffix(settings, map_state->states[0]);
+    settings.path.back().map_element_name = "values";
     values->serializeBinaryBulkStateSuffix(settings, map_state->states[1]);
     settings.path.pop_back();
 }
@@ -339,7 +352,9 @@ void DataTypeMap::deserializeBinaryBulkStatePrefix(
     map_state->states.resize(2);
 
     settings.path.push_back(Substream::MapElement);
+    settings.path.back().map_element_name = "keys";
     keys->deserializeBinaryBulkStatePrefix(settings, map_state->states[0]);
+    settings.path.back().map_element_name = "values";
     values->deserializeBinaryBulkStatePrefix(settings, map_state->states[1]);
     settings.path.pop_back();
 
@@ -356,10 +371,14 @@ void DataTypeMap::serializeBinaryBulkWithMultipleStreams(
 {
     auto * map_state = checkAndGetMapSerializeState(state);
     settings.path.push_back(Substream::MapElement);
+
     const auto & keys_col = extractElementColumn(column, 0);
+    settings.path.back().map_element_name = "keys";
     keys->serializeBinaryBulkWithMultipleStreams(keys_col, offset, limit, settings, map_state->states[0]);
     const auto & values_col = extractElementColumn(column, 1);
+    settings.path.back().map_element_name = "values";
     values->serializeBinaryBulkWithMultipleStreams(values_col, offset, limit, settings, map_state->states[1]);
+
     settings.path.pop_back();
 }
 
@@ -374,8 +393,10 @@ void DataTypeMap::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::MapElement);
     settings.avg_value_size_hint = 0;
     auto & keys_col = extractElementColumn(column, 0);
+    settings.path.back().map_element_name = "keys";
     keys->deserializeBinaryBulkWithMultipleStreams(keys_col, limit, settings, map_state->states[0]);
     auto & values_col = extractElementColumn(column, 1);
+    settings.path.back().map_element_name = "values";
     values->deserializeBinaryBulkWithMultipleStreams(values_col, limit, settings, map_state->states[1]);
 
     settings.path.pop_back();

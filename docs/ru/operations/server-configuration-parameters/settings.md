@@ -387,7 +387,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 Можно не указывать, если реплицируемых таблицы не используются.
 
-Подробнее смотрите в разделе «[Создание реплицируемых таблиц](../../operations/server-configuration-parameters/settings.md)».
+Подробнее смотрите в разделе «[Создание реплицируемых таблиц](../../engines/table-engines/mergetree-family/replication.md)».
 
 **Пример**
 

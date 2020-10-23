@@ -116,7 +116,7 @@ public:
         return type;
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -149,8 +149,8 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
 
 
 template <typename Derived>
-void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
-        ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
+        ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns;
@@ -158,12 +158,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     Columns array_holders;
     ColumnPtr offsets_column;
 
-    ColumnsWithTypeAndName args;
-
-    for (size_t i = 0; i < arguments.size(); ++i)
-        args.emplace_back(columns[arguments[i]]);
-
-    const ArraysDepths arrays_depths = getArraysDepths(args);
+    const ArraysDepths arrays_depths = getArraysDepths(arguments);
 
     /// If the column is Array - return it. If the const Array - materialize it, keep ownership and return.
     auto get_array_column = [&](const auto & column) -> const DB::ColumnArray *
@@ -186,7 +181,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const auto * array = get_array_column(columns[arguments[i]].column.get());
+        const auto * array = get_array_column(arguments[i].column.get());
         if (!array)
             continue;
 
@@ -258,7 +253,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     for (ssize_t depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
         result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
 
-    columns[result].column = result_nested_array;
+    return result_nested_array;
 }
 
 /*

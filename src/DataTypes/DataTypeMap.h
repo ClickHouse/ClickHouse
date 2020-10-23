@@ -44,6 +44,11 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
+
+    /** Each sub-column in a map is serialized in separate stream.
+      */
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+
     void serializeBinaryBulkStatePrefix(
            SerializeBinaryBulkSettings & settings,
            SerializeBinaryBulkStatePtr & state) const override;

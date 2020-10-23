@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int UNKNOWN_POLICY;
 }
 
 namespace ActionLocks
@@ -187,6 +188,39 @@ Pipe StorageMergeTree::read(
 std::optional<UInt64> StorageMergeTree::totalRows() const
 {
     return getTotalActiveSizeInRows();
+}
+
+std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    Names partition_key_columns = partition_key.column_names;
+    KeyCondition key_condition(
+        query_info, context, partition_key_columns, partition_key.expression, true /* single_point */, true /* strict */);
+    if (key_condition.alwaysUnknownOrTrue())
+        return {};
+    std::unordered_map<String, bool> partition_filter_map;
+    size_t res = 0;
+    auto lock = lockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (part->isEmpty())
+            continue;
+        const auto & partition_id = part->info.partition_id;
+        bool is_valid;
+        if (auto it = partition_filter_map.find(partition_id); it != partition_filter_map.end())
+            is_valid = it->second;
+        else
+        {
+            const auto & partition_value = part->partition.value;
+            std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
+            is_valid = key_condition.mayBeTrueInRange(partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
+            partition_filter_map.emplace(partition_id, is_valid);
+        }
+        if (is_valid)
+            res += part->rows_count;
+    }
+    return res;
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes() const
@@ -1331,7 +1365,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         throw Exception("Destination table " + dest_table_storage->getStorageID().getNameForLogs() +
                        " should have the same storage policy of source table " + getStorageID().getNameForLogs() + ". " +
                        getStorageID().getNameForLogs() + ": " + this->getStoragePolicy()->getName() + ", " +
-                       dest_table_storage->getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::LOGICAL_ERROR);
+                       dest_table_storage->getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_POLICY);
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();

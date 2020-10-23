@@ -3,6 +3,7 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/DiskAccessStorage.h>
+#include <Access/LDAPAccessStorage.h>
 #include <Access/ContextAccess.h>
 #include <Access/RoleCache.h>
 #include <Access/RowPolicyCache.h>
@@ -253,6 +254,12 @@ void AccessControlManager::addMemoryStorage(const String & storage_name_)
 }
 
 
+void AccessControlManager::addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
+{
+    addStorage(std::make_shared<LDAPAccessStorage>(storage_name_, this, config_, prefix_));
+}
+
+
 void AccessControlManager::addStoragesFromUserDirectoriesConfig(
     const Poco::Util::AbstractConfiguration & config,
     const String & key,
@@ -275,6 +282,8 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
             type = UsersConfigAccessStorage::STORAGE_TYPE;
         else if ((type == "local") || (type == "local_directory"))
             type = DiskAccessStorage::STORAGE_TYPE;
+        else if (type == "ldap")
+            type = LDAPAccessStorage::STORAGE_TYPE;
 
         String name = config.getString(prefix + ".name", type);
 
@@ -294,6 +303,10 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
             String path = config.getString(prefix + ".path");
             bool readonly = config.getBool(prefix + ".readonly", false);
             addDiskStorage(name, path, readonly);
+        }
+        else if (type == LDAPAccessStorage::STORAGE_TYPE)
+        {
+            addLDAPStorage(name, config, prefix);
         }
         else
             throw Exception("Unknown storage type '" + type + "' at " + prefix + " in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -346,7 +359,7 @@ UUID AccessControlManager::login(const String & user_name, const String & passwo
 
 void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    external_authenticators->setConfig(config, getLogger());
+    external_authenticators->setConfiguration(config, getLogger());
 }
 
 
