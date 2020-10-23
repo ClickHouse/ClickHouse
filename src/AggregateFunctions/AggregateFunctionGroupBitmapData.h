@@ -12,7 +12,7 @@
 // TODO: find out what it is. On github, they have proper interface headers like
 // this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
 #include <roaring/roaring.h>
-
+void * containerptr_roaring_bitmap_add(roaring_bitmap_t * r, uint32_t val, uint8_t * typecode, int * index);
 
 namespace DB
 {
@@ -600,6 +600,7 @@ public:
     }
 
 private:
+
     /// To read and write the DB Buffer directly, migrate code from CRoaring
     void db_roaring_bitmap_add_many(DB::ReadBuffer & db_buf, roaring_bitmap_t * r, size_t n_args)
     {
