@@ -417,8 +417,10 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, DatabasePtr database, St
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto [_, inserted] = map_part.map.try_emplace(uuid, std::move(database), std::move(table));
+    /// Normally this should never happen, but it's possible when the same UUIDs are explicitly specified in different CREATE queries,
+    /// so it's not LOGICAL_ERROR
     if (!inserted)
-        throw Exception("Mapping for table with UUID=" + toString(uuid) + " already exists", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Mapping for table with UUID=" + toString(uuid) + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
@@ -701,6 +703,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, 0});
     else
         tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time});
+    tables_marked_dropped_ids.insert(table_id.uuid);
     /// If list of dropped tables was empty, start a drop task
     if (drop_task && tables_marked_dropped.size() == 1)
         (*drop_task)->schedule();
@@ -742,6 +745,9 @@ void DatabaseCatalog::dropTableDataTask()
         try
         {
             dropTableFinally(table);
+            std::lock_guard lock(tables_marked_dropped_mutex);
+            [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table.table_id.uuid);
+            assert(removed);
         }
         catch (...)
         {
@@ -755,6 +761,8 @@ void DatabaseCatalog::dropTableDataTask()
                     need_reschedule = true;
             }
         }
+
+        wait_table_finally_dropped.notify_all();
     }
 
     /// Do not schedule a task if there is no tables to drop
@@ -812,6 +820,17 @@ String DatabaseCatalog::resolveDictionaryName(const String & name) const
         return name;
 
     return toString(db_and_table.second->getStorageID().uuid);
+}
+
+void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
+{
+    if (uuid == UUIDHelpers::Nil)
+        return;
+    std::unique_lock lock{tables_marked_dropped_mutex};
+    wait_table_finally_dropped.wait(lock, [&]()
+    {
+        return tables_marked_dropped_ids.count(uuid) == 0;
+    });
 }
 
 

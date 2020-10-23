@@ -12,10 +12,10 @@ RUN apt-get update -y \
             ncdu \
             netcat-openbsd \
             openssl \
-            python \
-            python-lxml \
-            python-requests \
-            python-termcolor \
+            python3 \
+            python3-lxml \
+            python3-requests \
+            python3-termcolor \
             qemu-user-static \
             sudo \
             telnet \
@@ -32,6 +32,9 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+ENV NUM_TRIES=1
+ENV MAX_RUN_TIME=0
 
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]

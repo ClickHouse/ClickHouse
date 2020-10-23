@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import StringIO
+import io
 import gzip
 import subprocess
 from tempfile import NamedTemporaryFile
@@ -14,7 +14,7 @@ class HDFSApi(object):
         self.http_data_port = "50075"
         self.user = user
 
-    def read_data(self, path):
+    def read_data(self, path, universal_newlines=True):
         response = requests.get(
             "http://{host}:{port}/webhdfs/v1{path}?op=OPEN".format(host=self.host, port=self.http_proxy_port,
                                                                    path=path), allow_redirects=False)
@@ -27,7 +27,10 @@ class HDFSApi(object):
         if response_data.status_code != 200:
             response_data.raise_for_status()
 
-        return response_data.content
+        if universal_newlines:
+            return response_data.text
+        else:
+            return response_data.content
 
     # Requests can't put file
     def _curl_to_put(self, filename, path, params):
@@ -35,12 +38,14 @@ class HDFSApi(object):
                                                                                 port=self.http_data_port, path=path,
                                                                                 params=params)
         cmd = "curl -s -i -X PUT -T {fname} '{url}'".format(fname=filename, url=url)
-        output = subprocess.check_output(cmd, shell=True)
+        output = subprocess.check_output(cmd, shell=True, universal_newlines=True)
         return output
 
     def write_data(self, path, content):
-        named_file = NamedTemporaryFile()
+        named_file = NamedTemporaryFile(mode='wb+')
         fpath = named_file.name
+        if isinstance(content, str):
+            content = content.encode()
         named_file.write(content)
         named_file.flush()
         response = requests.put(
@@ -58,10 +63,12 @@ class HDFSApi(object):
             raise Exception("Can't create file on hdfs:\n {}".format(output))
 
     def write_gzip_data(self, path, content):
-        out = StringIO.StringIO()
-        with gzip.GzipFile(fileobj=out, mode="w") as f:
+        if isinstance(content, str):
+            content = content.encode()
+        out = io.BytesIO()
+        with gzip.GzipFile(fileobj=out, mode="wb") as f:
             f.write(content)
         self.write_data(path, out.getvalue())
 
     def read_gzip_data(self, path):
-        return gzip.GzipFile(fileobj=StringIO.StringIO(self.read_data(path))).read()
+        return gzip.GzipFile(fileobj=io.BytesIO(self.read_data(path, universal_newlines=False))).read().decode()

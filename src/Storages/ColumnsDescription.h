@@ -112,6 +112,7 @@ public:
 
     ColumnDefaults getDefaults() const; /// TODO: remove
     bool hasDefault(const String & column_name) const;
+    bool hasDefaults() const;
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
     /// Does column has non default specified compression codec

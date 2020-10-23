@@ -17,8 +17,12 @@ namespace
 void MergeTreeDataPartWriterOnDisk::Stream::finalize()
 {
     compressed.next();
-    plain_file->next();
+    /// 'compressed_buf' doesn't call next() on underlying buffer ('plain_hashing'). We should do it manually.
+    plain_hashing.next();
     marks.next();
+
+    plain_file->finalize();
+    marks_file->finalize();
 }
 
 void MergeTreeDataPartWriterOnDisk::Stream::sync() const
@@ -208,7 +212,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
      * And otherwise it will look like excessively growing memory consumption in context of query.
      *  (observed in long INSERT SELECTs)
      */
-    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
 
@@ -331,6 +335,7 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
+        index_file_stream->finalize();
         if (sync)
             index_file_stream->sync();
         index_stream = nullptr;
