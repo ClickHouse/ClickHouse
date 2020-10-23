@@ -610,7 +610,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
-            args.storage_def->order_by = args.storage_def->primary_key;
+            args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
         if (!args.storage_def->order_by)
             throw Exception(
