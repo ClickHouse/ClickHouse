@@ -1,5 +1,5 @@
 ---
-toc_priority: 4
+toc_priority: 5
 toc_title: DICTIONARY
 ---
 

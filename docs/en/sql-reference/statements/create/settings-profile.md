@@ -1,5 +1,5 @@
 ---
-toc_priority: 9
+toc_priority: 10
 toc_title: SETTINGS PROFILE
 ---
 
