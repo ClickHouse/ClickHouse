@@ -129,6 +129,33 @@ Example:
 </macros>
 ```
 
+Allow omitting arguments for the Replicated table engine if defaults are specified in configuration file. For example:
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}</default_replica_path>
+<default_replica_name>{replica}</default_replica_path>
+```
+
+The two examples below will be equivalent in this case.
+
+An example of creating a table with specifying arguments:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}') 
+ORDER BY x
+```
+
+An example of creating a table without specifying arguments:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree 
+ORDER BY x
+```
+
 The path to the table in ZooKeeper should be unique for each replicated table. Tables on different shards should have different paths.
 In this case, the path consists of the following parts:
 
