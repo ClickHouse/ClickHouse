@@ -16,6 +16,7 @@ ClickHouse не удаляет данные из таблицы автомати
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата завершения выполнения запроса потоком.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время завершения выполнения запроса потоком.
 -   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время начала обработки запроса.
+-   `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время начала обработки запроса с точностью до микросекунд.
 -   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — длительность обработки запроса в миллисекундах.
 -   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество прочитанных строк.
 -   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество прочитанных байтов.

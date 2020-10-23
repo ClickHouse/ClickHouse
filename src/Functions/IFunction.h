@@ -46,7 +46,7 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    virtual void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run) = 0;
+    virtual ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) = 0;
 
     virtual void createLowCardinalityResultCache(size_t cache_size) = 0;
 };
@@ -67,16 +67,16 @@ public:
     virtual String getName() const = 0;
 
     virtual const DataTypes & getArgumentTypes() const = 0;
-    virtual const DataTypePtr & getReturnType() const = 0;
+    virtual const DataTypePtr & getResultType() const = 0;
 
     /// Do preparations and return executable.
     /// sample_columns should contain data types of arguments and values of constants, if relevant.
-    virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & sample_columns, const ColumnNumbers & arguments, size_t result) const = 0;
+    virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
     /// TODO: make const
-    virtual void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run = false)
+    virtual ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false)
     {
-        return prepare(columns, arguments, result)->execute(columns, arguments, result, input_rows_count, dry_run);
+        return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -111,7 +111,7 @@ public:
       * There is no need to implement function if it has zero arguments.
       * Must return ColumnConst with single row or nullptr.
       */
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/) const { return nullptr; }
 
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...
@@ -226,9 +226,9 @@ public:
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 
-/** Return ColumnNullable of src, with null map as OR-ed null maps of args columns in columnss.
+/** Return ColumnNullable of src, with null map as OR-ed null maps of args columns.
   * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
   */
-ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & columns, const ColumnNumbers & args, size_t result, size_t input_rows_count);
+ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count);
 
 }

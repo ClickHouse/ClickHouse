@@ -510,7 +510,9 @@ namespace ErrorCodes
     extern const int ROW_AND_ROWS_TOGETHER = 544;
     extern const int FIRST_AND_NEXT_TOGETHER = 545;
     extern const int NO_ROW_DELIMITER = 546;
-    extern const int CANNOT_READ_MAP_FROM_TEXT = 547;
+    extern const int INVALID_RAID_TYPE = 547;
+    extern const int UNKNOWN_VOLUME = 548;
+    extern const int CANNOT_READ_MAP_FROM_TEXT = 549;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

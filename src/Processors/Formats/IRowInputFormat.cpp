@@ -14,6 +14,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int CANNOT_READ_MAP_FROM_TEXT;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
@@ -30,6 +31,7 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_DATE
         || code == ErrorCodes::CANNOT_PARSE_DATETIME
         || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
+        || code == ErrorCodes::CANNOT_READ_MAP_FROM_TEXT
         || code == ErrorCodes::CANNOT_PARSE_NUMBER
         || code == ErrorCodes::CANNOT_PARSE_UUID
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE

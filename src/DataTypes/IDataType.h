@@ -101,6 +101,8 @@ public:
         /// Index of tuple element, starting at 1.
         String tuple_element_name;
 
+        String map_element_name;
+
         Substream(Type type_) : type(type_) {}
     };
 
