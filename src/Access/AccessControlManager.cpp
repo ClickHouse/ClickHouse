@@ -137,7 +137,6 @@ AccessControlManager::AccessControlManager()
 
 AccessControlManager::~AccessControlManager() = default;
 
-
 void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_)
 {
     auto storages = getStoragesPtr();
@@ -163,6 +162,7 @@ void AccessControlManager::addUsersConfigStorage(const String & storage_name_, c
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
     new_storage->setConfig(users_config_);
     addStorage(new_storage);
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 
 void AccessControlManager::addUsersConfigStorage(
@@ -195,6 +195,7 @@ void AccessControlManager::addUsersConfigStorage(
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
     new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
     addStorage(new_storage);
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 
 void AccessControlManager::reloadUsersConfigs()
@@ -238,7 +239,9 @@ void AccessControlManager::addDiskStorage(const String & storage_name_, const St
             }
         }
     }
-    addStorage(std::make_shared<DiskAccessStorage>(storage_name_, directory_, readonly_));
+    auto new_storage = std::make_shared<DiskAccessStorage>(storage_name_, directory_, readonly_);
+    addStorage(new_storage);
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 
 
@@ -250,13 +253,17 @@ void AccessControlManager::addMemoryStorage(const String & storage_name_)
         if (auto memory_storage = typeid_cast<std::shared_ptr<MemoryAccessStorage>>(storage))
             return;
     }
-    addStorage(std::make_shared<MemoryAccessStorage>(storage_name_));
+    auto new_storage = std::make_shared<MemoryAccessStorage>(storage_name_);
+    addStorage(new_storage);
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
 
 
 void AccessControlManager::addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
 {
-    addStorage(std::make_shared<LDAPAccessStorage>(storage_name_, this, config_, prefix_));
+    auto new_storage = std::make_shared<LDAPAccessStorage>(storage_name_, this, config_, prefix_);
+    addStorage(new_storage);
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}', LDAP server name: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getLDAPServerName());
 }
 
 

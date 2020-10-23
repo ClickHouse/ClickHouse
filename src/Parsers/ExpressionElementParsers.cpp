@@ -789,6 +789,7 @@ bool ParserDateAddExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ++pos;
 
     IntervalKind interval_kind;
+    ASTPtr interval_func_node;
     if (parseIntervalKind(pos, expected, interval_kind))
     {
         /// function(unit, offset, timestamp)
@@ -805,6 +806,13 @@ bool ParserDateAddExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
         if (!ParserExpression().parse(pos, timestamp_node, expected))
             return false;
+        auto interval_expr_list_args = std::make_shared<ASTExpressionList>();
+        interval_expr_list_args->children = {offset_node};
+
+        interval_func_node = std::make_shared<ASTFunction>();
+        interval_func_node->as<ASTFunction &>().name = interval_kind.toNameOfFunctionToIntervalDataType();
+        interval_func_node->as<ASTFunction &>().arguments = std::move(interval_expr_list_args);
+        interval_func_node->as<ASTFunction &>().children.push_back(interval_func_node->as<ASTFunction &>().arguments);
     }
     else
     {
@@ -816,26 +824,12 @@ bool ParserDateAddExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
             return false;
         ++pos;
 
-        if (!ParserKeyword("INTERVAL").ignore(pos, expected))
-            return false;
-
-        if (!ParserExpression().parse(pos, offset_node, expected))
-            return false;
-
-        if (!parseIntervalKind(pos, expected, interval_kind))
+        if (!ParserIntervalOperatorExpression{}.parse(pos, interval_func_node, expected))
             return false;
     }
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
-
-    auto interval_expr_list_args = std::make_shared<ASTExpressionList>();
-    interval_expr_list_args->children = {offset_node};
-
-    auto interval_func_node = std::make_shared<ASTFunction>();
-    interval_func_node->name = interval_kind.toNameOfFunctionToIntervalDataType();
-    interval_func_node->arguments = std::move(interval_expr_list_args);
-    interval_func_node->children.push_back(interval_func_node->arguments);
 
     auto expr_list_args = std::make_shared<ASTExpressionList>();
     expr_list_args->children = {timestamp_node, interval_func_node};
