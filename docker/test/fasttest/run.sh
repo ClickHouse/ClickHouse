@@ -270,8 +270,6 @@ TESTS_TO_SKIP=(
     # Look at DistributedFilesToInsert, so cannot run in parallel.
     01457_DistributedFilesToInsert
 
-    # Looks at MemoryTracking
-    01540_MemoryTracking
     01541_max_memory_usage_for_user
 )
 
