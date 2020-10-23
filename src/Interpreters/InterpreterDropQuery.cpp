@@ -90,7 +90,7 @@ BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
             throw Exception("Table " + table_id.getNameForLogs() + " is not a View", ErrorCodes::LOGICAL_ERROR);
 
         /// Now get UUID, so we can wait for table data to be finally dropped
-        table_id = table->getStorageID();
+        table_id.uuid = database->tryGetTableUUID(table_id.table_name);
 
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
