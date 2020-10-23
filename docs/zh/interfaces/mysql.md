@@ -7,7 +7,7 @@ toc_title: "MySQL\u63A5\u53E3"
 
 # MySQL接口 {#mysql-interface}
 
-ClickHouse支持MySQL线协议。 它可以通过启用 [mysql\_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) 在配置文件中设置:
+ClickHouse支持MySQL线协议。 它可以通过启用 [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) 在配置文件中设置:
 
 ``` xml
 <mysql_port>9004</mysql_port>

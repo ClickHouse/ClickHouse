@@ -53,6 +53,8 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `a NOT LIKE s` – The `notLike(a, b)` function.
 
+`a ILIKE s` – The `ilike(a, b)` function.
+
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 
 `a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.

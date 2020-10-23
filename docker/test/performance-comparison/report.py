@@ -312,7 +312,7 @@ def add_errors_explained():
 
 
 if args.report == 'main':
-    print(header_template.format())
+    print((header_template.format()))
 
     add_tested_commits()
 
@@ -468,14 +468,14 @@ if args.report == 'main':
             return
 
         columns = [
-            'Test',                                               #0
-            'Wall clock time,&nbsp;s',                            #1
-            'Total client time,&nbsp;s',                          #2
-            'Total queries',                                      #3
-            'Longest query<br>(sum for all runs),&nbsp;s',        #4
-            'Avg wall clock time<br>(sum for all runs),&nbsp;s',  #5
-            'Shortest query<br>(sum for all runs),&nbsp;s',       #6
-            '', # Runs                                            #7
+            'Test',                                                  #0
+            'Wall clock time, entire test,&nbsp;s',                  #1
+            'Total client time for measured query runs,&nbsp;s',     #2
+            'Queries',                                               #3
+            'Longest query, total for measured runs,&nbsp;s',        #4
+            'Wall clock time per query,&nbsp;s',                     #5
+            'Shortest query, total for measured runs,&nbsp;s',       #6
+            '', # Runs                                               #7
             ]
         attrs = ['' for c in columns]
         attrs[7] = None
@@ -571,14 +571,14 @@ if args.report == 'main':
         status = 'failure'
         message = 'Errors while building the report.'
 
-    print("""
+    print(("""
     <!--status: {status}-->
     <!--message: {message}-->
-    """.format(status=status, message=message))
+    """.format(status=status, message=message)))
 
 elif args.report == 'all-queries':
 
-    print(header_template.format())
+    print((header_template.format()))
 
     add_tested_commits()
 

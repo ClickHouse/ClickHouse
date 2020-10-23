@@ -56,19 +56,19 @@ class ServerThread(threading.Thread):
 
         while retries:
             self._choose_ports_and_args()
-            print 'Start clickhouse-server with args:', self._args
+            print('Start clickhouse-server with args:', self._args)
             self._proc = subprocess.Popen([self._bin] + self._args, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             while self._proc.poll() is None:
                 try:
                     time.sleep(ServerThread.DEFAULT_SERVER_DELAY)
                     s = socket.create_connection(('localhost', self.tcp_port), ServerThread.DEFAULT_CONNECTION_TIMEOUT)
-                    s.sendall('G')  # trigger expected "bad" HELLO response
-                    print 'Successful server response:', s.recv(1024)  # FIXME: read whole buffered response
+                    s.sendall(b'G')  # trigger expected "bad" HELLO response
+                    print('Successful server response:', s.recv(1024))  # FIXME: read whole buffered response
                     s.shutdown(socket.SHUT_RDWR)
                     s.close()
                 except Exception as e:
-                    print >> sys.stderr, 'Failed to connect to server:', e
+                    print('Failed to connect to server:', e, file=sys.stderr)
                     continue
                 else:
                     break
@@ -76,8 +76,8 @@ class ServerThread(threading.Thread):
             # If process has died then try to fetch output before releasing lock
             if self._proc.returncode is not None:
                 stdout, stderr = self._proc.communicate()
-                print >> sys.stderr, stdout
-                print >> sys.stderr, stderr
+                print(stdout.decode('utf-8'), file=sys.stderr)
+                print(stderr.decode('utf-8'), file=sys.stderr)
 
             if self._proc.returncode == 70:  # Address already in use
                 retries -= 1
@@ -101,7 +101,7 @@ class ServerThread(threading.Thread):
         if self._proc.returncode is None:
             self._proc.terminate()
         self.join()
-        print 'Stop clickhouse-server'
+        print('Stop clickhouse-server')
 
 
 ServerThread.DEFAULT_SERVER_CONFIG = \

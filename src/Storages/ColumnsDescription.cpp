@@ -415,6 +415,14 @@ bool ColumnsDescription::hasPhysicalOrSubcolumn(const String & column_name) cons
     return hasPhysical(column_name) || subcolumns.find(column_name) != subcolumns.end();
 }
 
+bool ColumnsDescription::hasDefaults() const
+{
+    for (const auto & column : columns)
+        if (column.default_desc.expression)
+            return true;
+    return false;
+}
+
 ColumnDefaults ColumnsDescription::getDefaults() const
 {
     ColumnDefaults ret;

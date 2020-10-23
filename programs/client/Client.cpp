@@ -134,7 +134,6 @@ private:
     bool stdout_is_a_tty = false;        /// stdout is a terminal.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
-    String query_id;                     /// Current query_id.
     String full_query; /// Current query as it was given to the client.
 
     // Current query as it will be sent to the server. It may differ from the
@@ -219,6 +218,9 @@ private:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
+    /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
+    std::vector<std::pair<String, String>> query_id_formats;
+
     void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
@@ -243,6 +245,17 @@ private:
         /// Set path for format schema files
         if (config().has("format_schema_path"))
             context.setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
+
+        /// Initialize query_id_formats if any
+        if (config().has("query_id_formats"))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config().keys("query_id_formats", keys);
+            for (const auto & name : keys)
+                query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
+        }
+        if (query_id_formats.empty())
+            query_id_formats.emplace_back("Query id:", " {query_id}\n");
     }
 
 
@@ -559,7 +572,7 @@ private:
 
         if (is_interactive)
         {
-            if (!query_id.empty())
+            if (config().has("query_id"))
                 throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
@@ -665,7 +678,9 @@ private:
         }
         else
         {
-            query_id = config().getString("query_id", "");
+            auto query_id = config().getString("query_id", "");
+            if (!query_id.empty())
+                context.setCurrentQueryId(query_id);
             if (query_fuzzer_runs)
             {
                 nonInteractiveWithFuzzing();
@@ -1187,8 +1202,15 @@ private:
                 }
                 catch (...)
                 {
+                    // Some functions (e.g. protocol parsers) don't throw, but
+                    // set last_exception instead, so we'll also do it here for
+                    // uniformity.
                     last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     received_exception_from_server = true;
+                }
+
+                if (received_exception_from_server)
+                {
                     fmt::print(stderr, "Error on processing query '{}': {}\n",
                         ast_to_process->formatForErrorMessage(),
                         last_exception_received_from_server->message());
@@ -1198,29 +1220,30 @@ private:
                 {
                     // Probably the server is dead because we found an assertion
                     // failure. Fail fast.
+                    fmt::print(stderr, "Lost connection to the server\n");
                     return begin;
                 }
 
+                // The server is still alive so we're going to continue fuzzing.
+                // Determine what we're going to use as the starting AST.
                 if (received_exception_from_server)
                 {
-                    // Query completed with error, ignore it and fuzz again.
-                    fprintf(stderr, "Got error, will fuzz again\n");
-
+                    // Query completed with error, keep the previous starting AST.
+                    // Also discard the exception that we now know to be non-fatal,
+                    // so that it doesn't influence the exit code.
+                    last_exception_received_from_server.reset(nullptr);
                     received_exception_from_server = false;
-                    last_exception_received_from_server.reset();
-
-                    continue;
                 }
                 else if (ast_to_process->formatForErrorMessage().size() > 500)
                 {
                     // ast too long, start from original ast
-                    fprintf(stderr, "current ast too long, won't elaborate\n");
+                    fprintf(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
                     fuzz_base = orig_ast;
                 }
                 else
                 {
                     // fuzz starting from this successful query
-                    fprintf(stderr, "using this ast as etalon\n");
+                    fprintf(stderr, "Query succeeded, using this AST as a start\n");
                     fuzz_base = ast_to_process;
                 }
             }
@@ -1272,6 +1295,19 @@ private:
             writeString(full_query, std_out);
             writeChar('\n', std_out);
             std_out.next();
+        }
+
+        if (is_interactive)
+        {
+            // Generate a new query_id
+            context.setCurrentQueryId("");
+            for (const auto & query_id_format : query_id_formats)
+            {
+                writeString(query_id_format.first, std_out);
+                writeString(fmt::format(query_id_format.second, fmt::arg("query_id", context.getCurrentQueryId())), std_out);
+                writeChar('\n', std_out);
+                std_out.next();
+            }
         }
 
         watch.restart();
@@ -1399,7 +1435,7 @@ private:
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query_to_send,
-                    query_id,
+                    context.getCurrentQueryId(),
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
                     &context.getClientInfo(),
@@ -1440,7 +1476,7 @@ private:
         connection->sendQuery(
             connection_parameters.timeouts,
             query_to_send,
-            query_id,
+            context.getCurrentQueryId(),
             QueryProcessingStage::Complete,
             &context.getSettingsRef(),
             &context.getClientInfo(),
@@ -1555,9 +1591,8 @@ private:
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
 
-        const auto & column_defaults = columns_description.getDefaults();
-        if (!column_defaults.empty())
-            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
+        if (columns_description.hasDefaults())
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, context);
 
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 

@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int UNKNOWN_POLICY;
 }
 
 namespace ActionLocks
@@ -189,6 +190,39 @@ std::optional<UInt64> StorageMergeTree::totalRows() const
     return getTotalActiveSizeInRows();
 }
 
+std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    Names partition_key_columns = partition_key.column_names;
+    KeyCondition key_condition(
+        query_info, context, partition_key_columns, partition_key.expression, true /* single_point */, true /* strict */);
+    if (key_condition.alwaysUnknownOrTrue())
+        return {};
+    std::unordered_map<String, bool> partition_filter_map;
+    size_t res = 0;
+    auto lock = lockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (part->isEmpty())
+            continue;
+        const auto & partition_id = part->info.partition_id;
+        bool is_valid;
+        if (auto it = partition_filter_map.find(partition_id); it != partition_filter_map.end())
+            is_valid = it->second;
+        else
+        {
+            const auto & partition_value = part->partition.value;
+            std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
+            is_valid = key_condition.mayBeTrueInRange(partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
+            partition_filter_map.emplace(partition_id, is_valid);
+        }
+        if (is_valid)
+            res += part->rows_count;
+    }
+    return res;
+}
+
 std::optional<UInt64> StorageMergeTree::totalBytes() const
 {
     return getTotalActiveSizeInBytes();
@@ -286,7 +320,12 @@ struct CurrentlyMergingPartsTagger
     StorageMergeTree & storage;
 
 public:
-    CurrentlyMergingPartsTagger(FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
+    CurrentlyMergingPartsTagger(
+        FutureMergedMutatedPart & future_part_,
+        size_t total_size,
+        StorageMergeTree & storage_,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool is_mutation)
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
@@ -304,7 +343,7 @@ public:
                 max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
             }
 
-            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr), max_volume_index);
+            reserved_space = storage.tryReserveSpacePreferringTTLRules(metadata_snapshot, total_size, ttl_infos, time(nullptr), max_volume_index);
         }
         if (!reserved_space)
         {
@@ -715,7 +754,7 @@ bool StorageMergeTree::merge(
             return false;
         }
 
-        merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
+        merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, metadata_snapshot, false);
         auto table_id = getStorageID();
         merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
     }
@@ -739,7 +778,7 @@ bool StorageMergeTree::merge(
     try
     {
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr),
+            future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr), global_context,
             merging_tagger->reserved_space, deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
@@ -856,7 +895,7 @@ bool StorageMergeTree::tryMutatePart()
             future_part.name = part->getNewName(new_part_info);
             future_part.type = part->getType();
 
-            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true);
+            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
             break;
         }
     }
@@ -1326,7 +1365,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         throw Exception("Destination table " + dest_table_storage->getStorageID().getNameForLogs() +
                        " should have the same storage policy of source table " + getStorageID().getNameForLogs() + ". " +
                        getStorageID().getNameForLogs() + ": " + this->getStoragePolicy()->getName() + ", " +
-                       dest_table_storage->getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::LOGICAL_ERROR);
+                       dest_table_storage->getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_POLICY);
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();

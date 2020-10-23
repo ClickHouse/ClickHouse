@@ -36,14 +36,13 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto & elem = block.getByPosition(arguments[0]);
+        const auto & elem = arguments[0];
 
-        /// Note that the result is not a constant, because it contains block size.
+        /// Note that the result is not a constant, because it contains columns size.
 
-        block.getByPosition(result).column
-            = DataTypeString().createColumnConst(input_rows_count,
+        return DataTypeString().createColumnConst(input_rows_count,
                 elem.type->getName() + ", " + elem.column->dumpStructure())->convertToFullColumnIfConst();
     }
 };
