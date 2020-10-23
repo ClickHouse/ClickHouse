@@ -118,7 +118,6 @@ public:
         bool no_makeset;
         bool only_consts;
         bool no_storage_or_local;
-        bool has_untuple = false;
         size_t visit_depth;
         ScopeStack actions_stack;
 
