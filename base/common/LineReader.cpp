@@ -30,7 +30,7 @@ void trim(String & s)
 bool hasInputData()
 {
     timeval timeout = {0, 0};
-    fd_set fds{};
+    fd_set fds;
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
     return select(1, &fds, nullptr, nullptr, &timeout) == 1;
@@ -38,10 +38,10 @@ bool hasInputData()
 
 }
 
-std::optional<LineReader::Suggest::WordsRange> LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length) const
+LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length) const
 {
     if (!ready)
-        return std::nullopt;
+        return std::make_pair(words.end(), words.end());
 
     std::string_view last_word;
 
@@ -53,18 +53,18 @@ std::optional<LineReader::Suggest::WordsRange> LineReader::Suggest::getCompletio
 
     /// last_word can be empty.
 
-    /// Only perform case sensitive completion when the prefix string contains any uppercase characters
-    if (std::none_of(prefix.begin(), prefix.end(), [&](auto c) { return c >= 'A' && c <= 'Z'; }))
+    if (case_insensitive)
         return std::equal_range(
-            words_no_case.begin(), words_no_case.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
-            {
-                return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
-            });
+                words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
+                {
+                    return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
+                });
     else
-        return std::equal_range(words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
-        {
-            return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
-        });
+        return std::equal_range(
+                words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
+                {
+                    return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
+                });
 }
 
 LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)

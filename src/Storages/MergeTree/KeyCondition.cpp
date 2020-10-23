@@ -1,14 +1,13 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/FieldToDataType.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -325,7 +324,7 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
         return result_node;
     }
 
-    auto cloned_node = node->clone();
+    const auto cloned_node = node->clone();
 
     if (func && inverse_relations.find(func->name) != inverse_relations.cend())
     {
@@ -345,11 +344,49 @@ inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVi
 inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
 
+FieldWithInfinity::FieldWithInfinity(const Field & field_)
+    : field(field_),
+    type(Type::NORMAL)
+{
+}
+
+FieldWithInfinity::FieldWithInfinity(Field && field_)
+    : field(std::move(field_)),
+    type(Type::NORMAL)
+{
+}
+
+FieldWithInfinity::FieldWithInfinity(const Type type_)
+    : type(type_)
+{
+}
+
+FieldWithInfinity FieldWithInfinity::getMinusInfinity()
+{
+    return FieldWithInfinity(Type::MINUS_INFINITY);
+}
+
+FieldWithInfinity FieldWithInfinity::getPlusInfinity()
+{
+    return FieldWithInfinity(Type::PLUS_INFINITY);
+}
+
+bool FieldWithInfinity::operator<(const FieldWithInfinity & other) const
+{
+    return type < other.type || (type == other.type && type == Type::NORMAL && field < other.field);
+}
+
+bool FieldWithInfinity::operator==(const FieldWithInfinity & other) const
+{
+    return type == other.type && (type != Type::NORMAL || field == other.field);
+}
+
+
 /** Calculate expressions, that depend only on constants.
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block KeyCondition::getBlockWithConstants(
-    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context)
+    const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context)
 {
     Block result
     {
@@ -368,10 +405,8 @@ KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
     const Names & key_column_names,
-    const ExpressionActionsPtr & key_expr_,
-    bool single_point_,
-    bool strict_)
-    : key_expr(key_expr_), prepared_sets(query_info.sets), single_point(single_point_), strict(strict_)
+    const ExpressionActionsPtr & key_expr_)
+    : key_expr(key_expr_), prepared_sets(query_info.sets)
 {
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
@@ -451,65 +486,24 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
 }
 
 
-static Field applyFunctionForField(
+static void applyFunction(
     const FunctionBasePtr & func,
-    const DataTypePtr & arg_type,
-    const Field & arg_value)
+    const DataTypePtr & arg_type, const Field & arg_value,
+    DataTypePtr & res_type, Field & res_value)
 {
-    ColumnsWithTypeAndName columns
+    res_type = func->getReturnType();
+
+    Block block
     {
         { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
+        { nullptr, res_type, "y" }
     };
 
-    auto col = func->execute(columns, func->getResultType(), 1);
-    return (*col)[0];
+    func->execute(block, {0}, 1, 1);
+
+    block.safeGetByPosition(1).column->get(0, res_value);
 }
 
-/// The case when arguments may have types different than in the primary key.
-static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
-    const FunctionOverloadResolverPtr & func,
-    const DataTypePtr & arg_type,
-    const Field & arg_value)
-{
-    ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
-
-    FunctionBasePtr func_base = func->build(arguments);
-
-    DataTypePtr return_type = func_base->getResultType();
-
-    auto col = func_base->execute(arguments, return_type, 1);
-
-    Field result = (*col)[0];
-
-    return {std::move(result), std::move(return_type)};
-}
-
-
-static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
-{
-    /// Fallback for fields without block reference.
-    if (field.isExplicit())
-        return applyFunctionForField(func, current_type, field);
-
-    String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
-    const auto & columns = field.columns;
-    size_t result_idx = columns->size();
-
-    for (size_t i = 0; i < result_idx; ++i)
-    {
-        if ((*columns)[i].name == result_name)
-            result_idx = i;
-    }
-
-    ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-    if (result_idx == columns->size())
-    {
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
-        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
-    }
-
-    return {field.columns, field.row_idx, result_idx};
-}
 
 void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
 {
@@ -528,7 +522,7 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
                   * - in this case `n - 1` elements are added (where `n` is the number of arguments).
                   */
                 if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
-                    rpn.emplace_back(element);
+                    rpn.emplace_back(std::move(element));
             }
 
             return;
@@ -551,25 +545,13 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     Field & out_value,
     DataTypePtr & out_type)
 {
-    /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
-    /// Consider the following test case:
-    ///
-    /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
-    /// insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
-    /// select count() from test1 where p > toDateTime('2020-09-01 10:00:00');
-    ///
-    /// toDate(DateTime) is always monotonic, but we cannot relaxing the predicates to be
-    /// >= toDate(toDateTime('2020-09-01 10:00:00')), which returns 3 instead of the right count: 2.
-    if (strict)
-        return false;
-
     String expr_name = node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
 
     bool found_transformation = false;
-    for (const ExpressionAction & action : key_expr->getActions())
+    for (const ExpressionAction & a : key_expr->getActions())
     {
         /** The key functional expression constraint may be inferred from a plain column in the expression.
           * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
@@ -581,27 +563,27 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
           * Instead, we can qualify only functions that do not transform the range (for example rounding),
           * which while not strictly monotonic, are monotonic everywhere on the input range.
           */
-        const auto & argument_names = action.argument_names;
-        if (action.type == ExpressionAction::Type::APPLY_FUNCTION
-            && argument_names.size() == 1
-            && argument_names[0] == expr_name)
+        const auto & action = a.argument_names;
+        if (a.type == ExpressionAction::Type::APPLY_FUNCTION && action.size() == 1 && a.argument_names[0] == expr_name)
         {
-            if (!action.function_base->hasInformationAboutMonotonicity())
+            if (!a.function_base->hasInformationAboutMonotonicity())
                 return false;
 
-            /// Range is irrelevant in this case.
-            IFunction::Monotonicity monotonicity = action.function_base->getMonotonicityForRange(*out_type, Field(), Field());
+            // Range is irrelevant in this case
+            IFunction::Monotonicity monotonicity = a.function_base->getMonotonicityForRange(*out_type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
                 return false;
 
-            /// Apply the next transformation step.
-            std::tie(out_value, out_type) = applyFunctionForFieldOfUnknownType(
-                action.function_builder,
-                out_type, out_value);
+            // Apply the next transformation step
+            DataTypePtr new_type;
+            applyFunction(a.function_base, out_type, out_value, new_type, out_value);
+            if (!new_type)
+                return false;
 
-            expr_name = action.result_name;
+            out_type.swap(new_type);
+            expr_name = a.result_name;
 
-            /// Transformation results in a key expression, accept.
+            // Transformation results in a key expression, accept
             auto it = key_columns.find(expr_name);
             if (key_columns.end() != it)
             {
@@ -724,33 +706,14 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
-        const auto & args = (*it)->arguments->children;
         auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
-        ColumnsWithTypeAndName arguments;
-        if (args.size() == 2)
-        {
-            if (const auto * arg_left = args[0]->as<ASTLiteral>())
-            {
-                auto left_arg_type = applyVisitor(FieldToDataType(), arg_left->value);
-                arguments.push_back({ left_arg_type->createColumnConst(0, arg_left->value), left_arg_type, "" });
-                arguments.push_back({ nullptr, key_column_type, "" });
-            }
-            else if (const auto * arg_right = args[1]->as<ASTLiteral>())
-            {
-                arguments.push_back({ nullptr, key_column_type, "" });
-                auto right_arg_type = applyVisitor(FieldToDataType(), arg_right->value);
-                arguments.push_back({ right_arg_type->createColumnConst(0, arg_right->value), right_arg_type, "" });
-            }
-        }
-        else
-            arguments.push_back({ nullptr, key_column_type, "" });
+        ColumnsWithTypeAndName arguments{{ nullptr, key_column_type, "" }};
         auto func = func_builder->build(arguments);
 
-        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-        if (!func || (!single_point && !func->hasInformationAboutMonotonicity()))
+        if (!func || !func->hasInformationAboutMonotonicity())
             return false;
 
-        key_column_type = func->getResultType();
+        key_column_type = func->getReturnType();
         out_functions_chain.push_back(func);
     }
 
@@ -782,27 +745,12 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     if (const auto * func = node->as<ASTFunction>())
     {
         const auto & args = func->arguments->children;
-        if (args.size() > 2 || args.empty())
+        if (args.size() != 1)
             return false;
 
         out_functions_chain.push_back(func);
-        bool ret = false;
-        if (args.size() == 2)
-        {
-            if (args[0]->as<ASTLiteral>())
-            {
-                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[1], out_key_column_num, out_key_column_type, out_functions_chain);
-            }
-            else if (args[1]->as<ASTLiteral>())
-            {
-                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
-            }
-        }
-        else
-        {
-            ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
-        }
-        return ret;
+
+        return isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
     }
 
     return false;
@@ -869,23 +817,23 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                 is_set_const = true;
             }
             else if (getConstant(args[1], block_with_constants, const_value, const_type)
-                && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+                     && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
             {
                 key_arg_pos = 0;
             }
             else if (getConstant(args[1], block_with_constants, const_value, const_type)
-                && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                     && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
             {
                 key_arg_pos = 0;
                 is_constant_transformed = true;
             }
             else if (getConstant(args[0], block_with_constants, const_value, const_type)
-                && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
+                     && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
             {
                 key_arg_pos = 1;
             }
             else if (getConstant(args[0], block_with_constants, const_value, const_type)
-                && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                     && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
             {
                 key_arg_pos = 1;
                 is_constant_transformed = true;
@@ -918,7 +866,6 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                     func_name = "greaterOrEquals";
                 else if (func_name == "in" || func_name == "notIn" ||
                          func_name == "like" || func_name == "notLike" ||
-                         func_name == "ilike" || func_name == "notIlike" ||
                          func_name == "startsWith")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
@@ -927,8 +874,8 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             }
 
             bool cast_not_needed =
-                is_set_const /// Set args are already casted inside Set::createFromAST
-                || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
+                    is_set_const /// Set args are already casted inside Set::createFromAST
+                    || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
 
             if (!cast_not_needed)
                 castValueToType(key_expr_type, const_value, const_type, node);
@@ -943,23 +890,17 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
 
         return atom_it->second(out, const_value);
     }
-    else if (getConstant(node, block_with_constants, const_value, const_type))
+    else if (getConstant(node, block_with_constants, const_value, const_type))    /// For cases where it says, for example, `WHERE 0 AND something`
     {
-        /// For cases where it says, for example, `WHERE 0 AND something`
+        if (const_value.getType() == Field::Types::UInt64
+            || const_value.getType() == Field::Types::Int64
+            || const_value.getType() == Field::Types::Float64)
+        {
+            /// Zero in all types is represented in memory the same way as in UInt64.
+            out.function = const_value.get<UInt64>()
+                ? RPNElement::ALWAYS_TRUE
+                : RPNElement::ALWAYS_FALSE;
 
-        if (const_value.getType() == Field::Types::UInt64)
-        {
-            out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
-        }
-        else if (const_value.getType() == Field::Types::Int64)
-        {
-            out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
-        }
-        else if (const_value.getType() == Field::Types::Float64)
-        {
-            out.function = const_value.safeGet<Float64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
     }
@@ -1044,8 +985,8 @@ String KeyCondition::toString() const
 template <typename F>
 static BoolMask forAnyHyperrectangle(
     size_t key_size,
-    const FieldRef * key_left,
-    const FieldRef * key_right,
+    const Field * key_left,
+    const Field * key_right,
     bool left_bounded,
     bool right_bounded,
     std::vector<Range> & hyperrectangle,
@@ -1136,8 +1077,8 @@ static BoolMask forAnyHyperrectangle(
 
 BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
-    const FieldRef * left_key,
-    const FieldRef * right_key,
+    const Field * left_key,
+    const Field * right_key,
     const DataTypes & data_types,
     bool right_bounded,
     BoolMask initial_mask) const
@@ -1166,7 +1107,7 @@ BoolMask KeyCondition::checkInRange(
 /*      std::cerr << "Hyperrectangle: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
             std::cerr << (i != 0 ? " x " : "") << key_ranges[i].toString();
-        std::cerr << ": " << res.can_be_true << "\n";*/
+        std::cerr << ": " << res << "\n";*/
 
         return res;
     });
@@ -1175,121 +1116,38 @@ BoolMask KeyCondition::checkInRange(
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
-    const MonotonicFunctionsChain & functions,
-    DataTypePtr current_type,
-    bool single_point)
+    MonotonicFunctionsChain & functions,
+    DataTypePtr current_type)
 {
-    for (const auto & func : functions)
+    for (auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
-        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-        IFunction::Monotonicity monotonicity = single_point
-            ? IFunction::Monotonicity{true}
-            : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
+        IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
+            *current_type.get(), key_range.left, key_range.right);
 
         if (!monotonicity.is_monotonic)
         {
             return {};
         }
 
-        /// If we apply function to open interval, we can get empty intervals in result.
-        /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
-        /// To avoid this we make range left and right included.
+        /// Apply the function.
+        DataTypePtr new_type;
         if (!key_range.left.isNull())
-        {
-            key_range.left = applyFunction(func, current_type, key_range.left);
-            key_range.left_included = true;
-        }
-
+            applyFunction(func, current_type, key_range.left, new_type, key_range.left);
         if (!key_range.right.isNull())
+            applyFunction(func, current_type, key_range.right, new_type, key_range.right);
+
+        if (!new_type)
         {
-            key_range.right = applyFunction(func, current_type, key_range.right);
-            key_range.right_included = true;
+            return {};
         }
 
-        current_type = func->getResultType();
+        current_type.swap(new_type);
 
         if (!monotonicity.is_positive)
             key_range.swapLeftAndRight();
     }
     return key_range;
-}
-
-// Returns whether the condition is one continuous range of the primary key,
-// where every field is matched by range or a single element set.
-// This allows to use a more efficient lookup with no extra reads.
-bool KeyCondition::matchesExactContinuousRange() const
-{
-    // Not implemented yet.
-    if (hasMonotonicFunctionsChain())
-        return false;
-
-    enum Constraint
-    {
-        POINT,
-        RANGE,
-        UNKNOWN,
-    };
-
-    std::vector<Constraint> column_constraints(key_columns.size(), Constraint::UNKNOWN);
-
-    for (const auto & element : rpn)
-    {
-        if (element.function == RPNElement::Function::FUNCTION_AND)
-        {
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
-        {
-            column_constraints[element.key_column] = Constraint::POINT;
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
-        {
-            if (element.range.left == element.range.right)
-            {
-                column_constraints[element.key_column] = Constraint::POINT;
-            }
-            if (column_constraints[element.key_column] != Constraint::POINT)
-            {
-                column_constraints[element.key_column] = Constraint::RANGE;
-            }
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
-        {
-            continue;
-        }
-
-        return false;
-    }
-
-    auto min_constraint = column_constraints[0];
-
-    if (min_constraint > Constraint::RANGE)
-    {
-        return false;
-    }
-
-    for (size_t i = 1; i < key_columns.size(); ++i)
-    {
-        if (column_constraints[i] < min_constraint)
-        {
-            return false;
-        }
-
-        if (column_constraints[i] == Constraint::RANGE && min_constraint == Constraint::RANGE)
-        {
-            return false;
-        }
-
-        min_constraint = column_constraints[i];
-    }
-
-    return true;
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(
@@ -1315,8 +1173,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range,
                     element.monotonic_functions_chain,
-                    data_types[element.key_column],
-                    single_point
+                    data_types[element.key_column]
                 );
 
                 if (!new_range)
@@ -1391,8 +1248,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
 BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
-    const FieldRef * left_key,
-    const FieldRef * right_key,
+    const Field * left_key,
+    const Field * right_key,
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
@@ -1402,8 +1259,8 @@ BoolMask KeyCondition::checkInRange(
 
 bool KeyCondition::mayBeTrueInRange(
     size_t used_key_size,
-    const FieldRef * left_key,
-    const FieldRef * right_key,
+    const Field * left_key,
+    const Field * right_key,
     const DataTypes & data_types) const
 {
     return checkInRange(used_key_size, left_key, right_key, data_types, true, BoolMask::consider_only_can_be_true).can_be_true;
@@ -1412,7 +1269,7 @@ bool KeyCondition::mayBeTrueInRange(
 
 BoolMask KeyCondition::checkAfter(
     size_t used_key_size,
-    const FieldRef * left_key,
+    const Field * left_key,
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
@@ -1422,7 +1279,7 @@ BoolMask KeyCondition::checkAfter(
 
 bool KeyCondition::mayBeTrueAfter(
     size_t used_key_size,
-    const FieldRef * left_key,
+    const Field * left_key,
     const DataTypes & data_types) const
 {
     return checkInRange(used_key_size, left_key, nullptr, data_types, false, BoolMask::consider_only_can_be_true).can_be_true;
@@ -1551,15 +1408,6 @@ size_t KeyCondition::getMaxKeyColumn() const
         }
     }
     return res;
-}
-
-bool KeyCondition::hasMonotonicFunctionsChain() const
-{
-    for (const auto & element : rpn)
-        if (!element.monotonic_functions_chain.empty()
-            || (element.set_index && element.set_index->hasMonotonicFunctionsChain()))
-            return true;
-    return false;
 }
 
 }

@@ -3,6 +3,7 @@
 #include <sstream>
 #include <optional>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
@@ -14,38 +15,16 @@
 namespace DB
 {
 
-class Context;
+namespace ErrorCodes
+{
+    extern const int BAD_TYPE_OF_FIELD;
+}
+
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-/** A field, that can be stored in two representations:
-  * - A standalone field.
-  * - A field with reference to its position in a block.
-  *   It's needed for execution of functions on ranges during
-  *   index analysis. If function was executed once for field,
-  *   its result would be cached for whole block for which field's reference points to.
-  */
-struct FieldRef : public Field
-{
-    FieldRef() = default;
-
-    /// Create as explicit field without block.
-    template <typename T>
-    FieldRef(T && value) : Field(std::forward<T>(value)) {}
-
-    /// Create as reference to field in block.
-    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
-        : Field((*(*columns_)[column_idx_].column)[row_idx_]),
-          columns(columns_), row_idx(row_idx_), column_idx(column_idx_) {}
-
-    bool isExplicit() const { return columns == nullptr; }
-
-    ColumnsWithTypeAndName * columns = nullptr;
-    size_t row_idx = 0;
-    size_t column_idx = 0;
-};
 
 /** Range with open or closed ends; possibly unbounded.
   */
@@ -56,8 +35,8 @@ private:
     static bool less(const Field & lhs, const Field & rhs);
 
 public:
-    FieldRef left;                       /// the left border, if any
-    FieldRef right;                      /// the right border, if any
+    Field left;                       /// the left border, if any
+    Field right;                      /// the right border, if any
     bool left_bounded = false;        /// bounded at the left
     bool right_bounded = false;       /// bounded at the right
     bool left_included = false;       /// includes the left border, if any
@@ -67,11 +46,11 @@ public:
     Range() {}
 
     /// One point.
-    Range(const FieldRef & point)
+    Range(const Field & point)
         : left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}
 
     /// A bounded two-sided range.
-    Range(const FieldRef & left_, bool left_included_, const FieldRef & right_, bool right_included_)
+    Range(const Field & left_, bool left_included_, const Field & right_, bool right_included_)
         : left(left_), right(right_),
         left_bounded(true), right_bounded(true),
         left_included(left_included_), right_included(right_included_)
@@ -79,7 +58,7 @@ public:
         shrinkToIncludedIfPossible();
     }
 
-    static Range createRightBounded(const FieldRef & right_point, bool right_included)
+    static Range createRightBounded(const Field & right_point, bool right_included)
     {
         Range r;
         r.right = right_point;
@@ -89,7 +68,7 @@ public:
         return r;
     }
 
-    static Range createLeftBounded(const FieldRef & left_point, bool left_included)
+    static Range createLeftBounded(const Field & left_point, bool left_included)
     {
         Range r;
         r.left = left_point;
@@ -105,7 +84,7 @@ public:
       */
     void shrinkToIncludedIfPossible()
     {
-        if (left.isExplicit() && left_bounded && !left_included)
+        if (left_bounded && !left_included)
         {
             if (left.getType() == Field::Types::UInt64 && left.get<UInt64>() != std::numeric_limits<UInt64>::max())
             {
@@ -118,7 +97,7 @@ public:
                 left_included = true;
             }
         }
-        if (right.isExplicit() && right_bounded && !right_included)
+        if (right_bounded && !right_included)
         {
             if (right.getType() == Field::Types::UInt64 && right.get<UInt64>() != std::numeric_limits<UInt64>::min())
             {
@@ -141,13 +120,13 @@ public:
     }
 
     /// x contained in the range
-    bool contains(const FieldRef & x) const
+    bool contains(const Field & x) const
     {
         return !leftThan(x) && !rightThan(x);
     }
 
     /// x is to the left
-    bool rightThan(const FieldRef & x) const
+    bool rightThan(const Field & x) const
     {
         return (left_bounded
             ? !(less(left, x) || (left_included && equals(x, left)))
@@ -155,7 +134,7 @@ public:
     }
 
     /// x is to the right
-    bool leftThan(const FieldRef & x) const
+    bool leftThan(const Field & x) const
     {
         return (right_bounded
             ? !(less(x, right) || (right_included && equals(x, right)))
@@ -216,6 +195,42 @@ public:
     String toString() const;
 };
 
+
+/// Class that extends arbitrary objects with infinities, like +-inf for floats
+class FieldWithInfinity
+{
+public:
+    enum Type
+    {
+        MINUS_INFINITY = -1,
+        NORMAL = 0,
+        PLUS_INFINITY = 1
+    };
+
+    explicit FieldWithInfinity(const Field & field_);
+    FieldWithInfinity(Field && field_);
+
+    static FieldWithInfinity getMinusInfinity();
+    static FieldWithInfinity getPlusInfinity();
+
+    bool operator<(const FieldWithInfinity & other) const;
+    bool operator==(const FieldWithInfinity & other) const;
+
+    Field getFieldIfFinite() const
+    {
+        if (type != NORMAL)
+            throw Exception("Trying to get field of infinite type", ErrorCodes::BAD_TYPE_OF_FIELD);
+        return field;
+    }
+
+private:
+    Field field;
+    Type type;
+
+    FieldWithInfinity(const Type type_);
+};
+
+
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -232,9 +247,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr,
-        bool single_point_ = false,
-        bool strict_ = false);
+        const ExpressionActionsPtr & key_expr);
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
@@ -248,8 +261,8 @@ public:
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
     BoolMask checkInRange(
         size_t used_key_size,
-        const FieldRef * left_key,
-        const FieldRef* right_key,
+        const Field * left_key,
+        const Field * right_key,
         const DataTypes & data_types,
         BoolMask initial_mask = BoolMask(false, false)) const;
 
@@ -257,7 +270,7 @@ public:
     /// left_key must contain all the fields in the sort_descr in the appropriate order.
     BoolMask checkAfter(
         size_t used_key_size,
-        const FieldRef * left_key,
+        const Field * left_key,
         const DataTypes & data_types,
         BoolMask initial_mask = BoolMask(false, false)) const;
 
@@ -265,15 +278,15 @@ public:
     /// This is more efficient than checkInRange(...).can_be_true.
     bool mayBeTrueInRange(
         size_t used_key_size,
-        const FieldRef * left_key,
-        const FieldRef * right_key,
+        const Field * left_key,
+        const Field * right_key,
         const DataTypes & data_types) const;
 
     /// Same as checkAfter, but calculate only may_be_true component of a result.
     /// This is more efficient than checkAfter(...).can_be_true.
     bool mayBeTrueAfter(
         size_t used_key_size,
-        const FieldRef * left_key,
+        const Field * left_key,
         const DataTypes & data_types) const;
 
     /// Checks that the index can not be used.
@@ -281,8 +294,6 @@ public:
 
     /// Get the maximum number of the key element used in the condition.
     size_t getMaxKeyColumn() const;
-
-    bool hasMonotonicFunctionsChain() const;
 
     /// Impose an additional condition: the value in the column `column` must be in the range `range`.
     /// Returns whether there is such a column in the key.
@@ -304,15 +315,12 @@ public:
             const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context);
+        const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
-        const MonotonicFunctionsChain & functions,
-        DataTypePtr current_type,
-        bool single_point = false);
-
-    bool matchesExactContinuousRange() const;
+        MonotonicFunctionsChain & functions,
+        DataTypePtr current_type);
 
 private:
     /// The expression is stored as Reverse Polish Notation.
@@ -349,10 +357,10 @@ private:
         Range range;
         size_t key_column = 0;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
-        using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
+        using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
 
-        MonotonicFunctionsChain monotonic_functions_chain;
+        mutable MonotonicFunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
     };
 
     using RPN = std::vector<RPNElement>;
@@ -366,8 +374,8 @@ public:
 private:
     BoolMask checkInRange(
         size_t used_key_size,
-        const FieldRef * left_key,
-        const FieldRef * right_key,
+        const Field * left_key,
+        const Field * right_key,
         const DataTypes & data_types,
         bool right_bounded,
         BoolMask initial_mask) const;
@@ -416,11 +424,6 @@ private:
     ColumnIndices key_columns;
     ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;
-
-    // If true, always allow key_expr to be wrapped by function
-    bool single_point;
-    // If true, do not use always_monotonic information to transform constants
-    bool strict;
 };
 
 }

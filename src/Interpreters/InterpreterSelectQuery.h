@@ -5,15 +5,17 @@
 #include <Core/QueryProcessingStage.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <DataStreams/IBlockStream_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/TableLockHolder.h>
+#include <Storages/TableStructureLockHolder.h>
 #include <Storages/ReadInOrderOptimizer.h>
-#include <Interpreters/StorageID.h>
+#include <Storages/StorageID.h>
 
+#include <Processors/QueryPipeline.h>
 #include <Columns/FilterDescription.h>
 
 namespace Poco { class Logger; }
@@ -23,11 +25,9 @@ namespace DB
 
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
-class Context;
-class QueryPlan;
 
-struct TreeRewriterResult;
-using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+struct SyntaxAnalyzerResult;
+using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -70,7 +70,6 @@ public:
         const ASTPtr & query_ptr_,
         const Context & context_,
         const StoragePtr & storage_,
-        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
 
     ~InterpreterSelectQuery() override;
@@ -78,8 +77,11 @@ public:
     /// Execute a query. Get the stream of blocks to read.
     BlockIO execute() override;
 
-    /// Builds QueryPlan for current query.
-    void buildQueryPlan(QueryPlan & query_plan);
+    /// Execute the query and return multuple streams for parallel processing.
+    BlockInputStreams executeWithMultipleStreams(QueryPipeline & parent_pipeline);
+
+    QueryPipeline executeWithProcessors() override;
+    bool canExecuteWithProcessors() const override { return true; }
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
@@ -92,8 +94,6 @@ public:
 
     size_t getMaxStreams() const { return max_streams; }
 
-    const SelectQueryInfo & getQueryInfo() const { return query_info; }
-
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -102,45 +102,118 @@ private:
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
-        const Names & required_result_column_names = {},
-        const StorageMetadataPtr & metadata_snapshot_= nullptr);
+        const Names & required_result_column_names = {});
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
-    Block getSampleBlockImpl();
+    Block getSampleBlockImpl(bool try_move_to_prewhere);
 
-    void executeImpl(QueryPlan & query_plan, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe);
+    struct Pipeline
+    {
+        /** Streams of data.
+          * The source data streams are produced in the executeFetchColumns function.
+          * Then they are converted (wrapped in other streams) using the `execute*` functions,
+          *  to get the whole pipeline running the query.
+          */
+        BlockInputStreams streams;
+
+        /** When executing FULL or RIGHT JOIN, there will be a data stream from which you can read "not joined" rows.
+          * It has a special meaning, since reading from it should be done after reading from the main streams.
+          * It is appended to the main streams in UnionBlockInputStream or ParallelAggregatingBlockInputStream.
+          */
+        BlockInputStreamPtr stream_with_non_joined_data;
+        bool union_stream = false;
+
+        /// Cache value of InterpreterSelectQuery::max_streams
+        size_t max_threads = 1;
+
+        BlockInputStreamPtr & firstStream() { return streams.at(0); }
+
+        template <typename Transform>
+        void transform(Transform && transformation)
+        {
+            for (auto & stream : streams)
+                transformation(stream);
+
+            if (stream_with_non_joined_data)
+                transformation(stream_with_non_joined_data);
+        }
+
+        bool hasMoreThanOneStream() const
+        {
+            return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
+        }
+
+        /// Resulting stream is mix of other streams data. Distinct and/or order guaranties are broken.
+        bool hasMixedStreams() const
+        {
+            return hasMoreThanOneStream() || union_stream;
+        }
+
+        bool hasDelayedStream() const { return stream_with_non_joined_data != nullptr; }
+        bool initialized() const { return !streams.empty(); }
+
+        /// Compatibility with QueryPipeline (Processors)
+        void   setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
+        size_t getNumThreads() const { return max_threads; }
+    };
+
+    template <typename TPipeline>
+    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe, QueryPipeline & save_context_and_storage);
 
     /// Different stages of query execution.
 
-    void executeFetchColumns(
-        QueryProcessingStage::Enum processing_stage,
-        QueryPlan & query_plan,
-        const PrewhereInfoPtr & prewhere_info,
-        const Names & columns_to_remove_after_prewhere);
+    /// dry_run - don't read from table, use empty header block instead.
+    void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
-    void executeWhere(QueryPlan & query_plan, const ExpressionActionsPtr & expression, bool remove_filter);
-    void executeAggregation(QueryPlan & query_plan, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
-    void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final);
-    void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
-    void executeHaving(QueryPlan & query_plan, const ExpressionActionsPtr & expression);
-    static void executeExpression(QueryPlan & query_plan, const ExpressionActionsPtr & expression, const std::string & description);
-    void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
-    void executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
-    void executeWithFill(QueryPlan & query_plan);
-    void executeMergeSorted(QueryPlan & query_plan, const std::string & description);
-    void executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset);
-    void executeLimitBy(QueryPlan & query_plan);
-    void executeLimit(QueryPlan & query_plan);
-    void executeOffset(QueryPlan & query_plan);
-    static void executeProjection(QueryPlan & query_plan, const ExpressionActionsPtr & expression);
-    void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
-    void executeExtremes(QueryPlan & query_plan);
-    void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-    void executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
+    template <typename TPipeline>
+    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
+        const PrewhereInfoPtr & prewhere_info,
+        const Names & columns_to_remove_after_prewhere,
+        QueryPipeline & save_context_and_storage);
+
+    void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
+    void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
+    void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeOrder(Pipeline & pipeline, InputSortingInfoPtr sorting_info);
+    void executeWithFill(Pipeline & pipeline);
+    void executeMergeSorted(Pipeline & pipeline);
+    void executePreLimit(Pipeline & pipeline);
+    void executeUnion(Pipeline & pipeline, Block header);
+    void executeLimitBy(Pipeline & pipeline);
+    void executeLimit(Pipeline & pipeline);
+    static void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
+    void executeExtremes(Pipeline & pipeline);
+    void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
+
+    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
+    void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
+    void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
+    void executeWithFill(QueryPipeline & pipeline);
+    void executeMergeSorted(QueryPipeline & pipeline);
+    void executePreLimit(QueryPipeline & pipeline);
+    void executeLimitBy(QueryPipeline & pipeline);
+    void executeLimit(QueryPipeline & pipeline);
+    static void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
+    void executeExtremes(QueryPipeline & pipeline);
+    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     String generateFilterActions(
         ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
+
+    /// Add ConvertingBlockInputStream to specified header.
+    void unifyStreams(Pipeline & pipeline, Block header);
 
     enum class Modificator
     {
@@ -148,7 +221,9 @@ private:
         CUBE = 1
     };
 
-    void executeRollupOrCube(QueryPlan & query_plan, Modificator modificator);
+    void executeRollupOrCube(Pipeline & pipeline, Modificator modificator);
+
+    void executeRollupOrCube(QueryPipeline & pipeline, Modificator modificator);
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *
@@ -161,7 +236,7 @@ private:
     SelectQueryOptions options;
     ASTPtr query_ptr;
     std::shared_ptr<Context> context;
-    TreeRewriterResultPtr syntax_analyzer_result;
+    SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;
 
@@ -188,14 +263,13 @@ private:
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
     StorageID table_id = StorageID::createEmpty();  /// Will be initialized if storage is not nullptr
-    TableLockHolder table_lock;
+    TableStructureReadLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;
     std::optional<Pipe> input_pipe;
 
     Poco::Logger * log;
-    StorageMetadataPtr metadata_snapshot;
 };
 
 }

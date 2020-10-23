@@ -11,11 +11,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-
-/** Replaces values where condition is met with the previous value that have condition not met
-  * (or with the first value if condition was true for all elements before).
-  * Looks somewhat similar to arrayFilter, but instead removing elements, it fills gaps with the value of previous element.
-  */
 template <bool reverse>
 struct ArrayFillImpl
 {
@@ -85,7 +80,7 @@ struct ArrayFillImpl
         }
         else
         {
-            const auto * column_fill_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
+            const auto *column_fill_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_fill_const)
                 throw Exception("Unexpected type of cut column", ErrorCodes::ILLEGAL_COLUMN);

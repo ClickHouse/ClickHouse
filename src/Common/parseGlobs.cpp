@@ -3,13 +3,10 @@
 #include <re2/stringpiece.h>
 #include <algorithm>
 #include <sstream>
-#include <cassert>
-#include <iomanip>
-
 
 namespace DB
 {
-/* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library for matching
+/* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library fo matching
  * with such steps:
  * 1) search intervals like {0..9} and enums like {abc,xyz,qwe} in {}, replace them by regexp with pipe (expr1|expr2|expr3),
  * 2) search and replace "*" and "?".
@@ -41,23 +38,14 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
 
         if (buffer.find(',') == std::string::npos)
         {
-            size_t range_begin = 0;
-            size_t range_end = 0;
+            size_t range_begin, range_end;
             char point;
             std::istringstream iss_range(buffer);
             iss_range >> range_begin >> point >> point >> range_end;
-            assert(!iss_range.fail());
-            bool leading_zeros = buffer[0] == '0';
-            size_t num_len = std::to_string(range_end).size();
-            if (leading_zeros)
-                oss_for_replacing << std::setfill('0') << std::setw(num_len);
             oss_for_replacing << range_begin;
             for (size_t i = range_begin + 1; i <= range_end; ++i)
             {
-                oss_for_replacing << '|';
-                if (leading_zeros)
-                    oss_for_replacing << std::setfill('0') << std::setw(num_len);
-                oss_for_replacing << i;
+                oss_for_replacing << '|' << i;
             }
         }
         else

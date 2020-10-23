@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class StorageView final : public ext::shared_ptr_helper<StorageView>, public IStorage
+class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageView>;
 public:
@@ -21,22 +21,22 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot) const
-    {
-        replaceWithSubquery(select_query, metadata_snapshot->getSelectQuery().inner_query->clone(), view_name);
-    }
+    ASTPtr getRuntimeViewQuery(const ASTSelectQuery & outer_query, const Context & context);
 
-    static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name);
-    static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
+    ASTPtr getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize);
+
+private:
+    ASTPtr inner_query;
+
+    static void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery);
 
 protected:
     StorageView(

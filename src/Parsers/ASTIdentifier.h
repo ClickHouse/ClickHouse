@@ -3,7 +3,6 @@
 #include <optional>
 
 #include <Parsers/ASTWithAlias.h>
-#include <Core/UUID.h>
 
 
 namespace DB
@@ -11,7 +10,7 @@ namespace DB
 
 struct IdentifierSemantic;
 struct IdentifierSemanticImpl;
-struct StorageID;
+struct DatabaseAndTableWithAlias;
 
 
 /// Identifier (column, table or alias)
@@ -21,7 +20,6 @@ public:
     /// The composite identifier will have a concatenated name (of the form a.b.c),
     /// and individual components will be available inside the name_parts.
     String name;
-    UUID uuid = UUIDHelpers::Nil;
 
     ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {});
     ASTIdentifier(std::vector<String> && name_parts_);
@@ -40,8 +38,6 @@ public:
     bool isShort() const { return name_parts.empty() || name == name_parts.back(); }
 
     void setShortName(const String & new_name);
-
-    /// Restore name field from name_parts in case it was cropped by analyzer but we need a full form for future (re)analyze.
     void restoreCompoundName();
 
     const String & shortName() const
@@ -52,8 +48,6 @@ public:
     }
 
     void resetTable(const String & database_name, const String & table_name);
-
-    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -68,22 +62,19 @@ private:
     static std::shared_ptr<ASTIdentifier> createSpecial(const String & name, std::vector<String> && name_parts = {});
 
     friend struct IdentifierSemantic;
-    friend ASTPtr createTableIdentifier(const StorageID & table_id);
+    friend ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
     friend void setIdentifierSpecial(ASTPtr & ast);
-    friend StorageID getTableIdentifier(const ASTPtr & ast);
 };
 
 
 /// ASTIdentifier Helpers: hide casts and semantic.
 
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
-ASTPtr createTableIdentifier(const StorageID & table_id);
 void setIdentifierSpecial(ASTPtr & ast);
 
 String getIdentifierName(const IAST * ast);
 std::optional<String> tryGetIdentifierName(const IAST * ast);
 bool tryGetIdentifierNameInto(const IAST * ast, String & name);
-StorageID getTableIdentifier(const ASTPtr & ast);
 
 inline String getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }
 inline std::optional<String> tryGetIdentifierName(const ASTPtr & ast) { return tryGetIdentifierName(ast.get()); }

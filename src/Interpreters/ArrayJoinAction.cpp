@@ -35,13 +35,11 @@ ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool arr
 }
 
 
-void ArrayJoinAction::prepare(ColumnsWithTypeAndName & sample) const
+void ArrayJoinAction::prepare(Block & sample_block)
 {
-    for (auto & current : sample)
+    for (const auto & name : columns)
     {
-        if (columns.count(current.name) == 0)
-            continue;
-
+        ColumnWithTypeAndName & current = sample_block.getByName(name);
         const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
         if (!array_type)
             throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
@@ -50,7 +48,7 @@ void ArrayJoinAction::prepare(ColumnsWithTypeAndName & sample) const
     }
 }
 
-void ArrayJoinAction::execute(Block & block)
+void ArrayJoinAction::execute(Block & block, bool dry_run)
 {
     if (columns.empty())
         throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
@@ -68,7 +66,7 @@ void ArrayJoinAction::execute(Block & block)
         /// Resize all array joined columns to the longest one, (at least 1 if LEFT ARRAY JOIN), padded with default values.
         auto rows = block.rows();
         auto uint64 = std::make_shared<DataTypeUInt64>();
-        ColumnWithTypeAndName column_of_max_length{{}, uint64, {}};
+        ColumnWithTypeAndName column_of_max_length;
         if (is_left)
             column_of_max_length = ColumnWithTypeAndName(uint64->createColumnConst(rows, 1u), uint64, {});
         else
@@ -78,19 +76,22 @@ void ArrayJoinAction::execute(Block & block)
         {
             auto & src_col = block.getByName(name);
 
-            ColumnsWithTypeAndName tmp_block{src_col}; //, {{}, uint64, {}}};
-            auto len_col = function_length->build(tmp_block)->execute(tmp_block, uint64, rows);
+            Block tmp_block{src_col, {{}, uint64, {}}};
+            function_length->build({src_col})->execute(tmp_block, {0}, 1, rows);
 
-            ColumnsWithTypeAndName tmp_block2{column_of_max_length, {len_col, uint64, {}}};
-            column_of_max_length.column = function_greatest->build(tmp_block2)->execute(tmp_block2, uint64, rows);
+            Block tmp_block2{
+                column_of_max_length, tmp_block.safeGetByPosition(1), {{}, uint64, {}}};
+            function_greatest->build({column_of_max_length, tmp_block.safeGetByPosition(1)})->execute(tmp_block2, {0, 1}, 2, rows);
+            column_of_max_length = tmp_block2.safeGetByPosition(2);
         }
 
         for (const auto & name : columns)
         {
             auto & src_col = block.getByName(name);
 
-            ColumnsWithTypeAndName tmp_block{src_col, column_of_max_length};
-            src_col.column = function_arrayResize->build(tmp_block)->execute(tmp_block, src_col.type, rows);
+            Block tmp_block{src_col, column_of_max_length, {{}, src_col.type, {}}};
+            function_arrayResize->build({src_col, column_of_max_length})->execute(tmp_block, {0, 1}, 2, rows);
+            src_col.column = tmp_block.safeGetByPosition(2).column;
             any_array_ptr = src_col.column->convertToFullColumnIfConst();
         }
 
@@ -102,9 +103,10 @@ void ArrayJoinAction::execute(Block & block)
         {
             auto src_col = block.getByName(name);
 
-            ColumnsWithTypeAndName tmp_block{src_col};
+            Block tmp_block{src_col, {{}, src_col.type, {}}};
 
-            non_empty_array_columns[name] = function_builder->build(tmp_block)->execute(tmp_block, src_col.type, src_col.column->size());
+            function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size(), dry_run);
+            non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
         }
 
         any_array_ptr = non_empty_array_columns.begin()->second->convertToFullColumnIfConst();
@@ -134,6 +136,33 @@ void ArrayJoinAction::execute(Block & block)
         else
         {
             current.column = current.column->replicate(any_array->getOffsets());
+        }
+    }
+}
+
+void ArrayJoinAction::finalize(NameSet & needed_columns, NameSet & unmodified_columns, NameSet & final_columns)
+{
+    /// Do not ARRAY JOIN columns that are not used anymore.
+    /// Usually, such columns are not used until ARRAY JOIN, and therefore are ejected further in this function.
+    /// We will not remove all the columns so as not to lose the number of rows.
+    for (auto it = columns.begin(); it != columns.end();)
+    {
+        bool need = needed_columns.count(*it);
+        if (!need && columns.size() > 1)
+        {
+            columns.erase(it++);
+        }
+        else
+        {
+            needed_columns.insert(*it);
+            unmodified_columns.erase(*it);
+
+            /// If no ARRAY JOIN results are used, forcibly leave an arbitrary column at the output,
+            ///  so you do not lose the number of rows.
+            if (!need)
+                final_columns.insert(*it);
+
+            ++it;
         }
     }
 }

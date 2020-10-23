@@ -4,8 +4,6 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/setThreadName.h>
-
 
 namespace DB
 {
@@ -25,10 +23,10 @@ void ClusterCopier::init()
 
     task_description_watch_callback = [this] (const Coordination::WatchResponse & response)
     {
-        if (response.error != Coordination::Error::ZOK)
+        if (response.error != Coordination::ZOK)
             return;
-        UInt64 version = ++task_description_version;
-        LOG_DEBUG(log, "Task description should be updated, local version {}", version);
+        UInt64 version = ++task_descprtion_version;
+        LOG_DEBUG(log, "Task description should be updated, local version " << version);
     };
 
     task_description_path = task_zookeeper_path + "/description";
@@ -49,7 +47,7 @@ void ClusterCopier::init()
         task_table.initShards(task_cluster->random_engine);
     }
 
-    LOG_DEBUG(log, "Will process {} table tasks", task_cluster->table_tasks.size());
+    LOG_DEBUG(log, "Will process " << task_cluster->table_tasks.size() << " table tasks");
 
     /// Do not initialize tables, will make deferred initialization in process()
 
@@ -87,7 +85,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
 {
     TaskTable & task_table = task_shard->task_table;
 
-    LOG_INFO(log, "Discover partitions of shard {}", task_shard->getDescription());
+    LOG_INFO(log, "Discover partitions of shard " << task_shard->getDescription());
 
     auto get_partitions = [&] () { return getShardPartitions(timeouts, *task_shard); };
     auto existing_partitions_names = retry(get_partitions, 60);
@@ -134,7 +132,8 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
         {
             if (!task_table.enabled_partitions_set.count(partition_name))
             {
-                LOG_DEBUG(log, "Partition {} will not be processed, since it is not in enabled_partitions of {}", partition_name, task_table.table_id);
+                LOG_DEBUG(log, "Partition " << partition_name << " will not be processed, since it is not in "
+                                            << "enabled_partitions of " << task_table.table_id);
             }
         }
     }
@@ -146,18 +145,8 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
 
     for (const String & partition_name : filtered_partitions_names)
     {
-        const size_t number_of_splits = task_table.number_of_splits;
-        task_shard->partition_tasks.emplace(partition_name, ShardPartition(*task_shard, partition_name, number_of_splits));
+        task_shard->partition_tasks.emplace(partition_name, ShardPartition(*task_shard, partition_name));
         task_shard->checked_partitions.emplace(partition_name, true);
-
-        auto shard_partition_it = task_shard->partition_tasks.find(partition_name);
-        PartitionPieces & shard_partition_pieces = shard_partition_it->second.pieces;
-
-        for (size_t piece_number = 0; piece_number < number_of_splits; ++piece_number)
-        {
-            bool res = checkPresentPartitionPiecesOnCurrentShard(timeouts, *task_shard, partition_name, piece_number);
-            shard_partition_pieces.emplace_back(shard_partition_it->second, piece_number, res);
-        }
     }
 
     if (!missing_partitions.empty())
@@ -166,10 +155,11 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
         for (const String & missing_partition : missing_partitions)
             ss << " " << missing_partition;
 
-        LOG_WARNING(log, "There are no {} partitions from enabled_partitions in shard {} :{}", missing_partitions.size(), task_shard->getDescription(), ss.str());
+        LOG_WARNING(log, "There are no " << missing_partitions.size() << " partitions from enabled_partitions in shard "
+                         << task_shard->getDescription() << " :" << ss.str());
     }
 
-    LOG_DEBUG(log, "Will copy {} partitions from shard {}", task_shard->partition_tasks.size(), task_shard->getDescription());
+    LOG_DEBUG(log, "Will copy " << task_shard->partition_tasks.size() << " partitions from shard " << task_shard->getDescription());
 }
 
 void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts, TaskTable & task_table, UInt64 num_threads)
@@ -179,13 +169,9 @@ void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts,
         ThreadPool thread_pool(num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
         for (const TaskShardPtr & task_shard : task_table.all_shards)
-            thread_pool.scheduleOrThrowOnError([this, timeouts, task_shard]()
-            {
-                setThreadName("DiscoverPartns");
-                discoverShardPartitions(timeouts, task_shard);
-            });
+            thread_pool.scheduleOrThrowOnError([this, timeouts, task_shard]() { discoverShardPartitions(timeouts, task_shard); });
 
-        LOG_DEBUG(log, "Waiting for {} setup jobs", thread_pool.active());
+        LOG_DEBUG(log, "Waiting for " << thread_pool.active() << " setup jobs");
         thread_pool.wait();
     }
 }
@@ -206,11 +192,10 @@ void ClusterCopier::uploadTaskDescription(const std::string & task_path, const s
 
     zookeeper->createAncestors(local_task_description_path);
     auto code = zookeeper->tryCreate(local_task_description_path, task_config_str, zkutil::CreateMode::Persistent);
-    if (code != Coordination::Error::ZOK && force)
+    if (code && force)
         zookeeper->createOrUpdate(local_task_description_path, task_config_str, zkutil::CreateMode::Persistent);
 
-    LOG_DEBUG(log, "Task description {} uploaded to {} with result {} ({})",
-        ((code != Coordination::Error::ZOK && !force) ? "not " : ""), local_task_description_path, code, Coordination::errorMessage(code));
+    LOG_DEBUG(log, "Task description " << ((code && !force) ? "not " : "") << "uploaded to " << local_task_description_path << " with result " << code << " ("<< zookeeper->error2string(code) << ")");
 }
 
 void ClusterCopier::reloadTaskDescription()
@@ -219,29 +204,29 @@ void ClusterCopier::reloadTaskDescription()
     task_description_watch_zookeeper = zookeeper;
 
     String task_config_str;
-    Coordination::Stat stat{};
-    Coordination::Error code;
+    Coordination::Stat stat;
+    int code;
 
     zookeeper->tryGetWatch(task_description_path, task_config_str, &stat, task_description_watch_callback, &code);
-    if (code != Coordination::Error::ZOK)
+    if (code)
         throw Exception("Can't get description node " + task_description_path, ErrorCodes::BAD_ARGUMENTS);
 
-    LOG_DEBUG(log, "Loading description, zxid={}", task_description_current_stat.czxid);
+    LOG_DEBUG(log, "Loading description, zxid=" << task_descprtion_current_stat.czxid);
     auto config = getConfigurationFromXMLString(task_config_str);
 
     /// Setup settings
     task_cluster->reloadSettings(*config);
-    context.setSettings(task_cluster->settings_common);
+    context.getSettingsRef() = task_cluster->settings_common;
 
     task_cluster_current_config = config;
-    task_description_current_stat = stat;
+    task_descprtion_current_stat = stat;
 }
 
 void ClusterCopier::updateConfigIfNeeded()
 {
-    UInt64 version_to_update = task_description_version;
-    bool is_outdated_version = task_description_current_version != version_to_update;
-    bool is_expired_session  = !task_description_watch_zookeeper || task_description_watch_zookeeper->expired();
+    UInt64 version_to_update = task_descprtion_version;
+    bool is_outdated_version = task_descprtion_current_version != version_to_update;
+    bool is_expired_session = !task_description_watch_zookeeper || task_description_watch_zookeeper->expired();
 
     if (!is_outdated_version && !is_expired_session)
         return;
@@ -249,14 +234,15 @@ void ClusterCopier::updateConfigIfNeeded()
     LOG_DEBUG(log, "Updating task description");
     reloadTaskDescription();
 
-    task_description_current_version = version_to_update;
+    task_descprtion_current_version = version_to_update;
 }
 
 void ClusterCopier::process(const ConnectionTimeouts & timeouts)
 {
     for (TaskTable & task_table : task_cluster->table_tasks)
     {
-        LOG_INFO(log, "Process table task {} with {} shards, {} of them are local ones", task_table.table_id, task_table.all_shards.size(), task_table.local_shards.size());
+        LOG_INFO(log, "Process table task " << task_table.table_id << " with "
+                      << task_table.all_shards.size() << " shards, " << task_table.local_shards.size() << " of them are local ones");
 
         if (task_table.all_shards.empty())
             continue;
@@ -312,9 +298,6 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
             }
         }
 
-        /// Delete helping tables in both cases (whole table is done or not)
-        dropHelpingTables(task_table);
-
         if (!table_is_done)
         {
             throw Exception("Too many tries to process table " + task_table.table_id + ". Abort remaining execution",
@@ -324,13 +307,6 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
 }
 
 /// Protected section
-
-
-/*
- * Creates task worker node and checks maximum number of workers not to exceed the limit.
- * To achieve this we have to check version of workers_version_path node and create current_worker_path
- * node atomically.
- * */
 
 zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNeed(
     const zkutil::ZooKeeperPtr & zookeeper,
@@ -344,8 +320,8 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
         std::this_thread::sleep_for(current_sleep_time);
 
     String workers_version_path = getWorkersPathVersion();
-    String workers_path         = getWorkersPath();
-    String current_worker_path  = getCurrentWorkerNodePath();
+    String workers_path = getWorkersPath();
+    String current_worker_path = getCurrentWorkerNodePath();
 
     UInt64 num_bad_version_errors = 0;
 
@@ -360,7 +336,8 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
 
         if (static_cast<UInt64>(stat.numChildren) >= task_cluster->max_workers)
         {
-            LOG_DEBUG(log, "Too many workers ({}, maximum {}). Postpone processing {}", stat.numChildren, task_cluster->max_workers, description);
+            LOG_DEBUG(log, "Too many workers (" << stat.numChildren << ", maximum " << task_cluster->max_workers << ")"
+                << ". Postpone processing " << description);
 
             if (unprioritized)
                 current_sleep_time = std::min(max_sleep_time, current_sleep_time + default_sleep_time);
@@ -376,10 +353,10 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
             Coordination::Responses responses;
             auto code = zookeeper->tryMulti(ops, responses);
 
-            if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
+            if (code == Coordination::ZOK || code == Coordination::ZNODEEXISTS)
                 return std::make_shared<zkutil::EphemeralNodeHolder>(current_worker_path, *zookeeper, false, false, description);
 
-            if (code == Coordination::Error::ZBADVERSION)
+            if (code == Coordination::ZBADVERSION)
             {
                 ++num_bad_version_errors;
 
@@ -398,56 +375,22 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
     }
 }
 
-
-bool ClusterCopier::checkPartitionPieceIsClean(
-        const zkutil::ZooKeeperPtr & zookeeper,
-        const CleanStateClock & clean_state_clock,
-        const String & task_status_path)
+/** Checks that the whole partition of a table was copied. We should do it carefully due to dirty lock.
+ * State of some task could change during the processing.
+ * We have to ensure that all shards have the finished state and there is no dirty flag.
+ * Moreover, we have to check status twice and check zxid, because state can change during the checking.
+ */
+bool ClusterCopier::checkPartitionIsDone(const TaskTable & task_table, const String & partition_name, const TasksShard & shards_with_partition)
 {
-    LogicalClock task_start_clock;
-
-    Coordination::Stat stat{};
-    if (zookeeper->exists(task_status_path, &stat))
-        task_start_clock = LogicalClock(stat.mzxid);
-
-    return clean_state_clock.is_clean() && (!task_start_clock.hasHappened() || clean_state_clock.discovery_zxid <= task_start_clock);
-}
-
-
-bool ClusterCopier::checkAllPiecesInPartitionAreDone(const TaskTable & task_table, const String & partition_name, const TasksShard & shards_with_partition)
-{
-    bool answer = true;
-    for (size_t piece_number = 0; piece_number < task_table.number_of_splits; ++piece_number)
-    {
-        bool piece_is_done = checkPartitionPieceIsDone(task_table, partition_name, piece_number, shards_with_partition);
-        if (!piece_is_done)
-            LOG_DEBUG(log, "Partition {} piece {} is not already done.", partition_name, piece_number);
-        answer &= piece_is_done;
-    }
-
-    return answer;
-}
-
-
-/* The same as function above
- * Assume that we don't know on which shards do we have partition certain piece.
- * We'll check them all (I mean shards that contain the whole partition)
- * And shards that don't have certain piece MUST mark that piece is_done true.
- * */
-bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, const String & partition_name,
-                               size_t piece_number, const TasksShard & shards_with_partition)
-{
-    LOG_DEBUG(log, "Check that all shards processed partition {} piece {} successfully", partition_name, piece_number);
+    LOG_DEBUG(log, "Check that all shards processed partition " << partition_name << " successfully");
 
     auto zookeeper = context.getZooKeeper();
 
-    /// Collect all shards that contain partition piece number piece_number.
-    Strings piece_status_paths;
-    for (const auto & shard : shards_with_partition)
+    Strings status_paths;
+    for (auto & shard : shards_with_partition)
     {
         ShardPartition & task_shard_partition = shard->partition_tasks.find(partition_name)->second;
-        ShardPartitionPiece & shard_partition_piece = task_shard_partition.pieces[piece_number];
-        piece_status_paths.emplace_back(shard_partition_piece.getShardStatusPath());
+        status_paths.emplace_back(task_shard_partition.getShardStatusPath());
     }
 
     std::vector<int64_t> zxid1, zxid2;
@@ -455,7 +398,7 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
     try
     {
         std::vector<zkutil::ZooKeeper::FutureGet> get_futures;
-        for (const String & path : piece_status_paths)
+        for (const String & path : status_paths)
             get_futures.emplace_back(zookeeper->asyncGet(path));
 
         // Check that state is Finished and remember zxid
@@ -466,30 +409,34 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
             TaskStateWithOwner status = TaskStateWithOwner::fromString(res.data);
             if (status.state != TaskState::Finished)
             {
-                LOG_INFO(log, "The task {} is being rewritten by {}. Partition piece will be rechecked", res.data, status.owner);
+                LOG_INFO(log, "The task " << res.data << " is being rewritten by " << status.owner << ". Partition will be rechecked");
                 return false;
             }
 
             zxid1.push_back(res.stat.pzxid);
         }
 
-        const String piece_is_dirty_flag_path = task_table.getCertainPartitionPieceIsDirtyPath(partition_name, piece_number);
-        const String piece_is_dirty_cleaned_path = task_table.getCertainPartitionPieceIsCleanedPath(partition_name, piece_number);
-        const String piece_task_status_path = task_table.getCertainPartitionPieceTaskStatusPath(partition_name, piece_number);
-
-        CleanStateClock clean_state_clock (zookeeper, piece_is_dirty_flag_path, piece_is_dirty_cleaned_path);
-
-        const bool is_clean = checkPartitionPieceIsClean(zookeeper, clean_state_clock, piece_task_status_path);
-
-
-        if (!is_clean)
+        // Check that partition is not dirty
         {
-            LOG_INFO(log, "Partition {} become dirty", partition_name);
-            return false;
+            CleanStateClock clean_state_clock (
+                                               zookeeper,
+                                               task_table.getPartitionIsDirtyPath(partition_name),
+                                               task_table.getPartitionIsCleanedPath(partition_name)
+                                               );
+            Coordination::Stat stat;
+            LogicalClock task_start_clock;
+            if (zookeeper->exists(task_table.getPartitionTaskStatusPath(partition_name), &stat))
+                task_start_clock = LogicalClock(stat.mzxid);
+            zookeeper->get(task_table.getPartitionTaskStatusPath(partition_name), &stat);
+            if (!clean_state_clock.is_clean() || task_start_clock <= clean_state_clock.discovery_zxid)
+            {
+                LOG_INFO(log, "Partition " << partition_name << " become dirty");
+                return false;
+            }
         }
 
         get_futures.clear();
-        for (const String & path : piece_status_paths)
+        for (const String & path : status_paths)
             get_futures.emplace_back(zookeeper->asyncGet(path));
 
         // Remember zxid of states again
@@ -501,171 +448,25 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
     }
     catch (const Coordination::Exception & e)
     {
-        LOG_INFO(log, "A ZooKeeper error occurred while checking partition {} piece number {}. Will recheck the partition. Error: {}", partition_name, toString(piece_number), e.displayText());
+        LOG_INFO(log, "A ZooKeeper error occurred while checking partition " << partition_name
+                      << ". Will recheck the partition. Error: " << e.displayText());
         return false;
     }
 
     // If all task is finished and zxid is not changed then partition could not become dirty again
-    for (UInt64 shard_num = 0; shard_num < piece_status_paths.size(); ++shard_num)
+    for (UInt64 shard_num = 0; shard_num < status_paths.size(); ++shard_num)
     {
         if (zxid1[shard_num] != zxid2[shard_num])
         {
-            LOG_INFO(log, "The task {} is being modified now. Partition piece will be rechecked", piece_status_paths[shard_num]);
+            LOG_INFO(log, "The task " << status_paths[shard_num] << " is being modified now. Partition will be rechecked");
             return false;
         }
     }
 
-    LOG_INFO(log, "Partition {} piece number {} is copied successfully", partition_name, toString(piece_number));
+    LOG_INFO(log, "Partition " << partition_name << " is copied successfully");
     return true;
 }
 
-
-TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & task_table, const String & partition_name)
-{
-    bool inject_fault = false;
-    if (move_fault_probability > 0)
-    {
-        double value = std::uniform_real_distribution<>(0, 1)(task_table.task_cluster.random_engine);
-        inject_fault = value < move_fault_probability;
-    }
-
-    LOG_DEBUG(log, "Try to move {} to destination table", partition_name);
-
-    auto zookeeper = context.getZooKeeper();
-
-    const auto current_partition_attach_is_active = task_table.getPartitionAttachIsActivePath(partition_name);
-    const auto current_partition_attach_is_done   = task_table.getPartitionAttachIsDonePath(partition_name);
-
-    /// Create ephemeral node to mark that we are active and process the partition
-    zookeeper->createAncestors(current_partition_attach_is_active);
-    zkutil::EphemeralNodeHolderPtr partition_attach_node_holder;
-    try
-    {
-        partition_attach_node_holder = zkutil::EphemeralNodeHolder::create(current_partition_attach_is_active, *zookeeper, host_id);
-    }
-    catch (const Coordination::Exception & e)
-    {
-        if (e.code == Coordination::Error::ZNODEEXISTS)
-        {
-            LOG_DEBUG(log, "Someone is already moving pieces {}", current_partition_attach_is_active);
-            return TaskStatus::Active;
-        }
-
-        throw;
-    }
-
-
-    /// Exit if task has been already processed;
-    /// create blocking node to signal cleaning up if it is abandoned
-    {
-        String status_data;
-        if (zookeeper->tryGet(current_partition_attach_is_done, status_data))
-        {
-            TaskStateWithOwner status = TaskStateWithOwner::fromString(status_data);
-            if (status.state == TaskState::Finished)
-            {
-                LOG_DEBUG(log, "All pieces for partition from this task {} has been successfully moved to destination table by {}", current_partition_attach_is_active, status.owner);
-                return TaskStatus::Finished;
-            }
-
-            /// Task is abandoned, because previously we created ephemeral node, possibly in other copier's process.
-            /// Initialize DROP PARTITION
-            LOG_DEBUG(log, "Moving piece for partition {} has not been successfully finished by {}. Will try to move by myself.", current_partition_attach_is_active, status.owner);
-
-            /// Remove is_done marker.
-            zookeeper->remove(current_partition_attach_is_done);
-        }
-    }
-
-
-    /// Try start processing, create node about it
-    {
-        String start_state = TaskStateWithOwner::getData(TaskState::Started, host_id);
-        zookeeper->create(current_partition_attach_is_done, start_state, zkutil::CreateMode::Persistent);
-    }
-
-    /// Move partition to original destination table.
-    for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
-    {
-        LOG_DEBUG(log, "Trying to move partition {} piece {} to original table", partition_name, toString(current_piece_number));
-
-        ASTPtr query_alter_ast;
-        String query_alter_ast_string;
-
-        DatabaseAndTableName original_table = task_table.table_push;
-        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first,
-                                                                  original_table.second + "_piece_" +
-                                                                  toString(current_piece_number));
-
-        Settings settings_push = task_cluster->settings_push;
-
-        /// It is important, ALTER ATTACH PARTITION must be done synchronously
-        /// And we will execute this ALTER query on each replica of a shard.
-        /// It is correct, because this query is idempotent.
-        settings_push.replication_alter_partitions_sync = 2;
-
-        query_alter_ast_string += " ALTER TABLE " + getQuotedTable(original_table) +
-                                  " ATTACH PARTITION " + partition_name +
-                                  " FROM " + getQuotedTable(helping_table);
-
-        LOG_DEBUG(log, "Executing ALTER query: {}", query_alter_ast_string);
-
-        try
-        {
-            size_t num_nodes = executeQueryOnCluster(
-                    task_table.cluster_push,
-                    query_alter_ast_string,
-                    settings_push,
-                    PoolMode::GET_MANY,
-                    ClusterExecutionMode::ON_EACH_NODE);
-
-            LOG_INFO(log, "Number of nodes that executed ALTER query successfully : {}", toString(num_nodes));
-        }
-        catch (...)
-        {
-            LOG_DEBUG(log, "Error while moving partition {} piece {} to original table", partition_name, toString(current_piece_number));
-            throw;
-        }
-
-        if (inject_fault)
-            throw Exception("Copy fault injection is activated", ErrorCodes::UNFINISHED);
-
-        try
-        {
-            String query_deduplicate_ast_string;
-            if (!task_table.isReplicatedTable())
-            {
-                query_deduplicate_ast_string += " OPTIMIZE TABLE " + getQuotedTable(original_table) +
-                                                " PARTITION " + partition_name + " DEDUPLICATE;";
-
-                LOG_DEBUG(log, "Executing OPTIMIZE DEDUPLICATE query: {}", query_alter_ast_string);
-
-                UInt64 num_nodes = executeQueryOnCluster(
-                        task_table.cluster_push,
-                        query_deduplicate_ast_string,
-                        task_cluster->settings_push,
-                        PoolMode::GET_MANY);
-
-                LOG_INFO(log, "Number of shard that executed OPTIMIZE DEDUPLICATE query successfully : {}", toString(num_nodes));
-            }
-        }
-        catch (...)
-        {
-            LOG_DEBUG(log, "Error while executing OPTIMIZE DEDUPLICATE partition {}in the original table", partition_name);
-            throw;
-        }
-    }
-
-    /// Create node to signal that we finished moving
-    {
-        String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
-        zookeeper->set(current_partition_attach_is_done, state_finished, 0);
-    }
-
-    return TaskStatus::Finished;
-}
-
-/// Removes MATERIALIZED and ALIAS columns from create table query
 ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast)
 {
     const ASTs & column_asts = query_ast->as<ASTCreateQuery &>().columns_list->columns->children;
@@ -690,7 +491,7 @@ ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast
 
     auto new_columns_list = std::make_shared<ASTColumns>();
     new_columns_list->set(new_columns_list->columns, new_columns);
-    if (const auto * indices = query_ast->as<ASTCreateQuery>()->columns_list->indices)
+    if (auto indices = query_ast->as<ASTCreateQuery>()->columns_list->indices)
         new_columns_list->set(new_columns_list->indices, indices->clone());
 
     new_query.replace(new_query.columns_list, new_columns_list);
@@ -698,10 +499,7 @@ ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast
     return new_query_ast;
 }
 
-/// Replaces ENGINE and table name in a create query
-std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast,
-                                                          const DatabaseAndTableName & new_table,
-                                                          const ASTPtr & new_storage_ast)
+std::shared_ptr<ASTCreateQuery> ClusterCopier::rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
 {
     const auto & create = create_query_ast->as<ASTCreateQuery &>();
     auto res = std::make_shared<ASTCreateQuery>(create);
@@ -720,34 +518,29 @@ std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_
 }
 
 
-bool ClusterCopier::tryDropPartitionPiece(
-        ShardPartition & task_partition,
-        const size_t current_piece_number,
-        const zkutil::ZooKeeperPtr & zookeeper,
-        const CleanStateClock & clean_state_clock)
+bool ClusterCopier::tryDropPartition(ShardPartition & task_partition, const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock)
 {
     if (is_safe_mode)
         throw Exception("DROP PARTITION is prohibited in safe mode", ErrorCodes::NOT_IMPLEMENTED);
 
     TaskTable & task_table = task_partition.task_shard.task_table;
-    ShardPartitionPiece & partition_piece = task_partition.pieces[current_piece_number];
 
-    const String current_shards_path                  = partition_piece.getPartitionPieceShardsPath();
-    const String current_partition_active_workers_dir = partition_piece.getPartitionPieceActiveWorkersPath();
-    const String is_dirty_flag_path                   = partition_piece.getPartitionPieceIsDirtyPath();
-    const String dirty_cleaner_path                   = partition_piece.getPartitionPieceCleanerPath();
-    const String is_dirty_cleaned_path                = partition_piece.getPartitionPieceIsCleanedPath();
+    const String current_shards_path = task_partition.getPartitionShardsPath();
+    const String current_partition_active_workers_dir = task_partition.getPartitionActiveWorkersPath();
+    const String is_dirty_flag_path = task_partition.getCommonPartitionIsDirtyPath();
+    const String dirt_cleaner_path = is_dirty_flag_path + "/cleaner";
+    const String is_dirt_cleaned_path = task_partition.getCommonPartitionIsCleanedPath();
 
     zkutil::EphemeralNodeHolder::Ptr cleaner_holder;
     try
     {
-        cleaner_holder = zkutil::EphemeralNodeHolder::create(dirty_cleaner_path, *zookeeper, host_id);
+        cleaner_holder = zkutil::EphemeralNodeHolder::create(dirt_cleaner_path, *zookeeper, host_id);
     }
     catch (const Coordination::Exception & e)
     {
-        if (e.code == Coordination::Error::ZNODEEXISTS)
+        if (e.code == Coordination::ZNODEEXISTS)
         {
-            LOG_DEBUG(log, "Partition {} piece {} is cleaning now by somebody, sleep", task_partition.name, toString(current_piece_number));
+            LOG_DEBUG(log, "Partition " << task_partition.name << " is cleaning now by somebody, sleep");
             std::this_thread::sleep_for(default_sleep_time);
             return false;
         }
@@ -755,12 +548,12 @@ bool ClusterCopier::tryDropPartitionPiece(
         throw;
     }
 
-    Coordination::Stat stat{};
+    Coordination::Stat stat;
     if (zookeeper->exists(current_partition_active_workers_dir, &stat))
     {
         if (stat.numChildren != 0)
         {
-            LOG_DEBUG(log, "Partition {} contains {} active workers while trying to drop it. Going to sleep.", task_partition.name, stat.numChildren);
+            LOG_DEBUG(log, "Partition " << task_partition.name << " contains " << stat.numChildren << " active workers while trying to drop it. Going to sleep.");
             std::this_thread::sleep_for(default_sleep_time);
             return false;
         }
@@ -778,9 +571,9 @@ bool ClusterCopier::tryDropPartitionPiece(
         }
         catch (const Coordination::Exception & e)
         {
-            if (e.code == Coordination::Error::ZNODEEXISTS)
+            if (e.code == Coordination::ZNODEEXISTS)
             {
-                LOG_DEBUG(log, "Partition {} is being filled now by somebody, sleep", task_partition.name);
+                LOG_DEBUG(log, "Partition " << task_partition.name << " is being filled now by somebody, sleep");
                 return false;
             }
 
@@ -789,24 +582,20 @@ bool ClusterCopier::tryDropPartitionPiece(
 
         // Lock the dirty flag
         zookeeper->set(is_dirty_flag_path, host_id, clean_state_clock.discovery_version.value());
-        zookeeper->tryRemove(partition_piece.getPartitionPieceCleanStartPath());
-        CleanStateClock my_clock(zookeeper, is_dirty_flag_path, is_dirty_cleaned_path);
+        zookeeper->tryRemove(task_partition.getPartitionCleanStartPath());
+        CleanStateClock my_clock(zookeeper, is_dirty_flag_path, is_dirt_cleaned_path);
 
         /// Remove all status nodes
         {
             Strings children;
-            if (zookeeper->tryGetChildren(current_shards_path, children) == Coordination::Error::ZOK)
+            if (zookeeper->tryGetChildren(current_shards_path, children) == Coordination::ZOK)
                 for (const auto & child : children)
                 {
                     zookeeper->removeRecursive(current_shards_path + "/" + child);
                 }
         }
 
-
-        DatabaseAndTableName original_table = task_table.table_push;
-        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
-
-        String query = "ALTER TABLE " + getQuotedTable(helping_table);
+        String query = "ALTER TABLE " + getQuotedTable(task_table.table_push);
         query += " DROP PARTITION " + task_partition.name + "";
 
         /// TODO: use this statement after servers will be updated up to 1.1.54310
@@ -818,24 +607,24 @@ bool ClusterCopier::tryDropPartitionPiece(
         /// It is important, DROP PARTITION must be done synchronously
         settings_push.replication_alter_partitions_sync = 2;
 
-        LOG_DEBUG(log, "Execute distributed DROP PARTITION: {}", query);
-        /// We have to drop partition_piece on each replica
-        size_t num_shards = executeQueryOnCluster(
-                cluster_push, query,
-                settings_push,
-                PoolMode::GET_MANY,
-                ClusterExecutionMode::ON_EACH_NODE);
+        LOG_DEBUG(log, "Execute distributed DROP PARTITION: " << query);
+        /// Limit number of max executing replicas to 1
+        UInt64 num_shards = executeQueryOnCluster(cluster_push, query, nullptr, &settings_push, PoolMode::GET_ONE, 1);
 
-        LOG_INFO(log, "DROP PARTITION was successfully executed on {} nodes of a cluster.", num_shards);
+        if (num_shards < cluster_push->getShardCount())
+        {
+            LOG_INFO(log, "DROP PARTITION wasn't successfully executed on " << cluster_push->getShardCount() - num_shards << " shards");
+            return false;
+        }
 
         /// Update the locking node
         if (!my_clock.is_stale())
         {
             zookeeper->set(is_dirty_flag_path, host_id, my_clock.discovery_version.value());
             if (my_clock.clean_state_version)
-                zookeeper->set(is_dirty_cleaned_path, host_id, my_clock.clean_state_version.value());
+                zookeeper->set(is_dirt_cleaned_path, host_id, my_clock.clean_state_version.value());
             else
-                zookeeper->create(is_dirty_cleaned_path, host_id, zkutil::CreateMode::Persistent);
+                zookeeper->create(is_dirt_cleaned_path, host_id, zkutil::CreateMode::Persistent);
         }
         else
         {
@@ -844,12 +633,12 @@ bool ClusterCopier::tryDropPartitionPiece(
             return false;
         }
 
-        LOG_INFO(log, "Partition {} piece {} was dropped on cluster {}", task_partition.name, toString(current_piece_number), task_table.cluster_push_name);
-        if (zookeeper->tryCreate(current_shards_path, host_id, zkutil::CreateMode::Persistent) == Coordination::Error::ZNODEEXISTS)
+        LOG_INFO(log, "Partition " << task_partition.name << " was dropped on cluster " << task_table.cluster_push_name);
+        if (zookeeper->tryCreate(current_shards_path, host_id, zkutil::CreateMode::Persistent) == Coordination::ZNODEEXISTS)
             zookeeper->set(current_shards_path, host_id);
     }
 
-    LOG_INFO(log, "Partition {} piece {} is safe for work now.", task_partition.name, toString(current_piece_number));
+    LOG_INFO(log, "Partition " << task_partition.name << " is safe for work now.");
     return true;
 }
 
@@ -867,13 +656,12 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
         ClusterPartition & cluster_partition = task_table.cluster_partitions[partition_name];
 
         Stopwatch watch;
-        /// We will check all the shards of the table and check if they contain current partition.
         TasksShard expected_shards;
         UInt64 num_failed_shards = 0;
 
         ++cluster_partition.total_tries;
 
-        LOG_DEBUG(log, "Processing partition {} for the whole cluster", partition_name);
+        LOG_DEBUG(log, "Processing partition " << partition_name << " for the whole cluster");
 
         /// Process each source shard having current partition and copy current partition
         /// NOTE: shards are sorted by "distance" to current host
@@ -893,22 +681,12 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 
                     if (has_partition)
                     {
-                        const size_t number_of_splits = task_table.number_of_splits;
-                        shard->partition_tasks.emplace(partition_name, ShardPartition(*shard, partition_name, number_of_splits));
-                        LOG_DEBUG(log, "Discovered partition {} in shard {}", partition_name, shard->getDescription());
-                        /// To save references in the future.
-                        auto shard_partition_it = shard->partition_tasks.find(partition_name);
-                        PartitionPieces & shard_partition_pieces = shard_partition_it->second.pieces;
-
-                        for (size_t piece_number = 0; piece_number < number_of_splits; ++piece_number)
-                        {
-                            auto res = checkPresentPartitionPiecesOnCurrentShard(timeouts, *shard, partition_name, piece_number);
-                            shard_partition_pieces.emplace_back(shard_partition_it->second, piece_number, res);
-                        }
+                        shard->partition_tasks.emplace(partition_name, ShardPartition(*shard, partition_name));
+                        LOG_DEBUG(log, "Discovered partition " << partition_name << " in shard " << shard->getDescription());
                     }
                     else
                     {
-                        LOG_DEBUG(log, "Found that shard {} does not contain current partition {}", shard->getDescription(), partition_name);
+                        LOG_DEBUG(log, "Found that shard " << shard->getDescription() << " does not contain current partition " << partition_name);
                         continue;
                     }
                 }
@@ -921,17 +699,15 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
             }
 
             auto it_shard_partition = shard->partition_tasks.find(partition_name);
-            /// Previously when we discovered that shard does not contain current partition, we skipped it.
-            /// At this moment partition have to be present.
             if (it_shard_partition == shard->partition_tasks.end())
-                throw Exception("There are no such partition in a shard. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+                 throw Exception("There are no such partition in a shard. This is a bug.", ErrorCodes::LOGICAL_ERROR);
             auto & partition = it_shard_partition->second;
 
             expected_shards.emplace_back(shard);
 
             /// Do not sleep if there is a sequence of already processed shards to increase startup
             bool is_unprioritized_task = !previous_shard_is_instantly_finished && shard->priority.is_remote;
-            TaskStatus task_status = TaskStatus::Error;
+            PartitionTaskStatus task_status = PartitionTaskStatus::Error;
             bool was_error = false;
             has_shard_to_process = true;
             for (UInt64 try_num = 0; try_num < max_shard_partition_tries; ++try_num)
@@ -939,20 +715,20 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
                 task_status = tryProcessPartitionTask(timeouts, partition, is_unprioritized_task);
 
                 /// Exit if success
-                if (task_status == TaskStatus::Finished)
+                if (task_status == PartitionTaskStatus::Finished)
                     break;
 
                 was_error = true;
 
                 /// Skip if the task is being processed by someone
-                if (task_status == TaskStatus::Active)
+                if (task_status == PartitionTaskStatus::Active)
                     break;
 
                 /// Repeat on errors
                 std::this_thread::sleep_for(default_sleep_time);
             }
 
-            if (task_status == TaskStatus::Error)
+            if (task_status == PartitionTaskStatus::Error)
                 ++num_failed_shards;
 
             previous_shard_is_instantly_finished = !was_error;
@@ -962,51 +738,20 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 
         /// Check that whole cluster partition is done
         /// Firstly check the number of failed partition tasks, then look into ZooKeeper and ensure that each partition is done
-        bool partition_copying_is_done = num_failed_shards == 0;
+        bool partition_is_done = num_failed_shards == 0;
         try
         {
-            partition_copying_is_done =
-                    !has_shard_to_process
-                    || (partition_copying_is_done && checkAllPiecesInPartitionAreDone(task_table, partition_name, expected_shards));
+            partition_is_done =
+                !has_shard_to_process
+                || (partition_is_done && checkPartitionIsDone(task_table, partition_name, expected_shards));
         }
         catch (...)
         {
             tryLogCurrentException(log);
-            partition_copying_is_done = false;
+            partition_is_done = false;
         }
 
-
-        bool partition_moving_is_done = false;
-        /// Try to move only if all pieces were copied.
-        if (partition_copying_is_done)
-        {
-            for (UInt64 try_num = 0; try_num < max_shard_partition_piece_tries_for_alter; ++try_num)
-            {
-                try
-                {
-                    auto res = tryMoveAllPiecesToDestinationTable(task_table, partition_name);
-                    /// Exit and mark current task is done.
-                    if (res == TaskStatus::Finished)
-                    {
-                        partition_moving_is_done = true;
-                        break;
-                    }
-
-                    /// Exit if this task is active.
-                    if (res == TaskStatus::Active)
-                        break;
-
-                    /// Repeat on errors.
-                    std::this_thread::sleep_for(default_sleep_time);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, "Some error occurred while moving pieces to destination table for partition " + partition_name);
-                }
-            }
-        }
-
-        if (partition_copying_is_done && partition_moving_is_done)
+        if (partition_is_done)
         {
             task_table.finished_cluster_partitions.emplace(partition_name);
 
@@ -1014,20 +759,21 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
             task_table.rows_copied += cluster_partition.rows_copied;
             double elapsed = cluster_partition.elapsed_time_seconds;
 
-            LOG_INFO(log, "It took {} seconds to copy partition {}: {} uncompressed bytes, {} rows and {} source blocks are copied",
-                elapsed, partition_name,
-                formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied),
-                formatReadableQuantity(cluster_partition.rows_copied),
-                cluster_partition.blocks_copied);
+            LOG_INFO(log, "It took " << std::fixed << std::setprecision(2) << elapsed << " seconds to copy partition " << partition_name
+                     << ": " << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied) << " uncompressed bytes"
+                     << ", " << formatReadableQuantity(cluster_partition.rows_copied) << " rows"
+                     << " and " << cluster_partition.blocks_copied << " source blocks are copied");
 
             if (cluster_partition.rows_copied)
             {
-                LOG_INFO(log, "Average partition speed: {} per second.", formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied / elapsed));
+                LOG_INFO(log, "Average partition speed: "
+                    << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied / elapsed) << " per second.");
             }
 
             if (task_table.rows_copied)
             {
-                LOG_INFO(log, "Average table {} speed: {} per second.", task_table.table_id, formatReadableSizeWithDecimalSuffix(task_table.bytes_copied / elapsed));
+                LOG_INFO(log, "Average table " << task_table.table_id << " speed: "
+                    << formatReadableSizeWithDecimalSuffix(task_table.bytes_copied / elapsed) << " per second.");
             }
         }
     }
@@ -1038,25 +784,26 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 
     if (!table_is_done)
     {
-        LOG_INFO(log, "Table {} is not processed yet.Copied {} of {}, will retry", task_table.table_id, finished_partitions, required_partitions);
+        LOG_INFO(log, "Table " + task_table.table_id + " is not processed yet."
+            << "Copied " << finished_partitions << " of " << required_partitions << ", will retry");
     }
 
     return table_is_done;
 }
 
-/// Job for copying partition from particular shard.
-TaskStatus ClusterCopier::tryProcessPartitionTask(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task)
+
+PartitionTaskStatus ClusterCopier::tryProcessPartitionTask(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task)
 {
-    TaskStatus res;
+    PartitionTaskStatus res;
 
     try
     {
-        res = iterateThroughAllPiecesInPartition(timeouts, task_partition, is_unprioritized_task);
+        res = processPartitionTaskImpl(timeouts, task_partition, is_unprioritized_task);
     }
     catch (...)
     {
         tryLogCurrentException(log, "An error occurred while processing partition " + task_partition.name);
-        res = TaskStatus::Error;
+        res = PartitionTaskStatus::Error;
     }
 
     /// At the end of each task check if the config is updated
@@ -1072,81 +819,26 @@ TaskStatus ClusterCopier::tryProcessPartitionTask(const ConnectionTimeouts & tim
     return res;
 }
 
-TaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTimeouts & timeouts, ShardPartition & task_partition,
-                                                       bool is_unprioritized_task)
-{
-    const size_t total_number_of_pieces = task_partition.task_shard.task_table.number_of_splits;
-
-    TaskStatus res{TaskStatus::Finished};
-
-    bool was_failed_pieces = false;
-    bool was_active_pieces = false;
-
-    for (size_t piece_number = 0; piece_number < total_number_of_pieces; piece_number++)
-    {
-        for (UInt64 try_num = 0; try_num < max_shard_partition_tries; ++try_num)
-        {
-            LOG_INFO(log, "Attempt number {} to process partition {} piece number {} on shard number {} with index {}.",
-                try_num, task_partition.name, piece_number,
-                task_partition.task_shard.numberInCluster(),
-                task_partition.task_shard.indexInCluster());
-
-            res = processPartitionPieceTaskImpl(timeouts, task_partition, piece_number, is_unprioritized_task);
-
-            /// Exit if success
-            if (res == TaskStatus::Finished)
-                break;
-
-            /// Skip if the task is being processed by someone
-            if (res == TaskStatus::Active)
-                break;
-
-            /// Repeat on errors
-            std::this_thread::sleep_for(default_sleep_time);
-        }
-
-        was_active_pieces = (res == TaskStatus::Active);
-        was_failed_pieces = (res == TaskStatus::Error);
-    }
-
-    if (was_failed_pieces)
-        return TaskStatus::Error;
-
-    if (was_active_pieces)
-        return TaskStatus::Active;
-
-    return TaskStatus::Finished;
-}
-
-
-TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
-        const ConnectionTimeouts & timeouts, ShardPartition & task_partition,
-        const size_t current_piece_number, bool is_unprioritized_task)
+PartitionTaskStatus ClusterCopier::processPartitionTaskImpl(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task)
 {
     TaskShard & task_shard = task_partition.task_shard;
     TaskTable & task_table = task_shard.task_table;
-    ClusterPartition & cluster_partition  = task_table.getClusterPartition(task_partition.name);
-    ShardPartitionPiece & partition_piece = task_partition.pieces[current_piece_number];
-
-    const size_t number_of_splits = task_table.number_of_splits;
-    const String primary_key_comma_separated = task_table.primary_key_comma_separated;
+    ClusterPartition & cluster_partition = task_table.getClusterPartition(task_partition.name);
 
     /// We need to update table definitions for each partition, it could be changed after ALTER
-    createShardInternalTables(timeouts, task_shard, true);
-
-    auto split_table_for_current_piece = task_shard.list_of_split_tables_on_shard[current_piece_number];
+    createShardInternalTables(timeouts, task_shard);
 
     auto zookeeper = context.getZooKeeper();
 
-    const String piece_is_dirty_flag_path          = partition_piece.getPartitionPieceIsDirtyPath();
-    const String piece_is_dirty_cleaned_path       = partition_piece.getPartitionPieceIsCleanedPath();
-    const String current_task_piece_is_active_path = partition_piece.getActiveWorkerPath();
-    const String current_task_piece_status_path    = partition_piece.getShardStatusPath();
+    const String is_dirty_flag_path = task_partition.getCommonPartitionIsDirtyPath();
+    const String is_dirt_cleaned_path = task_partition.getCommonPartitionIsCleanedPath();
+    const String current_task_is_active_path = task_partition.getActiveWorkerPath();
+    const String current_task_status_path = task_partition.getShardStatusPath();
 
     /// Auxiliary functions:
 
     /// Creates is_dirty node to initialize DROP PARTITION
-    auto create_is_dirty_node = [&] (const CleanStateClock & clock)
+    auto create_is_dirty_node = [&, this] (const CleanStateClock & clock)
     {
         if (clock.is_stale())
             LOG_DEBUG(log, "Clean state clock is stale while setting dirty flag, cowardly bailing");
@@ -1155,88 +847,81 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         else if (clock.discovery_version)
         {
             LOG_DEBUG(log, "Updating clean state clock");
-            zookeeper->set(piece_is_dirty_flag_path, host_id, clock.discovery_version.value());
+            zookeeper->set(is_dirty_flag_path, host_id, clock.discovery_version.value());
         }
         else
         {
             LOG_DEBUG(log, "Creating clean state clock");
-            zookeeper->create(piece_is_dirty_flag_path, host_id, zkutil::CreateMode::Persistent);
+            zookeeper->create(is_dirty_flag_path, host_id, zkutil::CreateMode::Persistent);
         }
     };
 
     /// Returns SELECT query filtering current partition and applying user filter
-    auto get_select_query = [&] (const DatabaseAndTableName & from_table, const String & fields, bool enable_splitting, String limit = "")
+    auto get_select_query = [&] (const DatabaseAndTableName & from_table, const String & fields, String limit = "")
     {
         String query;
         query += "SELECT " + fields + " FROM " + getQuotedTable(from_table);
-
-        if (enable_splitting && experimental_use_sample_offset)
-            query += " SAMPLE 1/" + toString(number_of_splits) + " OFFSET " + toString(current_piece_number) + "/" + toString(number_of_splits);
-
         /// TODO: Bad, it is better to rewrite with ASTLiteral(partition_key_field)
         query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + task_partition.name + " AS partition_key))";
-
-        if (enable_splitting && !experimental_use_sample_offset)
-            query += " AND ( cityHash64(" + primary_key_comma_separated + ") %" + toString(number_of_splits) + " = " + toString(current_piece_number) + " )";
-
         if (!task_table.where_condition_str.empty())
             query += " AND (" + task_table.where_condition_str + ")";
-
         if (!limit.empty())
             query += " LIMIT " + limit;
 
         ParserQuery p_query(query.data() + query.size());
-
-        const auto & settings = context.getSettingsRef();
-        return parseQuery(p_query, query, settings.max_query_size, settings.max_parser_depth);
+        return parseQuery(p_query, query, 0);
     };
 
     /// Load balancing
-    auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_piece_status_path, is_unprioritized_task);
+    auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path, is_unprioritized_task);
 
-    LOG_DEBUG(log, "Processing {}", current_task_piece_status_path);
+    LOG_DEBUG(log, "Processing " << current_task_status_path);
 
-    const String piece_status_path = partition_piece.getPartitionPieceShardsPath();
+    CleanStateClock clean_state_clock (zookeeper, is_dirty_flag_path, is_dirt_cleaned_path);
 
-    CleanStateClock clean_state_clock(zookeeper, piece_is_dirty_flag_path, piece_is_dirty_cleaned_path);
-
-    const bool is_clean = checkPartitionPieceIsClean(zookeeper, clean_state_clock, piece_status_path);
-
-    /// Do not start if partition piece is dirty, try to clean it
-    if (is_clean)
+    LogicalClock task_start_clock;
     {
-        LOG_DEBUG(log, "Partition {} piece {} appears to be clean", task_partition.name, current_piece_number);
-        zookeeper->createAncestors(current_task_piece_status_path);
+        Coordination::Stat stat;
+        if (zookeeper->exists(task_partition.getPartitionShardsPath(), &stat))
+            task_start_clock = LogicalClock(stat.mzxid);
+    }
+
+    /// Do not start if partition is dirty, try to clean it
+    if (clean_state_clock.is_clean()
+        && (!task_start_clock.hasHappened() || clean_state_clock.discovery_zxid <= task_start_clock))
+    {
+        LOG_DEBUG(log, "Partition " << task_partition.name << " appears to be clean");
+        zookeeper->createAncestors(current_task_status_path);
     }
     else
     {
-        LOG_DEBUG(log, "Partition {} piece {} is dirty, try to drop it", task_partition.name, current_piece_number);
+        LOG_DEBUG(log, "Partition " << task_partition.name << " is dirty, try to drop it");
 
         try
         {
-            tryDropPartitionPiece(task_partition, current_piece_number, zookeeper, clean_state_clock);
+            tryDropPartition(task_partition, zookeeper, clean_state_clock);
         }
         catch (...)
         {
             tryLogCurrentException(log, "An error occurred when clean partition");
         }
 
-        return TaskStatus::Error;
+        return PartitionTaskStatus::Error;
     }
 
     /// Create ephemeral node to mark that we are active and process the partition
-    zookeeper->createAncestors(current_task_piece_is_active_path);
+    zookeeper->createAncestors(current_task_is_active_path);
     zkutil::EphemeralNodeHolderPtr partition_task_node_holder;
     try
     {
-        partition_task_node_holder = zkutil::EphemeralNodeHolder::create(current_task_piece_is_active_path, *zookeeper, host_id);
+        partition_task_node_holder = zkutil::EphemeralNodeHolder::create(current_task_is_active_path, *zookeeper, host_id);
     }
     catch (const Coordination::Exception & e)
     {
-        if (e.code == Coordination::Error::ZNODEEXISTS)
+        if (e.code == Coordination::ZNODEEXISTS)
         {
-            LOG_DEBUG(log, "Someone is already processing {}", current_task_piece_is_active_path);
-            return TaskStatus::Active;
+            LOG_DEBUG(log, "Someone is already processing " << current_task_is_active_path);
+            return PartitionTaskStatus::Active;
         }
 
         throw;
@@ -1246,76 +931,60 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     /// create blocking node to signal cleaning up if it is abandoned
     {
         String status_data;
-        if (zookeeper->tryGet(current_task_piece_status_path, status_data))
+        if (zookeeper->tryGet(current_task_status_path, status_data))
         {
             TaskStateWithOwner status = TaskStateWithOwner::fromString(status_data);
             if (status.state == TaskState::Finished)
             {
-                LOG_DEBUG(log, "Task {} has been successfully executed by {}", current_task_piece_status_path, status.owner);
-                return TaskStatus::Finished;
+                LOG_DEBUG(log, "Task " << current_task_status_path << " has been successfully executed by " << status.owner);
+                return PartitionTaskStatus::Finished;
             }
 
-            /// Task is abandoned, because previously we created ephemeral node, possibly in other copier's process.
-            /// Initialize DROP PARTITION
-            LOG_DEBUG(log, "Task {} has not been successfully finished by {}. Partition will be dropped and refilled.", current_task_piece_status_path, status.owner);
+            // Task is abandoned, initialize DROP PARTITION
+            LOG_DEBUG(log, "Task " << current_task_status_path << " has not been successfully finished by " << status.owner << ". Partition will be dropped and refilled.");
 
             create_is_dirty_node(clean_state_clock);
-            return TaskStatus::Error;
+            return PartitionTaskStatus::Error;
         }
-    }
-
-
-    /// Exit if current piece is absent on this shard. Also mark it as finished, because we will check
-    /// whether each shard have processed each partitition (and its pieces).
-    if (partition_piece.is_absent_piece)
-    {
-        String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
-        auto res = zookeeper->tryCreate(current_task_piece_status_path, state_finished, zkutil::CreateMode::Persistent);
-        if (res == Coordination::Error::ZNODEEXISTS)
-            LOG_DEBUG(log, "Partition {} piece {} is absent on current replica of a shard. But other replicas have already marked it as done.", task_partition.name, current_piece_number);
-        if (res == Coordination::Error::ZOK)
-            LOG_DEBUG(log, "Partition {} piece {} is absent on current replica of a shard. Will mark it as done. Other replicas will do the same.", task_partition.name, current_piece_number);
-        return TaskStatus::Finished;
     }
 
     /// Check that destination partition is empty if we are first worker
     /// NOTE: this check is incorrect if pull and push tables have different partition key!
     String clean_start_status;
-    if (!zookeeper->tryGet(partition_piece.getPartitionPieceCleanStartPath(), clean_start_status) || clean_start_status != "ok")
+    if (!zookeeper->tryGet(task_partition.getPartitionCleanStartPath(), clean_start_status) || clean_start_status != "ok")
     {
-        zookeeper->createIfNotExists(partition_piece.getPartitionPieceCleanStartPath(), "");
-        auto checker = zkutil::EphemeralNodeHolder::create(partition_piece.getPartitionPieceCleanStartPath() + "/checker",
-                                                           *zookeeper, host_id);
+        zookeeper->createIfNotExists(task_partition.getPartitionCleanStartPath(), "");
+        auto checker = zkutil::EphemeralNodeHolder::create(task_partition.getPartitionCleanStartPath() + "/checker", *zookeeper, host_id);
         // Maybe we are the first worker
-
-        ASTPtr query_select_ast = get_select_query(split_table_for_current_piece, "count()", /*enable_splitting*/ true);
+        ASTPtr query_select_ast = get_select_query(task_shard.table_split_shard, "count()");
         UInt64 count;
         {
             Context local_context = context;
             // Use pull (i.e. readonly) settings, but fetch data from destination servers
-            local_context.setSettings(task_cluster->settings_pull);
-            local_context.setSetting("skip_unavailable_shards", true);
+            local_context.getSettingsRef() = task_cluster->settings_pull;
+            local_context.getSettingsRef().skip_unavailable_shards = true;
 
-            Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_select_ast, local_context)->execute().getInputStream());
+            Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_select_ast, local_context)->execute().in);
             count = (block) ? block.safeGetByPosition(0).column->getUInt(0) : 0;
         }
 
         if (count != 0)
         {
-            LOG_INFO(log, "Partition {} piece {}is not empty. In contains {} rows.", task_partition.name, current_piece_number, count);
-            Coordination::Stat stat_shards{};
-            zookeeper->get(partition_piece.getPartitionPieceShardsPath(), &stat_shards);
+            Coordination::Stat stat_shards;
+            zookeeper->get(task_partition.getPartitionShardsPath(), &stat_shards);
 
             /// NOTE: partition is still fresh if dirt discovery happens before cleaning
             if (stat_shards.numChildren == 0)
             {
-                LOG_WARNING(log, "There are no workers for partition {} piece {}, but destination table contains {} rows. Partition will be dropped and refilled.", task_partition.name, toString(current_piece_number), count);
+                LOG_WARNING(log, "There are no workers for partition " << task_partition.name
+                                 << ", but destination table contains " << count << " rows"
+                                 << ". Partition will be dropped and refilled.");
 
                 create_is_dirty_node(clean_state_clock);
-                return TaskStatus::Error;
+                return PartitionTaskStatus::Error;
             }
         }
-        zookeeper->set(partition_piece.getPartitionPieceCleanStartPath(), "ok");
+        zookeeper->set(task_partition.getPartitionCleanStartPath(), "ok");
     }
     /// At this point, we need to sync that the destination table is clean
     /// before any actual work
@@ -1323,45 +992,32 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     /// Try start processing, create node about it
     {
         String start_state = TaskStateWithOwner::getData(TaskState::Started, host_id);
-        CleanStateClock new_clean_state_clock(zookeeper, piece_is_dirty_flag_path, piece_is_dirty_cleaned_path);
+        CleanStateClock new_clean_state_clock (zookeeper, is_dirty_flag_path, is_dirt_cleaned_path);
         if (clean_state_clock != new_clean_state_clock)
         {
-            LOG_INFO(log, "Partition {} piece {} clean state changed, cowardly bailing", task_partition.name, toString(current_piece_number));
-            return TaskStatus::Error;
+            LOG_INFO(log, "Partition " << task_partition.name << " clean state changed, cowardly bailing");
+            return PartitionTaskStatus::Error;
         }
         else if (!new_clean_state_clock.is_clean())
         {
-            LOG_INFO(log, "Partition {} piece {} is dirty and will be dropped and refilled", task_partition.name, toString(current_piece_number));
+            LOG_INFO(log, "Partition " << task_partition.name << " is dirty and will be dropped and refilled");
             create_is_dirty_node(new_clean_state_clock);
-            return TaskStatus::Error;
+            return PartitionTaskStatus::Error;
         }
-        zookeeper->create(current_task_piece_status_path, start_state, zkutil::CreateMode::Persistent);
+        zookeeper->create(current_task_status_path, start_state, zkutil::CreateMode::Persistent);
     }
 
     /// Try create table (if not exists) on each shard
     {
-        /// Define push table for current partition piece
-        auto database_and_table_for_current_piece= std::pair<String, String>(
-                task_table.table_push.first,
-                task_table.table_push.second + "_piece_" + toString(current_piece_number));
-
-        auto new_engine_push_ast = task_table.engine_push_ast;
-        if (task_table.isReplicatedTable())
-        {
-            new_engine_push_ast = task_table.rewriteReplicatedCreateQueryToPlain();
-        }
-
-        auto create_query_push_ast = rewriteCreateQueryStorage(
-                task_shard.current_pull_table_create_query,
-                database_and_table_for_current_piece, new_engine_push_ast);
-
+        auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query, task_table.table_push, task_table.engine_push_ast);
         create_query_push_ast->as<ASTCreateQuery &>().if_not_exists = true;
         String query = queryToString(create_query_push_ast);
 
-        LOG_DEBUG(log, "Create destination tables. Query: {}", query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
-        LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}",
-            getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
+        LOG_DEBUG(log, "Create destination tables. Query: " << query);
+        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, create_query_push_ast, &task_cluster->settings_push,
+                                PoolMode::GET_MANY);
+        LOG_DEBUG(log, "Destination tables " << getQuotedTable(task_table.table_push) << " have been created on " << shards
+                                             << " shards of " << task_table.cluster_push->getShardCount());
     }
 
     /// Do the copying
@@ -1374,38 +1030,38 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         }
 
         // Select all fields
-        ASTPtr query_select_ast = get_select_query(task_shard.table_read_shard, "*", /*enable_splitting*/ true, inject_fault ? "1" : "");
+        ASTPtr query_select_ast = get_select_query(task_shard.table_read_shard, "*", inject_fault ? "1" : "");
 
-        LOG_DEBUG(log, "Executing SELECT query and pull from {} : {}", task_shard.getDescription(), queryToString(query_select_ast));
+        LOG_DEBUG(log, "Executing SELECT query and pull from " << task_shard.getDescription()
+                       << " : " << queryToString(query_select_ast));
 
         ASTPtr query_insert_ast;
         {
             String query;
-            query += "INSERT INTO " + getQuotedTable(split_table_for_current_piece) + " VALUES ";
+            query += "INSERT INTO " + getQuotedTable(task_shard.table_split_shard) + " VALUES ";
 
             ParserQuery p_query(query.data() + query.size());
-            const auto & settings = context.getSettingsRef();
-            query_insert_ast = parseQuery(p_query, query, settings.max_query_size, settings.max_parser_depth);
+            query_insert_ast = parseQuery(p_query, query, 0);
 
-            LOG_DEBUG(log, "Executing INSERT query: {}", query);
+            LOG_DEBUG(log, "Executing INSERT query: " << query);
         }
 
         try
         {
-            std::unique_ptr<Context> context_select = std::make_unique<Context>(context);
-            context_select->setSettings(task_cluster->settings_pull);
-
-            std::unique_ptr<Context> context_insert = std::make_unique<Context>(context);
-            context_insert->setSettings(task_cluster->settings_push);
-
             /// Custom INSERT SELECT implementation
+            Context context_select = context;
+            context_select.getSettingsRef() = task_cluster->settings_pull;
+
+            Context context_insert = context;
+            context_insert.getSettingsRef() = task_cluster->settings_push;
+
             BlockInputStreamPtr input;
             BlockOutputStreamPtr output;
             {
-                BlockIO io_select = InterpreterFactory::get(query_select_ast, *context_select)->execute();
-                BlockIO io_insert = InterpreterFactory::get(query_insert_ast, *context_insert)->execute();
+                BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
+                BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
 
-                input = io_select.getInputStream();
+                input = io_select.in;
                 output = io_insert.out;
             }
 
@@ -1422,7 +1078,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                     throw Exception("ZooKeeper session is expired, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
 
                 if (!future_is_dirty_checker.valid())
-                    future_is_dirty_checker = zookeeper->asyncExists(piece_is_dirty_flag_path);
+                    future_is_dirty_checker = zookeeper->asyncExists(is_dirty_flag_path);
 
                 /// check_period_milliseconds should less than average insert time of single block
                 /// Otherwise, the insertion will slow a little bit
@@ -1430,7 +1086,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                 {
                     Coordination::ExistsResponse status = future_is_dirty_checker.get();
 
-                    if (status.error != Coordination::Error::ZNONODE)
+                    if (status.error != Coordination::ZNONODE)
                     {
                         LogicalClock dirt_discovery_epoch (status.stat.mzxid);
                         if (dirt_discovery_epoch == clean_state_clock.discovery_zxid)
@@ -1464,52 +1120,30 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         catch (...)
         {
             tryLogCurrentException(log, "An error occurred during copying, partition will be marked as dirty");
-            create_is_dirty_node(clean_state_clock);
-            return TaskStatus::Error;
+            return PartitionTaskStatus::Error;
         }
-    }
-
-    LOG_INFO(log, "Partition {} piece {} copied. But not moved to original destination table.", task_partition.name, toString(current_piece_number));
-
-
-    /// Try create original table (if not exists) on each shard
-    try
-    {
-        auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query,
-                                                               task_table.table_push, task_table.engine_push_ast);
-        auto & create = create_query_push_ast->as<ASTCreateQuery &>();
-        create.if_not_exists = true;
-        InterpreterCreateQuery::prepareOnClusterQuery(create, context, task_table.cluster_push_name);
-        String query = queryToString(create_query_push_ast);
-
-        LOG_DEBUG(log, "Create destination tables. Query: {}", query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
-        LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}", getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Error while creating original table. Maybe we are not first.");
     }
 
     /// Finalize the processing, change state of current partition task (and also check is_dirty flag)
     {
         String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
-        CleanStateClock new_clean_state_clock (zookeeper, piece_is_dirty_flag_path, piece_is_dirty_cleaned_path);
+        CleanStateClock new_clean_state_clock (zookeeper, is_dirty_flag_path, is_dirt_cleaned_path);
         if (clean_state_clock != new_clean_state_clock)
         {
-            LOG_INFO(log, "Partition {} piece {} clean state changed, cowardly bailing", task_partition.name, toString(current_piece_number));
-            return TaskStatus::Error;
+            LOG_INFO(log, "Partition " << task_partition.name << " clean state changed, cowardly bailing");
+            return PartitionTaskStatus::Error;
         }
         else if (!new_clean_state_clock.is_clean())
         {
-            LOG_INFO(log, "Partition {} piece {} became dirty and will be dropped and refilled", task_partition.name, toString(current_piece_number));
+            LOG_INFO(log, "Partition " << task_partition.name << " became dirty and will be dropped and refilled");
             create_is_dirty_node(new_clean_state_clock);
-            return TaskStatus::Error;
+            return PartitionTaskStatus::Error;
         }
-        zookeeper->set(current_task_piece_status_path, state_finished, 0);
+        zookeeper->set(current_task_status_path, state_finished, 0);
     }
 
-    return TaskStatus::Finished;
+    LOG_INFO(log, "Partition " << task_partition.name << " copied");
+    return PartitionTaskStatus::Finished;
 }
 
 void ClusterCopier::dropAndCreateLocalTable(const ASTPtr & create_ast)
@@ -1532,64 +1166,11 @@ void ClusterCopier::dropLocalTableIfExists(const DatabaseAndTableName & table_na
     interpreter.execute();
 }
 
-
-void ClusterCopier::dropHelpingTables(const TaskTable & task_table)
-{
-    LOG_DEBUG(log, "Removing helping tables");
-    for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
-    {
-        DatabaseAndTableName original_table = task_table.table_push;
-        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
-
-        String query = "DROP TABLE IF EXISTS " + getQuotedTable(helping_table);
-
-        const ClusterPtr & cluster_push = task_table.cluster_push;
-        Settings settings_push = task_cluster->settings_push;
-
-        LOG_DEBUG(log, "Execute distributed DROP TABLE: {}", query);
-        /// We have to drop partition_piece on each replica
-        UInt64 num_nodes = executeQueryOnCluster(
-                cluster_push, query,
-                settings_push,
-                PoolMode::GET_MANY,
-                ClusterExecutionMode::ON_EACH_NODE);
-
-        LOG_DEBUG(log, "DROP TABLE query was successfully executed on {} nodes.", toString(num_nodes));
-    }
-}
-
-
-void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskTable & task_table, const String & partition_name)
-{
-    LOG_DEBUG(log, "Try drop partition partition from all helping tables.");
-    for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
-    {
-        DatabaseAndTableName original_table = task_table.table_push;
-        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
-
-        String query = "ALTER TABLE " + getQuotedTable(helping_table) + " DROP PARTITION " + partition_name;
-
-        const ClusterPtr & cluster_push = task_table.cluster_push;
-        Settings settings_push = task_cluster->settings_push;
-
-        LOG_DEBUG(log, "Execute distributed DROP PARTITION: {}", query);
-        /// We have to drop partition_piece on each replica
-        UInt64 num_nodes = executeQueryOnCluster(
-                cluster_push, query,
-                settings_push,
-                PoolMode::GET_MANY,
-                ClusterExecutionMode::ON_EACH_NODE);
-
-        LOG_DEBUG(log, "DROP PARTITION query was successfully executed on {} nodes.", toString(num_nodes));
-    }
-    LOG_DEBUG(log, "All helping tables dropped partition {}", partition_name);
-}
-
 String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings)
 {
     String query = "SHOW CREATE TABLE " + getQuotedTable(table);
     Block block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(
-            connection, query, InterpreterShowCreateQuery::getSampleBlock(), context, settings));
+        connection, query, InterpreterShowCreateQuery::getSampleBlock(), context, settings));
 
     return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
 }
@@ -1597,20 +1178,17 @@ String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, C
 ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
 {
     /// Fetch and parse (possibly) new definition
-    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull, true);
+    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull);
     String create_query_pull_str = getRemoteCreateTable(
-            task_shard.task_table.table_pull,
-            *connection_entry,
-            &task_cluster->settings_pull);
+        task_shard.task_table.table_pull,
+        *connection_entry,
+        &task_cluster->settings_pull);
 
     ParserCreateQuery parser_create_query;
-    const auto & settings = context.getSettingsRef();
-    return parseQuery(parser_create_query, create_query_pull_str, settings.max_query_size, settings.max_parser_depth);
+    return parseQuery(parser_create_query, create_query_pull_str, 0);
 }
 
-/// If it is implicitly asked to create split Distributed table for certain piece on current shard, we will do it.
-void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeouts,
-        TaskShard & task_shard, bool create_split)
+void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeouts, TaskShard & task_shard, bool create_split)
 {
     TaskTable & task_table = task_shard.task_table;
 
@@ -1622,13 +1200,7 @@ void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeout
     String read_shard_prefix = ".read_shard_" + toString(task_shard.indexInCluster()) + ".";
     String split_shard_prefix = ".split.";
     task_shard.table_read_shard = DatabaseAndTableName(working_database_name, read_shard_prefix + task_table.table_id);
-    task_shard.main_table_split_shard = DatabaseAndTableName(working_database_name, split_shard_prefix + task_table.table_id);
-
-    for (const auto & piece_number : ext::range(0, task_table.number_of_splits))
-    {
-        task_shard.list_of_split_tables_on_shard[piece_number] =
-                DatabaseAndTableName(working_database_name, split_shard_prefix + task_table.table_id + "_piece_" + toString(piece_number));
-    }
+    task_shard.table_split_shard = DatabaseAndTableName(working_database_name, split_shard_prefix + task_table.table_id);
 
     /// Create special cluster with single shard
     String shard_read_cluster_name = read_shard_prefix + task_table.cluster_pull_name;
@@ -1636,35 +1208,16 @@ void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeout
     context.setCluster(shard_read_cluster_name, cluster_pull_current_shard);
 
     auto storage_shard_ast = createASTStorageDistributed(shard_read_cluster_name, task_table.table_pull.first, task_table.table_pull.second);
+    const auto & storage_split_ast = task_table.engine_split_ast;
 
     auto create_query_ast = removeAliasColumnsFromCreateQuery(task_shard.current_pull_table_create_query);
-
     auto create_table_pull_ast = rewriteCreateQueryStorage(create_query_ast, task_shard.table_read_shard, storage_shard_ast);
+    auto create_table_split_ast = rewriteCreateQueryStorage(create_query_ast, task_shard.table_split_shard, storage_split_ast);
+
     dropAndCreateLocalTable(create_table_pull_ast);
 
     if (create_split)
-    {
-        auto create_table_split_piece_ast = rewriteCreateQueryStorage(
-                create_query_ast,
-                task_shard.main_table_split_shard,
-                task_table.main_engine_split_ast);
-
-        dropAndCreateLocalTable(create_table_split_piece_ast);
-
-        /// Create auxiliary split tables for each piece
-        for (const auto & piece_number : ext::range(0, task_table.number_of_splits))
-        {
-            const auto & storage_piece_split_ast = task_table.auxiliary_engine_split_asts[piece_number];
-
-            create_table_split_piece_ast = rewriteCreateQueryStorage(
-                    create_query_ast,
-                    task_shard.list_of_split_tables_on_shard[piece_number],
-                    storage_piece_split_ast);
-
-            dropAndCreateLocalTable(create_table_split_piece_ast);
-        }
-    }
-
+        dropAndCreateLocalTable(create_table_split_ast);
 }
 
 
@@ -1683,14 +1236,13 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
     }
 
     ParserQuery parser_query(query.data() + query.size());
-    const auto & settings = context.getSettingsRef();
-    ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
+    ASTPtr query_ast = parseQuery(parser_query, query, 0);
 
-    LOG_DEBUG(log, "Computing destination partition set, executing query: {}", query);
+    LOG_DEBUG(log, "Computing destination partition set, executing query: " << query);
 
     Context local_context = context;
     local_context.setSettings(task_cluster->settings_pull);
-    Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_ast, local_context)->execute().getInputStream());
+    Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_ast, local_context)->execute().in);
 
     std::set<String> res;
     if (block)
@@ -1706,123 +1258,72 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
         }
     }
 
-    LOG_DEBUG(log, "There are {} destination partitions in shard {}", res.size(), task_shard.getDescription());
+    LOG_DEBUG(log, "There are " << res.size() << " destination partitions in shard " << task_shard.getDescription());
 
     return res;
 }
 
-bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
-        TaskShard & task_shard, const String & partition_quoted_name)
+bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts, TaskShard & task_shard, const String & partition_quoted_name)
 {
     createShardInternalTables(timeouts, task_shard, false);
 
     TaskTable & task_table = task_shard.task_table;
 
     std::string query = "SELECT 1 FROM " + getQuotedTable(task_shard.table_read_shard)
-                        + " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) +
-                        " = (" + partition_quoted_name + " AS partition_key))";
+        + " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + partition_quoted_name + " AS partition_key))";
 
     if (!task_table.where_condition_str.empty())
         query += " AND (" + task_table.where_condition_str + ")";
 
     query += " LIMIT 1";
 
-    LOG_DEBUG(log, "Checking shard {} for partition {} existence, executing query: {}", task_shard.getDescription(), partition_quoted_name, query);
+    LOG_DEBUG(log, "Checking shard " << task_shard.getDescription() << " for partition "
+                   << partition_quoted_name << " existence, executing query: " << query);
 
     ParserQuery parser_query(query.data() + query.size());
-const auto & settings = context.getSettingsRef();
-    ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
+    ASTPtr query_ast = parseQuery(parser_query, query, 0);
 
     Context local_context = context;
     local_context.setSettings(task_cluster->settings_pull);
-    return InterpreterFactory::get(query_ast, local_context)->execute().getInputStream()->read().rows() != 0;
+    return InterpreterFactory::get(query_ast, local_context)->execute().in->read().rows() != 0;
 }
 
-bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTimeouts & timeouts,
-                           TaskShard & task_shard, const String & partition_quoted_name, size_t current_piece_number)
-{
-    createShardInternalTables(timeouts, task_shard, false);
 
-    TaskTable & task_table = task_shard.task_table;
-    const size_t number_of_splits = task_table.number_of_splits;
-    const String & primary_key_comma_separated = task_table.primary_key_comma_separated;
-
-    UNUSED(primary_key_comma_separated);
-
-    std::string query = "SELECT 1 FROM " + getQuotedTable(task_shard.table_read_shard);
-
-    if (experimental_use_sample_offset)
-        query += " SAMPLE 1/" + toString(number_of_splits) + " OFFSET " + toString(current_piece_number) + "/" + toString(number_of_splits);
-
-    query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast)
-                        + " = (" + partition_quoted_name + " AS partition_key))";
-
-    if (!experimental_use_sample_offset)
-        query += " AND (cityHash64(" + primary_key_comma_separated + ") % "
-                 + std::to_string(number_of_splits) + " = " + std::to_string(current_piece_number) + " )";
-
-    if (!task_table.where_condition_str.empty())
-        query += " AND (" + task_table.where_condition_str + ")";
-
-    query += " LIMIT 1";
-
-    LOG_DEBUG(log, "Checking shard {} for partition {} piece {} existence, executing query: {}", task_shard.getDescription(), partition_quoted_name, std::to_string(current_piece_number), query);
-
-    ParserQuery parser_query(query.data() + query.size());
-    const auto & settings = context.getSettingsRef();
-    ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
-
-    Context local_context = context;
-    local_context.setSettings(task_cluster->settings_pull);
-    auto result = InterpreterFactory::get(query_ast, local_context)->execute().getInputStream()->read().rows();
-    if (result != 0)
-        LOG_DEBUG(log, "Partition {} piece number {} is PRESENT on shard {}", partition_quoted_name, std::to_string(current_piece_number), task_shard.getDescription());
-    else
-        LOG_DEBUG(log, "Partition {} piece number {} is ABSENT on shard {}", partition_quoted_name, std::to_string(current_piece_number), task_shard.getDescription());
-    return result != 0;
-}
-
-/** Executes simple query (without output streams, for example DDL queries) on each shard of the cluster
-  * Returns number of shards for which at least one replica executed query successfully
-  */
 UInt64 ClusterCopier::executeQueryOnCluster(
-        const ClusterPtr & cluster,
-        const String & query,
-        const Settings & current_settings,
-        PoolMode pool_mode,
-        ClusterExecutionMode execution_mode,
-        UInt64 max_successful_executions_per_shard) const
+    const ClusterPtr & cluster,
+    const String & query,
+    const ASTPtr & query_ast_,
+    const Settings * settings,
+    PoolMode pool_mode,
+    UInt64 max_successful_executions_per_shard) const
 {
     auto num_shards = cluster->getShardsInfo().size();
     std::vector<UInt64> per_shard_num_successful_replicas(num_shards, 0);
 
-    ParserQuery p_query(query.data() + query.size());
-    ASTPtr query_ast = parseQuery(p_query, query, current_settings.max_query_size, current_settings.max_parser_depth);
+    ASTPtr query_ast;
+    if (query_ast_ == nullptr)
+    {
+        ParserQuery p_query(query.data() + query.size());
+        query_ast = parseQuery(p_query, query, 0);
+    }
+    else
+        query_ast = query_ast_;
 
-    /// We will have to execute query on each replica of a shard.
-    if (execution_mode == ClusterExecutionMode::ON_EACH_NODE)
-        max_successful_executions_per_shard = 0;
-
-    std::atomic<size_t> origin_replicas_number;
 
     /// We need to execute query on one replica at least
-    auto do_for_shard = [&] (UInt64 shard_index, Settings shard_settings)
+    auto do_for_shard = [&] (UInt64 shard_index)
     {
-        setThreadName("QueryForShard");
-
         const Cluster::ShardInfo & shard = cluster->getShardsInfo().at(shard_index);
         UInt64 & num_successful_executions = per_shard_num_successful_replicas.at(shard_index);
         num_successful_executions = 0;
 
-        auto increment_and_check_exit = [&] () -> bool
+        auto increment_and_check_exit = [&] ()
         {
             ++num_successful_executions;
             return max_successful_executions_per_shard && num_successful_executions >= max_successful_executions_per_shard;
         };
 
         UInt64 num_replicas = cluster->getShardsAddresses().at(shard_index).size();
-
-        origin_replicas_number += num_replicas;
         UInt64 num_local_replicas = shard.getLocalNodeCount();
         UInt64 num_remote_replicas = num_replicas - num_local_replicas;
 
@@ -1839,10 +1340,11 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         /// Will try to make as many as possible queries
         if (shard.hasRemoteConnections())
         {
-            shard_settings.max_parallel_replicas = num_remote_replicas ? num_remote_replicas : 1;
+            Settings current_settings = settings ? *settings : task_cluster->settings_common;
+            current_settings.max_parallel_replicas = num_remote_replicas ? num_remote_replicas : 1;
 
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(shard_settings).getSaturated(shard_settings.max_execution_time);
-            auto connections = shard.pool->getMany(timeouts, &shard_settings, pool_mode);
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
+            auto connections = shard.pool->getMany(timeouts, &current_settings, pool_mode);
 
             for (auto & connection : connections)
             {
@@ -1852,7 +1354,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
                 try
                 {
                     /// CREATE TABLE and DROP PARTITION queries return empty block
-                    RemoteBlockInputStream stream{*connection, query, Block{}, context, &shard_settings};
+                    RemoteBlockInputStream stream{*connection, query, Block{}, context, &current_settings};
                     NullBlockOutputStream output{Block{}};
                     copyData(stream, output);
 
@@ -1871,27 +1373,16 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         ThreadPool thread_pool(std::min<UInt64>(num_shards, getNumberOfPhysicalCPUCores()));
 
         for (UInt64 shard_index = 0; shard_index < num_shards; ++shard_index)
-            thread_pool.scheduleOrThrowOnError([=, shard_settings = current_settings] { do_for_shard(shard_index, std::move(shard_settings)); });
+            thread_pool.scheduleOrThrowOnError([=] { do_for_shard(shard_index); });
 
         thread_pool.wait();
     }
 
-    UInt64 successful_nodes = 0;
+    UInt64 successful_shards = 0;
     for (UInt64 num_replicas : per_shard_num_successful_replicas)
-    {
-        if (execution_mode == ClusterExecutionMode::ON_EACH_NODE)
-            successful_nodes += num_replicas;
-        else
-            /// Count only successful shards
-            successful_nodes += (num_replicas > 0);
-    }
+        successful_shards += (num_replicas > 0);
 
-    if (execution_mode == ClusterExecutionMode::ON_EACH_NODE && successful_nodes != origin_replicas_number)
-    {
-        LOG_INFO(log, "There was an error while executing ALTER on each node. Query was executed on {} nodes. But had to be executed on {}", toString(successful_nodes), toString(origin_replicas_number.load()));
-    }
-
-    return successful_nodes;
+    return successful_shards;
 }
 
 }

@@ -18,12 +18,10 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
 }
 
-StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription & columns_)
-    : IStorage(table_id)
+StorageInput::StorageInput(const String & table_name_, const ColumnsDescription & columns_)
+    : IStorage({"", table_name_})
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(columns_);
 }
 
 
@@ -58,9 +56,7 @@ void StorageInput::setInputStream(BlockInputStreamPtr input_stream_)
 }
 
 
-Pipe StorageInput::read(
-    const Names & /*column_names*/,
-    const StorageMetadataPtr & metadata_snapshot,
+Pipes StorageInput::read(const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -74,13 +70,15 @@ Pipe StorageInput::read(
     {
         /// Send structure to the client.
         query_context.initializeInput(shared_from_this());
-        return Pipe(std::make_shared<StorageInputSource>(query_context, metadata_snapshot->getSampleBlock()));
+        pipes.emplace_back(std::make_shared<StorageInputSource>(query_context, getSampleBlock()));
+        return pipes;
     }
 
     if (!input_stream)
         throw Exception("Input stream is not initialized, input() must be used only in INSERT SELECT query", ErrorCodes::INVALID_USAGE_OF_INPUT);
 
-    return Pipe(std::make_shared<SourceFromInputStream>(input_stream));
+    pipes.emplace_back(std::make_shared<SourceFromInputStream>(input_stream));
+    return pipes;
 }
 
 }

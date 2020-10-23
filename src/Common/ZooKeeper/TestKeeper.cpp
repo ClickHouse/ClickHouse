@@ -1,11 +1,10 @@
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 #include <sstream>
 #include <iomanip>
-#include <functional>
 
 
 namespace Coordination
@@ -26,14 +25,11 @@ static String baseName(const String & path)
 }
 
 
-using Undo = std::function<void()>;
-
-
 struct TestKeeperRequest : virtual Request
 {
     virtual bool isMutable() const { return false; }
     virtual ResponsePtr createResponse() const = 0;
-    virtual std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const = 0;
+    virtual ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const = 0;
     virtual void processWatches(TestKeeper::Watches & /*watches*/, TestKeeper::Watches & /*list_watches*/) const {}
 };
 
@@ -71,9 +67,9 @@ static void processWatchesImpl(const String & path, TestKeeper::Watches & watche
 struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 {
     TestKeeperCreateRequest() = default;
-    explicit TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
+    TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
     ResponsePtr createResponse() const override;
-    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+    ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
     {
@@ -84,10 +80,10 @@ struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 {
     TestKeeperRemoveRequest() = default;
-    explicit TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
+    TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
     bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
-    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+    ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
     {
@@ -98,23 +94,23 @@ struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 struct TestKeeperExistsRequest final : ExistsRequest, TestKeeperRequest
 {
     ResponsePtr createResponse() const override;
-    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+    ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 {
     TestKeeperGetRequest() = default;
     ResponsePtr createResponse() const override;
-    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+    ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 {
     TestKeeperSetRequest() = default;
-    explicit TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
+    TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
     bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
-    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+    ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
     {
@@ -125,20 +121,20 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 struct TestKeeperListRequest final : ListRequest, TestKeeperRequest
 {
     ResponsePtr createResponse() const override;
-    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+    ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
 {
     TestKeeperCheckRequest() = default;
-    explicit TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
+    TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
     ResponsePtr createResponse() const override;
-    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+    ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
-    explicit TestKeeperMultiRequest(const Requests & generic_requests)
+    TestKeeperMultiRequest(const Requests & generic_requests)
     {
         requests.reserve(generic_requests.size());
 
@@ -162,7 +158,7 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }
             else
-                throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
+                throw Exception("Illegal command as part of multi ZooKeeper request", ZBADARGUMENTS);
         }
     }
 
@@ -173,15 +169,13 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
     }
 
     ResponsePtr createResponse() const override;
-    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+    ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 
-std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Container & container, int64_t zxid) const
+ResponsePtr TestKeeperCreateRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     CreateResponse response;
-    Undo undo;
-
     if (container.count(path))
     {
         response.error = Error::ZNODEEXISTS;
@@ -225,18 +219,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             }
 
             response.path_created = path_created;
-            container.emplace(path_created, std::move(created_node));
-
-            undo = [&container, path_created, is_sequential = is_sequential, parent_path = it->first]
-            {
-                container.erase(path_created);
-                auto & undo_parent = container.at(parent_path);
-                --undo_parent.stat.cversion;
-                --undo_parent.stat.numChildren;
-
-                if (is_sequential)
-                    --undo_parent.seq_num;
-            };
+            container.emplace(std::move(path_created), std::move(created_node));
 
             ++it->second.stat.cversion;
             ++it->second.stat.numChildren;
@@ -245,13 +228,12 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
         }
     }
 
-    return { std::make_shared<CreateResponse>(response), undo };
+    return std::make_shared<CreateResponse>(response);
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Container & container, int64_t) const
+ResponsePtr TestKeeperRemoveRequest::process(TestKeeper::Container & container, int64_t) const
 {
     RemoveResponse response;
-    Undo undo;
 
     auto it = container.find(path);
     if (it == container.end())
@@ -268,26 +250,17 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Contai
     }
     else
     {
-        auto prev_node = it->second;
         container.erase(it);
         auto & parent = container.at(parentPath(path));
         --parent.stat.numChildren;
         ++parent.stat.cversion;
         response.error = Error::ZOK;
-
-        undo = [prev_node, &container, path = path]
-        {
-            container.emplace(path, prev_node);
-            auto & undo_parent = container.at(parentPath(path));
-            ++undo_parent.stat.numChildren;
-            --undo_parent.stat.cversion;
-        };
     }
 
-    return { std::make_shared<RemoveResponse>(response), undo };
+    return std::make_shared<RemoveResponse>(response);
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperExistsRequest::process(TestKeeper::Container & container, int64_t) const
+ResponsePtr TestKeeperExistsRequest::process(TestKeeper::Container & container, int64_t) const
 {
     ExistsResponse response;
 
@@ -302,10 +275,10 @@ std::pair<ResponsePtr, Undo> TestKeeperExistsRequest::process(TestKeeper::Contai
         response.error = Error::ZNONODE;
     }
 
-    return { std::make_shared<ExistsResponse>(response), {} };
+    return std::make_shared<ExistsResponse>(response);
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container & container, int64_t) const
+ResponsePtr TestKeeperGetRequest::process(TestKeeper::Container & container, int64_t) const
 {
     GetResponse response;
 
@@ -321,13 +294,12 @@ std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container
         response.error = Error::ZOK;
     }
 
-    return { std::make_shared<GetResponse>(response), {} };
+    return std::make_shared<GetResponse>(response);
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container & container, int64_t zxid) const
+ResponsePtr TestKeeperSetRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     SetResponse response;
-    Undo undo;
 
     auto it = container.find(path);
     if (it == container.end())
@@ -336,8 +308,6 @@ std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container
     }
     else if (version == -1 || version == it->second.stat.version)
     {
-        auto prev_node = it->second;
-
         it->second.data = data;
         ++it->second.stat.version;
         it->second.stat.mzxid = zxid;
@@ -346,22 +316,16 @@ std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container
         ++container.at(parentPath(path)).stat.cversion;
         response.stat = it->second.stat;
         response.error = Error::ZOK;
-
-        undo = [prev_node, &container, path = path]
-        {
-            container.at(path) = prev_node;
-            --container.at(parentPath(path)).stat.cversion;
-        };
     }
     else
     {
         response.error = Error::ZBADVERSION;
     }
 
-    return { std::make_shared<SetResponse>(response), undo };
+    return std::make_shared<SetResponse>(response);
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Container & container, int64_t) const
+ResponsePtr TestKeeperListRequest::process(TestKeeper::Container & container, int64_t) const
 {
     ListResponse response;
 
@@ -374,28 +338,24 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
     {
         auto path_prefix = path;
         if (path_prefix.empty())
-            throw Exception("Logical error: path cannot be empty", Error::ZSESSIONEXPIRED);
+            throw Exception("Logical error: path cannot be empty", ZSESSIONEXPIRED);
 
         if (path_prefix.back() != '/')
             path_prefix += '/';
 
         /// Fairly inefficient.
-        for (auto child_it = container.upper_bound(path_prefix);
-             child_it != container.end() && startsWith(child_it->first, path_prefix);
-            ++child_it)
-        {
+        for (auto child_it = container.upper_bound(path_prefix); child_it != container.end() && startsWith(child_it->first, path_prefix); ++child_it)
             if (parentPath(child_it->first) == path)
                 response.names.emplace_back(baseName(child_it->first));
-        }
 
         response.stat = it->second.stat;
         response.error = Error::ZOK;
     }
 
-    return { std::make_shared<ListResponse>(response), {} };
+    return std::make_shared<ListResponse>(response);
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Container & container, int64_t) const
+ResponsePtr TestKeeperCheckRequest::process(TestKeeper::Container & container, int64_t) const
 {
     CheckResponse response;
     auto it = container.find(path);
@@ -412,44 +372,38 @@ std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Contain
         response.error = Error::ZOK;
     }
 
-    return { std::make_shared<CheckResponse>(response), {} };
+    return std::make_shared<CheckResponse>(response);
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
+ResponsePtr TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     MultiResponse response;
     response.responses.reserve(requests.size());
-    std::vector<Undo> undo_actions;
+
+    /// Fairly inefficient.
+    auto container_copy = container;
 
     try
     {
         for (const auto & request : requests)
         {
             const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(*request);
-            auto [ cur_response, undo_action ] = concrete_request.process(container, zxid);
+            auto cur_response = concrete_request.process(container, zxid);
             response.responses.emplace_back(cur_response);
             if (cur_response->error != Error::ZOK)
             {
                 response.error = cur_response->error;
-
-                for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
-                    if (*it)
-                        (*it)();
-
-                return { std::make_shared<MultiResponse>(response), {} };
+                container = container_copy;
+                return std::make_shared<MultiResponse>(response);
             }
-            else
-                undo_actions.emplace_back(std::move(undo_action));
         }
 
         response.error = Error::ZOK;
-        return { std::make_shared<MultiResponse>(response), {} };
+        return std::make_shared<MultiResponse>(response);
     }
     catch (...)
     {
-        for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
-            if (*it)
-                (*it)();
+        container = container_copy;
         throw;
     }
 }
@@ -522,7 +476,7 @@ void TestKeeper::processingThread()
                 ++zxid;
 
                 info.request->addRootPath(root_path);
-                auto [response, _] = info.request->process(container, zxid);
+                ResponsePtr response = info.request->process(container, zxid);
                 if (response->error == Error::ZOK)
                     info.request->processWatches(watches, list_watches);
 
@@ -560,7 +514,7 @@ void TestKeeper::finalize()
                 WatchResponse response;
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
-                response.error = Error::ZSESSIONEXPIRED;
+                response.error = ZSESSIONEXPIRED;
 
                 for (auto & callback : path_watch.second)
                 {
@@ -587,7 +541,7 @@ void TestKeeper::finalize()
             if (info.callback)
             {
                 ResponsePtr response = info.request->createResponse();
-                response->error = Error::ZSESSIONEXPIRED;
+                response->error = ZSESSIONEXPIRED;
                 try
                 {
                     info.callback(*response);
@@ -602,7 +556,7 @@ void TestKeeper::finalize()
                 WatchResponse response;
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
-                response.error = Error::ZSESSIONEXPIRED;
+                response.error = ZSESSIONEXPIRED;
                 try
                 {
                     info.watch(response);
@@ -633,10 +587,10 @@ void TestKeeper::pushRequest(RequestInfo && request)
         std::lock_guard lock(push_request_mutex);
 
         if (expired)
-            throw Exception("Session expired", Error::ZSESSIONEXPIRED);
+            throw Exception("Session expired", ZSESSIONEXPIRED);
 
         if (!requests_queue.tryPush(std::move(request), operation_timeout.totalMilliseconds()))
-            throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
+            throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
     }
     catch (...)
     {

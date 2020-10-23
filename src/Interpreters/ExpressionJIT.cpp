@@ -107,9 +107,9 @@ static ColumnData getColumnData(const IColumn * column)
 static void applyFunction(IFunctionBase & function, Field & value)
 {
     const auto & type = function.getArgumentTypes().at(0);
-    ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
-    auto col = function.execute(args, function.getResultType(), 1);
-    col->get(0, value);
+    Block block = {{ type->createColumnConst(1, value), type, "x" }, { nullptr, function.getReturnType(), "y" }};
+    function.execute(block, {0}, 1, 1);
+    block.safeGetByPosition(1).column->get(0, value);
 }
 
 static llvm::TargetMachine * getNativeMachine()
@@ -117,7 +117,7 @@ static llvm::TargetMachine * getNativeMachine()
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
     auto triple = llvm::sys::getProcessTriple();
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
+    const auto *target = llvm::TargetRegistry::lookupTarget(triple, error);
     if (!target)
         throw Exception("Could not initialize native target: " + error, ErrorCodes::CANNOT_COMPILE_CODE);
     llvm::SubtargetFeatures features;
@@ -137,7 +137,7 @@ struct SymbolResolver : public llvm::orc::SymbolResolver
 {
     llvm::LegacyJITSymbolResolver & impl;
 
-    explicit SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
+    SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
 
     llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final
     {
@@ -275,9 +275,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t block_size) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
     {
-        auto col_res = result_type->createColumn();
+        auto col_res = block.getByPosition(result).type->createColumn();
 
         if (block_size)
         {
@@ -290,16 +290,16 @@ public:
             std::vector<ColumnData> columns(arguments.size() + 1);
             for (size_t i = 0; i < arguments.size(); ++i)
             {
-                const auto * column = arguments[i].column.get();
+                const auto * column = block.getByPosition(arguments[i]).column.get();
                 if (!column)
-                    throw Exception("Column " + arguments[i].name + " is missing", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
                 columns[i] = getColumnData(column);
             }
             columns[arguments.size()] = getColumnData(col_res.get());
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
         }
 
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -313,7 +313,7 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
     auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy(), size_type);
     auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
     auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, f.getName(), context.module.get());
-    auto * args = func->args().begin();
+    auto *args = func->args().begin();
     llvm::Value * counter_arg = &*args++;
     llvm::Value * columns_arg = &*args++;
 
@@ -322,7 +322,7 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
     std::vector<ColumnDataPlaceholder> columns(arg_types.size() + 1);
     for (size_t i = 0; i <= arg_types.size(); ++i)
     {
-        const auto & type = i == arg_types.size() ? f.getResultType() : arg_types[i];
+        const auto & type = i == arg_types.size() ? f.getReturnType() : arg_types[i];
         auto * data = b.CreateLoad(b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
         columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(type))->getPointerTo());
         columns[i].null_init = type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
@@ -428,7 +428,7 @@ static CompilableExpression subexpression(const IFunctionBase & f, std::vector<C
         for (const auto & arg : args)
             input.push_back([&]() { return arg(builder, inputs); });
         auto * result = f.compile(builder, input);
-        if (result->getType() != toNativeType(builder, f.getResultType()))
+        if (result->getType() != toNativeType(builder, f.getReturnType()))
             throw Exception("Function " + f.getName() + " generated an llvm::Value of invalid type", ErrorCodes::LOGICAL_ERROR);
         return result;
     };
@@ -441,7 +441,7 @@ struct LLVMModuleState
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
 };
 
-LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, const DB::Block & sample_block)
+LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, const Block & sample_block)
     : name(actions.back().result_name)
     , module_state(std::make_unique<LLVMModuleState>())
 {
@@ -484,7 +484,7 @@ llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlacehol
     return it->second(builder, values);
 }
 
-ExecutableFunctionImplPtr LLVMFunction::prepare(const ColumnsWithTypeAndName &) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
+ExecutableFunctionImplPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
 
 bool LLVMFunction::isDeterministic() const
 {
@@ -510,7 +510,7 @@ bool LLVMFunction::isSuitableForConstantFolding() const
     return true;
 }
 
-bool LLVMFunction::isInjective(const ColumnsWithTypeAndName & sample_block) const
+bool LLVMFunction::isInjective(const Block & sample_block)
 {
     for (const auto & f : originals)
         if (!f->isInjective(sample_block))
@@ -528,27 +528,27 @@ bool LLVMFunction::hasInformationAboutMonotonicity() const
 
 LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
 {
-    const IDataType * type_ptr = &type;
-    Field left_mut = left;
-    Field right_mut = right;
+    const IDataType * type_ = &type;
+    Field left_ = left;
+    Field right_ = right;
     Monotonicity result(true, true, true);
     /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
     for (size_t i = 0; i < originals.size(); ++i)
     {
-        Monotonicity m = originals[i]->getMonotonicityForRange(*type_ptr, left_mut, right_mut);
+        Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
         if (!m.is_monotonic)
             return m;
         result.is_positive ^= !m.is_positive;
         result.is_always_monotonic &= m.is_always_monotonic;
         if (i + 1 < originals.size())
         {
-            if (left_mut != Field())
-                applyFunction(*originals[i], left_mut);
-            if (right_mut != Field())
-                applyFunction(*originals[i], right_mut);
+            if (left_ != Field())
+                applyFunction(*originals[i], left_);
+            if (right_ != Field())
+                applyFunction(*originals[i], right_);
             if (!m.is_positive)
-                std::swap(left_mut, right_mut);
-            type_ptr = originals[i]->getResultType().get();
+                std::swap(left_, right_);
+            type_ = originals[i]->getReturnType().get();
         }
     }
     return result;
@@ -557,7 +557,7 @@ LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType
 
 static bool isCompilable(const IFunctionBase & function)
 {
-    if (!canBeNativeType(*function.getResultType()))
+    if (!canBeNativeType(*function.getReturnType()))
         return false;
     for (const auto & type : function.getArgumentTypes())
         if (!canBeNativeType(*type))
@@ -599,6 +599,7 @@ static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependen
             case ExpressionAction::ADD_COLUMN:
             case ExpressionAction::COPY_COLUMN:
             case ExpressionAction::ARRAY_JOIN:
+            case ExpressionAction::JOIN:
             {
                 Names columns = actions[i].getNeededColumns();
                 for (const auto & column : columns)
@@ -701,7 +702,7 @@ void compileFunctions(
     for (auto & action : actions)
     {
         if (action.type == ExpressionAction::APPLY_FUNCTION && action.is_function_compiled)
-            action.function = action.function_base->prepare({}); /// Arguments are not used for LLVMFunction.
+            action.function = action.function_base->prepare({}, {}, 0); /// Arguments are not used for LLVMFunction.
     }
 }
 

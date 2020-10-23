@@ -29,10 +29,10 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     }
 
     /// Output if has data.
-    if (has_output)
+    if (transformed)
     {
-        output.pushData(std::move(output_data));
-        has_output = false;
+        output.pushData(std::move(current_data));
+        transformed = false;
 
         if (!no_more_data_needed)
             return Status::PortFull;
@@ -56,16 +56,26 @@ ISimpleTransform::Status ISimpleTransform::prepare()
             return Status::Finished;
         }
 
-        input.setNeeded();
-
         if (!input.hasData())
+        {
+            input.setNeeded();
             return Status::NeedData;
+        }
 
-        input_data = input.pullData(set_input_not_needed_after_read);
+        current_data = input.pullData(true);
         has_input = true;
 
-        if (input_data.exception)
+        if (current_data.exception)
+        {
+            /// Skip transform in case of exception.
+            has_input = false;
+            transformed = true;
+
             /// No more data needed. Exception will be thrown (or swallowed) later.
+            input.setNotNeeded();
+        }
+
+        if (set_input_not_needed_after_read)
             input.setNotNeeded();
     }
 
@@ -75,35 +85,29 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 
 void ISimpleTransform::work()
 {
-    if (input_data.exception)
-    {
-        /// Skip transform in case of exception.
-        output_data = std::move(input_data);
-        has_input = false;
-        has_output = true;
+    if (current_data.exception)
         return;
-    }
 
     try
     {
-        transform(input_data.chunk, output_data.chunk);
+        transform(current_data.chunk);
     }
     catch (DB::Exception &)
     {
-        output_data.exception = std::current_exception();
-        has_output = true;
+        current_data.exception = std::current_exception();
+        transformed = true;
         has_input = false;
         return;
     }
 
     has_input = !needInputData();
 
-    if (!skip_empty_chunks || output_data.chunk)
-        has_output = true;
+    if (!skip_empty_chunks || current_data.chunk)
+        transformed = true;
 
-    if (has_output && !output_data.chunk && getOutputPort().getHeader())
+    if (transformed && !current_data.chunk)
         /// Support invariant that chunks must have the same number of columns as header.
-        output_data.chunk = Chunk(getOutputPort().getHeader().cloneEmpty().getColumns(), 0);
+        current_data.chunk = Chunk(getOutputPort().getHeader().cloneEmpty().getColumns(), 0);
 }
 
 }

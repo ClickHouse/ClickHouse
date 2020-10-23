@@ -6,13 +6,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
 
 /** Reverse the sequence of code points in a UTF-8 encoded string.
   * The result may not match the expected result, because modifying code points (for example, diacritics) may be applied to another symbols.
@@ -62,7 +61,7 @@ struct ReverseUTF8Impl
         }
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception("Cannot apply function reverseUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -73,8 +72,6 @@ struct NameReverseUTF8
     static constexpr auto name = "reverseUTF8";
 };
 using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl, NameReverseUTF8, true>;
-
-}
 
 void registerFunctionReverseUTF8(FunctionFactory & factory)
 {

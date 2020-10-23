@@ -11,27 +11,19 @@ class ASTSubquery;
 struct ASTTableExpression;
 struct ASTArrayJoin;
 
-struct QueryAliasesWithSubqueries
-{
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
-};
-
-struct QueryAliasesNoSubqueries
-{
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
-};
-
 /// Visits AST node to collect aliases.
-template <typename Helper>
 class QueryAliasesMatcher
 {
 public:
     using Visitor = ConstInDepthNodeVisitor<QueryAliasesMatcher, false>;
 
-    using Data = Aliases;
+    struct Data
+    {
+        Aliases & aliases;
+    };
 
     static void visit(const ASTPtr & ast, Data & data);
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child) { return Helper::needChildVisit(node, child); }
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 
 private:
     static void visit(const ASTSelectQuery & select, const ASTPtr & ast, Data & data);
@@ -41,7 +33,6 @@ private:
 };
 
 /// Visits AST nodes and collect their aliases in one map (with links to source nodes).
-using QueryAliasesVisitor = QueryAliasesMatcher<QueryAliasesWithSubqueries>::Visitor;
-using QueryAliasesNoSubqueriesVisitor = QueryAliasesMatcher<QueryAliasesNoSubqueries>::Visitor;
+using QueryAliasesVisitor = QueryAliasesMatcher::Visitor;
 
 }

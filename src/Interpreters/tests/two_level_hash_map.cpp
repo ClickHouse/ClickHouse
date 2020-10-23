@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <AggregateFunctions/UniquesHashSet.h>
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
@@ -31,7 +31,7 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = std::stol(argv[1]);
+    size_t n = atoi(argv[1]);
 
     std::vector<Key> data(n);
 

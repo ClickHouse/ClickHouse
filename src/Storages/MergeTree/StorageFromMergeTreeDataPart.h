@@ -6,51 +6,65 @@
 #include <Core/Defines.h>
 
 #include <ext/shared_ptr_helper.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromMergeTreeDataPart final : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
+class StorageFromMergeTreeDataPart : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageFromMergeTreeDataPart>;
 public:
     String getName() const override { return "FromMergeTreeDataPart"; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams) override
     {
-        return MergeTreeDataSelectExecutor(part->storage)
-            .readFromParts({part}, column_names, metadata_snapshot, query_info, context, max_block_size, num_streams);
+        return MergeTreeDataSelectExecutor(part->storage).readFromParts(
+                {part}, column_names, query_info, context, max_block_size, num_streams);
     }
 
 
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(
-        const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
     {
-        return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
+        return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
-    NamesAndTypesList getVirtuals() const override
+    bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
+    bool hasRowsTTL() const override { return part->storage.hasRowsTTL(); }
+
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
     {
-        return part->storage.getVirtuals();
+        return part->storage.getColumnDependencies(updated_columns);
     }
+
+    StorageInMemoryMetadata getInMemoryMetadata() const override
+    {
+        return part->storage.getInMemoryMetadata();
+    }
+
+
+    bool hasSortingKey() const { return part->storage.hasSortingKey(); }
+
+    Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
+
 
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(getIDFromPart(part_))
+        : IStorage(getIDFromPart(part_), part_->storage.getVirtuals())
         , part(part_)
     {
-        setInMemoryMetadata(part_->storage.getInMemoryMetadata());
+        setColumns(part_->storage.getColumns());
+        setIndices(part_->storage.getIndices());
     }
 
 private:

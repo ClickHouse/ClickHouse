@@ -4,7 +4,6 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -13,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int SYNTAX_ERROR;
 }
 
 
@@ -108,30 +106,15 @@ void ASTIdentifier::resetTable(const String & database_name, const String & tabl
     auto & ident = ast->as<ASTIdentifier &>();
     name.swap(ident.name);
     name_parts.swap(ident.name_parts);
-    uuid = ident.uuid;
-}
-
-void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(uuid);
-    IAST::updateTreeHashImpl(hash_state);
 }
 
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name)
 {
-    assert(database_name != "_temporary_and_external_tables");
-    return createTableIdentifier(StorageID(database_name, table_name));
-}
+    if (database_name.empty())
+        return ASTIdentifier::createSpecial(table_name);
 
-ASTPtr createTableIdentifier(const StorageID & table_id)
-{
-    std::shared_ptr<ASTIdentifier> res;
-    if (table_id.database_name.empty())
-        res = ASTIdentifier::createSpecial(table_id.table_name);
-    else
-        res = ASTIdentifier::createSpecial(table_id.database_name + "." + table_id.table_name, {table_id.database_name, table_id.table_name});
-    res->uuid = table_id.uuid;
-    return res;
+    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name, {database_name, table_name});
+    return database_and_table;
 }
 
 String getIdentifierName(const IAST * ast)
@@ -168,19 +151,6 @@ void setIdentifierSpecial(ASTPtr & ast)
     if (ast)
         if (auto * id = ast->as<ASTIdentifier>())
             id->semantic->special = true;
-}
-
-StorageID getTableIdentifier(const ASTPtr & ast)
-{
-    if (!ast)
-        throw Exception("AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
-    const auto & identifier = dynamic_cast<const ASTIdentifier &>(*ast);
-    if (identifier.name_parts.size() > 2)
-        throw Exception("Logical error: more than two components in table expression", ErrorCodes::SYNTAX_ERROR);
-
-    if (identifier.name_parts.size() == 2)
-        return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
-    return { "", identifier.name, identifier.uuid };
 }
 
 }

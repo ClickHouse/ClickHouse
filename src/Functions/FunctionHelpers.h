@@ -24,12 +24,6 @@ const Type * checkAndGetDataType(const IDataType * data_type)
     return typeid_cast<const Type *>(data_type);
 }
 
-template <typename... Types>
-bool checkDataTypes(const IDataType * data_type)
-{
-    return (... || typeid_cast<const Types *>(data_type));
-}
-
 template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
@@ -82,9 +76,13 @@ inline std::enable_if_t<IsDecimalNumber<T>, Field> toField(const T & x, UInt32 s
 Columns convertConstTupleToConstantElements(const ColumnConst & column);
 
 
-/// Returns the copy of a given columns in which each column is replaced with its respective nested
+/// Returns the copy of a given block in which each column specified in
+/// the "arguments" parameter is replaced with its respective nested
 /// column if it is nullable.
-ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns);
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args);
+
+/// Similar function as above. Additionally transform the result type if needed.
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result);
 
 /// Checks argument type at specified index with predicate.
 /// throws if there is no argument at specified index or if predicate returns false.

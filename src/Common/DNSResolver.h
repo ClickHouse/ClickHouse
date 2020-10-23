@@ -2,10 +2,9 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 #include <memory>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
-#include <common/logger_useful.h>
 
 
 namespace DB
@@ -17,25 +16,17 @@ namespace DB
 class DNSResolver : private boost::noncopyable
 {
 public:
-    typedef std::vector<Poco::Net::IPAddress> IPAddresses;
-
     static DNSResolver & instance();
 
     DNSResolver(const DNSResolver &) = delete;
 
-    /// Accepts host names like 'example.com' or '127.0.0.1' or '::1' and resolves its IP
+    /// Accepts host names like 'example.com' or '127.0.0.1' or '::1' and resolve its IP
     Poco::Net::IPAddress resolveHost(const std::string & host);
 
-    /// Accepts host names like 'example.com' or '127.0.0.1' or '::1' and resolves all its IPs
-    IPAddresses resolveHostAll(const std::string & host);
-
-    /// Accepts host names like 'example.com:port' or '127.0.0.1:port' or '[::1]:port' and resolves its IP and port
+    /// Accepts host names like 'example.com:port' or '127.0.0.1:port' or '[::1]:port' and resolve its IP and port
     Poco::Net::SocketAddress resolveAddress(const std::string & host_and_port);
 
     Poco::Net::SocketAddress resolveAddress(const std::string & host, UInt16 port);
-
-    /// Accepts host IP and resolves its host name
-    String reverseResolve(const Poco::Net::IPAddress & address);
 
     /// Get this server host name
     String getHostName();
@@ -53,21 +44,16 @@ public:
     ~DNSResolver();
 
 private:
-    template<typename UpdateF, typename ElemsT>
-    bool updateCacheImpl(UpdateF && update_func, ElemsT && elems, const String & log_msg);
 
     DNSResolver();
 
     struct Impl;
     std::unique_ptr<Impl> impl;
-    Poco::Logger * log;
 
-    /// Updates cached value and returns true it has been changed.
+    /// Returns true if IP of host has been changed.
     bool updateHost(const String & host);
-    bool updateAddress(const Poco::Net::IPAddress & address);
 
     void addToNewHosts(const String & host);
-    void addToNewAddresses(const Poco::Net::IPAddress & address);
 };
 
 }

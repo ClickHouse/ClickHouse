@@ -2,10 +2,9 @@
 
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
-#include <Storages/MergeTree/MergeType.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -33,8 +32,8 @@ struct ReplicatedMergeTreeLogEntryData
         GET_PART,       /// Get the part from another replica.
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
-        CLEAR_COLUMN,   /// NOTE: Deprecated. Drop specific column from specified partition.
-        CLEAR_INDEX,    /// NOTE: Deprecated. Drop specific index from specified partition.
+        CLEAR_COLUMN,   /// Drop specific column from specified partition.
+        CLEAR_INDEX,    /// Drop specific index from specified partition.
         REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
         MUTATE_PART,    /// Apply one or several mutations to the part.
         ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
@@ -80,9 +79,12 @@ struct ReplicatedMergeTreeLogEntryData
 
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
-    MergeType merge_type = MergeType::REGULAR;
     String column_name;
     String index_name;
+
+    /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
+    /// without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
+    bool force_ttl = false;
 
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;

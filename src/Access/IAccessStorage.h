@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/UUID.h>
 #include <ext/scope_guard.h>
 #include <functional>
@@ -11,13 +11,9 @@
 
 
 namespace Poco { class Logger; }
-namespace Poco::Net { class IPAddress; }
 
 namespace DB
 {
-struct User;
-class ExternalAuthenticators;
-
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
 /// The implementations of this class MUST be thread-safe.
 class IAccessStorage
@@ -28,58 +24,51 @@ public:
 
     /// Returns the name of this storage.
     const String & getStorageName() const { return storage_name; }
-    virtual const char * getStorageType() const = 0;
-
-    /// Returns a JSON with the parameters of the storage. It's up to the storage type to fill the JSON.
-    virtual String getStorageParamsJSON() const { return "{}"; }
-
-    using EntityType = IAccessEntity::Type;
-    using EntityTypeInfo = IAccessEntity::TypeInfo;
 
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
-    std::vector<UUID> findAll(EntityType type) const;
+    std::vector<UUID> findAll(std::type_index type) const;
 
-    template <typename EntityClassT>
-    std::vector<UUID> findAll() const { return findAll(EntityClassT::TYPE); }
+    template <typename EntityType>
+    std::vector<UUID> findAll() const { return findAll(typeid(EntityType)); }
 
-    /// Searches for an entity with specified type and name. Returns std::nullopt if not found.
-    std::optional<UUID> find(EntityType type, const String & name) const;
+    /// Searchs for an entity with specified type and name. Returns std::nullopt if not found.
+    std::optional<UUID> find(std::type_index type, const String & name) const;
 
-    template <typename EntityClassT>
-    std::optional<UUID> find(const String & name) const { return find(EntityClassT::TYPE, name); }
+    template <typename EntityType>
+    std::optional<UUID> find(const String & name) const { return find(typeid(EntityType), name); }
 
-    std::vector<UUID> find(EntityType type, const Strings & names) const;
+    std::vector<UUID> find(std::type_index type, const Strings & names) const;
 
-    template <typename EntityClassT>
-    std::vector<UUID> find(const Strings & names) const { return find(EntityClassT::TYPE, names); }
+    template <typename EntityType>
+    std::vector<UUID> find(const Strings & names) const { return find(typeid(EntityType), names); }
 
-    /// Searches for an entity with specified name and type. Throws an exception if not found.
-    UUID getID(EntityType type, const String & name) const;
+    /// Searchs for an entity with specified name and type. Throws an exception if not found.
+    UUID getID(std::type_index type, const String & name) const;
 
-    template <typename EntityClassT>
-    UUID getID(const String & name) const { return getID(EntityClassT::TYPE, name); }
+    template <typename EntityType>
+    UUID getID(const String & name) const { return getID(typeid(EntityType), name); }
 
-    std::vector<UUID> getIDs(EntityType type, const Strings & names) const;
+    std::vector<UUID> getIDs(std::type_index type, const Strings & names) const;
 
-    template <typename EntityClassT>
-    std::vector<UUID> getIDs(const Strings & names) const { return getIDs(EntityClassT::TYPE, names); }
+    template <typename EntityType>
+    std::vector<UUID> getIDs(const Strings & names) const { return getIDs(typeid(EntityType), names); }
 
     /// Returns whether there is an entity with such identifier in the storage.
     bool exists(const UUID & id) const;
 
     /// Reads an entity. Throws an exception if not found.
-    template <typename EntityClassT = IAccessEntity>
-    std::shared_ptr<const EntityClassT> read(const UUID & id) const;
+    template <typename EntityType = IAccessEntity>
+    std::shared_ptr<const EntityType> read(const UUID & id) const;
 
-    template <typename EntityClassT = IAccessEntity>
-    std::shared_ptr<const EntityClassT> read(const String & name) const;
+    template <typename EntityType = IAccessEntity>
+    std::shared_ptr<const EntityType> read(const String & name) const;
 
     /// Reads an entity. Returns nullptr if not found.
-    template <typename EntityClassT = IAccessEntity>
-    std::shared_ptr<const EntityClassT> tryRead(const UUID & id) const;
+    template <typename EntityType = IAccessEntity>
+    std::shared_ptr<const EntityType> tryRead(const UUID & id) const;
 
-    template <typename EntityClassT = IAccessEntity>
-    std::shared_ptr<const EntityClassT> tryRead(const String & name) const;
+    template <typename EntityType = IAccessEntity>
+    std::shared_ptr<const EntityType> tryRead(const String & name) const;
 
     /// Reads only name of an entity.
     String readName(const UUID & id) const;
@@ -129,30 +118,22 @@ public:
 
     /// Subscribes for all changes.
     /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    ext::scope_guard subscribeForChanges(EntityType type, const OnChangedHandler & handler) const;
+    ext::scope_guard subscribeForChanges(std::type_index type, const OnChangedHandler & handler) const;
 
-    template <typename EntityClassT>
-    ext::scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(EntityClassT::TYPE, handler); }
+    template <typename EntityType>
+    ext::scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(typeid(EntityType), handler); }
 
     /// Subscribes for changes of a specific entry.
     /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
     ext::scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     ext::scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
-    bool hasSubscription(EntityType type) const;
+    bool hasSubscription(std::type_index type) const;
     bool hasSubscription(const UUID & id) const;
 
-    /// Finds an user, check its password and returns the ID of the user.
-    /// Throws an exception if no such user or password is incorrect.
-    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
-
-    /// Returns the ID of an user who has logged in (maybe on another node).
-    /// The function assumes that the password has been already checked somehow, so we can skip checking it now.
-    UUID getIDOfLoggedUser(const String & user_name) const;
-
 protected:
-    virtual std::optional<UUID> findImpl(EntityType type, const String & name) const = 0;
-    virtual std::vector<UUID> findAllImpl(EntityType type) const = 0;
+    virtual std::optional<UUID> findImpl(std::type_index type, const String & name) const = 0;
+    virtual std::vector<UUID> findAllImpl(std::type_index type) const = 0;
     virtual bool existsImpl(const UUID & id) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id) const = 0;
     virtual String readNameImpl(const UUID & id) const = 0;
@@ -161,30 +142,22 @@ protected:
     virtual void removeImpl(const UUID & id) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
     virtual ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
-    virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const = 0;
+    virtual ext::scope_guard subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const = 0;
     virtual bool hasSubscriptionImpl(const UUID & id) const = 0;
-    virtual bool hasSubscriptionImpl(EntityType type) const = 0;
-    virtual UUID loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
-    virtual bool isPasswordCorrectImpl(const User & user, const String & password, const ExternalAuthenticators & external_authenticators) const;
-    virtual bool isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const;
-    virtual UUID getIDOfLoggedUserImpl(const String & user_name) const;
+    virtual bool hasSubscriptionImpl(std::type_index type) const = 0;
 
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
-    static String outputEntityTypeAndName(EntityType type, const String & name) { return EntityTypeInfo::get(type).outputWithEntityName(name); }
+    static String getTypeName(std::type_index type) { return IAccessEntity::getTypeName(type); }
     [[noreturn]] void throwNotFound(const UUID & id) const;
-    [[noreturn]] void throwNotFound(EntityType type, const String & name) const;
-    [[noreturn]] static void throwBadCast(const UUID & id, EntityType type, const String & name, EntityType required_type);
-    [[noreturn]] void throwIDCollisionCannotInsert(
-        const UUID & id, EntityType type, const String & name, EntityType existing_type, const String & existing_name) const;
-    [[noreturn]] void throwNameCollisionCannotInsert(EntityType type, const String & name) const;
-    [[noreturn]] void throwNameCollisionCannotRename(EntityType type, const String & old_name, const String & new_name) const;
-    [[noreturn]] void throwReadonlyCannotInsert(EntityType type, const String & name) const;
-    [[noreturn]] void throwReadonlyCannotUpdate(EntityType type, const String & name) const;
-    [[noreturn]] void throwReadonlyCannotRemove(EntityType type, const String & name) const;
-    [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
-    [[noreturn]] static void throwInvalidPassword();
-    [[noreturn]] static void throwCannotAuthenticate(const String & user_name);
+    [[noreturn]] void throwNotFound(std::type_index type, const String & name) const;
+    [[noreturn]] static void throwBadCast(const UUID & id, std::type_index type, const String & name, std::type_index required_type);
+    [[noreturn]] void throwIDCollisionCannotInsert(const UUID & id, std::type_index type, const String & name, std::type_index existing_type, const String & existing_name) const;
+    [[noreturn]] void throwNameCollisionCannotInsert(std::type_index type, const String & name) const;
+    [[noreturn]] void throwNameCollisionCannotRename(std::type_index type, const String & old_name, const String & new_name) const;
+    [[noreturn]] void throwReadonlyCannotInsert(std::type_index type, const String & name) const;
+    [[noreturn]] void throwReadonlyCannotUpdate(std::type_index type, const String & name) const;
+    [[noreturn]] void throwReadonlyCannotRemove(std::type_index type, const String & name) const;
 
     using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;
     using Notifications = std::vector<Notification>;
@@ -198,43 +171,38 @@ private:
 };
 
 
-template <typename EntityClassT>
-std::shared_ptr<const EntityClassT> IAccessStorage::read(const UUID & id) const
+template <typename EntityType>
+std::shared_ptr<const EntityType> IAccessStorage::read(const UUID & id) const
 {
     auto entity = readImpl(id);
-    if constexpr (std::is_same_v<EntityClassT, IAccessEntity>)
-        return entity;
-    else
-    {
-        auto ptr = typeid_cast<std::shared_ptr<const EntityClassT>>(entity);
-        if (ptr)
-            return ptr;
-        throwBadCast(id, entity->getType(), entity->getName(), EntityClassT::TYPE);
-    }
+    auto ptr = typeid_cast<std::shared_ptr<const EntityType>>(entity);
+    if (ptr)
+        return ptr;
+    throwBadCast(id, entity->getType(), entity->getFullName(), typeid(EntityType));
 }
 
 
-template <typename EntityClassT>
-std::shared_ptr<const EntityClassT> IAccessStorage::read(const String & name) const
+template <typename EntityType>
+std::shared_ptr<const EntityType> IAccessStorage::read(const String & name) const
 {
-    return read<EntityClassT>(getID<EntityClassT>(name));
+    return read<EntityType>(getID<EntityType>(name));
 }
 
 
-template <typename EntityClassT>
-std::shared_ptr<const EntityClassT> IAccessStorage::tryRead(const UUID & id) const
+template <typename EntityType>
+std::shared_ptr<const EntityType> IAccessStorage::tryRead(const UUID & id) const
 {
     auto entity = tryReadBase(id);
     if (!entity)
         return nullptr;
-    return typeid_cast<std::shared_ptr<const EntityClassT>>(entity);
+    return typeid_cast<std::shared_ptr<const EntityType>>(entity);
 }
 
 
-template <typename EntityClassT>
-std::shared_ptr<const EntityClassT> IAccessStorage::tryRead(const String & name) const
+template <typename EntityType>
+std::shared_ptr<const EntityType> IAccessStorage::tryRead(const String & name) const
 {
-    auto id = find<EntityClassT>(name);
-    return id ? tryRead<EntityClassT>(*id) : nullptr;
+    auto id = find<EntityType>(name);
+    return id ? tryRead<EntityType>(*id) : nullptr;
 }
 }

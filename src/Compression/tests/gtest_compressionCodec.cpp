@@ -2,7 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -11,7 +11,8 @@
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 
-#include <random>
+#include <boost/format.hpp>
+
 #include <bitset>
 #include <cmath>
 #include <initializer_list>
@@ -62,10 +63,6 @@ std::vector<T> operator+(std::vector<T> && left, std::vector<T> && right)
 namespace
 {
 
-template <class T> using is_pod = std::is_trivial<std::is_standard_layout<T>>;
-template <class T> inline constexpr bool is_pod_v = is_pod<T>::value;
-
-
 template <typename T>
 struct AsHexStringHelper
 {
@@ -87,7 +84,7 @@ std::ostream & operator << (std::ostream & ostr, const AsHexStringHelper<T> & he
 template <typename T>
 AsHexStringHelper<T> AsHexString(const T & container)
 {
-    static_assert (sizeof(container[0]) == 1 && is_pod_v<std::decay_t<decltype(container[0])>>, "Only works on containers of byte-size PODs.");
+    static_assert (sizeof(container[0]) == 1 && std::is_pod<std::decay_t<decltype(container[0])>>::value, "Only works on containers of byte-size PODs.");
 
     return AsHexStringHelper<T>{container};
 }
@@ -98,7 +95,7 @@ std::string bin(const T & value, size_t bits = sizeof(T)*8)
     static const uint8_t MAX_BITS = sizeof(T)*8;
     assert(bits <= MAX_BITS);
 
-    return std::bitset<sizeof(T) * 8>(static_cast<uint64_t>(value))
+    return std::bitset<sizeof(T) * 8>(static_cast<unsigned long long>(value))
             .to_string().substr(MAX_BITS - bits, bits);
 }
 
@@ -165,7 +162,7 @@ public:
           data_end(container.data() + container.size()),
           current_value(T{})
     {
-        static_assert(sizeof(container[0]) == 1 && is_pod_v<std::decay_t<decltype(container[0])>>, "Only works on containers of byte-size PODs.");
+        static_assert(sizeof(container[0]) == 1 && std::is_pod<std::decay_t<decltype(container[0])>>::value, "Only works on containers of byte-size PODs.");
         read();
     }
 
@@ -174,7 +171,7 @@ public:
         return current_value;
     }
 
-    size_t itemsLeft() const
+    size_t ItemsLeft() const
     {
         return reinterpret_cast<const char *>(data_end) - reinterpret_cast<const char *>(data);
     }
@@ -185,9 +182,9 @@ public:
         return *this;
     }
 
-    explicit operator bool() const
+    operator bool() const
     {
-        return itemsLeft() > 0;
+        return ItemsLeft() > 0;
     }
 
 private:
@@ -223,7 +220,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
 
     if (l_size != r_size)
     {
-        result = ::testing::AssertionFailure() << "size mismatch, expected: " << l_size << " got:" << r_size;
+        result = ::testing::AssertionFailure() << "size mismatch" << " expected: " << l_size << " got:" << r_size;
     }
     if (l_size == 0 || r_size == 0)
     {
@@ -233,7 +230,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
     auto l = AsSequenceOf<T>(left);
     auto r = AsSequenceOf<T>(right);
 
-    static constexpr auto MAX_MISMATCHING_ITEMS = 5;
+    const auto MAX_MISMATCHING_ITEMS = 5;
     int mismatching_items = 0;
     size_t i = 0;
 
@@ -255,8 +252,8 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
             if (++mismatching_items <= MAX_MISMATCHING_ITEMS)
             {
                 result << "\nmismatching " << sizeof(T) << "-byte item #" << i
-                   << "\nexpected: " << bin(left_value) << " (0x" << std::hex << size_t(left_value) << ")"
-                   << "\ngot     : " << bin(right_value) << " (0x" << std::hex << size_t(right_value) << ")";
+                   << "\nexpected: " << bin(left_value) << " (0x" << std::hex << left_value << ")"
+                   << "\ngot     : " << bin(right_value) << " (0x" << std::hex << right_value << ")";
                 if (mismatching_items == MAX_MISMATCHING_ITEMS)
                 {
                     result << "\n..." << std::endl;
@@ -389,7 +386,7 @@ CodecTestSequence makeSeq(Args && ... args)
     }
 
     return CodecTestSequence{
-            (fmt::format("{} values of {}", std::size(vals), type_name<T>())),
+            (boost::format("%1% values of %2%") % std::size(vals) % type_name<T>()).str(),
             std::move(data),
             makeDataType<T>()
     };
@@ -406,12 +403,17 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
     {
         const T v = gen(static_cast<T>(i));
 
+//        if constexpr (debug_log_items)
+//        {
+//            std::cerr << "#" << i << " " << type_name<T>() << "(" << sizeof(T) << " bytes) : " << v << std::endl;
+//        }
+
         unalignedStore<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
     return CodecTestSequence{
-            (fmt::format("{} values of {} from {}", (End - Begin), type_name<T>(), gen_name)),
+            (boost::format("%1% values of %2% from %3%") % (End - Begin) % type_name<T>() % gen_name).str(),
             std::move(data),
             makeDataType<T>()
     };
@@ -460,7 +462,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 {
     const std::string codec_statement = "(" + codec_string + ")";
     Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
-    IParser::Pos token_iterator(tokens, 0);
+    IParser::Pos token_iterator(tokens);
 
     Expected expected;
     ASTPtr codec_ast;
@@ -472,8 +474,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 }
 
 template <typename Timer>
-void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSequence & test_sequence,
-                     std::optional<double> expected_compression_ratio = {})
+void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSequence & test_sequence, std::optional<double> expected_compression_ratio = std::optional<double>{})
 {
     const auto & source_data = test_sequence.serialized_data;
 
@@ -482,7 +483,6 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     timer.start();
 
-    assert(source_data.data() != nullptr); // Codec assumes that source buffer is not null.
     const UInt32 encoded_size = codec.compress(source_data.data(), source_data.size(), encoded.data());
     timer.report("encoding");
 
@@ -540,12 +540,17 @@ TEST_P(CodecTest, TranscodingWithDataType)
     testTranscoding(*codec);
 }
 
+TEST_P(CodecTest, TranscodingWithoutDataType)
+{
+    const auto codec = makeCodec(CODEC_WITHOUT_DATA_TYPE);
+    testTranscoding(*codec);
+}
 
 // Param is tuple-of-tuple to simplify instantiating with values, since typically group of cases test only one codec.
 class CodecTestCompatibility : public ::testing::TestWithParam<std::tuple<Codec, std::tuple<CodecTestSequence, std::string>>>
 {};
 
-// Check that input sequence when encoded matches the encoded string binary.
+// Check that iput sequence when encoded matches the encoded string binary.
 TEST_P(CodecTestCompatibility, Encoding)
 {
     const auto & codec_spec = std::get<0>(GetParam());
@@ -602,7 +607,7 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
         }
     }
 
-    auto compute_mean_and_stddev = [](const auto & values)
+    auto computeMeanAndStdDev = [](const auto & values)
     {
         double mean{};
 
@@ -643,7 +648,7 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
     for (const auto & k : {"encoding", "decoding"})
     {
         const auto & values = results[k];
-        const auto & [mean, std_dev] = compute_mean_and_stddev(values);
+        const auto & [mean, std_dev] = computeMeanAndStdDev(values);
         // Ensure that Coefficient of variation is reasonably low, otherwise these numbers are meaningless
         EXPECT_GT(0.05, std_dev / mean);
         std::cerr << "\t" << std::fixed << std::setprecision(1) << mean / 1000.0;
@@ -651,7 +656,6 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
 
     std::cerr << std::endl;
 }
-GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(CodecTestPerformance);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Here we use generators to produce test payload for codecs.
@@ -698,13 +702,13 @@ auto SequentialGenerator = [](auto stride = 1)
 template <typename T>
 using uniform_distribution =
 typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distribution<T>,
-        typename std::conditional_t<is_integer_v<T>, std::uniform_int_distribution<T>, void>>;
+        typename std::conditional_t<is_integral_v<T>, std::uniform_int_distribution<T>, void>>;
 
 
 template <typename T = Int32>
-struct MonotonicGenerator // NOLINT
+struct MonotonicGenerator
 {
-    explicit MonotonicGenerator(T stride_ = 1, T max_step = 10) // NOLINT
+    MonotonicGenerator(T stride_ = 1, T max_step = 10)
         : prev_value(0),
           stride(stride_),
           random_engine(0),
@@ -728,7 +732,7 @@ private:
 template <typename T>
 struct RandomGenerator
 {
-    explicit RandomGenerator(T seed = 0, T value_min = std::numeric_limits<T>::min(), T value_max = std::numeric_limits<T>::max())
+    RandomGenerator(T seed = 0, T value_min = std::numeric_limits<T>::min(), T value_max = std::numeric_limits<T>::max())
         : random_engine(seed),
           distribution(value_min, value_max)
     {
@@ -747,11 +751,7 @@ private:
 
 auto RandomishGenerator = [](auto i)
 {
-    using T = decltype(i);
-    double sin_value = sin(static_cast<double>(i * i)) * i;
-    if (sin_value < std::numeric_limits<T>::lowest() || sin_value > std::numeric_limits<T>::max())
-        return T{};
-    return T(sin_value);
+    return static_cast<decltype(i)>(sin(static_cast<double>(i * i)) * i);
 };
 
 auto MinMaxGenerator = []()
@@ -796,8 +796,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     std::vector<CodecTestSequence> sequences;
     sequences.reserve(sequences_count);
 
-    // Don't test against sequence of size 0, since it causes a nullptr source buffer as codec input and produces an error.
-    // sequences.push_back(makeSeq<T>()); // sequence of size 0
+    sequences.push_back(makeSeq<T>()); // sequence of size 0
     for (size_t i = 1; i < sequences_count; ++i)
     {
         std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
@@ -1129,7 +1128,7 @@ template <typename ValueType>
 auto DDCompatibilityTestSequence()
 {
     // Generates sequences with double delta in given range.
-    auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
+    auto ddGenerator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
     {
         const auto curr = dd + prev + prev_delta;
         prev = curr;
@@ -1151,7 +1150,7 @@ auto DDCompatibilityTestSequence()
 
         // - 4 is to allow DD value to settle before transitioning through important point,
         // since DD depends on 2 previous values of data, + 2 is arbitrary.
-        ret.append(generateSeq<ValueType>(G(dd_generator), p - 4, p + 2));
+        ret.append(generateSeq<ValueType>(G(ddGenerator), p - 4, p + 2));
     }
 
     return ret;
@@ -1274,8 +1273,8 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
     )
 );
 
-// These 'tests' try to measure performance of encoding and decoding and hence only make sense to be run locally,
-// also they require pretty big data to run against and generating this data slows down startup of unit test process.
+// These 'tests' try to measure performance of encoding and decoding and hence only make sence to be run locally,
+// also they require pretty big data to run agains and generating this data slows down startup of unit test process.
 // So un-comment only at your discretion.
 
 // Just as if all sequences from generatePyramidOfSequences were appended to one-by-one to the first one.

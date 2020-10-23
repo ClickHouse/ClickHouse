@@ -1,5 +1,4 @@
 #include <Interpreters/getTableExpressions.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -85,25 +84,23 @@ static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression 
     else if (table_expression.table_function)
     {
         const auto table_function = table_expression.table_function;
-        auto * query_context = const_cast<Context *>(&context.getQueryContext());
+        auto *query_context = const_cast<Context *>(&context.getQueryContext());
         const auto & function_storage = query_context->executeTableFunction(table_function);
-        auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr();
-        const auto & columns = function_metadata_snapshot->getColumns();
+        const auto & columns = function_storage->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = function_storage->getVirtuals();
+        virtuals = columns.getVirtuals();
     }
     else if (table_expression.database_and_table_name)
     {
-        auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
-        const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
-        auto table_metadata_snapshot = table->getInMemoryMetadataPtr();
-        const auto & columns = table_metadata_snapshot->getColumns();
+        DatabaseAndTableWithAlias database_table(table_expression.database_and_table_name);
+        const auto & table = context.getTable(database_table.database, database_table.table);
+        const auto & columns = table->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = table->getVirtuals();
+        virtuals = columns.getVirtuals();
     }
 
     return names_and_type_list;
@@ -117,9 +114,10 @@ NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table
     return getColumnsFromTableExpression(table_expression, context, materialized, aliases, virtuals);
 }
 
-TablesWithColumns getDatabaseAndTablesWithColumns(const std::vector<const ASTTableExpression *> & table_expressions, const Context & context)
+std::vector<TableWithColumnNamesAndTypes> getDatabaseAndTablesWithColumns(const std::vector<const ASTTableExpression *> & table_expressions,
+                                                                          const Context & context)
 {
-    TablesWithColumns tables_with_columns;
+    std::vector<TableWithColumnNamesAndTypes> tables_with_columns;
 
     if (!table_expressions.empty())
     {
@@ -145,6 +143,17 @@ TablesWithColumns getDatabaseAndTablesWithColumns(const std::vector<const ASTTab
     }
 
     return tables_with_columns;
+}
+
+std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const std::vector<const ASTTableExpression *> & table_expressions,
+                                                                      const Context & context)
+{
+    std::vector<TableWithColumnNamesAndTypes> tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
+    std::vector<TableWithColumnNames> out;
+    out.reserve(tables_with_columns.size());
+    for (auto & table : tables_with_columns)
+        out.emplace_back(table.removeTypes());
+    return out;
 }
 
 }

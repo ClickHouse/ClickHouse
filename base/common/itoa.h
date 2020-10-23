@@ -30,6 +30,7 @@
 #include <cstddef>
 #include <cstring>
 #include <type_traits>
+#include "likely.h"
 
 using int128_t = __int128;
 using uint128_t = unsigned __int128;
@@ -372,7 +373,7 @@ static inline char * writeLeadingMinus(char * pos)
 
 static inline char * writeSIntText(int128_t x, char * pos)
 {
-    static constexpr int128_t min_int128 = uint128_t(1) << 127;
+    static const int128_t min_int128 = int128_t(0x8000000000000000ll) << 64;
 
     if (unlikely(x == min_int128))
     {

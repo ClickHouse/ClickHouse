@@ -1,11 +1,8 @@
 #include <Common/ClickHouseRevision.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 namespace ClickHouseRevision
 {
-    unsigned getVersionRevision() { return VERSION_REVISION; }
+    unsigned get() { return VERSION_REVISION; }
     unsigned getVersionInteger() { return VERSION_INTEGER; }
 }

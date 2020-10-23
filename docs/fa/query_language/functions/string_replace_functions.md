@@ -1,0 +1,1 @@
+../../../en/query_language/functions/string_replace_functions.md

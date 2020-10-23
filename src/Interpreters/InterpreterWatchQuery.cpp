@@ -13,10 +13,9 @@ limitations under the License. */
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Interpreters/Context.h>
 #include <Access/AccessFlags.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/StreamLocalLimits.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 
 namespace DB
@@ -29,6 +28,10 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+BlockInputStreamPtr InterpreterWatchQuery::executeImpl()
+{
+    return std::make_shared<OneBlockInputStream>(Block());
+}
 
 BlockIO InterpreterWatchQuery::execute()
 {
@@ -37,18 +40,28 @@ BlockIO InterpreterWatchQuery::execute()
 
     BlockIO res;
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
-    auto table_id = context.resolveStorageID(query, Context::ResolveOrdinary);
+    String database;
+    String table;
+    /// Get database
+    if (!query.database.empty())
+        database = query.database;
+    else
+        database = context.getCurrentDatabase();
+
+    /// Get table
+    table = query.table;
 
     /// Get storage
-    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    storage = context.tryGetTable(database, table);
 
     if (!storage)
-        throw Exception("Table " + table_id.getNameForLogs() + " doesn't exist.",
+        throw Exception("Table " + backQuoteIfNeed(database) + "." +
+        backQuoteIfNeed(table) + " doesn't exist.",
         ErrorCodes::UNKNOWN_TABLE);
 
     /// List of columns to read to execute the query.
-    Names required_columns = storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical();
-    context.checkAccess(AccessType::SELECT, table_id, required_columns);
+    Names required_columns = storage->getColumns().getNamesOfPhysical();
+    context.checkAccess(AccessType::SELECT, database, table, required_columns);
 
     /// Get context settings for this query
     const Settings & settings = context.getSettingsRef();
@@ -76,8 +89,8 @@ BlockIO InterpreterWatchQuery::execute()
     /// Constraints on the result, the quota on the result, and also callback for progress.
     if (IBlockInputStream * stream = dynamic_cast<IBlockInputStream *>(streams[0].get()))
     {
-        StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT;
+        IBlockInputStream::LocalLimits limits;
+        limits.mode = IBlockInputStream::LIMITS_CURRENT;
         limits.size_limits.max_rows = settings.max_result_rows;
         limits.size_limits.max_bytes = settings.max_result_bytes;
         limits.size_limits.overflow_mode = settings.result_overflow_mode;

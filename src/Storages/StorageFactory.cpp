@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/StorageID.h>
+#include <Storages/StorageID.h>
 
 namespace DB
 {
@@ -123,7 +123,7 @@ StoragePtr StorageFactory::get(
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
 
-            auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
+            auto checkFeature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
                 if (!feature_matcher_fn(it->second.features))
                 {
@@ -142,22 +142,22 @@ StoragePtr StorageFactory::get(
             };
 
             if (storage_def->settings)
-                check_feature(
+                checkFeature(
                     "SETTINGS clause",
                     [](StorageFeatures features) { return features.supports_settings; });
 
             if (storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
-                check_feature(
+                checkFeature(
                     "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
                     [](StorageFeatures features) { return features.supports_sort_order; });
 
             if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
-                check_feature(
+                checkFeature(
                     "TTL clause",
                     [](StorageFeatures features) { return features.supports_ttl; });
 
             if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
-                check_feature(
+                checkFeature(
                     "skipping indices",
                     [](StorageFeatures features) { return features.supports_skipping_indices; });
         }
@@ -180,31 +180,13 @@ StoragePtr StorageFactory::get(
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
 
-    auto res = storages.at(name).creator_fn(arguments);
-    if (!empty_engine_args.empty())
-    {
-        /// Storage creator modified empty arguments list, so we should modify the query
-        assert(storage_def && storage_def->engine && !storage_def->engine->arguments);
-        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();
-        storage_def->engine->children.push_back(storage_def->engine->arguments);
-        storage_def->engine->arguments->children = empty_engine_args;
-    }
-    return res;
+    return storages.at(name).creator_fn(arguments);
 }
 
 StorageFactory & StorageFactory::instance()
 {
     static StorageFactory ret;
     return ret;
-}
-
-
-AccessType StorageFactory::getSourceAccessType(const String & table_engine) const
-{
-    auto it = storages.find(table_engine);
-    if (it == storages.end())
-        return AccessType::NONE;
-    return it->second.features.source_access_type;
 }
 
 }

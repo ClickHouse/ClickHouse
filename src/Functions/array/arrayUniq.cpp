@@ -57,7 +57,7 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
@@ -66,79 +66,73 @@ private:
     template <typename T>
     struct MethodOneNumber
     {
-        using Set = ClearableHashSetWithStackMemory<T, DefaultHash<T>,
-            INITIAL_SIZE_DEGREE>;
-
+        using Set = ClearableHashSet<T, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
+                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
         using Method = ColumnsHashing::HashMethodOneNumber<typename Set::value_type, void, T, false>;
     };
 
     struct MethodString
     {
-        using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
-            INITIAL_SIZE_DEGREE>;
-
+        using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
         using Method = ColumnsHashing::HashMethodString<typename Set::value_type, void, false, false>;
     };
 
     struct MethodFixedString
     {
-        using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
-            INITIAL_SIZE_DEGREE>;
-
+        using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
         using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, void, false, false>;
     };
 
     struct MethodFixed
     {
-        using Set = ClearableHashSetWithStackMemory<UInt128, UInt128HashCRC32,
-            INITIAL_SIZE_DEGREE>;
-
+        using Set = ClearableHashSet<UInt128, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
+                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
         using Method = ColumnsHashing::HashMethodKeysFixed<typename Set::value_type, UInt128, void, false, false, false>;
     };
 
     struct MethodHashed
     {
-        using Set = ClearableHashSetWithStackMemory<UInt128, UInt128TrivialHash,
-            INITIAL_SIZE_DEGREE>;
-
+        using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
         using Method = ColumnsHashing::HashMethodHashed<typename Set::value_type, void, false>;
     };
 
     template <typename Method>
     void executeMethod(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, const Sizes & key_sizes,
-            const NullMap * null_map, ColumnUInt32::Container & res_values) const;
+            const NullMap * null_map, ColumnUInt32::Container & res_values);
 
     template <typename Method, bool has_null_map>
     void executeMethodImpl(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, const Sizes & key_sizes,
-            const NullMap * null_map, ColumnUInt32::Container & res_values) const;
+            const NullMap * null_map, ColumnUInt32::Container & res_values);
 
     template <typename T>
-    bool executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
-    bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
-    bool executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
-    bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
-    void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
+    bool executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
+    void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
 };
 
 
-ColumnPtr FunctionArrayUniq::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
+void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const ColumnArray::Offsets * offsets = nullptr;
-    const size_t num_arguments = arguments.size();
-    assert(num_arguments > 0);
+    size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns(num_arguments);
 
     Columns array_holders;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const ColumnPtr & array_ptr = arguments[i].column;
+        const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
-                arguments[i].column.get());
+                block.getByPosition(arguments[i]).column.get());
             if (!const_array)
-                throw Exception("Illegal column " + arguments[i].column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
             array_holders.emplace_back(const_array->convertToFullColumn());
@@ -196,7 +190,7 @@ ColumnPtr FunctionArrayUniq::executeImpl(ColumnsWithTypeAndName & arguments, con
             executeHashed(*offsets, data_columns, res_values);
     }
 
-    return res;
+    block.getByPosition(result).column = std::move(res);
 }
 
 template <typename Method, bool has_null_map>
@@ -205,7 +199,7 @@ void FunctionArrayUniq::executeMethodImpl(
     const ColumnRawPtrs & columns,
     const Sizes & key_sizes,
     [[maybe_unused]] const NullMap * null_map,
-    ColumnUInt32::Container & res_values) const
+    ColumnUInt32::Container & res_values)
 {
     typename Method::Set set;
     typename Method::Method method(columns, key_sizes, nullptr);
@@ -220,7 +214,7 @@ void FunctionArrayUniq::executeMethodImpl(
         for (ColumnArray::Offset j = prev_off; j < off; ++j)
         {
             if constexpr (has_null_map)
-            { // NOLINT
+            {
                 if ((*null_map)[j])
                 {
                     found_null = true;
@@ -242,7 +236,7 @@ void FunctionArrayUniq::executeMethod(
     const ColumnRawPtrs & columns,
     const Sizes & key_sizes,
     const NullMap * null_map,
-    ColumnUInt32::Container & res_values) const
+    ColumnUInt32::Container & res_values)
 {
     if (null_map)
         executeMethodImpl<Method, true>(offsets, columns, key_sizes, null_map, res_values);
@@ -252,7 +246,7 @@ void FunctionArrayUniq::executeMethod(
 }
 
 template <typename T>
-bool FunctionArrayUniq::executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
+bool FunctionArrayUniq::executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values)
 {
     const auto * nested = checkAndGetColumn<ColumnVector<T>>(&data);
     if (!nested)
@@ -262,7 +256,7 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray::Offsets & offsets, cons
     return true;
 }
 
-bool FunctionArrayUniq::executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
+bool FunctionArrayUniq::executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values)
 {
     const auto * nested = checkAndGetColumn<ColumnString>(&data);
     if (nested)
@@ -271,7 +265,7 @@ bool FunctionArrayUniq::executeString(const ColumnArray::Offsets & offsets, cons
     return nested;
 }
 
-bool FunctionArrayUniq::executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
+bool FunctionArrayUniq::executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values)
 {
     const auto * nested = checkAndGetColumn<ColumnFixedString>(&data);
     if (nested)
@@ -283,7 +277,7 @@ bool FunctionArrayUniq::executeFixedString(const ColumnArray::Offsets & offsets,
 bool FunctionArrayUniq::execute128bit(
         const ColumnArray::Offsets & offsets,
         const ColumnRawPtrs & columns,
-        ColumnUInt32::Container & res_values) const
+        ColumnUInt32::Container & res_values)
 {
     size_t count = columns.size();
     size_t keys_bytes = 0;
@@ -307,7 +301,7 @@ bool FunctionArrayUniq::execute128bit(
 void FunctionArrayUniq::executeHashed(
         const ColumnArray::Offsets & offsets,
         const ColumnRawPtrs & columns,
-        ColumnUInt32::Container & res_values) const
+        ColumnUInt32::Container & res_values)
 {
     executeMethod<MethodHashed>(offsets, columns, {}, nullptr, res_values);
 }

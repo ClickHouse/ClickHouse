@@ -1,5 +1,5 @@
 #include <Common/PODArray.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <iostream>
 
 #define ASSERT_CHECK(cond, res)                        \
@@ -18,9 +18,9 @@ static void test1()
 {
     using namespace DB;
 
-    static constexpr size_t initial_bytes = 32;
-    using Array = PODArray<UInt64, initial_bytes,
-        AllocatorWithStackMemory<Allocator<false>, initial_bytes>>;
+    static constexpr size_t initial_size = 8;
+    static constexpr size_t stack_threshold = 32;
+    using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator<false>, stack_threshold>>;
 
     bool res = true;
 
@@ -139,9 +139,9 @@ static void test2()
 {
     using namespace DB;
 
-    static constexpr size_t initial_bytes = 32;
-    using Array = PODArray<UInt64, initial_bytes,
-        AllocatorWithStackMemory<Allocator<false>, initial_bytes>>;
+    static constexpr size_t initial_size = 8;
+    static constexpr size_t stack_threshold = 32;
+    using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator<false>, stack_threshold>>;
 
     bool res = true;
 
@@ -389,9 +389,9 @@ static void test3()
 {
     using namespace DB;
 
-    static constexpr size_t initial_bytes = 32;
-    using Array = PODArray<UInt64, initial_bytes,
-        AllocatorWithStackMemory<Allocator<false>, initial_bytes>>;
+    static constexpr size_t initial_size = 8;
+    static constexpr size_t stack_threshold = 32;
+    using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator<false>, stack_threshold>>;
 
     bool res = true;
 
@@ -409,7 +409,7 @@ static void test3()
 
         Array arr2{std::move(arr)};
 
-        ASSERT_CHECK((arr.empty()), res); // NOLINT
+        ASSERT_CHECK((arr.empty()), res);
 
         ASSERT_CHECK((arr2.size() == 3), res);
         ASSERT_CHECK((arr2[0] == 1), res);
@@ -428,7 +428,7 @@ static void test3()
 
         Array arr2{std::move(arr)};
 
-        ASSERT_CHECK((arr.empty()), res); // NOLINT
+        ASSERT_CHECK((arr.empty()), res);
 
         ASSERT_CHECK((arr2.size() == 5), res);
         ASSERT_CHECK((arr2[0] == 1), res);

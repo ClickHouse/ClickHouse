@@ -2,6 +2,7 @@
 
 #include "CurrentThread.h"
 #include <common/logger_useful.h>
+#include <common/likely.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <Interpreters/ProcessList.h>
@@ -70,13 +71,6 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
     if (unlikely(!current_thread))
         return;
     current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
-}
-
-void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->setFatalErrorCallback(callback);
 }
 
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()

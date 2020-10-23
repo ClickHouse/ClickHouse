@@ -22,9 +22,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 template <typename Name>
 class FormatFunction : public IFunction
 {
@@ -57,7 +54,7 @@ public:
 
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
-            const auto * arg = arguments[arg_idx].get();
+            const auto *const arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName(),
@@ -67,9 +64,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const ColumnPtr & c0 = arguments[0].column;
+        const ColumnPtr & c0 = block.getByPosition(arguments[0]).column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
 
         if (!c0_const_string)
@@ -81,14 +78,14 @@ public:
 
         std::vector<const ColumnString::Chars *> data(arguments.size() - 1);
         std::vector<const ColumnString::Offsets *> offsets(arguments.size() - 1);
-        std::vector<size_t> fixed_string_sizes(arguments.size() - 1);
+        std::vector<size_t> fixed_string_N(arguments.size() - 1);
         std::vector<String> constant_strings(arguments.size() - 1);
 
         bool has_column_string = false;
         bool has_column_fixed_string = false;
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            const ColumnPtr & column = arguments[i].column;
+            const ColumnPtr & column = block.getByPosition(arguments[i]).column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
             {
                 has_column_string = true;
@@ -99,7 +96,7 @@ public:
             {
                 has_column_fixed_string = true;
                 data[i - 1] = &fixed_col->getChars();
-                fixed_string_sizes[i - 1] = fixed_col->getN();
+                fixed_string_N[i - 1] = fixed_col->getN();
             }
             else if (const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(column.get()))
             {
@@ -116,13 +113,13 @@ public:
             std::move(pattern),
             data,
             offsets,
-            fixed_string_sizes,
+            fixed_string_N,
             constant_strings,
             col_res->getChars(),
             col_res->getOffsets(),
             input_rows_count);
 
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -132,8 +129,6 @@ struct NameFormat
     static constexpr auto name = "format";
 };
 using FunctionFormat = FormatFunction<NameFormat>;
-
-}
 
 void registerFunctionFormat(FunctionFactory & factory)
 {

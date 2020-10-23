@@ -1,6 +1,6 @@
 #include <Poco/UTF8Encoding.h>
 #include <IO/WriteBufferValidUTF8.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -81,7 +81,7 @@ void WriteBufferValidUTF8::nextImpl()
         size_t len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
 
         if (len > 4)
-        { // NOLINT
+        {
             /// Invalid start of sequence. Skip one byte.
             putValid(valid_start, p - valid_start);
             putReplacement();

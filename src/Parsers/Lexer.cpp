@@ -65,7 +65,7 @@ Token Lexer::nextTokenImpl()
 
     const char * const token_begin = pos;
 
-    auto comment_until_end_of_line = [&]() mutable
+    auto commentUntilEndOfLine = [&]() mutable
     {
         pos = find_first_symbols<'\n'>(pos, end);    /// This means that newline in single-line comment cannot be escaped.
         return Token(TokenType::Comment, token_begin, pos);
@@ -146,20 +146,13 @@ Token Lexer::nextTokenImpl()
                 }
             }
 
-            /// Try to parse it to a identifier(1identifier_name), otherwise it return ErrorWrongNumber
+            /// word character cannot go just after number (SELECT 123FROM)
             if (pos < end && isWordCharASCII(*pos))
             {
                 ++pos;
                 while (pos < end && isWordCharASCII(*pos))
                     ++pos;
-
-                for (const char * iterator = token_begin; iterator < pos; ++iterator)
-                {
-                    if (!isWordCharASCII(*iterator) && *iterator != '$')
-                        return Token(TokenType::ErrorWrongNumber, token_begin, pos);
-                }
-
-                return Token(TokenType::BareWord, token_begin, pos);
+                return Token(TokenType::ErrorWrongNumber, token_begin, pos);
             }
 
             return Token(TokenType::Number, token_begin, pos);
@@ -232,7 +225,7 @@ Token Lexer::nextTokenImpl()
             if (pos < end && *pos == '-')
             {
                 ++pos;
-                return comment_until_end_of_line();
+                return commentUntilEndOfLine();
             }
 
             return Token(TokenType::Minus, token_begin, pos);
@@ -248,32 +241,20 @@ Token Lexer::nextTokenImpl()
                 if (*pos == '/')
                 {
                     ++pos;
-                    return comment_until_end_of_line();
+                    return commentUntilEndOfLine();
                 }
                 else
                 {
                     ++pos;
-
-                    /// Nested multiline comments are supported according to the SQL standard.
-                    size_t nesting_level = 1;
-
                     while (pos + 2 <= end)
                     {
-                        if (pos[0] == '/' && pos[1] == '*')
+                        /// This means that nested multiline comments are not supported.
+                        if (pos[0] == '*' && pos[1] == '/')
                         {
                             pos += 2;
-                            ++nesting_level;
+                            return Token(TokenType::Comment, token_begin, pos);
                         }
-                        else if (pos[0] == '*' && pos[1] == '/')
-                        {
-                            pos += 2;
-                            --nesting_level;
-
-                            if (nesting_level == 0)
-                                return Token(TokenType::Comment, token_begin, pos);
-                        }
-                        else
-                            ++pos;
+                        ++pos;
                     }
                     return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, end);
                 }
@@ -324,30 +305,18 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::ErrorSinglePipeMark, token_begin, pos);
         }
         case '@':
-        {
-            ++pos;
-            if (pos < end && *pos == '@')
-                return Token(TokenType::DoubleAt, token_begin, ++pos);
-            return Token(TokenType::At, token_begin, pos);
-        }
+            return Token(TokenType::At, token_begin, ++pos);
 
         default:
-            if (isWordCharASCII(*pos) || *pos == '$')
+            if (isWordCharASCII(*pos))
             {
                 ++pos;
-                while (pos < end && (isWordCharASCII(*pos) || *pos == '$'))
+                while (pos < end && isWordCharASCII(*pos))
                     ++pos;
                 return Token(TokenType::BareWord, token_begin, pos);
             }
             else
-            {
-                /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
-                pos = skipWhitespacesUTF8(pos, end);
-                if (pos > token_begin)
-                    return Token(TokenType::Whitespace, token_begin, pos);
-                else
-                    return Token(TokenType::Error, token_begin, ++pos);
-            }
+                return Token(TokenType::Error, token_begin, ++pos);
     }
 }
 

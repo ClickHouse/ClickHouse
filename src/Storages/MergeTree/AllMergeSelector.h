@@ -11,8 +11,8 @@ class AllMergeSelector : public IMergeSelector
 {
 public:
     /// Parameter max_total_size_to_merge is ignored.
-    PartsRange select(
-        const PartsRanges & parts_ranges,
+    PartsInPartition select(
+        const Partitions & partitions,
         const size_t max_total_size_to_merge) override;
 };
 

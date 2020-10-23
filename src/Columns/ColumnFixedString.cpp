@@ -6,10 +6,6 @@
 #include <Common/memcpySmall.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
-#include <Common/HashTable/Hash.h>
-
-#include <ext/scope_guard.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -29,7 +25,6 @@ namespace ErrorCodes
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int PARAMETER_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -88,7 +83,7 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
 
 StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const
 {
-    auto * pos = arena.allocContinue(n, begin);
+    auto *pos = arena.allocContinue(n, begin);
     memcpy(pos, &chars[n * index], n);
     return StringRef(pos, n);
 }
@@ -104,32 +99,6 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
-}
-
-void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
-{
-    auto s = size();
-
-    if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
-
-    const UInt8 * pos = chars.data();
-    UInt32 * hash_data = hash.getData().data();
-
-    for (size_t row = 0; row < s; ++row)
-    {
-        *hash_data = ::updateWeakHash32(pos, n, *hash_data);
-
-        pos += n;
-        ++hash_data;
-    }
-}
-
-void ColumnFixedString::updateHashFast(SipHash & hash) const
-{
-    hash.update(n);
-    hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
 }
 
 template <bool positive>
@@ -167,82 +136,6 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
             std::sort(res.begin(), res.end(), less<false>(*this));
         else
             std::sort(res.begin(), res.end(), less<true>(*this));
-    }
-}
-
-void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
-{
-    if (equal_ranges.empty())
-        return;
-
-    if (limit >= size() || limit >= equal_ranges.back().second)
-        limit = 0;
-
-    size_t number_of_ranges = equal_ranges.size();
-    if (limit)
-        --number_of_ranges;
-
-    EqualRanges new_ranges;
-    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
-
-    for (size_t i = 0; i < number_of_ranges; ++i)
-    {
-        const auto& [first, last] = equal_ranges[i];
-        if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, less<false>(*this));
-        else
-            std::sort(res.begin() + first, res.begin() + last, less<true>(*this));
-
-        auto new_first = first;
-        for (auto j = first + 1; j < last; ++j)
-        {
-            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        if (last - new_first > 1)
-            new_ranges.emplace_back(new_first, last);
-    }
-    if (limit)
-    {
-        const auto & [first, last] = equal_ranges.back();
-
-        if (limit < first || limit > last)
-            return;
-
-        /// Since then we are working inside the interval.
-
-        if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
-        else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
-
-        auto new_first = first;
-        for (auto j = first + 1; j < limit; ++j)
-        {
-            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n)  != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        auto new_last = limit;
-        for (auto j = limit; j < last; ++j)
-        {
-            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n)  == 0)
-            {
-                std::swap(res[new_last], res[j]);
-                ++new_last;
-            }
-        }
-        if (new_last - new_first > 1)
-            new_ranges.emplace_back(new_first, new_last);
     }
 }
 

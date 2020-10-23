@@ -32,9 +32,101 @@ namespace ErrorCodes
 }
 
 
-static void checkCalculated(const ColumnWithTypeAndName & col_read,
-                            const ColumnWithTypeAndName & col_defaults,
-                            size_t defaults_needed)
+AddingDefaultsBlockInputStream::AddingDefaultsBlockInputStream(const BlockInputStreamPtr & input,
+                                                               const ColumnDefaults & column_defaults_,
+                                                               const Context & context_)
+    : column_defaults(column_defaults_),
+      context(context_)
+{
+    children.push_back(input);
+    header = input->getHeader();
+}
+
+
+Block AddingDefaultsBlockInputStream::readImpl()
+{
+    Block res = children.back()->read();
+    if (!res)
+        return res;
+
+    if (column_defaults.empty())
+        return res;
+
+    const BlockMissingValues & block_missing_values = children.back()->getMissingValues();
+    if (block_missing_values.empty())
+        return res;
+
+    /// res block alredy has all columns values, with default value for type
+    /// (not value specified in table). We identify which columns we need to
+    /// recalculate with help of block_missing_values.
+    Block evaluate_block{res};
+    /// remove columns for recalculation
+    for (const auto & column : column_defaults)
+    {
+        if (evaluate_block.has(column.first))
+        {
+            size_t column_idx = res.getPositionByName(column.first);
+            if (block_missing_values.hasDefaultBits(column_idx))
+                evaluate_block.erase(column.first);
+        }
+    }
+
+    if (!evaluate_block.columns())
+        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), res.rows()), std::make_shared<DataTypeUInt8>(), "_dummy"});
+
+    evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), column_defaults, context, false);
+
+    std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
+
+    for (const ColumnWithTypeAndName & column_def : evaluate_block)
+    {
+        const String & column_name = column_def.name;
+
+        if (column_defaults.count(column_name) == 0)
+            continue;
+
+        size_t block_column_position = res.getPositionByName(column_name);
+        ColumnWithTypeAndName & column_read = res.getByPosition(block_column_position);
+        const auto & defaults_mask = block_missing_values.getDefaultsBitmask(block_column_position);
+
+        checkCalculated(column_read, column_def, defaults_mask.size());
+
+        if (!defaults_mask.empty())
+        {
+            /// TODO: FixedString
+            if (isColumnedAsNumber(column_read.type) || isDecimal(column_read.type))
+            {
+                MutableColumnPtr column_mixed = (*std::move(column_read.column)).mutate();
+                mixNumberColumns(column_read.type->getTypeId(), column_mixed, column_def.column, defaults_mask);
+                column_read.column = std::move(column_mixed);
+            }
+            else
+            {
+                MutableColumnPtr column_mixed = mixColumns(column_read, column_def, defaults_mask);
+                mixed_columns.emplace(block_column_position, std::move(column_mixed));
+            }
+        }
+    }
+
+    if (!mixed_columns.empty())
+    {
+        /// replace columns saving block structure
+        MutableColumns mutation = res.mutateColumns();
+        for (size_t position = 0; position < mutation.size(); ++position)
+        {
+            auto it = mixed_columns.find(position);
+            if (it != mixed_columns.end())
+                mutation[position] = std::move(it->second);
+        }
+        res.setColumns(std::move(mutation));
+    }
+
+    return res;
+}
+
+void AddingDefaultsBlockInputStream::checkCalculated(const ColumnWithTypeAndName & col_read,
+                                                     const ColumnWithTypeAndName & col_defaults,
+                                                     size_t defaults_needed) 
 {
     size_t column_size = col_read.column->size();
 
@@ -45,16 +137,13 @@ static void checkCalculated(const ColumnWithTypeAndName & col_read,
         throw Exception("Unexpected defaults count", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (!col_read.type->equals(*col_defaults.type))
-        throw Exception("Mismatch column types while adding defaults", ErrorCodes::TYPE_MISMATCH);
+        throw Exception("Mismach column types while adding defaults", ErrorCodes::TYPE_MISMATCH);
 }
 
-static void mixNumberColumns(
-    TypeIndex type_idx,
-    MutableColumnPtr & column_mixed,
-    const ColumnPtr & col_defaults,
-    const BlockMissingValues::RowsBitMask & defaults_mask)
+void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, MutableColumnPtr & column_mixed, const ColumnPtr & col_defaults,
+                                                      const BlockMissingValues::RowsBitMask & defaults_mask) 
 {
-    auto call = [&](const auto & types)
+    auto call = [&](const auto & types) -> bool
     {
         using Types = std::decay_t<decltype(types)>;
         using DataType = typename Types::LeftType;
@@ -98,9 +187,9 @@ static void mixNumberColumns(
         throw Exception("Unexpected type on mixNumberColumns", ErrorCodes::LOGICAL_ERROR);
 }
 
-static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
-    const ColumnWithTypeAndName & col_defaults,
-    const BlockMissingValues::RowsBitMask & defaults_mask)
+MutableColumnPtr AddingDefaultsBlockInputStream::mixColumns(const ColumnWithTypeAndName & col_read,
+                                                            const ColumnWithTypeAndName & col_defaults,
+                                                            const BlockMissingValues::RowsBitMask & defaults_mask) 
 {
     size_t column_size = col_read.column->size();
     size_t defaults_needed = defaults_mask.size();
@@ -124,101 +213,6 @@ static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
         column_mixed->insertFrom(*col_read.column, i);
 
     return column_mixed;
-}
-
-
-AddingDefaultsBlockInputStream::AddingDefaultsBlockInputStream(
-    const BlockInputStreamPtr & input,
-    const ColumnsDescription & columns_,
-    const Context & context_)
-    : columns(columns_)
-    , column_defaults(columns.getDefaults())
-    , context(context_)
-{
-    children.push_back(input);
-    header = input->getHeader();
-}
-
-
-Block AddingDefaultsBlockInputStream::readImpl()
-{
-    Block res = children.back()->read();
-    if (!res)
-        return res;
-
-    if (column_defaults.empty())
-        return res;
-
-    const BlockMissingValues & block_missing_values = children.back()->getMissingValues();
-    if (block_missing_values.empty())
-        return res;
-
-    /// res block already has all columns values, with default value for type
-    /// (not value specified in table). We identify which columns we need to
-    /// recalculate with help of block_missing_values.
-    Block evaluate_block{res};
-    /// remove columns for recalculation
-    for (const auto & column : column_defaults)
-    {
-        if (evaluate_block.has(column.first))
-        {
-            size_t column_idx = res.getPositionByName(column.first);
-            if (block_missing_values.hasDefaultBits(column_idx))
-                evaluate_block.erase(column.first);
-        }
-    }
-
-    if (!evaluate_block.columns())
-        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), res.rows()), std::make_shared<DataTypeUInt8>(), "_dummy"});
-
-    evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
-
-    std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
-
-    for (const ColumnWithTypeAndName & column_def : evaluate_block)
-    {
-        const String & column_name = column_def.name;
-
-        if (column_defaults.count(column_name) == 0)
-            continue;
-
-        size_t block_column_position = res.getPositionByName(column_name);
-        ColumnWithTypeAndName & column_read = res.getByPosition(block_column_position);
-        const auto & defaults_mask = block_missing_values.getDefaultsBitmask(block_column_position);
-
-        checkCalculated(column_read, column_def, defaults_mask.size());
-
-        if (!defaults_mask.empty())
-        {
-            /// TODO: FixedString
-            if (isColumnedAsNumber(column_read.type) || isDecimal(column_read.type))
-            {
-                MutableColumnPtr column_mixed = IColumn::mutate(std::move(column_read.column));
-                mixNumberColumns(column_read.type->getTypeId(), column_mixed, column_def.column, defaults_mask);
-                column_read.column = std::move(column_mixed);
-            }
-            else
-            {
-                MutableColumnPtr column_mixed = mixColumns(column_read, column_def, defaults_mask);
-                mixed_columns.emplace(block_column_position, std::move(column_mixed));
-            }
-        }
-    }
-
-    if (!mixed_columns.empty())
-    {
-        /// replace columns saving block structure
-        MutableColumns mutation = res.mutateColumns();
-        for (size_t position = 0; position < mutation.size(); ++position)
-        {
-            auto it = mixed_columns.find(position);
-            if (it != mixed_columns.end())
-                mutation[position] = std::move(it->second);
-        }
-        res.setColumns(std::move(mutation));
-    }
-
-    return res;
 }
 
 }

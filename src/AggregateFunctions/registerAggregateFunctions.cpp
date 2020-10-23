@@ -32,9 +32,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionUniqUpTo(factory);
         registerAggregateFunctionTopK(factory);
         registerAggregateFunctionsBitwise(factory);
-#if !defined(ARCADIA_BUILD)
         registerAggregateFunctionsBitmap(factory);
-#endif
         registerAggregateFunctionsMaxIntersections(factory);
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);
@@ -45,7 +43,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionMoving(factory);
         registerAggregateFunctionCategoricalIV(factory);
         registerAggregateFunctionAggThrow(factory);
-        registerAggregateFunctionRankCorrelation(factory);
     }
 
     {
@@ -59,7 +56,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorNull(factory);
         registerAggregateFunctionCombinatorOrFill(factory);
         registerAggregateFunctionCombinatorResample(factory);
-        registerAggregateFunctionCombinatorDistinct(factory);
     }
 }
 

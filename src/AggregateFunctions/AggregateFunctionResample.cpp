@@ -13,9 +13,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 class AggregateFunctionCombinatorResample final : public IAggregateFunctionCombinator
 {
 public:
@@ -46,7 +43,6 @@ public:
 
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
-        const AggregateFunctionProperties &,
         const DataTypes & arguments,
         const Array & params) const override
     {
@@ -95,8 +91,6 @@ public:
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory)
 {

@@ -15,15 +15,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/**
- * How data is stored (in a nutshell):
- * we have a dictionary @e reverse_index in ColumnUnique that holds pairs (DataType, UIntXX) and a column
- * with UIntXX holding actual data indices.
- * To obtain the value's index, call #getOrFindIndex.
- * To operate on the data (so called indices column), call #getIndexes.
- *
- * @note The indices column always contains the default value (empty StringRef) with the first index.
- */
 class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>
 {
     friend class COWHelper<IColumn, ColumnLowCardinality>;
@@ -48,7 +39,6 @@ public:
 
     std::string getName() const override { return "ColumnLowCardinality"; }
     const char * getFamilyName() const override { return "ColumnLowCardinality"; }
-    TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
 
     ColumnPtr convertToFullColumn() const { return getDictionary().getNestedColumn()->index(getIndexes(), 0); }
     ColumnPtr convertToFullColumnIfLowCardinality() const override { return convertToFullColumn(); }
@@ -100,10 +90,6 @@ public:
         return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
-
-    void updateHashFast(SipHash &) const override;
-
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
@@ -121,13 +107,7 @@ public:
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override;
-
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
-
-    void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const override;
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
@@ -170,12 +150,7 @@ public:
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
-
-    /**
-     * Checks if the dictionary column is Nullable(T).
-     * So LC(Nullable(T)) would return true, LC(U) -- false.
-     */
-    bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
+    bool isNullable() const override { return isColumnNullable(*dictionary.getColumnUniquePtr()); }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
@@ -255,8 +230,6 @@ public:
 
         bool containsDefault() const;
 
-        void updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const;
-
     private:
         WrappedPtr positions;
         size_t size_of_type = 0;
@@ -302,6 +275,8 @@ private:
     private:
         WrappedPtr column_unique;
         bool shared = false;
+
+        static void checkColumn(const IColumn & column);
     };
 
     Dictionary dictionary;

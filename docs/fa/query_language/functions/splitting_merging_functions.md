@@ -1,0 +1,1 @@
+../../../en/query_language/functions/splitting_merging_functions.md

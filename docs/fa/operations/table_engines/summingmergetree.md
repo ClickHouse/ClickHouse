@@ -1,0 +1,1 @@
+../../../en/operations/table_engines/summingmergetree.md

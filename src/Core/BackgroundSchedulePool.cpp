@@ -1,5 +1,6 @@
 #include "BackgroundSchedulePool.h"
 #include <Common/MemoryTracker.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -8,6 +9,12 @@
 #include <chrono>
 #include <ext/scope_guard.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric BackgroundSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundSchedulePool;
+}
 
 namespace DB
 {
@@ -41,13 +48,11 @@ bool BackgroundSchedulePoolTaskInfo::schedule()
     return true;
 }
 
-bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t ms, bool overwrite)
+bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t ms)
 {
     std::lock_guard lock(schedule_mutex);
 
     if (deactivated || scheduled)
-        return false;
-    if (delayed && !overwrite)
         return false;
 
     pool.scheduleDelayedTask(shared_from_this(), ms, lock);
@@ -90,7 +95,7 @@ bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
 void BackgroundSchedulePoolTaskInfo::execute()
 {
     Stopwatch watch;
-    CurrentMetrics::Increment metric_increment{pool.tasks_metric};
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundSchedulePoolTask};
 
     std::lock_guard lock_exec(exec_mutex);
 
@@ -111,7 +116,7 @@ void BackgroundSchedulePoolTaskInfo::execute()
     static const int32_t slow_execution_threshold_ms = 200;
 
     if (milliseconds >= slow_execution_threshold_ms)
-        LOG_TRACE(&Poco::Logger::get(log_name), "Execution took {} ms.", milliseconds);
+        LOG_TRACE(&Logger::get(log_name), "Execution took " << milliseconds << " ms.");
 
     {
         std::lock_guard lock_schedule(schedule_mutex);
@@ -150,12 +155,10 @@ Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 }
 
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, const char *thread_name_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_)
     : size(size_)
-    , tasks_metric(tasks_metric_)
-    , thread_name(thread_name_)
 {
-    LOG_INFO(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size);
+    LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Create BackgroundSchedulePool with " << size << " threads");
 
     threads.resize(size);
     for (auto & thread : threads)
@@ -178,7 +181,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         queue.wakeUpAll();
         delayed_thread.join();
 
-        LOG_TRACE(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
+        LOG_TRACE(&Logger::get("BackgroundSchedulePool"), "Waiting for threads to finish.");
         for (auto & thread : threads)
             thread.join();
     }
@@ -244,10 +247,12 @@ void BackgroundSchedulePool::attachToThreadGroup()
 
 void BackgroundSchedulePool::threadFunction()
 {
-    setThreadName(thread_name.c_str());
+    setThreadName("BackgrSchedPool");
 
     attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
+    if (auto *memory_tracker = CurrentThread::getMemoryTracker())
+        memory_tracker->setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
 
     while (!shutdown)
     {
@@ -262,7 +267,7 @@ void BackgroundSchedulePool::threadFunction()
 
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
-    setThreadName((thread_name + "/D").c_str());
+    setThreadName("BckSchPoolDelay");
 
     attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });

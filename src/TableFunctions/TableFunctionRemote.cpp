@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -27,8 +28,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
-void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Context & context)
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     ASTs & args_func = ast_function->children;
 
@@ -45,12 +45,13 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
     String cluster_description;
     String remote_database;
     String remote_table;
+    ASTPtr remote_table_function_ptr;
     String username;
     String password;
 
     size_t arg_num = 0;
 
-    auto get_string_literal = [](const IAST & node, const char * description)
+    auto getStringLiteral = [](const IAST & node, const char * description)
     {
         const auto * lit = node.as<ASTLiteral>();
         if (!lit)
@@ -70,7 +71,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
     else
     {
         if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
-            cluster_description = get_string_literal(*args[arg_num], "Hosts pattern");
+            cluster_description = getStringLiteral(*args[arg_num], "Hosts pattern");
     }
     ++arg_num;
 
@@ -115,7 +116,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
     {
         if (arg_num < args.size())
         {
-            username = get_string_literal(*args[arg_num], "Username");
+            username = getStringLiteral(*args[arg_num], "Username");
             ++arg_num;
         }
         else
@@ -123,7 +124,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
 
         if (arg_num < args.size())
         {
-            password = get_string_literal(*args[arg_num], "Password");
+            password = getStringLiteral(*args[arg_num], "Password");
             ++arg_num;
         }
     }
@@ -131,11 +132,14 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
     if (arg_num < args.size())
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    context.checkAccess(AccessType::remote);
+
     /// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
     /// We need to mark them as the name of the database or table, because the default value is column.
     for (auto ast : args)
         setIdentifierSpecial(ast);
 
+    ClusterPtr cluster;
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
@@ -151,7 +155,6 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;
-        names.reserve(shards.size());
         for (const auto & shard : shards)
             names.push_back(parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses));
 
@@ -185,57 +188,27 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
             secure);
     }
 
-    if (!remote_table_function_ptr && remote_table.empty())
-        throw Exception("The name of remote table cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
 
-    remote_table_id.database_name = remote_database;
-    remote_table_id.table_name = remote_table;
-}
-
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const
-{
-    /// StorageDistributed supports mismatching structure of remote table, so we can use outdated structure for CREATE ... AS remote(...)
-    /// without additional conversion in StorageTableFunctionProxy
-    if (cached_columns.empty())
-        cached_columns = getActualTableStructure(context);
-
-    assert(cluster);
     StoragePtr res = remote_table_function_ptr
-        ? StorageDistributed::create(
-            StorageID(getDatabaseName(), table_name),
-            cached_columns,
-            ConstraintsDescription{},
+        ? StorageDistributed::createWithOwnCluster(
+            StorageID("", table_name),
+            structure_remote_table,
             remote_table_function_ptr,
-            String{},
-            context,
-            ASTPtr{},
-            String{},
-            String{},
-            false,
-            cluster)
-        : StorageDistributed::create(
-            StorageID(getDatabaseName(), table_name),
-            cached_columns,
-            ConstraintsDescription{},
-            remote_table_id.database_name,
-            remote_table_id.table_name,
-            String{},
-            context,
-            ASTPtr{},
-            String{},
-            String{},
-            false,
-            cluster);
+            cluster,
+            context)
+        : StorageDistributed::createWithOwnCluster(
+            StorageID("", table_name),
+            structure_remote_table,
+            remote_database,
+            remote_table,
+            cluster,
+            context);
 
     res->startup();
     return res;
 }
 
-ColumnsDescription TableFunctionRemote::getActualTableStructure(const Context & context) const
-{
-    assert(cluster);
-    return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
-}
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
     : name{name_}, secure{secure_}

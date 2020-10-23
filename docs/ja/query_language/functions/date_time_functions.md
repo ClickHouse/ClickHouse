@@ -1,0 +1,1 @@
+../../../en/query_language/functions/date_time_functions.md

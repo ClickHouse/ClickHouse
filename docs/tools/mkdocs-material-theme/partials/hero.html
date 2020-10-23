@@ -1,0 +1,9 @@
+{% set class = "md-hero" %}
+{% if not feature.tabs %}
+  {% set class = "md-hero md-hero--expand" %}
+{% endif %}
+<div class="{{ class }}" data-md-component="hero">
+  <div class="md-hero__inner md-grid">
+    {{ page.meta.hero }}
+  </div>
+</div>

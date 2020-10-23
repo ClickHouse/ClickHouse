@@ -1,5 +1,4 @@
 #include <Columns/ColumnTuple.h>
-#include <Columns/IColumnImpl.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -7,7 +6,6 @@
 #include <ext/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
 #include <Core/Field.h>
 
 
@@ -19,7 +17,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -183,24 +180,6 @@ void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
         column->updateHashWithValue(n, hash);
 }
 
-void ColumnTuple::updateWeakHash32(WeakHash32 & hash) const
-{
-    auto s = size();
-
-    if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
-
-    for (const auto & column : columns)
-        column->updateWeakHash32(hash);
-}
-
-void ColumnTuple::updateHashFast(SipHash & hash) const
-{
-    for (const auto & column : columns)
-        column->updateHashFast(hash);
-}
-
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const size_t tuple_size = columns.size();
@@ -285,14 +264,6 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
     return 0;
 }
 
-void ColumnTuple::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnTuple>(assert_cast<const ColumnTuple &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
-}
-
 template <bool positive>
 struct ColumnTuple::Less
 {
@@ -341,23 +312,6 @@ void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_h
             std::sort(res.begin(), res.end(), Less<false>(columns, nan_direction_hint));
         else
             std::sort(res.begin(), res.end(), Less<true>(columns, nan_direction_hint));
-    }
-}
-
-void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
-{
-    if (equal_ranges.empty())
-        return;
-
-    for (const auto & column : columns)
-    {
-        column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
-
-        while (limit && !equal_ranges.empty() && limit <= equal_ranges.back().first)
-            equal_ranges.pop_back();
-
-        if (equal_ranges.empty())
-            break;
     }
 }
 
@@ -417,7 +371,7 @@ void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
 
 bool ColumnTuple::structureEquals(const IColumn & rhs) const
 {
-    if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
+    if (const auto *rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
     {
         const size_t tuple_size = columns.size();
         if (tuple_size != rhs_tuple->columns.size())

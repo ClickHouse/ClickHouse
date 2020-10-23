@@ -1,0 +1,1 @@
+../../../en/query_language/functions/math_functions.md

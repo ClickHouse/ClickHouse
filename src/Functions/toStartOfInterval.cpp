@@ -31,8 +31,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Year>
     {
-        static constexpr auto name = function_name;
-
         static UInt16 execute(UInt16 d, UInt64 years, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfYearInterval(DayNum(d), years);
@@ -47,8 +45,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Quarter>
     {
-        static constexpr auto name = function_name;
-
         static UInt16 execute(UInt16 d, UInt64 quarters, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfQuarterInterval(DayNum(d), quarters);
@@ -63,8 +59,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Month>
     {
-        static constexpr auto name = function_name;
-
         static UInt16 execute(UInt16 d, UInt64 months, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfMonthInterval(DayNum(d), months);
@@ -79,8 +73,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Week>
     {
-        static constexpr auto name = function_name;
-
         static UInt16 execute(UInt16 d, UInt64 weeks, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfWeekInterval(DayNum(d), weeks);
@@ -95,8 +87,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Day>
     {
-        static constexpr auto name = function_name;
-
         static UInt32 execute(UInt16 d, UInt64 days, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfDayInterval(DayNum(d), days);
@@ -111,8 +101,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Hour>
     {
-        static constexpr auto name = function_name;
-
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 hours, const DateLUTImpl & time_zone) { return time_zone.toStartOfHourInterval(t, hours); }
@@ -121,8 +109,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Minute>
     {
-        static constexpr auto name = function_name;
-
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 minutes, const DateLUTImpl & time_zone)
@@ -134,8 +120,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Second>
     {
-        static constexpr auto name = function_name;
-
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 seconds, const DateLUTImpl & time_zone)
@@ -143,6 +127,7 @@ namespace
             return time_zone.toStartOfSecondInterval(t, seconds);
         }
     };
+}
 
 
 class FunctionToStartOfInterval : public IFunction
@@ -226,13 +211,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) override
     {
-        const auto & time_column = arguments[0];
-        const auto & interval_column = arguments[1];
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+        const auto & time_column = block.getByPosition(arguments[0]);
+        const auto & interval_column = block.getByPosition(arguments[1]);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
         auto result_column = dispatchForColumns(time_column, interval_column, time_zone);
-        return result_column;
+        block.getByPosition(result).column = std::move(result_column);
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -247,7 +232,7 @@ public:
 
 private:
     ColumnPtr dispatchForColumns(
-        const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone) const
+        const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
     {
         const auto & from_datatype = *time_column.type.get();
         const auto which_type = WhichDataType(from_datatype);
@@ -276,7 +261,7 @@ private:
 
     template <typename ColumnType, typename FromDataType>
     ColumnPtr dispatchForIntervalColumn(
-        const FromDataType & from, const ColumnType & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone) const
+        const FromDataType & from, const ColumnType & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
@@ -316,7 +301,7 @@ private:
 
 
     template <typename FromDataType, typename ToType, IntervalKind::Kind unit, typename ColumnType>
-    ColumnPtr execute(const FromDataType & from_datatype, const ColumnType & time_column, UInt64 num_units, const DateLUTImpl & time_zone) const
+    ColumnPtr execute(const FromDataType & from_datatype, const ColumnType & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
     {
         const auto & time_data = time_column.getData();
         size_t size = time_column.size();
@@ -326,7 +311,7 @@ private:
 
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
         {
-            const auto transform = TransformDateTime64<Transform<unit>>{from_datatype.getScale()};
+            const auto transform = DateTime64BasicTransformWrapper<Transform<unit>>{from_datatype.getScale()};
             for (size_t i = 0; i != size; ++i)
                 result_data[i] = transform.execute(time_data[i], num_units, time_zone);
         }
@@ -339,7 +324,6 @@ private:
     }
 };
 
-}
 
 void registerFunctionToStartOfInterval(FunctionFactory & factory)
 {

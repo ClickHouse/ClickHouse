@@ -1,5 +1,4 @@
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
-#include <Parsers/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
 
 
@@ -7,34 +6,30 @@ namespace DB
 {
 namespace
 {
-    using EntityType = IAccessEntity::Type;
-    using EntityTypeInfo = IAccessEntity::TypeInfo;
+    using Kind = ASTShowCreateAccessEntityQuery::Kind;
 
-    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    const char * kindToKeyword(Kind kind)
     {
-        bool need_comma = false;
-        for (const auto & name : names)
+        switch (kind)
         {
-            if (std::exchange(need_comma, true))
-                settings.ostr << ',';
-            settings.ostr << ' ' << backQuoteIfNeed(name);
+            case Kind::USER: return "USER";
+            case Kind::QUOTA: return "QUOTA";
+            case Kind::ROW_POLICY: return "POLICY";
         }
+        __builtin_unreachable();
     }
 }
 
 
-String ASTShowCreateAccessEntityQuery::getKeyword() const
+ASTShowCreateAccessEntityQuery::ASTShowCreateAccessEntityQuery(Kind kind_)
+    : kind(kind_), keyword(kindToKeyword(kind_))
 {
-    size_t total_count = (names.size()) + (row_policy_names ? row_policy_names->size() : 0) + current_user + current_quota;
-    bool multiple = (total_count != 1) || all || !short_name.empty() || database_and_table_name;
-    const auto & type_info = EntityTypeInfo::get(type);
-    return multiple ? type_info.plural_name : type_info.name;
 }
 
 
 String ASTShowCreateAccessEntityQuery::getID(char) const
 {
-    return String("SHOW CREATE ") + getKeyword() + " query";
+    return String("SHOW CREATE ") + keyword + " query";
 }
 
 
@@ -46,42 +41,25 @@ ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 
 void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CREATE " << getKeyword() << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
+                  << "SHOW CREATE " << keyword
+                  << (settings.hilite ? hilite_none : "");
 
-    if (!names.empty())
-        formatNames(names, settings);
-
-    if (row_policy_names)
+    if ((kind == Kind::USER) && current_user)
     {
-        settings.ostr << " ";
-        row_policy_names->format(settings);
     }
-
-    if (!short_name.empty())
-        settings.ostr << " " << backQuoteIfNeed(short_name);
-
-    if (database_and_table_name)
+    else if ((kind == Kind::QUOTA) && current_quota)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT" << (settings.hilite ? hilite_none : "");
+    else if (kind == Kind::ROW_POLICY)
     {
-        const String & database = database_and_table_name->first;
-        const String & table_name = database_and_table_name->second;
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
-        settings.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
-        settings.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
+        const String & database = row_policy_name.database;
+        const String & table_name = row_policy_name.table_name;
+        const String & policy_name = row_policy_name.policy_name;
+        settings.ostr << ' ' << backQuoteIfNeed(policy_name) << (settings.hilite ? hilite_keyword : "") << " ON "
+                      << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
+                      << backQuoteIfNeed(table_name);
     }
+    else
+        settings.ostr << " " << backQuoteIfNeed(name);
 }
-
-
-void ASTShowCreateAccessEntityQuery::replaceEmptyDatabaseWithCurrent(const String & current_database)
-{
-    if (row_policy_names)
-        row_policy_names->replaceEmptyDatabaseWithCurrent(current_database);
-
-    if (database_and_table_name)
-    {
-        String & database = database_and_table_name->first;
-        if (database.empty())
-            database = current_database;
-    }
-}
-
 }

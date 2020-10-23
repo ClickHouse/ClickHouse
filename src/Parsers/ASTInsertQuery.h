@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Interpreters/StorageID.h>
+
 
 namespace DB
 {
@@ -12,11 +12,11 @@ namespace DB
 class ASTInsertQuery : public IAST
 {
 public:
-    StorageID table_id = StorageID::createEmpty();
+    String database;
+    String table;
     ASTPtr columns;
     String format;
     ASTPtr select;
-    ASTPtr watch;
     ASTPtr table_function;
     ASTPtr settings_ast;
 
@@ -31,7 +31,7 @@ public:
     void tryFindInputFunction(ASTPtr & input_function) const;
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return "InsertQuery" + (delim + table_id.database_name) + delim + table_id.table_name; }
+    String getID(char delim) const override { return "InsertQuery" + (delim + database) + delim + table; }
 
     ASTPtr clone() const override
     {
@@ -40,7 +40,6 @@ public:
 
         if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
-        if (watch) { res->watch = watch->clone(); res->children.push_back(res->watch); }
         if (table_function) { res->table_function = table_function->clone(); res->children.push_back(res->table_function); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
 

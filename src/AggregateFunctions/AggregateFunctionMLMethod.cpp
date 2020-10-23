@@ -130,7 +130,7 @@ LinearModelData::LinearModelData(
     gradient_batch.resize(param_num_ + 1, Float64{0.0});
 }
 
-void LinearModelData::updateState()
+void LinearModelData::update_state()
 {
     if (batch_size == 0)
         return;
@@ -143,12 +143,13 @@ void LinearModelData::updateState()
 
 void LinearModelData::predict(
     ColumnVector<Float64>::Container & container,
-    ColumnsWithTypeAndName & arguments,
+    Block & block,
     size_t offset,
     size_t limit,
+    const ColumnNumbers & arguments,
     const Context & context) const
 {
-    gradient_computer->predict(container, arguments, offset, limit, weights, bias, context);
+    gradient_computer->predict(container, block, offset, limit, arguments, weights, bias, context);
 }
 
 void LinearModelData::returnWeights(IColumn & to) const
@@ -196,10 +197,10 @@ void LinearModelData::merge(const DB::LinearModelData & rhs)
     if (iter_num == 0 && rhs.iter_num == 0)
         return;
 
-    updateState();
+    update_state();
     /// can't update rhs state because it's constant
 
-    /// squared mean is more stable (in sense of quality of prediction) when two states with quietly different number of learning steps are merged
+    /// squared mean is more stable (in sence of quality of prediction) when two states with quietly different number of learning steps are merged
     Float64 frac = (static_cast<Float64>(iter_num) * iter_num) / (iter_num * iter_num + rhs.iter_num * rhs.iter_num);
 
     for (size_t i = 0; i < weights.size(); ++i)
@@ -218,13 +219,13 @@ void LinearModelData::add(const IColumn ** columns, size_t row_num)
     Float64 target = (*columns[0]).getFloat64(row_num);
 
     /// Here we have columns + 1 as first column corresponds to target value, and others - to features
-    weights_updater->addToBatch(
+    weights_updater->add_to_batch(
         gradient_batch, *gradient_computer, weights, bias, l2_reg_coef, target, columns + 1, row_num);
 
     ++batch_size;
     if (batch_size == batch_capacity)
     {
-        updateState();
+        update_state();
     }
 }
 
@@ -299,7 +300,7 @@ void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & b
     beta2_powered_ *= beta2_;
 }
 
-void Adam::addToBatch(
+void Adam::add_to_batch(
         std::vector<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
         const std::vector<Float64> & weights,
@@ -357,7 +358,7 @@ void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64
     bias += accumulated_gradient[weights.size()];
 }
 
-void Nesterov::addToBatch(
+void Nesterov::add_to_batch(
     std::vector<Float64> & batch_gradient,
     IGradientComputer & gradient_computer,
     const std::vector<Float64> & weights,
@@ -431,7 +432,7 @@ void StochasticGradientDescent::update(
     bias += (learning_rate * batch_gradient[weights.size()]) / batch_size;
 }
 
-void IWeightsUpdater::addToBatch(
+void IWeightsUpdater::add_to_batch(
     std::vector<Float64> & batch_gradient,
     IGradientComputer & gradient_computer,
     const std::vector<Float64> & weights,
@@ -448,14 +449,15 @@ void IWeightsUpdater::addToBatch(
 
 void LogisticRegression::predict(
     ColumnVector<Float64>::Container & container,
-    ColumnsWithTypeAndName & arguments,
+    Block & block,
     size_t offset,
     size_t limit,
+    const ColumnNumbers & arguments,
     const std::vector<Float64> & weights,
     Float64 bias,
     const Context & /*context*/) const
 {
-    size_t rows_num = arguments.front().column->size();
+    size_t rows_num = block.rows();
 
     if (offset > rows_num || offset + limit > rows_num)
         throw Exception("Invalid offset and limit for LogisticRegression::predict. "
@@ -466,7 +468,7 @@ void LogisticRegression::predict(
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
-        const ColumnWithTypeAndName & cur_col = arguments[i];
+        const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
 
         if (!isNativeNumber(cur_col.type))
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
@@ -516,9 +518,10 @@ void LogisticRegression::compute(
 
 void LinearRegression::predict(
     ColumnVector<Float64>::Container & container,
-    ColumnsWithTypeAndName & arguments,
+    Block & block,
     size_t offset,
     size_t limit,
+    const ColumnNumbers & arguments,
     const std::vector<Float64> & weights,
     Float64 bias,
     const Context & /*context*/) const
@@ -528,7 +531,7 @@ void LinearRegression::predict(
         throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
     }
 
-    size_t rows_num = arguments.front().column->size();
+    size_t rows_num = block.rows();
 
     if (offset > rows_num || offset + limit > rows_num)
         throw Exception("Invalid offset and limit for LogisticRegression::predict. "
@@ -539,7 +542,7 @@ void LinearRegression::predict(
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
-        const ColumnWithTypeAndName & cur_col = arguments[i];
+        const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
 
         if (!isNativeNumber(cur_col.type))
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);

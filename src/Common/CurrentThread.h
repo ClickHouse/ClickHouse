@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 
+#include <common/likely.h>
 #include <common/StringRef.h>
 #include <Common/ThreadStatus.h>
 
@@ -32,7 +33,7 @@ class InternalTextLogsQueue;
 class CurrentThread
 {
 public:
-    /// Return true in case of successful initialization
+    /// Return true in case of successful initializaiton
     static bool isInitialized();
 
     /// Handler to current thread
@@ -46,13 +47,17 @@ public:
                                             LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
 
-    static void setFatalErrorCallback(std::function<void()> callback);
-
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
     static void updatePerformanceCounters();
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker * getMemoryTracker();
+
+    static inline Int64 & getUntrackedMemory()
+    {
+        /// It assumes that (current_thread != nullptr) is already checked with getMemoryTracker()
+        return current_thread->untracked_memory;
+    }
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
@@ -102,3 +107,4 @@ private:
 };
 
 }
+

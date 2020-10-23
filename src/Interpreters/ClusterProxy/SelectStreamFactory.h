@@ -2,13 +2,10 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ClusterProxy/IStreamFactory.h>
-#include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
-
-using Scalars = std::map<String, Block>;
 
 namespace ClusterProxy
 {
@@ -20,7 +17,7 @@ public:
     SelectStreamFactory(
         const Block & header_,
         QueryProcessingStage::Enum processed_stage_,
-        StorageID main_table_,
+        QualifiedTableName main_table_,
         const Scalars & scalars_,
         bool has_virtual_shard_num_column_,
         const Tables & external_tables);
@@ -39,12 +36,12 @@ public:
         const String & query, const ASTPtr & query_ast,
         const Context & context, const ThrottlerPtr & throttler,
         const SelectQueryInfo & query_info,
-        Pipes & pipes) override;
+        Pipes & res) override;
 
 private:
     const Block header;
     QueryProcessingStage::Enum processed_stage;
-    StorageID main_table = StorageID::createEmpty();
+    QualifiedTableName main_table;
     ASTPtr table_func_ptr;
     Scalars scalars;
     bool has_virtual_shard_num_column = false;

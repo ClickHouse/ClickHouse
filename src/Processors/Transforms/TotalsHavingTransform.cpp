@@ -21,13 +21,13 @@ void finalizeChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     for (auto & column : columns)
-        if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
-            column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
+        if (const auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(column.get()))
+            column = agg_function->convertToValues();
 
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-Block TotalsHavingTransform::transformHeader(Block block, const ExpressionActionsPtr & expression, bool final)
+static Block createOutputHeader(Block block, const ExpressionActionsPtr & expression, bool final)
 {
     if (final)
         finalizeBlock(block);
@@ -46,7 +46,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, transformHeader(header, expression_, final_), true)
+    : ISimpleTransform(header, createOutputHeader(header, expression_, final_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)
@@ -257,8 +257,7 @@ void TotalsHavingTransform::prepareTotals()
     {
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
         expression->execute(block);
-        /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
-        totals = Chunk(block.getColumns(), block.rows());
+        totals = Chunk(block.getColumns(), 1);
     }
 }
 

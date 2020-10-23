@@ -1,6 +1,6 @@
 #include "TaskStatsInfoGetter.h"
 #include <Common/Exception.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 #include <unistd.h>
 
@@ -19,9 +19,6 @@
 #include <linux/taskstats.h>
 #include <linux/capability.h>
 
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#endif
 
 /// Basic idea is motivated by "iotop" tool.
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt

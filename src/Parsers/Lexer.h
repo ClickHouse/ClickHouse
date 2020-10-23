@@ -48,8 +48,7 @@ namespace DB
     M(GreaterOrEquals) \
     M(Concatenation)          /** String concatenation operator: || */ \
     \
-    M(At)                     /** @. Used for specifying user names and also for MySQL-style variables. */ \
-    M(DoubleAt)               /** @@. Used for MySQL-style global variables. */ \
+    M(At)                     /** @. Used only for specifying user names. */ \
     \
     /** Order is important. EndOfStream goes after all usual tokens, and special error tokens goes after EndOfStream. */ \
     \

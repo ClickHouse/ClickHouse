@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -37,8 +37,6 @@ struct IntervalKind
     /// Returns an uppercased version of what `toString()` returns.
     const char * toKeyword() const;
 
-    const char * toLowercasedKeyword() const;
-
     /// Returns the string which can be passed to the `unit` parameter of the dateDiff() function.
     /// For example, `IntervalKind{IntervalKind::Day}.getDateDiffParameter()` returns "day".
     const char * toDateDiffUnit() const;
@@ -52,10 +50,5 @@ struct IntervalKind
     /// For example, `IntervalKind{IntervalKind::Day}.getExtractTimePartFunctionName()`
     /// returns "toDayOfMonth".
     const char * toNameOfFunctionExtractTimePart() const;
-
-    /// Converts the string representation of an interval kind to its IntervalKind equivalent.
-    /// Returns false if the conversion unsucceeded.
-    /// For example, `IntervalKind::tryParseString('second', result)` returns `result` equals `IntervalKind::Kind::Second`.
-    static bool tryParseString(const std::string & kind, IntervalKind::Kind & result);
 };
 }

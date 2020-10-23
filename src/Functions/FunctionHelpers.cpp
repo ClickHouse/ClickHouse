@@ -7,6 +7,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -50,37 +52,55 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
 }
 
 
-ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns)
+static Block createBlockWithNestedColumnsImpl(const Block & block, const std::unordered_set<size_t> & args)
 {
-    ColumnsWithTypeAndName res;
-    for (const auto & col : columns)
+    Block res;
+    size_t columns = block.columns();
+
+    for (size_t i = 0; i < columns; ++i)
     {
-        if (col.type->isNullable())
+        const auto & col = block.getByPosition(i);
+
+        if (args.count(i) && col.type->isNullable())
         {
             const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(*col.type).getNestedType();
 
             if (!col.column)
             {
-                res.emplace_back(ColumnWithTypeAndName{nullptr, nested_type, col.name});
+                res.insert({nullptr, nested_type, col.name});
             }
             else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col.column))
             {
                 const auto & nested_col = nullable->getNestedColumnPtr();
-                res.emplace_back(ColumnWithTypeAndName{nested_col, nested_type, col.name});
+                res.insert({nested_col, nested_type, col.name});
             }
             else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
             {
                 const auto & nested_col = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn())->getNestedColumnPtr();
-                res.emplace_back(ColumnWithTypeAndName{ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
+                res.insert({ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
             }
             else
                 throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
         }
         else
-            res.emplace_back(col);
+            res.insert(col);
     }
 
     return res;
+}
+
+
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args)
+{
+    std::unordered_set<size_t> args_set(args.begin(), args.end());
+    return createBlockWithNestedColumnsImpl(block, args_set);
+}
+
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result)
+{
+    std::unordered_set<size_t> args_set(args.begin(), args.end());
+    args_set.insert(result);
+    return createBlockWithNestedColumnsImpl(block, args_set);
 }
 
 void validateArgumentType(const IFunction & func, const DataTypes & arguments,
@@ -117,13 +137,13 @@ void validateArgumentsImpl(const IFunction & func,
 
         const auto & arg = arguments[i + argument_offset];
         const auto descriptor = descriptors[i];
-        if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
-            throw Exception("Illegal type of argument #" + std::to_string(argument_offset + i + 1) // +1 is for human-friendly 1-based indexing
+        if (int errorCode = descriptor.isValid(arg.type, arg.column); errorCode != 0)
+            throw Exception("Illegal type of argument #" + std::to_string(i)
                             + (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{})
                             + " of function " + func.getName()
                             + (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{})
                             + (arg.type ? ", got " + arg.type->getName() : String{}),
-                            error_code);
+                            errorCode);
     }
 }
 
@@ -147,7 +167,7 @@ void validateFunctionArgumentTypes(const IFunction & func,
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto join_argument_types = [](const auto & args, const String sep = ", ")
+        auto joinArgumentTypes = [](const auto & args, const String sep = ", ") -> String
         {
             String result;
             for (const auto & a : args)
@@ -174,11 +194,11 @@ void validateFunctionArgumentTypes(const IFunction & func,
 
         throw Exception("Incorrect number of arguments for function " + func.getName()
                         + " provided " + std::to_string(arguments.size())
-                        + (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{})
+                        + (!arguments.empty() ? " (" + joinArgumentTypes(arguments) + ")" : String{})
                         + ", expected " + std::to_string(mandatory_args.size())
                         + (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
-                        + " (" + join_argument_types(mandatory_args)
-                        + (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : "")
+                        + " (" + joinArgumentTypes(mandatory_args)
+                        + (!optional_args.empty() ? ", [" + joinArgumentTypes(optional_args) + "]" : "")
                         + ")",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }

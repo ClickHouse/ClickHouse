@@ -5,8 +5,9 @@
 #include <climits>
 #include <random>
 #include <functional>
-#include <common/types.h>
+#include <common/Types.h>
 #include <ext/scope_guard.h>
+#include <Core/Types.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>
@@ -56,15 +57,13 @@ public:
             NestedPools nested_pools_,
             time_t decrease_error_period_,
             size_t max_error_cap_,
-            Poco::Logger * log_)
+            Logger * log_)
         : nested_pools(std::move(nested_pools_))
         , decrease_error_period(decrease_error_period_)
         , max_error_cap(max_error_cap_)
         , shared_pool_states(nested_pools.size())
         , log(log_)
     {
-        for (size_t i = 0;i < nested_pools.size(); ++i)
-            shared_pool_states[i].config_priority = nested_pools[i]->getPriority();
     }
 
     struct TryResult
@@ -101,34 +100,29 @@ public:
     /// this functor. The pools with lower result value will be tried first.
     using GetPriorityFunc = std::function<size_t(size_t index)>;
 
+    /// Returns a single connection.
+    Entry get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
+
 
     /// Returns at least min_entries and at most max_entries connections (at most one connection per nested pool).
     /// The method will throw if it is unable to get min_entries alive connections or
     /// if fallback_to_stale_replicas is false and it is unable to get min_entries connections to up-to-date replicas.
     std::vector<TryResult> getMany(
             size_t min_entries, size_t max_entries, size_t max_tries,
-            size_t max_ignored_errors,
-            bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority = GetPriorityFunc());
+            const GetPriorityFunc & get_priority = GetPriorityFunc(),
+            bool fallback_to_stale_replicas = true);
+
+    void reportError(const Entry & entry);
 
 protected:
     struct PoolState;
 
     using PoolStates = std::vector<PoolState>;
 
-    /// Returns a single connection.
-    Entry get(size_t max_ignored_errors, bool fallback_to_stale_replicas,
-        const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
-
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
-    PoolStates updatePoolStates(size_t max_ignored_errors);
-
-    auto getPoolExtendedStates() const
-    {
-        std::lock_guard lock(pool_states_mutex);
-        return std::make_tuple(shared_pool_states, nested_pools, last_error_decrease_time);
-    }
+    PoolStates updatePoolStates();
+    PoolStates getPoolStates() const;
 
     NestedPools nested_pools;
 
@@ -140,18 +134,14 @@ protected:
     /// The time when error counts were last decreased.
     time_t last_error_decrease_time = 0;
 
-    Poco::Logger * log;
+    Logger * log;
 };
 
 template <typename TNestedPool>
 typename TNestedPool::Entry
-PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_to_stale_replicas,
-    const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
+PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
-    std::vector<TryResult> results = getMany(
-        1 /* min entries */, 1 /* max entries */, 1 /* max tries */,
-        max_ignored_errors, fallback_to_stale_replicas,
-        try_get_entry, get_priority);
+    std::vector<TryResult> results = getMany(1, 1, 1, try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(
                 "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
@@ -163,13 +153,12 @@ template <typename TNestedPool>
 std::vector<typename PoolWithFailoverBase<TNestedPool>::TryResult>
 PoolWithFailoverBase<TNestedPool>::getMany(
         size_t min_entries, size_t max_entries, size_t max_tries,
-        size_t max_ignored_errors,
-        bool fallback_to_stale_replicas,
         const TryGetEntryFunc & try_get_entry,
-        const GetPriorityFunc & get_priority)
+        const GetPriorityFunc & get_priority,
+        bool fallback_to_stale_replicas)
 {
     /// Update random numbers and error counts.
-    PoolStates pool_states = updatePoolStates(max_ignored_errors);
+    PoolStates pool_states = updatePoolStates();
     if (get_priority)
     {
         for (size_t i = 0; i < pool_states.size(); ++i)
@@ -229,7 +218,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
             ShuffledPool & shuffled_pool = shuffled_pools[i];
             TryResult & result = try_results[i];
-            if (max_tries && (shuffled_pool.error_count >= max_tries || !result.entry.isNull()))
+            if (shuffled_pool.error_count >= max_tries || !result.entry.isNull())
                 continue;
 
             std::string fail_message;
@@ -250,7 +239,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             }
             else
             {
-                LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
+                LOG_WARNING(log, "Connection failed at try №"
+                            << (shuffled_pool.error_count + 1) << ", reason: " << fail_message);
                 ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
                 shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
@@ -307,12 +297,25 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 }
 
 template <typename TNestedPool>
+void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
+{
+    for (size_t i = 0; i < nested_pools.size(); ++i)
+    {
+        if (nested_pools[i]->contains(entry))
+        {
+            std::lock_guard lock(pool_states_mutex);
+            auto & pool_state = shared_pool_states[i];
+            pool_state.error_count = std::min(max_error_cap, pool_state.error_count + 1);
+            return;
+        }
+    }
+    throw DB::Exception("Can't find pool to report error", DB::ErrorCodes::LOGICAL_ERROR);
+}
+
+template <typename TNestedPool>
 struct PoolWithFailoverBase<TNestedPool>::PoolState
 {
     UInt64 error_count = 0;
-    /// Priority from the <remote_server> configuration.
-    Int64 config_priority = 1;
-    /// Priority from the GetPriorityFunc.
     Int64 priority = 0;
     UInt32 random = 0;
 
@@ -323,8 +326,8 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
 
     static bool compare(const PoolState & lhs, const PoolState & rhs)
     {
-        return std::forward_as_tuple(lhs.error_count, lhs.config_priority, lhs.priority, lhs.random)
-             < std::forward_as_tuple(rhs.error_count, rhs.config_priority, rhs.priority, rhs.random);
+        return std::forward_as_tuple(lhs.error_count, lhs.priority, lhs.random)
+            < std::forward_as_tuple(rhs.error_count, rhs.priority, rhs.random);
     }
 
 private:
@@ -333,7 +336,7 @@ private:
 
 template <typename TNestedPool>
 typename PoolWithFailoverBase<TNestedPool>::PoolStates
-PoolWithFailoverBase<TNestedPool>::updatePoolStates(size_t max_ignored_errors)
+PoolWithFailoverBase<TNestedPool>::updatePoolStates()
 {
     PoolStates result;
     result.reserve(nested_pools.size());
@@ -352,17 +355,14 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates(size_t max_ignored_errors)
 
             if (delta >= 0)
             {
-                const UInt64 MAX_BITS = sizeof(UInt64) * CHAR_BIT;
-                size_t shift_amount = MAX_BITS;
                 /// Divide error counts by 2 every decrease_error_period seconds.
-                if (decrease_error_period)
-                    shift_amount = delta / decrease_error_period;
+                size_t shift_amount = delta / decrease_error_period;
                 /// Update time but don't do it more often than once a period.
                 /// Else if the function is called often enough, error count will never decrease.
                 if (shift_amount)
                     last_error_decrease_time = current_time;
 
-                if (shift_amount >= MAX_BITS)
+                if (shift_amount >= sizeof(UInt64) * CHAR_BIT)
                 {
                     for (auto & state : shared_pool_states)
                         state.error_count = 0;
@@ -379,10 +379,13 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates(size_t max_ignored_errors)
 
         result.assign(shared_pool_states.begin(), shared_pool_states.end());
     }
-
-    /// distributed_replica_max_ignored_errors
-    for (auto & state : result)
-        state.error_count = std::max<UInt64>(0, state.error_count - max_ignored_errors);
-
     return result;
+}
+
+template <typename TNestedPool>
+typename PoolWithFailoverBase<TNestedPool>::PoolStates
+PoolWithFailoverBase<TNestedPool>::getPoolStates() const
+{
+    std::lock_guard lock(pool_states_mutex);
+    return shared_pool_states;
 }

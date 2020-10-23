@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/GeoHash.h>
+#include <Functions/GeoUtils.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Columns/ColumnString.h>
@@ -19,9 +19,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
-
-namespace
-{
 
 // geohashEncode(lon float32/64, lat float32/64, length UInt8) => string
 class FunctionGeohashEncode : public IFunction
@@ -59,7 +56,7 @@ public:
     }
 
     template <typename LonType, typename LatType>
-    bool tryExecute(const IColumn * lon_column, const IColumn * lat_column, UInt64 precision_value, ColumnPtr & result) const
+    bool tryExecute(const IColumn * lon_column, const IColumn * lat_column, UInt64 precision_value, ColumnPtr & result)
     {
         const ColumnVector<LonType> * longitude = checkAndGetColumn<ColumnVector<LonType>>(lon_column);
         const ColumnVector<LatType> * latitude = checkAndGetColumn<ColumnVector<LatType>>(lat_column);
@@ -83,7 +80,7 @@ public:
             const Float64 longitude_value = longitude->getElement(i);
             const Float64 latitude_value = latitude->getElement(i);
 
-            const size_t encoded_size = geohashEncode(longitude_value, latitude_value, precision_value, pos);
+            const size_t encoded_size = GeoUtils::geohashEncode(longitude_value, latitude_value, precision_value, pos);
 
             pos += encoded_size;
             *pos = '\0';
@@ -100,28 +97,28 @@ public:
 
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        const IColumn * longitude = arguments[0].column.get();
-        const IColumn * latitude = arguments[1].column.get();
+        const IColumn * longitude = block.getByPosition(arguments[0]).column.get();
+        const IColumn * latitude = block.getByPosition(arguments[1]).column.get();
 
         const UInt64 precision_value = std::min<UInt64>(GEOHASH_MAX_TEXT_LENGTH,
-                arguments.size() == 3 ? arguments[2].column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
+                arguments.size() == 3 ? block.getByPosition(arguments[2]).column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
 
-        ColumnPtr res_column;
+        ColumnPtr & res_column = block.getByPosition(result).column;
 
         if (tryExecute<Float32, Float32>(longitude, latitude, precision_value, res_column) ||
             tryExecute<Float64, Float32>(longitude, latitude, precision_value, res_column) ||
             tryExecute<Float32, Float64>(longitude, latitude, precision_value, res_column) ||
             tryExecute<Float64, Float64>(longitude, latitude, precision_value, res_column))
-            return res_column;
+            return;
 
         std::string arguments_description;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             if (i != 0)
                 arguments_description += ", ";
-            arguments_description += arguments[i].column->getName();
+            arguments_description += block.getByPosition(arguments[i]).column->getName();
         }
 
         throw Exception("Unsupported argument types: " + arguments_description +
@@ -130,7 +127,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionGeohashEncode(FunctionFactory & factory)
 {

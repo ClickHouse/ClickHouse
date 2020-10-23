@@ -4,9 +4,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
 
-#include <ext/scope_guard.h>
 
 namespace DB
 {
@@ -18,12 +16,6 @@ namespace ErrorCodes
 
 namespace
 {
-    void checkColumn(const IColumn & column)
-    {
-        if (!dynamic_cast<const IColumnUnique *>(&column))
-            throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
-    }
-
     template <typename T>
     PaddedPODArray<T> * getIndexesData(IColumn & indexes)
     {
@@ -191,7 +183,7 @@ void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, si
 
         /// TODO: Support native insertion from other unique column. It will help to avoid null map creation.
 
-        auto sub_idx = IColumn::mutate(low_cardinality_src->getIndexes().cut(start, length));
+        auto sub_idx = (*low_cardinality_src->getIndexes().cut(start, length)).mutate();
         auto idx_map = mapUniqueIndex(*sub_idx);
 
         auto src_nested = low_cardinality_src->getDictionary().getNestedColumn();
@@ -243,27 +235,6 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
     return new_pos;
 }
 
-void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
-{
-    auto s = size();
-
-    if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
-
-    const auto & dict = getDictionary().getNestedColumn();
-    WeakHash32 dict_hash(dict->size());
-    dict->updateWeakHash32(dict_hash);
-
-    idx.updateWeakHash(hash, dict_hash);
-}
-
-void ColumnLowCardinality::updateHashFast(SipHash & hash) const
-{
-    idx.getPositions()->updateHashFast(hash);
-    getDictionary().getNestedColumn()->updateHashFast(hash);
-}
-
 void ColumnLowCardinality::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
@@ -275,7 +246,7 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
     if (size == 0)
         unique_ptr = unique_ptr->cloneEmpty();
 
-    return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size));
+    return ColumnLowCardinality::create((*std::move(unique_ptr)).mutate(), getIndexes().cloneResized(size));
 }
 
 int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
@@ -284,15 +255,6 @@ int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int
     size_t n_index = getIndexes().getUInt(n);
     size_t m_index = low_cardinality_column.getIndexes().getUInt(m);
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
-}
-
-void ColumnLowCardinality::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                         PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                         int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnLowCardinality>(
-            assert_cast<const ColumnLowCardinality &>(rhs), rhs_row_num, row_indexes,
-            compare_results, direction, nan_direction_hint);
 }
 
 void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
@@ -330,95 +292,13 @@ void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_di
     }
 }
 
-void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
-{
-    if (equal_ranges.empty())
-        return;
-
-    if (limit >= size() || limit >= equal_ranges.back().second)
-        limit = 0;
-
-    size_t number_of_ranges = equal_ranges.size();
-    if (limit)
-        --number_of_ranges;
-
-    EqualRanges new_ranges;
-    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
-
-    for (size_t i = 0; i < number_of_ranges; ++i)
-    {
-        const auto& [first, last] = equal_ranges[i];
-        if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
-                      {return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) > 0; });
-        else
-            std::sort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
-                      {return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) < 0; });
-
-        auto new_first = first;
-        for (auto j = first + 1; j < last; ++j)
-        {
-            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        if (last - new_first > 1)
-            new_ranges.emplace_back(new_first, last);
-    }
-
-    if (limit)
-    {
-        const auto & [first, last] = equal_ranges.back();
-
-        if (limit < first || limit > last)
-            return;
-
-        /// Since then we are working inside the interval.
-
-        if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
-                              {return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) > 0; });
-        else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
-                              {return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) < 0; });
-        auto new_first = first;
-
-        for (auto j = first + 1; j < limit; ++j)
-        {
-            if (getDictionary().compareAt(getIndexes().getUInt(res[new_first]), getIndexes().getUInt(res[j]), getDictionary(), nan_direction_hint) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-
-        auto new_last = limit;
-        for (auto j = limit; j < last; ++j)
-        {
-            if (getDictionary().compareAt(getIndexes().getUInt(res[new_first]), getIndexes().getUInt(res[j]), getDictionary(), nan_direction_hint) == 0)
-            {
-                std::swap(res[new_last], res[j]);
-                ++new_last;
-            }
-        }
-        if (new_last - new_first > 1)
-            new_ranges.emplace_back(new_first, new_last);
-    }
-}
-
 std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     auto columns = getIndexes().scatter(num_columns, selector);
     for (auto & column : columns)
     {
         auto unique_ptr = dictionary.getColumnUniquePtr();
-        column = ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), std::move(column));
+        column = ColumnLowCardinality::create((*std::move(unique_ptr)).mutate(), std::move(column));
     }
 
     return columns;
@@ -435,7 +315,7 @@ void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
 
 ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t start, size_t length) const
 {
-    auto sub_positions = IColumn::mutate(idx.getPositions()->cut(start, length));
+    auto sub_positions = (*idx.getPositions()->cut(start, length)).mutate();
     /// Create column with new indexes and old dictionary.
     /// Dictionary is shared, but will be recreated after compactInplace call.
     auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), std::move(sub_positions));
@@ -462,7 +342,7 @@ void ColumnLowCardinality::compactIfSharedDictionary()
 ColumnLowCardinality::DictionaryEncodedColumn
 ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const
 {
-    MutableColumnPtr sub_indexes = IColumn::mutate(idx.getPositions()->cut(offset, limit));
+    MutableColumnPtr sub_indexes = (*std::move(idx.getPositions()->cut(offset, limit))).mutate();
     auto indexes_map = mapUniqueIndex(*sub_indexes);
     auto sub_keys = getDictionary().getNestedColumn()->index(*indexes_map, 0);
 
@@ -515,25 +395,25 @@ void ColumnLowCardinality::Index::callForType(Callback && callback, size_t size_
 
 size_t ColumnLowCardinality::Index::getSizeOfIndexType(const IColumn & column, size_t hint)
 {
-    auto check_for = [&](auto type) { return typeid_cast<const ColumnVector<decltype(type)> *>(&column) != nullptr; };
-    auto try_get_size_for = [&](auto type) -> size_t { return check_for(type) ? sizeof(decltype(type)) : 0; };
+    auto checkFor = [&](auto type) { return typeid_cast<const ColumnVector<decltype(type)> *>(&column) != nullptr; };
+    auto tryGetSizeFor = [&](auto type) -> size_t { return checkFor(type) ? sizeof(decltype(type)) : 0; };
 
     if (hint)
     {
         size_t size = 0;
-        callForType([&](auto type) { size = try_get_size_for(type); }, hint);
+        callForType([&](auto type) { size = tryGetSizeFor(type); }, hint);
 
         if (size)
             return size;
     }
 
-    if (auto size = try_get_size_for(UInt8()))
+    if (auto size = tryGetSizeFor(UInt8()))
         return size;
-    if (auto size = try_get_size_for(UInt16()))
+    if (auto size = tryGetSizeFor(UInt16()))
         return size;
-    if (auto size = try_get_size_for(UInt32()))
+    if (auto size = tryGetSizeFor(UInt32()))
         return size;
-    if (auto size = try_get_size_for(UInt64()))
+    if (auto size = tryGetSizeFor(UInt64()))
         return size;
 
     throw Exception("Unexpected indexes type for ColumnLowCardinality. Expected UInt, got " + column.getName(),
@@ -629,13 +509,13 @@ UInt64 ColumnLowCardinality::Index::getMaxPositionForCurrentType() const
 size_t ColumnLowCardinality::Index::getPositionAt(size_t row) const
 {
     size_t pos;
-    auto get_position = [&](auto type)
+    auto getPosition = [&](auto type)
     {
         using CurIndexType = decltype(type);
         pos = getPositionsData<CurIndexType>()[row];
     };
 
-    callForType(std::move(get_position), size_of_type);
+    callForType(std::move(getPosition), size_of_type);
     return pos;
 }
 
@@ -650,7 +530,7 @@ void ColumnLowCardinality::Index::insertPosition(UInt64 position)
 
 void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit)
 {
-    auto insert_for_type = [&](auto type)
+    auto insertForType = [&](auto type)
     {
         using ColumnType = decltype(type);
         const auto * column_ptr = typeid_cast<const ColumnVector<ColumnType> *>(&column);
@@ -684,10 +564,10 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
         return true;
     };
 
-    if (!insert_for_type(UInt8()) &&
-        !insert_for_type(UInt16()) &&
-        !insert_for_type(UInt32()) &&
-        !insert_for_type(UInt64()))
+    if (!insertForType(UInt8()) &&
+        !insertForType(UInt16()) &&
+        !insertForType(UInt32()) &&
+        !insertForType(UInt64()))
         throw Exception("Invalid column for ColumnLowCardinality index. Expected UInt, got " + column.getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
 
@@ -759,24 +639,6 @@ bool ColumnLowCardinality::Index::containsDefault() const
     return contains;
 }
 
-void ColumnLowCardinality::Index::updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const
-{
-    auto & hash_data = hash.getData();
-    auto & dict_hash_data = dict_hash.getData();
-
-    auto update_weak_hash = [&](auto x)
-    {
-        using CurIndexType = decltype(x);
-        auto & data = getPositionsData<CurIndexType>();
-        auto size = data.size();
-
-        for (size_t i = 0; i < size; ++i)
-            hash_data[i] = intHashCRC32(dict_hash_data[data[i]], hash_data[i]);
-    };
-
-    callForType(std::move(update_weak_hash), size_of_type);
-}
-
 
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
@@ -787,6 +649,13 @@ ColumnLowCardinality::Dictionary::Dictionary(ColumnPtr column_unique_, bool is_s
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
     checkColumn(*column_unique);
+}
+
+void ColumnLowCardinality::Dictionary::checkColumn(const IColumn & column)
+{
+
+    if (!dynamic_cast<const IColumnUnique *>(&column))
+        throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
 }
 
 void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique_)
@@ -808,7 +677,7 @@ void ColumnLowCardinality::Dictionary::compact(ColumnPtr & positions)
     auto sub_keys = unique.getNestedColumn()->index(*indexes, 0);
     auto new_indexes = new_unique.uniqueInsertRangeFrom(*sub_keys, 0, sub_keys->size());
 
-    positions = IColumn::mutate(new_indexes->index(*positions, 0));
+    positions = (*new_indexes->index(*positions, 0)).mutate();
     column_unique = std::move(new_column_unique);
 
     shared = false;

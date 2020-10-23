@@ -7,9 +7,7 @@
 #include <IO/BrotliReadBuffer.h>
 #include <IO/BrotliWriteBuffer.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 
 namespace DB

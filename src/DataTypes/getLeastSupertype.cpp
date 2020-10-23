@@ -262,7 +262,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
             for (const auto & t : types)
             {
-                if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
+                if (const auto *dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
                 {
                     const auto scale = dt64->getScale();
                     if (scale > max_scale)
@@ -299,7 +299,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
 
             if (num_supported != type_ids.size())
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless conversion to Decimal",
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless convertion to Decimal",
                                 ErrorCodes::NO_COMMON_TYPE);
 
             UInt32 max_scale = 0;

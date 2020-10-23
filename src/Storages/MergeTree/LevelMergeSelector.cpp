@@ -14,7 +14,7 @@ namespace
   */
 struct Estimator
 {
-    using Iterator = LevelMergeSelector::PartsRange::const_iterator;
+    using Iterator = LevelMergeSelector::PartsInPartition::const_iterator;
 
     void consider(Iterator begin, Iterator end, size_t sum_size)
     {
@@ -28,9 +28,9 @@ struct Estimator
         }
     }
 
-    LevelMergeSelector::PartsRange getBest() const
+    LevelMergeSelector::PartsInPartition getBest() const
     {
-        return LevelMergeSelector::PartsRange(best_begin, best_end);
+        return LevelMergeSelector::PartsInPartition(best_begin, best_end);
     }
 
     double min_score = 0;
@@ -40,7 +40,7 @@ struct Estimator
 
 
 void selectWithinPartition(
-    const LevelMergeSelector::PartsRange & parts,
+    const LevelMergeSelector::PartsInPartition & parts,
     const size_t max_total_size_to_merge,
     Estimator & estimator,
     const LevelMergeSelector::Settings & settings)
@@ -89,7 +89,7 @@ void selectWithinPartition(
             if (range_size <= max_total_size_to_merge)
                 estimator.consider(parts.begin() + range_begin, parts.begin() + range_end, range_size);
 
-            break;    /// Minimum level is enough.
+            break;    /// Minumum level is enough.
         }
 
         if (range_begin == 0)
@@ -103,14 +103,14 @@ void selectWithinPartition(
 }
 
 
-LevelMergeSelector::PartsRange LevelMergeSelector::select(
-    const PartsRanges & parts_ranges,
+LevelMergeSelector::PartsInPartition LevelMergeSelector::select(
+    const Partitions & partitions,
     const size_t max_total_size_to_merge)
 {
     Estimator estimator;
 
-    for (const auto & parts_range: parts_ranges)
-        selectWithinPartition(parts_range, max_total_size_to_merge, estimator, settings);
+    for (const auto & partition : partitions)
+        selectWithinPartition(partition, max_total_size_to_merge, estimator, settings);
 
     return estimator.getBest();
 }

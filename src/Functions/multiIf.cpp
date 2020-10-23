@@ -12,14 +12,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-namespace
-{
 
 /// Function multiIf, which generalizes the function if.
 ///
@@ -35,7 +33,9 @@ class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMultiIf>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMultiIf>(context); }
+    FunctionMultiIf(const Context & context_) : context(context_) {}
+
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -106,7 +106,7 @@ public:
         return getLeastSupertype(types_of_branches);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
     {
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
@@ -127,7 +127,7 @@ public:
         Columns converted_columns_holder;
         converted_columns_holder.reserve(instructions.size());
 
-        const DataTypePtr & return_type = result_type;
+        const DataTypePtr & return_type = block.getByPosition(result).type;
 
         for (size_t i = 0; i < args.size(); i += 2)
         {
@@ -142,7 +142,7 @@ public:
             }
             else
             {
-                const ColumnWithTypeAndName & cond_col = args[i];
+                const ColumnWithTypeAndName & cond_col = block.getByPosition(args[i]);
 
                 /// We skip branches that are always false.
                 /// If we encounter a branch that is always true, we can finish.
@@ -168,7 +168,7 @@ public:
                 }
             }
 
-            const ColumnWithTypeAndName & source_col = args[source_idx];
+            const ColumnWithTypeAndName & source_col = block.getByPosition(args[source_idx]);
             if (source_col.type->equals(*return_type))
             {
                 instruction.source = source_col.column.get();
@@ -176,7 +176,7 @@ public:
             else
             {
                 /// Cast all columns to result type.
-                converted_columns_holder.emplace_back(castColumn(source_col, return_type));
+                converted_columns_holder.emplace_back(castColumn(source_col, return_type, context));
                 instruction.source = converted_columns_holder.back().get();
             }
 
@@ -223,11 +223,12 @@ public:
             }
         }
 
-        return res;
+        block.getByPosition(result).column = std::move(res);
     }
-};
 
-}
+private:
+    const Context & context;
+};
 
 void registerFunctionMultiIf(FunctionFactory & factory)
 {

@@ -70,8 +70,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
-        /// (TaskStatsInfoGetter has about 500K RPS).
+        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it (TaskStatsInfoGetter has about 500K RPS).
         watch.stop();
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
@@ -85,7 +84,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         }
     }
 
-    file_offset_of_buffer_end += bytes_read;
+    pos_in_file += bytes_read;
 
     if (bytes_read)
     {
@@ -102,35 +101,22 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
 off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
-    size_t new_pos;
+    off_t new_pos;
     if (whence == SEEK_SET)
-    {
-        assert(offset >= 0);
         new_pos = offset;
-    }
     else if (whence == SEEK_CUR)
-    {
-        new_pos = file_offset_of_buffer_end - (working_buffer.end() - pos) + offset;
-    }
+        new_pos = pos_in_file - (working_buffer.end() - pos) + offset;
     else
-    {
         throw Exception("ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-    }
 
     /// Position is unchanged.
-    if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
+    if (new_pos + (working_buffer.end() - pos) == pos_in_file)
         return new_pos;
 
-    // file_offset_of_buffer_end corresponds to working_buffer.end(); it's a past-the-end pos,
-    // so the second inequality is strict.
-    if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
-        && new_pos < file_offset_of_buffer_end)
+    if (hasPendingData() && new_pos <= pos_in_file && new_pos >= pos_in_file - static_cast<off_t>(working_buffer.size()))
     {
         /// Position is still inside buffer.
-        pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-        assert(pos >= working_buffer.begin());
-        assert(pos < working_buffer.end());
-
+        pos = working_buffer.begin() + (new_pos - (pos_in_file - working_buffer.size()));
         return new_pos;
     }
     else
@@ -143,7 +129,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         if (-1 == res)
             throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
                                    ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-        file_offset_of_buffer_end = new_pos;
+        pos_in_file = new_pos;
 
         watch.stop();
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());

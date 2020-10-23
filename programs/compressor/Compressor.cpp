@@ -14,7 +14,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/TerminalSize.h>
-#include <Core/Defines.h>
 
 
 namespace DB
@@ -63,8 +62,6 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 int mainEntryClickHouseCompressor(int argc, char ** argv)
 {
-    using namespace DB;
-
     boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
@@ -101,10 +98,10 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             codecs = options["codec"].as<std::vector<std::string>>();
 
         if ((use_lz4hc || use_zstd || use_none) && !codecs.empty())
-            throw Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", DB::ErrorCodes::BAD_ARGUMENTS);
 
         if (!codecs.empty() && options.count("level"))
-            throw Exception("Wrong options, --level is not compatible with --codec list", ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception("Wrong options, --level is not compatible with --codec list", DB::ErrorCodes::BAD_ARGUMENTS);
 
         std::string method_family = "LZ4";
 
@@ -119,21 +116,22 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         if (options.count("level"))
             level = options["level"].as<int>();
 
-        CompressionCodecPtr codec;
+
+        DB::CompressionCodecPtr codec;
         if (!codecs.empty())
         {
-            ParserCodec codec_parser;
+            DB::ParserCodec codec_parser;
 
             std::string codecs_line = boost::algorithm::join(codecs, ",");
-            auto ast = parseQuery(codec_parser, "(" + codecs_line + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-            codec = CompressionCodecFactory::instance().get(ast, nullptr);
+            auto ast = DB::parseQuery(codec_parser, "(" + codecs_line + ")", 0);
+            codec = DB::CompressionCodecFactory::instance().get(ast, nullptr);
         }
         else
-            codec = CompressionCodecFactory::instance().get(method_family, level);
+            codec = DB::CompressionCodecFactory::instance().get(method_family, level);
 
 
-        ReadBufferFromFileDescriptor rb(STDIN_FILENO);
-        WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
+        DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);
+        DB::WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
 
         if (stat_mode)
         {
@@ -143,20 +141,20 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else if (decompress)
         {
             /// Decompression
-            CompressedReadBuffer from(rb);
-            copyData(from, wb);
+            DB::CompressedReadBuffer from(rb);
+            DB::copyData(from, wb);
         }
         else
         {
             /// Compression
-            CompressedWriteBuffer to(wb, codec, block_size);
-            copyData(rb, to);
+            DB::CompressedWriteBuffer to(wb, codec, block_size);
+            DB::copyData(rb, to);
         }
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(true);
-        return getCurrentExceptionCode();
+        std::cerr << DB::getCurrentExceptionMessage(true);
+        return DB::getCurrentExceptionCode();
     }
 
     return 0;

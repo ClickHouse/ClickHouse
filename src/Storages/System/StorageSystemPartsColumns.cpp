@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -14,8 +15,8 @@ namespace DB
 {
 
 
-StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
-    : StorageSystemPartsBase(table_id_,
+StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name_)
+    : StorageSystemPartsBase(name_,
     {
         {"partition",                                  std::make_shared<DataTypeString>()},
         {"name",                                       std::make_shared<DataTypeString>()},
@@ -48,7 +49,6 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
 
         {"column",                                     std::make_shared<DataTypeString>()},
         {"type",                                       std::make_shared<DataTypeString>()},
-        {"column_position",                            std::make_shared<DataTypeUInt64>()},
         {"default_kind",                               std::make_shared<DataTypeString>()},
         {"default_expression",                         std::make_shared<DataTypeString>()},
         {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
@@ -70,7 +70,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
     };
 
     std::unordered_map<String, ColumnInfo> columns_info;
-    for (const auto & column : info.storage->getInMemoryMetadataPtr()->getColumns())
+    for (const auto & column : info.storage->getColumns())
     {
         ColumnInfo column_info;
         if (column.default_desc.expression)
@@ -101,10 +101,9 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
 
         using State = IMergeTreeDataPart::State;
 
-        size_t column_position = 0;
         for (const auto & column : part->getColumns())
+
         {
-            ++column_position;
             size_t j = 0;
             {
                 WriteBufferFromOwnString out;
@@ -117,7 +116,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
             columns_[j++]->insert(part->getMarksCount());
 
             columns_[j++]->insert(part->rows_count);
-            columns_[j++]->insert(part->getBytesOnDisk());
+            columns_[j++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
             columns_[j++]->insert(columns_size.data_compressed);
             columns_[j++]->insert(columns_size.data_uncompressed);
             columns_[j++]->insert(columns_size.marks);
@@ -139,12 +138,11 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
             columns_[j++]->insert(info.database);
             columns_[j++]->insert(info.table);
             columns_[j++]->insert(info.engine);
-            columns_[j++]->insert(part->volume->getDisk()->getName());
+            columns_[j++]->insert(part->disk->getName());
             columns_[j++]->insert(part->getFullPath());
 
             columns_[j++]->insert(column.name);
             columns_[j++]->insert(column.type->getName());
-            columns_[j++]->insert(column_position);
 
             auto column_info_it = columns_info.find(column.name);
             if (column_info_it != columns_info.end())

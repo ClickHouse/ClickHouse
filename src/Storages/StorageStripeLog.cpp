@@ -18,6 +18,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -33,8 +34,6 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
-
-#include <cassert>
 
 
 namespace DB
@@ -55,13 +54,12 @@ public:
 
     static Block getHeader(
         StorageStripeLog & storage,
-        const StorageMetadataPtr & metadata_snapshot,
         const Names & column_names,
         IndexForNativeFormat::Blocks::const_iterator index_begin,
         IndexForNativeFormat::Blocks::const_iterator index_end)
     {
         if (index_begin == index_end)
-            return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
+            return storage.getSampleBlockForColumns(column_names);
 
         /// TODO: check if possible to always return storage.getSampleBlock()
 
@@ -76,22 +74,13 @@ public:
         return header;
     }
 
-    StripeLogSource(
-        StorageStripeLog & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const Names & column_names,
-        size_t max_read_buffer_size_,
+    StripeLogSource(StorageStripeLog & storage_, const Names & column_names, size_t max_read_buffer_size_,
         std::shared_ptr<const IndexForNativeFormat> & index_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_)
-        : SourceWithProgress(
-            getHeader(storage_, metadata_snapshot_, column_names, index_begin_, index_end_))
-        , storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
-        , max_read_buffer_size(max_read_buffer_size_)
-        , index(index_)
-        , index_begin(index_begin_)
-        , index_end(index_end_)
+        : SourceWithProgress(getHeader(storage_, column_names, index_begin_, index_end_))
+        , storage(storage_), max_read_buffer_size(max_read_buffer_size_)
+        , index(index_), index_begin(index_begin_), index_end(index_end_)
     {
     }
 
@@ -121,7 +110,6 @@ protected:
 
 private:
     StorageStripeLog & storage;
-    StorageMetadataPtr metadata_snapshot;
     size_t max_read_buffer_size;
 
     std::shared_ptr<const IndexForNativeFormat> index;
@@ -156,18 +144,15 @@ private:
 class StripeLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit StripeLogBlockOutputStream(StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_)
-        : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
-        , lock(storage.rwlock)
-        , data_out_file(storage.table_path + "data.bin")
-        , data_out_compressed(storage.disk->writeFile(data_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
-        , data_out(std::make_unique<CompressedWriteBuffer>(
-            *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size))
-        , index_out_file(storage.table_path + "index.mrk")
-        , index_out_compressed(storage.disk->writeFile(index_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
-        , index_out(std::make_unique<CompressedWriteBuffer>(*index_out_compressed))
-        , block_out(*data_out, 0, metadata_snapshot->getSampleBlock(), false, index_out.get(), storage.disk->getFileSize(data_out_file))
+    explicit StripeLogBlockOutputStream(StorageStripeLog & storage_)
+        : storage(storage_), lock(storage.rwlock),
+        data_out_file(storage.table_path + "data.bin"),
+        data_out_compressed(storage.disk->writeFile(data_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append)),
+        data_out(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size),
+        index_out_file(storage.table_path + "index.mrk"),
+        index_out_compressed(storage.disk->writeFile(index_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append)),
+        index_out(*index_out_compressed),
+        block_out(data_out, 0, storage.getSampleBlock(), false, &index_out, storage.disk->getFileSize(data_out_file))
     {
     }
 
@@ -175,16 +160,7 @@ public:
     {
         try
         {
-            if (!done)
-            {
-                /// Rollback partial writes.
-                data_out.reset();
-                data_out_compressed.reset();
-                index_out.reset();
-                index_out_compressed.reset();
-
-                storage.file_checker.repair();
-            }
+            writeSuffix();
         }
         catch (...)
         {
@@ -192,7 +168,7 @@ public:
         }
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -205,31 +181,27 @@ public:
             return;
 
         block_out.writeSuffix();
-        data_out->next();
+        data_out.next();
         data_out_compressed->next();
-        data_out_compressed->finalize();
-        index_out->next();
+        index_out.next();
         index_out_compressed->next();
-        index_out_compressed->finalize();
 
         storage.file_checker.update(data_out_file);
         storage.file_checker.update(index_out_file);
-        storage.file_checker.save();
 
         done = true;
     }
 
 private:
     StorageStripeLog & storage;
-    StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_mutex> lock;
 
     String data_out_file;
     std::unique_ptr<WriteBuffer> data_out_compressed;
-    std::unique_ptr<CompressedWriteBuffer> data_out;
+    CompressedWriteBuffer data_out;
     String index_out_file;
     std::unique_ptr<WriteBuffer> index_out_compressed;
-    std::unique_ptr<CompressedWriteBuffer> index_out;
+    CompressedWriteBuffer index_out;
     NativeBlockOutputStream block_out;
 
     bool done = false;
@@ -249,12 +221,10 @@ StorageStripeLog::StorageStripeLog(
     , table_path(relative_path_)
     , max_compress_block_size(max_compress_block_size_)
     , file_checker(disk, table_path + "sizes.json")
-    , log(&Poco::Logger::get("StorageStripeLog"))
+    , log(&Logger::get("StorageStripeLog"))
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    storage_metadata.setConstraints(constraints_);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(columns_);
+    setConstraints(constraints_);
 
     if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
@@ -263,42 +233,24 @@ StorageStripeLog::StorageStripeLog(
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);
-
-        file_checker.setEmpty(table_path + "data.bin");
-        file_checker.setEmpty(table_path + "index.mrk");
-    }
-    else
-    {
-        try
-        {
-            file_checker.repair();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
     }
 }
 
 
-void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
+void StorageStripeLog::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
-    assert(table_path != new_path_to_table_data);
-    {
-        std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
-        disk->moveDirectory(table_path, new_path_to_table_data);
+    disk->moveDirectory(table_path, new_path_to_table_data);
 
-        table_path = new_path_to_table_data;
-        file_checker.setPath(table_path + "sizes.json");
-    }
-    renameInMemory(new_table_id);
+    table_path = new_path_to_table_data;
+    file_checker.setPath(table_path + "sizes.json");
+    renameInMemory(new_database_name, new_table_name);
 }
 
 
-Pipe StorageStripeLog::read(
+Pipes StorageStripeLog::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -307,7 +259,7 @@ Pipe StorageStripeLog::read(
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(column_names);
 
     NameSet column_names_set(column_names.begin(), column_names.end());
 
@@ -316,7 +268,8 @@ Pipe StorageStripeLog::read(
     String index_file = table_path + "index.mrk";
     if (!disk->exists(index_file))
     {
-        return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+        pipes.emplace_back(std::make_shared<NullSource>(getSampleBlockForColumns(column_names)));
+        return pipes;
     }
 
     CompressedReadBufferFromFile index_in(disk->readFile(index_file, INDEX_BUFFER_SIZE));
@@ -335,18 +288,19 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            *this, metadata_snapshot, column_names, context.getSettingsRef().max_read_buffer_size, index, begin, end));
+            *this, column_names, context.getSettingsRef().max_read_buffer_size, index, begin, end));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
 
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
 
-BlockOutputStreamPtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageStripeLog::write(
+    const ASTPtr & /*query*/, const Context & /*context*/)
 {
-    return std::make_shared<StripeLogBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<StripeLogBlockOutputStream>(*this);
 }
 
 
@@ -356,7 +310,7 @@ CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, const Conte
     return file_checker.check();
 }
 
-void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+void StorageStripeLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 

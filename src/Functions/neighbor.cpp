@@ -15,9 +15,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-namespace
-{
-
 // Implements function, giving value for column within range of given
 // Example:
 // | c1 |
@@ -31,7 +28,9 @@ class FunctionNeighbor : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbor>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbor>(context); }
+
+    FunctionNeighbor(const Context & context_) : context(context_) {}
 
     /// Get the name of the function.
     String getName() const override { return name; }
@@ -77,20 +76,22 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const ColumnWithTypeAndName & source_elem = arguments[0];
-        const ColumnWithTypeAndName & offset_elem = arguments[1];
+        const DataTypePtr & result_type = block.getByPosition(result).type;
+
+        const ColumnWithTypeAndName & source_elem = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & offset_elem = block.getByPosition(arguments[1]);
         bool has_defaults = arguments.size() == 3;
 
-        ColumnPtr source_column_casted = castColumn(source_elem, result_type);
+        ColumnPtr source_column_casted = castColumn(source_elem, result_type, context);
         ColumnPtr offset_column = offset_elem.column;
 
         ColumnPtr default_column_casted;
         if (has_defaults)
         {
-            const ColumnWithTypeAndName & default_elem = arguments[2];
-            default_column_casted = castColumn(default_elem, result_type);
+            const ColumnWithTypeAndName & default_elem = block.getByPosition(arguments[2]);
+            default_column_casted = castColumn(default_elem, result_type, context);
         }
 
         bool source_is_constant = isColumnConst(*source_column_casted);
@@ -115,7 +116,7 @@ public:
 
             /// Protection from possible overflow.
             if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
+                throw Exception("Too large offset: " + toString(offset) + " in function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             auto result_column = result_type->createColumn();
 
@@ -151,7 +152,7 @@ public:
             if (offset == 0)
             {
                 /// Degenerate case, just copy source column as is.
-                return source_is_constant
+                block.getByPosition(result).column = source_is_constant
                     ? ColumnConst::create(source_column_casted, input_rows_count)
                     : source_column_casted;
             }
@@ -159,13 +160,13 @@ public:
             {
                 insert_range_from(source_is_constant, source_column_casted, offset, Int64(input_rows_count) - offset);
                 insert_range_from(default_is_constant, default_column_casted, Int64(input_rows_count) - offset, offset);
-                return result_column;
+                block.getByPosition(result).column = std::move(result_column);
             }
             else
             {
                 insert_range_from(default_is_constant, default_column_casted, 0, -offset);
                 insert_range_from(source_is_constant, source_column_casted, 0, Int64(input_rows_count) + offset);
-                return result_column;
+                block.getByPosition(result).column = std::move(result_column);
             }
         }
         else
@@ -178,7 +179,7 @@ public:
 
                 /// Protection from possible overflow.
                 if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
+                    throw Exception("Too large offset: " + toString(offset) + " in function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
                 Int64 src_idx = row + offset;
 
@@ -190,12 +191,13 @@ public:
                     result_column->insertDefault();
             }
 
-            return result_column;
+            block.getByPosition(result).column = std::move(result_column);
         }
     }
-};
 
-}
+private:
+    const Context & context;
+};
 
 void registerFunctionNeighbor(FunctionFactory & factory)
 {

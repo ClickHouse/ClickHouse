@@ -2,7 +2,6 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/ConstraintsDescription.h>
-#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -16,7 +15,7 @@ class CheckConstraintsBlockOutputStream : public IBlockOutputStream
 {
 public:
     CheckConstraintsBlockOutputStream(
-            const StorageID & table_,
+            const String & table_,
             const BlockOutputStreamPtr & output_,
             const Block & header_,
             const ConstraintsDescription & constraints_,
@@ -31,7 +30,7 @@ public:
     void writeSuffix() override;
 
 private:
-    StorageID table_id;
+    String table;
     BlockOutputStreamPtr output;
     Block header;
     const ConstraintsDescription constraints;

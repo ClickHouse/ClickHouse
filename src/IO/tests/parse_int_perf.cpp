@@ -1,12 +1,15 @@
 #include <iostream>
 #include <iomanip>
 
-#include <common/types.h>
+#include <common/Types.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/AsynchronousWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
 
 #include <Common/Stopwatch.h>
@@ -37,9 +40,7 @@ int main(int argc, char ** argv)
 
         using T = UInt8;
 
-        size_t n = std::stol(argv[1]);
-        assert(n > 0);
-
+        size_t n = atoi(argv[1]);
         std::vector<T> data(n);
         std::vector<T> data2(n);
 

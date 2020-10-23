@@ -16,7 +16,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
-#include <common/types.h>
+#include <common/Types.h>
 
 
 namespace DB
@@ -63,7 +63,7 @@ public:
         if (file_doesnt_exists && !create_if_need)
         {
             throw Poco::Exception("File " + path + " does not exist. "
-            "You must create it manually with appropriate value or 0 for first start.");
+            "You must create it manulally with appropriate value or 0 for first start.");
         }
 
         int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);

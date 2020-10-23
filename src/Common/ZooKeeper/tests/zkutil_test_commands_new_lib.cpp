@@ -1,11 +1,10 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Event.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
-#include <common/find_symbols.h>
+#include <boost/algorithm/string.hpp>
 
 
 using namespace Coordination;
@@ -24,23 +23,15 @@ try
     Poco::Logger::root().setChannel(channel);
     Poco::Logger::root().setLevel("trace");
 
-    std::string hosts_arg = argv[1];
-    std::vector<std::string> hosts_strings;
-    splitInto<','>(hosts_strings, hosts_arg);
-    ZooKeeper::Nodes nodes;
-    nodes.reserve(hosts_strings.size());
-    for (auto & host_string : hosts_strings)
-    {
-        bool secure = bool(startsWith(host_string, "secure://"));
+    std::string addresses_arg = argv[1];
+    std::vector<std::string> addresses_strings;
+    boost::split(addresses_strings, addresses_arg, boost::is_any_of(","));
+    ZooKeeper::Addresses addresses;
+    addresses.reserve(addresses_strings.size());
+    for (const auto & address_string : addresses_strings)
+        addresses.emplace_back(address_string);
 
-        if (secure)
-            host_string.erase(0, strlen("secure://"));
-
-        nodes.emplace_back(ZooKeeper::Node{Poco::Net::SocketAddress{host_string},secure});
-    }
-
-
-    ZooKeeper zk(nodes, {}, {}, {}, {5, 0}, {0, 50000}, {0, 50000});
+    ZooKeeper zk(addresses, {}, {}, {}, {5, 0}, {0, 50000}, {0, 50000});
 
     Poco::Event event(true);
 
@@ -49,8 +40,8 @@ try
     zk.create("/test", "old", false, false, {},
         [&](const CreateResponse & response)
         {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Error (create): " << errorMessage(response.error) << '\n';
+            if (response.error)
+                std::cerr << "Error (create) " << response.error << ": " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Created path: " << response.path_created << '\n';
 
@@ -64,8 +55,8 @@ try
     zk.get("/test",
         [&](const GetResponse & response)
         {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Error (get): " << errorMessage(response.error) << '\n';
+            if (response.error)
+                std::cerr << "Error (get) " << response.error << ": " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Value: " << response.data << '\n';
 
@@ -73,8 +64,8 @@ try
         },
         [](const WatchResponse & response)
         {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Watch (get) on /test, Error: " << errorMessage(response.error) << '\n';
+            if (response.error)
+                std::cerr << "Watch (get) on /test, Error " << response.error << ": " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Watch (get) on /test, path: " << response.path << ", type: " << response.type << '\n';
         });
@@ -86,8 +77,8 @@ try
     zk.set("/test", "new", -1,
         [&](const SetResponse & response)
         {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Error (set): " << errorMessage(response.error) << '\n';
+            if (response.error)
+                std::cerr << "Error (set) " << response.error << ": " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Set\n";
 
@@ -101,8 +92,8 @@ try
     zk.list("/",
         [&](const ListResponse & response)
         {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Error (list): " << errorMessage(response.error) << '\n';
+            if (response.error)
+                std::cerr << "Error (list) " << response.error << ": " << errorMessage(response.error) << '\n';
             else
             {
                 std::cerr << "Children:\n";
@@ -114,8 +105,8 @@ try
         },
         [](const WatchResponse & response)
         {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Watch (list) on /, Error: " << errorMessage(response.error) << '\n';
+            if (response.error)
+                std::cerr << "Watch (list) on /, Error " << response.error << ": " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
         });
@@ -127,8 +118,8 @@ try
     zk.exists("/test",
         [&](const ExistsResponse & response)
         {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Error (exists): " << errorMessage(response.error) << '\n';
+            if (response.error)
+                std::cerr << "Error (exists) " << response.error << ": " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Exists\n";
 
@@ -136,8 +127,8 @@ try
         },
         [](const WatchResponse & response)
         {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Watch (exists) on /test, Error: " << errorMessage(response.error) << '\n';
+            if (response.error)
+                std::cerr << "Watch (exists) on /test, Error " << response.error << ": " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Watch (exists) on /test, path: " << response.path << ", type: " << response.type << '\n';
         });
@@ -148,8 +139,8 @@ try
 
     zk.remove("/test", -1, [&](const RemoveResponse & response)
         {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Error (remove): " << errorMessage(response.error) << '\n';
+            if (response.error)
+                std::cerr << "Error (remove) " << response.error << ": " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Removed\n";
 
@@ -184,13 +175,13 @@ try
 
     zk.multi(ops, [&](const MultiResponse & response)
     {
-        if (response.error != Coordination::Error::ZOK)
-            std::cerr << "Error (multi): " << errorMessage(response.error) << '\n';
+        if (response.error)
+            std::cerr << "Error (multi) " << response.error << ": " << errorMessage(response.error) << '\n';
         else
         {
             for (const auto & elem : response.responses)
-                if (elem->error != Coordination::Error::ZOK)
-                    std::cerr << "Error (elem): " << errorMessage(elem->error) << '\n';
+                if (elem->error)
+                    std::cerr << "Error (elem) " << elem->error << ": " << errorMessage(elem->error) << '\n';
 
             std::cerr << "Created path: " << dynamic_cast<const CreateResponse &>(*response.responses[0]).path_created << '\n';
         }

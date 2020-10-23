@@ -9,14 +9,13 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
 
 /** Reverse the string as a sequence of bytes.
   */
@@ -41,7 +40,7 @@ struct ReverseImpl
         }
     }
 
-    static void vectorFixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data)
+    static void vector_fixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data)
     {
         res_data.resize(data.size());
         size_t size = data.size() / n;
@@ -72,7 +71,7 @@ public:
         return 1;
     }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override
+    bool isInjective(const Block &) override
     {
         return true;
     }
@@ -89,24 +88,24 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
-        const ColumnPtr column = arguments[0].column;
+        const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnString::create();
             ReverseImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
-            return col_res;
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = ColumnFixedString::create(col_fixed->getN());
-            ReverseImpl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
-            return col_res;
+            ReverseImpl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
@@ -144,7 +143,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionReverse(FunctionFactory & factory)
 {

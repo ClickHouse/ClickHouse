@@ -4,12 +4,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
-#include <common/getFQDNOrHostName.h>
+#include <Common/getFQDNOrHostName.h>
+#include <Common/ClickHouseRevision.h>
+#include <Common/config_version.h>
 #include <unistd.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
 
 
 namespace DB
@@ -43,7 +41,7 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
         writeBinary(client_name, out);
         writeVarUInt(client_version_major, out);
         writeVarUInt(client_version_minor, out);
-        writeVarUInt(client_tcp_protocol_version, out);
+        writeVarUInt(client_revision, out);
     }
     else if (interface == Interface::HTTP)
     {
@@ -91,7 +89,7 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
         readBinary(client_name, in);
         readVarUInt(client_version_major, in);
         readVarUInt(client_version_minor, in);
-        readVarUInt(client_tcp_protocol_version, in);
+        readVarUInt(client_revision, in);
     }
     else if (interface == Interface::HTTP)
     {
@@ -110,16 +108,8 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             readVarUInt(client_version_patch, in);
         else
-            client_version_patch = client_tcp_protocol_version;
+            client_version_patch = client_revision;
     }
-}
-
-
-void ClientInfo::setInitialQuery()
-{
-    query_kind = QueryKind::INITIAL_QUERY;
-    fillOSUserHostNameAndVersionInfo();
-    client_name = (DBMS_NAME " ") + client_name;
 }
 
 
@@ -136,7 +126,7 @@ void ClientInfo::fillOSUserHostNameAndVersionInfo()
     client_version_major = DBMS_VERSION_MAJOR;
     client_version_minor = DBMS_VERSION_MINOR;
     client_version_patch = DBMS_VERSION_PATCH;
-    client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+    client_revision = ClickHouseRevision::get();
 }
 
 

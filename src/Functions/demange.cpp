@@ -1,7 +1,9 @@
 #include <common/demangle.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Access/AccessFlags.h>
@@ -17,9 +19,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-namespace
-{
 
 class FunctionDemangle : public IFunction
 {
@@ -61,9 +60,9 @@ public:
         return true;
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const ColumnPtr & column = arguments[0].column;
+        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnString * column_concrete = checkAndGetColumn<ColumnString>(column.get());
 
         if (!column_concrete)
@@ -85,11 +84,9 @@ public:
             }
         }
 
-        return result_column;
+        block.getByPosition(result).column = std::move(result_column);
     }
 };
-
-}
 
 void registerFunctionDemangle(FunctionFactory & factory)
 {

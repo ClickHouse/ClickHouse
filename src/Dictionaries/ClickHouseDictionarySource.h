@@ -21,11 +21,9 @@ public:
     ClickHouseDictionarySource(
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
-        const std::string & path_to_settings,
         const std::string & config_prefix,
         const Block & sample_block_,
-        const Context & context,
-        const std::string & default_database);
+        const Context & context);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
@@ -47,10 +45,6 @@ public:
     DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
 
     std::string toString() const override;
-
-    /// Used for detection whether the hashtable should be preallocated
-    /// (since if there is WHERE then it can filter out too much)
-    bool hasWhere() const { return !where.empty(); }
 
 private:
     std::string getUpdateFieldAndDate();

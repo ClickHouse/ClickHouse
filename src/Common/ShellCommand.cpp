@@ -6,7 +6,6 @@
 #include <Common/ShellCommand.h>
 #include <Common/PipeFDs.h>
 #include <common/logger_useful.h>
-#include <common/errnoToString.h>
 #include <IO/WriteHelpers.h>
 #include <unistd.h>
 #include <csignal>
@@ -35,61 +34,28 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_CHILD_PROCESS;
 }
 
-ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, bool terminate_in_destructor_)
+ShellCommand::ShellCommand(pid_t pid_, int in_fd_, int out_fd_, int err_fd_, bool terminate_in_destructor_)
     : pid(pid_)
     , terminate_in_destructor(terminate_in_destructor_)
+    , log(&Poco::Logger::get("ShellCommand"))
     , in(in_fd_)
     , out(out_fd_)
-    , err(err_fd_)
-{
-}
-
-Poco::Logger * ShellCommand::getLogger()
-{
-    return &Poco::Logger::get("ShellCommand");
-}
+    , err(err_fd_) {}
 
 ShellCommand::~ShellCommand()
 {
     if (terminate_in_destructor)
     {
-        LOG_TRACE(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
         int retcode = kill(pid, SIGTERM);
         if (retcode != 0)
-            LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
+            LOG_WARNING(log, "Cannot kill pid " << pid << " errno '" << errnoToString(retcode) << "'");
     }
     else if (!wait_called)
-    {
-        try
-        {
-            tryWait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger());
-        }
-    }
+        tryWait();
 }
 
-void ShellCommand::logCommand(const char * filename, char * const argv[])
+std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor)
 {
-    std::stringstream args;
-    for (int i = 0; argv != nullptr && argv[i] != nullptr; ++i)
-    {
-        if (i > 0)
-            args << ", ";
-
-        /// NOTE: No escaping is performed.
-        args << "'" << argv[i] << "'";
-    }
-    LOG_TRACE(ShellCommand::getLogger(), "Will start shell command '{}' with arguments {}", filename, args.str());
-}
-
-std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
-    const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor)
-{
-    logCommand(filename, argv);
-
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
       * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
@@ -129,29 +95,24 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
                 _exit(int(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
-        // Reset the signal mask: it may be non-empty and will be inherited
-        // by the child process, which might not expect this.
-        sigset_t mask;
-        sigemptyset(&mask);
-        sigprocmask(0, nullptr, &mask);
-        sigprocmask(SIG_UNBLOCK, &mask, nullptr);
-
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
 
         _exit(int(ReturnCodes::CANNOT_EXEC));
     }
 
-    std::unique_ptr<ShellCommand> res(new ShellCommand(
-        pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
+    std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
 
-    LOG_TRACE(getLogger(), "Started shell command '{}' with pid {}", filename, pid);
+    /// Now the ownership of the file descriptors is passed to the result.
+    pipe_stdin.fds_rw[1] = -1;
+    pipe_stdout.fds_rw[0] = -1;
+    pipe_stderr.fds_rw[0] = -1;
+
     return res;
 }
 
 
-std::unique_ptr<ShellCommand> ShellCommand::execute(
-    const std::string & command, bool pipe_stdin_only, bool terminate_in_destructor)
+std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command, bool pipe_stdin_only, bool terminate_in_destructor)
 {
     /// Arguments in non-constant chunks of memory (as required for `execv`).
     /// Moreover, their copying must be done before calling `vfork`, so after `vfork` do a minimum of things.
@@ -165,8 +126,7 @@ std::unique_ptr<ShellCommand> ShellCommand::execute(
 }
 
 
-std::unique_ptr<ShellCommand> ShellCommand::executeDirect(
-    const std::string & path, const std::vector<std::string> & arguments, bool terminate_in_destructor)
+std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & path, const std::vector<std::string> & arguments, bool terminate_in_destructor)
 {
     size_t argv_sum_size = path.size() + 1;
     for (const auto & arg : arguments)
@@ -195,17 +155,9 @@ int ShellCommand::tryWait()
 {
     wait_called = true;
 
-    in.close();
-    out.close();
-    err.close();
-
-    LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
-
     int status = 0;
     if (-1 == waitpid(pid, &status, 0))
         throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
-
-    LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
 
     if (WIFEXITED(status))
         return WEXITSTATUS(status);

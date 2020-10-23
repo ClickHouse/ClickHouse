@@ -49,18 +49,13 @@ AggregateFunctionPtr createAggregateFunctionArgMax(const std::string & name, con
 
 void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory & factory)
 {
+    factory.registerFunction("any", createAggregateFunctionAny);
+    factory.registerFunction("anyLast", createAggregateFunctionAnyLast);
+    factory.registerFunction("anyHeavy", createAggregateFunctionAnyHeavy);
     factory.registerFunction("min", createAggregateFunctionMin, AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("max", createAggregateFunctionMax, AggregateFunctionFactory::CaseInsensitive);
-
-    /// The functions below depend on the order of data.
-
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
-
-    factory.registerFunction("any", { createAggregateFunctionAny, properties });
-    factory.registerFunction("anyLast", { createAggregateFunctionAnyLast, properties });
-    factory.registerFunction("anyHeavy", { createAggregateFunctionAnyHeavy, properties });
-    factory.registerFunction("argMin", { createAggregateFunctionArgMin, properties });
-    factory.registerFunction("argMax", { createAggregateFunctionArgMax, properties });
+    factory.registerFunction("argMin", createAggregateFunctionArgMin);
+    factory.registerFunction("argMax", createAggregateFunctionArgMax);
 }
 
 }

@@ -85,12 +85,12 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
             load_factor = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
 
             if (load_factor < 1)
-                throw Exception("Too small parameter 'load_factor' for aggregate function " + name + ". Minimum: 1",
+                throw Exception("Too small parameter for aggregate function " + name + ". Minimum: 1",
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
-        if (k > TOP_K_MAX_SIZE || load_factor > TOP_K_MAX_SIZE || k * load_factor > TOP_K_MAX_SIZE)
-            throw Exception("Too large parameter(s) for aggregate function " + name + ". Maximum: " + toString(TOP_K_MAX_SIZE),
+        if (k > TOP_K_MAX_SIZE)
+            throw Exception("Too large parameter for aggregate function " + name + ". Maximum: " + toString(TOP_K_MAX_SIZE),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (k == 0)
@@ -117,10 +117,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
-
-    factory.registerFunction("topK", { createAggregateFunctionTopK<false>, properties });
-    factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true>, properties });
+    factory.registerFunction("topK", createAggregateFunctionTopK<false>);
+    factory.registerFunction("topKWeighted", createAggregateFunctionTopK<true>);
 }
 
 }

@@ -16,7 +16,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
     extern const int LOGICAL_ERROR;
 }
@@ -27,10 +26,8 @@ namespace
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
-    auto table_id = context.tryResolveStorageID(database_and_table);
-    if (!table_id)
-        return {};
-    return DatabaseCatalog::instance().tryGetTable(table_id, context);
+    DatabaseAndTableWithAlias db_and_table(database_and_table);
+    return context.tryGetTable(db_and_table.database, db_and_table.table);
 }
 
 using CheckShardsAndTables = InJoinSubqueriesPreprocessor::CheckShardsAndTables;
@@ -55,7 +52,7 @@ struct NonGlobalTableData
 private:
     void renameIfNeeded(ASTPtr & database_and_table)
     {
-        const DistributedProductMode distributed_product_mode = context.getSettingsRef().distributed_product_mode;
+        const SettingDistributedProductMode distributed_product_mode = context.getSettingsRef().distributed_product_mode;
 
         StoragePtr storage = tryGetTable(database_and_table, context);
         if (!storage || !checker.hasAtLeastTwoShards(*storage))
@@ -153,12 +150,6 @@ private:
     {
         if (node.name == "in" || node.name == "notIn")
         {
-            if (node.arguments->children.size() != 2)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Function '{}' expects two arguments, given: '{}'",
-                    node.name, node.formatForErrorMessage());
-            }
             auto & subquery = node.arguments->children.at(1);
             std::vector<ASTPtr> renamed;
             NonGlobalTableVisitor::Data table_data{data.checker, data.context, renamed, &node, nullptr};

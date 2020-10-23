@@ -8,7 +8,6 @@ void registerFunctionDomain(FunctionFactory & factory);
 void registerFunctionDomainWithoutWWW(FunctionFactory & factory);
 void registerFunctionFirstSignificantSubdomain(FunctionFactory & factory);
 void registerFunctionTopLevelDomain(FunctionFactory & factory);
-void registerFunctionPort(FunctionFactory & factory);
 void registerFunctionPath(FunctionFactory & factory);
 void registerFunctionPathFull(FunctionFactory & factory);
 void registerFunctionQueryString(FunctionFactory & factory);
@@ -26,7 +25,6 @@ void registerFunctionCutFragment(FunctionFactory & factory);
 void registerFunctionCutQueryStringAndFragment(FunctionFactory & factory);
 void registerFunctionCutURLParameter(FunctionFactory & factory);
 void registerFunctionDecodeURLComponent(FunctionFactory & factory);
-void registerFunctionNetloc(FunctionFactory & factory);
 
 void registerFunctionsURL(FunctionFactory & factory)
 {
@@ -35,7 +33,6 @@ void registerFunctionsURL(FunctionFactory & factory)
     registerFunctionDomainWithoutWWW(factory);
     registerFunctionFirstSignificantSubdomain(factory);
     registerFunctionTopLevelDomain(factory);
-    registerFunctionPort(factory);
     registerFunctionPath(factory);
     registerFunctionPathFull(factory);
     registerFunctionQueryString(factory);
@@ -53,7 +50,6 @@ void registerFunctionsURL(FunctionFactory & factory)
     registerFunctionCutQueryStringAndFragment(factory);
     registerFunctionCutURLParameter(factory);
     registerFunctionDecodeURLComponent(factory);
-    registerFunctionNetloc(factory);
 }
 
 }

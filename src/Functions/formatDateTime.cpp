@@ -4,12 +4,10 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
 
-#include <Functions/DateTimeTransforms.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunctionImpl.h>
-#include <Functions/castTypeToEither.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <IO/WriteHelpers.h>
@@ -23,6 +21,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -34,22 +33,14 @@ namespace ErrorCodes
 
 namespace
 {
-
-template <typename DataType> struct ActionValueTypeMap {};
-template <> struct ActionValueTypeMap<DataTypeInt8>       { using ActionValueType = UInt32; };
-template <> struct ActionValueTypeMap<DataTypeUInt8>      { using ActionValueType = UInt32; };
-template <> struct ActionValueTypeMap<DataTypeInt16>      { using ActionValueType = UInt32; };
-template <> struct ActionValueTypeMap<DataTypeUInt16>     { using ActionValueType = UInt32; };
-template <> struct ActionValueTypeMap<DataTypeInt32>      { using ActionValueType = UInt32; };
-template <> struct ActionValueTypeMap<DataTypeUInt32>     { using ActionValueType = UInt32; };
-template <> struct ActionValueTypeMap<DataTypeInt64>      { using ActionValueType = UInt32; };
-template <> struct ActionValueTypeMap<DataTypeUInt64>     { using ActionValueType = UInt32; };
-template <> struct ActionValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
-template <> struct ActionValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
+// in private namespace to avoid GCC 9 error: "explicit specialization in non-namespace scope"
+template <typename DataType> struct ActionaValueTypeMap {};
+template <> struct ActionaValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
+template <> struct ActionaValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
 // TODO(vnemkov): once there is support for Int64 in LUT, make that Int64.
 // TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
-template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
-
+template <> struct ActionaValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
+}
 
 /** formatDateTime(time, 'pattern')
   * Performs formatting of time, according to provided pattern.
@@ -60,7 +51,7 @@ template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueTyp
   * It is implemented in two steps.
   * At first step, it creates a pattern of zeros, literal characters, whitespaces, etc.
   *  and quickly fills resulting character array (string column) with this pattern.
-  * At second step, it walks across the resulting character array and modifies/replaces specific characters,
+  * At second step, it walks across the resulting character array and modifies/replaces specific charaters,
   *  by calling some functions by pointers and shifting cursor by specified amount.
   *
   * Advantages:
@@ -89,25 +80,10 @@ template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueTyp
   *
   * PS. We can make this function to return FixedString. Currently it returns String.
   */
-template <typename Name, bool support_integer>
-class FunctionFormatDateTimeImpl : public IFunction
+class FunctionFormatDateTime : public IFunction
 {
 private:
     /// Time is either UInt32 for DateTime or UInt16 for Date.
-    template <typename F>
-    static bool castType(const IDataType * type, F && f)
-    {
-        return castTypeToEither<
-            DataTypeInt8,
-            DataTypeUInt8,
-            DataTypeInt16,
-            DataTypeUInt16,
-            DataTypeInt32,
-            DataTypeUInt32,
-            DataTypeInt64,
-            DataTypeUInt64>(type, std::forward<F>(f));
-    }
-
     template <typename Time>
     class Action
     {
@@ -117,7 +93,7 @@ private:
         Func func;
         size_t shift;
 
-        explicit Action(Func func_, size_t shift_ = 0) : func(func_), shift(shift_) {}
+        Action(Func func_, size_t shift_ = 0) : func(func_), shift(shift_) {}
 
         void perform(char *& target, Time source, const DateLUTImpl & timezone)
         {
@@ -179,7 +155,7 @@ private:
                 writeNumber2(target, day);
         }
 
-        static void ISO8601Date(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Date(char * target, Time source, const DateLUTImpl & timezone)
         {
             writeNumber4(target, ToYearImpl::execute(source, timezone));
             writeNumber2(target + 5, ToMonthImpl::execute(source, timezone));
@@ -207,19 +183,9 @@ private:
             *target += (day == 7 ? 0 : day);
         }
 
-        static void ISO8601Week(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Week(char * target, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToISOWeekImpl::execute(source, timezone));
-        }
-
-        static void ISO8601Year2(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
-        {
-            writeNumber2(target, ToISOYearImpl::execute(source, timezone) % 100);
-        }
-
-        static void ISO8601Year4(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
-        {
-            writeNumber4(target, ToISOYearImpl::execute(source, timezone));
         }
 
         static void year2(char * target, Time source, const DateLUTImpl & timezone)
@@ -248,7 +214,7 @@ private:
             writeNumber2(target, ToMinuteImpl::execute(source, timezone));
         }
 
-        static void AMPM(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void AMPM(char * target, Time source, const DateLUTImpl & timezone)
         {
             auto hour = ToHourImpl::execute(source, timezone);
             if (hour >= 12)
@@ -266,7 +232,7 @@ private:
             writeNumber2(target, ToSecondImpl::execute(source, timezone));
         }
 
-        static void ISO8601Time(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        static void ISO8601Time(char * target, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToHourImpl::execute(source, timezone));
             writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
@@ -275,9 +241,9 @@ private:
     };
 
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = "formatDateTime";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatDateTime>(); }
 
     String getName() const override
     {
@@ -293,138 +259,63 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if constexpr (support_integer)
+        if (arguments.size() != 2 && arguments.size() != 3)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(arguments.size()) + ", should be 2 or 3",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (!WhichDataType(arguments[0].type).isDateOrDateTime())
+            throw Exception("Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() +
+                            ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (!WhichDataType(arguments[1].type).isString())
+            throw Exception("Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (arguments.size() == 3)
         {
-            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(
-                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                        + ", should be 1, 2 or 3",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            if (arguments.size() == 1 && !isInteger(arguments[0].type))
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                        + " when arguments size is 1. Should be integer",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || WhichDataType(arguments[0].type).isDateOrDateTime()))
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                        + " when arguments size is 2 or 3. Should be a integer or a date with time",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-        else
-        {
-            if (arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(
-                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                        + ", should be 2 or 3",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            if (!WhichDataType(arguments[0].type).isDateOrDateTime())
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                        + ". Should be a date or a date with time",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (!WhichDataType(arguments[2].type).isString())
+                throw Exception("Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isString())
-            throw Exception(
-                "Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
-            throw Exception(
-                "Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 1)
-            return std::make_shared<DataTypeDateTime>();
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, [[maybe_unused]] size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        ColumnPtr res;
-        if constexpr (support_integer)
-        {
-            if (arguments.size() == 1)
-            {
-                if (!castType(arguments[0].type.get(), [&](const auto & type)
-                    {
-                        using FromDataType = std::decay_t<decltype(type)>;
-                        res = ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(arguments, result_type, input_rows_count);
-                        return true;
-                    }))
-                {
-                    throw Exception(
-                        "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                            + ", must be Integer or DateTime when arguments size is 1.",
-                        ErrorCodes::ILLEGAL_COLUMN);
-                }
-            }
-            else
-            {
-                if (!castType(arguments[0].type.get(), [&](const auto & type)
-                    {
-                        using FromDataType = std::decay_t<decltype(type)>;
-                        if (!(res = executeType<FromDataType>(arguments, result_type)))
-                            throw Exception(
-                                "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                                    + ", must be Integer or DateTime.",
-                                ErrorCodes::ILLEGAL_COLUMN);
-                        return true;
-                    }))
-                {
-                    if (!((res = executeType<DataTypeDate>(arguments, result_type))
-                        || (res = executeType<DataTypeDateTime>(arguments, result_type))
-                        || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
-                        throw Exception(
-                            "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                                + ", must be Integer or DateTime.",
+        if (!executeType<DataTypeDate>(block, arguments, result)
+            && !executeType<DataTypeDateTime>(block, arguments, result)
+            && !executeType<DataTypeDateTime64>(block, arguments, result))
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+                            + " of function " + getName() + ", must be Date or DateTime",
                             ErrorCodes::ILLEGAL_COLUMN);
-                }
-            }
-        }
-        else
-        {
-            if (!((res = executeType<DataTypeDate>(arguments, result_type))
-                || (res = executeType<DataTypeDateTime>(arguments, result_type))
-                || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
-                throw Exception(
-                    "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                        + ", must be Date or DateTime.",
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
-
-        return res;
     }
 
     template <typename DataType>
-    ColumnPtr executeType(ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        auto * times = checkAndGetColumn<typename DataType::ColumnType>(arguments[0].column.get());
+        auto * times = checkAndGetColumn<typename DataType::ColumnType>(block.getByPosition(arguments[0]).column.get());
         if (!times)
-            return nullptr;
+            return false;
 
-        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
         if (!pattern_column)
-            throw Exception("Illegal column " + arguments[1].column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                             + " of second ('format') argument of function " + getName()
                             + ". Must be constant string.",
                             ErrorCodes::ILLEGAL_COLUMN);
 
         String pattern = pattern_column->getValue<String>();
 
-        using T = typename ActionValueTypeMap<DataType>::ActionValueType;
+        using T = typename ActionaValueTypeMap<DataType>::ActionValueType;
         std::vector<Action<T>> instructions;
         String pattern_to_fill = parsePattern(pattern, instructions);
         size_t result_size = pattern_to_fill.size();
 
         const DateLUTImpl * time_zone_tmp = nullptr;
-        if (castType(arguments[0].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
-        {
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        }
-        else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+        if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
         else
             time_zone_tmp = &DateLUT::instance();
 
@@ -465,8 +356,8 @@ public:
             }
         }
 
-        auto * begin = reinterpret_cast<char *>(dst_data.data());
-        auto * pos = begin;
+        auto *begin = reinterpret_cast<char *>(dst_data.data());
+        auto *pos = begin;
 
         for (size_t i = 0; i < vec.size(); ++i)
         {
@@ -490,7 +381,8 @@ public:
         }
 
         dst_data.resize(pos - begin);
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
+        return true;
     }
 
     template <typename T>
@@ -502,7 +394,7 @@ public:
         const char * end = pos + pattern.size();
 
         /// Add shift to previous action; or if there were none, add noop action with shift.
-        auto add_shift = [&](size_t amount)
+        auto addShift = [&](size_t amount)
         {
             if (instructions.empty())
                 instructions.emplace_back(&Action<T>::noop);
@@ -510,12 +402,12 @@ public:
         };
 
         /// If the argument was DateTime, add instruction for printing. If it was date, just shift (the buffer is pre-filled with default values).
-        auto add_instruction_or_shift = [&](typename Action<T>::Func func [[maybe_unused]], size_t shift)
+        auto addInstructionOrShift = [&](typename Action<T>::Func func [[maybe_unused]], size_t shift)
         {
             if constexpr (std::is_same_v<T, UInt32>)
                 instructions.emplace_back(func, shift);
             else
-                add_shift(shift);
+                addShift(shift);
         };
 
         while (true)
@@ -527,7 +419,7 @@ public:
                 if (pos < percent_pos)
                 {
                     result.append(pos, percent_pos);
-                    add_shift(percent_pos - pos);
+                    addShift(percent_pos - pos);
                 }
 
                 pos = percent_pos + 1;
@@ -566,18 +458,6 @@ public:
                         instructions.emplace_back(&Action<T>::ISO8601Date, 10);
                         result.append("0000-00-00");
                         break;
-
-                    // Last two digits of year of ISO 8601 week number (see %G)
-                    case 'g':
-                      instructions.emplace_back(&Action<T>::ISO8601Year2, 2);
-                      result.append("00");
-                      break;
-
-                    // Year of ISO 8601 week number (see %V)
-                    case 'G':
-                      instructions.emplace_back(&Action<T>::ISO8601Year4, 4);
-                      result.append("0000");
-                      break;
 
                     // Day of the year (001-366)   235
                     case 'j':
@@ -625,58 +505,58 @@ public:
 
                     // Minute (00-59)
                     case 'M':
-                        add_instruction_or_shift(&Action<T>::minute, 2);
+                        addInstructionOrShift(&Action<T>::minute, 2);
                         result.append("00");
                         break;
 
                     // AM or PM
                     case 'p':
-                        add_instruction_or_shift(&Action<T>::AMPM, 2);
+                        addInstructionOrShift(&Action<T>::AMPM, 2);
                         result.append("AM");
                         break;
 
                     // 24-hour HH:MM time, equivalent to %H:%M 14:55
                     case 'R':
-                        add_instruction_or_shift(&Action<T>::hhmm24, 5);
+                        addInstructionOrShift(&Action<T>::hhmm24, 5);
                         result.append("00:00");
                         break;
 
                     // Seconds
                     case 'S':
-                        add_instruction_or_shift(&Action<T>::second, 2);
+                        addInstructionOrShift(&Action<T>::second, 2);
                         result.append("00");
                         break;
 
                     // ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S 14:55:02
                     case 'T':
-                        add_instruction_or_shift(&Action<T>::ISO8601Time, 8);
+                        addInstructionOrShift(&Action<T>::ISO8601Time, 8);
                         result.append("00:00:00");
                         break;
 
                     // Hour in 24h format (00-23)
                     case 'H':
-                        add_instruction_or_shift(&Action<T>::hour24, 2);
+                        addInstructionOrShift(&Action<T>::hour24, 2);
                         result.append("00");
                         break;
 
                     // Hour in 12h format (01-12)
                     case 'I':
-                        add_instruction_or_shift(&Action<T>::hour12, 2);
+                        addInstructionOrShift(&Action<T>::hour12, 2);
                         result.append("12");
                         break;
 
                     /// Escaped literal characters.
                     case '%':
                         result += '%';
-                        add_shift(1);
+                        addShift(1);
                         break;
                     case 't':
                         result += '\t';
-                        add_shift(1);
+                        addShift(1);
                         break;
                     case 'n':
                         result += '\n';
-                        add_shift(1);
+                        addShift(1);
                         break;
 
                     // Unimplemented
@@ -695,7 +575,7 @@ public:
             else
             {
                 result.append(pos, end);
-                add_shift(end + 1 - pos); /// including zero terminator
+                addShift(end + 1 - pos); /// including zero terminator
                 break;
             }
         }
@@ -704,26 +584,9 @@ public:
     }
 };
 
-struct NameFormatDateTime
-{
-    static constexpr auto name = "formatDateTime";
-};
-
-struct NameFromUnixTime
-{
-    static constexpr auto name = "FROM_UNIXTIME";
-};
-
-using FunctionFormatDateTime = FunctionFormatDateTimeImpl<NameFormatDateTime, false>;
-using FunctionFROM_UNIXTIME = FunctionFormatDateTimeImpl<NameFromUnixTime, true>;
-
-}
-
 void registerFunctionFormatDateTime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFormatDateTime>();
-    factory.registerFunction<FunctionFROM_UNIXTIME>();
-    factory.registerAlias("fromUnixTimestamp", "FROM_UNIXTIME");
 }
 
 }

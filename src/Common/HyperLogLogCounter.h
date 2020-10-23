@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <common/Types.h>
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
 #include <Common/HashTable/Hash.h>

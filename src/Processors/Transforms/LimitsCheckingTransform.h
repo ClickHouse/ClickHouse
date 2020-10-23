@@ -4,7 +4,7 @@
 #include <Poco/Timespan.h>
 #include <Interpreters/ProcessList.h>
 
-#include <DataStreams/StreamLocalLimits.h>
+#include <DataStreams/IBlockOutputStream.h>
 
 namespace DB
 {
@@ -26,19 +26,22 @@ class LimitsCheckingTransform : public ISimpleTransform
 {
 public:
 
-    LimitsCheckingTransform(const Block & header_, StreamLocalLimits limits_);
+    using LocalLimits = IBlockInputStream::LocalLimits;
+    using LimitsMode = IBlockInputStream::LimitsMode;
+
+    LimitsCheckingTransform(const Block & header_, LocalLimits limits_);
 
     String getName() const override { return "LimitsCheckingTransform"; }
 
-    void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) { quota = quota_; }
+    void setQuota(const QuotaContextPtr & quota_) { quota = quota_; }
 
 protected:
     void transform(Chunk & chunk) override;
 
 private:
-    StreamLocalLimits limits;
+    LocalLimits limits;
 
-    std::shared_ptr<const EnabledQuota> quota;
+    QuotaContextPtr quota;
     UInt64 prev_elapsed = 0;
 
     ProcessorProfileInfo info;

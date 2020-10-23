@@ -1,14 +1,5 @@
----
-toc_folder_title: Guides
-toc_priority: 38
-toc_title: Overview
----
+# ClickHouse Guides
 
-# ClickHouse Guides {#clickhouse-guides}
+Detailed step-by-step instructions that will help you solve various tasks using ClickHouse.
 
-List of detailed step-by-step instructions that help to solve various tasks using ClickHouse:
-
--   [Tutorial on simple cluster set-up](../getting-started/tutorial.md)
--   [Applying a CatBoost model in ClickHouse](../guides/apply-catboost-model.md)
-
-[Original article](https://clickhouse.tech/docs/en/guides/) <!--hide-->
+- [Applying a CatBoost Model in ClickHouse](apply_catboost_model.md)

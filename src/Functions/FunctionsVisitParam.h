@@ -36,7 +36,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -80,19 +79,12 @@ struct ExtractParamImpl
     using ResultType = typename ParamExtractor::ResultType;
 
     static constexpr bool use_default_implementation_for_constants = true;
-    static constexpr bool supports_start_pos = false;
 
     /// It is assumed that `res` is the correct size and initialized with zeros.
-    static void vectorConstant(
-        const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
+    static void vector_constant(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
         std::string needle,
-        const ColumnPtr & start_pos,
         PaddedPODArray<ResultType> & res)
     {
-        if (start_pos != nullptr)
-            throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support start_pos argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
 
@@ -129,20 +121,14 @@ struct ExtractParamImpl
             memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
     }
 
-    template <typename... Args> static void vectorVector(Args &&...)
+    template <typename... Args> static void vector_vector(Args &&...)
     {
         throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    template <typename... Args> static void constantVector(Args &&...)
+    template <typename... Args> static void constant_vector(Args &&...)
     {
         throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
-    }
-
-    template <typename... Args>
-    static void vectorFixedConstant(Args &&...)
-    {
-        throw Exception("Functions 'visitParamHas' don't support FixedString haystack argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

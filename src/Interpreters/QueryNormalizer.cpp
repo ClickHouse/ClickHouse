@@ -20,14 +20,13 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
     extern const int CYCLIC_ALIASES;
     extern const int UNKNOWN_QUERY_PARAMETER;
-    extern const int BAD_ARGUMENTS;
 }
 
 
 class CheckASTDepth
 {
 public:
-    explicit CheckASTDepth(QueryNormalizer::Data & data_)
+    CheckASTDepth(QueryNormalizer::Data & data_)
         : data(data_)
     {
         if (data.level > data.settings.max_ast_depth)
@@ -48,7 +47,7 @@ private:
 class RestoreAliasOnExitScope
 {
 public:
-    explicit RestoreAliasOnExitScope(String & alias_)
+    RestoreAliasOnExitScope(String & alias_)
         : alias(alias_)
         , copy(alias_)
     {}
@@ -152,13 +151,6 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
 {
     if (const auto * func_node = node->as<ASTFunction>())
     {
-        if (func_node->tryGetQueryArgument())
-        {
-            if (func_node->name != "view")
-                throw Exception("Query argument can only be used in the `view` TableFunction", ErrorCodes::BAD_ARGUMENTS);
-            /// Don't go into query argument.
-            return;
-        }
         /// We skip the first argument. We also assume that the lambda function can not have parameters.
         size_t first_pos = 0;
         if (func_node->name == "lambda")

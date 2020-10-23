@@ -1,4 +1,3 @@
-#pragma once
 #include "CacheDictionary.h"
 
 #include <Columns/ColumnsNumber.h>
@@ -39,7 +38,7 @@ template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumberImpl(
     Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
-    /// First fill everything with default values
+    //First fill everything with default values
     const auto rows = ext::size(ids);
     for (const auto row : ext::range(0, rows))
         out[row] = get_default(row);

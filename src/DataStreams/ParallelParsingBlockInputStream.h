@@ -5,6 +5,7 @@
 #include <Common/ThreadPool.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

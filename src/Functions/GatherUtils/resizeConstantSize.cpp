@@ -1,13 +1,8 @@
-#ifndef __clang_analyzer__ // It's too hard to analyze.
-
 #include "GatherUtils.h"
 #include "Selectors.h"
 #include "Algorithms.h"
 
 namespace DB::GatherUtils
-{
-
-namespace
 {
 
 struct ArrayResizeConstant : public ArrayAndValueSourceSelectorBySink<ArrayResizeConstant>
@@ -20,12 +15,9 @@ struct ArrayResizeConstant : public ArrayAndValueSourceSelectorBySink<ArrayResiz
     }
 };
 
-}
 
 void resizeConstantSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, ssize_t size)
 {
     ArrayResizeConstant::select(sink, array_source, value_source, size);
 }
 }
-
-#endif

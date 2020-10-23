@@ -8,15 +8,6 @@
 namespace DB
 {
 
-class AggregatedArenasChunkInfo : public ChunkInfo
-{
-public:
-    Arenas arenas;
-    AggregatedArenasChunkInfo(Arenas arenas_)
-        : arenas(std::move(arenas_))
-    {}
-};
-
 class AggregatedChunkInfo : public ChunkInfo
 {
 public:
@@ -37,8 +28,6 @@ struct AggregatingTransformParams
         : params(params_), aggregator(params), final(final_) {}
 
     Block getHeader() const { return aggregator.getHeader(final); }
-
-    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
 };
 
 struct ManyAggregatedData
@@ -99,7 +88,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
+    Logger * log = &Logger::get("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -127,7 +116,5 @@ private:
 
     void initGenerate();
 };
-
-Chunk convertToChunk(const Block & block);
 
 }

@@ -1,8 +1,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2 1
+#ifdef __SSE2__
+    #define LIBDIVIDE_USE_SSE2 1
 #endif
 
 #include <libdivide.h>
@@ -15,19 +15,16 @@ namespace ErrorCodes
     extern const int ILLEGAL_DIVISION;
 }
 
-namespace
-{
-
 /// Optimizations for integer division by a constant.
 
 template <typename A, typename B>
 struct DivideIntegralByConstantImpl
-    : BinaryOperation<A, B, DivideIntegralImpl<A, B>>
+    : BinaryOperationImplBase<A, B, DivideIntegralImpl<A, B>>
 {
     using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;
 
-    static NO_INLINE void vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
+    static NO_INLINE void vector_constant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
@@ -59,7 +56,7 @@ struct DivideIntegralByConstantImpl
 
         const A * a_end = a_pos + size;
 
-#if defined(__SSE2__)
+#ifdef __SSE2__
         static constexpr size_t values_per_sse_register = 16 / sizeof(A);
         const A * a_end_sse = a_pos + size / values_per_sse_register * values_per_sse_register;
 
@@ -86,8 +83,6 @@ struct DivideIntegralByConstantImpl
   * Can be expanded to all possible combinations, but more code is needed.
   */
 
-}
-
 template <> struct BinaryOperationImpl<UInt64, UInt8, DivideIntegralImpl<UInt64, UInt8>> : DivideIntegralByConstantImpl<UInt64, UInt8> {};
 template <> struct BinaryOperationImpl<UInt64, UInt16, DivideIntegralImpl<UInt64, UInt16>> : DivideIntegralByConstantImpl<UInt64, UInt16> {};
 template <> struct BinaryOperationImpl<UInt64, UInt32, DivideIntegralImpl<UInt64, UInt32>> : DivideIntegralByConstantImpl<UInt64, UInt32> {};
@@ -110,7 +105,7 @@ template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, I
 
 
 struct NameIntDiv { static constexpr auto name = "intDiv"; };
-using FunctionIntDiv = BinaryArithmeticOverloadResolver<DivideIntegralImpl, NameIntDiv, false>;
+using FunctionIntDiv = FunctionBinaryArithmetic<DivideIntegralImpl, NameIntDiv, false>;
 
 void registerFunctionIntDiv(FunctionFactory & factory)
 {

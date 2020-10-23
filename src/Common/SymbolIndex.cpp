@@ -1,7 +1,6 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/SymbolIndex.h>
-#include <Common/hex.h>
 
 #include <algorithm>
 #include <optional>
@@ -33,9 +32,9 @@ But because ClickHouse is linked with most of the symbols exported (-rdynamic fl
 3. DWARF debug info. It contains the most detailed information about symbols and everything else.
 It allows to get source file names and line numbers from addresses. Only available if you use -g option for compiler.
 It is also used by default for ClickHouse builds, but because of its weight (about two gigabytes)
-it is split to separate binary and provided in clickhouse-common-static-dbg package.
+it is splitted to separate binary and provided in clickhouse-common-static-dbg package.
 This separate binary is placed in /usr/lib/debug/usr/bin/clickhouse and is loaded automatically by tools like gdb, addr2line.
-When you build ClickHouse by yourself, debug info is not split and present in a single huge binary.
+When you build ClickHouse by yourself, debug info is not splitted and present in a single huge binary.
 
 What ClickHouse is using to provide good stack traces?
 
@@ -59,7 +58,7 @@ Otherwise you will get only exported symbols from program headers.
 #   pragma clang diagnostic ignored "-Wunused-macros"
 #endif
 
-#define __msan_unpoison_string(X) // NOLINT
+#define __msan_unpoison_string(X)
 #if defined(__has_feature)
 #   if __has_feature(memory_sanitizer)
 #       undef __msan_unpoison_string
@@ -119,7 +118,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
          */
 
         size_t sym_cnt = 0;
-        for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
+        for (const auto *it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
             // TODO: this branch leads to invalid address of the hash table. Need further investigation.
             // if (it->d_tag == DT_HASH)
@@ -162,7 +161,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
             continue;
 
         const char * strtab = nullptr;
-        for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
+        for (const auto *it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
             if (it->d_tag == DT_STRTAB)
             {
@@ -174,7 +173,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
         if (!strtab)
             continue;
 
-        for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
+        for (const auto *it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
             if (it->d_tag == DT_SYMTAB)
             {
@@ -182,7 +181,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
                 const ElfW(Sym) * elf_sym = reinterpret_cast<const ElfW(Sym) *>(correct_address(info->dlpi_addr, it->d_un.d_ptr));
 
                 /* Iterate over the symbol table */
-                for (ElfW(Word) sym_index = 0; sym_index < ElfW(Word)(sym_cnt); ++sym_index)
+                for (ElfW(Word) sym_index = 0; sym_index < sym_cnt; ++sym_index)
                 {
                     /// We are not interested in empty symbols.
                     if (!elf_sym[sym_index].st_size)
@@ -200,27 +199,13 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
                     symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value);
                     symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value + elf_sym[sym_index].st_size);
                     symbol.name = sym_name;
-                    symbols.push_back(symbol);
+                    symbols.push_back(std::move(symbol));
                 }
 
                 break;
             }
         }
     }
-}
-
-
-String getBuildIDFromProgramHeaders(dl_phdr_info * info)
-{
-    for (size_t header_index = 0; header_index < info->dlpi_phnum; ++header_index)
-    {
-        const ElfPhdr & phdr = info->dlpi_phdr[header_index];
-        if (phdr.p_type != PT_NOTE)
-            continue;
-
-        return Elf::getBuildID(reinterpret_cast<const char *>(info->dlpi_addr + phdr.p_vaddr), phdr.p_memsz);
-    }
-    return {};
 }
 
 
@@ -255,7 +240,7 @@ void collectSymbolsFromELFSymbolTable(
         symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value);
         symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value + symbol_table_entry->st_size);
         symbol.name = symbol_name;
-        symbols.push_back(symbol);
+        symbols.push_back(std::move(symbol));
     }
 }
 
@@ -290,24 +275,18 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
 
 void collectSymbolsFromELF(dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
-    std::vector<SymbolIndex::Object> & objects,
-    String & build_id)
+    std::vector<SymbolIndex::Object> & objects)
 {
     /// MSan does not know that the program segments in memory are initialized.
     __msan_unpoison_string(info->dlpi_name);
 
     std::string object_name = info->dlpi_name;
 
-    String our_build_id = getBuildIDFromProgramHeaders(info);
-
     /// If the name is empty - it's main executable.
     /// Find a elf file for the main executable.
 
     if (object_name.empty())
-    {
         object_name = "/proc/self/exe";
-        build_id = our_build_id;
-    }
 
     std::error_code ec;
     std::filesystem::path canonical_path = std::filesystem::canonical(object_name, ec);
@@ -315,35 +294,13 @@ void collectSymbolsFromELF(dl_phdr_info * info,
     if (ec)
         return;
 
-    /// Debug info and symbol table sections may be split to separate binary.
+    /// Debug info and symbol table sections may be splitted to separate binary.
     std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path.relative_path();
 
     object_name = std::filesystem::exists(debug_info_path) ? debug_info_path : canonical_path;
 
-    /// But we have to compare Build ID to check that debug info corresponds to the same executable.
-
     SymbolIndex::Object object;
     object.elf = std::make_unique<Elf>(object_name);
-
-    String file_build_id = object.elf->getBuildID();
-
-    if (our_build_id != file_build_id)
-    {
-        /// If debug info doesn't correspond to our binary, fallback to the info in our binary.
-        if (object_name != canonical_path)
-        {
-            object_name = canonical_path;
-            object.elf = std::make_unique<Elf>(object_name);
-
-            /// But it can still be outdated, for example, if executable file was deleted from filesystem and replaced by another file.
-            file_build_id = object.elf->getBuildID();
-            if (our_build_id != file_build_id)
-                return;
-        }
-        else
-            return;
-    }
-
     object.address_begin = reinterpret_cast<const void *>(info->dlpi_addr);
     object.address_end = reinterpret_cast<const void *>(info->dlpi_addr + object.elf->size());
     object.name = object_name;
@@ -365,7 +322,7 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
     collectSymbolsFromProgramHeaders(info, data.symbols);
-    collectSymbolsFromELF(info, data.symbols, data.objects, data.build_id);
+    collectSymbolsFromELF(info, data.symbols, data.objects);
 
     /* Continue iterations */
     return 0;
@@ -416,22 +373,6 @@ const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
 const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
 {
     return find(address, data.objects);
-}
-
-String SymbolIndex::getBuildIDHex() const
-{
-    String build_id_binary = getBuildID();
-    String build_id_hex;
-    build_id_hex.resize(build_id_binary.size() * 2);
-
-    char * pos = build_id_hex.data();
-    for (auto c : build_id_binary)
-    {
-        writeHexByteUppercase(c, pos);
-        pos += 2;
-    }
-
-    return build_id_hex;
 }
 
 SymbolIndex & SymbolIndex::instance()

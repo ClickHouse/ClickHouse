@@ -66,8 +66,8 @@ int main(int argc, char ** argv)
         }
 
         Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
-        Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
+        Logger::root().setChannel(channel);
+        Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
         LineReader lr({}, false, {"\\"}, {});
@@ -97,8 +97,10 @@ int main(int argc, char ** argv)
                     bool watch = w == "w";
                     zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
                     std::vector<std::string> v = zk.getChildren(path, nullptr, event);
-                    for (const auto & child : v)
-                        std::cout << child << std::endl;
+                    for (size_t i = 0; i < v.size(); ++i)
+                    {
+                        std::cout << v[i] << std::endl;
+                    }
                     if (watch)
                         waitForWatch(event);
                 }
@@ -106,13 +108,13 @@ int main(int argc, char ** argv)
                 {
                     DB::ReadBufferFromString in(line);
 
-                    std::string path_ignored;
+                    std::string path;
                     std::string data;
                     std::string mode;
 
                     DB::assertString("create", in);
                     DB::skipWhitespaceIfAny(in);
-                    readMaybeQuoted(path_ignored, in);
+                    readMaybeQuoted(path, in);
                     DB::skipWhitespaceIfAny(in);
                     readMaybeQuoted(data, in);
                     DB::skipWhitespaceIfAny(in);
@@ -191,7 +193,7 @@ int main(int argc, char ** argv)
                     zk.set(path, data, version, &stat);
                     printStat(stat);
                 }
-                else if (!cmd.empty())
+                else if (cmd != "")
                 {
                     std::cout << "commands:\n";
                     std::cout << "  q\n";

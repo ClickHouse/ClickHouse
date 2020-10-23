@@ -1,14 +1,13 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
+#include "config_functions.h"
 #if USE_SIMDJSON
-#    include <common/types.h>
-#    include <Common/Exception.h>
-#    include <common/defines.h>
-#    include <simdjson.h>
+
+#include <common/StringRef.h>
+#include <Common/Exception.h>
+#include <Core/Types.h>
+
+#include <simdjson/jsonparser.h>
 
 
 namespace DB
@@ -22,147 +21,120 @@ namespace ErrorCodes
 /// It provides ability to parse JSONs using simdjson library.
 struct SimdJSONParser
 {
-    class Array;
-    class Object;
+    static constexpr bool need_preallocate = true;
 
-    /// References an element in a JSON document, representing a JSON null, boolean, string, number,
-    /// array or object.
-    class Element
+    void preallocate(size_t max_size)
     {
-    public:
-        ALWAYS_INLINE Element() {}
-        ALWAYS_INLINE Element(const simdjson::dom::element & element_) : element(element_) {}
-
-        ALWAYS_INLINE bool isInt64() const { return element.type() == simdjson::dom::element_type::INT64; }
-        ALWAYS_INLINE bool isUInt64() const { return element.type() == simdjson::dom::element_type::UINT64; }
-        ALWAYS_INLINE bool isDouble() const { return element.type() == simdjson::dom::element_type::DOUBLE; }
-        ALWAYS_INLINE bool isString() const { return element.type() == simdjson::dom::element_type::STRING; }
-        ALWAYS_INLINE bool isArray() const { return element.type() == simdjson::dom::element_type::ARRAY; }
-        ALWAYS_INLINE bool isObject() const { return element.type() == simdjson::dom::element_type::OBJECT; }
-        ALWAYS_INLINE bool isBool() const { return element.type() == simdjson::dom::element_type::BOOL; }
-        ALWAYS_INLINE bool isNull() const { return element.type() == simdjson::dom::element_type::NULL_VALUE; }
-
-        ALWAYS_INLINE Int64 getInt64() const { return element.get_int64().first; }
-        ALWAYS_INLINE UInt64 getUInt64() const { return element.get_uint64().first; }
-        ALWAYS_INLINE double getDouble() const { return element.get_double().first; }
-        ALWAYS_INLINE bool getBool() const { return element.get_bool().first; }
-        ALWAYS_INLINE std::string_view getString() const { return element.get_string().first; }
-        ALWAYS_INLINE Array getArray() const;
-        ALWAYS_INLINE Object getObject() const;
-
-    private:
-        simdjson::dom::element element;
-    };
-
-    /// References an array in a JSON document.
-    class Array
-    {
-    public:
-        class Iterator
-        {
-        public:
-            ALWAYS_INLINE Iterator(const simdjson::dom::array::iterator & it_) : it(it_) {}
-            ALWAYS_INLINE Element operator*() const { return *it; }
-            ALWAYS_INLINE Iterator & operator++() { ++it; return *this; }
-            ALWAYS_INLINE Iterator operator++(int) { auto res = *this; ++it; return res; }
-            ALWAYS_INLINE friend bool operator!=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
-            ALWAYS_INLINE friend bool operator==(const Iterator & left, const Iterator & right) { return !(left != right); }
-        private:
-            simdjson::dom::array::iterator it;
-        };
-
-        ALWAYS_INLINE Array(const simdjson::dom::array & array_) : array(array_) {}
-        ALWAYS_INLINE Iterator begin() const { return array.begin(); }
-        ALWAYS_INLINE Iterator end() const { return array.end(); }
-        ALWAYS_INLINE size_t size() const { return array.size(); }
-        ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return array.at(index).first; }
-
-    private:
-        simdjson::dom::array array;
-    };
-
-    using KeyValuePair = std::pair<std::string_view, Element>;
-
-    /// References an object in a JSON document.
-    class Object
-    {
-    public:
-        class Iterator
-        {
-        public:
-            ALWAYS_INLINE Iterator(const simdjson::dom::object::iterator & it_) : it(it_) {}
-            ALWAYS_INLINE KeyValuePair operator*() const { const auto & res = *it; return {res.key, res.value}; }
-            ALWAYS_INLINE Iterator & operator++() { ++it; return *this; }
-            ALWAYS_INLINE Iterator operator++(int) { auto res = *this; ++it; return res; }
-            ALWAYS_INLINE friend bool operator!=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
-            ALWAYS_INLINE friend bool operator==(const Iterator & left, const Iterator & right) { return !(left != right); }
-        private:
-            simdjson::dom::object::iterator it;
-        };
-
-        ALWAYS_INLINE Object(const simdjson::dom::object & object_) : object(object_) {}
-        ALWAYS_INLINE Iterator begin() const { return object.begin(); }
-        ALWAYS_INLINE Iterator end() const { return object.end(); }
-        ALWAYS_INLINE size_t size() const { return object.size(); }
-
-        bool find(const std::string_view & key, Element & result) const
-        {
-            auto x = object.at_key(key);
-            if (x.error())
-                return false;
-
-            result = x.first;
-            return true;
-        }
-
-        /// Optional: Provides access to an object's element by index.
-        KeyValuePair operator[](size_t index) const
-        {
-            assert(index < size());
-            auto it = object.begin();
-            while (index--)
-                ++it;
-            const auto & res = *it;
-            return {res.key, res.value};
-        }
-
-    private:
-        simdjson::dom::object object;
-    };
-
-    /// Parses a JSON document, returns the reference to its root element if succeeded.
-    bool parse(const std::string_view & json, Element & result)
-    {
-        auto document = parser.parse(json.data(), json.size());
-        if (document.error())
-            return false;
-
-        result = document.first;
-        return true;
-    }
-
-    /// Optional: Allocates memory to parse JSON documents faster.
-    void reserve(size_t max_size)
-    {
-        if (parser.allocate(max_size) != simdjson::error_code::SUCCESS)
-            throw Exception{"Couldn't allocate " + std::to_string(max_size) + " bytes when parsing JSON",
+        if (!pj.allocate_capacity(max_size))
+            throw Exception{"Can not allocate memory for " + std::to_string(max_size) + " units when parsing JSON",
                             ErrorCodes::CANNOT_ALLOCATE_MEMORY};
     }
 
+    bool parse(const StringRef & json) { return !json_parse(json.data, json.size, pj); }
+
+    using Iterator = simdjson::ParsedJson::Iterator;
+    Iterator getRoot() { return Iterator{pj}; }
+
+    static bool isInt64(const Iterator & it) { return it.is_integer(); }
+    static bool isUInt64(const Iterator &) { return false; /* See https://github.com/lemire/simdjson/issues/68 */ }
+    static bool isDouble(const Iterator & it) { return it.is_double(); }
+    static bool isString(const Iterator & it) { return it.is_string(); }
+    static bool isArray(const Iterator & it) { return it.is_array(); }
+    static bool isObject(const Iterator & it) { return it.is_object(); }
+    static bool isBool(const Iterator & it) { return it.get_type() == 't' || it.get_type() == 'f'; }
+    static bool isNull(const Iterator & it) { return it.is_null(); }
+
+    static Int64 getInt64(const Iterator & it) { return it.get_integer(); }
+    static UInt64 getUInt64(const Iterator &) { return 0; /* isUInt64() never returns true */ }
+    static double getDouble(const Iterator & it) { return it.get_double(); }
+    static bool getBool(const Iterator & it) { return it.get_type() == 't'; }
+    static StringRef getString(const Iterator & it) { return StringRef{it.get_string(), it.get_string_length()}; }
+
+    static size_t sizeOfArray(const Iterator & it)
+    {
+        size_t size = 0;
+        Iterator it2 = it;
+        if (it2.down())
+        {
+            do
+                ++size;
+            while (it2.next());
+        }
+        return size;
+    }
+
+    static bool firstArrayElement(Iterator & it) { return it.down(); }
+
+    static bool arrayElementByIndex(Iterator & it, size_t index)
+    {
+        if (!it.down())
+            return false;
+        while (index--)
+            if (!it.next())
+                return false;
+        return true;
+    }
+
+    static bool nextArrayElement(Iterator & it) { return it.next(); }
+
+    static size_t sizeOfObject(const Iterator & it)
+    {
+        size_t size = 0;
+        Iterator it2 = it;
+        if (it2.down())
+        {
+            do
+                ++size;
+            while (it2.next() && it2.next()); //-V501
+        }
+        return size;
+    }
+
+    static bool firstObjectMember(Iterator & it) { return it.down() && it.next(); }
+
+    static bool firstObjectMember(Iterator & it, StringRef & first_key)
+    {
+        if (!it.down())
+            return false;
+        first_key.data = it.get_string();
+        first_key.size = it.get_string_length();
+        return it.next();
+    }
+
+    static bool objectMemberByIndex(Iterator & it, size_t index)
+    {
+        if (!it.down())
+            return false;
+        while (index--)
+            if (!it.next() || !it.next()) //-V501
+                return false;
+        return it.next();
+    }
+
+    static bool objectMemberByName(Iterator & it, const StringRef & name) { return it.move_to_key(name.data); }
+    static bool nextObjectMember(Iterator & it) { return it.next() && it.next(); } //-V501
+
+    static bool nextObjectMember(Iterator & it, StringRef & next_key)
+    {
+        if (!it.next())
+            return false;
+        next_key.data = it.get_string();
+        next_key.size = it.get_string_length();
+        return it.next();
+    }
+
+    static bool isObjectMember(const Iterator & it) { return it.get_scope_type() == '{'; }
+
+    static StringRef getKey(const Iterator & it)
+    {
+        Iterator it2 = it;
+        it2.prev();
+        return StringRef{it2.get_string(), it2.get_string_length()};
+    }
+
 private:
-    simdjson::dom::parser parser;
+    simdjson::ParsedJson pj;
 };
 
-inline ALWAYS_INLINE SimdJSONParser::Array SimdJSONParser::Element::getArray() const
-{
-    return element.get_array().first;
 }
-
-inline ALWAYS_INLINE SimdJSONParser::Object SimdJSONParser::Element::getObject() const
-{
-    return element.get_object().first;
-}
-
-}
-
 #endif

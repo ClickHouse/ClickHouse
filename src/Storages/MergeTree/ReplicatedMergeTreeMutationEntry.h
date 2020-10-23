@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MutationCommands.h>
 #include <map>
@@ -35,7 +35,7 @@ struct ReplicatedMergeTreeMutationEntry
     /// Replica which initiated mutation
     String source_replica;
 
-    /// Accured numbers of blocks
+    /// Accuired numbers of blocks
     /// partition_id -> block_number
     std::map<String, Int64> block_numbers;
 

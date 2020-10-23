@@ -1,4 +1,4 @@
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
@@ -42,12 +42,12 @@ void AIOContextPool::doMonitor()
 void AIOContextPool::waitForCompletion()
 {
     /// array to hold completion events
-    std::vector<io_event> events(max_concurrent_events);
+    io_event events[max_concurrent_events];
 
     try
     {
-        const auto num_events = getCompletionEvents(events.data(), max_concurrent_events);
-        fulfillPromises(events.data(), num_events);
+        const auto num_events = getCompletionEvents(events, max_concurrent_events);
+        fulfillPromises(events, num_events);
         notifyProducers(num_events);
     }
     catch (...)
@@ -98,7 +98,7 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
         const auto it = promises.find(completed_id);
         if (it == std::end(promises))
         {
-            LOG_ERROR(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id {}", completed_id);
+            LOG_ERROR(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id " << completed_id);
             continue;
         }
 
@@ -146,10 +146,11 @@ std::future<AIOContextPool::BytesRead> AIOContextPool::post(struct iocb & iocb)
     /// store id in AIO request for further identification
     iocb.aio_data = request_id;
 
+    auto num_requests = 0;
     struct iocb * requests[] { &iocb };
 
     /// submit a request
-    while (io_submit(aio_context.ctx, 1, requests) < 0)
+    while ((num_requests = io_submit(aio_context.ctx, 1, requests)) < 0)
     {
         if (errno == EAGAIN)
             /// wait until at least one event has been completed (or a spurious wakeup) and try again

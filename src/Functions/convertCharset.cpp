@@ -1,22 +1,20 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
+#include "config_core.h"
 #if USE_ICU
-#    include <Columns/ColumnConst.h>
-#    include <Columns/ColumnString.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/FunctionHelpers.h>
-#    include <Functions/IFunction.h>
-#    include <IO/WriteHelpers.h>
-#    include <Common/ObjectPool.h>
-#    include <Common/typeid_cast.h>
-#    include <ext/range.h>
 
-#    include <memory>
-#    include <string>
-#    include <unicode/ucnv.h>
+#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
+#include <Common/ObjectPool.h>
+#include <ext/range.h>
+
+#include <unicode/ucnv.h>
+#include <string>
+#include <memory>
 
 
 namespace DB
@@ -30,8 +28,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
 
 /** convertCharset(s, from, to)
   *
@@ -184,11 +180,11 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        const ColumnWithTypeAndName & arg_from = arguments[0];
-        const ColumnWithTypeAndName & arg_charset_from = arguments[1];
-        const ColumnWithTypeAndName & arg_charset_to = arguments[2];
+        const ColumnWithTypeAndName & arg_from = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & arg_charset_from = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & arg_charset_to = block.getByPosition(arguments[2]);
 
         const ColumnConst * col_charset_from = checkAndGetColumnConstStringOrFixedString(arg_charset_from.column.get());
         const ColumnConst * col_charset_to = checkAndGetColumnConstStringOrFixedString(arg_charset_to.column.get());
@@ -204,7 +200,7 @@ public:
         {
             auto col_to = ColumnString::create();
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets());
-            return col_to;
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column passed as first argument of function " + getName() + " (must be ColumnString).",
@@ -212,7 +208,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionConvertCharset(FunctionFactory & factory)
 {

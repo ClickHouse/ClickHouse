@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-class DiskMemoryDirectoryIterator final : public IDiskDirectoryIterator
+class DiskMemoryDirectoryIterator : public IDiskDirectoryIterator
 {
 public:
     explicit DiskMemoryDirectoryIterator(std::vector<Poco::Path> && dir_file_paths_)
@@ -42,9 +42,8 @@ private:
     std::vector<Poco::Path>::iterator iter;
 };
 
-
 /// Adapter with actual behaviour as ReadBufferFromString.
-class ReadIndirectBuffer final : public ReadBufferFromFileBase
+class ReadIndirectBuffer : public ReadBufferFromFileBase
 {
 public:
     ReadIndirectBuffer(String path_, const String & data_)
@@ -72,9 +71,8 @@ private:
     const String path;
 };
 
-
 /// This class is responsible to update files metadata after buffer is finalized.
-class WriteIndirectBuffer final : public WriteBufferFromFileBase
+class WriteIndirectBuffer : public WriteBufferFromFileBase
 {
 public:
     WriteIndirectBuffer(DiskMemory * disk_, String path_, WriteMode mode_, size_t buf_size)
@@ -130,6 +128,7 @@ private:
 
         impl.write(working_buffer.begin(), offset());
     }
+
 
     WriteBufferFromOwnString impl;
     DiskMemory * disk;
@@ -387,51 +386,8 @@ void DiskMemory::removeRecursive(const String & path)
 
 void DiskMemory::listFiles(const String & path, std::vector<String> & file_names)
 {
-    std::lock_guard lock(mutex);
-
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
         file_names.push_back(it->name());
-}
-
-void DiskMemory::createHardLink(const String &, const String &)
-{
-    throw Exception("Method createHardLink is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskMemory::createFile(const String &)
-{
-    throw Exception("Method createFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskMemory::setReadOnly(const String &)
-{
-    throw Exception("Method setReadOnly is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-int DiskMemory::open(const String & /*path*/, mode_t /*mode*/) const
-{
-    throw Exception("Method open is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskMemory::close(int /*fd*/) const
-{
-    throw Exception("Method close is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskMemory::sync(int /*fd*/) const
-{
-    throw Exception("Method sync is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskMemory::truncateFile(const String & path, size_t size)
-{
-    std::lock_guard lock(mutex);
-
-    auto file_it = files.find(path);
-    if (file_it == files.end())
-        throw Exception("File '" + path + "' doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-
-    file_it->second.data.resize(size);
 }
 
 

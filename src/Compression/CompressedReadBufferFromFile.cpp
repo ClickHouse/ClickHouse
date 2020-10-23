@@ -1,7 +1,6 @@
-#include <cassert>
-
 #include "CompressedReadBufferFromFile.h"
 
+#include <Compression/CompressionInfo.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/WriteHelpers.h>
 #include <IO/createReadBufferFromFileBase.h>
@@ -17,18 +16,13 @@ namespace ErrorCodes
 
 bool CompressedReadBufferFromFile::nextImpl()
 {
-    size_t size_decompressed = 0;
+    size_t size_decompressed;
     size_t size_compressed_without_checksum;
     size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum);
     if (!size_compressed)
         return false;
 
-    auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
-
-    /// This is for clang static analyzer.
-    assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
-
-    memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
+    memory.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
     decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
@@ -103,10 +97,8 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         if (!new_size_compressed)
             return bytes_read;
 
-        auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
-
         /// If the decompressed block fits entirely where it needs to be copied.
-        if (size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
+        if (size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer() <= n - bytes_read)
         {
             decompress(to + bytes_read, size_decompressed, size_compressed_without_checksum);
             bytes_read += size_decompressed;
@@ -116,11 +108,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         {
             size_compressed = new_size_compressed;
             bytes += offset();
-
-            /// This is for clang static analyzer.
-            assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
-
-            memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
+            memory.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
             pos = working_buffer.begin();
 

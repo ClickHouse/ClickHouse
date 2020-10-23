@@ -13,10 +13,7 @@
 #include <IO/Progress.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 
 namespace Poco
@@ -44,7 +41,7 @@ namespace DB
 /// Also this class write and flush special X-ClickHouse-Progress HTTP headers
 ///  if no data was sent at the time of progress notification.
 /// This allows to implement progress bar in HTTP clients.
-class WriteBufferFromHTTPServerResponse final : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
     Poco::Net::HTTPServerRequest & request;
@@ -97,7 +94,7 @@ public:
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         CompressionMethod compression_method_ = CompressionMethod::None);
 
-    /// Writes progress in repeating HTTP headers.
+    /// Writes progess in repeating HTTP headers.
     void onProgress(const Progress & progress);
 
     /// Send at least HTTP headers if no data has been sent yet.

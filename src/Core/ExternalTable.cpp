@@ -1,4 +1,5 @@
 #include <boost/program_options.hpp>
+#include <boost/algorithm/string.hpp>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
@@ -7,13 +8,13 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 #include <Storages/StorageMemory.h>
+#include <Poco/Net/MessageHeader.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
+
+#include <Core/ExternalTable.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Core/ExternalTable.h>
-#include <Poco/Net/MessageHeader.h>
-#include <common/find_symbols.h>
 
 
 namespace DB
@@ -41,11 +42,11 @@ ExternalTableDataPtr BaseExternalTable::getData(const Context & context)
 
 void BaseExternalTable::clean()
 {
-    name.clear();
-    file.clear();
-    format.clear();
+    name = "";
+    file = "";
+    format = "";
     structure.clear();
-    sample_block.clear();
+    sample_block = Block();
     read_buffer.reset();
 }
 
@@ -57,16 +58,22 @@ void BaseExternalTable::write()
     std::cerr << "format " << format << std::endl;
     std::cerr << "structure: \n";
     for (const auto & elem : structure)
-        std::cerr << '\t' << elem.first << ' ' << elem.second << std::endl;
+        std::cerr << "\t" << elem.first << " " << elem.second << std::endl;
+}
+
+std::vector<std::string> BaseExternalTable::split(const std::string & s, const std::string & d)
+{
+    std::vector<std::string> res;
+    boost::split(res, s, boost::algorithm::is_any_of(d), boost::algorithm::token_compress_on);
+    return res;
 }
 
 void BaseExternalTable::parseStructureFromStructureField(const std::string & argument)
 {
-    std::vector<std::string> vals;
-    splitInto<' ', ','>(vals, argument, true);
+    std::vector<std::string> vals = split(argument, " ,");
 
-    if (vals.size() % 2 != 0)
-        throw Exception("Odd number of attributes in section structure: " + std::to_string(vals.size()), ErrorCodes::BAD_ARGUMENTS);
+    if (vals.size() & 1)
+        throw Exception("Odd number of attributes in section structure", ErrorCodes::BAD_ARGUMENTS);
 
     for (size_t i = 0; i < vals.size(); i += 2)
         structure.emplace_back(vals[i], vals[i + 1]);
@@ -74,8 +81,7 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
 
 void BaseExternalTable::parseStructureFromTypesField(const std::string & argument)
 {
-    std::vector<std::string> vals;
-    splitInto<' ', ','>(vals, argument, true);
+    std::vector<std::string> vals = split(argument, " ,");
 
     for (size_t i = 0; i < vals.size(); ++i)
         structure.emplace_back("_" + toString(i + 1), vals[i]);
@@ -164,18 +170,16 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     /// Create table
     NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    auto temporary_table = TemporaryTableHolder(context, ColumnsDescription{columns}, {});
-    auto storage = temporary_table.getTable();
-    context.addExternalTable(data->table_name, std::move(temporary_table));
-    BlockOutputStreamPtr output = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), context);
+    StoragePtr storage = StorageMemory::create(StorageID("_external", data->table_name), ColumnsDescription{columns}, ConstraintsDescription{});
+    storage->startup();
+    context.addExternalTable(data->table_name, storage);
+    BlockOutputStreamPtr output = storage->write(ASTPtr(), context);
 
     /// Write data
-    data->pipe->resize(1);
-
     auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
-    connect(*data->pipe->getOutputPort(0), sink->getPort());
+    connect(data->pipe->getPort(), sink->getPort());
 
-    auto processors = Pipe::detachProcessors(std::move(*data->pipe));
+    auto processors = std::move(*data->pipe).detachProcessors();
     processors.push_back(std::move(sink));
 
     auto executor = std::make_shared<PipelineExecutor>(processors);

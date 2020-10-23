@@ -7,32 +7,25 @@
 namespace DB
 {
 
-template <bool replicated>
-NamesAndTypesList SystemMergeTreeSettings<replicated>::getNamesAndTypes()
+NamesAndTypesList SystemMergeTreeSettings::getNamesAndTypes()
 {
     return {
         {"name",        std::make_shared<DataTypeString>()},
         {"value",       std::make_shared<DataTypeString>()},
         {"changed",     std::make_shared<DataTypeUInt8>()},
         {"description", std::make_shared<DataTypeString>()},
-        {"type",        std::make_shared<DataTypeString>()},
     };
 }
 
-template <bool replicated>
-void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void SystemMergeTreeSettings::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    const auto & settings = replicated ? context.getReplicatedMergeTreeSettings().all() : context.getMergeTreeSettings().all();
-    for (const auto & setting : settings)
+    for (const auto & setting : context.getMergeTreeSettings())
     {
-        res_columns[0]->insert(setting.getName());
-        res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.isValueChanged());
-        res_columns[3]->insert(setting.getDescription());
-        res_columns[4]->insert(setting.getTypeName());
+        res_columns[0]->insert(setting.getName().toString());
+        res_columns[1]->insert(setting.getValueAsString());
+        res_columns[2]->insert(setting.isChanged());
+        res_columns[3]->insert(setting.getDescription().toString());
     }
 }
 
-template class SystemMergeTreeSettings<false>;
-template class SystemMergeTreeSettings<true>;
 }

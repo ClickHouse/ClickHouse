@@ -12,7 +12,7 @@
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
@@ -293,7 +293,7 @@ void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, V
     if (init)
         init(map);
 
-    for (const auto * end = data + size; data < end; ++data)
+    for (const auto *end = data + size; data < end; ++data)
         ++map[*data];
 
     watch.stop();
@@ -343,8 +343,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = std::stol(argv[1]);
-//    size_t m = std::stol(argv[2]);
+    size_t n = atoi(argv[1]);
+//    size_t m = atoi(argv[2]);
 
     std::cerr << std::fixed << std::setprecision(3);
 

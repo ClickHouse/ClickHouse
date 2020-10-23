@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -14,14 +14,14 @@ namespace DB
 
 class ASTAlterCommand;
 
-class Pipe;
-
 struct PartitionCommand
 {
     enum Type
     {
         ATTACH_PARTITION,
         MOVE_PARTITION,
+        CLEAR_COLUMN,
+        CLEAR_INDEX,
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
         FETCH_PARTITION,
@@ -33,6 +33,8 @@ struct PartitionCommand
     Type type;
 
     ASTPtr partition;
+    Field column_name;
+    Field index_name;
 
     /// true for DETACH PARTITION.
     bool detach = false;
@@ -62,47 +64,18 @@ struct PartitionCommand
         TABLE,
     };
 
-    std::optional<MoveDestinationType> move_destination_type;
-
+    MoveDestinationType move_destination_type;
 
     String move_destination_name;
 
     static std::optional<PartitionCommand> parse(const ASTAlterCommand * command);
-    /// Convert type of the command to string (use not only type, but also
-    /// different flags)
-    std::string typeToString() const;
 };
 
-using PartitionCommands = std::vector<PartitionCommand>;
-
-/// Result of exectuin of a single partition commands. Partition commands quite
-/// different, so some fields will be empty for some commands. Currently used in
-/// ATTACH and FREEZE commands.
-struct PartitionCommandResultInfo
+class PartitionCommands : public std::vector<PartitionCommand>
 {
-    /// Command type, always filled
-    String command_type;
-    /// Partition id, always filled
-    String partition_id;
-    /// Part name, always filled
-    String part_name;
-    /// Part name in /detached directory, filled in ATTACH
-    String old_part_name;
-    /// Absolute path to backup directory, filled in FREEZE
-    String backup_path;
-    /// Absolute path part backup, filled in FREEZE
-    String part_backup_path;
-    /// Name of the backup (specified by user or increment value), filled in
-    /// FREEZE
-    String backup_name;
+public:
+    void validate(const IStorage & table);
 };
 
-using PartitionCommandsResultInfo = std::vector<PartitionCommandResultInfo>;
-
-/// Convert partition comands result to Source from single Chunk, which will be
-/// used to print info to the user. Tries to create narrowest table for given
-/// results. For example, if all commands were FREEZE commands, than
-/// old_part_name column will be absent.
-Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result);
 
 }

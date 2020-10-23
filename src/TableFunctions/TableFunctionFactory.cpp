@@ -3,7 +3,6 @@
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -16,7 +15,7 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionFactory::registerFunction(const std::string & name, Value creator, CaseSensitiveness case_sensitiveness)
+void TableFunctionFactory::registerFunction(const std::string & name, Creator creator, CaseSensitiveness case_sensitiveness)
 {
     if (!table_functions.emplace(name, creator).second)
         throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
@@ -29,21 +28,19 @@ void TableFunctionFactory::registerFunction(const std::string & name, Value crea
 }
 
 TableFunctionPtr TableFunctionFactory::get(
-    const ASTPtr & ast_function,
+    const std::string & name,
     const Context & context) const
 {
-    const auto * table_function = ast_function->as<ASTFunction>();
-    auto res = tryGet(table_function->name, context);
+    auto res = tryGet(name, context);
     if (!res)
     {
-        auto hints = getHints(table_function->name);
+        auto hints = getHints(name);
         if (!hints.empty())
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}. Maybe you meant: {}", table_function->name , toString(hints));
+            throw Exception("Unknown table function " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_FUNCTION);
         else
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
+            throw Exception("Unknown table function " + name, ErrorCodes::UNKNOWN_FUNCTION);
     }
 
-    res->parseArguments(ast_function, context);
     return res;
 }
 

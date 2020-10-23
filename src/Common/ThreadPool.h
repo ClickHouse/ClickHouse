@@ -11,7 +11,6 @@
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
-#include <ext/scope_guard.h>
 
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -29,9 +28,6 @@ class ThreadPoolImpl
 {
 public:
     using Job = std::function<void()>;
-
-    /// Maximum number of threads is based on the number of physical cores.
-    ThreadPoolImpl();
 
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
     explicit ThreadPoolImpl(size_t max_threads_);
@@ -132,16 +128,8 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
   */
 class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 {
-    static std::unique_ptr<GlobalThreadPool> the_instance;
-
-    GlobalThreadPool(size_t max_threads_, size_t max_free_threads_,
-            size_t queue_size_, const bool shutdown_on_exception_)
-        : FreeThreadPool(max_threads_, max_free_threads_, queue_size_,
-            shutdown_on_exception_)
-    {}
-
 public:
-    static void initialize(size_t max_threads = 10000);
+    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000, false) {}
     static GlobalThreadPool & instance();
 };
 
@@ -162,20 +150,21 @@ public:
         GlobalThreadPool::instance().scheduleOrThrow([
             state = state,
             func = std::forward<Function>(func),
-            args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
+            args = std::make_tuple(std::forward<Args>(args)...)]
         {
-            auto event = std::move(state);
-            SCOPE_EXIT(event->set());
-
-            /// This moves are needed to destroy function and arguments before exit.
-            /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
-            auto function = std::move(func);
-            auto arguments = std::move(args);
-
-            /// Thread status holds raw pointer on query context, thus it always must be destroyed
-            /// before sending signal that permits to join this thread.
-            DB::ThreadStatus thread_status;
-            std::apply(function, arguments);
+            try
+            {
+                /// Thread status holds raw pointer on query context, thus it always must be destroyed
+                /// before sending signal that permits to join this thread.
+                DB::ThreadStatus thread_status;
+                std::apply(func, args);
+            }
+            catch (...)
+            {
+                state->set();
+                throw;
+            }
+            state->set();
         });
     }
 
@@ -227,3 +216,18 @@ private:
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
+
+
+/// Allows to save first catched exception in jobs and postpone its rethrow.
+class ExceptionHandler
+{
+public:
+    void setException(std::exception_ptr exception);
+    void throwIfException();
+
+private:
+    std::exception_ptr first_exception;
+    std::mutex mutex;
+};
+
+ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler);

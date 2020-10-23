@@ -1,8 +1,9 @@
 #pragma once
 
 #include <atomic>
-#include <common/types.h>
+#include <common/Types.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/SimpleActionBlocker.h>
 #include <Common/VariableContext.h>
 
 
@@ -12,7 +13,6 @@
   */
 class MemoryTracker
 {
-private:
     std::atomic<Int64> amount {0};
     std::atomic<Int64> peak {0};
     std::atomic<Int64> hard_limit {0};
@@ -22,9 +22,6 @@ private:
 
     /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
     double fault_probability = 0;
-
-    /// To randomly sample allocations and deallocations in trace_log.
-    double sample_probability = 0;
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
@@ -36,12 +33,9 @@ private:
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
 
-    void updatePeak(Int64 will_be);
-    void logMemoryUsage(Int64 current) const;
-
 public:
-    MemoryTracker(VariableContext level_ = VariableContext::Thread);
-    MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(VariableContext level_ = VariableContext::Thread) : level(level_) {}
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread) : parent(parent_), level(level_) {}
 
     ~MemoryTracker();
 
@@ -85,11 +79,6 @@ public:
         fault_probability = value;
     }
 
-    void setSampleProbability(double value)
-    {
-        sample_probability = value;
-    }
-
     void setProfilerStep(Int64 value)
     {
         profiler_step = value;
@@ -124,28 +113,12 @@ public:
     /// Reset the accumulated data and the parent.
     void reset();
 
-    /// Reset current counter to a new value.
-    void set(Int64 to);
-
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage() const;
 
-    /// To be able to temporarily stop memory tracking from current thread.
-    struct BlockerInThread
-    {
-    private:
-        BlockerInThread(const BlockerInThread &) = delete;
-        BlockerInThread & operator=(const BlockerInThread &) = delete;
-        static thread_local bool is_blocked;
-    public:
-        BlockerInThread() { is_blocked = true; }
-        ~BlockerInThread() { is_blocked = false; }
-        static bool isBlocked() { return is_blocked; }
-    };
+    /// To be able to temporarily stop memory tracker
+    DB::SimpleActionBlocker blocker;
 };
-
-extern MemoryTracker total_memory_tracker;
-
 
 /// Convenience methods, that use current thread's memory_tracker if it is available.
 namespace CurrentMemoryTracker
@@ -154,3 +127,6 @@ namespace CurrentMemoryTracker
     void realloc(Int64 old_size, Int64 new_size);
     void free(Int64 size);
 }
+
+
+DB::SimpleActionLock getCurrentMemoryTrackerActionLock();

@@ -1,6 +1,10 @@
 #include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Common/quoteString.h>
+#include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/sort.hpp>
+#include <boost/range/algorithm_ext/push_back.hpp>
+#include <map>
 
 
 namespace DB
@@ -12,13 +16,61 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatColumnNames(const Strings & columns, const IAST::FormatSettings & settings)
+    using KeywordToColumnsMap = std::map<std::string_view /* keyword */, std::vector<std::string_view> /* columns */>;
+    using TableToAccessMap = std::map<String /* database_and_table_name */, KeywordToColumnsMap>;
+
+    TableToAccessMap prepareTableToAccessMap(const AccessRightsElements & elements)
     {
+        TableToAccessMap res;
+        for (const auto & element : elements)
+        {
+            String database_and_table_name;
+            if (element.any_database)
+            {
+                if (element.any_table)
+                    database_and_table_name = "*.*";
+                else
+                    database_and_table_name = "*." + backQuoteIfNeed(element.table);
+            }
+            else if (element.database.empty())
+            {
+                if (element.any_table)
+                    database_and_table_name = "*";
+                else
+                    database_and_table_name = backQuoteIfNeed(element.table);
+            }
+            else
+            {
+                if (element.any_table)
+                    database_and_table_name = backQuoteIfNeed(element.database) + ".*";
+                else
+                    database_and_table_name = backQuoteIfNeed(element.database) + "." + backQuoteIfNeed(element.table);
+            }
+
+            KeywordToColumnsMap & keyword_to_columns = res[database_and_table_name];
+            for (const auto & keyword : element.access_flags.toKeywords())
+                boost::range::push_back(keyword_to_columns[keyword], element.columns);
+        }
+
+        for (auto & keyword_to_columns : res | boost::adaptors::map_values)
+        {
+            for (auto & columns : keyword_to_columns | boost::adaptors::map_values)
+                boost::range::sort(columns);
+        }
+        return res;
+    }
+
+
+    void formatColumnNames(const std::vector<std::string_view> & columns, const IAST::FormatSettings & settings)
+    {
+        if (columns.empty())
+            return;
+
         settings.ostr << "(";
-        bool need_comma = false;
+        bool need_comma_after_column_name = false;
         for (const auto & column : columns)
         {
-            if (std::exchange(need_comma, true))
+            if (std::exchange(need_comma_after_column_name, true))
                 settings.ostr << ", ";
             settings.ostr << backQuoteIfNeed(column);
         }
@@ -28,54 +80,24 @@ namespace
 
     void formatAccessRightsElements(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
     {
-        bool no_output = true;
-        for (size_t i = 0; i != elements.size(); ++i)
+        bool need_comma = false;
+        for (const auto & [database_and_table, keyword_to_columns] : prepareTableToAccessMap(elements))
         {
-            const auto & element = elements[i];
-            auto keywords = element.access_flags.toKeywords();
-            if (keywords.empty() || (!element.any_column && element.columns.empty()))
-                continue;
-
-            for (const auto & keyword : keywords)
+            for (const auto & [keyword, columns] : keyword_to_columns)
             {
-                if (!std::exchange(no_output, false))
+                if (std::exchange(need_comma, true))
                     settings.ostr << ", ";
 
                 settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << keyword << (settings.hilite ? IAST::hilite_none : "");
-                if (!element.any_column)
-                    formatColumnNames(element.columns, settings);
+                formatColumnNames(columns, settings);
             }
 
-            bool next_element_on_same_db_and_table = false;
-            if (i != elements.size() - 1)
-            {
-                const auto & next_element = elements[i + 1];
-                if ((element.database == next_element.database) && (element.any_database == next_element.any_database)
-                    && (element.table == next_element.table) && (element.any_table == next_element.any_table))
-                    next_element_on_same_db_and_table = true;
-            }
-
-            if (!next_element_on_same_db_and_table)
-            {
-                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ON " << (settings.hilite ? IAST::hilite_none : "");
-                if (element.any_database)
-                    settings.ostr << "*.";
-                else if (!element.database.empty())
-                    settings.ostr << backQuoteIfNeed(element.database) + ".";
-
-                if (element.any_table)
-                    settings.ostr << "*";
-                else
-                    settings.ostr << backQuoteIfNeed(element.table);
-            }
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ON " << (settings.hilite ? IAST::hilite_none : "") << database_and_table;
         }
-
-        if (no_output)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "USAGE ON " << (settings.hilite ? IAST::hilite_none : "") << "*.*";
     }
 
 
-    void formatToRoles(const ASTRolesOrUsersSet & to_roles, ASTGrantQuery::Kind kind, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTGenericRoleSet & to_roles, ASTGrantQuery::Kind kind, const IAST::FormatSettings & settings)
     {
         using Kind = ASTGrantQuery::Kind;
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << ((kind == Kind::GRANT) ? " TO " : " FROM ")
@@ -100,22 +122,19 @@ ASTPtr ASTGrantQuery::clone() const
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach ? "ATTACH " : "") << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
-                  << (settings.hilite ? IAST::hilite_none : "");
-
-    formatOnCluster(settings);
+                  << (settings.hilite ? IAST::hilite_none : "") << " ";
 
     if (kind == Kind::REVOKE)
     {
         if (grant_option)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " GRANT OPTION FOR" << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "GRANT OPTION FOR " << (settings.hilite ? hilite_none : "");
         else if (admin_option)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " ADMIN OPTION FOR" << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADMIN OPTION FOR " << (settings.hilite ? hilite_none : "");
     }
 
-    if (roles && !access_rights_elements.empty())
+    if ((!!roles + !access_rights_elements.empty()) != 1)
         throw Exception("Either roles or access rights elements should be set", ErrorCodes::LOGICAL_ERROR);
 
-    settings.ostr << " ";
     if (roles)
         roles->format(settings);
     else
@@ -131,18 +150,4 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
     }
 }
-
-
-void ASTGrantQuery::replaceEmptyDatabaseWithCurrent(const String & current_database)
-{
-    access_rights_elements.replaceEmptyDatabase(current_database);
-}
-
-
-void ASTGrantQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
-{
-    if (to_roles)
-        to_roles->replaceCurrentUserTagWithName(current_user_name);
-}
-
 }

@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsComparison.h>
+#include <Functions/FunctionsLogical.h>
 
 
 namespace DB
@@ -13,13 +14,14 @@ void registerFunctionEquals(FunctionFactory & factory)
 }
 
 template <>
-ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(
-    const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const
+void FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                                                                const ColumnsWithTypeAndName & y, size_t tuple_size,
+                                                                size_t input_rows_count)
 {
     return executeTupleEqualityImpl(
         FunctionFactory::instance().get("equals", context),
         FunctionFactory::instance().get("and", context),
-        x, y, tuple_size, input_rows_count);
+        block, result, x, y, tuple_size, input_rows_count);
 }
 
 }

@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/DDLWorker.h>
 #include <Access/AccessRightsElement.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -15,6 +16,23 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
     : query_ptr(query_ptr_), context(context_)
 {
 }
+
+
+struct RenameDescription
+{
+    RenameDescription(const ASTRenameQuery::Element & elem, const String & current_database) :
+        from_database_name(elem.from.database.empty() ? current_database : elem.from.database),
+        from_table_name(elem.from.table),
+        to_database_name(elem.to.database.empty() ? current_database : elem.to.database),
+        to_table_name(elem.to.table)
+    {}
+
+    String from_database_name;
+    String from_table_name;
+
+    String to_database_name;
+    String to_table_name;
+};
 
 
 BlockIO InterpreterRenameQuery::execute()
@@ -33,11 +51,26 @@ BlockIO InterpreterRenameQuery::execute()
       *  or we will be in inconsistent state. (It is worth to be fixed.)
       */
 
-    RenameDescriptions descriptions;
+    std::vector<RenameDescription> descriptions;
     descriptions.reserve(rename.elements.size());
 
+    /// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMES.
+    struct UniqueTableName
+    {
+        String database_name;
+        String table_name;
+
+        UniqueTableName(const String & database_name_, const String & table_name_)
+            : database_name(database_name_), table_name(table_name_) {}
+
+        bool operator< (const UniqueTableName & rhs) const
+        {
+            return std::tie(database_name, table_name) < std::tie(rhs.database_name, rhs.table_name);
+        }
+    };
+
     /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
-    TableGuards table_guards;
+    std::map<UniqueTableName, std::unique_ptr<DDLGuard>> table_guards;
 
     for (const auto & elem : rename.elements)
     {
@@ -51,52 +84,24 @@ BlockIO InterpreterRenameQuery::execute()
         table_guards[to];
     }
 
-    auto & database_catalog = DatabaseCatalog::instance();
-
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
-        table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name);
+        table_guard.second = context.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name);
 
-    if (rename.database)
-        return executeToDatabase(rename, descriptions);
-    else
-        return executeToTables(rename, descriptions);
-}
-
-BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions)
-{
-    auto & database_catalog = DatabaseCatalog::instance();
-
-    for (const auto & elem : descriptions)
+    for (auto & elem : descriptions)
     {
-        if (!rename.exchange)
-            database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);
+        context.assertTableDoesntExist(elem.to_database_name, elem.to_table_name);
+        auto from_table = context.getTable(elem.from_database_name, elem.from_table_name);
+        auto from_table_lock = from_table->lockExclusively(context.getCurrentQueryId());
 
-        database_catalog.getDatabase(elem.from_database_name)->renameTable(
-                context,
-                elem.from_table_name,
-                *database_catalog.getDatabase(elem.to_database_name),
-                elem.to_table_name,
-                rename.exchange,
-                rename.dictionary);
+        context.getDatabase(elem.from_database_name)->renameTable(
+            context,
+            elem.from_table_name,
+            *context.getDatabase(elem.to_database_name),
+            elem.to_table_name,
+            from_table_lock);
     }
 
-    return {};
-}
-
-BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const RenameDescriptions & descriptions)
-{
-    assert(descriptions.size() == 1);
-    assert(descriptions.front().from_table_name.empty());
-    assert(descriptions.front().to_table_name.empty());
-
-    const auto & old_name = descriptions.front().from_database_name;
-    const auto & new_name = descriptions.back().to_database_name;
-    auto & catalog = DatabaseCatalog::instance();
-
-    auto db = catalog.getDatabase(old_name);
-    catalog.assertDatabaseDoesntExist(new_name);
-    db->renameDatabase(new_name);
     return {};
 }
 
@@ -108,11 +113,6 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess() const
     {
         required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.database, elem.from.table);
         required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.database, elem.to.table);
-        if (rename.exchange)
-        {
-            required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from.database, elem.from.table);
-            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.database, elem.to.table);
-        }
     }
     return required_access;
 }

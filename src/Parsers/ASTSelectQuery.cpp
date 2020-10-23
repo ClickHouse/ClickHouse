@@ -5,7 +5,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -57,35 +56,22 @@ ASTPtr ASTSelectQuery::clone() const
 }
 
 
-void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(distinct);
-    hash_state.update(group_by_with_totals);
-    hash_state.update(group_by_with_rollup);
-    hash_state.update(group_by_with_cube);
-    hash_state.update(limit_with_ties);
-    IAST::updateTreeHashImpl(hash_state);
-}
-
-
 void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
     frame.need_parens = false;
-    frame.expression_list_prepend_whitespace = true;
-
     std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (with())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH" << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH " << (s.hilite ? hilite_none : "");
         s.one_line
             ? with()->formatImpl(s, state, frame)
             : with()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
         s.ostr << s.nl_or_ws;
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT" << (distinct ? " DISTINCT" : "") << (s.hilite ? hilite_none : "");
+    s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (distinct ? "DISTINCT " : "") << (s.hilite ? hilite_none : "");
 
     s.one_line
         ? select()->formatImpl(s, state, frame)
@@ -111,7 +97,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (groupBy())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY" << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? groupBy()->formatImpl(s, state, frame)
             : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
@@ -134,7 +120,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (orderBy())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY" << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? orderBy()->formatImpl(s, state, frame)
             : orderBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
@@ -149,7 +135,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
             s.ostr << ", ";
         }
         limitByLength()->formatImpl(s, state, frame);
-        s.ostr << (s.hilite ? hilite_keyword : "") << " BY" << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? limitBy()->formatImpl(s, state, frame)
             : limitBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
@@ -166,11 +152,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         limitLength()->formatImpl(s, state, frame);
         if (limit_with_ties)
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << " WITH TIES" << (s.hilite ? hilite_none : "");
-    }
-    else if (limitOffset())
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "OFFSET " << (s.hilite ? hilite_none : "");
-        limitOffset()->formatImpl(s, state, frame);
     }
 
     if (settings())
@@ -267,7 +248,7 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
 }
 
 
-ASTPtr ASTSelectQuery::sampleSize() const
+ASTPtr ASTSelectQuery::sample_size() const
 {
     const ASTTableExpression * table_expression = getFirstTableExpression(*this);
     if (!table_expression)
@@ -277,7 +258,7 @@ ASTPtr ASTSelectQuery::sampleSize() const
 }
 
 
-ASTPtr ASTSelectQuery::sampleOffset() const
+ASTPtr ASTSelectQuery::sample_offset() const
 {
     const ASTTableExpression * table_expression = getFirstTableExpression(*this);
     if (!table_expression)
@@ -309,7 +290,7 @@ bool ASTSelectQuery::withFill() const
 }
 
 
-ASTPtr ASTSelectQuery::arrayJoinExpressionList(bool & is_left) const
+ASTPtr ASTSelectQuery::array_join_expression_list(bool & is_left) const
 {
     const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
     if (!array_join)
@@ -320,10 +301,10 @@ ASTPtr ASTSelectQuery::arrayJoinExpressionList(bool & is_left) const
 }
 
 
-ASTPtr ASTSelectQuery::arrayJoinExpressionList() const
+ASTPtr ASTSelectQuery::array_join_expression_list() const
 {
     bool is_left;
-    return arrayJoinExpressionList(is_left);
+    return array_join_expression_list(is_left);
 }
 
 
@@ -346,12 +327,6 @@ static String getTableExpressionAlias(const ASTTableExpression * table_expressio
 
 void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
 {
-    assert(database_name != "_temporary_and_external_tables");
-    replaceDatabaseAndTable(StorageID(database_name, table_name));
-}
-
-void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
-{
     ASTTableExpression * table_expression = getFirstTableExpression(*this);
 
     if (!table_expression)
@@ -366,7 +341,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = createTableIdentifier(table_id);
+    table_expression->database_and_table_name = createTableIdentifier(database_name, table_name);
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);

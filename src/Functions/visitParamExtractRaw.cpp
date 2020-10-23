@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsVisitParam.h>
-#include <Functions/FunctionsStringSearchToString.h>
+#include <Functions/FunctionsStringSearch.h>
 
 
 namespace DB
@@ -15,7 +15,7 @@ struct ExtractRaw
         ExpectChars expects_end;
         UInt8 current_expect_end = 0;
 
-        for (const auto * extract_begin = pos; pos != end; ++pos)
+        for (const auto *extract_begin = pos; pos != end; ++pos)
         {
             if (current_expect_end && *pos == current_expect_end)
             {
@@ -26,7 +26,9 @@ struct ExtractRaw
             {
                 /// skip backslash
                 if (*pos == '\\' && pos + 1 < end && pos[1] == '"')
-                    ++pos;
+                {
+                    pos++;
+                }
             }
             else
             {

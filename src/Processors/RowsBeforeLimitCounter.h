@@ -15,15 +15,9 @@ public:
         rows_before_limit.fetch_add(rows, std::memory_order_release);
     }
 
-    void set(uint64_t rows)
-    {
-        setAppliedLimit();
-        rows_before_limit.store(rows, std::memory_order_release);
-    }
-
     uint64_t get() const { return rows_before_limit.load(std::memory_order_acquire); }
 
-    void setAppliedLimit() { has_applied_limit.store(true, std::memory_order_release); }
+    void setAppliedLimit() { has_applied_limit.store(true, std::memory_order::release); }
     bool hasAppliedLimit() const { return has_applied_limit.load(std::memory_order_acquire); }
 
 private:

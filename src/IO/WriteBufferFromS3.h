@@ -6,7 +6,7 @@
 
 #    include <memory>
 #    include <vector>
-#    include <common/types.h>
+#    include <Core/Types.h>
 #    include <IO/BufferWithOwnMemory.h>
 #    include <IO/HTTPCommon.h>
 #    include <IO/WriteBuffer.h>
@@ -24,8 +24,6 @@ namespace DB
 class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
-    bool is_multipart;
-
     String bucket;
     String key;
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
@@ -38,7 +36,7 @@ private:
     String upload_id;
     std::vector<String> part_tags;
 
-    Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
+    Logger * log = &Logger::get("WriteBufferFromS3");
 
 public:
     explicit WriteBufferFromS3(
@@ -46,7 +44,6 @@ public:
         const String & bucket_,
         const String & key_,
         size_t minimum_upload_part_size_,
-        bool is_multipart,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     void nextImpl() override;
@@ -57,13 +54,9 @@ public:
     ~WriteBufferFromS3() override;
 
 private:
-    bool finalized = false;
-
     void initiate();
     void writePart(const String & data);
     void complete();
-
-    void finalizeImpl();
 };
 
 }

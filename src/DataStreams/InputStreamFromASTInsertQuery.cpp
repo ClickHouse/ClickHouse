@@ -21,11 +21,7 @@ namespace ErrorCodes
 
 
 InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
-    const ASTPtr & ast,
-    ReadBuffer * input_buffer_tail_part,
-    const Block & header,
-    const Context & context,
-    const ASTPtr & input_function)
+    const ASTPtr & ast, ReadBuffer * input_buffer_tail_part, const Block & header, const Context & context, const ASTPtr & input_function)
 {
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
 
@@ -60,13 +56,12 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
 
     res_stream = context.getInputFormat(format, *input_buffer_contacenated, header, context.getSettings().max_insert_block_size);
 
-    if (context.getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
+    if (context.getSettingsRef().input_format_defaults_for_omitted_fields && !ast_insert_query->table.empty() && !input_function)
     {
-        StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        const auto & columns = metadata_snapshot->getColumns();
-        if (columns.hasDefaults())
-            res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, columns, context);
+        StoragePtr storage = context.getTable(ast_insert_query->database, ast_insert_query->table);
+        auto column_defaults = storage->getColumns().getDefaults();
+        if (!column_defaults.empty())
+            res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, column_defaults, context);
     }
 }
 

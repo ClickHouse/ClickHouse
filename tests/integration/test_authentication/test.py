@@ -10,8 +10,8 @@ def setup_nodes():
     try:
         cluster.start()
 
-        instance.query("CREATE USER sasha")
-        instance.query("CREATE USER masha IDENTIFIED BY 'qwerty'")
+        instance.query("CREATE USER sasha PROFILE 'default'")
+        instance.query("CREATE USER masha IDENTIFIED BY 'qwerty' PROFILE 'default'")
 
         yield cluster
 
@@ -30,8 +30,7 @@ def test_authentication_pass():
 
 def test_authentication_fail():
     # User doesn't exist.
-    assert "vasya: Authentication failed" in instance.query_and_get_error("SELECT currentUser()", user='vasya')
-
+    assert "vasya: Authentication failed" in instance.query_and_get_error("SELECT currentUser()", user = 'vasya')
+    
     # Wrong password.
-    assert "masha: Authentication failed" in instance.query_and_get_error("SELECT currentUser()", user='masha',
-                                                                          password='123')
+    assert "masha: Authentication failed" in instance.query_and_get_error("SELECT currentUser()", user = 'masha', password = '123')

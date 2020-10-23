@@ -5,7 +5,6 @@
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
 #include <common/LineReader.h>
-#include <thread>
 
 
 namespace DB
@@ -23,6 +22,9 @@ public:
         static Suggest instance;
         return instance;
     }
+
+    /// Need to set before load
+    void setCaseInsensitive() { case_insensitive = true; }
 
     void load(const ConnectionParameters & connection_parameters, size_t suggestion_limit);
 

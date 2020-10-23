@@ -7,7 +7,7 @@ namespace DB
 {
 /** Parses queries like
   * CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] name ON [database.]table
-  *      [AS {permissive | restrictive}]
+  *      [AS {PERMISSIVE | RESTRICTIVE}]
   *      [FOR {SELECT | INSERT | UPDATE | DELETE | ALL}]
   *      [USING condition]
   *      [WITH CHECK condition] [,...]
@@ -15,7 +15,7 @@ namespace DB
   *
   * ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
   *      [RENAME TO new_name]
-  *      [AS {permissive | restrictive}]
+  *      [AS {PERMISSIVE | RESTRICTIVE}]
   *      [FOR {SELECT | INSERT | UPDATE | DELETE | ALL}]
   *      [USING {condition | NONE}]
   *      [WITH CHECK {condition | NONE}] [,...]
@@ -24,7 +24,7 @@ namespace DB
 class ParserCreateRowPolicyQuery : public IParserBase
 {
 public:
-    void useAttachMode(bool attach_mode_ = true) { attach_mode = attach_mode_; }
+    ParserCreateRowPolicyQuery & enableAttachMode(bool enable_) { attach_mode = enable_; return *this; }
 
 protected:
     const char * getName() const override { return "CREATE ROW POLICY or ALTER ROW POLICY query"; }

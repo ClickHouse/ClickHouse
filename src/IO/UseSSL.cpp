@@ -1,25 +1,23 @@
 #include "UseSSL.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
-#if USE_SSL
-#    include <Poco/Net/SSLManager.h>
+#if USE_POCO_NETSSL
+#include <Poco/Net/SSLManager.h>
 #endif
 
 namespace DB
 {
 UseSSL::UseSSL()
 {
-#if USE_SSL
+#if USE_POCO_NETSSL
     Poco::Net::initializeSSL();
 #endif
 }
 
 UseSSL::~UseSSL()
 {
-#if USE_SSL
+#if USE_POCO_NETSSL
     Poco::Net::uninitializeSSL();
 #endif
 }

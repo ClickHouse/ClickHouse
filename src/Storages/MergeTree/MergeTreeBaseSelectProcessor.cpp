@@ -21,7 +21,6 @@ namespace ErrorCodes
 MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     Block header,
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
@@ -29,16 +28,16 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
     const Names & virt_column_names_)
-    : SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_))
-    , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
-    , prewhere_info(prewhere_info_)
-    , max_block_size_rows(max_block_size_rows_)
-    , preferred_block_size_bytes(preferred_block_size_bytes_)
-    , preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_)
-    , reader_settings(reader_settings_)
-    , use_uncompressed_cache(use_uncompressed_cache_)
-    , virt_column_names(virt_column_names_)
+:
+    SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_)),
+    storage(storage_),
+    prewhere_info(prewhere_info_),
+    max_block_size_rows(max_block_size_rows_),
+    preferred_block_size_bytes(preferred_block_size_bytes_),
+    preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_),
+    reader_settings(reader_settings_),
+    use_uncompressed_cache(use_uncompressed_cache_),
+    virt_column_names(virt_column_names_)
 {
     header_without_virtual_columns = getPort().getHeader();
 
@@ -106,7 +105,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     const MergeTreeIndexGranularity & index_granularity = task->data_part->index_granularity;
     const double min_filtration_ratio = 0.00001;
 
-    auto estimate_num_rows = [current_preferred_block_size_bytes, current_max_block_size_rows,
+    auto estimateNumRows = [current_preferred_block_size_bytes, current_max_block_size_rows,
         &index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
         MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader)
     {
@@ -141,7 +140,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
         return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule());
     };
 
-    UInt64 recommended_rows = estimate_num_rows(*task, task->range_reader);
+    UInt64 recommended_rows = estimateNumRows(*task, task->range_reader);
     UInt64 rows_to_read = std::max(UInt64(1), std::min(current_max_block_size_rows, recommended_rows));
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
@@ -330,6 +329,9 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
             auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
             ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
         }
+
+        if (!block)
+            block.insert({nullptr, std::make_shared<DataTypeNothing>(), "_nothing"});
     }
 }
 
