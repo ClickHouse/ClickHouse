@@ -1,6 +1,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageValues.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Pipe.h>
 
@@ -33,6 +34,7 @@ Pipe StorageValues::read(
 
     /// Get only required columns.
     Block block;
+
     for (const auto & name : column_names)
         block.insert(res_block.getByName(name));
 

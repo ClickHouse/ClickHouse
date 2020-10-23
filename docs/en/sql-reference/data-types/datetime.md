@@ -27,9 +27,9 @@ You can explicitly set a time zone for `DateTime`-type columns when creating a t
 
 The [clickhouse-client](../../interfaces/cli.md) applies the server time zone by default if a time zone isn’t explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
-ClickHouse outputs values depending on the value of the [date\_time\_output\_format](../../operations/settings/settings.md#settings-date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionaly you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
+ClickHouse outputs values in `YYYY-MM-DD hh:mm:ss` text format by default. You can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
 
-When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) setting.
+When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format) setting.
 
 ## Examples {#examples}
 
@@ -120,7 +120,6 @@ FROM dt
 -   [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
 -   [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
 -   [The `date_time_input_format` setting](../../operations/settings/settings.md#settings-date_time_input_format)
--   [The `date_time_output_format` setting](../../operations/settings/settings.md#settings-date_time_output_format)
 -   [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
 -   [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 -   [The `Date` data type](../../sql-reference/data-types/date.md)

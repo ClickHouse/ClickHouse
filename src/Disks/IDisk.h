@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
@@ -177,15 +177,6 @@ public:
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
 
-    /// Wrapper for POSIX open
-    virtual int open(const String & path, mode_t mode) const = 0;
-
-    /// Wrapper for POSIX close
-    virtual void close(int fd) const = 0;
-
-    /// Wrapper for POSIX fsync
-    virtual void sync(int fd) const = 0;
-
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 
@@ -195,10 +186,10 @@ public:
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
 
-    /// Returns executor to perform asynchronous operations.
-    virtual Executor & getExecutor() { return *executor; }
-
 private:
+    /// Returns executor to perform asynchronous operations.
+    Executor & getExecutor() { return *executor; }
+
     std::unique_ptr<Executor> executor;
 };
 

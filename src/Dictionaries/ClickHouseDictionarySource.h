@@ -48,10 +48,6 @@ public:
 
     std::string toString() const override;
 
-    /// Used for detection whether the hashtable should be preallocated
-    /// (since if there is WHERE then it can filter out too much)
-    bool hasWhere() const { return !where.empty(); }
-
 private:
     std::string getUpdateFieldAndDate();
 

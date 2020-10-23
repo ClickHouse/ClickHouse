@@ -22,9 +22,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 template <typename Name>
 class FormatFunction : public IFunction
 {
@@ -67,9 +64,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr & c0 = columns[arguments[0]].column;
+        const ColumnPtr & c0 = block.getByPosition(arguments[0]).column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
 
         if (!c0_const_string)
@@ -88,7 +85,7 @@ public:
         bool has_column_fixed_string = false;
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            const ColumnPtr & column = columns[arguments[i]].column;
+            const ColumnPtr & column = block.getByPosition(arguments[i]).column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
             {
                 has_column_string = true;
@@ -122,7 +119,7 @@ public:
             col_res->getOffsets(),
             input_rows_count);
 
-        columns[result].column = std::move(col_res);
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -132,8 +129,6 @@ struct NameFormat
     static constexpr auto name = "format";
 };
 using FunctionFormat = FormatFunction<NameFormat>;
-
-}
 
 void registerFunctionFormat(FunctionFactory & factory)
 {
