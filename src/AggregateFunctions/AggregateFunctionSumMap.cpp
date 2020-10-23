@@ -145,24 +145,25 @@ struct MaxMapDispatchOnTupleArgument
 
 void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sumMap", createAggregateFunctionMap<
-        SumMapVariants<false, false>::DispatchOnTupleArgument>);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    factory.registerFunction("sumMap", {createAggregateFunctionMap<
+        SumMapVariants<false, false>::DispatchOnTupleArgument>, properties});
 
-    factory.registerFunction("sumMapWithOverflow", createAggregateFunctionMap<
-        SumMapVariants<false, true>::DispatchOnTupleArgument>);
+    factory.registerFunction("sumMapWithOverflow", {createAggregateFunctionMap<
+        SumMapVariants<false, true>::DispatchOnTupleArgument>, properties});
 
-    factory.registerFunction("sumMapFiltered", createAggregateFunctionMap<
-        SumMapVariants<true, false>::DispatchOnTupleArgument>);
+    factory.registerFunction("sumMapFiltered", {createAggregateFunctionMap<
+        SumMapVariants<true, false>::DispatchOnTupleArgument>, properties});
 
     factory.registerFunction("sumMapFilteredWithOverflow",
-        createAggregateFunctionMap<
-            SumMapVariants<true, true>::DispatchOnTupleArgument>);
+        {createAggregateFunctionMap<
+            SumMapVariants<true, true>::DispatchOnTupleArgument>, properties});
 
     factory.registerFunction("minMap",
-        createAggregateFunctionMap<MinMapDispatchOnTupleArgument>);
+        {createAggregateFunctionMap<MinMapDispatchOnTupleArgument>, properties});
 
     factory.registerFunction("maxMap",
-        createAggregateFunctionMap<MaxMapDispatchOnTupleArgument>);
+        {createAggregateFunctionMap<MaxMapDispatchOnTupleArgument>, properties});
 }
 
 }
