@@ -329,4 +329,10 @@ const StoragePtr & DatabaseLazyIterator::table() const
     return current_storage;
 }
 
+void DatabaseLazyIterator::reset()
+{
+    if (current_storage)
+        current_storage.reset();
+}
+
 }
