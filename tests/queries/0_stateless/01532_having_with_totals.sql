@@ -6,7 +6,7 @@ SELECT *
 FROM 
 (
     SELECT a
-    FROM remote('127.0.0.{1,2}', default, local_t)
+    FROM remote('127.0.0.{1,2}', currentDatabase(), local_t)
     GROUP BY a
         WITH TOTALS
 )
@@ -20,7 +20,7 @@ SELECT *
 FROM 
 (
     SELECT a
-    FROM remote('127.0.0.1', default, local_t)
+    FROM remote('127.0.0.1', currentDatabase(), local_t)
     GROUP BY a
         WITH TOTALS
 )
@@ -33,7 +33,7 @@ SELECT 'with explicit having';
 SELECT
     a,
     count()
-FROM remote('127.0.0.{1,2}', default, t)
+FROM remote('127.0.0.{1,2}', currentDatabase(), local_t)
 GROUP BY a
     WITH TOTALS
 HAVING a IN 
