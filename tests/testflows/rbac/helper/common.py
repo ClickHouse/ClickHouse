@@ -1,8 +1,10 @@
 import uuid
-from multiprocessing.dummy import Pool
-from testflows.core.name import basename, parentname
-from contextlib import contextmanager
 
+from contextlib import contextmanager
+from multiprocessing.dummy import Pool
+
+from testflows.core.name import basename, parentname
+from testflows._core.testtype import TestSubType
 from testflows.core import *
 
 from rbac.helper.tables import table_types
@@ -53,7 +55,7 @@ def permutations(table_count=1):
     return [*range((1 << table_count)-1)]
 
 def getuid():
-    if "=" in basename(current().name):
+    if current().subtype == TestSubType.Example:
         testname = f"{basename(parentname(current().name)).replace(' ', '_').replace(',','')}"
     else:
         testname = f"{basename(current().name).replace(' ', '_').replace(',','')}"
