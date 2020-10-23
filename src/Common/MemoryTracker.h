@@ -3,6 +3,7 @@
 #include <atomic>
 #include <common/types.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/SimpleActionBlocker.h>
 #include <Common/VariableContext.h>
 
 
@@ -130,18 +131,8 @@ public:
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage() const;
 
-    /// To be able to temporarily stop memory tracking from current thread.
-    struct BlockerInThread
-    {
-    private:
-        BlockerInThread(const BlockerInThread &) = delete;
-        BlockerInThread & operator=(const BlockerInThread &) = delete;
-        static thread_local bool is_blocked;
-    public:
-        BlockerInThread() { is_blocked = true; }
-        ~BlockerInThread() { is_blocked = false; }
-        static bool isBlocked() { return is_blocked; }
-    };
+    /// To be able to temporarily stop memory tracker
+    DB::SimpleActionBlocker blocker;
 };
 
 extern MemoryTracker total_memory_tracker;
@@ -154,3 +145,7 @@ namespace CurrentMemoryTracker
     void realloc(Int64 old_size, Int64 new_size);
     void free(Int64 size);
 }
+
+
+/// Holding this object will temporarily disable memory tracking.
+DB::SimpleActionLock getCurrentMemoryTrackerActionLock();

@@ -6,6 +6,8 @@
 
 namespace DB
 {
+// TODO After we support `union_with_global`, this visitor should also be extended to match ASTSelectQueryWithUnion.
+class ASTSelectQuery;
 class ASTFunction;
 struct ASTTableExpression;
 

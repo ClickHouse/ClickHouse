@@ -125,7 +125,7 @@ public:
 
             if (!is_positive)
                 data.monotonicity.is_positive = !data.monotonicity.is_positive;
-            data.arg_data_type = function_base->getResultType();
+            data.arg_data_type = function_base->getReturnType();
         }
         else
             data.reject();

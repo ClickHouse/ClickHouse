@@ -114,7 +114,6 @@ public:
         MergeListEntry & merge_entry,
         TableLockHolder & table_lock_holder,
         time_t time_of_merge,
-        const Context & context,
         const ReservationPtr & space_reservation,
         bool deduplicate);
 

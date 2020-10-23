@@ -17,21 +17,21 @@ namespace ErrorCodes
 }
 
 template <bool or_null>
-ColumnPtr ExecutableFunctionJoinGet<or_null>::execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t)
+void ExecutableFunctionJoinGet<or_null>::execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t)
 {
-    ColumnsWithTypeAndName keys;
+    Block keys;
     for (size_t i = 2; i < arguments.size(); ++i)
     {
-        auto key = arguments[i];
-        keys.emplace_back(std::move(key));
+        auto key = block.getByPosition(arguments[i]);
+        keys.insert(std::move(key));
     }
-    return join->joinGet(keys, result_columns).column;
+    block.getByPosition(result) = join->joinGet(keys, result_block);
 }
 
 template <bool or_null>
-ExecutableFunctionImplPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
+ExecutableFunctionImplPtr FunctionJoinGet<or_null>::prepare(const Block &, const ColumnNumbers &, size_t) const
 {
-    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(join, DB::Block{{return_type->createColumn(), return_type, attr_name}});
+    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(join, Block{{return_type->createColumn(), return_type, attr_name}});
 }
 
 static auto getJoin(const ColumnsWithTypeAndName & arguments, const Context & context)

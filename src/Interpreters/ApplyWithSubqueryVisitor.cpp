@@ -13,8 +13,9 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 {
     if (auto * node_select = ast->as<ASTSelectQuery>())
     {
+        auto with = node_select->with();
         std::optional<Data> new_data;
-        if (auto with = node_select->with())
+        if (with)
         {
             for (auto & child : with->children)
                 visit(child, data);
@@ -31,19 +32,18 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 
         for (auto & child : node_select->children)
         {
-            if (child != node_select->with())
+            if (child != with)
                 visit(child, new_data ? *new_data : data);
         }
+        return;
     }
-    else
-    {
-        for (auto & child : ast->children)
-            visit(child, data);
-        if (auto * node_func = ast->as<ASTFunction>())
-            visit(*node_func, data);
-        else if (auto * node_table = ast->as<ASTTableExpression>())
-            visit(*node_table, data);
-    }
+
+    for (auto & child : ast->children)
+        visit(child, data);
+    if (auto * node_func = ast->as<ASTFunction>())
+        visit(*node_func, data);
+    else if (auto * node_table = ast->as<ASTTableExpression>())
+        visit(*node_table, data);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & data)

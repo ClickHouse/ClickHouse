@@ -221,25 +221,21 @@ Pipe StorageBuffer::read(
                     columns_intersection, destination_metadata_snapshot, query_info,
                     context, processed_stage, max_block_size, num_streams);
 
-                if (!pipe_from_dst.empty())
+                pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
                 {
-                    pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
-                    {
-                        return std::make_shared<AddingMissedTransform>(stream_header, header_after_adding_defaults,
-                            metadata_snapshot->getColumns(), context);
-                    });
+                    return std::make_shared<AddingMissedTransform>(stream_header, header_after_adding_defaults,
+                        metadata_snapshot->getColumns(), context);
+                });
 
-                    pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
-                    {
-                        return std::make_shared<ConvertingTransform>(
-                            stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
-                    });
-                }
+                pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
+                {
+                    return std::make_shared<ConvertingTransform>(
+                        stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
+                });
             }
         }
 
         pipe_from_dst.addTableLock(destination_lock);
-        pipe_from_dst.addStorageHolder(destination);
     }
 
     Pipe pipe_from_buffers;
@@ -316,7 +312,7 @@ static void appendBlock(const Block & from, Block & to)
 
     size_t old_rows = to.rows();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
     try
     {
@@ -694,7 +690,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;

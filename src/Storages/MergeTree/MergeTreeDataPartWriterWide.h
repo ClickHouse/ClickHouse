@@ -1,4 +1,3 @@
-#pragma once
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 namespace DB

@@ -4,7 +4,6 @@
 
 #include <Poco/Net/HTTPRequestHandler.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/HTMLForm.h>
 #include <Core/Names.h>
@@ -77,8 +76,7 @@ private:
         Poco::Net::HTTPServerRequest & request,
         HTMLForm & params,
         Poco::Net::HTTPServerResponse & response,
-        Output & used_output,
-        std::optional<CurrentThread::QueryScope> & query_scope);
+        Output & used_output);
 
     void trySendExceptionToClient(
         const std::string & s,

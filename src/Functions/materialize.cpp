@@ -39,9 +39,9 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        return arguments[0].column->convertToFullColumnIfConst();
+        block.getByPosition(result).column = block.getByPosition(arguments[0]).column->convertToFullColumnIfConst();
     }
 };
 

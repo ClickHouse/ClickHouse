@@ -48,8 +48,6 @@ public:
 
         /// Part compression codec definition.
         ASTPtr compression_codec_desc;
-
-        bool shall_participate_in_merges = true;
     };
 
     /// Parts are belong to partitions. Only parts within same partition could be merged.

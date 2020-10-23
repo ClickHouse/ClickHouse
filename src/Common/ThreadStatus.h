@@ -164,8 +164,6 @@ public:
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
 protected:
-    void applyQuerySettings();
-
     void initPerformanceCounters();
 
     void initQueryProfiler();

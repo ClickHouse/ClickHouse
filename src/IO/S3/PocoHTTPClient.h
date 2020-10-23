@@ -19,8 +19,6 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     const RemoteHostFilter & remote_host_filter;
 
     PocoHTTPClientConfiguration(const Aws::Client::ClientConfiguration & cfg, const RemoteHostFilter & remote_host_filter_);
-
-    void updateSchemeAndRegion();
 };
 
 class PocoHTTPClient : public Aws::Http::HttpClient

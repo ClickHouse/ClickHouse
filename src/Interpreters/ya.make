@@ -23,8 +23,6 @@ SRCS(
     addTypeConversionToAST.cpp
     AggregateDescription.cpp
     Aggregator.cpp
-    ApplyWithAliasVisitor.cpp
-    ApplyWithGlobalVisitor.cpp
     ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
@@ -63,7 +61,6 @@ SRCS(
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
     getClusterName.cpp
-    getHeaderForProcessingStage.cpp
     getTableExpressions.cpp
     HashJoin.cpp
     IdentifierSemantic.cpp

@@ -13,8 +13,9 @@ void registerFunctionLess(FunctionFactory & factory)
 }
 
 template <>
-ColumnPtr FunctionComparison<LessOp, NameLess>::executeTupleImpl(
-    const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const
+void FunctionComparison<LessOp, NameLess>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                                                            const ColumnsWithTypeAndName & y, size_t tuple_size,
+                                                            size_t input_rows_count) const
 {
     auto less = FunctionFactory::instance().get("less", context);
 
@@ -24,7 +25,7 @@ ColumnPtr FunctionComparison<LessOp, NameLess>::executeTupleImpl(
         FunctionFactory::instance().get("and", context),
         FunctionFactory::instance().get("or", context),
         FunctionFactory::instance().get("equals", context),
-        x, y, tuple_size, input_rows_count);
+        block, result, x, y, tuple_size, input_rows_count);
 }
 
 }

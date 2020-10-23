@@ -180,9 +180,4 @@ void DiskDecorator::sync(int fd) const
     delegate->sync(fd);
 }
 
-Executor & DiskDecorator::getExecutor()
-{
-    return delegate->getExecutor();
-}
-
 }

@@ -56,7 +56,7 @@ example01-{01..02}-1
 
 اگر شما جفت های متعدد از براکت در اشکال مختلف, این تولید محصول مستقیم از مجموعه مربوطه.
 
-نشانی ها و بخش هایی از نشانی در براکت فرفری را می توان با نماد لوله جدا (\|). در این مورد, مجموعه مربوطه را از نشانی ها به عنوان کپی تفسیر, و پرس و جو خواهد شد به اولین ماکت سالم ارسال. با این حال, کپی در نظم در حال حاضر در مجموعه تکرار [_تبالسازی](../../operations/settings/settings.md) تنظیمات.
+نشانی ها و بخش هایی از نشانی در براکت فرفری را می توان با نماد لوله جدا (\|). در این مورد, مجموعه مربوطه را از نشانی ها به عنوان کپی تفسیر, و پرس و جو خواهد شد به اولین ماکت سالم ارسال. با این حال, کپی در نظم در حال حاضر در مجموعه تکرار [\_تبالسازی](../../operations/settings/settings.md) تنظیمات.
 
 مثال:
 
@@ -80,6 +80,6 @@ example01-{01..02}-{1|2}
 اگر کاربر مشخص نشده است, `default` استفاده شده است.
 اگر رمز عبور مشخص نشده است, رمز عبور خالی استفاده شده است.
 
-`remoteSecure` - مثل `remote` but with secured connection. Default port — [_شروع مجدد](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) از پیکربندی و یا 9440.
+`remoteSecure` - مثل `remote` but with secured connection. Default port — [\_شروع مجدد](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) از پیکربندی و یا 9440.
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

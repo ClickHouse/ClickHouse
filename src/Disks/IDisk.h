@@ -195,10 +195,10 @@ public:
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
 
-    /// Returns executor to perform asynchronous operations.
-    virtual Executor & getExecutor() { return *executor; }
-
 private:
+    /// Returns executor to perform asynchronous operations.
+    Executor & getExecutor() { return *executor; }
+
     std::unique_ptr<Executor> executor;
 };
 
