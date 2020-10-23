@@ -155,5 +155,9 @@
 01509_dictionary_preallocate
 01526_max_untracked_memory
 01530_drop_database_atomic_sync
+01532_collate_in_low_cardinality
+01533_collate_in_nullable
+01542_collate_in_array
+01543_collate_in_tuple
 01547_query_log_current_database
 01548_query_log_query_execution_ms
