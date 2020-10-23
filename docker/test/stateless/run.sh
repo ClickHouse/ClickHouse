@@ -23,6 +23,13 @@ function run_tests()
     # We can have several additional options so we path them as array because it's
     # more idiologically correct.
     read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
+
+    # Skip these tests, because they fail when we rerun them multiple times
+    if [ "$NUM_TRIES" -gt "1" ]; then
+        ADDITIONAL_OPTIONS+=('--skip')
+        ADDITIONAL_OPTIONS+=('atomic')
+    fi
+
     for i in $(seq 1 $NUM_TRIES); do
         clickhouse-test --testname --shard --zookeeper --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a test_output/test_result.txt
         if [ ${PIPESTATUS[0]} -ne "0" ]; then
