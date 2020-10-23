@@ -522,21 +522,6 @@ const ActionsDAG & ScopeStack::getLastActions() const
     return *stack.back().actions;
 }
 
-struct CachedColumnName
-{
-    bool & skip_cache;
-    String cached;
-
-    explicit CachedColumnName(bool & skip_cache_) : skip_cache(skip_cache_) {}
-
-    const String & get(const ASTPtr & ast)
-    {
-        if (cached.empty() || skip_cache)
-            cached = ast->getColumnName();
-        return cached;
-    }
-};
-
 bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 {
     /// Visit children themself
@@ -636,7 +621,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         if (tuple_type->haveExplicitNames())
             func->setAlias(name);
         else
-            func->setAlias(data.getUniqueName("_ut" + name));
+            func->setAlias(data.getUniqueName("_ut_" + name));
 
         auto function_builder = FunctionFactory::instance().get(func->name, data.context);
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
@@ -676,8 +661,8 @@ void ActionsMatcher::visit(ASTExpressionList & expression_list, const ASTPtr &, 
 
 void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data)
 {
-    CachedColumnName column_name(data.has_untuple);
-    if (data.hasColumn(column_name.get(ast)))
+    auto column_name = ast->getColumnName();
+    if (data.hasColumn(column_name))
         return;
 
     if (!data.only_consts)
@@ -687,9 +672,9 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
 
         for (const auto & column_name_type : data.source_columns)
         {
-            if (column_name_type.name == column_name.get(ast))
+            if (column_name_type.name == column_name)
             {
-                throw Exception("Column " + backQuote(column_name.get(ast)) + " is not under aggregate function and not in GROUP BY",
+                throw Exception("Column " + backQuote(column_name) + " is not under aggregate function and not in GROUP BY",
                 ErrorCodes::NOT_AN_AGGREGATE);
             }
         }
@@ -702,8 +687,8 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
-    CachedColumnName column_name(data.has_untuple);
-    if (data.hasColumn(column_name.get(ast)))
+    auto column_name = ast->getColumnName();
+    if (data.hasColumn(column_name))
         return;
 
     if (node.name == "lambda")
@@ -718,10 +703,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         ASTPtr arg = node.arguments->children.at(0);
         visit(arg, data);
         if (!data.only_consts)
-        {
-            String result_name = column_name.get(ast);
-            data.addArrayJoin(arg->getColumnName(), result_name);
-        }
+            data.addArrayJoin(arg->getColumnName(), column_name);
 
         return;
     }
@@ -748,7 +730,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 data.addFunction(
                         FunctionFactory::instance().get(node.name + "IgnoreSet", data.context),
                         { argument_name, argument_name },
-                        column_name.get(ast));
+                        column_name);
             }
             return;
         }
@@ -952,7 +934,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (arguments_present)
     {
-        data.addFunction(function_builder, argument_names, column_name.get(ast));
+        /// Calculate column name here again, because AST may be changed here (in case of untuple).
+        data.addFunction(function_builder, argument_names, ast->getColumnName());
     }
 }
 
