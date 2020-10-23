@@ -76,8 +76,7 @@ public:
 
     std::shared_ptr<const IDictionaryBase> getDictionary(const String & dictionary_name)
     {
-        String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
-        auto dict = external_loader.getDictionary(resolved_name);
+        auto dict = external_loader.getDictionary(dictionary_name);
         if (!access_checked)
         {
             context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getName());
