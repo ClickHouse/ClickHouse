@@ -1301,6 +1301,17 @@ Possible values:
 
 Default value: 0
 
+## allow\_nondeterministic\_optimize\_skip\_unused\_shards {#allow-nondeterministic-optimize-skip-unused-shards}
+
+Allow nondeterministic (like `rand` or `dictGet`, since later has some caveats with updates) functions in sharding key.
+
+Possible values:
+
+-   0 — Disallowed.
+-   1 — Allowed.
+
+Default value: 0
+
 ## optimize\_skip\_unused\_shards\_nesting {#optimize-skip-unused-shards-nesting}
 
 Controls [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (hence still requires [`optimize_skip_unused_shards`](#optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
