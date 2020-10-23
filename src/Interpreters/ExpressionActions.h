@@ -49,96 +49,11 @@ class CompiledExpressionCache;
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
-/** Action on the block.
-  */
-struct ExpressionAction
-{
-private:
-    using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-public:
-    enum Type
-    {
-        ADD_COLUMN,
-        REMOVE_COLUMN,
-        COPY_COLUMN,
-
-        APPLY_FUNCTION,
-
-        /// Replaces the source column with array into column with elements.
-        /// Duplicates the values in the remaining columns by the number of elements in the arrays.
-        /// Source column is removed from block.
-        ARRAY_JOIN,
-
-        /// Reorder and rename the columns, delete the extra ones. The same column names are allowed in the result.
-        PROJECT,
-        /// Add columns with alias names. This columns are the same as non-aliased. PROJECT columns if you need to modify them.
-        ADD_ALIASES,
-    };
-
-    Type type{};
-
-    /// For ADD/REMOVE/ARRAY_JOIN/COPY_COLUMN.
-    std::string source_name;
-    std::string result_name;
-    DataTypePtr result_type;
-
-    /// If COPY_COLUMN can replace the result column.
-    bool can_replace = false;
-
-    /// For ADD_COLUMN.
-    ColumnPtr added_column;
-
-    /// For APPLY_FUNCTION.
-    /// OverloadResolver is used before action was added to ExpressionActions (when we don't know types of arguments).
-    FunctionOverloadResolverPtr function_builder;
-
-    /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
-    FunctionBasePtr function_base;
-    /// Prepared function which is used in function execution.
-    ExecutableFunctionPtr function;
-    Names argument_names;
-    bool is_function_compiled = false;
-
-    /// For JOIN
-    std::shared_ptr<const TableJoin> table_join;
-    JoinPtr join;
-
-    /// For PROJECT.
-    NamesWithAliases projection;
-
-    /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
-    static ExpressionAction applyFunction(
-            const FunctionOverloadResolverPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
-
-    static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_);
-    static ExpressionAction removeColumn(const std::string & removed_name);
-    static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name, bool can_replace = false);
-    static ExpressionAction project(const NamesWithAliases & projected_columns_);
-    static ExpressionAction project(const Names & projected_columns_);
-    static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
-    static ExpressionAction arrayJoin(std::string source_name, std::string result_name);
-
-    /// Which columns necessary to perform this action.
-    Names getNeededColumns() const;
-
-    std::string toString() const;
-
-    bool operator==(const ExpressionAction & other) const;
-
-    struct ActionHash
-    {
-        UInt128 operator()(const ExpressionAction & action) const;
-    };
-
-private:
-    friend class ExpressionActions;
-
-    void prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding);
-    void execute(Block & block, bool dry_run) const;
-};
-
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 class ActionsDAG
 {
@@ -160,8 +75,6 @@ public:
     struct Node
     {
         std::vector<Node *> children;
-        /// This field is filled if current node is replaced by existing node with the same name.
-        Node * renaming_parent = nullptr;
 
         Type type;
 
@@ -226,12 +139,27 @@ public:
     void removeUnusedActions(const Names & required_names);
     ExpressionActionsPtr buildExpressions();
 
+    /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
+    /// Returns nullptr if no actions may be moved before ARRAY JOIN.
+    ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
+
 private:
     Node & addNode(Node node, bool can_replace = false);
     Node & getNode(const std::string & name);
+
+    ActionsDAGPtr cloneEmpty() const
+    {
+        auto actions = std::make_shared<ActionsDAG>();
+        actions->max_temporary_columns = max_temporary_columns;
+        actions->max_temporary_non_const_columns = max_temporary_non_const_columns;
+
+#if USE_EMBEDDED_COMPILER
+        actions->compilation_cache = compilation_cache;
+#endif
+        return actions;
+    }
 };
 
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 /** Contains a sequence of actions on the block.
   */
@@ -290,10 +218,6 @@ public:
 
     /// Adds to the beginning the removal of all extra columns.
     void prependProjectInput() { project_input = true; }
-
-    /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
-    /// Returns nullptr if no actions may be moved before ARRAY JOIN.
-    ExpressionActionsPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
 
     /// - Adds actions to delete all but the specified columns.
     /// - Removes unused input columns.

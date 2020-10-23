@@ -333,127 +333,158 @@ std::string ExpressionActions::dumpActions() const
     return ss.str();
 }
 
-ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns)
+static std::string getUniqueNameForIndex(ActionsDAG::Index & index, std::string name)
 {
-    /// Create new actions.
-    /// Copy from this because we don't have context.
-    /// TODO: remove context from constructor?
-    auto split_actions = std::make_shared<ExpressionActions>(*this);
-    split_actions->actions.clear();
-    split_actions->sample_block.clear();
-    split_actions->input_columns.clear();
+    if (index.count(name) == 0)
+        return name;
 
-    /// Expected chain:
-    /// Expression (this) -> ArrayJoin (array_joined_columns) -> Expression (split_actions)
+    size_t next_id = 0;
+    std::string res;
+    do
+        res = name + "_" + std::to_string(next_id);
+    while (index.count(res));
 
-    /// We are going to move as many actions as we can from this to split_actions.
-    /// We can move all inputs which are not depend on array_joined_columns
-    /// (with some exceptions to PROJECT and REMOVE_COLUMN
+    return res;
+}
 
-    /// Use the same inputs for split_actions, except array_joined_columns.
-    for (const auto & input_column : input_columns)
+ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns)
+{
+    /// Split DAG into two parts.
+    /// (this_nodes, this_index) is a part which depends on ARRAY JOIN and stays here.
+    /// (split_nodes, split_index) is a part which will be moved before ARRAY JOIN.
+    std::list<Node> this_nodes;
+    std::list<Node> split_nodes;
+    Index this_index;
+    Index split_index;
+
+    struct Frame
     {
-        if (array_joined_columns.count(input_column.name) == 0)
-        {
-            split_actions->input_columns.emplace_back(input_column);
-            split_actions->sample_block.insert(ColumnWithTypeAndName(nullptr, input_column.type, input_column.name));
-        }
-    }
+        Node * node;
+        size_t next_child_to_visit = 0;
+    };
 
-    /// Do not split action if input depends only on array joined columns.
-    if (split_actions->input_columns.empty())
-        return nullptr;
-
-    /// Actions which depend on ARRAY JOIN result.
-    NameSet array_join_dependent_columns = array_joined_columns;
-    /// Arguments of actions which depend on ARRAY JOIN result.
-    /// This columns can't be deleted in split_actions.
-    NameSet array_join_dependent_columns_arguments;
-
-    /// We create new_actions list for `this`. Current actions are moved to new_actions nor added to split_actions.
-    Actions new_actions;
-    for (const auto & action : actions)
+    struct Data
     {
-        /// Exception for PROJECT.
-        /// It removes columns, so it will remove split_actions output which may be needed for actions from `this`.
-        /// So, we replace it ADD_ALIASES.
-        /// Usually, PROJECT is added to begin of actions in order to remove unused output of prev actions.
-        /// We skip it now, but will prependProjectInput at the end.
-        if (action.type == ExpressionAction::PROJECT)
+        bool depend_on_array_join = false;
+        bool visited = false;
+
+        /// Copies of node in one of the DAGs.
+        /// For COLUMN and INPUT both copies may exist.
+        Node * to_this = nullptr;
+        Node * to_split = nullptr;
+    };
+
+    std::stack<Frame> stack;
+    std::unordered_map<Node *, Data> data;
+
+    /// DFS. Decide if node depends on ARRAY JOIN and move it to one of the DAGs.
+    for (auto & node : nodes)
+    {
+        if (!data[&node].visited)
+            stack.push({.node = &node});
+
+        while (!stack.empty())
         {
-            /// Each alias has separate dependencies, so we split this action into two parts.
-            NamesWithAliases split_aliases;
-            NamesWithAliases depend_aliases;
-            for (const auto & pair : action.projection)
+            auto & cur = stack.top();
+            auto & cur_data = data[cur.node];
+
+            /// At first, visit all children. We depend on ARRAY JOIN if any child does.
+            while (cur.next_child_to_visit < cur.node->children.size())
             {
-                /// Skip if is not alias.
-                if (pair.second.empty())
-                    continue;
+                auto * child = cur.node->children[cur.next_child_to_visit];
+                auto & child_data = data[child];
 
-                if (array_join_dependent_columns.count(pair.first))
+                if (!child_data.visited)
                 {
-                    array_join_dependent_columns.insert(pair.second);
-                    depend_aliases.emplace_back(std::move(pair));
+                    stack.push({.node = child});
+                    break;
                 }
-                else
-                    split_aliases.emplace_back(std::move(pair));
+
+                ++cur.next_child_to_visit;
+                if (child_data.depend_on_array_join)
+                    cur_data.depend_on_array_join = true;
             }
 
-            if (!split_aliases.empty())
-                split_actions->add(ExpressionAction::addAliases(split_aliases));
+            /// Make a copy part.
+            if (cur.next_child_to_visit == cur.node->children.size())
+            {
+                if (cur.node->type == Type::INPUT && array_joined_columns.count(cur.node->result_name))
+                    cur_data.depend_on_array_join = true;
 
-            if (!depend_aliases.empty())
-                new_actions.emplace_back(ExpressionAction::addAliases(depend_aliases));
+                cur_data.visited = true;
+                stack.pop();
 
-            continue;
+                /// If node was in index, we would add it to index of part.
+                auto it = index.find(cur.node->result_name);
+                bool in_index = it != index.end() && it->second == cur.node;
+
+                if (cur_data.depend_on_array_join)
+                {
+                    auto & copy = this_nodes.emplace_back(*cur.node);
+
+                    /// Replace children to newly created nodes.
+                    for (auto & child : copy.children)
+                    {
+                        auto & child_data = data[child];
+
+                        /// If children is not created, int may be from split part.
+                        if (!child_data.to_this)
+                        {
+                            if (child->type == Type::COLUMN) /// Just create new node for COLUMN action.
+                                child_data.to_this = &this_nodes.emplace_back(*child);
+                            else
+                            {
+                                /// Node from split part is added as new input.
+                                Node input_node;
+                                node.type = Type::INPUT;
+                                node.result_type = child->result_type;
+                                node.result_name = getUniqueNameForIndex(index, child->result_name);
+                                child_data.to_this = &this_nodes.emplace_back(std::move(input_node));
+
+                                /// This node is needed for current action, so put it to index also.
+                                split_index[child_data.to_split->result_name] = child_data.to_split;
+                            }
+                        }
+
+                        child = child_data.to_this;
+                    }
+
+                    if (in_index)
+                        this_index[copy.result_name] = &copy;
+                }
+                else
+                {
+                    auto & copy = split_nodes.emplace_back(*cur.node);
+
+                    /// Replace children to newly created nodes.
+                    for (auto & child : copy.children)
+                    {
+                        child = data[child].to_split;
+                        assert(child != nullptr);
+                    }
+
+                    if (in_index)
+                        split_index[copy.result_name] = &copy;
+                }
+            }
         }
-
-        bool depends_on_array_join = false;
-        for (auto & column : action.getNeededColumns())
-            if (array_join_dependent_columns.count(column) != 0)
-                depends_on_array_join = true;
-
-        if (depends_on_array_join)
-        {
-            /// Add result of this action to array_join_dependent_columns too.
-            if (!action.result_name.empty())
-                array_join_dependent_columns.insert(action.result_name);
-
-            /// Add arguments of this action to array_join_dependent_columns_arguments.
-            auto needed = action.getNeededColumns();
-            array_join_dependent_columns_arguments.insert(needed.begin(), needed.end());
-
-            new_actions.emplace_back(action);
-        }
-        else if (action.type == ExpressionAction::REMOVE_COLUMN)
-        {
-            /// Exception for REMOVE_COLUMN.
-            /// We cannot move it to split_actions if any argument from `this` needed that column.
-            if (array_join_dependent_columns_arguments.count(action.source_name))
-                new_actions.emplace_back(action);
-            else
-                split_actions->add(action);
-        }
-        else
-            split_actions->add(action);
     }
 
-    /// Return empty actions if nothing was separated. Keep `this` unchanged.
-    if (split_actions->getActions().empty())
-        return nullptr;
+    /// Consider actions are empty if all nodes are constants or inputs.
+    bool split_actions_are_empty = true;
+    for (const auto & node : split_nodes)
+        if (!node.children.empty())
+            split_actions_are_empty = false;
 
-    std::swap(actions, new_actions);
+    if (split_actions_are_empty)
+        return {};
 
-    /// Collect inputs from ARRAY JOIN.
-    NamesAndTypesList inputs_from_array_join;
-    for (auto & column : input_columns)
-        if (array_joined_columns.count(column.name))
-            inputs_from_array_join.emplace_back(std::move(column));
+    index.swap(this_index);
+    nodes.swap(this_nodes);
 
-    /// Fix inputs for `this`.
-    /// It is output of split_actions + inputs from ARRAY JOIN.
-    input_columns = split_actions->getSampleBlock().getNamesAndTypesList();
-    input_columns.insert(input_columns.end(), inputs_from_array_join.begin(), inputs_from_array_join.end());
+    auto split_actions = cloneEmpty();
+    split_actions->nodes.swap(split_nodes);
+    split_actions->index.swap(split_index);
 
     return split_actions;
 }
@@ -501,102 +532,102 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 }
 
 
-/// It is not important to calculate the hash of individual strings or their concatenation
-UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action) const
-{
-    SipHash hash;
-    hash.update(action.type);
-    hash.update(action.is_function_compiled);
-    switch (action.type)
-    {
-        case ADD_COLUMN:
-            hash.update(action.result_name);
-            if (action.result_type)
-                hash.update(action.result_type->getName());
-            if (action.added_column)
-                hash.update(action.added_column->getName());
-            break;
-        case REMOVE_COLUMN:
-            hash.update(action.source_name);
-            break;
-        case COPY_COLUMN:
-            hash.update(action.result_name);
-            hash.update(action.source_name);
-            break;
-        case APPLY_FUNCTION:
-            hash.update(action.result_name);
-            if (action.result_type)
-                hash.update(action.result_type->getName());
-            if (action.function_base)
-            {
-                hash.update(action.function_base->getName());
-                for (const auto & arg_type : action.function_base->getArgumentTypes())
-                    hash.update(arg_type->getName());
-            }
-            for (const auto & arg_name : action.argument_names)
-                hash.update(arg_name);
-            break;
-        case ARRAY_JOIN:
-            hash.update(action.result_name);
-            hash.update(action.source_name);
-            break;
-        case PROJECT:
-            for (const auto & pair_of_strs : action.projection)
-            {
-                hash.update(pair_of_strs.first);
-                hash.update(pair_of_strs.second);
-            }
-            break;
-        case ADD_ALIASES:
-            break;
-    }
-    UInt128 result;
-    hash.get128(result.low, result.high);
-    return result;
-}
-
-bool ExpressionAction::operator==(const ExpressionAction & other) const
-{
-    if (result_type != other.result_type)
-    {
-        if (result_type == nullptr || other.result_type == nullptr)
-            return false;
-        else if (!result_type->equals(*other.result_type))
-            return false;
-    }
-
-    if (function_base != other.function_base)
-    {
-        if (function_base == nullptr || other.function_base == nullptr)
-            return false;
-        else if (function_base->getName() != other.function_base->getName())
-            return false;
-
-        const auto & my_arg_types = function_base->getArgumentTypes();
-        const auto & other_arg_types = other.function_base->getArgumentTypes();
-        if (my_arg_types.size() != other_arg_types.size())
-            return false;
-
-        for (size_t i = 0; i < my_arg_types.size(); ++i)
-            if (!my_arg_types[i]->equals(*other_arg_types[i]))
-                return false;
-    }
-
-    if (added_column != other.added_column)
-    {
-        if (added_column == nullptr || other.added_column == nullptr)
-            return false;
-        else if (added_column->getName() != other.added_column->getName())
-            return false;
-    }
-
-    return source_name == other.source_name
-        && result_name == other.result_name
-        && argument_names == other.argument_names
-        && TableJoin::sameJoin(table_join.get(), other.table_join.get())
-        && projection == other.projection
-        && is_function_compiled == other.is_function_compiled;
-}
+///// It is not important to calculate the hash of individual strings or their concatenation
+//UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action) const
+//{
+//    SipHash hash;
+//    hash.update(action.type);
+//    hash.update(action.is_function_compiled);
+//    switch (action.type)
+//    {
+//        case ADD_COLUMN:
+//            hash.update(action.result_name);
+//            if (action.result_type)
+//                hash.update(action.result_type->getName());
+//            if (action.added_column)
+//                hash.update(action.added_column->getName());
+//            break;
+//        case REMOVE_COLUMN:
+//            hash.update(action.source_name);
+//            break;
+//        case COPY_COLUMN:
+//            hash.update(action.result_name);
+//            hash.update(action.source_name);
+//            break;
+//        case APPLY_FUNCTION:
+//            hash.update(action.result_name);
+//            if (action.result_type)
+//                hash.update(action.result_type->getName());
+//            if (action.function_base)
+//            {
+//                hash.update(action.function_base->getName());
+//                for (const auto & arg_type : action.function_base->getArgumentTypes())
+//                    hash.update(arg_type->getName());
+//            }
+//            for (const auto & arg_name : action.argument_names)
+//                hash.update(arg_name);
+//            break;
+//        case ARRAY_JOIN:
+//            hash.update(action.result_name);
+//            hash.update(action.source_name);
+//            break;
+//        case PROJECT:
+//            for (const auto & pair_of_strs : action.projection)
+//            {
+//                hash.update(pair_of_strs.first);
+//                hash.update(pair_of_strs.second);
+//            }
+//            break;
+//        case ADD_ALIASES:
+//            break;
+//    }
+//    UInt128 result;
+//    hash.get128(result.low, result.high);
+//    return result;
+//}
+//
+//bool ExpressionAction::operator==(const ExpressionAction & other) const
+//{
+//    if (result_type != other.result_type)
+//    {
+//        if (result_type == nullptr || other.result_type == nullptr)
+//            return false;
+//        else if (!result_type->equals(*other.result_type))
+//            return false;
+//    }
+//
+//    if (function_base != other.function_base)
+//    {
+//        if (function_base == nullptr || other.function_base == nullptr)
+//            return false;
+//        else if (function_base->getName() != other.function_base->getName())
+//            return false;
+//
+//        const auto & my_arg_types = function_base->getArgumentTypes();
+//        const auto & other_arg_types = other.function_base->getArgumentTypes();
+//        if (my_arg_types.size() != other_arg_types.size())
+//            return false;
+//
+//        for (size_t i = 0; i < my_arg_types.size(); ++i)
+//            if (!my_arg_types[i]->equals(*other_arg_types[i]))
+//                return false;
+//    }
+//
+//    if (added_column != other.added_column)
+//    {
+//        if (added_column == nullptr || other.added_column == nullptr)
+//            return false;
+//        else if (added_column->getName() != other.added_column->getName())
+//            return false;
+//    }
+//
+//    return source_name == other.source_name
+//        && result_name == other.result_name
+//        && argument_names == other.argument_names
+//        && TableJoin::sameJoin(table_join.get(), other.table_join.get())
+//        && projection == other.projection
+//        && is_function_compiled == other.is_function_compiled;
+//}
 
 void ExpressionActionsChain::addStep()
 {
@@ -792,9 +823,6 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
 
     auto & res = nodes.emplace_back(std::move(node));
 
-    if (it != index.end())
-        it->second->renaming_parent = &res;
-
     index[res.result_name] = &res;
     return res;
 }
@@ -980,9 +1008,8 @@ ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 {
     ColumnsWithTypeAndName result;
     result.reserve(index.size());
-    for (const auto & node : nodes)
-        if (!node.renaming_parent)
-            result.emplace_back(node.column, node.result_type, node.result_name);
+    for (const auto & [name, node] : index)
+        result.emplace_back(node->column, node->result_type, std::string(name));
 
     return result;
 }
@@ -990,9 +1017,8 @@ ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 NamesAndTypesList ActionsDAG::getNamesAndTypesList() const
 {
     NamesAndTypesList result;
-    for (const auto & node : nodes)
-        if (!node.renaming_parent)
-            result.emplace_back(node.result_name, node.result_type);
+    for (const auto & [name, node] : index)
+        result.emplace_back(std::string(name), node->result_type);
 
     return result;
 }
@@ -1001,9 +1027,8 @@ Names ActionsDAG::getNames() const
 {
     Names names;
     names.reserve(index.size());
-    for (const auto & node : nodes)
-        if (!node.renaming_parent)
-            names.emplace_back(node.result_name);
+    for (const auto & pair : index)
+        names.emplace_back(pair.first);
 
     return names;
 }
@@ -1060,11 +1085,6 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
     }
 
     nodes.remove_if([&](Node * node) { return visited_nodes.count(node) == 0; });
-
-    /// Parent with the same name could be removed. Clear ptr to it if so.
-    for (auto & node : nodes)
-        if (node.renaming_parent && visited_nodes.count(node.renaming_parent) == 0)
-            node.renaming_parent = nullptr;
 }
 
 ExpressionActionsPtr ActionsDAG::buildExpressions()
@@ -1073,9 +1093,7 @@ ExpressionActionsPtr ActionsDAG::buildExpressions()
     {
         Node * node = nullptr;
         size_t num_created_children = 0;
-        size_t num_expected_children = 0;
         std::vector<Node *> parents;
-        Node * renamed_child = nullptr;
 
         ssize_t position = -1;
         size_t num_created_parents = 0;
@@ -1098,38 +1116,18 @@ ExpressionActionsPtr ActionsDAG::buildExpressions()
     for (auto & node : nodes)
     {
         auto & node_data = data[reverse_index[&node]];
-        node_data.num_expected_children += node.children.size();
-        node_data.used_in_result = node.renaming_parent == nullptr && index.count(node.result_name);
+        auto it = index.find(node.result_name);
+        node_data.used_in_result = it != index.end() && it->second == &node;
 
         for (const auto & child : node.children)
             data[reverse_index[child]].parents.emplace_back(&node);
-
-        if (node.renaming_parent)
-        {
-
-            auto & cur = data[reverse_index[node.renaming_parent]];
-            cur.renamed_child = &node;
-            cur.num_expected_children += 1;
-        }
     }
 
     for (auto & node : nodes)
     {
-        if (node.children.empty() && data[reverse_index[&node]].renamed_child == nullptr)
+        if (node.children.empty())
             ready_nodes.emplace(&node);
     }
-
-    auto update_parent = [&](Node * parent)
-    {
-        auto & cur = data[reverse_index[parent]];
-        ++cur.num_created_children;
-
-        if (cur.num_created_children == cur.num_expected_children)
-        {
-            auto & push_stack = parent->type == Type::ARRAY_JOIN ? ready_array_joins : ready_nodes;
-            push_stack.push(parent);
-        }
-    };
 
     auto expressions = std::make_shared<ExpressionActions>();
     std::stack<size_t> free_positions;
@@ -1184,10 +1182,16 @@ ExpressionActionsPtr ActionsDAG::buildExpressions()
             expressions->sample_block.insert({cur.node->column, cur.node->result_type, cur.node->result_name});
 
         for (const auto & parent : cur.parents)
-            update_parent(parent);
+        {
+            auto & parent_data = data[reverse_index[parent]];
+            ++parent_data.num_created_children;
 
-        if (node->renaming_parent)
-            update_parent(node->renaming_parent);
+            if (parent_data.num_created_children == parent->children.size())
+            {
+                auto & push_stack = parent->type == Type::ARRAY_JOIN ? ready_array_joins : ready_nodes;
+                push_stack.push(parent);
+            }
+        }
     }
 
     expressions->nodes.swap(nodes);
