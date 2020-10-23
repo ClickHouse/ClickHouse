@@ -112,3 +112,17 @@ INSERT INTO check_system_tables SELECT * FROM numbers_mt(101); -- direct block w
 SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
 DROP TABLE check_system_tables;
 DROP TABLE check_system_tables_null;
+
+SELECT 'Check total_bytes/total_rows for Set';
+CREATE TABLE check_system_tables Engine=Set() AS SELECT * FROM numbers(50);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables SELECT number+50 FROM numbers(50);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+DROP TABLE check_system_tables;
+
+SELECT 'Check total_bytes/total_rows for Join';
+CREATE TABLE check_system_tables Engine=Join(ANY, LEFT, number) AS SELECT * FROM numbers(50);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables SELECT number+50 FROM numbers(50);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+DROP TABLE check_system_tables;
