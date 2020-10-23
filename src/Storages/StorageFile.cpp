@@ -17,6 +17,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -51,7 +52,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
-    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace
@@ -126,33 +126,11 @@ void checkCreationIsAllowed(const Context & context_global, const std::string & 
 }
 }
 
-Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, const Context & context)
-{
-    String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
-    Poco::Path poco_path = Poco::Path(table_path);
-    if (poco_path.isRelative())
-        poco_path = Poco::Path(user_files_absolute_path, poco_path);
-
-    Strings paths;
-    const String path = poco_path.absolute().toString();
-    if (path.find_first_of("*?{") == std::string::npos)
-        paths.push_back(path);
-    else
-        paths = listFilesWithRegexpMatching("/", path);
-
-    for (const auto & cur_path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, cur_path);
-
-    return paths;
-}
-
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
     if (args.context.getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
-    if (args.format_name == "Distributed")
-        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
     is_db_table = false;
     use_table_fd = true;
@@ -167,22 +145,32 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     : StorageFile(args)
 {
     is_db_table = false;
-    paths = getPathsList(table_path_, user_files_path, args.context);
+    std::string user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
+    Poco::Path poco_path = Poco::Path(table_path_);
+    if (poco_path.isRelative())
+        poco_path = Poco::Path(user_files_absolute_path, poco_path);
+
+    const std::string path = poco_path.absolute().toString();
+    if (path.find_first_of("*?{") == std::string::npos)
+        paths.push_back(path);
+    else
+        paths = listFilesWithRegexpMatching("/", path);
+
+    for (const auto & cur_path : paths)
+        checkCreationIsAllowed(args.context, user_files_absolute_path, cur_path);
 
     if (args.format_name == "Distributed")
     {
-        if (paths.empty())
-            throw Exception("Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
+        if (!paths.empty())
+        {
+            auto & first_path = paths[0];
+            Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
 
-        auto & first_path = paths[0];
-        Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
 
-        StorageInMemoryMetadata storage_metadata;
-        auto columns = ColumnsDescription(header.getNamesAndTypesList());
-        if (!args.columns.empty() && columns != args.columns)
-            throw Exception("Table structure and file structure are different", ErrorCodes::INCOMPATIBLE_COLUMNS);
-        storage_metadata.setColumns(columns);
-        setInMemoryMetadata(storage_metadata);
+            StorageInMemoryMetadata storage_metadata;
+            storage_metadata.setColumns(ColumnsDescription(header.getNamesAndTypesList()));
+            setInMemoryMetadata(storage_metadata);
+        }
     }
 }
 
@@ -191,8 +179,6 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 {
     if (relative_table_dir_path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
-    if (args.format_name == "Distributed")
-        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String table_dir_path = base_path + relative_table_dir_path + "/";
     Poco::File(table_dir_path).createDirectories();
@@ -392,7 +378,7 @@ private:
 };
 
 
-Pipe StorageFile::read(
+Pipes StorageFile::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -433,7 +419,7 @@ Pipe StorageFile::read(
         pipes.emplace_back(std::make_shared<StorageFileSource>(
                 this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns()));
 
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
 
@@ -539,12 +525,9 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
     if (paths.size() != 1)
         throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
-    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
-    if (path_new == paths[0])
-        return;
-
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
+    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
     Poco::File(paths[0]).renameTo(path_new);
 

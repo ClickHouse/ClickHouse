@@ -143,6 +143,7 @@ namespace
             return time_zone.toStartOfSecondInterval(t, seconds);
         }
     };
+}
 
 
 class FunctionToStartOfInterval : public IFunction
@@ -226,13 +227,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) const override
     {
-        const auto & time_column = columns[arguments[0]];
-        const auto & interval_column = columns[arguments[1]];
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(columns, arguments, 2, 0);
+        const auto & time_column = block.getByPosition(arguments[0]);
+        const auto & interval_column = block.getByPosition(arguments[1]);
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
         auto result_column = dispatchForColumns(time_column, interval_column, time_zone);
-        columns[result].column = std::move(result_column);
+        block.getByPosition(result).column = std::move(result_column);
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -339,7 +340,6 @@ private:
     }
 };
 
-}
 
 void registerFunctionToStartOfInterval(FunctionFactory & factory)
 {

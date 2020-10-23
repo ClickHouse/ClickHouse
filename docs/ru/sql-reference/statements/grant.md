@@ -249,7 +249,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### ALTER {#grant-alter}
 
-Разрешает выполнять запросы [ALTER](alter/index.md) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять запросы [ALTER](alter.md) в соответствии со следующей иерархией привилегий:
 
 - `ALTER`. Уровень: `COLUMN`. 
     - `ALTER TABLE`. Уровень: `GROUP`
@@ -291,7 +291,7 @@ GRANT INSERT(x,y) ON db.table TO john
 - Привилегия `MODIFY SETTING` позволяет изменять настройки движков таблиц. Не влияет на настройки или конфигурационные параметры сервера.
 - Операция `ATTACH` требует наличие привилегии [CREATE](#grant-create).
 - Операция `DETACH` требует наличие привилегии [DROP](#grant-drop).
-- Для остановки мутации с помощью [KILL MUTATION](../../sql-reference/statements/kill.md#kill-mutation), необходима привилегия на выполнение данной мутации. Например, чтобы остановить запрос `ALTER UPDATE`, необходима одна из привилегий: `ALTER UPDATE`, `ALTER TABLE` или `ALTER`.
+- Для остановки мутации с помощью [KILL MUTATION](misc.md#kill-mutation-statement), необходима привилегия на выполнение данной мутации. Например, чтобы остановить запрос `ALTER UPDATE`, необходима одна из привилегий: `ALTER UPDATE`, `ALTER TABLE` или `ALTER`.
 
 ### CREATE {#grant-create}
 
@@ -321,7 +321,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### TRUNCATE {#grant-truncate}
 
-Разрешает выполнять запросы [TRUNCATE](../../sql-reference/statements/truncate.md).
+Разрешает выполнять запросы [TRUNCATE](misc.md#truncate-statement).
 
 Уровень: `TABLE`.
 
@@ -348,7 +348,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### KILL QUERY {#grant-kill-query}
 
-Разрешает выполнять запросы [KILL](../../sql-reference/statements/kill.md#kill-query) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять запросы [KILL](misc.md#kill-query-statement) в соответствии со следующей иерархией привилегий:
 
 Уровень: `GLOBAL`.
 

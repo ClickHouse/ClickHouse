@@ -4,6 +4,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
@@ -21,7 +22,7 @@ class StorageNull final : public ext::shared_ptr_helper<StorageNull>, public ISt
 public:
     std::string getName() const override { return "Null"; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo &,
@@ -30,11 +31,11 @@ public:
         size_t,
         unsigned) override
     {
-        return Pipe(
+        Pipes pipes;
+        pipes.emplace_back(
             std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+        return pipes;
     }
-
-    bool supportsParallelInsert() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &) override
     {

@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -16,8 +17,8 @@ namespace ErrorCodes
 }
 
 
-StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & table_id_)
-        : IStorage(table_id_)
+StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & name_)
+        : IStorage({"system", name_})
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(
@@ -29,13 +30,12 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & tab
              {"volume_type", std::make_shared<DataTypeString>()},
              {"max_data_part_size", std::make_shared<DataTypeUInt64>()},
              {"move_factor", std::make_shared<DataTypeFloat32>()},
-             {"prefer_not_to_merge", std::make_shared<DataTypeUInt8>()}
     }));
     // TODO: Add string column with custom volume-type-specific options
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe StorageSystemStoragePolicies::read(
+Pipes StorageSystemStoragePolicies::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -53,7 +53,6 @@ Pipe StorageSystemStoragePolicies::read(
     MutableColumnPtr col_volume_type = ColumnString::create();
     MutableColumnPtr col_max_part_size = ColumnUInt64::create();
     MutableColumnPtr col_move_factor = ColumnFloat32::create();
-    MutableColumnPtr col_prefer_not_to_merge = ColumnUInt8::create();
 
     for (const auto & [policy_name, policy_ptr] : context.getPoliciesMap())
     {
@@ -71,7 +70,6 @@ Pipe StorageSystemStoragePolicies::read(
             col_volume_type->insert(volumeTypeToString(volumes[i]->getType()));
             col_max_part_size->insert(volumes[i]->max_data_part_size);
             col_move_factor->insert(policy_ptr->getMoveFactor());
-            col_prefer_not_to_merge->insert(volumes[i]->areMergesAvoided() ? 1 : 0);
         }
     }
 
@@ -83,12 +81,14 @@ Pipe StorageSystemStoragePolicies::read(
     res_columns.emplace_back(std::move(col_volume_type));
     res_columns.emplace_back(std::move(col_max_part_size));
     res_columns.emplace_back(std::move(col_move_factor));
-    res_columns.emplace_back(std::move(col_prefer_not_to_merge));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
+
+    return pipes;
 }
 
 }

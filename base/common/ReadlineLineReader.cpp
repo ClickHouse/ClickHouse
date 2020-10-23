@@ -6,8 +6,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <iostream>
-
 namespace
 {
 
@@ -30,8 +28,7 @@ static LineReader::Suggest::Words::const_iterator end;
 static void findRange(const char * prefix, size_t prefix_length)
 {
     std::string prefix_str(prefix);
-    if (auto completions = suggest->getCompletions(prefix_str, prefix_length))
-        std::tie(pos, end) = *completions;
+    std::tie(pos, end) = suggest->getCompletions(prefix_str, prefix_length);
 }
 
 /// Iterates through matched range.
@@ -110,8 +107,6 @@ ReadlineLineReader::ReadlineLineReader(
         throw std::runtime_error(std::string("Cannot set signal handler for readline: ") + strerror(errno));
 
     rl_variable_bind("completion-ignore-case", "on");
-    // TODO: it doesn't work
-    // history_write_timestamps = 1;
 }
 
 ReadlineLineReader::~ReadlineLineReader()
@@ -134,11 +129,6 @@ LineReader::InputStatus ReadlineLineReader::readOneLine(const String & prompt)
 void ReadlineLineReader::addToHistory(const String & line)
 {
     add_history(line.c_str());
-
-    // Flush changes to the disk
-    // NOTE readline builds a buffer of all the lines to write, and write them in one syscall.
-    // Thus there is no need to lock the history file here.
-    write_history(history_file_path.c_str());
 }
 
 #if RL_VERSION_MAJOR >= 7
