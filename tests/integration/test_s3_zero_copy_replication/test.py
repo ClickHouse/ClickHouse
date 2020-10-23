@@ -54,6 +54,7 @@ def test_s3_zero_copy_replication(cluster, policy):
     )
 
     node1.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
+    time.sleep(1)
     assert node1.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data')"
     assert node2.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data')"
 
@@ -61,6 +62,7 @@ def test_s3_zero_copy_replication(cluster, policy):
     assert get_large_objects_count(cluster) == 1
 
     node2.query("INSERT INTO s3_test VALUES (2,'data'),(3,'data')")
+    time.sleep(1)
     assert node2.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
     assert node1.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
 
