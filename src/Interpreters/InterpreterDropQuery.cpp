@@ -60,6 +60,7 @@ BlockIO InterpreterDropQuery::execute()
 
 BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
 {
+    /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
     if (query.temporary || table_id.database_name.empty())
     {
@@ -88,6 +89,7 @@ BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
         if (query_ptr->as<ASTDropQuery &>().is_view && !table->isView())
             throw Exception("Table " + table_id.getNameForLogs() + " is not a View", ErrorCodes::LOGICAL_ERROR);
 
+        /// Now get UUID, so we can wait for table data to be finally dropped
         table_id = table->getStorageID();
 
         if (query.kind == ASTDropQuery::Kind::Detach)
