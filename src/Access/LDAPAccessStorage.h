@@ -32,6 +32,8 @@ public:
     explicit LDAPAccessStorage(const String & storage_name_, AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
     virtual ~LDAPAccessStorage() override = default;
 
+    String getLDAPServerName() const;
+
 public: // IAccessStorage implementations.
     virtual const char * getStorageType() const override;
     virtual String getStorageParamsJSON() const override;
