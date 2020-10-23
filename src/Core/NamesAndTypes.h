@@ -18,8 +18,8 @@ struct NameAndTypePair
 public:
     NameAndTypePair() = default;
     NameAndTypePair(const String & name_, const DataTypePtr & type_) : name(name_), type(type_), storage_type(type_) {}
-    NameAndTypePair(const String & name_, const String & subcolumn_name_,
-        const DataTypePtr & storage_type_, const DataTypePtr & type_);
+    NameAndTypePair(const String & storage_name_, const String & subcolumn_name_,
+        const DataTypePtr & storage_type_, const DataTypePtr & subcolumn_type_);
 
     String getStorageName() const;
     String getSubcolumnName() const;

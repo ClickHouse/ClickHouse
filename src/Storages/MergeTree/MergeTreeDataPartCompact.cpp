@@ -123,7 +123,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
 {
-    if (!getColumnPosition(column.name))
+    if (!getColumnPosition(column))
         return false;
 
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);

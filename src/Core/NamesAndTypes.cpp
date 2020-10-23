@@ -18,12 +18,12 @@ namespace ErrorCodes
 }
 
 NameAndTypePair::NameAndTypePair(
-    const String & name_, const String & subcolumn_name_,
-    const DataTypePtr & storage_type_, const DataTypePtr & type_)
-    : name(name_ + "." + subcolumn_name_)
-    , type(type_)
+    const String & storage_name_, const String & subcolumn_name_,
+    const DataTypePtr & storage_type_, const DataTypePtr & subcolumn_type_)
+    : name(storage_name_ + "." + subcolumn_name_)
+    , type(subcolumn_type_)
     , storage_type(storage_type_)
-    , subcolumn_delimiter_position(name_.size()) {}
+    , subcolumn_delimiter_position(storage_name_.size()) {}
 
 String NameAndTypePair::getStorageName() const
 {
