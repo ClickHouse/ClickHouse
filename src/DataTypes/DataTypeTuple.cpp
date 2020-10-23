@@ -44,20 +44,22 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_)
         names[i] = toString(i + 1);
 }
 
-static void checkTupleNames(const Strings & names, std::function<void(const char *, int)> on_error)
+static std::optional<Exception> checkTupleNames(const Strings & names)
 {
     std::unordered_set<String> names_set;
     for (const auto & name : names)
     {
         if (name.empty())
-            on_error("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+            return Exception("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
         if (isNumericASCII(name[0]))
-            on_error("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
+            return Exception("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
 
         if (!names_set.insert(name).second)
-            on_error("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
+            return Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
     }
+
+    return {};
 }
 
 DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_, bool serialize_names_)
@@ -67,14 +69,13 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_, b
     if (names.size() != size)
         throw Exception("Wrong number of names passed to constructor of DataTypeTuple", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    checkTupleNames(names, [](const char * msg, int code) { throw Exception(msg, code); });
+    if (auto exception = checkTupleNames(names))
+        throw std::move(*exception);
 }
 
 bool DataTypeTuple::canBeCreatedWithNames(const Strings & names)
 {
-    bool has_error = false;
-    checkTupleNames(names, [&](const char *, int) { has_error = true; });
-    return !has_error;
+    return checkTupleNames(names) == std::nullopt;
 }
 
 std::string DataTypeTuple::doGetName() const
