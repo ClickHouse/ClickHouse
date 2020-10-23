@@ -117,7 +117,9 @@ CREATE TABLE table_name
 
 </details>
 
-As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the ‘macros’ section of the configuration file. Example:
+As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the «[macros](../../../operations/server-configuration-parameters/settings/#macros) section of the configuration file. 
+
+Example:
 
 ``` xml
 <macros>
@@ -136,6 +138,9 @@ In this case, the path consists of the following parts:
 
 `table_name` is the name of the node for the table in ZooKeeper. It is a good idea to make it the same as the table name. It is defined explicitly, because in contrast to the table name, it doesn’t change after a RENAME query.
 *HINT*: you could add a database name in front of `table_name` as well. E.g. `db_name.table_name`
+
+The two built-in substitutions `{database}` and `{table}` can be used, they expand into the table name and the database name respectively (unless these macros are defined in the `macros` section). So the zookeeper path can be specified as `'/clickhouse/tables/{layer}-{shard}/{database}/{table}'`.
+Be careful with table renames when using these built-in substitutions. The path in Zookeeper cannot be changed, and when the table is renamed, the macros will expand into a different path, the table will refer to a path that does not exist in Zookeeper, and will go into read-only mode.
 
 The replica name identifies different replicas of the same table. You can use the server name for this, as in the example. The name only needs to be unique within each shard.
 

@@ -204,7 +204,7 @@ public:
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called
      * and "execute" otherwise.
      */
-    void selectAndExecute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    ColumnPtr selectAndExecute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (implementations.empty())
             throw Exception("There are no available implementations for function " "TODO(dakovalkov): add name",
@@ -212,14 +212,15 @@ public:
 
         /// Statistics shouldn't rely on small columnss.
         bool considerable = (input_rows_count > 1000);
+        ColumnPtr res;
 
         size_t id = statistics.select(considerable);
         Stopwatch watch;
 
         if constexpr (std::is_same_v<FunctionInterface, IFunction>)
-            implementations[id]->executeImpl(columns, arguments, result, input_rows_count);
+            res = implementations[id]->executeImpl(arguments, result_type, input_rows_count);
         else
-            implementations[id]->execute(columns, arguments, result, input_rows_count);
+            res = implementations[id]->execute(arguments, result_type, input_rows_count);
 
         watch.stop();
 
@@ -228,6 +229,8 @@ public:
             // TODO(dakovalkov): Calculate something more informative than rows count.
             statistics.complete(id, watch.elapsedSeconds(), input_rows_count);
         }
+
+        return res;
     }
 
     /* Register new implementation for function.

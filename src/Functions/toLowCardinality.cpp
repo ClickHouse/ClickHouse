@@ -32,19 +32,18 @@ public:
         return std::make_shared<DataTypeLowCardinality>(arguments[0]);
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t /*input_rows_count*/) const override
     {
         auto arg_num = arguments[0];
-        const auto & arg = columns[arg_num];
-        auto & res = columns[result];
+        const auto & arg = arguments[0];
 
         if (arg.type->lowCardinality())
-            res.column = arg.column;
+            return arg.column;
         else
         {
-            auto column = res.type->createColumn();
+            auto column = res_type->createColumn();
             typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
-            res.column = std::move(column);
+            return column;
         }
     }
 };
