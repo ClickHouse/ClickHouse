@@ -1240,17 +1240,24 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     if (apply.ignore(pos, expected))
     {
-        if (pos->type != TokenType::OpeningRoundBracket)
-            return false;
-        ++pos;
+        bool with_open_round_bracket = false;
+
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+            with_open_round_bracket = true;
+        }
 
         String func_name;
         if (!parseIdentifierOrStringLiteral(pos, expected, func_name))
             return false;
 
-        if (pos->type != TokenType::ClosingRoundBracket)
-            return false;
-        ++pos;
+        if (with_open_round_bracket)
+        {
+            if (pos->type != TokenType::ClosingRoundBracket)
+                return false;
+            ++pos;
+        }
 
         auto res = std::make_shared<ASTColumnsApplyTransformer>();
         res->func_name = func_name;
@@ -1259,13 +1266,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     }
     else if (except.ignore(pos, expected))
     {
-
         if (strict.ignore(pos, expected))
             is_strict = true;
-
-        if (pos->type != TokenType::OpeningRoundBracket)
-            return false;
-        ++pos;
 
         ASTs identifiers;
         auto parse_id = [&identifiers, &pos, &expected]
@@ -1278,12 +1280,23 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             return true;
         };
 
-        if (!ParserList::parseUtil(pos, expected, parse_id, false))
-            return false;
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            // support one or more parameter
+            ++pos;
+            if (!ParserList::parseUtil(pos, expected, parse_id, false))
+                return false;
 
-        if (pos->type != TokenType::ClosingRoundBracket)
-            return false;
-        ++pos;
+            if (pos->type != TokenType::ClosingRoundBracket)
+                return false;
+            ++pos;
+        }
+        else
+        {
+            // only one parameter
+            if (!parse_id())
+                return false;
+        }
 
         auto res = std::make_shared<ASTColumnsExceptTransformer>();
         res->children = std::move(identifiers);
@@ -1295,10 +1308,6 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     {
         if (strict.ignore(pos, expected))
             is_strict = true;
-
-        if (pos->type != TokenType::OpeningRoundBracket)
-            return false;
-        ++pos;
 
         ASTs replacements;
         ParserExpression element_p;
@@ -1323,12 +1332,23 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             return true;
         };
 
-        if (!ParserList::parseUtil(pos, expected, parse_id, false))
-            return false;
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
 
-        if (pos->type != TokenType::ClosingRoundBracket)
-            return false;
-        ++pos;
+            if (!ParserList::parseUtil(pos, expected, parse_id, false))
+                return false;
+
+            if (pos->type != TokenType::ClosingRoundBracket)
+                return false;
+            ++pos;
+        }
+        else
+        {
+            // only one parameter
+            if (!parse_id())
+                return false;
+        }
 
         auto res = std::make_shared<ASTColumnsReplaceTransformer>();
         res->children = std::move(replacements);
