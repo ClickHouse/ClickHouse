@@ -1342,34 +1342,29 @@ Result:
 ## RawBLOB {#rawblob}
 
 This format slurps all input data into a single value. This format can only parse a table with a single field of type [String](../sql-reference/data-types/string.md) or similar.
-When an empty value is passed to the input, ClickHouse generates an exception:
+The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
+
+The difference between `RawBLOB` and `TSVRaw`:
+-   data is output in binary format, no escaping;
+-   no delimiters between values;
+-   no newline at the end of each value.
+
+In `Raw BLOB` unlike `Raw Binary` strings are output without their length.
+
+When an empty value is passed to the `RawBLOB` input, ClickHouse generates an exception:
  
 ``` text
 Code: 108. DB::Exception: No data to insert
 ```
 
-
-The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
-
 **Example**
 
 ``` bash
-CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. "$CURDIR"/../shell_config.sh
-
-${CLICKHOUSE_CLIENT} -n --query "
-DROP TABLE IF EXISTS t;
-CREATE TABLE t (a LowCardinality(Nullable(String))) ENGINE = Memory;
-
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t FORMAT RawBLOB" < ${BASH_SOURCE[0]}
-
-cat ${BASH_SOURCE[0]} | md5sum
-
-${CLICKHOUSE_CLIENT} -n --query "SELECT * FROM t FORMAT RawBLOB" | md5sum
-
-${CLICKHOUSE_CLIENT} --query "
-DROP TABLE t;
-"
+$ clickhouse-client --query "DROP TABLE IF EXISTS {some_table};"                                                                
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"                   
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
+$ clickhouse-client --query "DROP TABLE {some_table};"
 ```
 
 Result:

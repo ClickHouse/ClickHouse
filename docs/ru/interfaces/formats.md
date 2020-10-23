@@ -1146,35 +1146,30 @@ SELECT * FROM line_as_string;
 
 ## RawBLOB {#rawblob}
 
-Этот формат считывает все входные данные в одно значение. Этот формат может парсить только таблицу с одним полем типа [String](../sql-reference/data-types/string.md) или подобным ему. 
-При передаче на вход пустого значения ClickHouse сгенерирует исключение:
+Этот формат считывает все входные данные в одно значение. Формат может парсить только таблицу с одним полем типа [String](../sql-reference/data-types/string.md) или подобным ему. 
+Результат выводится в бинарном виде без разделителей и экранирования. При выводе более одного значения формат неоднозначен и будет невозможно прочитать данные снова.
+
+Отличия между `RawBLOB` и `TabSeparatedRaw`:
+-   данные выводятся в бинарном виде, без экранирования;
+-   нет разделителей между значениями;
+-   нет новой строки в конце каждого значения.
+
+В `RawBLOB`, в отличие от `RowBinary`, строки выводятся без их длины.
+
+При передаче на вход `RawBLOB` пустого значения ClickHouse сгенерирует исключение:
  
 ``` text
 Code: 108. DB::Exception: No data to insert
 ```
 
-
-Результат выводится в двоичном формате без разделителей и экранирования. При выводе более одного значения формат неоднозначен и будет невозможно прочитать данные снова.
-
 **Пример**
 
 ``` bash
-CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. "$CURDIR"/../shell_config.sh
-
-${CLICKHOUSE_CLIENT} -n --query "
-DROP TABLE IF EXISTS t;
-CREATE TABLE t (a LowCardinality(Nullable(String))) ENGINE = Memory;
-
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t FORMAT RawBLOB" < ${BASH_SOURCE[0]}
-
-cat ${BASH_SOURCE[0]} | md5sum
-
-${CLICKHOUSE_CLIENT} -n --query "SELECT * FROM t FORMAT RawBLOB" | md5sum
-
-${CLICKHOUSE_CLIENT} --query "
-DROP TABLE t;
-"
+$ clickhouse-client --query "DROP TABLE IF EXISTS {some_table};"                                                                
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"                   
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
+$ clickhouse-client --query "DROP TABLE {some_table};"
 ```
 
 Результат:
