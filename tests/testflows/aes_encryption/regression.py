@@ -53,7 +53,7 @@ xfails = {
     RQ_SRS008_AES_Functions_DifferentModes("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path):
+def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """ClickHouse AES encryption functions regression module.
     """
     nodes = {
