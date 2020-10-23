@@ -4,7 +4,7 @@
 
 #include <Core/Row.h>
 #include <Core/Block.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -316,19 +316,15 @@ public:
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    void makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
+    /// Makes full clone of part in detached/ on another disk
+    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
     /// NOTE: Doesn't take column renames into account, if some column renames
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
-    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const { return false; }
-
-    /// Returns true if this part shall participate in merges according to
-    /// settings of given storage policy.
-    bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
+    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);

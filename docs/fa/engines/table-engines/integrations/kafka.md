@@ -134,7 +134,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-برای بهبود عملکرد, پیام های دریافت شده را به بلوک های اندازه گروه بندی می شوند [ا_فزونهها](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). اگر بلوک در داخل تشکیل نشده است [_خاله جریان](../../../operations/server-configuration-parameters/settings.md) میلی ثانیه, داده خواهد شد به جدول بدون در نظر گرفتن کامل از بلوک سرخ.
+برای بهبود عملکرد, پیام های دریافت شده را به بلوک های اندازه گروه بندی می شوند [ا\_فزونهها](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). اگر بلوک در داخل تشکیل نشده است [\_خاله جریان](../../../operations/server-configuration-parameters/settings.md) میلی ثانیه, داده خواهد شد به جدول بدون در نظر گرفتن کامل از بلوک سرخ.
 
 برای جلوگیری از دریافت داده های موضوع و یا تغییر منطق تبدیل جدا مشاهده محقق:
 

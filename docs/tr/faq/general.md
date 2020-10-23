@@ -17,7 +17,7 @@ Bu sistemler, yüksek gecikme süreleri nedeniyle çevrimiçi sorgular için uyg
 
 ## Oracle aracılığıyla ODBC kullanırken Kodlamalarla ilgili bir sorunum varsa ne olur? {#oracle-odbc-encodings}
 
-Oracle ODBC sürücüsü aracılığıyla dış sözlükler kaynağı olarak kullanırsanız, doğru değeri ayarlamanız gerekir. `NLS_LANG` ortam değişkeni `/etc/default/clickhouse`. Daha fazla bilgi için, bkz: [Oracle NLS_LANG SSS](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+Oracle ODBC sürücüsü aracılığıyla dış sözlükler kaynağı olarak kullanırsanız, doğru değeri ayarlamanız gerekir. `NLS_LANG` ortam değişkeni `/etc/default/clickhouse`. Daha fazla bilgi için, bkz: [Oracle NLS\_LANG SSS](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
 **Örnek**
 
