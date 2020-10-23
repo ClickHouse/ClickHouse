@@ -57,7 +57,7 @@ def query_common(query_text, settings={}, input_data=[], output_format='TabSepar
 def query_no_errors(*args, **kwargs):
     results = query_common(*args, **kwargs)
     if results and results[-1].HasField('exception'):
-        raise Exception(results[-1].exception.message)
+        raise Exception(results[-1].exception.display_text)
     return results
 
 def query(*args, **kwargs):
@@ -131,7 +131,7 @@ def test_totals_and_extremes():
 def test_errors_handling():
     e = query_and_get_error("")
     #print(e)
-    assert "Empty query" in e.message
+    assert "Empty query" in e.display_text
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     e = query_and_get_error("CREATE TABLE t (a UInt8) ENGINE = Memory")
-    assert "Table default.t already exists" in e.message
+    assert "Table default.t already exists" in e.display_text
