@@ -31,7 +31,7 @@ private:
 
     BlockIO executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists, bool no_delay);
 
-    BlockIO executeToTable(const StorageID & table_id, const ASTDropQuery & query);
+    BlockIO executeToTable(const ASTDropQuery & query);
 
     BlockIO executeToDictionary(const String & database_name, const String & dictionary_name, ASTDropQuery::Kind kind, bool if_exists, bool is_temporary, bool no_ddl_lock);
 
