@@ -20,6 +20,7 @@ FASTTEST_SOURCE=$(readlink -f "${FASTTEST_SOURCE:-$FASTTEST_WORKSPACE/ch}")
 FASTTEST_BUILD=$(readlink -f "${FASTTEST_BUILD:-${BUILD:-$FASTTEST_WORKSPACE/build}}")
 FASTTEST_DATA=$(readlink -f "${FASTTEST_DATA:-$FASTTEST_WORKSPACE/db-fasttest}")
 FASTTEST_OUTPUT=$(readlink -f "${FASTTEST_OUTPUT:-$FASTTEST_WORKSPACE}")
+PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
 
 # Export these variables, so that all subsequent invocations of the script
 # use them, and not try to guess them anew, which leads to weird effects.
@@ -28,6 +29,7 @@ export FASTTEST_SOURCE
 export FASTTEST_BUILD
 export FASTTEST_DATA
 export FASTTEST_OUT
+export PATH
 
 server_pid=none
 
@@ -137,7 +139,14 @@ git submodule foreach git clean -xfd
 
 function run_cmake
 {
-CMAKE_LIBS_CONFIG=("-DENABLE_LIBRARIES=0" "-DENABLE_TESTS=0" "-DENABLE_UTILS=0" "-DENABLE_EMBEDDED_COMPILER=0" "-DENABLE_THINLTO=0" "-DUSE_UNWIND=1")
+CMAKE_LIBS_CONFIG=(
+    "-DENABLE_LIBRARIES=0"
+    "-DENABLE_TESTS=0"
+    "-DENABLE_UTILS=0"
+    "-DENABLE_EMBEDDED_COMPILER=0"
+    "-DENABLE_THINLTO=0"
+    "-DUSE_UNWIND=1"
+)
 
 # TODO remove this? we don't use ccache anyway. An option would be to download it
 # from S3 simultaneously with cloning.
@@ -219,6 +228,8 @@ TESTS_TO_SKIP=(
     01268_dictionary_direct_layout
     01280_ssd_complex_key_dictionary
     01281_group_by_limit_memory_tracking    # max_memory_usage_for_user can interfere another queries running concurrently
+    01318_encrypt                           # Depends on OpenSSL
+    01318_decrypt                           # Depends on OpenSSL
     01281_unsucceeded_insert_select_queries_counter
     01292_create_user
     01294_lazy_database_concurrent
@@ -330,8 +341,6 @@ case "$stage" in
     ;&
 "build")
     build
-    PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
-    export PATH
     ;&
 "configure")
     # The `install_log.txt` is also needed for compatibility with old CI task --

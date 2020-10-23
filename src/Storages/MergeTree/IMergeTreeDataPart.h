@@ -324,7 +324,11 @@ public:
     /// NOTE: Doesn't take column renames into account, if some column renames
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
-    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
+    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const { return false; }
+
+    /// Returns true if this part shall participate in merges according to
+    /// settings of given storage policy.
+    bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);

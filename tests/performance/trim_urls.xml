@@ -20,5 +20,5 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore({func}URL))</query>
+    <query>SELECT ignore({func}URL)) FROM hits_100m_single LIMIT 50000000 FORMAT Null</query>
 </test>

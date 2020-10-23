@@ -15,12 +15,83 @@ Returns a single `String`-type ‘statement’ column, which contains a single v
 
 ## SHOW DATABASES {#show-databases}
 
-``` sql
-SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
+Prints a list of all databases.
+
+```sql
+SHOW DATABASES [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Prints a list of all databases.
-This query is identical to `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
+This statement is identical to the query:
+
+```sql
+SELECT name FROM system.databases [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+```
+
+### Examples {#examples}
+
+Getting database names, containing the symbols sequence 'de' in their names:
+
+``` sql
+SHOW DATABASES LIKE '%de%'
+```
+
+Result:
+
+``` text
+┌─name────┐
+│ default │
+└─────────┘
+```
+
+Getting database names, containing symbols sequence 'de' in their names, in the case insensitive manner:
+
+``` sql
+SHOW DATABASES ILIKE '%DE%'
+```
+
+Result:
+
+``` text
+┌─name────┐
+│ default │
+└─────────┘
+```
+
+Getting database names, not containing the symbols sequence 'de' in their names:
+
+``` sql
+SHOW DATABASES NOT LIKE '%de%'
+```
+
+Result:
+
+``` text
+┌─name───────────────────────────┐
+│ _temporary_and_external_tables │
+│ system                         │
+│ test                           │
+│ tutorial                       │
+└────────────────────────────────┘
+```
+
+Getting the first two rows from database names:
+
+``` sql
+SHOW DATABASES LIMIT 2
+```
+
+Result:
+
+``` text
+┌─name───────────────────────────┐
+│ _temporary_and_external_tables │
+│ default                        │
+└────────────────────────────────┘
+```
+
+### See Also {#see-also}
+
+-   [CREATE DATABASE](https://clickhouse.tech/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -42,32 +113,85 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 
 Displays a list of tables.
 
-``` sql
-SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```sql
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
 
-You can get the same results as the `SHOW TABLES` query in the following way:
+This statement is identical to the query:
 
-``` sql
-SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```sql
+SELECT name FROM system.tables [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-**Example**
+### Examples {#examples}
 
-The following query selects the first two rows from the list of tables in the `system` database, whose names contain `co`.
+Getting table names, containing the symbols sequence 'user' in their names:
 
 ``` sql
-SHOW TABLES FROM system LIKE '%co%' LIMIT 2
+SHOW TABLES FROM system LIKE '%user%'
 ```
+
+Result:
+
+``` text
+┌─name─────────────┐
+│ user_directories │
+│ users            │
+└──────────────────┘
+```
+
+Getting table names, containing sequence 'user' in their names, in the case insensitive manner:
+
+``` sql
+SHOW TABLES FROM system ILIKE '%USER%'
+```
+
+Result:
+
+``` text
+┌─name─────────────┐
+│ user_directories │
+│ users            │
+└──────────────────┘
+```
+
+Getting table names, not containing the symbol sequence 's' in their names:
+
+``` sql
+SHOW TABLES FROM system NOT LIKE '%s%'
+```
+
+Result:
+
+``` text
+┌─name─────────┐
+│ metric_log   │
+│ metric_log_0 │
+│ metric_log_1 │
+└──────────────┘
+```
+
+Getting the first two rows from table names:
+
+``` sql
+SHOW TABLES FROM system LIMIT 2
+```
+
+Result:
 
 ``` text
 ┌─name───────────────────────────┐
 │ aggregate_function_combinators │
-│ collations                     │
+│ asynchronous_metric_log        │
 └────────────────────────────────┘
 ```
+
+### See Also {#see-also}
+
+-   [Create Tables](https://clickhouse.tech/docs/en/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.tech/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
