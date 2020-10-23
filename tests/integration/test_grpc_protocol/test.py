@@ -120,6 +120,12 @@ def test_insert_query_streaming():
     query("INSERT INTO t VALUES", input_data=["(1),(2),(3)", "(5),(4),(6)", "(8),(7),(9)"])
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n7\n8\n9\n"
 
+def test_output_format():
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t VALUES (1),(2),(3)")
+    assert query("SELECT a FROM t ORDER BY a FORMAT JSONEachRow") == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    assert query("SELECT a FROM t ORDER BY a", output_format="JSONEachRow") == '{"a":1}\n{"a":2}\n{"a":3}\n'
+
 def test_totals_and_extremes():
     query("CREATE TABLE t (x UInt8, y UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4)")

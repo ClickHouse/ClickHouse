@@ -11,7 +11,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ParserQuery.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Server/IServer.h>
@@ -340,16 +342,26 @@ namespace
         ParserQuery parser(end);
         ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
 
-        /// Choose output format.
-        output_format = "Values";
-        if (!query_info.output_format().empty())
+        /// Choose input format.
+        insert_query = ast->as<ASTInsertQuery>();
+        if (insert_query)
         {
-            output_format = query_info.output_format();
-            query_context->setDefaultFormat(query_info.output_format());
+            input_format = insert_query->format;
+            if (input_format.empty())
+                input_format = "Values";
         }
 
+        /// Choose output format.
+        query_context->setDefaultFormat(query_info.output_format());
+        if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+            ast_query_with_output && ast_query_with_output->format)
+        {
+            output_format = getIdentifierName(ast_query_with_output->format);
+        }
+        if (output_format.empty())
+            output_format = query_context->getDefaultFormat();
+
         /// Start executing the query.
-        insert_query = ast->as<ASTInsertQuery>();
         const auto * query_end = end;
         if (insert_query && insert_query->data)
         {
@@ -373,17 +385,6 @@ namespace
             else
                 throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
         }
-
-        /// Choose input format.
-        if (insert_query)
-        {
-            input_format = insert_query->format;
-            if (input_format.empty())
-                input_format = "Values";
-        }
-
-        if (output_format.empty())
-            output_format = input_format;
 
         /// Prepare read buffer with data to insert.
         ConcatReadBuffer::ReadBuffers buffers;
