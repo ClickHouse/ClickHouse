@@ -233,7 +233,7 @@ void DiskMemory::createDirectoriesImpl(const String & path)
     files.emplace(path, FileData{FileType::Directory});
 }
 
-void DiskMemory::clearDirectory(const String & path, bool)
+void DiskMemory::clearDirectory(const String & path)
 {
     std::lock_guard lock(mutex);
 
@@ -348,7 +348,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & pa
     return std::make_unique<WriteIndirectBuffer>(this, path, mode, buf_size);
 }
 
-void DiskMemory::remove(const String & path, bool)
+void DiskMemory::remove(const String & path)
 {
     std::lock_guard lock(mutex);
 
@@ -368,7 +368,7 @@ void DiskMemory::remove(const String & path, bool)
     }
 }
 
-void DiskMemory::removeRecursive(const String & path, bool)
+void DiskMemory::removeRecursive(const String & path)
 {
     std::lock_guard lock(mutex);
 

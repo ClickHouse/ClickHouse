@@ -26,7 +26,7 @@ public:
     size_t getFileSize(const String & path) const override;
     void createDirectory(const String & path) override;
     void createDirectories(const String & path) override;
-    void clearDirectory(const String & path, bool keep_s3 = false) override;
+    void clearDirectory(const String & path) override;
     void moveDirectory(const String & from_path, const String & to_path) override;
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
     void createFile(const String & path) override;
@@ -39,8 +39,10 @@ public:
     readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const override;
     std::unique_ptr<WriteBufferFromFileBase>
     writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold) override;
-    void remove(const String & path, bool keep_s3 = false) override;
-    void removeRecursive(const String & path, bool keep_s3 = false) override;
+    void remove(const String & path) override;
+    void removeRecursive(const String & path) override;
+    void removeShared(const String & path, bool keep_s3) override;
+    void removeSharedRecursive(const String & path, bool keep_s3) override;
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
     Poco::Timestamp getLastModified(const String & path) override;
     void setReadOnly(const String & path) override;

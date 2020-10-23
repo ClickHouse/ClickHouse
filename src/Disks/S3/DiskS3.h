@@ -60,7 +60,7 @@ public:
 
     void createDirectories(const String & path) override;
 
-    void clearDirectory(const String & path, bool keep_s3 = false) override;
+    void clearDirectory(const String & path) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
 
@@ -88,9 +88,13 @@ public:
         size_t estimated_size,
         size_t aio_threshold) override;
 
-    void remove(const String & path, bool keep_s3 = false) override;
+    void remove(const String & path) override { removeShared(path, false); }
 
-    void removeRecursive(const String & path, bool keep_s3 = false) override;
+    void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
+
+    void removeShared(const String & path, bool keep_s3) override;
+
+    void removeSharedRecursive(const String & path, bool keep_s3) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
