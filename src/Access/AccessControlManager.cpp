@@ -253,7 +253,7 @@ void AccessControlManager::addMemoryStorage(const String & storage_name_)
         if (auto memory_storage = typeid_cast<std::shared_ptr<MemoryAccessStorage>>(storage))
             return;
     }
-    auto new_storage= std::make_shared<MemoryAccessStorage>(storage_name_);
+    auto new_storage = std::make_shared<MemoryAccessStorage>(storage_name_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
