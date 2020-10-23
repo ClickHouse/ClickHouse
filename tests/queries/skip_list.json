@@ -262,6 +262,8 @@
         "01516_drop_table_stress",
         "01457_create_as_table_function_structure",
         "01456_modify_column_type_via_add_drop_update",
+        "01060_avro",
+        "00612_http_max_query_size",
         "attach",
         "ddl_dictionaries",
         "dictionary",
