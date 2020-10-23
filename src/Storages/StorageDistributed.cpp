@@ -459,7 +459,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
         return QueryProcessingStage::Complete;
 
     ClusterPtr cluster = getCluster();
-    if (settings.optimize_skip_unused_shards)
+    if (settings.optimize_skip_unused_shards && 
+        (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic))
     {
         ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_ptr);
         if (optimized_cluster)
@@ -711,7 +712,9 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     ClusterPtr cluster = getCluster();
     const Settings & settings = context.getSettingsRef();
 
-    if (has_sharding_key && sharding_key_is_deterministic)
+    bool sharding_key_is_usable = settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic;
+
+    if (has_sharding_key && sharding_key_is_usable)
     {
         ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, metadata_snapshot, context);
         if (optimized)
@@ -724,7 +727,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
         std::stringstream exception_message;
         if (!has_sharding_key)
             exception_message << "No sharding key";
-        else if (!sharding_key_is_deterministic)
+        else if (!sharding_key_is_usable)
             exception_message << "Sharding key is not deterministic";
         else
             exception_message << "Sharding key " << sharding_key_column_name << " is not used";
