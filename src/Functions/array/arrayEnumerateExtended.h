@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -55,7 +56,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -120,7 +121,7 @@ private:
 
 
 template <typename Derived>
-void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     const ColumnArray::Offsets * offsets = nullptr;
     size_t num_arguments = arguments.size();
@@ -130,14 +131,14 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
     ColumnPtr offsets_column;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
+        const ColumnPtr & array_ptr = arguments[i].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
-                block.getByPosition(arguments[i]).column.get());
+                arguments[i].column.get());
             if (!const_array)
-                throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
+                throw Exception("Illegal column " + arguments[i].column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
             array_holders.emplace_back(const_array->convertToFullColumn());
@@ -154,7 +155,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
             throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
-        auto * array_data = &array->getData();
+        const auto * array_data = &array->getData();
         data_columns[i] = array_data;
     }
 
@@ -162,7 +163,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        if (auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
         {
             if (num_arguments == 1)
                 data_columns[i] = &nullable_col->getNestedColumn();
@@ -200,7 +201,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
             executeHashed(*offsets, data_columns, res_values);
     }
 
-    block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_column);
+    return ColumnArray::create(std::move(res_nested), offsets_column);
 }
 
 template <typename Derived>

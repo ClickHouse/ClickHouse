@@ -57,8 +57,8 @@ LocalServer::LocalServer() = default;
 
 LocalServer::~LocalServer()
 {
-    if (context)
-        context->shutdown(); /// required for properly exception handling
+    if (global_context)
+        global_context->shutdown(); /// required for properly exception handling
 }
 
 
@@ -95,9 +95,9 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 }
 
-void LocalServer::applyCmdSettings()
+void LocalServer::applyCmdSettings(Context & context)
 {
-    context->applySettingsChanges(cmd_settings.changes());
+    context.applySettingsChanges(cmd_settings.changes());
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -151,8 +151,12 @@ void LocalServer::tryInitPath()
     if (path.back() != '/')
         path += '/';
 
-    context->setPath(path);
-    context->setUserFilesPath(""); // user's files are everywhere
+    global_context->setPath(path);
+
+    global_context->setTemporaryStorage(path + "tmp");
+    global_context->setFlagsPath(path + "flags");
+
+    global_context->setUserFilesPath(""); // user's files are everywhere
 }
 
 
@@ -186,9 +190,9 @@ try
     }
 
     shared_context = Context::createShared();
-    context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
-    context->makeGlobalContext();
-    context->setApplicationType(Context::ApplicationType::LOCAL);
+    global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    global_context->makeGlobalContext();
+    global_context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
 
     std::optional<StatusFile> status;
@@ -210,32 +214,32 @@ try
 
     /// Maybe useless
     if (config().has("macros"))
-        context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
     /// Skip networking
 
     /// Sets external authenticators config (LDAP).
-    context->setExternalAuthenticatorsConfig(config());
+    global_context->setExternalAuthenticatorsConfig(config());
 
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
     /// There is no need for concurrent queries, override max_concurrent_queries.
-    context->getProcessList().setMaxSize(0);
+    global_context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        context->setUncompressedCache(uncompressed_cache_size);
+        global_context->setUncompressedCache(uncompressed_cache_size);
 
     /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
     /// Specify default value for mark_cache_size explicitly!
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        context->setMarkCache(mark_cache_size);
+        global_context->setMarkCache(mark_cache_size);
 
     /// Load global settings from default_profile and system_profile.
-    context->setDefaultProfiles(config());
+    global_context->setDefaultProfiles(config());
 
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
@@ -243,34 +247,34 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
-    context->setCurrentDatabase(default_database);
-    applyCmdOptions();
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *global_context));
+    global_context->setCurrentDatabase(default_database);
+    applyCmdOptions(*global_context);
 
-    String path = context->getPath();
+    String path = global_context->getPath();
     if (!path.empty())
     {
         /// Lock path directory before read
-        status.emplace(context->getPath() + "status", StatusFile::write_full_info);
+        status.emplace(global_context->getPath() + "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         Poco::File(path + "data/").createDirectories();
         Poco::File(path + "metadata/").createDirectories();
-        loadMetadataSystem(*context);
-        attachSystemTables(*context);
-        loadMetadata(*context);
+        loadMetadataSystem(*global_context);
+        attachSystemTables(*global_context);
+        loadMetadata(*global_context);
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else
     {
-        attachSystemTables(*context);
+        attachSystemTables(*global_context);
     }
 
     processQueries();
 
-    context->shutdown();
-    context.reset();
+    global_context->shutdown();
+    global_context.reset();
 
     status.reset();
     cleanup();
@@ -323,7 +327,7 @@ void LocalServer::processQueries()
     String initial_create_query = getInitialCreateTableQuery();
     String queries_str = initial_create_query + config().getRawString("query");
 
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = global_context->getSettingsRef();
 
     std::vector<String> queries;
     auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
@@ -331,15 +335,19 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
-    context->makeSessionContext();
-    context->makeQueryContext();
+    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
+    /// so we can't reuse it safely as a query context and need a copy here
+    auto context = Context(*global_context);
 
-    context->setUser("default", "", Poco::Net::SocketAddress{});
-    context->setCurrentQueryId("");
-    applyCmdSettings();
+    context.makeSessionContext();
+    context.makeQueryContext();
+
+    context.setUser("default", "", Poco::Net::SocketAddress{});
+    context.setCurrentQueryId("");
+    applyCmdSettings(context);
 
     /// Use the same query_id (and thread group) for all queries
-    CurrentThread::QueryScope query_scope_holder(*context);
+    CurrentThread::QueryScope query_scope_holder(context);
 
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;
@@ -358,7 +366,7 @@ void LocalServer::processQueries()
 
         try
         {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {});
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {});
         }
         catch (...)
         {
@@ -423,7 +431,7 @@ void LocalServer::setupUsers()
     }
 
     if (users_config)
-        context->setUsersConfig(users_config);
+        global_context->setUsersConfig(users_config);
     else
         throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
 }
@@ -577,10 +585,10 @@ void LocalServer::init(int argc, char ** argv)
     argsToConfig(arguments, config(), 100);
 }
 
-void LocalServer::applyCmdOptions()
+void LocalServer::applyCmdOptions(Context & context)
 {
-    context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
-    applyCmdSettings();
+    context.setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    applyCmdSettings(context);
 }
 
 }

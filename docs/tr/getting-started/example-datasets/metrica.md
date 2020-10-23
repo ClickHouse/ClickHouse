@@ -9,7 +9,7 @@ toc_title: "\xDCye.Metrica Verileri"
 
 Veri kümesi, isabetlerle ilgili anonimleştirilmiş verileri içeren iki tablodan oluşur (`hits_v1`) ve ziyaret visitsler (`visits_v1`(kayıt olmak için).Metrica. Yandex hakkında daha fazla bilgi edinebilirsiniz.Metrica içinde [ClickHouse geçmişi](../../introduction/history.md) bölme.
 
-Veri kümesi iki tablodan oluşur, bunlardan biri sıkıştırılmış olarak indirilebilir `tsv.xz` dosya veya hazırlanmış bölümler olarak. Buna ek olarak, genişletilmiş bir sürümü `hits` 100 milyon satır içeren tablo TSV olarak mevcuttur https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz ve hazırlanan bölümler olarak https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
+Veri kümesi iki tablodan oluşur, bunlardan biri sıkıştırılmış olarak indirilebilir `tsv.xz` dosya veya hazırlanmış bölümler olarak. Buna ek olarak, genişletilmiş bir sürümü `hits` 100 milyon satır içeren tablo TSV olarak mevcuttur https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz ve hazırlanan bölümler olarak https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
 
 ## Hazırlanan bölümlerden tablolar elde etme {#obtaining-tables-from-prepared-partitions}
 
