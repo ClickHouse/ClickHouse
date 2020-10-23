@@ -418,9 +418,9 @@ private:
     void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 
 
-    ReplicatedMergeTreeQueue::SelectedEntry selectQueueEntry();
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selectQueueEntry();
 
-    bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntry & entry);
+    bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
