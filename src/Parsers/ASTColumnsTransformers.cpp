@@ -33,7 +33,7 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
 
 void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << "(" << func_name << ")";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " " << func_name;
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
@@ -46,7 +46,10 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 
 void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : "") << (settings.hilite ? hilite_none : "") << "(";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : "") << (settings.hilite ? hilite_none : "");
+
+    if (children.size() > 1)
+        settings.ostr << " (";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -57,7 +60,8 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
         (*it)->formatImpl(settings, state, frame);
     }
 
-    settings.ostr << ")";
+    if (children.size() > 1)
+        settings.ostr << ")";
 }
 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
@@ -110,7 +114,10 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : "") << (settings.hilite ? hilite_none : "") << "(";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : "") << (settings.hilite ? hilite_none : "");
+
+    if (children.size() > 1)
+        settings.ostr << " (";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -121,7 +128,8 @@ void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, F
         (*it)->formatImpl(settings, state, frame);
     }
 
-    settings.ostr << ")";
+    if (children.size() > 1)
+        settings.ostr << ")";
 }
 
 void ASTColumnsReplaceTransformer::replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name)
