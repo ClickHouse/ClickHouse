@@ -783,7 +783,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
         else if (function && function->name == "untuple")
         {
-            data.has_untuple = true;
             auto columns = doUntuple(function, data);
 
             if (columns.empty())
