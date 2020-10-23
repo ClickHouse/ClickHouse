@@ -154,22 +154,6 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     }
 };
 
-template <typename A, typename B>
-struct NumIfImpl<A, B, NumberTraits::Error>
-{
-private:
-    [[noreturn]] static void throwError()
-    {
-        throw Exception("Invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-public:
-    template <typename... Args> static void vectorVector(Args &&...) { throwError(); }
-    template <typename... Args> static void vectorConstant(Args &&...) { throwError(); }
-    template <typename... Args> static void constantVector(Args &&...) { throwError(); }
-    template <typename... Args> static void constantConstant(Args &&...) { throwError(); }
-};
-
-
 class FunctionIf : public FunctionIfBase</*null_is_false=*/false>
 {
 public:
@@ -205,17 +189,29 @@ private:
         const IColumn * col_right_untyped = columns[arguments[2]].column.get();
         UInt32 scale = decimalScale<T0, T1>(columns, arguments);
 
-        if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+        if constexpr (std::is_same_v<ResultType, NumberTraits::Error>)
         {
-            NumIfImpl<T0, T1, ResultType>::vectorVector(
-                cond_col->getData(), col_left->getData(), col_right_vec->getData(), columns, result, scale);
-            return true;
+            const auto & arg_left = columns[arguments[1]];
+            const auto & arg_right = columns[arguments[2]];
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Incompatible types of arguments of function {}:"
+                " '{}' and '{}'", getName(), arg_left.type->getName(),
+                arg_right.type->getName());
         }
-        else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+        else
         {
-            NumIfImpl<T0, T1, ResultType>::vectorConstant(
-                cond_col->getData(), col_left->getData(), col_right_const->template getValue<T1>(), columns, result, scale);
-            return true;
+            if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+            {
+                NumIfImpl<T0, T1, ResultType>::vectorVector(
+                            cond_col->getData(), col_left->getData(), col_right_vec->getData(), columns, result, scale);
+                return true;
+            }
+            else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+            {
+                NumIfImpl<T0, T1, ResultType>::vectorConstant(
+                            cond_col->getData(), col_left->getData(), col_right_const->template getValue<T1>(), columns, result, scale);
+                return true;
+            }
         }
 
         return false;
@@ -234,17 +230,29 @@ private:
         const IColumn * col_right_untyped = columns[arguments[2]].column.get();
         UInt32 scale = decimalScale<T0, T1>(columns, arguments);
 
-        if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+        if constexpr (std::is_same_v<ResultType, NumberTraits::Error>)
         {
-            NumIfImpl<T0, T1, ResultType>::constantVector(
-                cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), columns, result, scale);
-            return true;
+            const auto & arg_left = columns[arguments[1]];
+            const auto & arg_right = columns[arguments[2]];
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Incompatible types of arguments of function {}:"
+                " '{}' and '{}'", getName(), arg_left.type->getName(),
+                arg_right.type->getName());
         }
-        else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+        else
         {
-            NumIfImpl<T0, T1, ResultType>::constantConstant(
-                cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), columns, result, scale);
-            return true;
+            if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+            {
+                NumIfImpl<T0, T1, ResultType>::constantVector(
+                            cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), columns, result, scale);
+                return true;
+            }
+            else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+            {
+                NumIfImpl<T0, T1, ResultType>::constantConstant(
+                            cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), columns, result, scale);
+                return true;
+            }
         }
 
         return false;
