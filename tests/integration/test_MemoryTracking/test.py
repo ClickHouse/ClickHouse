@@ -8,7 +8,10 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance('node', main_configs=['configs/no_system_log.xml'])
+node = cluster.add_instance('node', main_configs=[
+    'configs/no_system_log.xml',
+    'configs/asynchronous_metrics_update_period_s.xml',
+])
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
