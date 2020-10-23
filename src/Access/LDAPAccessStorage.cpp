@@ -29,6 +29,12 @@ LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl
 }
 
 
+String LDAPAccessStorage::getLDAPServerName() const
+{
+    return ldap_server;
+}
+
+
 void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
     std::scoped_lock lock(mutex);
