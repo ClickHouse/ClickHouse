@@ -1,5 +1,5 @@
 ---
-toc_priority: 53
+toc_priority: 51
 toc_title: TRUNCATE
 ---
 
