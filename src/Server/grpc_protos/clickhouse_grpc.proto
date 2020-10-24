@@ -16,6 +16,28 @@ message QueryInfo {
    bool next_query_info = 11;
 }
 
+enum LogsLevel {
+   LOG_NONE = 0;
+   LOG_FATAL = 1;
+   LOG_CRITICAL = 2;
+   LOG_ERROR = 3;
+   LOG_WARNING = 4;
+   LOG_NOTICE = 5;
+   LOG_INFORMATION = 6;
+   LOG_DEBUG = 7;
+   LOG_TRACE = 8;
+}
+
+message LogEntry {
+   uint32 time = 1;
+   uint32 time_microseconds = 2;
+   uint64 thread_id = 3;
+   string query_id = 4;
+   LogsLevel level = 5;
+   string source = 6;
+   string text = 7;
+}
+
 message Progress {
    uint64 read_rows = 1;
    uint64 read_bytes = 2;
@@ -35,8 +57,9 @@ message Result {
    string output = 1;
    string totals = 2;
    string extremes = 3;
-   Progress progress = 4;
-   Exception exception = 5;
+   repeated LogEntry logs = 4;
+   Progress progress = 5;
+   Exception exception = 6;
 }
 
 service ClickHouse {
