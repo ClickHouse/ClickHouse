@@ -68,6 +68,12 @@ function(PROTOBUF_GENERATE_GRPC_CPP SRCS HDRS)
   endif()
 endfunction()
 
+# By default have PROTOBUF_GENERATE_GRPC_CPP macro pass -I to protoc
+# for each directory where a proto file is referenced.
+if(NOT DEFINED PROTOBUF_GENERATE_GRPC_CPP_APPEND_PATH)
+  set(PROTOBUF_GENERATE_GRPC_CPP_APPEND_PATH TRUE)
+endif()
+
 # Helper function.
 # This function is a modified version of the function protobuf_generate() copied from https://github.com/Kitware/CMake/blob/master/Modules/FindProtobuf.cmake.
 function(protobuf_generate_grpc)
