@@ -27,15 +27,51 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 {
     ASTPtr list_node;
 
-    ParserList parser(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION ALL"), false);
-    if (!parser.parse(pos, list_node, expected))
-        return false;
+    ParserList parser_union(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION"), false);
+	ParserList parser_union_all(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION ALL"), false);
+	ParserList parser_union_distinct(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION DISTINCT"), false);
+
+    auto begin = pos;
+    auto current_expected = expected;
+    ASTSelectWithUnionQuery::Mode union_mode = ASTSelectWithUnionQuery::Mode::ALL;
+
+    /// Parser SELECT lists and UNION type, must have UNION
+    auto union_parser = [&](auto & parser, auto mode) {
+        if (!parser.parse(pos, list_node, expected))
+        {
+            pos = begin;
+            expected = current_expected;
+            return false;
+        }
+        /// number of SELECT lists should not less than 2
+        if (list_node->children.size() < 2)
+        {
+            pos = begin;
+            expected = current_expected;
+            return false;
+        }
+        union_mode = mode;
+        return true;
+    };
+
+    /// We first parse: SELECT ... UNION SELECT ...
+    ///                 SELECT ... UNION ALL SELECT ...
+    ///                 SELECT ... UNION DISTINCT SELECT ...
+    if (!union_parser(parser_union, ASTSelectWithUnionQuery::Mode::Unspecified)
+        && !union_parser(parser_union_all, ASTSelectWithUnionQuery::Mode::ALL)
+        && !union_parser(parser_union_distinct, ASTSelectWithUnionQuery::Mode::DISTINCT))
+    {
+        /// If above parse failed, we back to parse SELECT without UNION
+        if (!parser_union.parse(pos, list_node, expected))
+            return false;
+    }
 
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
 
     node = select_with_union_query;
     select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
+    select_with_union_query->mode = union_mode;
 
     // flatten inner union query
     for (auto & child : list_node->children)

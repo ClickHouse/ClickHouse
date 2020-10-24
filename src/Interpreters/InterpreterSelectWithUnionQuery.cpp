@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 
 
 namespace DB
@@ -18,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
+    extern const int EXPECTED_ALL_OR_DISTINCT;
 }
 
 
@@ -31,12 +33,34 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     context(std::make_shared<Context>(context_)),
     max_streams(context->getSettingsRef().max_threads)
 {
-    const auto & ast = query_ptr->as<ASTSelectWithUnionQuery &>();
+    auto & ast = query_ptr->as<ASTSelectWithUnionQuery &>();
 
     size_t num_selects = ast.list_of_selects->children.size();
 
     if (!num_selects)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
+
+    /// For SELECT ... UNION/UNION ALL/UNION DISTINCT SELECT ... query,
+    /// rewrite ast with settings.union_default_mode
+    if (num_selects > 1)
+    {
+        if (ast.mode == ASTSelectWithUnionQuery::Mode::Unspecified)
+        {
+            const Settings & settings = context->getSettingsRef();
+            if (settings.union_default_mode == UnionMode::ALL)
+                ast.mode = ASTSelectWithUnionQuery::Mode::ALL;
+            else if (settings.union_default_mode == UnionMode::DISTINCT)
+            {
+                ast.mode = ASTSelectWithUnionQuery::Mode::DISTINCT;
+            }
+            else
+                throw Exception(
+                    "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty",
+                    DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
+        }
+        if (ast.mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
+            distinct_union = true;
+    }
 
     /// Initialize interpreters for each SELECT query.
     /// Note that we pass 'required_result_column_names' to first SELECT.
@@ -197,6 +221,17 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
 
     query_plan.unitePlans(std::move(union_step), std::move(plans));
+
+    /// Add distinct transform for UNION DISTINCT query
+    if (distinct_union)
+    {
+        const Settings & settings = context->getSettingsRef();
+        SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+
+        auto distinct_step = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
+
+        query_plan.addStep(std::move(distinct_step));
+    }
 }
 
 BlockIO InterpreterSelectWithUnionQuery::execute()
