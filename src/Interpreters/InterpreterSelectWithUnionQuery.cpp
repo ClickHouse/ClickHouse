@@ -47,17 +47,17 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         if (ast.mode == ASTSelectWithUnionQuery::Mode::Unspecified)
         {
             const Settings & settings = context->getSettingsRef();
+
             if (settings.union_default_mode == UnionMode::ALL)
                 ast.mode = ASTSelectWithUnionQuery::Mode::ALL;
             else if (settings.union_default_mode == UnionMode::DISTINCT)
-            {
                 ast.mode = ASTSelectWithUnionQuery::Mode::DISTINCT;
-            }
             else
                 throw Exception(
                     "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty",
                     DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
         }
+
         if (ast.mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
             distinct_union = true;
     }
