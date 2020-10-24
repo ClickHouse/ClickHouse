@@ -94,3 +94,8 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' | while read file; do [[ $(head
 
 # Check for executable bit on non-executable files
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -q '.' && echo "These files should not be executable."
+
+# Check for BOM
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' && echo "Files should not have UTF-8 BOM"
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFF\xFE' && echo "Files should not have UTF-16LE BOM"
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' && echo "Files should not have UTF-16BE BOM"
