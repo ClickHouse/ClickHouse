@@ -1,13 +1,11 @@
-#include <Parsers/IAST.h>
+#include <Parsers/ExpressionListParsers.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/parseIntervalKind.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-
-#include <Common/typeid_cast.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -750,7 +748,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
 
     auto pair = std::make_shared<ASTPair>(with_brackets);
-    pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
+    pair->first = Poco::toLower(identifier->as<ASTIdentifier>()->name());
     pair->set(pair->second, value);
     node = pair;
     return true;

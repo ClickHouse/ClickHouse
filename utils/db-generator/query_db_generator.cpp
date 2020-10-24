@@ -622,7 +622,7 @@ FuncRet arrayJoinFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
-                indents.insert(ident->name);
+                indents.insert(ident->name());
         }
         for (const auto & indent : indents)
         {
@@ -654,7 +654,7 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
             {
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -734,7 +734,7 @@ FuncRet arrayFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -784,7 +784,7 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -848,7 +848,7 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
             {
@@ -905,7 +905,7 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -1046,7 +1046,7 @@ std::set<std::string> getIndent(DB::ASTPtr ch)
     std::set<std::string> ret = {};
     auto x = std::dynamic_pointer_cast<DB::ASTIdentifier>(ch);
     if (x)
-        ret.insert(x->name);
+        ret.insert(x->name());
     for (const auto & child : (*ch).children)
     {
         auto child_ind = getIndent(child);

@@ -137,19 +137,34 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
         </test_shard_localhost>
 
         <test_cluster_two_shards_localhost>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>{tcp_port}</port>
-                 </replica>
-             </shard>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>{tcp_port}</port>
-                 </replica>
-             </shard>
-         </test_cluster_two_shards_localhost>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>{tcp_port}</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>{tcp_port}</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards_localhost>
+
+        <test_cluster_two_shards>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>{tcp_port}</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>{tcp_port}</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards>
 
         <test_unavailable_shard>
             <shard>

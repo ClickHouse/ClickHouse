@@ -184,16 +184,10 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         .parse(pos, id_list, expected))
         return false;
 
-    String name;
     std::vector<String> parts;
     const auto & list = id_list->as<ASTExpressionList &>();
     for (const auto & child : list.children)
-    {
-        if (!name.empty())
-            name += '.';
         parts.emplace_back(getIdentifierName(child));
-        name += parts.back();
-    }
 
     ParserKeyword s_uuid("UUID");
     UUID uuid = UUIDHelpers::Nil;
@@ -207,9 +201,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
     }
 
-    if (parts.size() == 1)
-        parts.clear();
-    node = std::make_shared<ASTIdentifier>(name, std::move(parts));
+    node = std::make_shared<ASTIdentifier>(std::move(parts));
     node->as<ASTIdentifier>()->uuid = uuid;
 
     return true;
@@ -1651,7 +1643,7 @@ bool ParserFunctionWithKeyValueArguments::parseImpl(Pos & pos, ASTPtr & node, Ex
     }
 
     auto function = std::make_shared<ASTFunctionWithKeyValueArguments>(left_bracket_found);
-    function->name = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
+    function->name = Poco::toLower(identifier->as<ASTIdentifier>()->name());
     function->elements = expr_list_args;
     function->children.push_back(function->elements);
     node = function;
