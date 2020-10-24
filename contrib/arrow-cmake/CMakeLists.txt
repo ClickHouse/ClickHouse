@@ -48,6 +48,24 @@ set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE aft
 target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src)
 target_link_libraries (${THRIFT_LIBRARY} PRIVATE boost::headers_only)
 
+# === flatbuffers
+set(FLATBUFFERS_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/flatbuffers)
+set(FLATBUFFERS_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/flatbuffers)
+set(FLATBUFFERS_INCLUDE_DIR ${FLATBUFFERS_SRC_DIR}/include)
+
+# set flatbuffers CMake options
+if (MAKE_STATIC_LIBRARIES)
+    set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
+    set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
+else ()
+    set(FLATBUFFERS_BUILD_SHAREDLIB ON CACHE BOOL "Enable the build of the flatbuffers shared library")
+    set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "Disable the build of the flatbuffers library")
+endif ()
+set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "Skip flatbuffers tests")
+
+add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
+
+message(STATUS "FLATBUFFERS_LIBRARY: ${FLATBUFFERS_LIBRARY}")
 
 # === orc
 
@@ -72,26 +90,6 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
         -I ${PROTO_DIR}
         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
         "${PROTO_DIR}/orc_proto.proto")
-
-
-# === flatbuffers
-set(FLATBUFFERS_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/flatbuffers)
-set(FLATBUFFERS_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/flatbuffers)
-set(FLATBUFFERS_INCLUDE_DIR ${FLATBUFFERS_SRC_DIR}/include)
-
-# set flatbuffers CMake options
-if (MAKE_STATIC_LIBRARIES)
-    set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
-    set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
-else ()
-    set(FLATBUFFERS_BUILD_SHAREDLIB ON CACHE BOOL "Enable the build of the flatbuffers shared library")
-    set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "Disable the build of the flatbuffers library")
-endif ()
-set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "Skip flatbuffers tests")
-
-add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
-
-message(STATUS "FLATBUFFERS_LIBRARY: ${FLATBUFFERS_LIBRARY}")
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
 # Apple Clang compiler failed to compile this code without specifying c++11 standard.
@@ -139,6 +137,37 @@ set(ORC_SRCS
         ${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc
         )
 
+# === flight
+
+set(ARROW_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
+set(ARROW_FLIGHT_SRC_DIR ${ARROW_SRC_DIR}/arrow/flight)
+set(ARROW_FLIGHT_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR})
+
+set(PROTOC_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
+set(GRPC_CPP_PLUGIN_EXECUTABLE ${_gRPC_CPP_PLUGIN})
+set(PROTO_DIR ${ARROW_SRC_DIR}/../format)
+
+add_custom_command(OUTPUT Flight.pb.h
+                          Flight.pb.cc
+                          Flight.grpc.pb.h
+                          Flight.grpc.pb.cc
+        COMMAND ${PROTOC_EXECUTABLE}
+        ARGS -I ${PROTO_DIR}
+             --cpp_out=${ARROW_FLIGHT_GENERATED_SRC_DIR}
+             --grpc_out=${ARROW_FLIGHT_GENERATED_SRC_DIR}
+             --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN_EXECUTABLE}
+             ${PROTO_DIR}/Flight.proto)
+
+set(ARROW_FLIGHT_SRCS
+        ${ARROW_FLIGHT_SRC_DIR}/client.cc
+        ${ARROW_FLIGHT_SRC_DIR}/internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/protocol_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/serialization_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/server.cc
+        ${ARROW_FLIGHT_SRC_DIR}/server_auth.cc
+        ${ARROW_FLIGHT_SRC_DIR}/types.cc
+        ${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc
+        ${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.grpc.pb.cc)
 
 # === arrow
 
@@ -237,6 +266,7 @@ set(ARROW_SRCS
 
         ${LIBRARY_DIR}/vendored/base64.cpp
         ${ORC_SRCS}
+        ${ARROW_FLIGHT_SRCS}
         )
 
 set(ARROW_SRCS ${ARROW_SRCS}
@@ -310,6 +340,8 @@ target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GOOGLE_PROTOBUF_DIR
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_ADDITION_SOURCE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_FLIGHT_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_FLIGHT_GENERATED_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${FLATBUFFERS_INCLUDE_DIR})
 
