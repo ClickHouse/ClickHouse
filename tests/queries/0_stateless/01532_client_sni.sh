@@ -5,16 +5,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Check that ClickHouse properly uses SNI extension in Client Hello packet in HTTPS connection.
 
-sudo bash -c 'echo "127.0.0.1 yandex.ru" >> /etc/hosts'
-
-echo -ne 'y\r\n' | strace -f -x -s10000 -e trace=write,sendto ${CLICKHOUSE_LOCAL} --query "SELECT * FROM url('https://yandex.ru:${CLICKHOUSE_PORT_HTTPS}/', RawBLOB, 'data String')" 2>&1 |
-    grep -oF '\x00\x00\x00\x0e\x00\x0c\x00\x00\x09\x79\x61\x6e\x64\x65\x78\x2e\x72\x75'
+echo -ne 'y\r\n' | strace -f -x -s10000 -e trace=write,sendto ${CLICKHOUSE_LOCAL} --query "SELECT * FROM url('https://localhost:${CLICKHOUSE_PORT_HTTPS}/', RawBLOB, 'data String')" 2>&1 |
+    grep -oF '\x00\x00\x00\x0e\x00\x0c\x00\x00\x09\x6c\x6f\x63\x61\x6c\x68\x6f\x73\x74'
 #              ^^^^^^^^ ^^^^^^^ ^^^^^^^ ^^ ^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #                  |       |      |      |      |
-#           server name  data     |   hostname  |   y   a   n   d   e   x   .   r  u
+#           server name  data     |   hostname  |   l   o   c   a   l   h   o   s  t
 #          extension id  len: 14  |    type     |
 #                                 |             |
 #                       hostnames list       hostname
 #                            len, 12          len, 9
-
-sudo bash -c 'sed -i.bak "/yandex\.ru/d" /etc/hosts'
