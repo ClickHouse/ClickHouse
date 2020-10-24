@@ -307,11 +307,6 @@ private:
             }
 
             const auto input_value = input_column->getDataAt(r);
-            auto aad_value = StringRef{};
-            if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM && !std::is_same_v<std::nullptr_t, std::decay_t<AadColumnType>>)
-            {
-                aad_value = aad_column->getDataAt(r);
-            }
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
             {
