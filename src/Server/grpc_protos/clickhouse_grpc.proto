@@ -13,7 +13,10 @@ message QueryInfo {
    string user_name = 8;
    string password = 9;
    string quota = 10;
-   bool next_query_info = 11;
+   string session_id = 11;
+   bool session_check = 12;
+   uint32 session_timeout = 13;
+   bool next_query_info = 14;
 }
 
 enum LogsLevel {
