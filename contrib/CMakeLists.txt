@@ -20,7 +20,6 @@ add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing-sumbur)
 add_subdirectory (consistent-hashing)
-add_subdirectory (croaring)
 add_subdirectory (FastMemcpy)
 add_subdirectory (hyperscan-cmake)
 add_subdirectory (jemalloc-cmake)
@@ -34,6 +33,7 @@ add_subdirectory (ryu-cmake)
 add_subdirectory (unixodbc-cmake)
 
 add_subdirectory (poco-cmake)
+add_subdirectory (croaring-cmake)
 
 
 # TODO: refactor the contrib libraries below this comment.
