@@ -1061,4 +1061,23 @@ Default value: `/var/lib/clickhouse/access/`.
 
 -   [Access Control and Account Management](../../operations/access-rights.md#access-control)
 
+## user_directories {#user_directories}
+
+The path to the users config files. 
+
+The `user_directories` section can contain any number of items, the order of the items means their precedence.
+
+**Example**
+
+``` xml
+<user_directories>
+    <users_xml>
+        <path>/etc/clickhouse-server/users.xml</path>
+    </users_xml>
+    <local_directory>
+        <path>/var/lib/clickhouse/access/</path>
+    </local_directory>
+</user_directories>
+```
+
 [Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
