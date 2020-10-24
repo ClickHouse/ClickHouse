@@ -25,7 +25,7 @@ SELECT [DISTINCT] expr_list
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
-[UNION ALL ...]
+[UNION  ...]
 [INTO OUTFILE filename]
 [FORMAT format]
 ```
@@ -46,7 +46,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [SELECT clause](#select-clause)
 -   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
--   [UNION ALL clause](../../../sql-reference/statements/select/union-all.md)
+-   [UNION clause](../../../sql-reference/statements/select/union.md)
 -   [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
 -   [FORMAT clause](../../../sql-reference/statements/select/format.md)
 
