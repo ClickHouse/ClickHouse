@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 sudo bash -c 'echo "127.0.0.1 yandex.ru" >> /etc/hosts'
 
-echo -ne 'y\r\n' | strace -f -x -s10000 -e trace=write,sendto ${CLICKHOUSE_LOCAL} --query "SELECT * FROM url('https://yandex.ru:8443/', RawBLOB, 'data String')" 2>&1 |
+echo -ne 'y\r\n' | strace -f -x -s10000 -e trace=write,sendto ${CLICKHOUSE_LOCAL} --query "SELECT * FROM url('https://yandex.ru:${CLICKHOUSE_PORT_HTTPS}/', RawBLOB, 'data String')" 2>&1 |
     grep -oF '\x00\x00\x00\x0e\x00\x0c\x00\x00\x09\x79\x61\x6e\x64\x65\x78\x2e\x72\x75'
 #              ^^^^^^^^ ^^^^^^^ ^^^^^^^ ^^ ^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #                  |       |      |      |      |
