@@ -178,3 +178,30 @@ def test_logs():
     assert "SELECT 1" in logs
     assert "Read 1 rows" in logs
     assert "Peak memory usage" in logs
+
+def test_progress():
+    results = query_no_errors("SELECT number, sleep(0.31) FROM numbers(8) SETTINGS max_block_size=2, interactive_delay=100000")
+    #print(results)
+    assert str(results) ==\
+"""[progress {
+  read_rows: 2
+  read_bytes: 16
+  total_rows_to_read: 8
+}
+, output: "0\\t0\\n1\\t0\\n"
+, progress {
+  read_rows: 2
+  read_bytes: 16
+}
+, output: "2\\t0\\n3\\t0\\n"
+, progress {
+  read_rows: 2
+  read_bytes: 16
+}
+, output: "4\\t0\\n5\\t0\\n"
+, progress {
+  read_rows: 2
+  read_bytes: 16
+}
+, output: "6\\t0\\n7\\t0\\n"
+, ]"""
