@@ -23,13 +23,25 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
+    std::string mode_str;
+    switch (mode)
+    {
+        case Mode::Unspecified:
+            mode_str = "";
+            break;
+        case Mode::ALL:
+            mode_str = "ALL";
+            break;
+        case Mode::DISTINCT:
+            mode_str = "DISTINCT";
+            break;
+    }
+
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
-            settings.ostr
-                << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
-                << "UNION ALL" << (settings.hilite ? hilite_none : "")
-                << settings.nl_or_ws;
+            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "") << "UNION " << mode_str
+                          << (settings.hilite ? hilite_none : "") << settings.nl_or_ws;
 
         (*it)->formatImpl(settings, state, frame);
     }

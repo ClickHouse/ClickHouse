@@ -17,6 +17,15 @@ public:
     ASTPtr clone() const override;
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
+    enum class Mode
+    {
+        Unspecified,
+        ALL,
+        DISTINCT
+    };
+
+    Mode mode = Mode::Unspecified;
+
     ASTPtr list_of_selects;
 };
 

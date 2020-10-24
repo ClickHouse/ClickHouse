@@ -12,7 +12,7 @@ class Context;
 class InterpreterSelectQuery;
 class QueryPlan;
 
-/** Interprets one or multiple SELECT queries inside UNION ALL chain.
+/** Interprets one or multiple SELECT queries inside UNION/UNION ALL/UNION DISTINCT chain.
   */
 class InterpreterSelectWithUnionQuery : public IInterpreter
 {
@@ -53,6 +53,8 @@ private:
     Block result_header;
 
     size_t max_streams = 1;
+
+    bool distinct_union = false;
 
     static Block getCommonHeaderForUnion(const Blocks & headers);
 };
