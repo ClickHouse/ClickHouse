@@ -150,9 +150,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const IColumn * point_col = columns[arguments[0]].column.get();
+        const IColumn * point_col = arguments[0].column.get();
         const auto * const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
         if (const_tuple_col)
             point_col = &const_tuple_col->getDataColumn();
@@ -164,7 +164,7 @@ public:
 
         const auto & tuple_columns = tuple_col->getColumns();
 
-        const ColumnWithTypeAndName poly = columns[arguments[1]];
+        const ColumnWithTypeAndName poly = arguments[1];
         const IColumn * poly_col = poly.column.get();
         const ColumnConst * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
 
@@ -179,7 +179,7 @@ public:
         if (poly_is_const)
         {
             Polygon polygon;
-            parseConstPolygon(columns, arguments, polygon);
+            parseConstPolygon(arguments, polygon);
 
             /// Polygons are preprocessed and saved in cache.
             /// Preprocessing can be computationally heavy but dramatically speeds up matching.
@@ -203,11 +203,11 @@ public:
             if (point_is_const)
             {
                 bool is_in = impl->contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
-                columns[result].column = columns[result].type->createColumnConst(input_rows_count, is_in);
+                return result_type->createColumnConst(input_rows_count, is_in);
             }
             else
             {
-                columns[result].column = pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
+                return pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
             }
         }
         else
@@ -225,14 +225,14 @@ public:
             /// Or, a polygon without holes can be represented by 1d array:
             /// [(outer_x_1, outer_y_1, ...)]
 
-            if (isTwoDimensionalArray(*columns[arguments[1]].type))
+            if (isTwoDimensionalArray(*arguments[1].type))
             {
                 /// We cast everything to Float64 in advance (in batch fashion)
                 ///  to avoid casting with virtual calls in a loop.
                 /// Note that if the type is already Float64, the operation in noop.
 
                 ColumnPtr polygon_column_float64 = castColumn(
-                    columns[arguments[1]],
+                    arguments[1],
                     std::make_shared<DataTypeArray>(
                         std::make_shared<DataTypeArray>(
                             std::make_shared<DataTypeTuple>(DataTypes{
@@ -252,7 +252,7 @@ public:
             else
             {
                 ColumnPtr polygon_column_float64 = castColumn(
-                    columns[arguments[1]],
+                    arguments[1],
                     std::make_shared<DataTypeArray>(
                         std::make_shared<DataTypeTuple>(DataTypes{
                             std::make_shared<DataTypeFloat64>(),
@@ -269,7 +269,7 @@ public:
                 }
             }
 
-            columns[result].column = std::move(res_column);
+            return res_column;
         }
     }
 
@@ -469,11 +469,11 @@ private:
         }
     }
 
-    void parseConstPolygonWithHolesFromMultipleColumns(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, Polygon & out_polygon) const
+    void parseConstPolygonWithHolesFromMultipleColumns(ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
     {
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            const auto * const_col = checkAndGetColumn<ColumnConst>(columns[arguments[i]].column.get());
+            const auto * const_col = checkAndGetColumn<ColumnConst>(arguments[i].column.get());
             if (!const_col)
                 throw Exception("Multi-argument version of function " + getName() + " works only with const polygon",
                     ErrorCodes::BAD_ARGUMENTS);
@@ -507,12 +507,12 @@ private:
         }
     }
 
-    void parseConstPolygonFromSingleColumn(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, Polygon & out_polygon) const
+    void parseConstPolygonFromSingleColumn(ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
     {
-        if (isTwoDimensionalArray(*columns[arguments[1]].type))
+        if (isTwoDimensionalArray(*arguments[1].type))
         {
             ColumnPtr polygon_column_float64 = castColumn(
-                columns[arguments[1]],
+                arguments[1],
                 std::make_shared<DataTypeArray>(
                     std::make_shared<DataTypeArray>(
                         std::make_shared<DataTypeTuple>(DataTypes{
@@ -527,7 +527,7 @@ private:
         else
         {
             ColumnPtr polygon_column_float64 = castColumn(
-                columns[arguments[1]],
+                arguments[1],
                 std::make_shared<DataTypeArray>(
                     std::make_shared<DataTypeTuple>(DataTypes{
                         std::make_shared<DataTypeFloat64>(),
@@ -540,12 +540,12 @@ private:
         }
     }
 
-    void parseConstPolygon(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, Polygon & out_polygon) const
+    void parseConstPolygon(ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
     {
         if (arguments.size() == 2)
-            parseConstPolygonFromSingleColumn(columns, arguments, out_polygon);
+            parseConstPolygonFromSingleColumn(arguments, out_polygon);
         else
-            parseConstPolygonWithHolesFromMultipleColumns(columns, arguments, out_polygon);
+            parseConstPolygonWithHolesFromMultipleColumns(arguments, out_polygon);
 
         /// Fix orientation and close rings. It's required for subsequent processing.
         boost::geometry::correct(out_polygon);

@@ -54,7 +54,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    bool executeTyped(ColumnsWithTypeAndName & columns, const size_t result, const ColumnConst * left_arg, const IColumn * right_arg) const
+    ColumnPtr executeTyped(const ColumnConst * left_arg, const IColumn * right_arg) const
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -95,15 +95,14 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            columns[result].column = std::move(dst);
-            return true;
+            return dst;
         }
 
-        return false;
+        return nullptr;
     }
 
     template <typename LeftType, typename RightType>
-    bool executeTyped(ColumnsWithTypeAndName & columns, const size_t result, const ColumnVector<LeftType> * left_arg, const IColumn * right_arg) const
+    ColumnPtr executeTyped(const ColumnVector<LeftType> * left_arg, const IColumn * right_arg) const
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -157,8 +156,7 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            columns[result].column = std::move(dst);
-            return true;
+            return dst;
         }
         if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
@@ -200,17 +198,17 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            columns[result].column = std::move(dst);
-            return true;
+            return dst;
         }
 
-        return false;
+        return nullptr;
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & col_left = columns[arguments[0]];
-        const ColumnWithTypeAndName & col_right = columns[arguments[1]];
+        const ColumnWithTypeAndName & col_left = arguments[0];
+        const ColumnWithTypeAndName & col_right = arguments[1];
+        ColumnPtr res;
 
         auto call = [&](const auto & types) -> bool
         {
@@ -224,7 +222,7 @@ private:
 
             if (const auto left_arg_typed = checkAndGetColumn<ColVecLeft>(left_arg))
             {
-                if (executeTyped<LeftType, RightType>(columns, result, left_arg_typed, right_arg))
+                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
                     return true;
 
                 throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
@@ -232,7 +230,7 @@ private:
             }
             if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
             {
-                if (executeTyped<LeftType, RightType>(columns, result, left_arg_typed, right_arg))
+                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
                     return true;
 
                 throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
@@ -248,6 +246,8 @@ private:
         if (!callOnBasicTypes<true, true, false, false>(left_index, right_index, call))
             throw Exception{"Illegal column " + col_left.column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
+
+        return res;
     }
 };
 
