@@ -127,7 +127,7 @@ function clone_submodules
 (
 cd "$FASTTEST_SOURCE"
 
-SUBMODULES_TO_UPDATE=(contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco contrib/libunwind contrib/ryu contrib/fmtlib contrib/base64 contrib/cctz contrib/libcpuid contrib/double-conversion contrib/libcxx contrib/libcxxabi contrib/libc-headers contrib/lz4 contrib/zstd contrib/fastops contrib/rapidjson contrib/re2 contrib/sparsehash-c11)
+SUBMODULES_TO_UPDATE=(contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco contrib/libunwind contrib/ryu contrib/fmtlib contrib/base64 contrib/cctz contrib/libcpuid contrib/double-conversion contrib/libcxx contrib/libcxxabi contrib/libc-headers contrib/lz4 contrib/zstd contrib/fastops contrib/rapidjson contrib/re2 contrib/sparsehash-c11 contrib/croaring)
 
 git submodule sync
 git submodule update --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
@@ -269,6 +269,11 @@ TESTS_TO_SKIP=(
 
     # Look at DistributedFilesToInsert, so cannot run in parallel.
     01457_DistributedFilesToInsert
+
+    01541_max_memory_usage_for_user
+
+    # Require python libraries like scipy, pandas and numpy
+    01322_ttest_scipy
 )
 
 time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
