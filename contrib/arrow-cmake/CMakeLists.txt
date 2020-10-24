@@ -77,19 +77,14 @@ set(ORC_SOURCE_WRAP_DIR ${ORC_SOURCE_DIR}/wrap)
 set(ORC_BUILD_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/src)
 set(ORC_BUILD_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include)
 
-set(GOOGLE_PROTOBUF_DIR ${Protobuf_INCLUDE_DIR}/)
-set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
+set(ORC_PROTO_DIR ${ORC_SOURCE_DIR}../proto)
+set(ORC_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR})
+
+set(GOOGLE_PROTOBUF_DIR ${Protobuf_INCLUDE_DIR})
+
 set(ARROW_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
 
-set(PROTOBUF_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
-set(PROTO_DIR ${ORC_SOURCE_DIR}/../proto)
-
-
-add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
-        COMMAND ${PROTOBUF_EXECUTABLE}
-        -I ${PROTO_DIR}
-        --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
-        "${PROTO_DIR}/orc_proto.proto")
+protobuf_generate_cpp(ORC_GENERATED_SRCS ORC_GENERATED_INCLUDES ${ORC_PROTO_DIR}/orc_proto.proto)
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
 # Apple Clang compiler failed to compile this code without specifying c++11 standard.
@@ -134,8 +129,7 @@ set(ORC_SRCS
         ${ORC_SOURCE_SRC_DIR}/Writer.cc
         ${ORC_SOURCE_SRC_DIR}/io/InputStream.cc
         ${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc
-        ${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc
-        )
+        ${ORC_GENERATED_SRCS})
 
 # === flight
 
@@ -144,19 +138,9 @@ set(ARROW_PROTO_DIR ${ARROW_SOURCE_DIR}/format)
 set(ARROW_FLIGHT_SRC_DIR ${ARROW_SOURCE_DIR}/cpp/src/arrow/flight)
 set(ARROW_FLIGHT_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
-set(PROTOC_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
-set(GRPC_CPP_PLUGIN_EXECUTABLE ${_gRPC_CPP_PLUGIN})
+set(GRPC_DIR ${_gRPC_SOURCE_DIR})
 
-add_custom_command(OUTPUT Flight.pb.h
-                          Flight.pb.cc
-                          Flight.grpc.pb.h
-                          Flight.grpc.pb.cc
-        COMMAND ${PROTOC_EXECUTABLE}
-        ARGS -I ${ARROW_PROTO_DIR}
-             --cpp_out=${ARROW_FLIGHT_GENERATED_SRC_DIR}
-             --grpc_out=${ARROW_FLIGHT_GENERATED_SRC_DIR}
-             --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN_EXECUTABLE}
-             ${ARROW_PROTO_DIR}/Flight.proto)
+protobuf_generate_grpc_cpp(ARROW_FLIGHT_GENERATED_SRCS ARROW_FLIGHT_GENERATED_INCLUDES ${ARROW_PROTO_DIR}/Flight.proto)
 
 set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_SRC_DIR}/client.cc
@@ -166,8 +150,7 @@ set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_SRC_DIR}/server.cc
         ${ARROW_FLIGHT_SRC_DIR}/server_auth.cc
         ${ARROW_FLIGHT_SRC_DIR}/types.cc
-        ${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc
-        ${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.grpc.pb.cc)
+        ${ARROW_FLIGHT_GENERATED_SRCS})
 
 # === arrow
 
@@ -339,7 +322,8 @@ target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_WRAP_DIR
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GOOGLE_PROTOBUF_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_ADDITION_SOURCE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_GENERATED_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GRPC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_FLIGHT_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_FLIGHT_GENERATED_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_SRC_DIR})
