@@ -4,13 +4,13 @@ toc_title: WITH
 
 # WITH Clause {#with-clause}
 
-This section provides support for Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), so the results of `WITH` clause can be used in the rest of `SELECT` query.
+This section provides support for Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), so the results of `WITH` clause can be used in the rest of `SELECT` query. Named subqueries can be included to the current and children query context. Those identifiers can appear in places where table objects are allowed. Recursion is prevented by hiding the current level CTEs from the WITH expression.
 
-## Limitations {#limitations}
+## Syntax
 
-1.  Recursive queries are not supported.
-2.  When subquery is used inside WITH section, it’s result should be scalar with exactly one row.
-3.  Expression’s results are not available in subqueries.
+``` sql
+WITH <expression> AS <identifier|expression>
+```
 
 ## Examples {#examples}
 
@@ -22,7 +22,7 @@ SELECT *
 FROM hits
 WHERE
     EventDate = toDate(ts_upper_bound) AND
-    EventTime <= ts_upper_bound
+    EventTime <= ts_upper_bound;
 ```
 
 **Example 2:** Evicting sum(bytes) expression result from SELECT clause column list
@@ -34,7 +34,7 @@ SELECT
     table
 FROM system.parts
 GROUP BY table
-ORDER BY s
+ORDER BY s;
 ```
 
 **Example 3:** Using results of scalar subquery
@@ -53,27 +53,12 @@ SELECT
 FROM system.parts
 GROUP BY table
 ORDER BY table_disk_usage DESC
-LIMIT 10
+LIMIT 10;
 ```
 
 **Example 4:** Re-using expression in subquery
 
-As a workaround for current limitation for expression usage in subqueries, you may duplicate it.
-
 ``` sql
-WITH ['hello'] AS hello
-SELECT
-    hello,
-    *
-FROM
-(
-    WITH ['hello'] AS hello
-    SELECT hello
-)
-```
-
-``` text
-┌─hello─────┬─hello─────┐
-│ ['hello'] │ ['hello'] │
-└───────────┴───────────┘
+WITH test1 AS (SELECT i + 1, j + 1 FROM test1) 
+SELECT * FROM test1;
 ```
