@@ -35,7 +35,7 @@ function execute_tcp_one_session()
 # one users query in background (to avoid reseting max_memory_usage_for_user)
 # --max_block_size=1 to make it killable (check the state each 1 second, 1 row)
 # (the test takes ~40 seconds in debug build, so 60 seconds is ok)
-${CLICKHOUSE_CLIENT} --max_block_size=1 --format Null -q 'SELECT sleepEachRow(1) FROM numbers(60)' &
+${CLICKHOUSE_CLIENT} --max_block_size=1 --format Null -q 'SELECT sleepEachRow(1) FROM numbers(600)' &
 # trap
 sleep_query_pid=$!
 function cleanup()
