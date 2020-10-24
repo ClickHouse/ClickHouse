@@ -232,8 +232,8 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const Da
     if (!to_strip)
         return;
 
-    identifier.full_name.clear();
     identifier.name_parts = std::vector<String>(identifier.name_parts.begin() + to_strip, identifier.name_parts.end());
+    identifier.resetFullName();
 }
 
 void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
@@ -242,8 +242,8 @@ void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const Dat
     if (!prefix.empty())
     {
         prefix.resize(prefix.size() - 1); /// crop dot
-        identifier.full_name.clear();
         identifier.name_parts = {prefix, identifier.shortName()};
+        identifier.resetFullName();
         identifier.semantic->table = prefix;
         identifier.semantic->legacy_compound = true;
     }

@@ -49,7 +49,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
-    mutable String full_name;
+    String full_name;
     std::vector<String> name_parts;
 
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -64,6 +64,8 @@ private:
     friend ASTPtr createTableIdentifier(const StorageID & table_id);
     friend void setIdentifierSpecial(ASTPtr & ast);
     friend StorageID getTableIdentifier(const ASTPtr & ast);
+
+    void resetFullName();
 };
 
 

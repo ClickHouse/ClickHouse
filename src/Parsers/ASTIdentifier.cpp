@@ -26,17 +26,16 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special)
     : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     assert(!name_parts.empty());
-    for (const auto & part : name_parts)
-    {
+    for (const auto & part [[maybe_unused]] : name_parts)
         assert(!part.empty());
-        (void) part;  // otherwise not-used in release build
-    }
 
     semantic->special = special;
     semantic->legacy_compound = true;
 
     if (!special && name_parts.size() >= 2)
         semantic->table = name_parts.end()[-2];
+
+    resetFullName();
 }
 
 ASTPtr ASTIdentifier::clone() const
@@ -66,13 +65,7 @@ void ASTIdentifier::setShortName(const String & new_name)
 const String & ASTIdentifier::name() const
 {
     assert(!name_parts.empty());
-
-    if (full_name.empty())
-    {
-        full_name = name_parts[0];
-        for (size_t i = 1; i < name_parts.size(); ++i)
-            full_name += '.' + name_parts[i];
-    }
+    assert(!full_name.empty());
 
     return full_name;
 }
@@ -112,8 +105,8 @@ void ASTIdentifier::restoreTable()
 {
     if (!compound())
     {
-        full_name.clear();
         name_parts.insert(name_parts.begin(), semantic->table);
+        resetFullName();
     }
 }
 
@@ -130,6 +123,13 @@ void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(uuid);
     IAST::updateTreeHashImpl(hash_state);
+}
+
+void ASTIdentifier::resetFullName()
+{
+    full_name = name_parts[0];
+    for (size_t i = 1; i < name_parts.size(); ++i)
+        full_name += '.' + name_parts[i];
 }
 
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name)
