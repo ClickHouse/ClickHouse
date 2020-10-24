@@ -263,7 +263,7 @@ private:
     /// If the limit is exceeded, the connection is simply closed.
     /// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
     /// The average size of the node value in this case is less than 10 kilobytes.
-    static constexpr auto MAX_MULTI_OPS = 100;
+    static constexpr size_t MAX_MULTI_OPS = 100;
 
     /// Very large queue entries may appear occasionally.
     /// We cannot process MAX_MULTI_OPS at once because it will fail.
