@@ -172,9 +172,6 @@ function build
 (
 cd "$FASTTEST_BUILD"
 time ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
-if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
-    cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
-fi
 ccache --show-stats ||:
 )
 }
