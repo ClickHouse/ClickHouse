@@ -57,6 +57,7 @@ bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & 
     return virtual_parts.getContainingPart(data_part->info) != data_part->name;
 }
 
+
 bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 {
     auto queue_path = replica_path + "/queue";
@@ -67,6 +68,9 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
     {
         std::lock_guard pull_logs_lock(pull_logs_to_queue_mutex);
+
+        /// Reset batch size on initialization to recover from possible errors of too large batch size.
+        current_multi_batch_size = 1;
 
         String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
         log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
@@ -496,7 +500,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
             /// Increase the batch size exponentially, so it will saturate to MAX_MULTI_OPS.
             if (current_multi_batch_size < MAX_MULTI_OPS)
-                current_multi_batch_size = std::min(MAX_MULTI_OPS, current_multi_batch_size * 2);
+                current_multi_batch_size = std::min<size_t>(MAX_MULTI_OPS, current_multi_batch_size * 2);
 
             String last_entry = *last;
             if (!startsWith(last_entry, "log-"))
