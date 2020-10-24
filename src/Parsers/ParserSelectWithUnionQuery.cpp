@@ -28,15 +28,16 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     ASTPtr list_node;
 
     ParserList parser_union(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION"), false);
-	ParserList parser_union_all(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION ALL"), false);
-	ParserList parser_union_distinct(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION DISTINCT"), false);
+    ParserList parser_union_all(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION ALL"), false);
+    ParserList parser_union_distinct(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION DISTINCT"), false);
 
     auto begin = pos;
     auto current_expected = expected;
     ASTSelectWithUnionQuery::Mode union_mode = ASTSelectWithUnionQuery::Mode::ALL;
 
     /// Parser SELECT lists and UNION type, must have UNION
-    auto union_parser = [&](auto & parser, auto mode) {
+    auto union_parser = [&](auto & parser, auto mode)
+    {
         if (!parser.parse(pos, list_node, expected))
         {
             pos = begin;
