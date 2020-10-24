@@ -21,6 +21,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -37,6 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_GRPC_QUERY_INFO;
+    extern const int INVALID_SESSION_TIMEOUT;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int UNKNOWN_DATABASE;
@@ -44,6 +46,24 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Gets session's timeout from query info or from the server config.
+    std::chrono::steady_clock::duration getSessionTimeout(const GRPCQueryInfo & query_info, const Poco::Util::AbstractConfiguration & config)
+    {
+        auto session_timeout = query_info.session_timeout();
+        if (session_timeout)
+        {
+            auto max_session_timeout = config.getUInt("max_session_timeout", 3600);
+            if (session_timeout > max_session_timeout)
+                throw Exception(
+                    "Session timeout '" + std::to_string(session_timeout) + "' is larger than max_session_timeout: "
+                        + std::to_string(max_session_timeout) + ". Maximum session timeout could be modified in configuration file.",
+                    ErrorCodes::INVALID_SESSION_TIMEOUT);
+        }
+        else
+            session_timeout = config.getInt("default_session_timeout", 60);
+        return std::chrono::seconds(session_timeout);
+    }
+
     /// Generates a description of a query by a specified query info.
     /// This description is used for logging only.
     String getQueryDescription(const GRPCQueryInfo & query_info)
@@ -218,6 +238,7 @@ namespace
         IServer & iserver;
         Poco::Logger * log = nullptr;
 
+        std::shared_ptr<NamedSession> session;
         std::optional<Context> query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
         String query_text;
@@ -347,6 +368,16 @@ namespace
         query_context->setCurrentQueryId(query_info.query_id());
         if (!quota_key.empty())
             query_context->setQuotaKey(quota_key);
+
+        /// The user could specify session identifier and session timeout.
+        /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
+        if (!query_info.session_id().empty())
+        {
+            session = query_context->acquireNamedSession(
+                query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
+            query_context = session->context;
+            query_context->setSessionContext(session->context);
+        }
 
         /// Set client info.
         ClientInfo & client_info = query_context->getClientInfo();
@@ -492,7 +523,8 @@ namespace
                 readQueryInfo();
                 if (!query_info.query().empty() || !query_info.query_id().empty() || !query_info.settings().empty()
                     || !query_info.database().empty() || !query_info.input_data_delimiter().empty() || !query_info.output_format().empty()
-                    || !query_info.user_name().empty() || !query_info.password().empty() || !query_info.quota().empty())
+                    || !query_info.user_name().empty() || !query_info.password().empty() || !query_info.quota().empty()
+                    || !query_info.session_id().empty())
                 {
                     throw Exception("Extra query infos can be used only to add more input data. "
                                     "Only the following fields can be set: input_data, next_query_info",
@@ -699,6 +731,9 @@ namespace
         io = {};
         query_scope.reset();
         query_context.reset();
+        if (session)
+            session->release();
+        session.reset();
     }
 
     void Call::readQueryInfo()
