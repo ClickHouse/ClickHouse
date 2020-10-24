@@ -139,24 +139,24 @@ set(ORC_SRCS
 
 # === flight
 
-set(ARROW_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
-set(ARROW_FLIGHT_SRC_DIR ${ARROW_SRC_DIR}/arrow/flight)
+set(ARROW_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow)
+set(ARROW_PROTO_DIR ${ARROW_SOURCE_DIR}/format)
+set(ARROW_FLIGHT_SRC_DIR ${ARROW_SOURCE_DIR}/cpp/src/arrow/flight)
 set(ARROW_FLIGHT_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
 set(PROTOC_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
 set(GRPC_CPP_PLUGIN_EXECUTABLE ${_gRPC_CPP_PLUGIN})
-set(PROTO_DIR ${ARROW_SRC_DIR}/../format)
 
 add_custom_command(OUTPUT Flight.pb.h
                           Flight.pb.cc
                           Flight.grpc.pb.h
                           Flight.grpc.pb.cc
         COMMAND ${PROTOC_EXECUTABLE}
-        ARGS -I ${PROTO_DIR}
+        ARGS -I ${ARROW_PROTO_DIR}
              --cpp_out=${ARROW_FLIGHT_GENERATED_SRC_DIR}
              --grpc_out=${ARROW_FLIGHT_GENERATED_SRC_DIR}
              --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN_EXECUTABLE}
-             ${PROTO_DIR}/Flight.proto)
+             ${ARROW_PROTO_DIR}/Flight.proto)
 
 set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_SRC_DIR}/client.cc
