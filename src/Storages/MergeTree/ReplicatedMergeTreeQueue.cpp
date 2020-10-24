@@ -486,19 +486,17 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
     {
         std::sort(log_entries.begin(), log_entries.end());
 
-        /// ZK contains a limit on the number or total size of operations in a multi-request.
-        /// If the limit is exceeded, the connection is simply closed.
-        /// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
-        /// The average size of the node value in this case is less than 10 kilobytes.
-        static constexpr auto MAX_MULTI_OPS = 100;
-
-        for (size_t entry_idx = 0, num_entries = log_entries.size(); entry_idx < num_entries; entry_idx += MAX_MULTI_OPS)
+        for (size_t entry_idx = 0, num_entries = log_entries.size(); entry_idx < num_entries; entry_idx += current_multi_batch_size)
         {
             auto begin = log_entries.begin() + entry_idx;
-            auto end = entry_idx + MAX_MULTI_OPS >= log_entries.size()
+            auto end = entry_idx + current_multi_batch_size >= log_entries.size()
                 ? log_entries.end()
-                : (begin + MAX_MULTI_OPS);
+                : (begin + current_multi_batch_size);
             auto last = end - 1;
+
+            /// Increase the batch size exponentially, so it will saturate to MAX_MULTI_OPS.
+            if (current_multi_batch_size < MAX_MULTI_OPS)
+                current_multi_batch_size = std::min(MAX_MULTI_OPS, current_multi_batch_size * 2);
 
             String last_entry = *last;
             if (!startsWith(last_entry, "log-"))
