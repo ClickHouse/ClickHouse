@@ -51,7 +51,6 @@ def test_disabled_mysql_server(started_cluster):
 
     with PartitionManager() as pm:
         clickhouse_node.query("CREATE DATABASE test_db ENGINE = MySQL('mysql1:3306', 'test_db', 'root', 'clickhouse')")
-
             
         pm._add_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': 'DROP'})
         clickhouse_node.query("SELECT * FROM system.parts")
