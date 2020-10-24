@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-# Check that ClickHouse properly use SNI extension in Client Hello packet in HTTPS connection.
+# Check that ClickHouse properly uses SNI extension in Client Hello packet in HTTPS connection.
 
 sudo bash -c 'echo "127.0.0.1 yandex.ru" >> /etc/hosts'
 
@@ -15,6 +15,6 @@ echo -ne 'y\r\n' | strace -f -x -s10000 -e trace=write,sendto ${CLICKHOUSE_LOCAL
 #          extension id  len: 14  |    type     |
 #                                 |             |
 #                       hostnames list       hostname
-#                            len, 14          len, 9
+#                            len, 12          len, 9
 
 sudo bash -c 'sed -i.bak "/yandex\.ru/d" /etc/hosts'
