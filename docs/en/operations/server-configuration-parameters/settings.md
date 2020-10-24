@@ -1063,7 +1063,7 @@ Default value: `/var/lib/clickhouse/access/`.
 
 ## user_directories {#user_directories}
 
-The path to the users config files. 
+The path to the users config files. If `user_directories` is specified, the path from `users_config` won't be used.
 
 The `user_directories` section can contain any number of items, the order of the items means their precedence.
 
