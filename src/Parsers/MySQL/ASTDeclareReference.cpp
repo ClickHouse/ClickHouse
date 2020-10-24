@@ -95,7 +95,7 @@ bool ParserDeclareReference::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     declare_reference->on_delete_option = delete_option;
     declare_reference->on_update_option = update_option;
     declare_reference->reference_expression = expression;
-    declare_reference->reference_table_name = table_name->as<ASTIdentifier>()->name;
+    declare_reference->reference_table_name = table_name->as<ASTIdentifier>()->name();
 
     node = declare_reference;
     return true;
