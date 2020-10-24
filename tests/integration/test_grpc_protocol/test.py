@@ -84,6 +84,14 @@ def query_and_get_extremes(*args, **kwargs):
         extremes += result.extremes
     return extremes
 
+def query_and_get_logs(*args, **kwargs):
+    logs = ""
+    for result in query_no_errors(*args, **kwargs):
+        for log_entry in result.logs:
+            #print(log_entry)
+            logs += log_entry.text + "\n"
+    return logs
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     cluster.start()
@@ -164,3 +172,9 @@ def test_errors_handling():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     e = query_and_get_error("CREATE TABLE t (a UInt8) ENGINE = Memory")
     assert "Table default.t already exists" in e.display_text
+
+def test_logs():
+    logs = query_and_get_logs("SELECT 1", settings={'send_logs_level':'debug'})
+    assert "SELECT 1" in logs
+    assert "Read 1 rows" in logs
+    assert "Peak memory usage" in logs
