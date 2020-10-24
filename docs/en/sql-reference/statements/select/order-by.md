@@ -230,7 +230,7 @@ returns
 OFFSET offset_row_count {ROW | ROWS} FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}
 ```
 
-The `FETCH` is an alternative to the [LIMIT] (https://clickhouse.tech/docs/en/sql-reference/statements/select/limit/#limit-clause) clause and retrieves rows from a query `SELECT` type.
+The `FETCH` is an alternative to the [LIMIT] (../../../sql-reference/statements/select/limit.md) clause and retrieves rows from a query `SELECT` type.
 
 The `OFFSET` says to skip that many rows before beginning to return rows.
 
@@ -246,7 +246,7 @@ is identical to the query
 SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1
 ```
 
-When using `FETCH`, it is important to use an [ORDER BY] (https://clickhouse.tech/docs/en/sql-reference/statements/select/order-by/#select-order-by) clause that constrains the result rows into a unique order. Otherwise, you will get an unpredictable subset of the query's rows.
+When using `FETCH`, it is important to use an [ORDER BY] (../../../sql-reference/statements/select/order-by.md) clause that constrains the result rows into a unique order. Otherwise, you will get an unpredictable subset of the query's rows.
 
 `ROW` and `ROWS` as well as `FIRST` and `NEXT` are noise words that don't influence the effects of these conditions.
 
