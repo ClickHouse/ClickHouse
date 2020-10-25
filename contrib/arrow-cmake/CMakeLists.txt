@@ -235,25 +235,26 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/util/compression_zstd.cc
         ${LIBRARY_DIR}/util/cpu_info.cc
         ${LIBRARY_DIR}/util/decimal.cc
+        ${LIBRARY_DIR}/util/delimiting.cc
+        ${LIBRARY_DIR}/util/formatting.cc
+        ${LIBRARY_DIR}/util/future.cc
         ${LIBRARY_DIR}/util/int_util.cc
         ${LIBRARY_DIR}/util/io_util.cc
+        ${LIBRARY_DIR}/util/iterator.cc
         ${LIBRARY_DIR}/util/key_value_metadata.cc
         ${LIBRARY_DIR}/util/logging.cc
         ${LIBRARY_DIR}/util/memory.cc
+        ${LIBRARY_DIR}/util/parsing.cc
         ${LIBRARY_DIR}/util/string_builder.cc
         ${LIBRARY_DIR}/util/string.cc
         ${LIBRARY_DIR}/util/task_group.cc
         ${LIBRARY_DIR}/util/thread_pool.cc
-        ${LIBRARY_DIR}/util/trie.cc
-        ${LIBRARY_DIR}/util/utf8.cc
-        ${LIBRARY_DIR}/util/future.cc
-        ${LIBRARY_DIR}/util/formatting.cc
-        ${LIBRARY_DIR}/util/parsing.cc
         ${LIBRARY_DIR}/util/time.cc
-        ${LIBRARY_DIR}/util/delimiting.cc
-        ${LIBRARY_DIR}/util/iterator.cc
-
+        ${LIBRARY_DIR}/util/trie.cc
+        ${LIBRARY_DIR}/util/uri.cc
+        ${LIBRARY_DIR}/util/utf8.cc
         ${LIBRARY_DIR}/vendored/base64.cpp
+
         ${ORC_SRCS}
         ${ARROW_FLIGHT_SRCS})
 
