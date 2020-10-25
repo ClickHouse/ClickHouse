@@ -152,7 +152,7 @@ Status MakeFlightInfo(
     return SchemaToString(schema, &out->schema);
 }
 
-#define ARROW_EXPECT_OK(expr)                                           \
+#define ARROW_TEST_EXPECT_OK(expr)                                           \
   do {                                                                  \
     auto _res = (expr);                                                 \
     ::arrow::Status _st = ::arrow::internal::GenericToStatus(_res);     \
@@ -165,9 +165,9 @@ std::vector<flight::FlightInfo> ExampleFlightInfo()
     flight::Location location2;
     flight::Location location3;
 
-    ARROW_EXPECT_OK(flight::Location::ForGrpcTcp("foo1.bar.com", 12345, &location1));
-    ARROW_EXPECT_OK(flight::Location::ForGrpcTcp("foo2.bar.com", 12345, &location2));
-    ARROW_EXPECT_OK(flight::Location::ForGrpcTcp("foo3.bar.com", 12345, &location3));
+    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("foo1.bar.com", 12345, &location1));
+    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("foo2.bar.com", 12345, &location2));
+    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("foo3.bar.com", 12345, &location3));
 
     flight::FlightInfo::Data flight1, flight2, flight3;
 
@@ -181,11 +181,11 @@ std::vector<flight::FlightInfo> ExampleFlightInfo()
     auto schema1 = ExampleIntSchema();
     auto schema2 = ExampleStringSchema();
 
-    ARROW_EXPECT_OK(MakeFlightInfo(*schema1, descr1, {endpoint1, endpoint2}, 1000, 100000, &flight1));
-    ARROW_EXPECT_OK(MakeFlightInfo(*schema2, descr2, {endpoint3}, 1000, 100000, &flight2));
+    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema1, descr1, {endpoint1, endpoint2}, 1000, 100000, &flight1));
+    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema2, descr2, {endpoint3}, 1000, 100000, &flight2));
     return {flight::FlightInfo(flight1), flight::FlightInfo(flight2)};
 }
 
-#undef ARROW_EXPECT_OK
+#undef ARROW_TEST_EXPECT_OK
 
 }
