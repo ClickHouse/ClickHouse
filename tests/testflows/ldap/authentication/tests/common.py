@@ -95,6 +95,8 @@ def add_config(config, timeout=20, restart=False):
             if exitcode == 0:
                 break
             time.sleep(1)
+        if settings.debug:
+            node.command(f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name}")
         assert exitcode == 0, error()
 
     def wait_for_config_to_be_loaded():
