@@ -1,28 +1,9 @@
 #include "ArrowFlightServer.h"
-#include <arrow/flight/test_util.h> // FIXME: Remove it before merge
 
 #include <memory>
 
-namespace
-{
-
-arrow::Status GetBatchForFlight(const arrow::flight::Ticket & ticket, std::shared_ptr<arrow::RecordBatchReader> * out) {
-    if (ticket.ticket == "ticket-ints-1") {
-        arrow::flight::BatchVector batches;
-        RETURN_NOT_OK(arrow::flight::ExampleIntBatches(&batches));
-        *out = std::make_shared<arrow::flight::BatchIterator>(batches[0]->schema(), batches);
-        return arrow::Status::OK();
-    } else if (ticket.ticket == "ticket-dicts-1") {
-        arrow::flight::BatchVector batches;
-        RETURN_NOT_OK(arrow::flight::ExampleDictBatches(&batches));
-        *out = std::make_shared<arrow::flight::BatchIterator>(batches[0]->schema(), batches);
-        return arrow::Status::OK();
-    } else {
-        return arrow::Status::NotImplemented("no stream implemented for this ticket");
-    }
-}
-
-} // FIXME: Remove it before merge
+// FIXME: remove it before merge
+#include "ArrowFlightTestUtil.h"
 
 namespace DB
 {
@@ -83,7 +64,7 @@ arrow::Status ArrowFlightServer::ListFlights(
     const arrow::flight::Criteria * criteria,
     std::unique_ptr<arrow::flight::FlightListing> * listings)
 {
-    std::vector<arrow::flight::FlightInfo> flights = arrow::flight::ExampleFlightInfo();
+    std::vector<arrow::flight::FlightInfo> flights = arrow::ExampleFlightInfo();
     if (criteria && !criteria->expression.empty()) {
         // For test purposes, if we get criteria, return no results
         flights.clear();
@@ -103,7 +84,7 @@ arrow::Status ArrowFlightServer::GetFlightInfo(
         return arrow::Status::OutOfMemory("Sentinel");
     }
 
-    std::vector<arrow::flight::FlightInfo> flights = arrow::flight::ExampleFlightInfo();
+    std::vector<arrow::flight::FlightInfo> flights = arrow::ExampleFlightInfo();
 
     for (const auto& info : flights) {
         if (info.descriptor().Equals(request)) {
@@ -119,7 +100,7 @@ arrow::Status ArrowFlightServer::GetSchema(
     const arrow::flight::FlightDescriptor & request,
     std::unique_ptr<arrow::flight::SchemaResult> * schema)
 {
-    std::vector<arrow::flight::FlightInfo> flights = arrow::flight::ExampleFlightInfo();
+    std::vector<arrow::flight::FlightInfo> flights = arrow::ExampleFlightInfo();
 
     for (const auto& info : flights) {
         if (info.descriptor().Equals(request)) {

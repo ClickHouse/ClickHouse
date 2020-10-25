@@ -157,14 +157,6 @@ set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_SRC_DIR}/server.cc
         ${ARROW_FLIGHT_SRC_DIR}/server_auth.cc
         ${ARROW_FLIGHT_SRC_DIR}/types.cc
-
-        ${ARROW_SRC_DIR}/vendored/uriparser/Uri.h
-        ${ARROW_SRC_DIR}/vendored/uriparser/UriDefsAnsi.h
-        ${ARROW_SRC_DIR}/vendored/uriparser/UriDefsConfig.h
-        ${ARROW_SRC_DIR}/vendored/uriparser/UriDefsUnicode.h
-
-        ${ARROW_SRC_DIR}/util/uri.cc
-
         ${ARROW_FLIGHT_GENERATED_SRCS})
 
 # === arrow
@@ -260,6 +252,7 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/util/thread_pool.cc
         ${LIBRARY_DIR}/util/time.cc
         ${LIBRARY_DIR}/util/trie.cc
+        ${LIBRARY_DIR}/util/uri.cc
         ${LIBRARY_DIR}/util/utf8.cc
 
         ${LIBRARY_DIR}/vendored/base64.cpp
