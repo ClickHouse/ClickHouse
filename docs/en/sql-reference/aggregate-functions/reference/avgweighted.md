@@ -28,11 +28,7 @@ but may have different types.
 -   `NaN`. If all the weights are equal to 0.
 -   Weighted mean otherwise.
 
-**Return type**
-
-- `Decimal` if both types are [Decimal](../../../sql-reference/data-types/decimal.md)
-  or if one type is Decimal and other is Integer.
-- [Float64](../../../sql-reference/data-types/float.md) otherwise.
+**Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 
 **Example**
 
