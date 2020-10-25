@@ -38,8 +38,9 @@ namespace DB
 
 static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 20;
-static const auto HEARTBEAT_RESCHEDULE_MS = 3000;
 static const uint32_t QUEUE_SIZE = 100000;
+static const auto MAX_FAILED_READ_ATTEMPTS = 10;
+static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
 {
@@ -121,9 +122,6 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     streaming_task = global_context.getSchedulePool().createTask("RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
     streaming_task->deactivate();
-
-    heartbeat_task = global_context.getSchedulePool().createTask("RabbitMQHeartbeatTask", [this]{ heartbeatFunc(); });
-    heartbeat_task->deactivate();
 
     if (queue_base.empty())
     {
@@ -207,16 +205,6 @@ Context StorageRabbitMQ::addSettings(Context context) const
         context.setSetting("format_schema", schema_name);
 
     return context;
-}
-
-
-void StorageRabbitMQ::heartbeatFunc()
-{
-    if (!stream_cancelled && event_handler->connectionRunning())
-    {
-        connection->heartbeat();
-        heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS);
-    }
 }
 
 
@@ -402,7 +390,6 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
 
     if (reconnecting)
     {
-        deactivateTask(heartbeat_task, false, false);
         connection->close(); /// Connection might be unusable, but not closed
 
         /* Connection is not closed immediately (firstly, all pending operations are completed, and then
@@ -452,7 +439,6 @@ void StorageRabbitMQ::unbindExchange()
      */
     std::call_once(flag, [&]()
     {
-        heartbeat_task->deactivate();
         streaming_task->deactivate();
         event_handler->updateLoopState(Loop::STOP);
         looping_task->deactivate();
@@ -499,8 +485,6 @@ Pipe StorageRabbitMQ::read(
             deactivateTask(looping_task, false, true);
 
         update_channels = restoreConnection(true);
-        if (update_channels)
-            heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS);
     }
 
     Pipes pipes;
@@ -521,7 +505,6 @@ Pipe StorageRabbitMQ::read(
             if (event_handler->loopRunning())
             {
                 deactivateTask(looping_task, false, true);
-                deactivateTask(heartbeat_task, false, false);
             }
 
             rabbit_stream->updateChannel();
@@ -568,7 +551,6 @@ void StorageRabbitMQ::startup()
 
     event_handler->updateLoopState(Loop::RUN);
     streaming_task->activateAndSchedule();
-    heartbeat_task->activateAndSchedule();
 }
 
 
@@ -579,7 +561,6 @@ void StorageRabbitMQ::shutdown()
 
     deactivateTask(streaming_task, true, false);
     deactivateTask(looping_task, true, true);
-    deactivateTask(heartbeat_task, true, false);
 
     connection->close();
 
@@ -688,6 +669,8 @@ void StorageRabbitMQ::streamingToViewsFunc()
 
         if (dependencies_count)
         {
+            auto start_time = std::chrono::steady_clock::now();
+
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!stream_cancelled && num_created_consumers > 0)
             {
@@ -696,8 +679,17 @@ void StorageRabbitMQ::streamingToViewsFunc()
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                if (!streamToViews())
+                if (streamToViews())
                     break;
+
+                auto end_time = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                {
+                    event_handler->updateLoopState(Loop::STOP);
+                    LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
+                    break;
+                }
             }
         }
     }
@@ -731,13 +723,6 @@ bool StorageRabbitMQ::streamToViews()
     auto column_names = block_io.out->getHeader().getNames();
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 
-    /* event_handler->connectionRunning() does not guarantee that connnection is not closed in case loop was not running before, but
-     * need to anyway start the loop to activate error callbacks and update connection state, because even checking with
-     * connection->usable() will not give correct answer before callbacks are activated.
-     */
-    if (!event_handler->loopRunning() && event_handler->connectionRunning())
-        looping_task->activateAndSchedule();
-
     auto block_size = getMaxBlockSize();
 
     // Create a stream for each consumer and join them in a union stream
@@ -770,34 +755,46 @@ bool StorageRabbitMQ::streamToViews()
         in = streams[0];
 
     std::atomic<bool> stub = {false};
+
+    /// Loop could run untill this point only if select query was made
+    if (!event_handler->loopRunning())
+    {
+        event_handler->updateLoopState(Loop::RUN);
+        looping_task->activateAndSchedule();
+    }
+
     copyData(*in, *block_io.out, &stub);
 
-    /* Need to stop loop even if connection is ok, because sending ack() with loop running in another thread will lead to a lot of data
-     * races inside the library, but only in case any error occurs or connection is lost while ack is being sent
+    /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
+     * error occurs or connection is lost while ack is being sent
      */
-    if (event_handler->loopRunning())
-        deactivateTask(looping_task, false, true);
+    deactivateTask(looping_task, false, true);
+    size_t queue_empty = 0;
 
     if (!event_handler->connectionRunning())
     {
-        if (!stream_cancelled && restoreConnection(true))
+        if (stream_cancelled)
+            return true;
+
+        if (restoreConnection(true))
         {
             for (auto & stream : streams)
                 stream->as<RabbitMQBlockInputStream>()->updateChannel();
         }
         else
         {
-            /// Reschedule if unable to connect to rabbitmq or quit if cancelled
-            return false;
+            LOG_TRACE(log, "Reschedule streaming. Unable to restore connection.");
+            return true;
         }
     }
     else
     {
-        deactivateTask(heartbeat_task, false, false);
-
         /// Commit
         for (auto & stream : streams)
         {
+            if (stream->as<RabbitMQBlockInputStream>()->queueEmpty())
+                ++queue_empty;
+
             /* false is returned by the sendAck function in only two cases:
              * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
              *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
@@ -828,19 +825,25 @@ bool StorageRabbitMQ::streamToViews()
                     break;
                 }
             }
+
+            event_handler->iterateLoop();
         }
     }
 
-    event_handler->updateLoopState(Loop::RUN);
-    looping_task->activateAndSchedule();
-    heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS); /// It is also deactivated in restoreConnection(), so reschedule anyway
+    if ((queue_empty == num_queues) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))
+    {
+        connection->heartbeat();
+        read_attempts = 0;
+        LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
+        return true;
+    }
+    else
+    {
+        event_handler->updateLoopState(Loop::RUN);
+        looping_task->activateAndSchedule();
+    }
 
-    // Check whether the limits were applied during query execution
-    bool limits_applied = false;
-    const BlockStreamProfileInfo & info = in->getProfileInfo();
-    limits_applied = info.hasAppliedLimit();
-
-    return limits_applied;
+    return false;
 }
 
 
