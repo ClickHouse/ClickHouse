@@ -12,8 +12,6 @@ PEERDIR(
     clickhouse/src
 )
 
-CFLAGS(-g0)
-
 SRCS(
     main.cpp
 

@@ -30,37 +30,11 @@ namespace ErrorCodes
     extern const int CANNOT_SET_THREAD_PRIORITY;
 }
 
-void ThreadStatus::applyQuerySettings()
-{
-    const Settings & settings = query_context->getSettingsRef();
-
-    query_id = query_context->getCurrentQueryId();
-    initQueryProfiler();
-
-    untracked_memory_limit = settings.max_untracked_memory;
-    if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
-        untracked_memory_limit = settings.memory_profiler_step;
-
-#if defined(OS_LINUX)
-    /// Set "nice" value if required.
-    Int32 new_os_thread_priority = settings.os_thread_priority;
-    if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
-    {
-        LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
-
-        if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
-            throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-
-        os_thread_priority = new_os_thread_priority;
-    }
-#endif
-}
-
 
 void ThreadStatus::attachQueryContext(Context & query_context_)
 {
     query_context = &query_context_;
-
+    query_id = query_context->getCurrentQueryId();
     if (!global_context)
         global_context = &query_context->getGlobalContext();
 
@@ -73,7 +47,7 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
             thread_group->global_context = global_context;
     }
 
-    applyQuerySettings();
+    initQueryProfiler();
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -108,7 +82,30 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     }
 
     if (query_context)
-        applyQuerySettings();
+    {
+        query_id = query_context->getCurrentQueryId();
+        initQueryProfiler();
+
+        const Settings & settings = query_context->getSettingsRef();
+
+        untracked_memory_limit = settings.max_untracked_memory;
+        if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
+            untracked_memory_limit = settings.memory_profiler_step;
+
+#if defined(OS_LINUX)
+        /// Set "nice" value if required.
+        Int32 new_os_thread_priority = settings.os_thread_priority;
+        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
+        {
+            LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
+
+            if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
+                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+
+            os_thread_priority = new_os_thread_priority;
+        }
+#endif
+    }
 
     initPerformanceCounters();
 
@@ -139,22 +136,6 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     setupState(thread_group_);
 }
 
-inline UInt64 time_in_nanoseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(timepoint.time_since_epoch()).count();
-}
-
-inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
-
-
-inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
-}
-
 void ThreadStatus::initPerformanceCounters()
 {
     performance_counters_finalized = false;
@@ -165,17 +146,11 @@ void ThreadStatus::initPerformanceCounters()
     memory_tracker.resetCounters();
     memory_tracker.setDescription("(for thread)");
 
-    // query_start_time_{microseconds, nanoseconds} are all constructed from the same time point
-    // to ensure that they are all equal upto the precision of a second.
-    const auto now = std::chrono::system_clock::now();
-
-    query_start_time_nanoseconds = time_in_nanoseconds(now);
-    query_start_time = time_in_seconds(now);
-    query_start_time_microseconds = time_in_microseconds(now);
+    query_start_time_nanoseconds = getCurrentTimeNanoseconds();
+    query_start_time = time(nullptr);
     ++queries_started;
 
-    // query_start_time_nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
-    *last_rusage = RUsageCounters::current();
+    *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
 
     if (query_context)
     {
@@ -326,16 +301,8 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 {
     QueryThreadLogElement elem;
 
-    // construct current_time and current_time_microseconds using the same time point
-    // so that the two times will always be equal up to a precision of a second.
-    const auto now = std::chrono::system_clock::now();
-    auto current_time =  time_in_seconds(now);
-    auto current_time_microseconds =  time_in_microseconds(now);
-
-    elem.event_time = current_time;
-    elem.event_time_microseconds = current_time_microseconds;
+    elem.event_time = time(nullptr);
     elem.query_start_time = query_start_time;
-    elem.query_start_time_microseconds = query_start_time_microseconds;
     elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
 
     elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);

@@ -22,6 +22,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
@@ -37,11 +38,10 @@
 #include <Columns/ColumnArray.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
-#include <Poco/Net/NetException.h>
 #include <common/sleep.h>
-#include <common/getFQDNOrHostName.h>
 #include <random>
 #include <pcg_random.hpp>
+#include <Poco/Net/NetException.h>
 
 
 namespace DB
@@ -144,7 +144,7 @@ struct DDLLogEntry
         rb >> "version: " >> version >> "\n";
 
         if (version != CURRENT_VERSION)
-            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}", version);
+            throw Exception("Unknown DDLLogEntry format version: " + DB::toString(version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
         Strings host_id_strings;
         rb >> "query: " >> escape >> query >> "\n";
@@ -308,14 +308,9 @@ static bool isSupportedAlterType(int type)
 }
 
 
-DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix)
-    : context(context_)
-    , log(&Poco::Logger::get("DDLWorker"))
-    , pool_size(pool_size_)
-    , worker_pool(pool_size_)
+DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix)
+    : context(context_), log(&Poco::Logger::get("DDLWorker"))
 {
-    last_tasks.reserve(pool_size);
-
     queue_dir = zk_root_dir;
     if (queue_dir.back() == '/')
         queue_dir.resize(queue_dir.size() - 1);
@@ -348,7 +343,6 @@ DDLWorker::~DDLWorker()
     stop_flag = true;
     queue_updated_event->set();
     cleanup_event->set();
-    worker_pool.wait();
     main_thread.join();
     cleanup_thread.join();
 }
@@ -370,27 +364,8 @@ DDLWorker::ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
     return current_zookeeper;
 }
 
-void DDLWorker::recoverZooKeeper()
-{
-    LOG_DEBUG(log, "Recovering ZooKeeper session after: {}", getCurrentExceptionMessage(false));
 
-    while (!stop_flag)
-    {
-        try
-        {
-            getAndSetZooKeeper();
-            break;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            sleepForSeconds(5);
-        }
-    }
-}
-
-
-DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
+bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
 {
     String node_data;
     String entry_path = queue_dir + "/" + entry_name;
@@ -399,7 +374,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     {
         /// It is Ok that node could be deleted just now. It means that there are no current host in node's host list.
         out_reason = "The task was deleted";
-        return {};
+        return false;
     }
 
     auto task = std::make_unique<DDLTask>();
@@ -430,7 +405,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         }
 
         out_reason = "Incorrect task format";
-        return {};
+        return false;
     }
 
     bool host_in_hostlist = false;
@@ -458,13 +433,12 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         }
     }
 
-    if (!host_in_hostlist)
-    {
+    if (host_in_hostlist)
+        current_task = std::move(task);
+    else
         out_reason = "There is no a local address in host list";
-        return {};
-    }
 
-    return task;
+    return host_in_hostlist;
 }
 
 
@@ -474,9 +448,10 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
     std::sort(all_nodes.begin(), all_nodes.end());
 }
 
-void DDLWorker::scheduleTasks()
+
+void DDLWorker::processTasks()
 {
-    LOG_DEBUG(log, "Scheduling tasks");
+    LOG_DEBUG(log, "Processing tasks");
     auto zookeeper = tryGetZooKeeper();
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
@@ -484,61 +459,86 @@ void DDLWorker::scheduleTasks()
     if (queue_nodes.empty())
         return;
 
-    bool server_startup = last_tasks.empty();
+    bool server_startup = last_processed_task_name.empty();
 
     auto begin_node = server_startup
         ? queue_nodes.begin()
-        : std::upper_bound(queue_nodes.begin(), queue_nodes.end(), last_tasks.back());
+        : std::upper_bound(queue_nodes.begin(), queue_nodes.end(), last_processed_task_name);
 
     for (auto it = begin_node; it != queue_nodes.end(); ++it)
     {
         String entry_name = *it;
 
-        String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper);
-        if (!task)
+        if (current_task)
         {
-            LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
-            saveTask(entry_name);
-            continue;
+            if (current_task->entry_name == entry_name)
+            {
+                LOG_INFO(log, "Trying to process task {} again", entry_name);
+            }
+            else
+            {
+                LOG_INFO(log, "Task {} was deleted from ZooKeeper before current host committed it", current_task->entry_name);
+                current_task = nullptr;
+            }
         }
 
-        bool already_processed = zookeeper->exists(task->entry_path + "/finished/" + task->host_id_str);
-        if (!server_startup && !task->was_executed && already_processed)
+        if (!current_task)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Server expects that DDL task {} should be processed, but it was already processed according to ZK",
-                entry_name);
+            String reason;
+            if (!initAndCheckTask(entry_name, reason, zookeeper))
+            {
+                LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
+                last_processed_task_name = entry_name;
+                continue;
+            }
+        }
+
+        DDLTask & task = *current_task;
+
+        bool already_processed = zookeeper->exists(task.entry_path + "/finished/" + task.host_id_str);
+        if (!server_startup && !task.was_executed && already_processed)
+        {
+            throw Exception(
+                "Server expects that DDL task " + task.entry_name + " should be processed, but it was already processed according to ZK",
+                ErrorCodes::LOGICAL_ERROR);
         }
 
         if (!already_processed)
         {
-            worker_pool.scheduleOrThrowOnError([this, task_ptr = task.release()]()
+            try
             {
-                setThreadName("DDLWorkerExec");
-                enqueueTask(DDLTaskPtr(task_ptr));
-            });
+                processTask(task, zookeeper);
+            }
+            catch (const Coordination::Exception & e)
+            {
+                if (server_startup && e.code == Coordination::Error::ZNONODE)
+                {
+                    LOG_WARNING(log, "ZooKeeper NONODE error during startup. Ignoring entry {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
+                }
+                else
+                {
+                     throw;
+                }
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "An error occurred while processing task {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
+                throw;
+            }
         }
         else
         {
-            LOG_DEBUG(log, "Task {} ({}) has been already processed", entry_name, task->entry.query);
+            LOG_DEBUG(log, "Task {} ({}) has been already processed", task.entry_name, task.entry.query);
         }
 
-        saveTask(entry_name);
+        last_processed_task_name = task.entry_name;
+        current_task.reset();
 
         if (stop_flag)
             break;
     }
 }
 
-void DDLWorker::saveTask(const String & entry_name)
-{
-    if (last_tasks.size() == pool_size)
-    {
-        last_tasks.erase(last_tasks.begin());
-    }
-    last_tasks.emplace_back(entry_name);
-}
 
 /// Parses query and resolves cluster and host in cluster
 void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
@@ -559,9 +559,10 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     task.cluster_name = task.query_on_cluster->cluster;
     task.cluster = context.tryGetCluster(task.cluster_name);
     if (!task.cluster)
-        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-            "DDL task {} contains current host {} in cluster {}, but there are no such cluster here.",
-            task.entry_name, task.host_id.readableString(), task.cluster_name);
+    {
+        throw Exception("DDL task " + task.entry_name + " contains current host " + task.host_id.readableString()
+            + " in cluster " + task.cluster_name + ", but there are no such cluster here.", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+    }
 
     /// Try to find host from task host list in cluster
     /// At the first, try find exact match (host name and ports should be literally equal)
@@ -582,9 +583,10 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
                 {
                     if (default_database == address.default_database)
                     {
-                        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                            "There are two exactly the same ClickHouse instances {} in cluster {}",
-                            address.readableString(), task.cluster_name);
+                        throw Exception(
+                            "There are two exactly the same ClickHouse instances " + address.readableString() + " in cluster "
+                                + task.cluster_name,
+                            ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
                     }
                     else
                     {
@@ -598,8 +600,9 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
                         auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get());
                         if (!query_with_table || query_with_table->database.empty())
                         {
-                            throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
+                            throw Exception(
+                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.",
+                                ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
                         }
                         if (default_database == query_with_table->database)
                             return;
@@ -632,9 +635,8 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
             {
                 if (found_via_resolving)
                 {
-                    throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                        "There are two the same ClickHouse instances in cluster {} : {} and {}",
-                        task.cluster_name, task.address_in_cluster.readableString(), address.readableString());
+                    throw Exception("There are two the same ClickHouse instances in cluster " + task.cluster_name + " : "
+                        + task.address_in_cluster.readableString() + " and " + address.readableString(), ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
                 }
                 else
                 {
@@ -649,9 +651,8 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
 
     if (!found_via_resolving)
     {
-        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-            "Not found host {} in definition of cluster {}",
-            task.host_id.readableString(), task.cluster_name);
+        throw Exception("Not found host " + task.host_id.readableString() + " in definition of cluster " + task.cluster_name,
+                        ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
     }
     else
     {
@@ -672,7 +673,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
 
     try
     {
-        auto current_context = std::make_unique<Context>(context);
+        current_context = std::make_unique<Context>(context);
         current_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         current_context->setCurrentQueryId(""); // generate random query_id
         executeQuery(istr, ostr, false, *current_context, {});
@@ -706,44 +707,8 @@ void DDLWorker::attachToThreadGroup()
 }
 
 
-void DDLWorker::enqueueTask(DDLTaskPtr task_ptr)
+void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 {
-    auto & task = *task_ptr;
-
-    while (!stop_flag)
-    {
-        try
-        {
-            processTask(task);
-            return;
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (Coordination::isHardwareError(e.code))
-            {
-                recoverZooKeeper();
-            }
-            else if (e.code == Coordination::Error::ZNONODE)
-            {
-                LOG_ERROR(log, "ZooKeeper error: {}", getCurrentExceptionMessage(true));
-                // TODO: retry?
-            }
-            else
-            {
-                LOG_ERROR(log, "Unexpected ZooKeeper error: {}.", getCurrentExceptionMessage(true));
-                return;
-            }
-        }
-        catch (...)
-        {
-            LOG_WARNING(log, "An error occurred while processing task {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
-        }
-    }
-}
-void DDLWorker::processTask(DDLTask & task)
-{
-    auto zookeeper = tryGetZooKeeper();
-
     LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.entry.query);
 
     String dummy;
@@ -842,7 +807,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
     /// If we will develop new replicated storage
     if (!replicated_storage)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage type '{}' is not supported by distributed DDL", storage->getName());
+        throw Exception("Storage type '" + storage->getName() + "' is not supported by distributed DDL", ErrorCodes::NOT_IMPLEMENTED);
 
     /// Generate unique name for shard node, it will be used to execute the query by only single host
     /// Shard node name has format 'replica_name1,replica_name2,...,replica_nameN'
@@ -1120,7 +1085,7 @@ void DDLWorker::runMainThread()
             attachToThreadGroup();
 
             cleanup_event->set();
-            scheduleTasks();
+            processTasks();
 
             LOG_DEBUG(log, "Waiting a watch");
             queue_updated_event->wait();
@@ -1129,7 +1094,23 @@ void DDLWorker::runMainThread()
         {
             if (Coordination::isHardwareError(e.code))
             {
-                recoverZooKeeper();
+                LOG_DEBUG(log, "Recovering ZooKeeper session after: {}", getCurrentExceptionMessage(false));
+
+                while (!stop_flag)
+                {
+                    try
+                    {
+                        getAndSetZooKeeper();
+                        break;
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                        using namespace std::chrono_literals;
+                        std::this_thread::sleep_for(5s);
+                    }
+                }
             }
             else if (e.code == Coordination::Error::ZNONODE)
             {
@@ -1246,24 +1227,28 @@ public:
                 size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
                 size_t num_active_hosts = current_active_hosts.size();
 
+                std::stringstream msg;
+                msg << "Watching task " << node_path << " is executing longer than distributed_ddl_task_timeout"
+                    << " (=" << timeout_seconds << ") seconds."
+                    << " There are " << num_unfinished_hosts << " unfinished hosts"
+                    << " (" << num_active_hosts << " of them are currently active)"
+                    << ", they are going to execute the query in background";
 
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                    "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
-                    "There are {} unfinished hosts ({} of them are currently active), they are going to execute the query in background",
-                    node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+                throw Exception(msg.str(), ErrorCodes::TIMEOUT_EXCEEDED);
             }
 
             if (num_hosts_finished != 0 || try_number != 0)
             {
-                sleepForMilliseconds(std::min<size_t>(1000, 50 * (try_number + 1)));
+                auto current_sleep_for = std::chrono::milliseconds(std::min(static_cast<size_t>(1000), 50 * (try_number + 1)));
+                std::this_thread::sleep_for(current_sleep_for);
             }
 
             /// TODO: add shared lock
             if (!zookeeper->exists(node_path))
             {
-                throw Exception(ErrorCodes::UNFINISHED,
-                    "Cannot provide query execution status. The query's node {} has been deleted by the cleaner since it was finished (or its lifetime is expired)",
-                    node_path);
+                throw Exception("Cannot provide query execution status. The query's node " + node_path
+                                + " has been deleted by the cleaner since it was finished (or its lifetime is expired)",
+                                ErrorCodes::UNFINISHED);
             }
 
             Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, node_path + "/finished"));
@@ -1286,7 +1271,7 @@ public:
                 auto [host, port] = Cluster::Address::fromString(host_id);
 
                 if (status.code != 0 && first_exception == nullptr)
-                    first_exception = std::make_unique<Exception>(status.code, "There was an error on [{}:{}]: {}", host, port, status.message);
+                    first_exception = std::make_unique<Exception>("There was an error on [" + host + ":" + toString(port) + "]: " + status.message, status.code);
 
                 ++num_hosts_finished;
 
@@ -1416,11 +1401,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
                [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
            != query_requires_access.end());
 
-    bool use_local_default_database = false;
-    const String & current_database = context.getCurrentDatabase();
-
     if (need_replace_current_database)
     {
+        bool use_local_default_database = false;
         Strings shard_default_databases;
         for (const auto & shard : shards)
         {
@@ -1441,6 +1424,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
 
         if (use_local_default_database)
         {
+            const String & current_database = context.getCurrentDatabase();
+            AddDefaultDatabaseVisitor visitor(current_database);
+            visitor.visitDDL(query_ptr);
+
             query_requires_access.replaceEmptyDatabase(current_database);
         }
         else
@@ -1460,9 +1447,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
             }
         }
     }
-
-    AddDefaultDatabaseVisitor visitor(current_database, !use_local_default_database);
-    visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config
     if (query_requires_grant_option)

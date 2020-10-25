@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include <functional>
-#include <iosfwd>
+#include <ostream>
 
 #include <common/types.h>
 #include <common/unaligned.h>
@@ -313,4 +313,19 @@ namespace ZeroTraits
 }
 
 
-std::ostream & operator<<(std::ostream & os, const StringRef & str);
+inline bool operator==(StringRef lhs, const char * rhs)
+{
+    for (size_t pos = 0; pos < lhs.size; ++pos)
+        if (!rhs[pos] || lhs.data[pos] != rhs[pos])
+            return false;
+
+    return true;
+}
+
+inline std::ostream & operator<<(std::ostream & os, const StringRef & str)
+{
+    if (str.data)
+        os.write(str.data, str.size);
+
+    return os;
+}

@@ -202,7 +202,7 @@ SELECT * FROM nestedt FORMAT TSV
 -   `min` ردیف با حداقل مقدار در `format_template_row` فرمت (هنگامی که افراط و به مجموعه 1)
 -   `max` ردیف با حداکثر ارزش در است `format_template_row` فرمت (هنگامی که افراط و به مجموعه 1)
 -   `rows` تعداد کل ردیف خروجی است
--   `rows_before_limit` است حداقل تعداد ردیف وجود دارد که بدون محدودیت بوده است. خروجی تنها در صورتی که پرس و جو شامل حد. اگر پرس و جو شامل گروه های, ردیف ها_افور_لیمیت_تلاست تعداد دقیق ردیف وجود دارد که بدون محدودیت بوده است.
+-   `rows_before_limit` است حداقل تعداد ردیف وجود دارد که بدون محدودیت بوده است. خروجی تنها در صورتی که پرس و جو شامل حد. اگر پرس و جو شامل گروه های, ردیف ها\_افور\_لیمیت\_تلاست تعداد دقیق ردیف وجود دارد که بدون محدودیت بوده است.
 -   `time` زمان اجرای درخواست در ثانیه است
 -   `rows_read` است تعداد ردیف خوانده شده است
 -   `bytes_read` تعداد بایت (غیر فشرده) خوانده شده است
@@ -353,21 +353,21 @@ Both data output and parsing are supported in this format. For parsing, any orde
 
 با کاما از هم جدا فرمت ارزش ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-هنگام قالب بندی, ردیف در دو نقل قول محصور. نقل قول دو در داخل یک رشته خروجی به عنوان دو نقل قول دو در یک ردیف است. هیچ قانون دیگری برای فرار از شخصیت وجود دارد. تاریخ و تاریخ زمان در دو نقل قول محصور شده است. اعداد خروجی بدون نقل قول. ارزش ها توسط یک شخصیت جداساز از هم جدا, که `,` به طور پیش فرض. شخصیت جداساز در تنظیمات تعریف شده است [_مخفی کردن _قابلیت _جدید](../operations/settings/settings.md#settings-format_csv_delimiter). ردیف ها با استفاده از خوراک خط یونیکس جدا می شوند. ارریس در سی سی اس وی به شرح زیر مرتب شده است: ابتدا مجموعه ای به یک رشته به عنوان در قالب تبسپار شده مرتب شده است و سپس رشته حاصل خروجی به سی سی اس وی در دو نقل قول است. دسته بندی ها در قالب سی اس وی به صورت ستون های جداگانه مرتب می شوند (به این معنا که لانه خود را در تاپل از دست داده است).
+هنگام قالب بندی, ردیف در دو نقل قول محصور. نقل قول دو در داخل یک رشته خروجی به عنوان دو نقل قول دو در یک ردیف است. هیچ قانون دیگری برای فرار از شخصیت وجود دارد. تاریخ و تاریخ زمان در دو نقل قول محصور شده است. اعداد خروجی بدون نقل قول. ارزش ها توسط یک شخصیت جداساز از هم جدا, که `,` به طور پیش فرض. شخصیت جداساز در تنظیمات تعریف شده است [\_مخفی کردن \_قابلیت \_جدید](../operations/settings/settings.md#settings-format_csv_delimiter). ردیف ها با استفاده از خوراک خط یونیکس جدا می شوند. ارریس در سی سی اس وی به شرح زیر مرتب شده است: ابتدا مجموعه ای به یک رشته به عنوان در قالب تبسپار شده مرتب شده است و سپس رشته حاصل خروجی به سی سی اس وی در دو نقل قول است. دسته بندی ها در قالب سی اس وی به صورت ستون های جداگانه مرتب می شوند (به این معنا که لانه خود را در تاپل از دست داده است).
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\* به طور پیش فرض, جداساز است `,`. دیدن [_مخفی کردن _قابلیت _جدید](../operations/settings/settings.md#settings-format_csv_delimiter) تنظیم برای اطلاعات بیشتر.
+\* به طور پیش فرض, جداساز است `,`. دیدن [\_مخفی کردن \_قابلیت \_جدید](../operations/settings/settings.md#settings-format_csv_delimiter) تنظیم برای اطلاعات بیشتر.
 
 هنگامی که تجزیه, تمام مقادیر را می توان یا با یا بدون نقل قول تجزیه. هر دو نقل قول دو و تک پشتیبانی می شوند. ردیف همچنین می توانید بدون نقل قول مرتب شود. در این مورد, به شخصیت جداساز و یا خوراک خط تجزیه (کروم و یا ال اف). در هنگام تجزیه ردیف بدون نقل قول فضاهای پیشرو و انتهایی و زبانه ها نادیده گرفته می شوند. برای اشتراک خط, یونیکس (کلیک کنید), پنجره ها (کروم ال اف) و سیستم عامل مک کلاسیک (کروم ال اف) انواع پشتیبانی می شوند.
 
 مقادیر ورودی بدون علامت خالی با مقادیر پیش فرض برای ستون های مربوطه جایگزین می شوند
-[_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+[\_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 فعال است.
 
-`NULL` به عنوان فرمت `\N` یا `NULL` یا یک رشته بدون علامت خالی (تنظیمات را ببینید [_فرستادن به _کوچکنمایی](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) و [_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` به عنوان فرمت `\N` یا `NULL` یا یک رشته بدون علامت خالی (تنظیمات را ببینید [\_فرستادن به \_کوچکنمایی](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) و [\_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 پشتیبانی از خروجی بالغ و افراط به همان شیوه به عنوان `TabSeparated`.
 
@@ -452,12 +452,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-جانسون سازگار با جاوا اسکریپت است. برای اطمینان از این, برخی از شخصیت ها علاوه بر فرار: بریده بریده `/` فرار به عنوان `\/`; معافیت خط جایگزین `U+2028` و `U+2029`, که شکستن برخی از مرورگرهای, به عنوان فرار `\uXXXX`. شخصیت های کنترل اسکی فرار: برگشت به عقب, خوراک فرم, خوراک خط, بازگشت حمل, و تب افقی با جایگزین `\b`, `\f`, `\n`, `\r`, `\t` , و همچنین بایت باقی مانده در محدوده 00-1ف با استفاده از `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [خروجی _فرمان_جسون_کوات_64بیت_تنظیمی](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) به 0.
+جانسون سازگار با جاوا اسکریپت است. برای اطمینان از این, برخی از شخصیت ها علاوه بر فرار: بریده بریده `/` فرار به عنوان `\/`; معافیت خط جایگزین `U+2028` و `U+2029`, که شکستن برخی از مرورگرهای, به عنوان فرار `\uXXXX`. شخصیت های کنترل اسکی فرار: برگشت به عقب, خوراک فرم, خوراک خط, بازگشت حمل, و تب افقی با جایگزین `\b`, `\f`, `\n`, `\r`, `\t` , و همچنین بایت باقی مانده در محدوده 00-1ف با استفاده از `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [خروجی \_فرمان\_جسون\_کوات\_64بیت\_تنظیمی](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) به 0.
 
 `rows` – The total number of output rows.
 
 `rows_before_limit_at_least` حداقل تعداد ردیف وجود دارد که بدون محدودیت بوده است. خروجی تنها در صورتی که پرس و جو شامل حد.
-اگر پرس و جو شامل گروه های, ردیف ها_افور_لیمیت_تلاست تعداد دقیق ردیف وجود دارد که بدون محدودیت بوده است.
+اگر پرس و جو شامل گروه های, ردیف ها\_افور\_لیمیت\_تلاست تعداد دقیق ردیف وجود دارد که بدون محدودیت بوده است.
 
 `totals` – Total values (when using WITH TOTALS).
 
@@ -544,7 +544,7 @@ INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021
 
 را کلیک کنید جایگزین مقادیر حذف شده با مقادیر پیش فرض برای مربوطه [انواع داده ها](../sql-reference/data-types/index.md).
 
-اگر `DEFAULT expr` مشخص شده است, تاتر با استفاده از قوانین تعویض مختلف بسته به [_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) تنظیمات.
+اگر `DEFAULT expr` مشخص شده است, تاتر با استفاده از قوانین تعویض مختلف بسته به [\_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) تنظیمات.
 
 جدول زیر را در نظر بگیرید:
 
@@ -587,7 +587,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 ### استفاده از ساختارهای تو در تو {#jsoneachrow-nested}
 
-اگر شما یک جدول با [تو در تو](../sql-reference/data-types/nested-data-structures/nested.md) ستون نوع داده, شما می توانید داده های جانسون با همان ساختار وارد. فعال کردن این ویژگی با [تغییر _کم_تر_تنظیم مجدد _جنسان](../operations/settings/settings.md#settings-input_format_import_nested_json) تنظیمات.
+اگر شما یک جدول با [تو در تو](../sql-reference/data-types/nested-data-structures/nested.md) ستون نوع داده, شما می توانید داده های جانسون با همان ساختار وارد. فعال کردن این ویژگی با [تغییر \_کم\_تر\_تنظیم مجدد \_جنسان](../operations/settings/settings.md#settings-input_format_import_nested_json) تنظیمات.
 
 برای مثال جدول زیر را در نظر بگیرید:
 
@@ -601,7 +601,7 @@ CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memor
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-برای قرار دادن داده ها به عنوان یک شی جوسون سلسله مراتبی, تنظیم [وارد کردن _ترمپ_م_تر_اس_جسون ثبت شده=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+برای قرار دادن داده ها به عنوان یک شی جوسون سلسله مراتبی, تنظیم [وارد کردن \_ترمپ\_م\_تر\_اس\_جسون ثبت شده=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -1046,7 +1046,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 -   شروع با `[A-Za-z_]`
 -   متعاقبا تنها حاوی `[A-Za-z0-9_]`
 
-خروجی فشرده سازی فایل و فاصله همگام سازی را می توان با پیکربندی [_فرماندگی لبه بام](../operations/settings/settings.md#settings-output_format_avro_codec) و [_فرماندگی لبه چشم](../operations/settings/settings.md#settings-output_format_avro_sync_interval) به ترتیب.
+خروجی فشرده سازی فایل و فاصله همگام سازی را می توان با پیکربندی [\_فرماندگی لبه بام](../operations/settings/settings.md#settings-output_format_avro_codec) و [\_فرماندگی لبه چشم](../operations/settings/settings.md#settings-output_format_avro_sync_interval) به ترتیب.
 
 ## هشدار داده می شود {#data-format-avro-confluent}
 
@@ -1056,7 +1056,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 
 طرحواره ذخیره سازی یک بار حل شود.
 
-نشانی وب رجیستری طرحواره با پیکربندی [باز کردن _نمایش مجدد](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+نشانی وب رجیستری طرحواره با پیکربندی [باز کردن \_نمایش مجدد](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
 ### تطبیق انواع داده ها {#data_types-matching-1}
 
@@ -1199,12 +1199,12 @@ e.g. `schemafile.proto:MessageType`.
 اگر شما با استفاده از مشتری در [حالت دسته ای](../interfaces/cli.md#cli_usage) مسیر طرح باید به دلایل امنیتی نسبی باشد.
 
 اگر داده های ورودی یا خروجی را از طریق [رابط قام](../interfaces/http.md) نام پرونده مشخص شده در شمای قالب
-باید در دایرکتوری مشخص شده در واقع [قالب_شکلمات شیمی](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
+باید در دایرکتوری مشخص شده در واقع [قالب\_شکلمات شیمی](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 در پیکربندی سرور.
 
 ## پرش خطاها {#skippingerrors}
 
-برخی از فرمت های مانند `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` و `Protobuf` می توانید ردیف شکسته جست و خیز اگر خطای تجزیه رخ داده است و ادامه تجزیه از ابتدای ردیف بعدی. ببینید [وارد کردن _فرست_مرزیابی _نمایش مجدد](../operations/settings/settings.md#settings-input_format_allow_errors_num) و
+برخی از فرمت های مانند `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` و `Protobuf` می توانید ردیف شکسته جست و خیز اگر خطای تجزیه رخ داده است و ادامه تجزیه از ابتدای ردیف بعدی. ببینید [وارد کردن \_فرست\_مرزیابی \_نمایش مجدد](../operations/settings/settings.md#settings-input_format_allow_errors_num) و
 [ثبت نام](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) تنظیمات.
 محدودیت ها:
 - در صورت خطای تجزیه `JSONEachRow` پرش تمام داده ها تا زمانی که خط جدید (یا بخش ویژه), بنابراین ردیف باید توسط حد و مرز مشخصی `\n` برای شمارش خطاها به درستی.

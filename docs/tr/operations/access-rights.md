@@ -134,10 +134,10 @@ Yönetim sorguları:
 
 -   Yapılandırmaları depolama için bir dizin Kur.
 
-    ClickHouse, erişim varlık yapılandırmalarını, [access_control_path](server-configuration-parameters/settings.md#access_control_path) sunucu yapılandırma parametresi.
+    ClickHouse, erişim varlık yapılandırmalarını, [access\_control\_path](server-configuration-parameters/settings.md#access_control_path) sunucu yapılandırma parametresi.
 
 -   En az bir kullanıcı hesabı için SQL tabanlı erişim denetimi ve hesap yönetimini etkinleştirin.
 
-    Varsayılan olarak SQL güdümlü erişim denetimi ve hesap yönetimi, tüm kullanıcılar için açık. En az bir kullanıcı yapılandırmanız gerekir `users.xml` yapılandırma dosyası ve atama 1 [access_management](settings/settings-users.md#access_management-user-setting) ayar.
+    Varsayılan olarak SQL güdümlü erişim denetimi ve hesap yönetimi, tüm kullanıcılar için açık. En az bir kullanıcı yapılandırmanız gerekir `users.xml` yapılandırma dosyası ve atama 1 [access\_management](settings/settings-users.md#access_management-user-setting) ayar.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

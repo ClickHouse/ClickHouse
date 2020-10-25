@@ -11,11 +11,13 @@ RUN apt-get update -y \
             tzdata \
             fakeroot \
             debhelper \
+            zookeeper \
+            zookeeperd \
             expect \
-            python3 \
-            python3-lxml \
-            python3-termcolor \
-            python3-requests \
+            python \
+            python-lxml \
+            python-termcolor \
+            python-requests \
             sudo \
             openssl \
             ncdu \
@@ -31,7 +33,7 @@ RUN apt-get update -y \
             qemu-user-static
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
-   && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
+   && wget --quiet -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
    && cp /tmp/clickhouse-odbc-tmp/lib64/*.so /usr/local/lib/ \
    && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
