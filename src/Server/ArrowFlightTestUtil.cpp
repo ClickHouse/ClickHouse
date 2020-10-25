@@ -1,5 +1,7 @@
 #include "ArrowFlightTestUtil.h"
 
+#include <Common/Exception.h>
+
 #include <arrow/util/bit_util.h>
 
 namespace DB::ErrorCodes
@@ -154,7 +156,7 @@ Status MakeFlightInfo(
   do {                                                                  \
     auto _res = (expr);                                                 \
     ::arrow::Status _st = ::arrow::internal::GenericToStatus(_res);     \
-    if (!_st.ok()) throw Exception{DB::ErrorCodes::UNKNOWN_EXCEPTION, "'" ARROW_STRINGIFY(expr) "' failed with " << _st.ToString()}; \
+    if (!_st.ok()) throw DB::Exception{DB::ErrorCodes::UNKNOWN_EXCEPTION, "'" ARROW_STRINGIFY(expr) "' failed with " + _st.ToString()}; \
   } while (false)
 
 std::vector<flight::FlightInfo> ExampleFlightInfo()
