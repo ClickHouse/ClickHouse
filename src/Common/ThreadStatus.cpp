@@ -4,9 +4,12 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
+#include <common/errnoToString.h>
 
 #include <Poco/Logger.h>
 #include <common/getThreadId.h>
+
+#include <signal.h>
 
 
 namespace DB
@@ -22,6 +25,9 @@ namespace ErrorCodes
 thread_local ThreadStatus * current_thread = nullptr;
 thread_local ThreadStatus * main_thread = nullptr;
 
+alignas(4096) static thread_local char alt_stack[4096];
+static thread_local bool has_alt_stack = false;
+
 
 ThreadStatus::ThreadStatus()
     : thread_id{getThreadId()}
@@ -35,6 +41,39 @@ ThreadStatus::ThreadStatus()
 
     /// NOTE: It is important not to do any non-trivial actions (like updating ProfileEvents or logging) before ThreadStatus is created
     /// Otherwise it could lead to SIGSEGV due to current_thread dereferencing
+
+    /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
+    /// If not already installed for current thread.
+    if (!has_alt_stack)
+    {
+        /// Don't repeat tries even if not installed successfully.
+        has_alt_stack = true;
+
+        /// We have to call 'sigaltstack' before first 'sigaction'. (It does not work other way, for unknown reason).
+        stack_t altstack_description{ .ss_sp = alt_stack, .ss_flags = 0, .ss_size = sizeof(alt_stack) };
+        if (0 != sigaltstack(&altstack_description, nullptr))
+        {
+            LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString(errno));
+        }
+        else
+        {
+            /// Obtain existing sigaction and modify it by adding a flag.
+            struct sigaction action{};
+            if (0 != sigaction(SIGSEGV, nullptr, &action))
+            {
+                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString(errno));
+            }
+            else if (!(action.sa_flags & SA_ONSTACK))
+            {
+                action.sa_flags |= SA_ONSTACK;
+
+                if (0 != sigaction(SIGSEGV, &action, nullptr))
+                {
+                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString(errno));
+                }
+            }
+        }
+    }
 }
 
 ThreadStatus::~ThreadStatus()
