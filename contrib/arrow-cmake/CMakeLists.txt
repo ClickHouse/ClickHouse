@@ -303,7 +303,8 @@ add_dependencies(${ARROW_LIBRARY} ${FLATBUFFERS_LIBRARY})
 
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${FLATBUFFERS_LIBRARY} boost::filesystem)
 
-target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
+target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
+target_include_directories(${ARROW_LIBRARY} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${CMAKE_CURRENT_BINARY_DIR}/cpp/src)
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${GOOGLE_PROTOBUF_LIBRARY} ${GRPC_LIBRARY})
 target_link_libraries(${ARROW_LIBRARY} PRIVATE lz4)
 if (ARROW_WITH_SNAPPY)
