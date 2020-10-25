@@ -41,7 +41,7 @@ bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     auto subpartition_declare = std::make_shared<ASTDeclareSubPartition>();
     subpartition_declare->options = options;
-    subpartition_declare->logical_name = logical_name->as<ASTIdentifier>()->name;
+    subpartition_declare->logical_name = logical_name->as<ASTIdentifier>()->name();
 
     if (options)
     {

@@ -1896,7 +1896,7 @@ private:
                     if (has_vertical_output_suffix)
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                     const auto & id = query_with_output->format->as<ASTIdentifier &>();
-                    current_format = id.name;
+                    current_format = id.name();
                 }
             }
 

@@ -290,10 +290,9 @@ private:
 
 
 /// Apply target function by feeding it "batches" of N columns
-/// Combining 10 columns per pass is the fastest for large columns sizes.
-/// For small columns sizes - more columns is faster.
+/// Combining 8 columns per pass is the fastest method, because it's the maximum when clang vectorizes a loop.
 template <
-    typename Op, template <typename, size_t> typename OperationApplierImpl, size_t N = 10>
+    typename Op, template <typename, size_t> typename OperationApplierImpl, size_t N = 8>
 struct OperationApplier
 {
     template <typename Columns, typename ResultData>

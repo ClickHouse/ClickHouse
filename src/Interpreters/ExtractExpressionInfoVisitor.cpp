@@ -41,7 +41,7 @@ void ExpressionInfoMatcher::visit(const ASTIdentifier & identifier, const ASTPtr
             const auto & table = data.tables[index];
 
             // TODO: make sure no collision ever happens
-            if (table.hasColumn(identifier.name))
+            if (table.hasColumn(identifier.name()))
             {
                 data.unique_reference_tables_pos.emplace(index);
                 break;
