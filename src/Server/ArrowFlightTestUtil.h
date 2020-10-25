@@ -2,8 +2,8 @@
 
 #include <arrow/array.h>
 #include <arrow/record_batch.h>
-#include <arrow/flight/internal.h>
 #include <arrow/type_traits.h>
+#include <arrow/flight/types.h>
 
 #include <random>
 
@@ -62,6 +62,8 @@ Status GetBatchForFlight(const flight::Ticket & ticket, std::shared_ptr<RecordBa
 std::shared_ptr<Schema> ExampleIntSchema();
 
 std::shared_ptr<Schema> ExampleStringSchema();
+
+Status SchemaToString(const Schema & schema, std::string * out);
 
 arrow::Status MakeFlightInfo(
     const Schema & schema,

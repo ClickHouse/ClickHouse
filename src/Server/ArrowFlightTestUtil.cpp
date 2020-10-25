@@ -119,6 +119,17 @@ std::shared_ptr<Schema> ExampleStringSchema()
     return ::arrow::schema({f0, f1});
 }
 
+Status SchemaToString(const Schema& schema, std::string* out) {
+    // TODO(wesm): Do we care about better memory efficiency here?
+    ipc::DictionaryMemo unused_dict_memo;
+    ARROW_ASSIGN_OR_RAISE(
+        std::shared_ptr<Buffer> serialized_schema,
+        ipc::SerializeSchema(schema, &unused_dict_memo, default_memory_pool()));
+    *out = std::string(reinterpret_cast<const char*>(serialized_schema->data()),
+                       static_cast<size_t>(serialized_schema->size()));
+    return Status::OK();
+}
+
 Status MakeFlightInfo(
     const Schema & schema,
     const flight::FlightDescriptor & descriptor,
@@ -131,7 +142,7 @@ Status MakeFlightInfo(
     out->endpoints = endpoints;
     out->total_records = total_records;
     out->total_bytes = total_bytes;
-    return flight::internal::SchemaToString(schema, &out->schema);
+    return SchemaToString(schema, &out->schema);
 }
 
 #define ARROW_EXPECT_OK(expr)                                           \
