@@ -165,10 +165,13 @@ public:
     void updateDependency(const StorageID & old_from, const StorageID & old_where,const StorageID & new_from, const StorageID & new_where);
 
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
-    /// and removeUUIDMapping(...) must be called when it detached.
+    /// removeUUIDMapping(...) must be called when it detached,
+    /// and removeUUIDMappingFinally(...) must be called when table is dropped and its data removed from disk.
+    /// To "lock" some UUID and prevent collision, addUUIDMapping(...) may be called with nullptr arguments.
     /// Such tables can be accessed by persistent UUID instead of database and table name.
-    void addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
+    void addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table);
     void removeUUIDMapping(const UUID & uuid);
+    void removeUUIDMappingFinally(const UUID & uuid);
     /// For moving table between databases
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
 
@@ -222,7 +225,7 @@ private:
 
     void loadMarkedAsDroppedTables();
     void dropTableDataTask();
-    void dropTableFinally(const TableMarkedAsDropped & table) const;
+    void dropTableFinally(const TableMarkedAsDropped & table);
 
     static constexpr size_t reschedule_time_ms = 100;
 
