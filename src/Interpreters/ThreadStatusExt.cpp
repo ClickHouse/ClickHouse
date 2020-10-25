@@ -30,37 +30,11 @@ namespace ErrorCodes
     extern const int CANNOT_SET_THREAD_PRIORITY;
 }
 
-void ThreadStatus::applyQuerySettings()
-{
-    const Settings & settings = query_context->getSettingsRef();
-
-    query_id = query_context->getCurrentQueryId();
-    initQueryProfiler();
-
-    untracked_memory_limit = settings.max_untracked_memory;
-    if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
-        untracked_memory_limit = settings.memory_profiler_step;
-
-#if defined(OS_LINUX)
-    /// Set "nice" value if required.
-    Int32 new_os_thread_priority = settings.os_thread_priority;
-    if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
-    {
-        LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
-
-        if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
-            throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-
-        os_thread_priority = new_os_thread_priority;
-    }
-#endif
-}
-
 
 void ThreadStatus::attachQueryContext(Context & query_context_)
 {
     query_context = &query_context_;
-
+    query_id = query_context->getCurrentQueryId();
     if (!global_context)
         global_context = &query_context->getGlobalContext();
 
@@ -73,7 +47,7 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
             thread_group->global_context = global_context;
     }
 
-    applyQuerySettings();
+    initQueryProfiler();
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -108,7 +82,30 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     }
 
     if (query_context)
-        applyQuerySettings();
+    {
+        query_id = query_context->getCurrentQueryId();
+        initQueryProfiler();
+
+        const Settings & settings = query_context->getSettingsRef();
+
+        untracked_memory_limit = settings.max_untracked_memory;
+        if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
+            untracked_memory_limit = settings.memory_profiler_step;
+
+#if defined(OS_LINUX)
+        /// Set "nice" value if required.
+        Int32 new_os_thread_priority = settings.os_thread_priority;
+        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
+        {
+            LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
+
+            if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
+                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+
+            os_thread_priority = new_os_thread_priority;
+        }
+#endif
+    }
 
     initPerformanceCounters();
 
@@ -300,8 +297,8 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 
-    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below (will reset to its parent).
-    memory_tracker.setParent(thread_group->memory_tracker.getParent());
+    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below.
+    memory_tracker.setParent(nullptr);
 
     query_id.clear();
     query_context = nullptr;

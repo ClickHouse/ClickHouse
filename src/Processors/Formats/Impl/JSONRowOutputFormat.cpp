@@ -10,10 +10,10 @@ namespace DB
 JSONRowOutputFormat::JSONRowOutputFormat(
     WriteBuffer & out_,
     const Block & header,
-    const RowOutputFormatParams & params_,
+    FormatFactory::WriteCallback callback,
     const FormatSettings & settings_,
     bool yield_strings_)
-    : IRowOutputFormat(header, out_, params_), settings(settings_), yield_strings(yield_strings_)
+    : IRowOutputFormat(header, out_, callback), settings(settings_), yield_strings(yield_strings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());
@@ -271,19 +271,19 @@ void registerOutputFormatProcessorJSON(FormatFactory & factory)
     factory.registerOutputFormatProcessor("JSON", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, false);
+        return std::make_shared<JSONRowOutputFormat>(buf, sample, callback, format_settings, false);
     });
 
     factory.registerOutputFormatProcessor("JSONStrings", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, true);
+        return std::make_shared<JSONRowOutputFormat>(buf, sample, callback, format_settings, true);
     });
 }
 

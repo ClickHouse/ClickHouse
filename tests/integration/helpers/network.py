@@ -19,7 +19,6 @@ class PartitionManager:
 
     def __init__(self):
         self._iptables_rules = []
-        _NetworkManager.get()
 
     def drop_instance_zk_connections(self, instance, action='DROP'):
         self._check_instance(instance)

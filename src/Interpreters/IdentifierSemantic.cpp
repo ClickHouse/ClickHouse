@@ -51,7 +51,7 @@ std::optional<size_t> tryChooseTable(const ASTIdentifier & identifier, const std
     if ((best_match != ColumnMatch::NoMatch) && same_match)
     {
         if (!allow_ambiguous)
-            throw Exception("Ambiguous column '" + identifier.name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+            throw Exception("Ambiguous column '" + identifier.name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
         best_match = ColumnMatch::Ambiguous;
         return {};
     }
@@ -66,7 +66,7 @@ std::optional<size_t> tryChooseTable(const ASTIdentifier & identifier, const std
 std::optional<String> IdentifierSemantic::getColumnName(const ASTIdentifier & node)
 {
     if (!node.semantic->special)
-        return node.name();
+        return node.name;
     return {};
 }
 
@@ -75,14 +75,14 @@ std::optional<String> IdentifierSemantic::getColumnName(const ASTPtr & ast)
     if (ast)
         if (const auto * id = ast->as<ASTIdentifier>())
             if (!id->semantic->special)
-                return id->name();
+                return id->name;
     return {};
 }
 
 std::optional<String> IdentifierSemantic::getTableName(const ASTIdentifier & node)
 {
     if (node.semantic->special)
-        return node.name();
+        return node.name;
     return {};
 }
 
@@ -91,7 +91,7 @@ std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
     if (ast)
         if (const auto * id = ast->as<ASTIdentifier>())
             if (id->semantic->special)
-                return id->name();
+                return id->name;
     return {};
 }
 
@@ -151,7 +151,7 @@ StorageID IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & iden
 
     if (identifier.name_parts.size() == 2)
         return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
-    return { "", identifier.name_parts[0], identifier.uuid };
+    return { "", identifier.name, identifier.uuid };
 }
 
 std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const String & table_name)
@@ -232,8 +232,16 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const Da
     if (!to_strip)
         return;
 
-    identifier.name_parts = std::vector<String>(identifier.name_parts.begin() + to_strip, identifier.name_parts.end());
-    identifier.resetFullName();
+    std::vector<String> stripped(identifier.name_parts.begin() + to_strip, identifier.name_parts.end());
+
+    DB::String new_name;
+    for (const auto & part : stripped)
+    {
+        if (!new_name.empty())
+            new_name += '.';
+        new_name += part;
+    }
+    identifier.name.swap(new_name);
 }
 
 void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
@@ -241,11 +249,10 @@ void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const Dat
     String prefix = db_and_table.getQualifiedNamePrefix();
     if (!prefix.empty())
     {
+        String short_name = identifier.shortName();
+        identifier.name = prefix + short_name;
         prefix.resize(prefix.size() - 1); /// crop dot
-        identifier.name_parts = {prefix, identifier.shortName()};
-        identifier.resetFullName();
-        identifier.semantic->table = prefix;
-        identifier.semantic->legacy_compound = true;
+        identifier.name_parts = {prefix, short_name};
     }
 }
 

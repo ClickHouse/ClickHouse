@@ -60,7 +60,7 @@ public:
         return std::make_shared<DataTypeTuple>(arguments);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);
@@ -70,9 +70,9 @@ public:
               *  convert all to non-constant columns,
               *  because many places in code expect all non-constant columns in non-constant tuple.
               */
-            tuple_columns[i] = arguments[i].column->convertToFullColumnIfConst();
+            tuple_columns[i] = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
         }
-        return ColumnTuple::create(tuple_columns);
+        block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
     }
 };
 

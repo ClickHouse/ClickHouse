@@ -141,7 +141,6 @@
 01460_DistributedFilesToInsert
 01474_executable_dictionary
 01474_bad_global_join
-01457_create_as_table_function_structure
 01473_event_time_microseconds
 01461_query_start_time_microseconds
 01455_shard_leaf_max_rows_bytes_to_read
@@ -152,6 +151,3 @@
 00738_lock_for_inner_table
 01515_force_data_skipping_indices
 01526_complex_key_dict_direct_layout
-01509_dictionary_preallocate
-01526_max_untracked_memory
-01530_drop_database_atomic_sync

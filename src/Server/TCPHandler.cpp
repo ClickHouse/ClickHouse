@@ -253,32 +253,29 @@ void TCPHandler::runImpl()
             /// Processing Query
             state.io = executeQuery(state.query, *query_context, false, state.stage, may_have_embedded_data);
 
+            if (state.io.out)
+                state.need_receive_data_for_insert = true;
+
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            if (state.io.out)
-            {
-                state.need_receive_data_for_insert = true;
+            /// Does the request require receive data from client?
+            if (state.need_receive_data_for_insert)
                 processInsertQuery(connection_settings);
-            }
-            else if (state.need_receive_data_for_input) // It implies pipeline execution
+            else if (state.need_receive_data_for_input)
             {
                 /// It is special case for input(), all works for reading data from client will be done in callbacks.
                 auto executor = state.io.pipeline.execute();
                 executor->execute(state.io.pipeline.getNumThreads());
+                state.io.onFinish();
             }
             else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors();
-            else if (state.io.in)
+            else
                 processOrdinaryQuery();
-
-            state.io.onFinish();
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
-
-            if (state.is_connection_closed)
-                break;
 
             sendLogs();
             sendEndOfStream();
@@ -404,7 +401,7 @@ void TCPHandler::runImpl()
 
         watch.stop();
 
-        LOG_DEBUG(log, "Processed in {} sec.", watch.elapsedSeconds());
+        LOG_INFO(log, "Processed in {} sec.", watch.elapsedSeconds());
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
@@ -447,11 +444,7 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
 
     /// If client disconnected.
     if (in->eof())
-    {
-        LOG_INFO(log, "Client has dropped the connection, cancel the query.");
-        state.is_connection_closed = true;
         return false;
-    }
 
     /// We accept and process data. And if they are over, then we leave.
     if (!receivePacket())
@@ -484,8 +477,9 @@ void TCPHandler::readData(const Settings & connection_settings)
     std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
     sendLogs();
 
-    while (readDataNext(poll_interval, receive_timeout))
-        ;
+    while (true)
+        if (!readDataNext(poll_interval, receive_timeout))
+            return;
 }
 
 
@@ -515,6 +509,7 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
     readData(connection_settings);
     state.io.out->writeSuffix();
+    state.io.onFinish();
 }
 
 
@@ -573,11 +568,10 @@ void TCPHandler::processOrdinaryQuery()
             sendProgress();
         }
 
-        if (state.is_connection_closed)
-            return;
-
         sendData({});
     }
+
+    state.io.onFinish();
 
     sendProgress();
 }
@@ -641,11 +635,10 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendLogs();
         }
 
-        if (state.is_connection_closed)
-            return;
-
         sendData({});
     }
+
+    state.io.onFinish();
 
     sendProgress();
 }
@@ -1191,14 +1184,6 @@ bool TCPHandler::isQueryCancelled()
     /// During request execution the only packet that can come from the client is stopping the query.
     if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
     {
-        if (in->eof())
-        {
-            LOG_INFO(log, "Client has dropped the connection, cancel the query.");
-            state.is_cancelled = true;
-            state.is_connection_closed = true;
-            return true;
-        }
-
         UInt64 packet_type = 0;
         readVarUInt(packet_type, *in);
 
@@ -1325,7 +1310,7 @@ void TCPHandler::run()
     {
         runImpl();
 
-        LOG_DEBUG(log, "Done processing connection.");
+        LOG_INFO(log, "Done processing connection.");
     }
     catch (Poco::Exception & e)
     {

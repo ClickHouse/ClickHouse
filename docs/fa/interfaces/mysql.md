@@ -7,7 +7,7 @@ toc_title: "\u0631\u0627\u0628\u0637 MySQL"
 
 # رابط MySQL {#mysql-interface}
 
-کلیک پروتکل سیم خروجی زیر را پشتیبانی می کند. این را می توان با فعال [_وارد کردن](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) تنظیم در پرونده پیکربندی:
+کلیک پروتکل سیم خروجی زیر را پشتیبانی می کند. این را می توان با فعال [\_وارد کردن](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) تنظیم در پرونده پیکربندی:
 
 ``` xml
 <mysql_port>9004</mysql_port>

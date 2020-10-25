@@ -29,15 +29,7 @@ public:
         if constexpr (!_top_to_bottom)
             visitChildren(ast);
 
-        try
-        {
-            Matcher::visit(ast, data);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("While processing {}", ast->formatForErrorMessage());
-            throw;
-        }
+        Matcher::visit(ast, data);
 
         if constexpr (_top_to_bottom)
             visitChildren(ast);

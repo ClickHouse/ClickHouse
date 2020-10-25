@@ -42,6 +42,21 @@ class StorageDistributed final : public ext::shared_ptr_helper<StorageDistribute
 public:
     ~StorageDistributed() override;
 
+    static StoragePtr createWithOwnCluster(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const String & remote_database_,       /// database on remote servers.
+        const String & remote_table_,          /// The name of the table on the remote servers.
+        ClusterPtr owned_cluster_,
+        const Context & context_);
+
+    static StoragePtr createWithOwnCluster(
+            const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        ASTPtr & remote_table_function_ptr_,     /// Table function ptr.
+        ClusterPtr & owned_cluster_,
+        const Context & context_);
+
     std::string getName() const override { return "Distributed"; }
 
     bool supportsSampling() const override { return true; }
@@ -150,8 +165,7 @@ protected:
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
-        bool attach_,
-        ClusterPtr owned_cluster_ = {});
+        bool attach_);
 
     StorageDistributed(
         const StorageID & id_,
@@ -163,8 +177,7 @@ protected:
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
-        bool attach,
-        ClusterPtr owned_cluster_ = {});
+        bool attach);
 
     String relative_data_path;
 

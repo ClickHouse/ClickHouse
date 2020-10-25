@@ -69,7 +69,7 @@ UUID MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool re
 
     UUID id = generateRandomID();
     std::lock_guard lock{mutex};
-    insertNoLock(id, new_entity, replace_if_exists, notifications);
+    insertNoLock(generateRandomID(), new_entity, replace_if_exists, notifications);
     return id;
 }
 

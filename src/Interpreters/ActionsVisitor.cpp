@@ -15,6 +15,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/FieldToDataType.h>
 
+#include <DataStreams/LazyBlockInputStream.h>
+
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 
@@ -582,7 +584,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
 
         /// Special check for WITH statement alias. Add alias action to be able to use this alias.
         if (identifier.prefer_alias_to_column_name && !identifier.alias.empty())
-            data.addAlias(identifier.name(), identifier.alias);
+            data.addAlias(identifier.name, identifier.alias);
     }
 }
 
