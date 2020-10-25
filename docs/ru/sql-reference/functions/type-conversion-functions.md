@@ -362,6 +362,10 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
+**См. также**
+
+-   Настройка [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable)
+
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 
 Приводит аргумент из числового типа данных к типу данных [IntervalType](../../sql-reference/data-types/special-data-types/interval.md).

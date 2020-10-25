@@ -442,6 +442,66 @@ SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[
 
 То же, что like, но с отрицанием.
 
+## ilike {#ilike}
+
+Нечувствительный к регистру вариант функции [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like). Вы можете использовать оператор `ILIKE` вместо функции `ilike`.
+
+**Синтаксис**
+
+``` sql
+ilike(haystack, pattern)
+```
+
+**Параметры**
+
+-   `haystack` — Входная строка. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `pattern` — Если `pattern` не содержит процента или нижнего подчеркивания, тогда `pattern` представляет саму строку. Нижнее подчеркивание (`_`) в `pattern` обозначает любой отдельный символ. Знак процента (`%`) соответствует последовательности из любого количества символов: от нуля и более.
+
+Некоторые примеры `pattern`:
+
+``` text
+'abc' ILIKE 'abc'    true
+'abc' ILIKE 'a%'     true
+'abc' ILIKE '_b_'    true
+'abc' ILIKE 'c'      false
+```
+
+**Возвращаемые значения**
+
+-   Правда, если строка соответствует `pattern`.
+-   Ложь, если строка не соответствует `pattern`.
+
+**Пример**
+
+Входная таблица:
+
+``` text
+┌─id─┬─name─────┬─days─┐
+│  1 │ January  │   31 │
+│  2 │ February │   29 │
+│  3 │ March    │   31 │
+│  4 │ April    │   30 │
+└────┴──────────┴──────┘
+```
+
+Запрос:
+
+``` sql
+SELECT * FROM Months WHERE ilike(name, '%j%')
+```
+
+Результат:
+
+``` text
+┌─id─┬─name────┬─days─┐
+│  1 │ January │   31 │
+└────┴─────────┴──────┘
+```
+
+**Смотрите также**
+
+-   [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+
 ## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 
 Вычисление 4-граммного расстояния между `haystack` и `needle`: считается симметрическая разность между двумя мультимножествами 4-грамм и нормализуется на сумму их мощностей. Возвращает число float от 0 до 1 – чем ближе к нулю, тем больше строки похожи друг на друга. Если константный `needle` или `haystack` больше чем 32КБ, кидается исключение. Если некоторые строки из неконстантного `haystack` или `needle` больше 32КБ, расстояние всегда равно единице.

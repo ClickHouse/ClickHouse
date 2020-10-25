@@ -27,4 +27,30 @@ toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438"
 
 Настройки, которые можно задать только в конфигурационном файле сервера, в разделе не рассматриваются.
 
+## Пользовательские настройки {#custom_settings}
+
+В дополнение к общим [настройкам](../../operations/settings/settings.md), пользователи могут определять собственные настройки. 
+
+Название пользовательской настройки должно начинаться с одного из предопределённых префиксов. Список этих префиксов должен быть задан в параметре [custom_settings_prefixes](../../operations/server-configuration-parameters/settings.md#custom_settings_prefixes) конфигурационнного файла сервера.
+
+```xml
+<custom_settings_prefixes>custom_</custom_settings_prefixes>
+```
+
+Чтобы задать значение пользовательской настройке, используйте команду `SET`:
+
+```sql
+SET custom_a = 123;
+```
+
+Чтобы получить текущее значение пользовательской настройки, используйте функцию `getSetting()`:
+
+```sql
+SELECT getSetting('custom_a');    
+```
+
+**См. также**
+
+-   [Конфигурационные параметры сервера](../../operations/server-configuration-parameters/settings.md)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/) <!--hide-->

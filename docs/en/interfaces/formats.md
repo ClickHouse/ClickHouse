@@ -43,6 +43,7 @@ The supported formats are:
 | [PrettyNoEscapes](#prettynoescapes)                                                     | ✗     | ✔      |
 | [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
 | [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
+| [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
 | [Avro](#data-format-avro)                                                               | ✔     | ✔      |
 | [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
 | [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
@@ -1075,6 +1076,10 @@ are not applied; the [table defaults](../sql-reference/statements/create/table.m
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
+
+## ProtobufSingle {#protobufsingle}
+
+Same as [Protobuf](#protobuf) but for storing/parsing single Protobuf message without length delimiters.
 
 ## Avro {#data-format-avro}
 

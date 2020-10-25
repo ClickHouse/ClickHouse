@@ -370,6 +370,10 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
+**See also**
+
+-   [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable) setting
+
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 
 Converts a Number type argument to an [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type.

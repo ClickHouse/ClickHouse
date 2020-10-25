@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeString.h>
@@ -53,19 +52,22 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        if (!(executeType<UInt8>(block, result)
-            || executeType<UInt16>(block, result)
-            || executeType<UInt32>(block, result)
-            || executeType<UInt64>(block, result)
-            || executeType<Int8>(block, result)
-            || executeType<Int16>(block, result)
-            || executeType<Int32>(block, result)
-            || executeType<Int64>(block, result)))
-            throw Exception("Illegal column " + block[0].column->getName()
-                + " of argument of function " + getName(),
+        ColumnPtr res;
+        if (!((res = executeType<UInt8>(arguments))
+            || (res = executeType<UInt16>(arguments))
+            || (res = executeType<UInt32>(arguments))
+            || (res = executeType<UInt64>(arguments))
+            || (res = executeType<Int8>(arguments))
+            || (res = executeType<Int16>(arguments))
+            || (res = executeType<Int32>(arguments))
+            || (res = executeType<Int64>(arguments))))
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                            + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
+
+        return res;
     }
 
 private:
@@ -89,9 +91,9 @@ private:
     }
 
     template <typename T>
-    bool executeType(Block & block, size_t result) const
+    ColumnPtr executeType(ColumnsWithTypeAndName & columns) const
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block[0].column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(columns[0].column.get()))
         {
             auto col_to = ColumnString::create();
 
@@ -112,14 +114,10 @@ private:
             }
 
             buf_to.finalize();
-            block[result].column = std::move(col_to);
-        }
-        else
-        {
-            return false;
+            return col_to;
         }
 
-        return true;
+        return nullptr;
     }
 };
 
