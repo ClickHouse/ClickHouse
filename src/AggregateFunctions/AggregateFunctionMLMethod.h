@@ -39,10 +39,9 @@ public:
 
     virtual void predict(
         ColumnVector<Float64>::Container & container,
-        ColumnsWithTypeAndName & columns,
+        ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
         Float64 bias,
         const Context & context) const = 0;
@@ -65,10 +64,9 @@ public:
 
     void predict(
         ColumnVector<Float64>::Container & container,
-        ColumnsWithTypeAndName & columns,
+        ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
         Float64 bias,
         const Context & context) const override;
@@ -91,10 +89,9 @@ public:
 
     void predict(
         ColumnVector<Float64>::Container & container,
-        ColumnsWithTypeAndName & columns,
+        ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
         Float64 bias,
         const Context & context) const override;
@@ -264,10 +261,9 @@ public:
 
     void predict(
         ColumnVector<Float64>::Container & container,
-        ColumnsWithTypeAndName & columns,
+        ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const ColumnNumbers & arguments,
         const Context & context) const;
 
     void returnWeights(IColumn & to) const;
@@ -364,10 +360,9 @@ public:
     void predictValues(
         ConstAggregateDataPtr place,
         IColumn & to,
-        ColumnsWithTypeAndName & columns,
+        ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const ColumnNumbers & arguments,
         const Context & context) const override
     {
         if (arguments.size() != param_num + 1)
@@ -382,7 +377,7 @@ public:
             throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
                             ErrorCodes::LOGICAL_ERROR);
 
-        this->data(place).predict(column->getData(), columns, offset, limit, arguments, context);
+        this->data(place).predict(column->getData(), arguments, offset, limit, context);
     }
 
     /** This function is called if aggregate function without State modifier is selected in a query.

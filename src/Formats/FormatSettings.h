@@ -34,6 +34,7 @@ struct FormatSettings
         bool unquoted_null_literal_as_null = false;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
+        bool input_format_enum_as_number = false;
     };
 
     CSV csv;
@@ -81,6 +82,7 @@ struct FormatSettings
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         String null_representation = "\\N";
+        bool input_format_enum_as_number = false;
     };
 
     TSV tsv;

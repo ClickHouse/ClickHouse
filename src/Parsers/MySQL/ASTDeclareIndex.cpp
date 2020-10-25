@@ -73,7 +73,7 @@ static inline bool parseDeclareOrdinaryIndex(IParser::Pos & pos, String & index_
 
         index_type = "SPATIAL";
         if (p_identifier.parse(pos, temp_node, expected))
-            index_name = temp_node->as<ASTIdentifier>()->name;
+            index_name = temp_node->as<ASTIdentifier>()->name();
     }
     else if (ParserKeyword("FULLTEXT").ignore(pos, expected))
     {
@@ -82,7 +82,7 @@ static inline bool parseDeclareOrdinaryIndex(IParser::Pos & pos, String & index_
 
         index_type = "FULLTEXT";
         if (p_identifier.parse(pos, temp_node, expected))
-            index_name = temp_node->as<ASTIdentifier>()->name;
+            index_name = temp_node->as<ASTIdentifier>()->name();
     }
     else
     {
@@ -94,14 +94,14 @@ static inline bool parseDeclareOrdinaryIndex(IParser::Pos & pos, String & index_
 
         index_type = "KEY_BTREE";   /// default index type
         if (p_identifier.parse(pos, temp_node, expected))
-            index_name = temp_node->as<ASTIdentifier>()->name;
+            index_name = temp_node->as<ASTIdentifier>()->name();
 
         if (ParserKeyword("USING").ignore(pos, expected))
         {
             if (!p_identifier.parse(pos, temp_node, expected))
                 return false;
 
-            index_type = "KEY_" + temp_node->as<ASTIdentifier>()->name;
+            index_type = "KEY_" + temp_node->as<ASTIdentifier>()->name();
         }
     }
 
@@ -122,7 +122,7 @@ static inline bool parseDeclareConstraintIndex(IParser::Pos & pos, String & inde
             if (!p_identifier.parse(pos, temp_node, expected))
                 return false;
 
-            index_name = temp_node->as<ASTIdentifier>()->name;
+            index_name = temp_node->as<ASTIdentifier>()->name();
         }
     }
 
@@ -132,7 +132,7 @@ static inline bool parseDeclareConstraintIndex(IParser::Pos & pos, String & inde
             ParserKeyword("INDEX").ignore(pos, expected);
 
         if (p_identifier.parse(pos, temp_node, expected))
-            index_name = temp_node->as<ASTIdentifier>()->name;  /// reset index_name
+            index_name = temp_node->as<ASTIdentifier>()->name();  /// reset index_name
 
         index_type = "UNIQUE_BTREE"; /// default btree index_type
         if (ParserKeyword("USING").ignore(pos, expected))
@@ -140,7 +140,7 @@ static inline bool parseDeclareConstraintIndex(IParser::Pos & pos, String & inde
             if (!p_identifier.parse(pos, temp_node, expected))
                 return false;
 
-            index_type = "UNIQUE_" + temp_node->as<ASTIdentifier>()->name;
+            index_type = "UNIQUE_" + temp_node->as<ASTIdentifier>()->name();
         }
     }
     else if (ParserKeyword("PRIMARY KEY").ignore(pos, expected))
@@ -151,14 +151,14 @@ static inline bool parseDeclareConstraintIndex(IParser::Pos & pos, String & inde
             if (!p_identifier.parse(pos, temp_node, expected))
                 return false;
 
-            index_type = "PRIMARY_KEY_" + temp_node->as<ASTIdentifier>()->name;
+            index_type = "PRIMARY_KEY_" + temp_node->as<ASTIdentifier>()->name();
         }
     }
     else if (ParserKeyword("FOREIGN KEY").ignore(pos, expected))
     {
         index_type = "FOREIGN";
         if (p_identifier.parse(pos, temp_node, expected))
-            index_name = temp_node->as<ASTIdentifier>()->name;  /// reset index_name
+            index_name = temp_node->as<ASTIdentifier>()->name();  /// reset index_name
     }
 
     return true;

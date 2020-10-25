@@ -139,7 +139,7 @@ ENGINE = <Engine>
 ```
 
 The `Default` codec can be specified to reference default compression which may dependend on different settings (and properties of data) in runtime. 
-Example: `value UInt64 CODEC(Default)` - the same as lack of codec specification.
+Example: `value UInt64 CODEC(Default)` — the same as lack of codec specification.
 
 Also you can remove current CODEC from the column and use default compression from config.xml:
 

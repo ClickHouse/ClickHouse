@@ -250,6 +250,8 @@ Pipe StorageMerge::read(
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
     if (!pipe.empty())
+        // It's possible to have many tables read from merge, resize(num_streams) might open too many files at the same time.
+        // Using narrowPipe instead.
         narrowPipe(pipe, num_streams);
 
     return pipe;
@@ -324,6 +326,8 @@ Pipe StorageMerge::createSources(
     if (!pipe.empty())
     {
         if (concat_streams && pipe.numOutputPorts() > 1)
+            // It's possible to have many tables read from merge, resize(1) might open too many files at the same time.
+            // Using concat instead.
             pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
 
         if (has_table_virtual_column)
@@ -340,6 +344,7 @@ Pipe StorageMerge::createSources(
         convertingSourceStream(header, metadata_snapshot, *modified_context, modified_query_info.query, pipe, processed_stage);
 
         pipe.addTableLock(struct_lock);
+        pipe.addStorageHolder(storage);
         pipe.addInterpreterContext(modified_context);
     }
 

@@ -305,6 +305,10 @@ When enabled, replace empty input fields in TSV with default values. For complex
 
 Disabled by default.
 
+## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
+
+For TSV input format switches to parsing enum values as enum ids.
+
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
 Enables or disables using default values if input data contain `NULL`, but the data type of the corresponding column in not `Nullable(T)` (for text input formats).
@@ -1161,6 +1165,10 @@ The character is interpreted as a delimiter in the CSV data. By default, the del
 
 For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
 
+## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
+
+For CSV input format switches to parsing enum values as enum ids.
+
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
@@ -1395,6 +1403,17 @@ Possible values:
 
 -   0 — Disabled.
 -   1 — Enabled.
+
+Default value: 0
+
+## allow_nondeterministic_optimize_skip_unused_shards {#allow-nondeterministic-optimize-skip-unused-shards}
+
+Allow nondeterministic (like `rand` or `dictGet`, since later has some caveats with updates) functions in sharding key.
+
+Possible values:
+
+-   0 — Disallowed.
+-   1 — Allowed.
 
 Default value: 0
 
@@ -2034,18 +2053,18 @@ Default value: `120` seconds.
 
 Enables or disables keeping of the `Nullable` data type in [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) operations.
 
-If set, `CAST(something_nullable AS Type)` returns `Nullable(Type)`.
+When the setting is enabled and the argument of `CAST` function is `Nullable`, the result is also transformed to `Nullable` type. When the setting is disabled, the result always has the destination type exactly.
 
 Possible values:
 
--  0 — The final type of `CAST` exactly the destination data type specified.
--  1 — The final type of `CAST` becomes `Nullable(DestinationDataType)`. 
+-  0 — The `CAST` result has exactly the destination type specified.
+-  1 — If the argument type is `Nullable`, the `CAST` result is transformed to `Nullable(DestinationDataType)`. 
 
 Default value: `0`.
 
 **Examples** 
 
-The following query exactly results in the destination data type:
+The following query results in the destination data type exactly:
 
 ```sql
 SET cast_keep_nullable = 0;
@@ -2077,7 +2096,7 @@ Result:
 
 **See Also** 
 
--   [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) operator
+-   [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function
 
 ## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
 

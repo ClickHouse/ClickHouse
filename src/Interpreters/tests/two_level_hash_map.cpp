@@ -128,7 +128,7 @@ int main(int argc, char ** argv)
         std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;
 
         if (sum_counts != n)
-            std::cerr << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+            std::cerr << "Error!" << std::endl;
     }
 
     return 0;

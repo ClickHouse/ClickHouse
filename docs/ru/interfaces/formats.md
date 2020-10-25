@@ -27,6 +27,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [PrettyNoEscapes](#prettynoescapes)                             | ✗      | ✔      |
 | [PrettySpace](#prettyspace)                                     | ✗      | ✔      |
 | [Protobuf](#protobuf)                                           | ✔      | ✔      |
+| [ProtobufSingle](#protobufsingle)                               | ✔      | ✔      |
 | [Parquet](#data-format-parquet)                                 | ✔      | ✔      |
 | [Arrow](#data-format-arrow)                                     | ✔      | ✔      |
 | [ArrowStream](#data-format-arrow-stream)                        | ✔      | ✔      |
@@ -948,6 +949,10 @@ message MessageType {
 ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
 в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
+## ProtobufSingle {#protobufsingle}
+
+То же, что [Protobuf](#protobuf), но без разделителей. Позволяет записать / прочитать не более одного сообщения за раз.
+
 ## Avro {#data-format-avro}
 
 [Apache Avro](https://avro.apache.org/) — это ориентированный на строки фреймворк для сериализации данных. Разработан в рамках проекта Apache Hadoop.
@@ -958,7 +963,7 @@ ClickHouse пишет и читает сообщения `Protocol Buffers` в �
 
 ## AvroConfluent {#data-format-avro-confluent}
 
-Для формата `AvroConfluent` ClickHouse поддерживает декодирование сообщений `Avro` с одним объектом. Такие сообщения используются с [Kafka] (http://kafka.apache.org/) и  реестром схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html). 
+Для формата `AvroConfluent` ClickHouse поддерживает декодирование сообщений `Avro` с одним объектом. Такие сообщения используются с [Kafka] (http://kafka.apache.org/) и  реестром схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html).
 
 Каждое сообщение `Avro` содержит идентификатор схемы, который может быть разрешен для фактической схемы с помощью реестра схем.
 
@@ -972,7 +977,7 @@ URL-адрес реестра схем настраивается с помощ�
 
 ### Использование {#ispolzovanie}
 
-Чтобы быстро проверить разрешение схемы, используйте [kafkacat](https://github.com/edenhill/kafkacat) с языком запросов [clickhouse-local](../operations/utilities/clickhouse-local.md): 
+Чтобы быстро проверить разрешение схемы, используйте [kafkacat](https://github.com/edenhill/kafkacat) с языком запросов [clickhouse-local](../operations/utilities/clickhouse-local.md):
 
 ``` bash
 $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-local   --input-format AvroConfluent --format_avro_schema_registry_url 'http://schema-registry' -S "field1 Int64, field2 String"  -q 'select *  from table'
