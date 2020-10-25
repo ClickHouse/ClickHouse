@@ -134,7 +134,7 @@ set(ORC_SRCS
         ${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc
         ${ORC_GENERATED_SRCS})
 
-# === flight
+# === arrow flight
 
 set(ARROW_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow)
 set(ARROW_PROTO_DIR ${ARROW_SOURCE_DIR}/format)
@@ -257,6 +257,22 @@ set(ARROW_SRCS
 
         ${LIBRARY_DIR}/vendored/base64.cpp
 
+        ${LIBRARY_DIR}/vendored/uriparser/UriCommon.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriCompare.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriEscape.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriFile.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriIp4.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriIp4Base.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriMemory.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriNormalize.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriNormalizeBase.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriParse.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriParseBase.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriQuery.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriRecompose.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriResolve.c
+        ${LIBRARY_DIR}/vendored/uriparser/UriShorten.c
+
         ${ORC_SRCS}
         ${ARROW_FLIGHT_SRCS})
 
@@ -321,14 +337,14 @@ if (ARROW_WITH_ZSTD)
     target_include_directories(${ARROW_LIBRARY} SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GOOGLE_PROTOBUF_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GRPC_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_WRAP_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GOOGLE_PROTOBUF_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_GENERATED_SRC_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GRPC_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_FLIGHT_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_FLIGHT_GENERATED_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${FLATBUFFERS_INCLUDE_DIR})
