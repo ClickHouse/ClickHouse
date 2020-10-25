@@ -57,6 +57,7 @@ struct QueryState
 
     /// Is request cancelled
     bool is_cancelled = false;
+    bool is_connection_closed = false;
     /// empty or not
     bool is_empty = true;
     /// Data was sent.

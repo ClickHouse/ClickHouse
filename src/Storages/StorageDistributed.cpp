@@ -271,7 +271,7 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
             if (!id)
                 return false;
             /// TODO: if GROUP BY contains multiIf()/if() it should contain only columns from sharding_key
-            if (!sharding_key_block.has(id->name))
+            if (!sharding_key_block.has(id->name()))
                 return false;
         }
         return true;

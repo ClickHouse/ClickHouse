@@ -172,7 +172,7 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     for (size_t index = 0; index != children.size(); ++index)
     {
         const ASTIdentifier * key_part = children[index]->as<const ASTIdentifier>();
-        result.push_back(key_part->name);
+        result.push_back(key_part->name());
     }
     return result;
 }
@@ -367,7 +367,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
 
         if (const auto * identifier = pair->second->as<const ASTIdentifier>(); identifier)
         {
-            AutoPtr<Text> value(doc->createTextNode(identifier->name));
+            AutoPtr<Text> value(doc->createTextNode(identifier->name()));
             current_xml_element->appendChild(value);
         }
         else if (const auto * literal = pair->second->as<const ASTLiteral>(); literal)

@@ -99,3 +99,6 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' && echo "Files should not have UTF-8 BOM"
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFF\xFE' && echo "Files should not have UTF-16LE BOM"
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' && echo "Files should not have UTF-16BE BOM"
+
+# Too many exclamation marks
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -F '!!!' && echo "Too many exclamation marks (looks dirty, unconfident)."
