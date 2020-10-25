@@ -162,7 +162,12 @@ void DatabaseCatalog::shutdownImpl()
     tables_marked_dropped.clear();
 
     std::lock_guard lock(databases_mutex);
-    assert(std::find_if_not(uuid_map.begin(), uuid_map.end(), [](const auto & elem) { return elem.map.empty(); }) == uuid_map.end());
+    assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
+    {
+        const auto & not_empty_mapping = [] (const auto & mapping) { return mapping.second.second; };
+        auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
+        return it != elem.map.end();
+    }) == uuid_map.end());
     databases.clear();
     db_uuid_map.clear();
     view_dependencies.clear();
