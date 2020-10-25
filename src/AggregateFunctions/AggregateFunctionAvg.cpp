@@ -1,3 +1,4 @@
+#include <memory>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionAvg.h>
 #include <AggregateFunctions/Helpers.h>
@@ -13,23 +14,22 @@ namespace ErrorCodes
 
 namespace
 {
+constexpr bool allowType(const DataTypePtr& type) noexcept
+{
+    const WhichDataType t(type);
+    return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal();
+}
+
 AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
-    AggregateFunctionPtr res;
-    DataTypePtr data_type = argument_types[0];
-
-    if (isDecimal(data_type))
-        res.reset(createWithDecimalType<AggregateFunctionAvg>(*data_type, *data_type, argument_types));
-    else
-        res.reset(createWithNumericType<AggregateFunctionAvg>(*data_type, argument_types));
-
-    if (!res)
+    if (!allowType(argument_types[0]))
         throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    return res;
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    return std::make_shared<AggregateFunctionAvg>(argument_types);
 }
 }
 
