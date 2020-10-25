@@ -11,15 +11,13 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
-
-namespace
-{
 
 /// Returns 1 if and Decimal value has more digits then it's Precision allow, 0 otherwise.
 /// Precision could be set as second argument or omitted. If ommited function uses Decimal presicion of the first argument.
@@ -60,16 +58,16 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
     {
-        const auto & src_column = arguments[0];
+        const auto & src_column = block.getByPosition(arguments[0]);
         if (!src_column.column)
             throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         UInt32 precision = 0;
         if (arguments.size() == 2)
         {
-            const auto & precision_column = arguments[1];
+            const auto & precision_column = block.getByPosition(arguments[1]);
             if (!precision_column.column)
                 throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -112,7 +110,7 @@ public:
             throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
                             ErrorCodes::ILLEGAL_COLUMN);
 
-        return result_column;
+        block.getByPosition(result_pos).column = std::move(result_column);
     }
 
 private:
@@ -144,7 +142,6 @@ private:
     }
 };
 
-}
 
 void registerFunctionIsDecimalOverflow(FunctionFactory & factory)
 {

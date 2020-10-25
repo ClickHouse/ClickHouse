@@ -20,7 +20,7 @@ ClickHouse поддерживает иерархические словари с
 
 Эту иерархию можно выразить в виде следующей таблицы-словаря.
 
-| region_id | parent_region | region_name  |
+| region\_id | parent\_region | region\_name  |
 |------------|----------------|---------------|
 | 1          | 0              | Russia        |
 | 2          | 1              | Moscow        |

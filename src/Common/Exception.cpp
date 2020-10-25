@@ -2,7 +2,6 @@
 
 #include <string.h>
 #include <cxxabi.h>
-#include <cstdlib>
 #include <Poco/String.h>
 #include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -37,13 +36,13 @@ namespace ErrorCodes
 Exception::Exception(const std::string & msg, int code)
     : Poco::Exception(msg, code)
 {
-    // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
+    // In debug builds, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifndef NDEBUG
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", msg);
-        abort();
+        LOG_ERROR(&Poco::Logger::root(), "Logical error: '{}'.", msg);
+        assert(false);
     }
 #endif
 }

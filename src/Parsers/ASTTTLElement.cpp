@@ -57,11 +57,6 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
             }
         }
     }
-    else if (mode == TTLMode::RECOMPRESS)
-    {
-        settings.ostr << " RECOMPRESS ";
-        recompression_codec->formatImpl(settings, state, frame);
-    }
     else if (mode == TTLMode::DELETE)
     {
         /// It would be better to output "DELETE" here but that will break compatibility with earlier versions.

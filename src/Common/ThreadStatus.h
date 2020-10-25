@@ -164,8 +164,6 @@ public:
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
 protected:
-    void applyQuerySettings();
-
     void initPerformanceCounters();
 
     void initQueryProfiler();
@@ -192,7 +190,6 @@ protected:
 
     bool performance_counters_finalized = false;
     UInt64 query_start_time_nanoseconds = 0;
-    UInt64 query_start_time_microseconds = 0;
     time_t query_start_time = 0;
     size_t queries_started = 0;
 

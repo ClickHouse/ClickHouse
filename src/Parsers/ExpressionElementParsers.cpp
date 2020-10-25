@@ -789,7 +789,6 @@ bool ParserDateAddExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ++pos;
 
     IntervalKind interval_kind;
-    ASTPtr interval_func_node;
     if (parseIntervalKind(pos, expected, interval_kind))
     {
         /// function(unit, offset, timestamp)
@@ -806,13 +805,6 @@ bool ParserDateAddExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
         if (!ParserExpression().parse(pos, timestamp_node, expected))
             return false;
-        auto interval_expr_list_args = std::make_shared<ASTExpressionList>();
-        interval_expr_list_args->children = {offset_node};
-
-        interval_func_node = std::make_shared<ASTFunction>();
-        interval_func_node->as<ASTFunction &>().name = interval_kind.toNameOfFunctionToIntervalDataType();
-        interval_func_node->as<ASTFunction &>().arguments = std::move(interval_expr_list_args);
-        interval_func_node->as<ASTFunction &>().children.push_back(interval_func_node->as<ASTFunction &>().arguments);
     }
     else
     {
@@ -824,12 +816,26 @@ bool ParserDateAddExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
             return false;
         ++pos;
 
-        if (!ParserIntervalOperatorExpression{}.parse(pos, interval_func_node, expected))
+        if (!ParserKeyword("INTERVAL").ignore(pos, expected))
+            return false;
+
+        if (!ParserExpression().parse(pos, offset_node, expected))
+            return false;
+
+        if (!parseIntervalKind(pos, expected, interval_kind))
             return false;
     }
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
+
+    auto interval_expr_list_args = std::make_shared<ASTExpressionList>();
+    interval_expr_list_args->children = {offset_node};
+
+    auto interval_func_node = std::make_shared<ASTFunction>();
+    interval_func_node->name = interval_kind.toNameOfFunctionToIntervalDataType();
+    interval_func_node->arguments = std::move(interval_expr_list_args);
+    interval_func_node->children.push_back(interval_func_node->arguments);
 
     auto expr_list_args = std::make_shared<ASTExpressionList>();
     expr_list_args->children = {timestamp_node, interval_func_node};
@@ -1182,7 +1188,6 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword columns("COLUMNS");
-    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserStringLiteral regex;
 
     if (!columns.ignore(pos, expected))
@@ -1192,9 +1197,8 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     ++pos;
 
-    ASTPtr column_list;
     ASTPtr regex_node;
-    if (!columns_p.parse(pos, column_list, expected) && !regex.parse(pos, regex_node, expected))
+    if (!regex.parse(pos, regex_node, expected))
         return false;
 
     if (pos->type != TokenType::ClosingRoundBracket)
@@ -1202,17 +1206,8 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ++pos;
 
     auto res = std::make_shared<ASTColumnsMatcher>();
-    if (column_list)
-    {
-        res->column_list = column_list;
-        res->children.push_back(res->column_list);
-    }
-    else
-    {
-        res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
-        res->children.push_back(regex_node);
-    }
-
+    res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+    res->children.push_back(regex_node);
     ParserColumnsTransformers transformers_p;
     ASTPtr transformer;
     while (transformers_p.parse(pos, transformer, expected))
@@ -1667,8 +1662,6 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_where("WHERE");
     ParserKeyword s_group_by("GROUP BY");
     ParserKeyword s_set("SET");
-    ParserKeyword s_recompress("RECOMPRESS");
-    ParserKeyword s_codec("CODEC");
     ParserToken s_comma(TokenType::Comma);
     ParserToken s_eq(TokenType::Equals);
 
@@ -1676,7 +1669,6 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;
     ParserExpressionList parser_expression_list(false);
-    ParserCodec parser_codec;
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
@@ -1700,10 +1692,6 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         mode = TTLMode::GROUP_BY;
     }
-    else if (s_recompress.ignore(pos))
-    {
-        mode = TTLMode::RECOMPRESS;
-    }
     else
     {
         s_delete.ignore(pos);
@@ -1712,7 +1700,6 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ASTPtr where_expr;
     ASTPtr ast_group_by_key;
-    ASTPtr recompression_codec;
     std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
 
     if (mode == TTLMode::MOVE)
@@ -1756,14 +1743,6 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_exp.parse(pos, where_expr, expected))
             return false;
     }
-    else if (mode == TTLMode::RECOMPRESS)
-    {
-        if (!s_codec.ignore(pos))
-            return false;
-
-        if (!parser_codec.parse(pos, recompression_codec, expected))
-            return false;
-    }
 
     auto ttl_element = std::make_shared<ASTTTLElement>(mode, destination_type, destination_name);
     ttl_element->setTTL(std::move(ttl_expr));
@@ -1775,9 +1754,6 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ttl_element->group_by_key = std::move(ast_group_by_key->children);
         ttl_element->group_by_aggregations = std::move(group_by_aggregations);
     }
-
-    if (mode == TTLMode::RECOMPRESS)
-        ttl_element->recompression_codec = recompression_codec;
 
     node = ttl_element;
     return true;

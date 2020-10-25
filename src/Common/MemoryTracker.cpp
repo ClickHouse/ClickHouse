@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <common/logger_useful.h>
-#include <Common/ProfileEvents.h>
 
 #include <atomic>
 #include <cmath>
@@ -23,14 +22,8 @@ namespace DB
     }
 }
 
-namespace ProfileEvents
-{
-    extern const Event QueryMemoryLimitExceeded;
-}
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
-
-thread_local bool MemoryTracker::BlockerInThread::is_blocked = false;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
@@ -58,15 +51,13 @@ MemoryTracker::~MemoryTracker()
 void MemoryTracker::logPeakMemoryUsage() const
 {
     const auto * description = description_ptr.load(std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"),
-        "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak));
+    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"), "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak));
 }
 
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
     const auto * description = description_ptr.load(std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"),
-        "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
+    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"), "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
 }
 
 
@@ -75,7 +66,7 @@ void MemoryTracker::alloc(Int64 size)
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
 
-    if (BlockerInThread::isBlocked())
+    if (blocker.isCancelled())
         return;
 
     /** Using memory_order_relaxed means that if allocations are done simultaneously,
@@ -90,15 +81,12 @@ void MemoryTracker::alloc(Int64 size)
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
 
-    /// Cap the limit to the total_memory_tracker, since it may include some drift
-    /// for user-level memory tracker.
+    /// Cap the limit to the total_memory_tracker, since it may include some drift.
     ///
     /// And since total_memory_tracker is reset to the process resident
     /// memory peridically (in AsynchronousMetrics::update()), any limit can be
     /// capped to it, to avoid possible drift.
-    if (unlikely(current_hard_limit
-        && will_be > current_hard_limit
-        && level == VariableContext::User))
+    if (unlikely(current_hard_limit && will_be > current_hard_limit))
     {
         Int64 total_amount = total_memory_tracker.get();
         if (amount > total_amount)
@@ -111,10 +99,11 @@ void MemoryTracker::alloc(Int64 size)
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability && fault(thread_local_rng)))
     {
-        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        BlockerInThread untrack_lock;
+        free(size);
 
-        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+        auto untrack_lock = blocker.cancel(); // NOLINT
+
         std::stringstream message;
         message << "Memory tracker";
         if (const auto * description = description_ptr.load(std::memory_order_relaxed))
@@ -123,13 +112,12 @@ void MemoryTracker::alloc(Int64 size)
             << " (attempt to allocate chunk of " << size << " bytes)"
             << ", maximum: " << formatReadableSizeWithBinarySuffix(current_hard_limit);
 
-        amount.fetch_sub(size, std::memory_order_relaxed);
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
 
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
-        BlockerInThread untrack_lock;
+        auto no_track = blocker.cancel();
         DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
         setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
     }
@@ -137,16 +125,17 @@ void MemoryTracker::alloc(Int64 size)
     std::bernoulli_distribution sample(sample_probability);
     if (unlikely(sample_probability && sample(thread_local_rng)))
     {
-        BlockerInThread untrack_lock;
+        auto no_track = blocker.cancel();
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
     }
 
     if (unlikely(current_hard_limit && will_be > current_hard_limit))
     {
-        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        BlockerInThread untrack_lock;
+        free(size);
 
-        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+        auto no_track = blocker.cancel(); // NOLINT
+
         std::stringstream message;
         message << "Memory limit";
         if (const auto * description = description_ptr.load(std::memory_order_relaxed))
@@ -155,7 +144,6 @@ void MemoryTracker::alloc(Int64 size)
             << " (attempt to allocate chunk of " << size << " bytes)"
             << ", maximum: " << formatReadableSizeWithBinarySuffix(current_hard_limit);
 
-        amount.fetch_sub(size, std::memory_order_relaxed);
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
 
@@ -182,13 +170,13 @@ void MemoryTracker::updatePeak(Int64 will_be)
 
 void MemoryTracker::free(Int64 size)
 {
-    if (BlockerInThread::isBlocked())
+    if (blocker.isCancelled())
         return;
 
     std::bernoulli_distribution sample(sample_probability);
     if (unlikely(sample_probability && sample(thread_local_rng)))
     {
-        BlockerInThread untrack_lock;
+        auto no_track = blocker.cancel();
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
     }
 
@@ -302,4 +290,12 @@ namespace CurrentMemoryTracker
             }
         }
     }
+}
+
+DB::SimpleActionLock getCurrentMemoryTrackerActionLock()
+{
+    auto * memory_tracker = DB::CurrentThread::getMemoryTracker();
+    if (!memory_tracker)
+        return {};
+    return memory_tracker->blocker.cancel();
 }
