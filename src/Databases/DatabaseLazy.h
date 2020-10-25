@@ -24,7 +24,7 @@ public:
 
     void loadStoredObjects(
         Context & context,
-        bool has_force_restore_data_flag, bool force_attach) override;
+        bool has_force_restore_data_flag) override;
 
     void createTable(
         const Context & context,

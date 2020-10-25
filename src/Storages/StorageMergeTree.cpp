@@ -41,7 +41,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int UNKNOWN_POLICY;
 }
 
 namespace ActionLocks
@@ -172,7 +171,7 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
-Pipe StorageMergeTree::read(
+Pipes StorageMergeTree::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -287,12 +286,7 @@ struct CurrentlyMergingPartsTagger
     StorageMergeTree & storage;
 
 public:
-    CurrentlyMergingPartsTagger(
-        FutureMergedMutatedPart & future_part_,
-        size_t total_size,
-        StorageMergeTree & storage_,
-        const StorageMetadataPtr & metadata_snapshot,
-        bool is_mutation)
+    CurrentlyMergingPartsTagger(FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
@@ -310,7 +304,7 @@ public:
                 max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
             }
 
-            reserved_space = storage.tryReserveSpacePreferringTTLRules(metadata_snapshot, total_size, ttl_infos, time(nullptr), max_volume_index);
+            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr), max_volume_index);
         }
         if (!reserved_space)
         {
@@ -633,13 +627,11 @@ bool StorageMergeTree::merge(
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto data_settings = getSettings();
 
     FutureMergedMutatedPart future_part;
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
-    MergeList::EntryPtr merge_entry;
 
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
@@ -659,21 +651,8 @@ bool StorageMergeTree::merge(
         if (partition_id.empty())
         {
             UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
-            bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < data_settings->max_number_of_merges_with_ttl_in_pool;
-
-            /// TTL requirements is much more strict than for regular merge, so
-            /// if regular not possible, than merge with ttl is not also not
-            /// possible.
             if (max_source_parts_size > 0)
-            {
-                selected = merger_mutator.selectPartsToMerge(
-                    future_part,
-                    aggressive,
-                    max_source_parts_size,
-                    can_merge,
-                    merge_with_ttl_allowed,
-                    out_disable_reason);
-            }
+                selected = merger_mutator.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
             else if (out_disable_reason)
                 *out_disable_reason = "Current value of max_source_parts_size is zero";
         }
@@ -721,10 +700,11 @@ bool StorageMergeTree::merge(
             return false;
         }
 
-        merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, metadata_snapshot, false);
-        auto table_id = getStorageID();
-        merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+        merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
     }
+
+    auto table_id = getStorageID();
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
 
     /// Logging
     Stopwatch stopwatch;
@@ -744,9 +724,13 @@ bool StorageMergeTree::merge(
 
     try
     {
+        /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
+        ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
+        bool force_ttl = (final && metadata_snapshot->hasAnyTTL());
+
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr), global_context,
-            merging_tagger->reserved_space, deduplicate);
+            future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr),
+            merging_tagger->reserved_space, deduplicate, force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         write_part_log({});
@@ -862,7 +846,7 @@ bool StorageMergeTree::tryMutatePart()
             future_part.name = part->getNewName(new_part_info);
             future_part.type = part->getType();
 
-            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
+            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true);
             break;
         }
     }
@@ -1071,7 +1055,7 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
-Pipe StorageMergeTree::alterPartition(
+Pipes StorageMergeTree::alterPartition(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
@@ -1154,7 +1138,7 @@ Pipe StorageMergeTree::alterPartition(
     if (query_context.getSettingsRef().alter_partition_verbose_result)
         return convertCommandsResultToSource(result);
 
-    return {};
+    return { };
 }
 
 
@@ -1218,7 +1202,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 }
 
 
-PartitionCommandsResultInfo StorageMergeTree::attachPartition(
+PartitionCommandsResultInfo  StorageMergeTree::attachPartition(
     const ASTPtr & partition, bool attach_part, const Context & context)
 {
     PartitionCommandsResultInfo results;
@@ -1332,7 +1316,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         throw Exception("Destination table " + dest_table_storage->getStorageID().getNameForLogs() +
                        " should have the same storage policy of source table " + getStorageID().getNameForLogs() + ". " +
                        getStorageID().getNameForLogs() + ": " + this->getStoragePolicy()->getName() + ", " +
-                       dest_table_storage->getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_POLICY);
+                       dest_table_storage->getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::LOGICAL_ERROR);
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();

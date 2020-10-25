@@ -72,7 +72,7 @@ public:
 
     struct NestedPoolStatus
     {
-        const Base::NestedPoolPtr pool;
+        const IConnectionPool * pool;
         size_t error_count;
         std::chrono::seconds estimated_recovery_time;
     };

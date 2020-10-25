@@ -13,10 +13,8 @@ namespace DB
 
 ReadFromStorageStep::ReadFromStorageStep(
     TableLockHolder table_lock,
-    StorageMetadataPtr metadata_snapshot,
-    StreamLocalLimits & limits,
-    SizeLimits & leaf_limits,
-    std::shared_ptr<const EnabledQuota> quota,
+    StorageMetadataPtr & metadata_snapshot,
+    SelectQueryOptions options,
     StoragePtr storage,
     const Names & required_columns,
     const SelectQueryInfo & query_info,
@@ -28,65 +26,84 @@ ReadFromStorageStep::ReadFromStorageStep(
     /// Note: we read from storage in constructor of step because we don't know real header before reading.
     /// It will be fixed when storage return QueryPlanStep itself.
 
-    Pipe pipe = storage->read(required_columns, metadata_snapshot, query_info, *context, processing_stage, max_block_size, max_streams);
+    Pipes pipes = storage->read(required_columns, metadata_snapshot, query_info, *context, processing_stage, max_block_size, max_streams);
 
-    if (pipe.empty())
+    if (pipes.empty())
     {
-        pipe = Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID())));
+        Pipe pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID())));
 
         if (query_info.prewhere_info)
         {
             if (query_info.prewhere_info->alias_actions)
-            {
-                pipe.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
-                });
-            }
+                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(
+                        pipe.getHeader(), query_info.prewhere_info->alias_actions));
 
-            pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<FilterTransform>(
-                    header,
+            pipe.addSimpleTransform(std::make_shared<FilterTransform>(
+                    pipe.getHeader(),
                     query_info.prewhere_info->prewhere_actions,
                     query_info.prewhere_info->prewhere_column_name,
-                    query_info.prewhere_info->remove_prewhere_column);
-            });
+                    query_info.prewhere_info->remove_prewhere_column));
 
             // To remove additional columns
             // In some cases, we did not read any marks so that the pipeline.streams is empty
             // Thus, some columns in prewhere are not removed as expected
             // This leads to mismatched header in distributed table
             if (query_info.prewhere_info->remove_columns_actions)
-            {
-                pipe.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<ExpressionTransform>(
-                            header, query_info.prewhere_info->remove_columns_actions);
-                });
-            }
+                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(
+                        pipe.getHeader(), query_info.prewhere_info->remove_columns_actions));
         }
+
+        pipes.emplace_back(std::move(pipe));
     }
 
     pipeline = std::make_unique<QueryPipeline>();
     QueryPipelineProcessorsCollector collector(*pipeline, this);
 
-    pipe.setLimits(limits);
+    /// Set the limits and quota for reading data, the speed and time of the query.
+    {
+        const Settings & settings = context->getSettingsRef();
 
-    /**
-      * Leaf size limits should be applied only for local processing of distributed queries.
-      * Such limits allow to control the read stage on leaf nodes and exclude the merging stage.
-      * Consider the case when distributed query needs to read from multiple shards. Then leaf
-      * limits will be applied on the shards only (including the root node) but will be ignored
-      * on the results merging stage.
-      */
-    if (!storage->isRemote())
-        pipe.setLeafLimits(leaf_limits);
+        IBlockInputStream::LocalLimits limits;
+        limits.mode = IBlockInputStream::LIMITS_TOTAL;
+        limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
+        limits.speed_limits.max_execution_time = settings.max_execution_time;
+        limits.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-    if (quota)
-        pipe.setQuota(quota);
+        /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
+          *  because the initiating server has a summary of the execution of the request on all servers.
+          *
+          * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
+          *  additionally on each remote server, because these limits are checked per block of data processed,
+          *  and remote servers may process way more blocks of data than are received by initiator.
+          *
+          * The limits to throttle maximum execution speed is also checked on all servers.
+          */
+        if (options.to_stage == QueryProcessingStage::Complete)
+        {
+            limits.speed_limits.min_execution_rps = settings.min_execution_speed;
+            limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
+        }
 
-    pipeline->init(std::move(pipe));
+        limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+        limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
+        limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+
+        auto quota = context->getQuota();
+
+        for (auto & pipe : pipes)
+        {
+            if (!options.ignore_limits)
+                pipe.setLimits(limits);
+
+            if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
+                pipe.setQuota(quota);
+        }
+    }
+
+    for (auto & pipe : pipes)
+        pipe.enableQuota();
+
+    pipeline->init(std::move(pipes));
 
     /// Add resources to pipeline. The order is important.
     /// Add in reverse order of destruction. Pipeline will be destroyed at the end in case of exception.

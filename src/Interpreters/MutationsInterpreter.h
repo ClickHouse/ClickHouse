@@ -13,10 +13,6 @@ namespace DB
 {
 
 class Context;
-class QueryPlan;
-
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
@@ -55,7 +51,7 @@ private:
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-    QueryPipelinePtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
+    BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
 

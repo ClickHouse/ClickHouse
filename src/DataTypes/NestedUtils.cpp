@@ -70,11 +70,22 @@ std::pair<std::string, std::string> splitName(const std::string & name)
     return {{ begin, first_end }, { second_begin, end }};
 }
 
+std::string createCommaSeparatedStringFrom(const Names & names)
+{
+    std::ostringstream ss;
+    if (!names.empty())
+    {
+        std::copy(names.begin(), std::prev(names.end()), std::ostream_iterator<std::string>(ss, ", "));
+        ss << names.back();
+    }
+    return ss.str();
+}
+
 
 std::string extractTableName(const std::string & nested_name)
 {
-    auto split = splitName(nested_name);
-    return split.first;
+    auto splitted = splitName(nested_name);
+    return splitted.first;
 }
 
 
@@ -139,10 +150,10 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
         bool collected = false;
         if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get()))
         {
-            auto split = splitName(name_type.name);
-            if (!split.second.empty())
+            auto splitted = splitName(name_type.name);
+            if (!splitted.second.empty())
             {
-                nested[split.first].emplace_back(split.second, type_arr->getNestedType());
+                nested[splitted.first].emplace_back(splitted.second, type_arr->getNestedType());
                 collected = true;
             }
         }
@@ -173,12 +184,12 @@ void validateArraySizes(const Block & block)
             if (!typeid_cast<const ColumnArray *>(elem.column.get()))
                 throw Exception("Column with Array type is not represented by ColumnArray column: " + elem.column->dumpStructure(), ErrorCodes::ILLEGAL_COLUMN);
 
-            auto split = splitName(elem.name);
+            auto splitted = splitName(elem.name);
 
             /// Is it really a column of Nested data structure.
-            if (!split.second.empty())
+            if (!splitted.second.empty())
             {
-                auto [it, inserted] = nested.emplace(split.first, i);
+                auto [it, inserted] = nested.emplace(splitted.first, i);
 
                 /// It's not the first column of Nested data structure.
                 if (!inserted)
@@ -189,7 +200,7 @@ void validateArraySizes(const Block & block)
                     if (!first_array_column.hasEqualOffsets(another_array_column))
                         throw Exception("Elements '" + block.getByPosition(it->second).name
                             + "' and '" + elem.name
-                            + "' of Nested data structure '" + split.first
+                            + "' of Nested data structure '" + splitted.first
                             + "' (Array columns) have different array sizes.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
                 }
             }

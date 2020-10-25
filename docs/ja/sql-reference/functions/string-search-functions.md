@@ -20,16 +20,15 @@ toc_title: "\u6587\u5B57\u5217\u3092\u691C\u7D22\u3059\u308B\u5834\u5408"
 **構文**
 
 ``` sql
-position(haystack, needle[, start_pos])
+position(haystack, needle)
 ```
 
-別名: `locate(haystack, needle[, start_pos])`.
+別名: `locate(haystack, needle)`.
 
 **パラメータ**
 
 -   `haystack` — string, in which substring will to be searched. [文字列](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [文字列](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **戻り値**
 
@@ -81,14 +80,13 @@ SELECT position('Привет, мир!', '!')
 **構文**
 
 ``` sql
-positionCaseInsensitive(haystack, needle[, start_pos])
+positionCaseInsensitive(haystack, needle)
 ```
 
 **パラメータ**
 
 -   `haystack` — string, in which substring will to be searched. [文字列](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [文字列](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **戻り値**
 
@@ -124,14 +122,13 @@ SELECT positionCaseInsensitive('Hello, world!', 'hello')
 **構文**
 
 ``` sql
-positionUTF8(haystack, needle[, start_pos])
+positionUTF8(haystack, needle)
 ```
 
 **パラメータ**
 
 -   `haystack` — string, in which substring will to be searched. [文字列](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [文字列](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **戻り値**
 
@@ -197,14 +194,13 @@ SELECT positionUTF8('Salut, étudiante!', '!')
 **構文**
 
 ``` sql
-positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
+positionCaseInsensitiveUTF8(haystack, needle)
 ```
 
 **パラメータ**
 
 -   `haystack` — string, in which substring will to be searched. [文字列](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [文字列](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **戻り値**
 

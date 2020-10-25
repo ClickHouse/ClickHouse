@@ -20,16 +20,15 @@ Para una búsqueda sin distinción de mayúsculas y minúsculas, utilice la func
 **Sintaxis**
 
 ``` sql
-position(haystack, needle[, start_pos])
+position(haystack, needle)
 ```
 
-Apodo: `locate(haystack, needle[, start_pos])`.
+Apodo: `locate(haystack, needle)`.
 
 **Parámetros**
 
 -   `haystack` — string, in which substring will to be searched. [Cadena](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [Cadena](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Valores devueltos**
 
@@ -81,14 +80,13 @@ Funciona bajo el supuesto de que la cadena contiene un conjunto de bytes que rep
 **Sintaxis**
 
 ``` sql
-positionCaseInsensitive(haystack, needle[, start_pos])
+positionCaseInsensitive(haystack, needle)
 ```
 
 **Parámetros**
 
 -   `haystack` — string, in which substring will to be searched. [Cadena](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [Cadena](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Valores devueltos**
 
@@ -124,14 +122,13 @@ Para una búsqueda sin distinción de mayúsculas y minúsculas, utilice la func
 **Sintaxis**
 
 ``` sql
-positionUTF8(haystack, needle[, start_pos])
+positionUTF8(haystack, needle)
 ```
 
 **Parámetros**
 
 -   `haystack` — string, in which substring will to be searched. [Cadena](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [Cadena](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Valores devueltos**
 
@@ -197,14 +194,13 @@ Funciona bajo el supuesto de que la cadena contiene un conjunto de bytes que rep
 **Sintaxis**
 
 ``` sql
-positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
+positionCaseInsensitiveUTF8(haystack, needle)
 ```
 
 **Parámetros**
 
 -   `haystack` — string, in which substring will to be searched. [Cadena](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [Cadena](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Valor devuelto**
 

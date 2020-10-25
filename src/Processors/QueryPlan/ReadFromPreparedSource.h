@@ -9,7 +9,7 @@ namespace DB
 class ReadFromPreparedSource : public ISourceStep
 {
 public:
-    explicit ReadFromPreparedSource(Pipe pipe_, std::shared_ptr<Context> context_ = nullptr);
+    explicit ReadFromPreparedSource(Pipe pipe_, std::shared_ptr<Context> context_);
 
     String getName() const override { return "ReadNothing"; }
 

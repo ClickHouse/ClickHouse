@@ -3,6 +3,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/hex.h>
@@ -93,7 +94,6 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , log{&Poco::Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
     , bg_pool(bg_pool_)
-    , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
 {
     task_handle = bg_pool.createTask(getLoggerName() + "/Bg", [this]{ run(); });
     task_handle->activateAndSchedule();
@@ -114,15 +114,16 @@ void StorageDistributedDirectoryMonitor::flushAllData()
     if (quit)
         return;
 
+    CurrentMetrics::Increment metric_pending_files{CurrentMetrics::DistributedFilesToInsert, 0};
     std::unique_lock lock{mutex};
 
-    const auto & files = getFiles();
+    const auto & files = getFiles(metric_pending_files);
     if (!files.empty())
     {
-        processFiles(files);
+        processFiles(files, metric_pending_files);
 
         /// Update counters
-        getFiles();
+        getFiles(metric_pending_files);
     }
 }
 
@@ -142,12 +143,15 @@ void StorageDistributedDirectoryMonitor::run()
 {
     std::unique_lock lock{mutex};
 
+    /// This metric will be updated with the number of pending files later.
+    CurrentMetrics::Increment metric_pending_files{CurrentMetrics::DistributedFilesToInsert, 0};
+
     bool do_sleep = false;
     while (!quit)
     {
         do_sleep = true;
 
-        const auto & files = getFiles();
+        const auto & files = getFiles(metric_pending_files);
         if (files.empty())
             break;
 
@@ -155,7 +159,7 @@ void StorageDistributedDirectoryMonitor::run()
         {
             try
             {
-                do_sleep = !processFiles(files);
+                do_sleep = !processFiles(files, metric_pending_files);
 
                 std::unique_lock metrics_lock(metrics_mutex);
                 last_exception = std::exception_ptr{};
@@ -192,7 +196,7 @@ void StorageDistributedDirectoryMonitor::run()
     }
 
     /// Update counters
-    getFiles();
+    getFiles(metric_pending_files);
 
     if (!quit && do_sleep)
         task_handle->scheduleAfter(sleep_time.count());
@@ -235,17 +239,8 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         }
 
         return std::make_shared<ConnectionPool>(
-            1, /* max_connections */
-            address.host_name,
-            address.port,
-            address.default_database,
-            address.user,
-            address.password,
-            address.cluster,
-            address.cluster_secret,
-            storage.getName() + '_' + address.user, /* client */
-            Protocol::Compression::Enable,
-            address.secure);
+            1, address.host_name, address.port, address.default_database, address.user, address.password,
+            storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);
     };
 
     auto pools = createPoolsForAddresses(name, pool_factory);
@@ -258,7 +253,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 }
 
 
-std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
+std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles(CurrentMetrics::Increment & metric_pending_files)
 {
     std::map<UInt64, std::string> files;
     size_t new_bytes_count = 0;
@@ -276,6 +271,8 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
         }
     }
 
+    /// Note: the value of this metric will be kept if this function will throw an exception.
+    /// This is needed, because in case of exception, files still pending.
     metric_pending_files.changeTo(files.size());
 
     {
@@ -286,11 +283,11 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
 
     return files;
 }
-bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std::string> & files)
+bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files)
 {
     if (should_batch_inserts)
     {
-        processFilesWithBatching(files);
+        processFilesWithBatching(files, metric_pending_files);
     }
     else
     {
@@ -299,14 +296,14 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
             if (quit)
                 return true;
 
-            processFile(file.second);
+            processFile(file.second, metric_pending_files);
         }
     }
 
     return true;
 }
 
-void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
+void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path, CurrentMetrics::Increment & metric_pending_files)
 {
     LOG_TRACE(log, "Started processing `{}`", file_path);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context->getSettingsRef());
@@ -365,7 +362,7 @@ void StorageDistributedDirectoryMonitor::readHeader(
 
         UInt64 initiator_revision;
         readVarUInt(initiator_revision, header_buf);
-        if (DBMS_TCP_PROTOCOL_VERSION < initiator_revision)
+        if (ClickHouseRevision::get() < initiator_revision)
         {
             LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
         }
@@ -584,7 +581,7 @@ public:
     explicit DirectoryMonitorBlockInputStream(const String & file_name)
         : in(file_name)
         , decompressing_in(in)
-        , block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION)
+        , block_in(decompressing_in, ClickHouseRevision::get())
         , log{&Poco::Logger::get("DirectoryMonitorBlockInputStream")}
     {
         Settings insert_settings;
@@ -648,7 +645,9 @@ StorageDistributedDirectoryMonitor::Status StorageDistributedDirectoryMonitor::g
     };
 }
 
-void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
+void StorageDistributedDirectoryMonitor::processFilesWithBatching(
+    const std::map<UInt64, std::string> & files,
+    CurrentMetrics::Increment & metric_pending_files)
 {
     std::unordered_set<UInt64> file_indices_to_skip;
 
@@ -689,7 +688,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
             readHeader(in, insert_settings, insert_query, client_info, log);
 
             CompressedReadBuffer decompressing_in(in);
-            NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+            NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
             block_in.readPrefix();
 
             while (Block block = block_in.read())

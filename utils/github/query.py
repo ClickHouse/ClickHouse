@@ -512,12 +512,12 @@ class Query:
             if request.status_code == 200:
                 result = request.json()
                 if 'errors' in result:
-                    raise Exception('Errors occurred: {}\nOriginal query: {}'.format(result["errors"], query))
+                    raise Exception('Errors occured: {}\nOriginal query: {}'.format(result["errors"], query))
 
                 if not is_mutation:
                     import inspect
                     caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
-                    if caller not in list(self.api_costs.keys()):
+                    if caller not in self.api_costs.keys():
                         self.api_costs[caller] = 0
                     self.api_costs[caller] += result['data']['rateLimit']['cost']
 

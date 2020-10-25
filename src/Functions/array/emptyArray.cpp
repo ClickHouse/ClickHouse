@@ -44,11 +44,11 @@ private:
         return std::make_shared<DataTypeArray>(std::make_shared<DataType>());
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
         using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
 
-        columns[result].column = ColumnArray::create(
+        block.getByPosition(result).column = ColumnArray::create(
             UnderlyingColumnType::create(),
             ColumnArray::ColumnOffsets::create(input_rows_count, 0));
     }

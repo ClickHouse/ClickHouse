@@ -49,14 +49,15 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
+    auto codec_str = [](const CompressionCodecPtr & codec_ptr) { return codec_ptr ? codec_ptr->getCodecDesc() : String(); };
+    auto ttl_str = [](const ASTPtr & ttl_ast) { return ttl_ast ? queryToString(ttl_ast) : String{}; };
 
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
         && comment == other.comment
-        && ast_to_str(codec) == ast_to_str(other.codec)
-        && ast_to_str(ttl) == ast_to_str(other.ttl);
+        && codec_str(codec) == codec_str(other.codec)
+        && ttl_str(ttl) == ttl_str(other.ttl);
 }
 
 void ColumnDescription::writeText(WriteBuffer & buf) const
@@ -83,7 +84,9 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
     if (codec)
     {
         writeChar('\t', buf);
-        DB::writeText(queryToString(codec), buf);
+        DB::writeText("CODEC(", buf);
+        DB::writeText(codec->getCodecDesc(), buf);
+        DB::writeText(")", buf);
     }
 
     if (ttl)
@@ -117,7 +120,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_ast->codec)
-            codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false);
+            codec = CompressionCodecFactory::instance().get(col_ast->codec, type, false);
 
         if (col_ast->ttl)
             ttl = col_ast->ttl;
@@ -412,13 +415,6 @@ std::optional<ColumnDefault> ColumnsDescription::getDefault(const String & colum
 }
 
 
-bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
-{
-    const auto it = columns.get<1>().find(column_name);
-
-    return it != columns.get<1>().end() && it->codec != nullptr;
-}
-
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
     const auto it = columns.get<1>().find(column_name);
@@ -426,22 +422,12 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
     if (it == columns.get<1>().end() || !it->codec)
         return default_codec;
 
-    return CompressionCodecFactory::instance().get(it->codec, it->type, default_codec);
+    return it->codec;
 }
 
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
 {
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
-}
-
-ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    const auto it = columns.get<1>().find(column_name);
-
-    if (it == columns.get<1>().end() || !it->codec)
-        return default_codec->getFullCodecDesc();
-
-    return it->codec;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
@@ -502,8 +488,8 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
-            if (action.type == ExpressionAction::Type::ARRAY_JOIN)
-                throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception("Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
         return actions->getSampleBlock();
     }

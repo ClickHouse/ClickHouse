@@ -1,4 +1,3 @@
-#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsNumber.h>
@@ -36,14 +35,14 @@ struct FunctionRunningDifferenceName<false>
     static constexpr auto name = "runningDifferenceStartingWithFirstValue";
 };
 
-/** Calculate difference of consecutive values in columns.
-  * So, result of function depends on partition of data to columnss and on order of data in columns.
+/** Calculate difference of consecutive values in block.
+  * So, result of function depends on partition of data to blocks and on order of data in block.
   */
 template <bool is_first_line_zero>
 class FunctionRunningDifferenceImpl : public IFunction
 {
 private:
-    /// It is possible to track value from previous columns, to calculate continuously across all columnss. Not implemented.
+    /// It is possible to track value from previous block, to calculate continuously across all blocks. Not implemented.
 
     template <typename Src, typename Dst>
     static void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst, const NullMap * null_map)
@@ -165,15 +164,15 @@ public:
         return res;
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        auto & src = columns[arguments.at(0)];
-        const auto & res_type = columns[result].type;
+        auto & src = block.getByPosition(arguments.at(0));
+        const auto & res_type = block.getByPosition(result).type;
 
         /// When column is constant, its difference is zero.
         if (isColumnConst(*src.column))
         {
-            columns[result].column = res_type->createColumnConstWithDefaultValue(input_rows_count);
+            block.getByPosition(result).column = res_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
 
@@ -197,9 +196,9 @@ public:
         });
 
         if (null_map_column)
-            columns[result].column = ColumnNullable::create(std::move(res_column), null_map_column);
+            block.getByPosition(result).column = ColumnNullable::create(std::move(res_column), null_map_column);
         else
-            columns[result].column = std::move(res_column);
+            block.getByPosition(result).column = std::move(res_column);
     }
 };
 

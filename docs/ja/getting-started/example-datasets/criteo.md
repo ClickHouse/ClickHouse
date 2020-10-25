@@ -1,11 +1,14 @@
 ---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 19
-toc_title: "Criteo のテラバイトクリックログ"
+toc_title: "Criteo\u304B\u3089\u30C6\u30E9\u30D0\u30A4\u30C8\u306E\u30AF\u30EA\u30C3\
+  \u30AF\u30ED\u30B0"
 ---
 
-# Criteo のテラバイトクリックログ {#terabyte-of-click-logs-from-criteo}
+# Criteoからのクリックログのテラバイト {#terabyte-of-click-logs-from-criteo}
 
-http://labs.criteo.com/downloads/download-terabyte-click-logs/ から データをダウンロードして下さい。
+データのダウンロードhttp://labs.criteo.com/downloads/download-terabyte-click-logs/
 
 ログをインポートするテーブルを作成します:
 

@@ -1,4 +1,3 @@
-#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -47,27 +46,27 @@ public:
         return std::make_shared<DataTypeArray>(getLeastSupertype(types));
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto & return_type = columns[result].type;
+        const auto & return_type = block.getByPosition(result).type;
 
         if (return_type->onlyNull())
         {
-            columns[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
+            block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
 
         auto result_column = return_type->createColumn();
 
-        auto array_column = columns[arguments[0]].column;
-        auto appended_column = columns[arguments[1]].column;
+        auto array_column = block.getByPosition(arguments[0]).column;
+        auto appended_column = block.getByPosition(arguments[1]).column;
 
-        if (!columns[arguments[0]].type->equals(*return_type))
-            array_column = castColumn(columns[arguments[0]], return_type);
+        if (!block.getByPosition(arguments[0]).type->equals(*return_type))
+            array_column = castColumn(block.getByPosition(arguments[0]), return_type);
 
         const DataTypePtr & return_nested_type = typeid_cast<const DataTypeArray &>(*return_type).getNestedType();
-        if (!columns[arguments[1]].type->equals(*return_nested_type))
-            appended_column = castColumn(columns[arguments[1]], return_nested_type);
+        if (!block.getByPosition(arguments[1]).type->equals(*return_nested_type))
+            appended_column = castColumn(block.getByPosition(arguments[1]), return_nested_type);
 
         std::unique_ptr<GatherUtils::IArraySource> array_source;
         std::unique_ptr<GatherUtils::IValueSource> value_source;
@@ -100,7 +99,7 @@ public:
 
         GatherUtils::push(*array_source, *value_source, *sink, push_front);
 
-        columns[result].column = std::move(result_column);
+        block.getByPosition(result).column = std::move(result_column);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

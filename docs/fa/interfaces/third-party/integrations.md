@@ -19,10 +19,10 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
         -   [تاتر-خروجی زیر-داده خوان](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
     -   [PostgreSQL](https://www.postgresql.org)
-        -   [_پاک کردن تصویر](https://github.com/Percona-Lab/clickhousedb_fdw)
-        -   [اطالعات._پاک کردن](https://github.com/Infinidat/infi.clickhouse_fdw) (استفاده [اطالعات.کلیک _شورم](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [\_پاک کردن تصویر](https://github.com/Percona-Lab/clickhousedb_fdw)
+        -   [اطالعات.\_پاک کردن](https://github.com/Infinidat/infi.clickhouse_fdw) (استفاده [اطالعات.کلیک \_شورم](https://github.com/Infinidat/infi.clickhouse_orm))
         -   [پی جی 2چ](https://github.com/mkabilov/pg2ch)
-        -   [_پاک کردن](https://github.com/adjust/clickhouse_fdw)
+        -   [\_پاک کردن](https://github.com/adjust/clickhouse_fdw)
     -   [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         -   [کلیک کنیدهاجر](https://github.com/zlzforever/ClickHouseMigrator)
 -   صف پیام
@@ -51,12 +51,12 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
     -   [گرافانا](https://grafana.com/)
         -   [فاحشه خانه-گرافانا](https://github.com/Vertamedia/clickhouse-grafana)
     -   [پرومتیوس](https://prometheus.io/)
-        -   [کلیک _گزارشسپر](https://github.com/f1yegor/clickhouse_exporter)
+        -   [کلیک \_گزارشسپر](https://github.com/f1yegor/clickhouse_exporter)
         -   [مجلس رقص رسمی دبیرستان](https://github.com/Percona-Lab/PromHouse)
-        -   [کلیک _گزارشسپر](https://github.com/hot-wifi/clickhouse_exporter) (استفاده [برو کارگیر](https://github.com/kshvakov/clickhouse/))
+        -   [کلیک \_گزارشسپر](https://github.com/hot-wifi/clickhouse_exporter) (استفاده [برو کارگیر](https://github.com/kshvakov/clickhouse/))
     -   [Nagios](https://www.nagios.org/)
-        -   [_تخچه نشانزنی](https://github.com/exogroup/check_clickhouse/)
-        -   [check_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
+        -   [\_تخچه نشانزنی](https://github.com/exogroup/check_clickhouse/)
+        -   [check\_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
     -   [زاببیکس](https://www.zabbix.com)
         -   [هوکاوس-زاببیکس-قالب](https://github.com/Altinity/clickhouse-zabbix-template)
     -   [کلیپ برد چند منظوره](https://sematext.com/)
@@ -76,7 +76,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
 
 -   پایتون
     -   [SQLAlchemy](https://www.sqlalchemy.org)
-        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (استفاده [اطالعات.کلیک _شورم](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (استفاده [اطالعات.کلیک \_شورم](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [پانداها](https://pandas.pydata.org)
         -   [پانداهاوس](https://github.com/kszucs/pandahouse)
 -   PHP
@@ -91,7 +91,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
 -   اسکالا
     -   [اککا](https://akka.io)
         -   [تاتر-اسکالا-کارفرما](https://github.com/crobox/clickhouse-scala-client)
--   C#
+-   C\#
     -   [ADO.NET](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview)
         -   [فاحشه خانه.ادو](https://github.com/killwort/ClickHouse-Net)
         -   [فاحشه خانه.کارگیر](https://github.com/DarkWanderer/ClickHouse.Client)

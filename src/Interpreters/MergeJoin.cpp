@@ -10,11 +10,11 @@
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/TemporaryFileStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <DataStreams/BlocksListBlockInputStream.h>
-
 
 namespace DB
 {
@@ -515,8 +515,8 @@ void MergeJoin::mergeInMemoryRightBlocks()
     QueryPipeline pipeline;
     pipeline.init(std::move(source));
 
-    /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
-    pipeline.addTransform(std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, nullptr, 0));
+    /// TODO: there should be no splitted keys by blocks for RIGHT|FULL JOIN
+    pipeline.addPipe({std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, nullptr, 0)});
 
     auto sorted_input = PipelineExecutingBlockInputStream(std::move(pipeline));
 

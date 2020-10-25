@@ -11,8 +11,8 @@ namespace DB
 {
 
 
-StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
-    : IStorage(table_id_)
+StorageSystemOne::StorageSystemOne(const std::string & name_)
+    : IStorage({"system", name_})
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({{"dummy", std::make_shared<DataTypeUInt8>()}}));
@@ -20,7 +20,7 @@ StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
 }
 
 
-Pipe StorageSystemOne::read(
+Pipes StorageSystemOne::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo &,
@@ -39,7 +39,10 @@ Pipe StorageSystemOne::read(
     auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
     Chunk chunk({ std::move(column) }, 1);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+
+    return pipes;
 }
 
 

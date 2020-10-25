@@ -23,9 +23,9 @@ public:
         FunctionWrapper(FunctionOverloadResolverPtr resolver, const ColumnsWithTypeAndName & arguments, Block & block,
                         const ColumnNumbers & arg_positions_, const String & column_name, TypeIndex expected_type);
 
-        void execute(ColumnsWithTypeAndName & columns, size_t rows) const
+        void execute(Block & block, size_t rows) const
         {
-            function->execute(columns, arg_positions, result_pos, rows, false);
+            function->execute(block, arg_positions, result_pos, rows, false);
         }
     };
 

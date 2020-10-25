@@ -127,7 +127,7 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr name_ast;
-            if (!ParserCompoundIdentifier{}.parse(pos, name_ast, expected))
+            if (!ParserIdentifier{}.parse(pos, name_ast, expected))
                 return false;
 
             String res_setting_name = getIdentifierName(name_ast);

@@ -6,16 +6,12 @@
 
 namespace DB
 {
-namespace
-{
 
 struct NameNotEmpty
 {
     static constexpr auto name = "notEmpty";
 };
 using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8>;
-
-}
 
 void registerFunctionNotEmpty(FunctionFactory & factory)
 {

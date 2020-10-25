@@ -18,9 +18,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-namespace
-{
-
 class FunctionH3EdgeAngle : public IFunction
 {
 public:
@@ -44,9 +41,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = columns[arguments[0]].column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
         auto dst = ColumnVector<Float64>::create();
         auto & dst_data = dst->getData();
@@ -65,11 +62,10 @@ public:
             dst_data[row] = res;
         }
 
-        columns[result].column = std::move(dst);
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
-}
 
 void registerFunctionH3EdgeAngle(FunctionFactory & factory)
 {

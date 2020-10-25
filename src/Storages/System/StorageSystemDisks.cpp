@@ -1,3 +1,4 @@
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemDisks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
@@ -10,8 +11,8 @@ namespace ErrorCodes
 }
 
 
-StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
-    : IStorage(table_id_)
+StorageSystemDisks::StorageSystemDisks(const std::string & name_)
+    : IStorage({"system", name_})
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
@@ -26,7 +27,7 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe StorageSystemDisks::read(
+Pipes StorageSystemDisks::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -65,7 +66,10 @@ Pipe StorageSystemDisks::read(
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
+
+    return pipes;
 }
 
 }

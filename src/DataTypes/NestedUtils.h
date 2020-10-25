@@ -13,6 +13,8 @@ namespace Nested
 
     std::pair<std::string, std::string> splitName(const std::string & name);
 
+    std::string createCommaSeparatedStringFrom(const Names & names);
+
     /// Returns the prefix of the name to the first '.'. Or the name is unchanged if there is no dot.
     std::string extractTableName(const std::string & nested_name);
 

@@ -35,19 +35,19 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        DB::Block expr_columns;
+        Block expr_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const auto & argument = columns[arguments[i]];
+            const auto & argument = block.getByPosition(arguments[i]);
             /// Replace column name with value from argument_names.
-            expr_columns.insert({argument.column, argument.type, signature->argument_names[i]});
+            expr_block.insert({argument.column, argument.type, signature->argument_names[i]});
         }
 
-        expression_actions->execute(expr_columns);
+        expression_actions->execute(expr_block);
 
-        columns[result].column = expr_columns.getByName(signature->return_name).column;
+        block.getByPosition(result).column = expr_block.getByName(signature->return_name).column;
     }
 
 bool useDefaultImplementationForNulls() const override { return false; }
@@ -81,7 +81,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionExpression>(expression_actions, signature);
     }
@@ -119,10 +119,10 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        ColumnsWithTypeAndName columns_to_catpure;
-        columns_to_catpure.reserve(arguments.size());
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
 
         Names names;
         DataTypes types;
@@ -140,12 +140,12 @@ public:
         }
 
         for (const auto & argument : arguments)
-            columns_to_catpure.push_back(columns[argument]);
+            columns.push_back(block.getByPosition(argument));
 
         auto function = std::make_unique<FunctionExpression>(expression_actions, types, names,
                                                              capture->return_type, capture->return_name);
         auto function_adaptor = std::make_shared<FunctionBaseAdaptor>(std::move(function));
-        columns[result].column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns_to_catpure);
+        block.getByPosition(result).column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns);
     }
 
 private:
@@ -179,7 +179,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionCapture>(expression_actions, capture);
     }
@@ -205,9 +205,9 @@ public:
             const String & expression_return_name_)
         : expression_actions(std::move(expression_actions_))
     {
-        /// Check that expression does not contain unusual actions that will break columnss structure.
+        /// Check that expression does not contain unusual actions that will break blocks structure.
         for (const auto & action : expression_actions->getActions())
-            if (action.type == ExpressionAction::Type::ARRAY_JOIN)
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
                 throw Exception("Expression with arrayJoin or other unusual action cannot be captured", ErrorCodes::BAD_ARGUMENTS);
 
         std::unordered_map<std::string, DataTypePtr> arguments_map;
