@@ -85,7 +85,9 @@ set(GOOGLE_PROTOBUF_LIBRARY ${Protobuf_LIBRARY})
 
 set(ARROW_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
 
-protobuf_generate_cpp(ORC_GENERATED_SRCS ORC_GENERATED_INCLUDES ${ORC_PROTO_DIR}/orc_proto.proto)
+protobuf_generate_cpp(ORC_GENERATED_SRCS ORC_GENERATED_INCLUDES
+        PROTOC_OUT_DIR ${ORC_GENERATED_SRC_DIR}
+        ${ORC_PROTO_DIR}/orc_proto.proto)
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
 # Apple Clang compiler failed to compile this code without specifying c++11 standard.
@@ -137,12 +139,14 @@ set(ORC_SRCS
 set(ARROW_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow)
 set(ARROW_PROTO_DIR ${ARROW_SOURCE_DIR}/format)
 set(ARROW_FLIGHT_SRC_DIR ${ARROW_SOURCE_DIR}/cpp/src/arrow/flight)
-set(ARROW_FLIGHT_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR})
+set(ARROW_FLIGHT_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR}/cpp/src/arrow/flight)
 
 set(GRPC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc/include/grpc++)
 set(GRPC_LIBRARY grpc++)
 
-protobuf_generate_grpc_cpp(ARROW_FLIGHT_GENERATED_SRCS ARROW_FLIGHT_GENERATED_INCLUDES ${ARROW_PROTO_DIR}/Flight.proto)
+protobuf_generate_grpc_cpp(ARROW_FLIGHT_GENERATED_SRCS ARROW_FLIGHT_GENERATED_INCLUDES
+        PROTOC_OUT_DIR ${ARROW_FLIGHT_GENERATED_SRC_DIR}
+        ${ARROW_PROTO_DIR}/Flight.proto)
 
 set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_SRC_DIR}/client.cc
@@ -251,8 +255,7 @@ set(ARROW_SRCS
 
         ${LIBRARY_DIR}/vendored/base64.cpp
         ${ORC_SRCS}
-        ${ARROW_FLIGHT_SRCS}
-        )
+        ${ARROW_FLIGHT_SRCS})
 
 set(ARROW_SRCS ${ARROW_SRCS}
         ${LIBRARY_DIR}/compute/context.cc

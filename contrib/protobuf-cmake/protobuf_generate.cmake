@@ -20,7 +20,7 @@ protobuf_generate_cpp (<SRCS> <HDRS>
 #]]
 
 function(PROTOBUF_GENERATE_CPP SRCS HDRS)
-  cmake_parse_arguments(protobuf_generate_cpp "" "EXPORT_MACRO;DESCRIPTORS" "" ${ARGN})
+  cmake_parse_arguments(protobuf_generate_cpp "" "EXPORT_MACRO;DESCRIPTORS;PROTOC_OUT_DIR" "" ${ARGN})
 
   set(_proto_files "${protobuf_generate_cpp_UNPARSED_ARGUMENTS}")
   if(NOT _proto_files)
@@ -36,6 +36,10 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
     set(_descriptors DESCRIPTORS)
   endif()
 
+  if(protobuf_generate_cpp_PROTOC_OUT_DIR)
+    set(_out_dir_arg PROTOC_OUT_DIR ${protobuf_generate_cpp_PROTOC_OUT_DIR})
+  endif()
+
   if(DEFINED PROTOBUF_IMPORT_DIRS AND NOT DEFINED Protobuf_IMPORT_DIRS)
     set(Protobuf_IMPORT_DIRS "${PROTOBUF_IMPORT_DIRS}")
   endif()
@@ -45,7 +49,7 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
   endif()
 
   set(_outvar)
-  protobuf_generate(${_append_arg} ${_descriptors} LANGUAGE cpp EXPORT_MACRO ${protobuf_generate_cpp_EXPORT_MACRO} OUT_VAR _outvar ${_import_arg} PROTOS ${_proto_files})
+  protobuf_generate(${_append_arg} ${_descriptors} LANGUAGE cpp EXPORT_MACRO ${protobuf_generate_cpp_EXPORT_MACRO} OUT_VAR _outvar ${_out_dir_arg} ${_import_arg} PROTOS ${_proto_files})
 
   set(${SRCS})
   set(${HDRS})
