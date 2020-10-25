@@ -19,6 +19,7 @@ StoragePtr TableFunctionHDFS::getStorage(
         format_,
         columns,
         ConstraintsDescription{},
+        nullptr,
         global_context,
         compression_method_);
 }

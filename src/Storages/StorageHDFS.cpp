@@ -4,6 +4,8 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageHDFS.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
@@ -13,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
@@ -32,6 +35,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INVALID_PARTITION_VALUE;
 }
 
 StorageHDFS::StorageHDFS(const String & uri_,
@@ -39,11 +43,13 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const ASTPtr & partition_by_ast_,
     Context & context_,
     const String & compression_method_ = "")
     : IStorage(table_id_)
     , uri(uri_)
     , format_name(format_name_)
+    , partition_by_ast(partition_by_ast_)
     , context(context_)
     , compression_method(compression_method_)
 {
@@ -52,8 +58,17 @@ StorageHDFS::StorageHDFS(const String & uri_,
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+
+    if (partition_by_ast)
+    {
+        storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, columns_, context);
+
+        partition_name_types = storage_metadata.partition_key.expression->getRequiredColumnsWithTypes();
+        minmax_idx_expr = std::make_shared<ExpressionActions>(partition_name_types, context);
+    }
     setInMemoryMetadata(storage_metadata);
 }
+
 
 namespace
 {
@@ -61,9 +76,13 @@ namespace
 class HDFSSource : public SourceWithProgress
 {
 public:
+
     struct SourcesInfo
     {
         std::vector<String> uris;
+        std::vector<FieldVector> partition_fields;
+
+        NamesAndTypesList partition_name_types;
 
         std::atomic<size_t> next_uri_to_read = 0;
 
@@ -109,20 +128,24 @@ public:
 
     Chunk generate() override
     {
+        auto to_read_block = sample_block;
+        for (const auto & name_type : source_info->partition_name_types)
+            to_read_block.erase(name_type.name);
+
         while (true)
         {
             if (!reader)
             {
-                auto pos = source_info->next_uri_to_read.fetch_add(1);
-                if (pos >= source_info->uris.size())
+                current_idx = source_info->next_uri_to_read.fetch_add(1);
+                if (current_idx >= source_info->uris.size())
                     return {};
 
-                auto path =  source_info->uris[pos];
+                auto path =  source_info->uris[current_idx];
                 current_path = uri + path;
 
                 auto compression = chooseCompressionMethod(path, compression_method);
                 auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path), compression);
-                auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+                auto input_stream = FormatFactory::instance().getInput(format, *read_buf, to_read_block, context, max_block_size);
 
                 reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
                 reader->readPrefix();
@@ -149,6 +172,17 @@ public:
                     columns.push_back(column->convertToFullColumnIfConst());
                 }
 
+                if (!source_info->partition_name_types.empty())
+                {
+                    auto types = source_info->partition_name_types.getTypes();
+                    for (size_t i = 0; i < types.size(); ++i)
+                    {
+                        auto column = types[i]->createColumnConst(num_rows, source_info->partition_fields[current_idx][i]);
+                        columns.push_back(column->convertToFullColumnIfConst());
+                    }
+                }
+
+
                 return Chunk(std::move(columns), num_rows);
             }
 
@@ -164,9 +198,11 @@ private:
     String format;
     String compression_method;
     String current_path;
+    size_t current_idx;
 
     UInt64 max_block_size;
     Block sample_block;
+
     const Context & context;
 };
 
@@ -260,25 +296,82 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
 
 }
 
-
 Pipe StorageHDFS::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & query_info,
     const Context & context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
     const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
-    const String path_from_uri = uri.substr(begin_of_path);
     const String uri_without_path = uri.substr(0, begin_of_path);
+    const String path_from_uri = uri.substr(begin_of_path);
 
     HDFSBuilderPtr builder = createHDFSBuilder(uri_without_path + "/");
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
     auto sources_info = std::make_shared<HDFSSource::SourcesInfo>();
     sources_info->uris = LSWithRegexpMatching("/", fs, path_from_uri);
+
+    if (minmax_idx_expr)
+    {
+        const auto names = partition_name_types.getNames();
+        std::optional<KeyCondition> minmax_idx_condition;
+        minmax_idx_condition.emplace(query_info, context, names, minmax_idx_expr);
+        auto prev_uris = sources_info->uris;
+        sources_info->uris.clear();
+        sources_info->partition_name_types = partition_name_types;
+
+        for (auto s_uri : prev_uris)
+        {
+            re2::StringPiece input(s_uri);
+            String tmp;
+            WriteBufferFromOwnString wb;
+
+            // consume the partition value from uri by regexp
+            // todo: integration with hive metastore
+            for (size_t i = 0; i < names.size(); ++i)
+            {
+                if (!RE2::FindAndConsume(&input, "/" + names[i] + "=([^/]+)/", &tmp))
+                    throw Exception(
+                    "Could not parse partition file path: " + s_uri,
+                    ErrorCodes::INVALID_PARTITION_VALUE);
+
+                if (i != 0)
+                    writeString(",", wb);
+                writeString(tmp, wb);
+            }
+
+            // TODO: CSV is a little hacky, maybe some better way? eg: Values
+            ReadBufferFromString buffer(wb.str());
+            auto input_stream
+                = FormatFactory::instance().getInput("CSV", buffer, metadata_snapshot->getPartitionKey().sample_block, context, context.getSettingsRef().max_block_size);
+
+            auto block = input_stream->read();
+            if (!block || !block.rows())
+                throw Exception(
+                    "Could not parse partition value: `",
+                    ErrorCodes::INVALID_PARTITION_VALUE);
+
+            std::vector<Field> fields(names.size());
+            std::vector<Range> ranges;
+            for (size_t i = 0; i < names.size(); ++i)
+            {
+                block.getByPosition(i).column->get(0, fields[i]);
+                ranges.emplace_back(fields[i]);
+            }
+
+            if (minmax_idx_condition->checkInHyperrectangle(
+                ranges, partition_name_types.getTypes()).can_be_true)
+            {
+                sources_info->uris.push_back(s_uri);
+                sources_info->partition_fields.push_back(std::move(fields));
+                continue;
+            }
+        }
+    }
 
     for (const auto & column : column_names)
     {
@@ -311,6 +404,11 @@ BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageM
 
 void registerStorageHDFS(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features{
+        .supports_sort_order = true,
+        .source_access_type = AccessType::HDFS
+    };
+
     factory.registerStorage("HDFS", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
@@ -334,13 +432,16 @@ void registerStorageHDFS(StorageFactory & factory)
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
-        return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.context, compression_method);
-    },
-    {
-        .source_access_type = AccessType::HDFS,
-    });
+        ASTPtr partition_by_ast;
+        if (args.storage_def->partition_by)
+            partition_by_ast = args.storage_def->partition_by->ptr();
+
+        return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, partition_by_ast, args.context, compression_method);
+    }, features);
 }
 
+// Though partition cols is virtual column of hdfs storage
+// but we can consider it as material column in ClickHouse
 NamesAndTypesList StorageHDFS::getVirtuals() const
 {
     return NamesAndTypesList{

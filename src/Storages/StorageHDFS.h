@@ -38,16 +38,24 @@ protected:
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const ASTPtr & partition_by_ast_,
         Context & context_,
         const String & compression_method_);
 
 private:
     String uri;
     String format_name;
+    const ASTPtr partition_by_ast;
     Context & context;
     String compression_method;
 
+    NamesAndTypesList partition_name_types;
+    ExpressionActionsPtr minmax_idx_expr;
+
+
     Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
+
+    void initPartitionKey();
 };
 }
 
