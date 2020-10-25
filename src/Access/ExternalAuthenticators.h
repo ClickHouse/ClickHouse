@@ -2,6 +2,7 @@
 
 #include <Access/LDAPParams.h>
 #include <common/types.h>
+#include <common/logger_useful.h>
 
 #include <map>
 #include <memory>

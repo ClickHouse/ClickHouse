@@ -120,15 +120,12 @@ def add_config(config, timeout=60, restart=False, reload_message=None):
                 bash.send(f"tail -c +{logsize} -f /var/log/clickhouse-server/clickhouse-server.log")
 
         with Then("I wait for config reload message in the log file"):
-            if reload_message is None:
+            if not reload_message:
                 reload_message = f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration"
                 if restart:
                     reload_message = f"ConfigReloader: Loaded config '/etc/clickhouse-server/config.xml', performed update on configuration"
 
             bash.expect(reload_message, timeout=timeout)
-
-        with Then("I sleep 10 sec to make sure LDAP external user directory is ready to authenticate"):
-            time.sleep(10)
 
     node = current().context.node
     try:

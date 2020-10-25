@@ -140,7 +140,8 @@ void parseAndAddLDAPServers(ExternalAuthenticators & external_authenticators, co
         try
         {
             external_authenticators.setLDAPServerParams(ldap_server_name, parseLDAPServer(config, ldap_server_name));
-        }
+            LOG_DEBUG(log, "Added external authenticator that uses LDAP server '{}'", ldap_server_name);
+	}
         catch (...)
         {
             tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(ldap_server_name));
