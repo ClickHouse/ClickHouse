@@ -17,3 +17,5 @@ ${CLICKHOUSE_LOCAL} --query "SELECT * FROM url('https://localhost:5678/', RawBLO
 #                                 |             |
 #                       hostnames list       hostname
 #                            len, 12          len, 9
+
+wait
