@@ -1,4 +1,3 @@
-#pragma once
 #include "FunctionsStringSearch.h"
 
 #include <algorithm>

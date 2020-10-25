@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 template <bool UseNull>
 class AggregateFunctionCombinatorOrFill final : public IAggregateFunctionCombinator
@@ -33,8 +31,6 @@ public:
             params);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactory & factory)
 {
