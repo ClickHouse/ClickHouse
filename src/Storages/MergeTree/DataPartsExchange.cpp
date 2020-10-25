@@ -5,7 +5,6 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
-#include <Common/FileSyncGuard.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <IO/HTTPCommon.h>
 #include <ext/scope_guard.h>
@@ -264,9 +263,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     int server_protocol_version = parse<int>(in.getResponseCookie("server_protocol_version", "0"));
 
     ReservationPtr reservation;
-    size_t sum_files_size = 0;
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
+        size_t sum_files_size;
         readBinary(sum_files_size, in);
         if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
@@ -276,7 +275,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
             assertString("ttl format version: 1\n", ttl_infos_buffer);
             ttl_infos.read(ttl_infos_buffer);
-            reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
+            reservation = data.reserveSpacePreferringTTLRules(sum_files_size, ttl_infos, std::time(nullptr));
         }
         else
             reservation = data.reserveSpace(sum_files_size);
@@ -287,15 +286,12 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
 
-    bool sync = (data_settings->min_compressed_bytes_to_fsync_after_fetch
-                    && sum_files_size >= data_settings->min_compressed_bytes_to_fsync_after_fetch);
-
     String part_type = "Wide";
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
         readStringBinary(part_type, in);
 
     return part_type == "InMemory" ? downloadPartToMemory(part_name, metadata_snapshot, std::move(reservation), in)
-        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
+        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
@@ -311,7 +307,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     NativeBlockInputStream block_in(in, 0);
     auto block = block_in.read();
 
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, reservation->getDisk(), 0);
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, reservation->getDisk());
     MergeTreeData::MutableDataPartPtr new_data_part =
         std::make_shared<MergeTreeDataPartInMemory>(data, part_name, volume);
 
@@ -334,7 +330,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
-    bool sync,
     const ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
@@ -355,10 +350,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
     disk->createDirectories(part_download_path);
-
-    std::optional<FileSyncGuard> sync_guard;
-    if (data.getSettings()->fsync_part_directory)
-        sync_guard.emplace(disk, part_download_path);
 
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)
@@ -401,14 +392,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             file_name != "columns.txt" &&
             file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
-
-        if (sync)
-            hashing_out.sync();
     }
 
     assertEOF(in);
 
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);

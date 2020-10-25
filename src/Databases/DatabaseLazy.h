@@ -122,7 +122,6 @@ public:
     bool isValid() const override;
     const String & name() const override;
     const StoragePtr & table() const override;
-    void reset() override;
 
 private:
     const DatabaseLazy & database;

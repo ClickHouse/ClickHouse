@@ -80,6 +80,6 @@ Le `remote` table de fonction peut être utile dans les cas suivants:
 Si l'utilisateur n'est pas spécifié, `default` est utilisée.
 Si le mot de passe n'est spécifié, un mot de passe vide est utilisé.
 
-`remoteSecure` - la même chose que `remote` but with secured connection. Default port — [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) de config ou 9440.
+`remoteSecure` - la même chose que `remote` but with secured connection. Default port — [tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) de config ou 9440.
 
 [Article Original](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

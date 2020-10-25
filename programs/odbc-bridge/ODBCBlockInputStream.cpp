@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
-    extern const int UNKNOWN_TYPE;
 }
 
 
@@ -87,8 +86,6 @@ namespace
             case ValueType::vtUUID:
                 assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
                 break;
-            default:
-                throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
         }
     }
 

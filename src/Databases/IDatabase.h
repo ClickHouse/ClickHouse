@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -44,8 +44,6 @@ public:
     /// (a database with support for lazy tables loading
     /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
-    /// Reset reference counter to the StoragePtr.
-    virtual void reset() = 0;
 
     virtual ~IDatabaseTablesIterator() = default;
 
@@ -95,8 +93,6 @@ public:
     const String & name() const override { return it->first; }
 
     const StoragePtr & table() const override { return it->second; }
-
-    void reset() override { it->second.reset(); }
 };
 
 /// Copies list of dictionaries and iterates through such snapshot.
