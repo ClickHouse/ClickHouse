@@ -122,6 +122,7 @@ private:
     BackgroundSchedulePool::TaskHolder looping_task;
 
     std::atomic<bool> stream_cancelled{false};
+    size_t read_attempts = 0;
 
     ConsumerBufferPtr createReadBuffer();
 
