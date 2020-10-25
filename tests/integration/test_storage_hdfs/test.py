@@ -23,6 +23,36 @@ def started_cluster():
         cluster.shutdown()
 
 
+def test_globs_with_parition(started_cluster):
+    hdfs_api = HDFSApi("root")
+    some_data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
+    globs_dir = "/dir_test_partition/"
+
+    files = ["day=2020-01-01/hour=01/textfile",
+            "day=2020-01-02/hour=01/textfile", "day=2020-01-02/hour=02/textfile",
+            "day=2020-01-03/hour=01/textfile", "day=2020-01-03/hour=02/textfile", "day=2020-01-03/hour=03/textfile"]
+    for filename in files:
+        hdfs_api.write_data(globs_dir + filename, some_data)
+
+    test_requests = [("where day = '2020-01-01'", 1, 1),
+                    ("where day = '2020-01-02'", 2, 1),
+                    ("where day = '2020-01-03'", 3, 1),
+                    ("where day >= '2020-01-02' AND hour >= 1", 5, 1),
+                    ("where day >= '2020-01-01' AND hour >= 3", 1, 1),
+                    ]
+
+    node1.query("create table partition_table (day Date, hour int, id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000" +  globs_dir +   "day=*/hour=*/textfile', 'TSV', 'none') partition by (day, hour)")
+
+    assert node1.query("select count(distinct _path) from partition_table", "6\n")
+
+    for where, paths_amount, files_amount in test_requests:
+        max_rows_to_read = str(2 * paths_amount)
+        assert node1.query("select id, name, weight from partition_table " + where  + " settings max_rows_to_read = " + max_rows_to_read) == paths_amount * some_data
+        assert node1.query("select count(distinct _path) from partition_table " + where  + " settings max_rows_to_read = " + max_rows_to_read ).rstrip() == str(
+            paths_amount)
+        assert node1.query("select count(distinct _file) from partition_table " + where  + " settings max_rows_to_read = " + max_rows_to_read ).rstrip() == str(
+            files_amount)
+
 def test_read_write_storage(started_cluster):
     hdfs_api = HDFSApi("root")
 

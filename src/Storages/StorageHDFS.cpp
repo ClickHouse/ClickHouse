@@ -92,11 +92,11 @@ public:
 
     using SourcesInfoPtr = std::shared_ptr<SourcesInfo>;
 
-    static Block getHeader(Block header, bool need_path_column, bool need_file_column)
+    static Block getHeader(Block header, const SourcesInfoPtr & source_info)
     {
-        if (need_path_column)
+        if (source_info->need_path_column)
             header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
-        if (need_file_column)
+        if (source_info->need_file_column)
             header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
 
         return header;
@@ -110,7 +110,7 @@ public:
         Block sample_block_,
         const Context & context_,
         UInt64 max_block_size_)
-        : SourceWithProgress(getHeader(sample_block_, source_info_->need_path_column, source_info_->need_file_column))
+        : SourceWithProgress(getHeader(sample_block_, source_info_))
         , source_info(std::move(source_info_))
         , uri(std::move(uri_))
         , format(std::move(format_))
@@ -128,9 +128,12 @@ public:
 
     Chunk generate() override
     {
+        std::vector<size_t> partition_indexs;
         auto to_read_block = sample_block;
         for (const auto & name_type : source_info->partition_name_types)
+        {
             to_read_block.erase(name_type.name);
+        }
 
         while (true)
         {
@@ -156,7 +159,15 @@ public:
                 Columns columns = res.getColumns();
                 UInt64 num_rows = res.rows();
 
-                /// Enrich with virtual columns.
+                auto types = source_info->partition_name_types.getTypes();
+                for (size_t i = 0; i < types.size(); ++i)
+                {
+                    auto column = types[i]->createColumnConst(num_rows, source_info->partition_fields[current_idx][i]);
+                    auto previous_idx = sample_block.getPositionByName(source_info->partition_name_types.getNames()[i]);
+                    columns.insert(columns.begin() + previous_idx, column->convertToFullColumnIfConst());
+                }
+
+                  /// Enrich with virtual columns.
                 if (source_info->need_path_column)
                 {
                     auto column = DataTypeString().createColumnConst(num_rows, current_path);
@@ -171,17 +182,6 @@ public:
                     auto column = DataTypeString().createColumnConst(num_rows, std::move(file_name));
                     columns.push_back(column->convertToFullColumnIfConst());
                 }
-
-                if (!source_info->partition_name_types.empty())
-                {
-                    auto types = source_info->partition_name_types.getTypes();
-                    for (size_t i = 0; i < types.size(); ++i)
-                    {
-                        auto column = types[i]->createColumnConst(num_rows, source_info->partition_fields[current_idx][i]);
-                        columns.push_back(column->convertToFullColumnIfConst());
-                    }
-                }
-
 
                 return Chunk(std::move(columns), num_rows);
             }
@@ -324,7 +324,7 @@ Pipe StorageHDFS::read(
         sources_info->uris.clear();
         sources_info->partition_name_types = partition_name_types;
 
-        for (auto s_uri : prev_uris)
+        for (const auto & s_uri : prev_uris)
         {
             re2::StringPiece input(s_uri);
             String tmp;
@@ -334,18 +334,20 @@ Pipe StorageHDFS::read(
             // todo: integration with hive metastore
             for (size_t i = 0; i < names.size(); ++i)
             {
-                if (!RE2::FindAndConsume(&input, "/" + names[i] + "=([^/]+)/", &tmp))
+                if (!RE2::FindAndConsume(&input, "/" + names[i] + "=([^/]+)", &tmp))
                     throw Exception(
                     "Could not parse partition file path: " + s_uri,
                     ErrorCodes::INVALID_PARTITION_VALUE);
 
                 if (i != 0)
                     writeString(",", wb);
+
                 writeString(tmp, wb);
             }
 
             // TODO: CSV is a little hacky, maybe some better way? eg: Values
             ReadBufferFromString buffer(wb.str());
+
             auto input_stream
                 = FormatFactory::instance().getInput("CSV", buffer, metadata_snapshot->getPartitionKey().sample_block, context, context.getSettingsRef().max_block_size);
 
@@ -363,12 +365,11 @@ Pipe StorageHDFS::read(
                 ranges.emplace_back(fields[i]);
             }
 
-            if (minmax_idx_condition->checkInHyperrectangle(
-                ranges, partition_name_types.getTypes()).can_be_true)
+            if (minmax_idx_condition->checkInHyperrectangle(ranges, partition_name_types.getTypes()).can_be_true)
             {
+                LOG_INFO(log, "matched partition: {}, hdfs file: {}",  partition_name_types.toString(), s_uri);
                 sources_info->uris.push_back(s_uri);
                 sources_info->partition_fields.push_back(std::move(fields));
-                continue;
             }
         }
     }
