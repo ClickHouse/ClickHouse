@@ -43,6 +43,6 @@ build_id:
 ```
 
 **См. также**
--   Системная таблица [trace_log](../../operations/system_tables/trace_log.md)
+-   Системная таблица [trace_log](../../operations/system-tables/trace_log.md)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/crash-log)
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/crash-log)
