@@ -80,7 +80,8 @@ set(ORC_BUILD_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include)
 set(ORC_PROTO_DIR ${ORC_SOURCE_DIR}/../proto)
 set(ORC_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
-set(GOOGLE_PROTOBUF_DIR ${Protobuf_INCLUDE_DIR})
+set(GOOGLE_PROTOBUF_INCLUDE_DIR ${Protobuf_INCLUDE_DIR})
+set(GOOGLE_PROTOBUF_LIBRARY ${Protobuf_LIBRARY})
 
 set(ARROW_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
 
@@ -138,7 +139,8 @@ set(ARROW_PROTO_DIR ${ARROW_SOURCE_DIR}/format)
 set(ARROW_FLIGHT_SRC_DIR ${ARROW_SOURCE_DIR}/cpp/src/arrow/flight)
 set(ARROW_FLIGHT_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
-set(GRPC_DIR ${_gRPC_SOURCE_DIR})
+set(GRPC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc/include/grpc++)
+set(GRPC_LIBRARY grpc++)
 
 protobuf_generate_grpc_cpp(ARROW_FLIGHT_GENERATED_SRCS ARROW_FLIGHT_GENERATED_INCLUDES ${ARROW_PROTO_DIR}/Flight.proto)
 
@@ -298,12 +300,8 @@ add_dependencies(${ARROW_LIBRARY} ${FLATBUFFERS_LIBRARY})
 
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${FLATBUFFERS_LIBRARY} boost::filesystem)
 
-if (USE_INTERNAL_PROTOBUF_LIBRARY)
-    add_dependencies(${ARROW_LIBRARY} protoc)
-endif ()
-
 target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
-target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${GOOGLE_PROTOBUF_LIBRARY} ${GRPC_LIBRARY})
 target_link_libraries(${ARROW_LIBRARY} PRIVATE lz4)
 if (ARROW_WITH_SNAPPY)
     target_link_libraries(${ARROW_LIBRARY} PRIVATE ${SNAPPY_LIBRARY})
@@ -319,14 +317,13 @@ endif ()
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_WRAP_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GOOGLE_PROTOBUF_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GOOGLE_PROTOBUF_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_GENERATED_SRC_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GRPC_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GRPC_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_FLIGHT_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_FLIGHT_GENERATED_SRC_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${FLATBUFFERS_INCLUDE_DIR})
 
 # === parquet
