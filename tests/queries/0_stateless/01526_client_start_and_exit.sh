@@ -4,12 +4,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # Create a huge amount of tables, so Suggest will take a time to load
-seq 1 1000 | sed -r -e 's/(.+)/CREATE TABLE IF NOT EXISTS test\1 (x UInt8) ENGINE = Memory;/' | ${CLICKHOUSE_CLIENT} -n
+${CLICKHOUSE_CLIENT} -q "SELECT 'CREATE TABLE test_' || hex(randomPrintableASCII(40)) || '(x UInt8) Engine=Memory;' FROM numbers(10000)" --format=TSVRaw | ${CLICKHOUSE_BENCHMARK} -c32 -i 10000 -d 0 2>&1 | grep -F 'Loaded 10000 queries'
 
 function stress()
 {
     while true; do
-        ./"$CURDIR"/01526_client_start_and_exit.expect
+        ./"$CURDIR"/01526_client_start_and_exit.expect | grep -v -P 'ClickHouse client|Connecting|Connected|:\) Bye\.|^\s*$|spawn bash|^0\s*$'
     done
 }
 
@@ -20,6 +20,3 @@ for _ in {1..10}; do
 done
 
 wait
-echo 'Ok'
-
-seq 1 1000 | sed -r -e 's/(.+)/DROP TABLE test\1;/' | ${CLICKHOUSE_CLIENT} -n
