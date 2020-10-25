@@ -279,7 +279,7 @@ Query:
 SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY 
 ```
 
-Reslt:
+Result:
 
 ``` text
 ┌─a─┬─b─┐
