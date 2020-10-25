@@ -26,8 +26,6 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
                     connection_parameters.default_database,
                     connection_parameters.user,
                     connection_parameters.password,
-                    "" /* cluster */,
-                    "" /* cluster_secret */,
                     "client",
                     connection_parameters.compression,
                     connection_parameters.security);
@@ -80,7 +78,7 @@ Suggest::Suggest()
              "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
              "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
              "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
-             "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
+             "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "FOR",     "RANDOMIZED",
              "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE"};
 }
 
@@ -158,8 +156,7 @@ void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts
                 return;
 
             default:
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
-                    packet.type, connection.getDescription());
+                throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         }
     }
 }

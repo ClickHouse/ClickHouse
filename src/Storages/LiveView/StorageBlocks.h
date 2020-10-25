@@ -35,7 +35,7 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override { return to_stage; }
 
-    Pipe read(
+    Pipes read(
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & /*query_info*/,
@@ -44,7 +44,7 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override
     {
-        return Pipe::unitePipes(std::move(pipes));
+        return std::move(pipes);
     }
 
 private:

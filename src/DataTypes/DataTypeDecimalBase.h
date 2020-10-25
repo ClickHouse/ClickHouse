@@ -50,9 +50,8 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 /// Int32    9
 /// Int64   18
 /// Int128  38
-/// Int256  76
 /// Operation between two decimals leads to Decimal(P, S), where
-///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
+///     P is one of (9, 18, 38); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
 template <typename T>
 class DataTypeDecimalBase : public DataTypeWithSimpleSerialization
@@ -144,7 +143,7 @@ public:
     T scaleFactorFor(const DataTypeNumber<U> & , bool is_multiply_or_divisor) const
     {
         if (is_multiply_or_divisor)
-            return T(1);
+            return 1;
         return getScaleMultiplier();
     }
 
@@ -156,39 +155,46 @@ protected:
 };
 
 
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
+template <typename T, typename U, template <typename> typename DecimalType>
+typename std::enable_if_t<(sizeof(T) >= sizeof(U)), DecimalType<T>>
+decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_multiply, bool is_divide)
 {
-    UInt32 scale{};
-    if constexpr (is_multiply)
+    UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
+    if (is_multiply)
         scale = tx.getScale() + ty.getScale();
-    else if constexpr (is_division)
+    else if (is_divide)
         scale = tx.getScale();
-    else
-        scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
-
-    if constexpr (sizeof(T) < sizeof(U))
-        return DecimalType<U>(DecimalUtils::maxPrecision<U>(), scale);
-    else
-        return DecimalType<T>(DecimalUtils::maxPrecision<T>(), scale);
+    return DecimalType<T>(DecimalUtils::maxPrecision<T>(), scale);
 }
 
-template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> &)
+template <typename T, typename U, template <typename> typename DecimalType>
+typename std::enable_if_t<(sizeof(T) < sizeof(U)), const DecimalType<U>>
+decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_multiply, bool is_divide)
+{
+    UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
+    if (is_multiply)
+        scale = tx.getScale() + ty.getScale();
+    else if (is_divide)
+        scale = tx.getScale();
+    return DecimalType<U>(DecimalUtils::maxPrecision<U>(), scale);
+}
+
+template <typename T, typename U, template <typename> typename DecimalType>
+const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> &, bool, bool)
 {
     return DecimalType<T>(DecimalUtils::maxPrecision<T>(), tx.getScale());
 }
 
-template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalType<U> & ty)
+template <typename T, typename U, template <typename> typename DecimalType>
+const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalType<U> & ty, bool, bool)
 {
     return DecimalType<U>(DecimalUtils::maxPrecision<U>(), ty.getScale());
 }
 
 template <template <typename> typename DecimalType>
-inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
+DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
-    if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal256>())
+    if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal128>())
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (static_cast<UInt64>(scale_value) > precision_value)
@@ -198,9 +204,7 @@ inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
         return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value);
     else if (precision_value <= DecimalUtils::maxPrecision<Decimal64>())
         return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value);
-    else if (precision_value <= DecimalUtils::maxPrecision<Decimal128>())
-       return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
-    return std::make_shared<DecimalType<Decimal256>>(precision_value, scale_value);
+    return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
 }
 
 }

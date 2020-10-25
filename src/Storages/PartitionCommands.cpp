@@ -135,7 +135,7 @@ std::string PartitionCommand::typeToString() const
     __builtin_unreachable();
 }
 
-Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)
+Pipes convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)
 {
     Block header {
          ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "command_type"),
@@ -187,7 +187,11 @@ Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_
     }
 
     Chunk chunk(std::move(res_columns), commands_result.size());
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+
+    Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    Pipes result;
+    result.emplace_back(std::move(pipe));
+    return result;
 }
 
 }

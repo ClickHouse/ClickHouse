@@ -1,11 +1,13 @@
 ---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 20
-toc_title: "スタースキーマ ベンチマーク"
+toc_title: "Star Schema\u30D9\u30F3\u30C1\u30DE\u30FC\u30AF"
 ---
 
-# スタースキーマ ベンチマーク {#star-schema-benchmark}
+# Star Schemaベンチマーク {#star-schema-benchmark}
 
-dbgen のコンパイル:
+Dbgenのコンパイル:
 
 ``` bash
 $ git clone git@github.com:vadimtk/ssb-dbgen.git
@@ -16,7 +18,7 @@ $ make
 データの生成:
 
 !!! warning "注意"
-    `-s 100` をつけるとdbgenは600万行(67GB)を生成します。 `-s 1000` は6億行を生成します(これには非常に時間がかかります)
+    と `-s 100` dbgenは600万行（67GB）を生成します。 `-s 1000` それは6億行を生成します（これは多くの時間がかかります)
 
 ``` bash
 $ ./dbgen -s 1000 -T c
@@ -100,7 +102,7 @@ $ clickhouse-client --query "INSERT INTO supplier FORMAT CSV" < supplier.tbl
 $ clickhouse-client --query "INSERT INTO lineorder FORMAT CSV" < lineorder.tbl
 ```
 
-「star schema」を非正規化された「flat schema」に変換します。
+変換 “star schema” 非正規化に “flat schema”:
 
 ``` sql
 SET max_memory_usage = 20000000000;

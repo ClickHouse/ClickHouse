@@ -34,7 +34,7 @@ protected:
     bool finished = false;
     bool finalized = false;
 
-    /// Flush data on each consumed chunk. This is intended for interactive applications to output data as soon as it's ready.
+    /// Flush data on each consumed chunk. This is intented for interactive applications to output data as soon as it's ready.
     bool auto_flush = false;
 
     RowsBeforeLimitCounterPtr rows_before_limit_counter;

@@ -29,7 +29,7 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -66,7 +66,6 @@ private:
     DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
 
     NamesAndTypesList getVirtuals() const override;
-    ColumnSizeByName getColumnSizes() const override;
 
 protected:
     StorageMerge(
@@ -76,7 +75,14 @@ protected:
         const String & table_name_regexp_,
         const Context & context_);
 
-    Pipe createSources(
+    Block getQueryHeader(
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage);
+
+    Pipes createSources(
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const QueryProcessingStage::Enum & processed_stage,

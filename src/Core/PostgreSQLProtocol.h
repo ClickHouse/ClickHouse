@@ -902,7 +902,7 @@ public:
         {
             type_to_method[user_auth_type]->authenticate(user_name, context, mt, address);
             mt.send(Messaging::AuthenticationOk(), true);
-            LOG_DEBUG(log, "Authentication for user {} was successful.", user_name);
+            LOG_INFO(log, "Authentication for user {} was successful.", user_name);
             return;
         }
 

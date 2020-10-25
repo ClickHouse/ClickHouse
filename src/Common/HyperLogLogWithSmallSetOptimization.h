@@ -27,7 +27,6 @@ class HyperLogLogWithSmallSetOptimization : private boost::noncopyable
 private:
     using Small = SmallSet<Key, small_set_size>;
     using Large = HyperLogLogCounter<K, Hash, UInt32, DenominatorType>;
-    using LargeValueType = typename Large::value_type;
 
     Small small;
     Large * large = nullptr;
@@ -43,7 +42,7 @@ private:
         Large * tmp_large = new Large;
 
         for (const auto & x : small)
-            tmp_large->insert(static_cast<LargeValueType>(x.getValue()));
+            tmp_large->insert(x.getValue());
 
         large = tmp_large;
     }
@@ -69,12 +68,12 @@ public:
                 else
                 {
                     toLarge();
-                    large->insert(static_cast<LargeValueType>(value));
+                    large->insert(value);
                 }
             }
         }
         else
-            large->insert(static_cast<LargeValueType>(value));
+            large->insert(value);
     }
 
     UInt64 size() const

@@ -4,5 +4,4 @@ RECURSE(
     loggers
     pcg-random
     widechar_width
-    readpassphrase
 )

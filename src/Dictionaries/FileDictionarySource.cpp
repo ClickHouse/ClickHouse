@@ -32,7 +32,7 @@ FileDictionarySource::FileDictionarySource(
     {
         const String user_files_path = context.getUserFilesPath();
         if (!startsWith(filepath, user_files_path))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
+            throw Exception("File path " + filepath + " is not inside " + user_files_path, ErrorCodes::PATH_ACCESS_DENIED);
     }
 }
 
@@ -60,7 +60,7 @@ BlockInputStreamPtr FileDictionarySource::loadAll()
 
 std::string FileDictionarySource::toString() const
 {
-    return fmt::format("File: {}, {}", filepath, format);
+    return "File: " + filepath + ' ' + format;
 }
 
 
@@ -76,7 +76,6 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const std::string & config_prefix,
                                  Block & sample_block,
                                  const Context & context,
-                                 const std::string & /* default_database */,
                                  bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)

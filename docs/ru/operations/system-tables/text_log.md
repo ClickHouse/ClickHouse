@@ -1,4 +1,4 @@
-# system.text_log {#system_tables-text_log}
+# system.text_log {#system-tables-text-log}
 
 Содержит записи логов. Уровень логирования для таблицы может быть ограничен параметром сервера `text_log.level`.
 

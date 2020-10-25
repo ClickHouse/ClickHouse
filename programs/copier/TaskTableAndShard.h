@@ -6,9 +6,6 @@
 
 #include <Core/Defines.h>
 
-#include <ext/map.h>
-#include <boost/algorithm/string/join.hpp>
-
 
 namespace DB
 {
@@ -51,9 +48,9 @@ struct TaskTable
     String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const;
 
 
-    bool isReplicatedTable() const { return is_replicated_table; }
+    bool isReplicatedTable() const { return engine_push_zk_path != ""; }
 
-    /// Partitions will be split into number-of-splits pieces.
+    /// Partitions will be splitted into number-of-splits pieces.
     /// Each piece will be copied independently. (10 by default)
     size_t number_of_splits;
 
@@ -81,7 +78,6 @@ struct TaskTable
 
     /// First argument of Replicated...MergeTree()
     String engine_push_zk_path;
-    bool is_replicated_table;
 
     ASTPtr rewriteReplicatedCreateQueryToPlain();
 
@@ -95,8 +91,8 @@ struct TaskTable
     ASTPtr main_engine_split_ast;
 
     /*
-     * To copy partition piece form one cluster to another we have to use Distributed table.
-     * In case of usage separate table (engine_push) for each partition piece,
+     * To copy partiton piece form one cluster to another we have to use Distributed table.
+     * In case of usage separate table (engine_push) for each partiton piece,
      * we have to use many Distributed tables.
      * */
     ASTs auxiliary_engine_split_asts;
@@ -117,7 +113,7 @@ struct TaskTable
     /**
      * Prioritized list of shards
      * all_shards contains information about all shards in the table.
-     * So we have to check whether particular shard have current partition or not while processing.
+     * So we have to check whether particular shard have current partiton or not while processing.
      */
     TasksShard all_shards;
     TasksShard local_shards;
@@ -126,7 +122,7 @@ struct TaskTable
     ClusterPartitions cluster_partitions;
     NameSet finished_cluster_partitions;
 
-    /// Partition names to process in user-specified order
+    /// Parition names to process in user-specified order
     Strings ordered_partition_names;
 
     ClusterPartition & getClusterPartition(const String & partition_name)
@@ -272,8 +268,8 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
         ParserStorage parser_storage;
         engine_push_ast = parseQuery(parser_storage, engine_push_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         engine_push_partition_key_ast = extractPartitionKey(engine_push_ast);
-        primary_key_comma_separated = boost::algorithm::join(extractPrimaryKeyColumnNames(engine_push_ast), ", ");
-        is_replicated_table = isReplicatedTableEngine(engine_push_ast);
+        primary_key_comma_separated = Nested::createCommaSeparatedStringFrom(extractPrimaryKeyColumnNames(engine_push_ast));
+        engine_push_zk_path = extractReplicatedTableZookeeperPath(engine_push_ast);
     }
 
     sharding_key_str = config.getString(table_prefix + "sharding_key");
@@ -376,17 +372,14 @@ inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain()
     auto & new_storage_ast = prev_engine_push_ast->as<ASTStorage &>();
     auto & new_engine_ast = new_storage_ast.engine->as<ASTFunction &>();
 
-    /// Remove "Replicated" from name
+    auto & replicated_table_arguments = new_engine_ast.arguments->children;
+
+    /// Delete first two arguments of Replicated...MergeTree() table.
+    replicated_table_arguments.erase(replicated_table_arguments.begin());
+    replicated_table_arguments.erase(replicated_table_arguments.begin());
+
+    /// Remove replicated from name
     new_engine_ast.name = new_engine_ast.name.substr(10);
-
-    if (new_engine_ast.arguments)
-    {
-        auto & replicated_table_arguments = new_engine_ast.arguments->children;
-
-        /// Delete first two arguments of Replicated...MergeTree() table.
-        replicated_table_arguments.erase(replicated_table_arguments.begin());
-        replicated_table_arguments.erase(replicated_table_arguments.begin());
-    }
 
     return new_storage_ast.clone();
 }

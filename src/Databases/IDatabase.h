@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -44,8 +44,6 @@ public:
     /// (a database with support for lazy tables loading
     /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
-    /// Reset reference counter to the StoragePtr.
-    virtual void reset() = 0;
 
     virtual ~IDatabaseTablesIterator() = default;
 
@@ -95,8 +93,6 @@ public:
     const String & name() const override { return it->first; }
 
     const StoragePtr & table() const override { return it->second; }
-
-    void reset() override { it->second.reset(); }
 };
 
 /// Copies list of dictionaries and iterates through such snapshot.
@@ -153,7 +149,7 @@ public:
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
-    virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
+    virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/) {}
 
     /// Check the existence of the table.
     virtual bool isTableExist(const String & name, const Context & context) const = 0;

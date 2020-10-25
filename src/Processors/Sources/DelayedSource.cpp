@@ -1,7 +1,6 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/NullSink.h>
-#include <Processors/ResizeProcessor.h>
 
 namespace DB
 {
@@ -30,12 +29,12 @@ DelayedSource::DelayedSource(const Block & header, Creator processors_creator, b
 
 IProcessor::Status DelayedSource::prepare()
 {
-    /// At first, wait for main output is needed and expand pipeline.
+    /// At first, wait for main input is needed and expand pipeline.
     if (inputs.empty())
     {
         auto & first_output = outputs.front();
 
-        /// If main output port was finished before callback was called, stop execution.
+        /// If main port was finished before callback was called, stop execution.
         if (first_output.isFinished())
         {
             for (auto & output : outputs)
@@ -75,7 +74,7 @@ IProcessor::Status DelayedSource::prepare()
 
         input->setNeeded();
         if (!input->hasData())
-            return Status::NeedData;
+            return Status::PortFull;
 
         output->pushData(input->pullData(true));
         return Status::PortFull;
@@ -112,26 +111,15 @@ void synchronizePorts(OutputPort *& pipe_port, OutputPort * source_port, const B
 void DelayedSource::work()
 {
     auto pipe = creator();
-    const auto & header = main->getHeader();
 
-    if (pipe.empty())
-    {
-        auto source = std::make_shared<NullSource>(header);
-        main_output = &source->getPort();
-        processors.emplace_back(std::move(source));
-        return;
-    }
-
-    pipe.resize(1);
-
-    main_output = pipe.getOutputPort(0);
+    main_output = &pipe.getPort();
     totals_output = pipe.getTotalsPort();
     extremes_output = pipe.getExtremesPort();
 
-    processors = Pipe::detachProcessors(std::move(pipe));
+    processors = std::move(pipe).detachProcessors();
 
-    synchronizePorts(totals_output, totals, header, processors);
-    synchronizePorts(extremes_output, extremes, header, processors);
+    synchronizePorts(totals_output, totals, main->getHeader(), processors);
+    synchronizePorts(extremes_output, extremes, main->getHeader(), processors);
 }
 
 Processors DelayedSource::expandPipeline()
@@ -156,11 +144,12 @@ Pipe createDelayedPipe(const Block & header, DelayedSource::Creator processors_c
 {
     auto source = std::make_shared<DelayedSource>(header, std::move(processors_creator), add_totals_port, add_extremes_port);
 
-    auto * main = &source->getPort();
-    auto * totals = source->getTotalsPort();
-    auto * extremes = source->getExtremesPort();
+    Pipe pipe(&source->getPort());
+    pipe.setTotalsPort(source->getTotalsPort());
+    pipe.setExtremesPort(source->getExtremesPort());
 
-    return Pipe(std::move(source), main, totals, extremes);
+    pipe.addProcessors({std::move(source)});
+    return pipe;
 }
 
 }

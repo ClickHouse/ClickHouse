@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
     extern const int THERE_IS_NO_PROFILE;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 
@@ -107,27 +106,4 @@ void Settings::addProgramOptions(boost::program_options::options_description & o
             field.getDescription())));
     }
 }
-
-void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
-{
-    if (config.getBool("skip_check_for_incorrect_settings", false))
-        return;
-
-    Settings settings;
-    for (auto setting : settings.all())
-    {
-        const auto & name = setting.getName();
-        if (config.has(name))
-        {
-            throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
-                " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
-                " You can add it to <profiles><default> if you want to change default value of this setting."
-                " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
-                " in the main configuration file.",
-                name, config_path),
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-        }
-    }
-}
-
 }

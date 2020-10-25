@@ -49,8 +49,6 @@
 
 `a NOT LIKE s` - функция `notLike(a, b)`
 
-`a ILIKE s` – функция `ilike(a, b)`
-
 `a BETWEEN b AND c` - равнозначно `a >= b AND a <= c`
 
 `a NOT BETWEEN b AND c` - равнозначно `a < b OR a > c`

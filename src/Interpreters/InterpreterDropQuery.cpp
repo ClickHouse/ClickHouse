@@ -41,9 +41,6 @@ BlockIO InterpreterDropQuery::execute()
     if (!drop.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccessForDDLOnCluster());
 
-    if (context.getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
-        drop.no_delay = true;
-
     if (!drop.table.empty())
     {
         if (!drop.is_dictionary)
@@ -52,7 +49,7 @@ BlockIO InterpreterDropQuery::execute()
             return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     }
     else if (!drop.database.empty())
-        return executeToDatabase(drop.database, drop.kind, drop.if_exists, drop.no_delay);
+        return executeToDatabase(drop.database, drop.kind, drop.if_exists);
     else
         throw Exception("Nothing to drop, both names are empty", ErrorCodes::LOGICAL_ERROR);
 }
@@ -124,19 +121,6 @@ BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
             database->dropTable(context, table_id.table_name, query.no_delay);
-        }
-    }
-
-    table.reset();
-    ddl_guard = {};
-    if (query.no_delay)
-    {
-        if (query.kind == ASTDropQuery::Kind::Drop)
-            DatabaseCatalog::instance().waitTableFinallyDropped(table_id.uuid);
-        else if (query.kind == ASTDropQuery::Kind::Detach)
-        {
-            if (auto * atomic = typeid_cast<DatabaseAtomic *>(database.get()))
-                atomic->waitDetachedTableNotInUse(table_id.uuid);
         }
     }
 
@@ -223,7 +207,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
 }
 
 
-BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists, bool no_delay)
+BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists)
 {
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
@@ -253,12 +237,8 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
                 query.kind = kind;
                 query.if_exists = true;
                 query.database = database_name;
-                query.no_delay = no_delay;
-
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
-                    /// Reset reference counter of the StoragePtr to allow synchronous drop.
-                    iterator->reset();
                     query.table = iterator->name();
                     executeToTable(query);
                 }

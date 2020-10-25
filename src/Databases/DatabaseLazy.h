@@ -24,7 +24,7 @@ public:
 
     void loadStoredObjects(
         Context & context,
-        bool has_force_restore_data_flag, bool force_attach) override;
+        bool has_force_restore_data_flag) override;
 
     void createTable(
         const Context & context,
@@ -122,7 +122,6 @@ public:
     bool isValid() const override;
     const String & name() const override;
     const StoragePtr & table() const override;
-    void reset() override;
 
 private:
     const DatabaseLazy & database;

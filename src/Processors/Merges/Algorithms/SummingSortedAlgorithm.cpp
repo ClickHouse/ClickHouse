@@ -230,7 +230,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 continue;
             }
 
-            /// Are they inside the primary key or partition key?
+            /// Are they inside the primary key or partiton key?
             if (isInPrimaryKey(description, column.name, i) ||  isInPartitionKey(column.name, partition_key_columns))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
@@ -440,7 +440,7 @@ static void setRow(Row & row, const ColumnRawPtrs & raw_columns, size_t row_num,
             if (i < column_names.size())
                 column_name = column_names[i];
 
-            throw Exception("SummingSortedAlgorithm failed to read row " + toString(row_num)
+            throw Exception("MergingSortedBlockInputStream failed to read row " + toString(row_num)
                             + " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
                             ErrorCodes::CORRUPTED_DATA);
         }

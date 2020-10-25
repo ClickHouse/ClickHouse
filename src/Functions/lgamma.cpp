@@ -11,11 +11,9 @@ extern "C"
 
 namespace DB
 {
-namespace
-{
 
 /// Use wrapper and use lgamma_r version because std::lgamma is not threadsafe.
-Float64 lgamma_wrapper(Float64 arg)
+static Float64 lgamma_wrapper(Float64 arg)
 {
     int signp;
     return lgamma_r(arg, &signp);
@@ -23,8 +21,6 @@ Float64 lgamma_wrapper(Float64 arg)
 
 struct LGammaName { static constexpr auto name = "lgamma"; };
 using FunctionLGamma = FunctionMathUnary<UnaryFunctionPlain<LGammaName, lgamma_wrapper>>;
-
-}
 
 void registerFunctionLGamma(FunctionFactory & factory)
 {
