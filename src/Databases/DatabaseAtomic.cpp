@@ -269,6 +269,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
                             database_name, query.database);
         not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
+        DatabaseCatalog::instance().addUUIDMapping(query.uuid, {}, {});
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);
         attachTableUnlocked(query.table, table, lock);   /// Should never throw
         table_name_to_path.emplace(query.table, table_data_path);
