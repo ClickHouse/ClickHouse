@@ -198,7 +198,7 @@ private:
     String format;
     String compression_method;
     String current_path;
-    size_t current_idx;
+    size_t current_idx = 0;
 
     UInt64 max_block_size;
     Block sample_block;
@@ -367,7 +367,7 @@ Pipe StorageHDFS::read(
 
             if (minmax_idx_condition->checkInHyperrectangle(ranges, partition_name_types.getTypes()).can_be_true)
             {
-                LOG_INFO(log, "matched partition: {}, hdfs file: {}",  partition_name_types.toString(), s_uri);
+                LOG_INFO(log, "matched partition: {}, hdfs file: {}", partition_name_types.toString(), s_uri);
                 sources_info->uris.push_back(s_uri);
                 sources_info->partition_fields.push_back(std::move(fields));
             }
