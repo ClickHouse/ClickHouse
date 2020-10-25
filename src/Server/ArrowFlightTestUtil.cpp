@@ -34,7 +34,7 @@ void GenerateTypedData(uint32_t * data, size_t n, uint32_t seed, uint32_t minVal
     std::mt19937 rng(seed);
     std::uniform_int_distribution<uint32_t> dist(minValue, maxValue);
 
-    // A static cast is required due to the int16 -> int8 handling.
+    // A static cast is required due to the int<smth> -> int8 handling.
     std::generate(data, data + n, [&dist, &rng] { return static_cast<uint32_t>(dist(rng)); });
 }
 
