@@ -98,7 +98,8 @@ def starttls_with_custom_port(self):
     login(servers, *users)
 
 def tls_connection(enable_tls, tls_require_cert):
-    """Try to login using LDAP user authentication over a TLS connection."""
+    """Try to login using LDAP user authentication over a TLS connection.
+    """
     servers = {
         "openldap2": {
             "host": "openldap2",
@@ -152,7 +153,8 @@ def tls(self):
     RQ_SRS_007_LDAP_Configuration_Server_EnableTLS_Options_Default("1.0")
 )
 def tls_enable_tls_default_yes(self):
-    """Check that the default value for the `enable_tls` is set to `yes`."""
+    """Check that the default value for the `enable_tls` is set to `yes`.
+    """
     servers = {
         "openldap2": {
             "host": "openldap2",
@@ -171,7 +173,8 @@ def tls_enable_tls_default_yes(self):
     RQ_SRS_007_LDAP_Configuration_Server_TLSRequireCert_Options_Default("1.0")
 )
 def tls_require_cert_default_demand(self):
-    """Check that the default value for the `tls_require_cert` is set to `demand`."""
+    """Check that the default value for the `tls_require_cert` is set to `demand`.
+    """
     servers = {
         "openldap2": {
             "host": "openldap2",
@@ -210,7 +213,8 @@ def starttls(self):
     RQ_SRS_007_LDAP_Configuration_Server_TLSCipherSuite("1.0")
 )
 def tls_cipher_suite(self):
-    """Check that `tls_cipher_suite` parameter can be used specify allowed cipher suites."""
+    """Check that `tls_cipher_suite` parameter can be used specify allowed cipher suites.
+    """
     servers = {
         "openldap4": {
             "host": "openldap4",
@@ -241,7 +245,8 @@ def tls_cipher_suite(self):
 ])
 def tls_minimum_protocol_version(self, version, exitcode, message):
     """Check that `tls_minimum_protocol_version` parameter can be used specify
-    to specify the minimum protocol version of SSL/TLS."""
+    to specify the minimum protocol version of SSL/TLS.
+    """
 
     servers = {
         "openldap4": {
@@ -278,6 +283,8 @@ def tls_minimum_protocol_version(self, version, exitcode, message):
 @TestFeature
 @Name("connection protocols")
 def feature(self, node="clickhouse1"):
+    """Check different LDAP connection protocols.
+    """
     self.context.node = self.context.cluster.node(node)
 
     for scenario in loads(current_module(), Scenario):
