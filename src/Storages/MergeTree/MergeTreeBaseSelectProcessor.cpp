@@ -314,9 +314,9 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
     if (prewhere_info)
     {
         if (prewhere_info->alias_actions)
-            prewhere_info->alias_actions->execute(block);
+            prewhere_info->alias_actions->buildExpressions()->execute(block);
 
-        prewhere_info->prewhere_actions->execute(block);
+        prewhere_info->prewhere_actions->buildExpressions()->execute(block);
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
 
         if (!prewhere_column.type->canBeUsedInBooleanContext())
