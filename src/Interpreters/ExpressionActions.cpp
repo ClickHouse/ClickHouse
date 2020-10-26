@@ -642,7 +642,7 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
 
 #if defined(ADDRESS_SANITIZER)
             const auto & msg = e.message();
-            if (__asan_region_is_poisoned(msg.data(), msg.size()))
+            if (__asan_region_is_poisoned(const_cast<char *>(msg.data()), msg.size()))
             {
                 LOG_FATAL(&Poco::Logger::get("ExpressionActions"), "Poisoned exception message (asan): {}", e.getStackTraceString());
             }
