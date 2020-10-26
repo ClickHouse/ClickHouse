@@ -699,8 +699,11 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         /// 3. Check if we can remove filter column at prewhere step. If we can, action will store single REMOVE_COLUMN.
         ColumnsWithTypeAndName columns = prewhere_actions->getResultColumns();
         auto required_columns = prewhere_actions->getRequiredColumns();
-        NameSet prewhere_input_names(required_columns.begin(), required_columns.end());
+        NameSet prewhere_input_names;
         NameSet unused_source_columns;
+
+        for (const auto & col : required_columns)
+            prewhere_input_names.insert(col.name);
 
         for (const auto & column : sourceColumns())
         {
