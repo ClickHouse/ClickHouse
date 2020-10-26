@@ -668,7 +668,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         auto & child = node.arguments->children[arg];
 
         const auto * lambda = child->as<ASTFunction>();
-        const auto * identifier = child->as<ASTIdentifier>();
+        const auto * identifier = child->as<ASTTableIdentifier>();
         if (lambda && lambda->name == "lambda")
         {
             /// If the argument is a lambda expression, just remember its approximate type.
@@ -714,7 +714,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
         else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
         {
-            auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
+            auto table_id = identifier->getTableId();
             table_id = data.context.resolveStorageID(table_id, Context::ResolveOrdinary);
             auto column_string = ColumnString::create();
             column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());

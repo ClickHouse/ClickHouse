@@ -1,6 +1,6 @@
-#include <Common/typeid_cast.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+
+#include <Parsers/ASTExpressionList.h>
 #include <Common/SipHash.h>
 
 

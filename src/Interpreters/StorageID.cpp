@@ -24,7 +24,7 @@ StorageID::StorageID(const ASTQueryWithTableAndOutput & query)
     assertNotEmpty();
 }
 
-StorageID::StorageID(const ASTIdentifier & table_identifier_node)
+StorageID::StorageID(const ASTTableIdentifier & table_identifier_node)
 {
     DatabaseAndTableWithAlias database_table(table_identifier_node);
     database_name = database_table.database;
@@ -35,9 +35,9 @@ StorageID::StorageID(const ASTIdentifier & table_identifier_node)
 
 StorageID::StorageID(const ASTPtr & node)
 {
-    if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(node.get()))
+    if (const auto * identifier = node->as<ASTTableIdentifier>())
         *this = StorageID(*identifier);
-    else if (const auto * simple_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(node.get()))
+    else if (const auto * simple_query = node->as<ASTQueryWithTableAndOutput>())
         *this = StorageID(*simple_query);
     else
         throw Exception("Unexpected AST", ErrorCodes::LOGICAL_ERROR);

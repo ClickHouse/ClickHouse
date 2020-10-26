@@ -22,14 +22,6 @@ void MarkTableIdentifiersMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * node_func = ast->as<ASTFunction>())
         visit(*node_func, ast, data);
-    else if (auto * node_table = ast->as<ASTTableExpression>())
-        visit(*node_table, ast, data);
-}
-
-void MarkTableIdentifiersMatcher::visit(ASTTableExpression & table, ASTPtr &, Data &)
-{
-    if (table.database_and_table_name)
-        setIdentifierSpecial(table.database_and_table_name);
 }
 
 void MarkTableIdentifiersMatcher::visit(const ASTFunction & func, ASTPtr &, Data & data)

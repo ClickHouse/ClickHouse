@@ -50,7 +50,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
 {
     if (table.database_and_table_name)
     {
-        auto table_id = IdentifierSemantic::extractDatabaseAndTable(table.database_and_table_name->as<ASTIdentifier &>());
+        auto table_id = table.database_and_table_name->as<ASTTableIdentifier>()->getTableId();
         if (table_id.database_name.empty())
         {
             auto subquery_it = data.subqueries.find(table_id.table_name);
@@ -71,9 +71,9 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
     if (checkFunctionIsInOrGlobalInOperator(func))
     {
         auto & ast = func.arguments->children.at(1);
-        if (const auto * ident = ast->as<ASTIdentifier>())
+        if (const auto * identifier = ast->as<ASTTableIdentifier>())
         {
-            auto table_id = IdentifierSemantic::extractDatabaseAndTable(*ident);
+            auto table_id = identifier->getTableId();
             if (table_id.database_name.empty())
             {
                 auto subquery_it = data.subqueries.find(table_id.table_name);

@@ -48,7 +48,7 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     auto & table_expr = join->table_expression->as<ASTTableExpression &>();
     if (table_expr.database_and_table_name)
     {
-        const auto & table_id = table_expr.database_and_table_name->as<ASTIdentifier &>();
+        const auto & table_id = table_expr.database_and_table_name->as<ASTTableIdentifier &>();
         String expr = "(select * from " + table_id.name() + ") as " + table_id.shortName();
 
         // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
@@ -240,7 +240,7 @@ void JoinedTables::rewriteDistributedInAndJoins(ASTPtr & query)
         std::vector<DatabaseAndTableWithAlias> renamed;
         renamed.reserve(ast_tables.size());
         for (auto & ast : ast_tables)
-            renamed.emplace_back(DatabaseAndTableWithAlias(*ast->as<ASTIdentifier>(), database));
+            renamed.emplace_back(DatabaseAndTableWithAlias(ast->as<ASTTableIdentifier &>(), database));
 
         /// Change qualified column names in distributed subqueries using table aliases.
         RenameQualifiedIdentifiersVisitor::Data data(renamed);

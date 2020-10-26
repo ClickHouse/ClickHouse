@@ -1,9 +1,9 @@
 #pragma once
 
-#include <optional>
-
-#include <Parsers/ASTWithAlias.h>
 #include <Core/UUID.h>
+#include <Parsers/ASTWithAlias.h>
+
+#include <optional>
 
 
 namespace DB
@@ -13,13 +13,10 @@ struct IdentifierSemantic;
 struct IdentifierSemanticImpl;
 struct StorageID;
 
-
-/// Identifier (column, table or alias)
+/// Generic identifier. ASTTableIdentifier - for table identifier.
 class ASTIdentifier : public ASTWithAlias
 {
 public:
-    UUID uuid = UUIDHelpers::Nil;
-
     explicit ASTIdentifier(const String & short_name);
     explicit ASTIdentifier(std::vector<String> && name_parts, bool special = false);
 
@@ -43,22 +40,16 @@ public:
 
     void restoreTable();  // TODO(ilezhankin): get rid of this
 
-    // FIXME: used only when it's needed to rewrite distributed table name to real remote table name.
-    void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this
-
-    void updateTreeHashImpl(SipHash & hash_state) const override;
-
 protected:
     String full_name;
     std::vector<String> name_parts;
+    std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 
 private:
     using ASTWithAlias::children; /// ASTIdentifier is child free
-
-    std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
     friend struct IdentifierSemantic;
     friend ASTPtr createTableIdentifier(const StorageID & table_id);
@@ -69,16 +60,34 @@ private:
 };
 
 
+class ASTTableIdentifier : public ASTIdentifier
+{
+    public:
+        explicit ASTTableIdentifier(const String & table_name);
+        explicit ASTTableIdentifier(const StorageID & table_id);
+        ASTTableIdentifier(const String & database_name, const String & table_name);
+
+        String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
+        ASTPtr clone() const override;
+
+        UUID uuid = UUIDHelpers::Nil;  // FIXME(ilezhankin): make private
+
+        StorageID getTableId() const;
+
+        // FIXME: used only when it's needed to rewrite distributed table name to real remote table name.
+        void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this
+
+        void updateTreeHashImpl(SipHash & hash_state) const override;
+};
+
+
 /// ASTIdentifier Helpers: hide casts and semantic.
 
-ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
-ASTPtr createTableIdentifier(const StorageID & table_id);
 void setIdentifierSpecial(ASTPtr & ast);
 
 String getIdentifierName(const IAST * ast);
 std::optional<String> tryGetIdentifierName(const IAST * ast);
 bool tryGetIdentifierNameInto(const IAST * ast, String & name);
-StorageID getTableIdentifier(const ASTPtr & ast);
 
 inline String getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }
 inline std::optional<String> tryGetIdentifierName(const ASTPtr & ast) { return tryGetIdentifierName(ast.get()); }

@@ -46,7 +46,7 @@ bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & e
 
     node = alter_query;
     alter_query->command_list = command_list;
-    StorageID table_id = getTableIdentifier(table);
+    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
     alter_query->table = table_id.table_name;
     alter_query->database = table_id.database_name;
 

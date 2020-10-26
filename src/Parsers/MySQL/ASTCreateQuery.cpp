@@ -101,7 +101,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     create_query->temporary = is_temporary;
     create_query->if_not_exists = if_not_exists;
 
-    StorageID table_id = getTableIdentifier(table);
+    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
     create_query->table = table_id.table_name;
     create_query->database = table_id.database_name;
     create_query->like_table = like_table;

@@ -47,7 +47,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
     const auto * subquery = table_expression->as<ASTSubquery>();
     const auto * function = table_expression->as<ASTFunction>();
-    const auto * table = table_expression->as<ASTIdentifier>();
+    const auto * table = table_expression->as<ASTTableIdentifier>();
 
     if (!subquery && !table && !function)
         throw Exception("Table expression is undefined, Method: ExpressionAnalyzer::interpretSubquery." , ErrorCodes::LOGICAL_ERROR);
