@@ -71,7 +71,7 @@ toUUIDOrNull(String)
 
 **Returned value**
 
-The Nullable UUID type value.
+The Nullable(UUID) type value.
 
 **Usage example**
 
