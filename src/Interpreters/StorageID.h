@@ -25,7 +25,7 @@ namespace ErrorCodes
 static constexpr char const * TABLE_WITH_UUID_NAME_PLACEHOLDER = "_";
 
 class ASTQueryWithTableAndOutput;
-class ASTIdentifier;
+class ASTTableIdentifier;
 class Context;
 
 struct StorageID
@@ -41,7 +41,7 @@ struct StorageID
     }
 
     StorageID(const ASTQueryWithTableAndOutput & query);
-    StorageID(const ASTIdentifier & table_identifier_node);
+    StorageID(const ASTTableIdentifier & table_identifier_node);
     StorageID(const ASTPtr & node);
 
     String getDatabaseName() const;

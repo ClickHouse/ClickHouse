@@ -14,7 +14,7 @@ namespace DB
 {
 
 class ASTSelectQuery;
-class ASTIdentifier;
+class ASTTableIdentifier;
 struct ASTTableExpression;
 class Context;
 
@@ -22,6 +22,7 @@ class Context;
 /// Extracts database name (and/or alias) from table expression or identifier
 struct DatabaseAndTableWithAlias
 {
+    // TODO(ilezhankin): replace with ASTTableIdentifier
     String database;
     String table;
     String alias;
@@ -29,7 +30,7 @@ struct DatabaseAndTableWithAlias
 
     DatabaseAndTableWithAlias() = default;
     DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
-    DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
+    DatabaseAndTableWithAlias(const ASTTableIdentifier & identifier, const String & current_database = "");
     DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
 
     /// "alias." or "table." if alias is empty

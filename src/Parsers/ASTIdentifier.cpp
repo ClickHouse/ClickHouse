@@ -110,21 +110,6 @@ void ASTIdentifier::restoreTable()
     }
 }
 
-void ASTIdentifier::resetTable(const String & database_name, const String & table_name)
-{
-    auto ast = createTableIdentifier(database_name, table_name);
-    auto & ident = ast->as<ASTIdentifier &>();
-    full_name.swap(ident.full_name);
-    name_parts.swap(ident.name_parts);
-    uuid = ident.uuid;
-}
-
-void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(uuid);
-    IAST::updateTreeHashImpl(hash_state);
-}
-
 void ASTIdentifier::resetFullName()
 {
     full_name = name_parts[0];
@@ -132,21 +117,49 @@ void ASTIdentifier::resetFullName()
         full_name += '.' + name_parts[i];
 }
 
-ASTPtr createTableIdentifier(const String & database_name, const String & table_name)
+ASTTableIdentifier::ASTTableIdentifier(const String & table_name) : ASTIdentifier({table_name}, true)
 {
-    assert(database_name != "_temporary_and_external_tables");
-    return createTableIdentifier(StorageID(database_name, table_name));
 }
 
-ASTPtr createTableIdentifier(const StorageID & table_id)
+ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id)
+    : ASTIdentifier(
+        table_id.database_name.empty() ? std::vector<String>{table_id.table_name}
+                                       : std::vector<String>{table_id.database_name, table_id.table_name},
+        true)
 {
-    std::shared_ptr<ASTIdentifier> res;
-    if (table_id.database_name.empty())
-        res = std::make_shared<ASTIdentifier>(std::vector<String>{table_id.table_name}, true);
-    else
-        res = std::make_shared<ASTIdentifier>(std::vector<String>{table_id.database_name, table_id.table_name}, true);
-    res->uuid = table_id.uuid;
-    return res;
+    uuid = table_id.uuid;
+}
+
+ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name)
+    : ASTIdentifier({database_name, table_name}, true)
+{
+}
+
+ASTPtr ASTTableIdentifier::clone() const
+{
+    auto ret = std::make_shared<ASTTableIdentifier>(*this);
+    ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
+    return ret;
+}
+
+StorageID ASTTableIdentifier::getTableId() const
+{
+    if (name_parts.size() == 2) return {name_parts[0], name_parts[1], uuid};
+    else return {{}, name_parts[0], uuid};
+}
+
+void ASTTableIdentifier::resetTable(const String & database_name, const String & table_name)
+{
+    auto identifier = std::make_shared<ASTTableIdentifier>(database_name, table_name);
+    full_name.swap(identifier->full_name);
+    name_parts.swap(identifier->name_parts);
+    uuid = identifier->uuid;
+}
+
+void ASTTableIdentifier::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(uuid);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 String getIdentifierName(const IAST * ast)
@@ -183,19 +196,6 @@ void setIdentifierSpecial(ASTPtr & ast)
     if (ast)
         if (auto * id = ast->as<ASTIdentifier>())
             id->semantic->special = true;
-}
-
-StorageID getTableIdentifier(const ASTPtr & ast)
-{
-    if (!ast)
-        throw Exception("AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
-    const auto & identifier = dynamic_cast<const ASTIdentifier &>(*ast);
-    if (identifier.name_parts.size() > 2)
-        throw Exception("Logical error: more than two components in table expression", ErrorCodes::SYNTAX_ERROR);
-
-    if (identifier.name_parts.size() == 2)
-        return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
-    return { "", identifier.name_parts[0], identifier.uuid };
 }
 
 }

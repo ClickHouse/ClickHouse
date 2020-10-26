@@ -54,8 +54,11 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false)
-    : table_name_with_optional_uuid(table_name_with_optional_uuid_) {}
+    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false)
+        : table_name_with_optional_uuid(table_name_with_optional_uuid_)
+    {
+    }
+
 protected:
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -106,7 +109,8 @@ protected:
 class ParserFunction : public IParserBase
 {
 public:
-    ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) {}
+    explicit ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) { }
+
 protected:
     const char * getName() const override { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -287,8 +291,8 @@ protected:
 class ParserAlias : public IParserBase
 {
 public:
-    ParserAlias(bool allow_alias_without_as_keyword_)
-        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
+    explicit ParserAlias(bool allow_alias_without_as_keyword_) : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) { }
+
 private:
     static const char * restricted_keywords[];
 
@@ -364,8 +368,10 @@ protected:
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {
 public:
-    ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false)
-        : brackets_can_be_omitted(brackets_can_be_omitted_) {}
+    explicit ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false) : brackets_can_be_omitted(brackets_can_be_omitted_)
+    {
+    }
+
 protected:
 
     const char * getName() const override { return "function with key-value arguments"; }

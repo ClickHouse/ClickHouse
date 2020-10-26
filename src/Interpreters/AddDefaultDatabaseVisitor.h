@@ -97,16 +97,16 @@ private:
     void visit(ASTTableExpression & table_expression, ASTPtr &) const
     {
         if (table_expression.database_and_table_name)
-            tryVisit<ASTIdentifier>(table_expression.database_and_table_name);
+            tryVisit<ASTTableIdentifier>(table_expression.database_and_table_name);
         else if (table_expression.subquery)
             tryVisit<ASTSubquery>(table_expression.subquery);
     }
 
     /// @note It expects that only table (not column) identifiers are visited.
-    void visit(const ASTIdentifier & identifier, ASTPtr & ast) const
+    void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
     {
         if (!identifier.compound())
-            ast = createTableIdentifier(database_name, identifier.name());
+            ast = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
     }
 
     void visit(ASTSubquery & subquery, ASTPtr &) const
@@ -136,7 +136,7 @@ private:
                     {
                         /// Second argument of the "in" function (or similar) may be a table name or a subselect.
                         /// Rewrite the table name or descend into subselect.
-                        if (!tryVisit<ASTIdentifier>(child->children[i]))
+                        if (!tryVisit<ASTTableIdentifier>(child->children[i]))
                             visit(child->children[i]);
                     }
                     else

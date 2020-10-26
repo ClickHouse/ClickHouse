@@ -127,7 +127,7 @@ String InterpreterSelectQuery::generateFilterActions(
     tables->children.push_back(tables_elem);
     tables_elem->table_expression = table_expr;
     tables_elem->children.push_back(table_expr);
-    table_expr->database_and_table_name = createTableIdentifier(db_name, table_name);
+    table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(db_name, table_name);
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
