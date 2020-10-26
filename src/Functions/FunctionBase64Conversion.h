@@ -91,14 +91,14 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnPtr column_string = columns[arguments[0]].column;
+        const ColumnPtr column_string = arguments[0].column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
 
         if (!input)
             throw Exception(
-                "Illegal column " + columns[arguments[0]].column->getName() + " of first argument of function " + getName(),
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();
@@ -111,9 +111,9 @@ public:
 
         const ColumnString::Offsets & src_offsets = input->getOffsets();
 
-        auto source = input->getChars().data();
-        auto dst = dst_data.data();
-        auto dst_pos = dst;
+        const auto * source = input->getChars().data();
+        auto * dst = dst_data.data();
+        auto * dst_pos = dst;
 
         size_t src_offset_prev = 0;
 
@@ -141,7 +141,7 @@ public:
                 {
                     // during decoding character array can be partially polluted
                     // if fail, revert back and clean
-                    auto savepoint = dst_pos;
+                    auto * savepoint = dst_pos;
                     outlen = _tb64d(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
                     if (!outlen)
                     {
@@ -166,7 +166,7 @@ public:
 
         dst_data.resize(dst_pos - dst);
 
-        columns[result].column = std::move(dst_column);
+        return dst_column;
     }
 };
 }

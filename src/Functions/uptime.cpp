@@ -39,9 +39,9 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        columns[result].column = DataTypeUInt32().createColumnConst(input_rows_count, static_cast<UInt64>(uptime));
+        return DataTypeUInt32().createColumnConst(input_rows_count, static_cast<UInt64>(uptime));
     }
 
 private:
