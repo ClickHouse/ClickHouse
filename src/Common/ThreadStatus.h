@@ -164,6 +164,8 @@ public:
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
 protected:
+    void applyQuerySettings();
+
     void initPerformanceCounters();
 
     void initQueryProfiler();
@@ -211,6 +213,24 @@ protected:
 
 private:
     void setupState(const ThreadGroupStatusPtr & thread_group_);
+};
+
+/**
+ * Creates ThreadStatus for the main thread.
+ */
+class MainThreadStatus : public ThreadStatus
+{
+public:
+    static MainThreadStatus & getInstance();
+    static ThreadStatus * get() { return main_thread; }
+    static bool isMainThread() { return main_thread == current_thread; }
+
+    ~MainThreadStatus();
+
+private:
+    MainThreadStatus();
+
+    static ThreadStatus * main_thread;
 };
 
 }

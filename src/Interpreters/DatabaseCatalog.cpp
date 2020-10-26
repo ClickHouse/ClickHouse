@@ -417,8 +417,10 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, DatabasePtr database, St
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto [_, inserted] = map_part.map.try_emplace(uuid, std::move(database), std::move(table));
+    /// Normally this should never happen, but it's possible when the same UUIDs are explicitly specified in different CREATE queries,
+    /// so it's not LOGICAL_ERROR
     if (!inserted)
-        throw Exception("Mapping for table with UUID=" + toString(uuid) + " already exists", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Mapping for table with UUID=" + toString(uuid) + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
@@ -530,7 +532,7 @@ std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, 
     std::unique_lock lock(ddl_guards_mutex);
     auto db_guard_iter = ddl_guards.try_emplace(database).first;
     DatabaseGuard & db_guard = db_guard_iter->second;
-    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table);
+    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table, database);
 }
 
 std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
@@ -832,7 +834,7 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
 }
 
 
-DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
+DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name)
         : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
 {
     it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
@@ -841,14 +843,19 @@ DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<s
     table_lock = std::unique_lock(*it->second.mutex);
     bool is_database = elem.empty();
     if (!is_database)
-        db_mutex.lock_shared();
+    {
+
+        bool locked_database_for_read = db_mutex.try_lock_shared();
+        if (!locked_database_for_read)
+        {
+            removeTableLock();
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
+        }
+    }
 }
 
-DDLGuard::~DDLGuard()
+void DDLGuard::removeTableLock()
 {
-    bool is_database = it->first.empty();
-    if (!is_database)
-        db_mutex.unlock_shared();
     guards_lock.lock();
     --it->second.counter;
     if (!it->second.counter)
@@ -856,6 +863,14 @@ DDLGuard::~DDLGuard()
         table_lock.unlock();
         map.erase(it);
     }
+}
+
+DDLGuard::~DDLGuard()
+{
+    bool is_database = it->first.empty();
+    if (!is_database)
+        db_mutex.unlock_shared();
+    removeTableLock();
 }
 
 }
