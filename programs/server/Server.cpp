@@ -277,7 +277,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     LOG_WARNING(log, "Server was built in debug mode. It will work slowly.");
 #endif
 
-#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+#if defined(SANITIZER)
     LOG_WARNING(log, "Server was built with sanitizer. It will work slowly.");
 #endif
 
