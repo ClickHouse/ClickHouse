@@ -1224,7 +1224,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             if (prewhere_info)
             {
                 /// Get some columns directly from PREWHERE expression actions
-                auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns();
+                auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
                 required_columns_from_prewhere.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
             }
 
