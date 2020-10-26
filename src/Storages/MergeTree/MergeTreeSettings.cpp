@@ -11,8 +11,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INVALID_CONFIG_PARAMETER;
-    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -34,9 +32,8 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::UNKNOWN_SETTING)
-            throw Exception(e.message() + " in MergeTree config", ErrorCodes::INVALID_CONFIG_PARAMETER);
-        else
-            e.rethrow();
+            e.addMessage("in MergeTree config");
+        throw;
     }
 }
 
@@ -51,9 +48,8 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNKNOWN_SETTING)
-                throw Exception(e.message() + " for storage " + storage_def.engine->name, ErrorCodes::BAD_ARGUMENTS);
-            else
-                e.rethrow();
+                e.addMessage("for storage " + storage_def.engine->name);
+            throw;
         }
     }
     else
