@@ -335,7 +335,6 @@ struct ContextShared
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
-    std::optional<BackgroundSchedulePool> message_broker_schedule_pool;    /// A thread pool that can run different jobs in background (used in kafka streaming)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -438,7 +437,6 @@ struct ContextShared
         schedule_pool.reset();
         distributed_schedule_pool.reset();
         ddl_worker.reset();
-        message_broker_schedule_pool.reset();
 
         /// Stop trace collector if any
         trace_collector.reset();
@@ -1441,17 +1439,6 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
     return *shared->distributed_schedule_pool;
 }
 
-BackgroundSchedulePool & Context::getMessageBrokerSchedulePool()
-{
-    auto lock = getLock();
-    if (!shared->message_broker_schedule_pool)
-        shared->message_broker_schedule_pool.emplace(
-            settings.background_message_broker_schedule_pool_size,
-            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
-            "BgMBSchPool");
-    return *shared->message_broker_schedule_pool;
-}
-
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
@@ -1950,7 +1937,7 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
          << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
 
     ostr << "How to fix this:\n"
-         << "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config and restart ClickHouse\n"
+         << "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n"
          << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
          << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
 
