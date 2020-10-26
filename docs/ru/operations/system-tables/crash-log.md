@@ -1,6 +1,6 @@
-﻿# system.crash_log {#system-tables_crash_log}
+# system.crash_log {#system-tables_crash_log}
 
-Содержит информацию о трассировках стека для фатальных ошибок. Таблица не содержится в базе данных по умолчанию, а создается только при возникновении фатальных ошибок. 
+Содержит информацию о трассировках стека для фатальных ошибок. Таблица не содержится в базе данных по умолчанию, а создается только при возникновении фатальных ошибок.
 
 Колонки:
 
@@ -39,7 +39,7 @@ trace:        [188531193,...]
 trace_full:   ['3. DB::(anonymous namespace)::FunctionFormatReadableTimeDelta::executeImpl(std::__1::vector<DB::ColumnWithTypeAndName, std::__1::allocator<DB::ColumnWithTypeAndName> >&, std::__1::vector<unsigned long, std::__1::allocator<unsigned long> > const&, unsigned long, unsigned long) const @ 0xb3cc1f9 in /home/username/work/ClickHouse/build/programs/clickhouse',...]
 version:      ClickHouse 20.11.1.1
 revision:     54442
-build_id:     
+build_id:
 ```
 
 **См. также**
