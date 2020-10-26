@@ -146,8 +146,8 @@ public:
     void checkPartitionCanBeDropped(const ASTPtr & partition) override { getNested()->checkPartitionCanBeDropped(partition); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
-    std::optional<UInt64> totalRows() const override { return getNested()->totalRows(); }
-    std::optional<UInt64> totalBytes() const override { return getNested()->totalBytes(); }
+    std::optional<UInt64> totalRows(const Context& context) const override { return getNested()->totalRows(context); }
+    std::optional<UInt64> totalBytes(const Context& context) const override { return getNested()->totalBytes(context); }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }
     std::optional<UInt64> lifetimeBytes() const override { return getNested()->lifetimeBytes(); }
 

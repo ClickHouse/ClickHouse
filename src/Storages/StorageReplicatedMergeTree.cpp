@@ -3719,7 +3719,7 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(
         }
         if (is_valid)
             res += part->rows_count;
-    });
+    }, context);
     return res;
 }
 
