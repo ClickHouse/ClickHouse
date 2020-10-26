@@ -1551,3 +1551,4 @@ def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_clust
 
     finally:
         node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))
+
