@@ -44,6 +44,27 @@ IMergeTreeReader::IMergeTreeReader(
 {
     for (const NameAndTypePair & column_from_part : data_part->getColumns())
         columns_from_part[column_from_part.name] = column_from_part.type;
+
+    std::unordered_map<String, size_t> positions;
+    size_t pos = 0;
+    for (const auto & column : columns)
+    {
+        if (!column.isSubcolumn())
+            positions[column.name] = pos;
+        ++pos;
+    }
+
+    pos = 0;
+    for (const auto & column : columns)
+    {
+        if (column.isSubcolumn())
+        {
+            auto it = positions.find(column.getStorageName());
+            if (it != positions.end())
+                duplicated_subcolumns[column.name] = it->second;
+        }
+        ++pos;
+    }
 }
 
 IMergeTreeReader::~IMergeTreeReader() = default;
@@ -74,6 +95,20 @@ static bool arrayHasNoElementsRead(const IColumn & column)
     return last_offset != 0;
 }
 
+void IMergeTreeReader::fillDuplicatedSubcolumns(Columns & res_columns)
+{
+    auto requested_column = columns.begin();
+    for (size_t i = 0; i < columns.size(); ++i, ++requested_column)
+    {
+        if (res_columns[i])
+            continue;
+
+        auto it = duplicated_subcolumns.find(requested_column->name);
+        if (it != duplicated_subcolumns.end() && res_columns[it->second])
+            res_columns[i] = requested_column->getStorageType()->getSubcolumn(
+                requested_column->getSubcolumnName(), *res_columns[it->second]->assumeMutable());
+    }
+}
 
 void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows)
 {
@@ -85,6 +120,8 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
             throw Exception("invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
                             "Expected " + toString(num_columns) + ", "
                             "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
+
+        fillDuplicatedSubcolumns(res_columns);
 
         /// For a missing column of a nested data structure we must create not a column of empty
         /// arrays, but a column of arrays of correct length.

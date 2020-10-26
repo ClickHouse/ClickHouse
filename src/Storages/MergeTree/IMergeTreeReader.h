@@ -82,12 +82,16 @@ protected:
     StorageMetadataPtr metadata_snapshot;
     MarkRanges all_mark_ranges;
 
+    std::unordered_map<String, size_t> duplicated_subcolumns;
+
     using ColumnPosition = std::optional<size_t>;
     ColumnPosition findColumnForOffsets(const String & column_name) const;
 
     friend class MergeTreeRangeReader::DelayedStream;
 
 private:
+    void fillDuplicatedSubcolumns(Columns & res_columns);
+
     /// Alter conversions, which must be applied on fly if required
     MergeTreeData::AlterConversions alter_conversions;
 

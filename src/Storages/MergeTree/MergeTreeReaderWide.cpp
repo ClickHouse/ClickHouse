@@ -79,6 +79,9 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
             auto column_from_part = getColumnFromPart(*name_and_type);
             const auto & [name, type] = column_from_part;
 
+            if (duplicated_subcolumns.count(name))
+                continue;
+
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)

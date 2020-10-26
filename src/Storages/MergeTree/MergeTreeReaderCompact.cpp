@@ -146,10 +146,11 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            if (!res_columns[pos])
+            auto column_from_part = getColumnFromPart(*name_and_type);
+
+            if (!res_columns[pos] || duplicated_subcolumns.count(column_from_part.name))
                 continue;
 
-            auto column_from_part = getColumnFromPart(*name_and_type);
             auto & column = mutable_columns[pos];
 
             try
