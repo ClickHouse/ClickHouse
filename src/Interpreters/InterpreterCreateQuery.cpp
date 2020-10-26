@@ -5,6 +5,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
+#include <Common/Macros.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -852,17 +853,70 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
     return {};
 }
 
+void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, const Context & context, const String & cluster_name)
+{
+    if (create.attach)
+        return;
+
+    /// Allows to execute ON CLUSTER queries during version upgrade
+    bool force_backward_compatibility = !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil;
+
+    /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
+    /// It will be ignored if database does not support UUIDs.
+    if (!force_backward_compatibility && create.uuid == UUIDHelpers::Nil)
+        create.uuid = UUIDHelpers::generateV4();
+
+    /// For cross-replication cluster we cannot use UUID in replica path.
+    String cluster_name_expanded = context.getMacros()->expand(cluster_name);
+    ClusterPtr cluster = context.getCluster(cluster_name_expanded);
+
+    bool maybe_cross_replication = cluster->maybeCrossReplication();
+    if (maybe_cross_replication || force_backward_compatibility)
+    {
+        /// Check that {uuid} macro is not used in zookeeper_path for ReplicatedMergeTree.
+        /// Otherwise replicas will generate different paths.
+        if (!create.storage)
+            return;
+        if (!create.storage->engine)
+            return;
+        if (!startsWith(create.storage->engine->name, "Replicated"))
+            return;
+
+        bool has_explicit_zk_path_arg = create.storage->engine->arguments &&
+                                        create.storage->engine->arguments->children.size() >= 2 &&
+                                        create.storage->engine->arguments->children[0]->as<ASTLiteral>() &&
+                                        create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.getType() == Field::Types::String;
+
+        if (has_explicit_zk_path_arg)
+        {
+            String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.get<String>();
+            Macros::MacroExpansionInfo info;
+            info.table_id.uuid = UUIDHelpers::generateV4();     /// Some non-Nil UUID, just check it's not expanded
+            info.ignore_unknown = true;
+            context.getMacros()->expand(zk_path, info);
+            if (!info.expanded_uuid)
+                return;
+        }
+
+        if (maybe_cross_replication)
+            throw Exception("Seems like cluster is configured for cross-replication, "
+                            "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
+                            "It's not supported for cross replication, because tables must have different UUIDs. "
+                            "Please specify unique zookeeper_path explicitly.", ErrorCodes::INCORRECT_QUERY);
+        else /// if (force_backward_compatibility)
+            throw Exception("Forced backward compatibility of ON CLUSTER queries is enabled, "
+                            "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
+                            "Please set show_table_uuid_in_table_create_query_if_not_nil=1 or specify unique zookeeper_path explicitly. "
+                            "Ensure all nodes in cluster are 20.8 or greater before enabling the setting.", ErrorCodes::INCORRECT_QUERY);
+    }
+}
+
 BlockIO InterpreterCreateQuery::execute()
 {
     auto & create = query_ptr->as<ASTCreateQuery &>();
     if (!create.cluster.empty())
     {
-        /// Allows to execute ON CLUSTER queries during version upgrade
-        bool force_backward_compatibility = !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil;
-        /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
-        /// It will be ignored if database does not support UUIDs.
-        if (!force_backward_compatibility && !create.attach && create.uuid == UUIDHelpers::Nil)
-            create.uuid = UUIDHelpers::generateV4();
+        prepareOnClusterQuery(create, context, create.cluster);
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
     }
 
