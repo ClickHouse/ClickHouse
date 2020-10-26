@@ -42,6 +42,7 @@ TEST(ParserColumn, AllGeneratedColumnOption)
 
     String input = "col_01 VARCHAR(100) NULL UNIQUE KEY PRIMARY KEY COMMENT 'column comment' COLLATE utf8 "
                    "REFERENCES tbl_name (col_01) CHECK 1 GENERATED ALWAYS AS (1) STORED";
+
     ASTPtr ast = parseQuery(p_column, input.data(), input.data() + input.size(), "", 0, 0);
     EXPECT_EQ(ast->as<ASTDeclareColumn>()->name, "col_01");
     EXPECT_EQ(ast->as<ASTDeclareColumn>()->data_type->as<ASTFunction>()->name, "VARCHAR");
