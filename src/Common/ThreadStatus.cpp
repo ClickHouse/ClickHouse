@@ -25,7 +25,7 @@ namespace ErrorCodes
 thread_local ThreadStatus * current_thread = nullptr;
 thread_local ThreadStatus * main_thread = nullptr;
 
-#if !defined(SANITIZER)
+#if !defined(SANITIZER) && !defined(ARCADIA_BUILD)
     alignas(4096) static thread_local char alt_stack[4096];
     static thread_local bool has_alt_stack = false;
 #endif
@@ -46,7 +46,8 @@ ThreadStatus::ThreadStatus()
 
     /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
     /// If not already installed for current thread.
-#if !defined(SANITIZER) && !defined(ARCADIA_BUILD) /// Sanitizer makes larger stack usage and/or confused by alternative stack.
+    /// Sanitizer makes larger stack usage and also it's incompatible with alternative stack by default (it sets up and relies on its own).
+#if !defined(SANITIZER) && !defined(ARCADIA_BUILD)
     if (!has_alt_stack)
     {
         /// Don't repeat tries even if not installed successfully.
